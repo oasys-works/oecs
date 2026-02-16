@@ -26,6 +26,7 @@ import type {
 import type { Archetype, ArchetypeID } from "../archetype/archetype";
 import { ArchetypeRegistry } from "../archetype/archetype_registry";
 import { ECS_ERROR, ECSError } from "../utils/error";
+import type { BitSet } from "../collections/bitset";
 
 //=========================================================
 // Constants
@@ -118,10 +119,9 @@ export class Store {
     arch.remove_entity(index);
 
     // Zero out component data for all components in this archetype
-    const sig = arch.signature;
-    for (let i = 0; i < sig.length; i++) {
-      this.components.clear(sig[i], index);
-    }
+    arch.mask.for_each((component_id) => {
+      this.components.clear(component_id as ComponentID, index);
+    });
 
     // Clear entity-archetype mapping
     this.entity_archetype[index] = UNASSIGNED;
@@ -336,7 +336,7 @@ export class Store {
   //=========================================================
 
   public get_matching_archetypes(
-    required: readonly ComponentID[],
+    required: BitSet,
   ): readonly Archetype[] {
     return this.archetype_registry.get_matching(required);
   }

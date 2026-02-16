@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ArchetypeRegistry } from "../archetype_registry";
 import { as_component_id, type ComponentID } from "../../component/component";
+import { BitSet } from "../../collections/bitset";
 
 // Helpers
 const comp_id = (n: number) => as_component_id(n) as ComponentID;
+
+function make_mask(...ids: number[]): BitSet {
+  const mask = new BitSet();
+  for (const id of ids) mask.set(id);
+  return mask;
+}
 
 describe("ArchetypeRegistry", () => {
   //=========================================================
@@ -15,7 +22,7 @@ describe("ArchetypeRegistry", () => {
     expect(reg.count).toBe(1);
 
     const empty = reg.get(reg.empty_archetype_id);
-    expect(empty.signature.length).toBe(0);
+    expect(empty.mask.has(0)).toBe(false);
   });
 
   it("get_component_archetype_count returns 0 for unknown component", () => {
@@ -33,7 +40,9 @@ describe("ArchetypeRegistry", () => {
 
     expect(reg.count).toBe(2); // empty + new
     const arch = reg.get(id);
-    expect([...arch.signature]).toEqual([comp_id(1), comp_id(2)]);
+    expect(arch.mask.has(1)).toBe(true);
+    expect(arch.mask.has(2)).toBe(true);
+    expect(arch.mask.has(3)).toBe(false);
   });
 
   it("deduplicates archetypes with same signature", () => {
@@ -78,7 +87,8 @@ describe("ArchetypeRegistry", () => {
     const target = reg.resolve_add(src, comp_id(2));
 
     const arch = reg.get(target);
-    expect([...arch.signature]).toEqual([comp_id(1), comp_id(2)]);
+    expect(arch.mask.has(1)).toBe(true);
+    expect(arch.mask.has(2)).toBe(true);
   });
 
   it("resolve_add caches the edge for repeated calls", () => {
@@ -113,7 +123,8 @@ describe("ArchetypeRegistry", () => {
     const target = reg.resolve_remove(src, comp_id(2));
 
     const arch = reg.get(target);
-    expect([...arch.signature]).toEqual([comp_id(1)]);
+    expect(arch.mask.has(1)).toBe(true);
+    expect(arch.mask.has(2)).toBe(false);
   });
 
   it("resolve_remove caches the edge for repeated calls", () => {
@@ -147,7 +158,7 @@ describe("ArchetypeRegistry", () => {
     reg.get_or_create([comp_id(1)]);
     reg.get_or_create([comp_id(2)]);
 
-    const matches = reg.get_matching([]);
+    const matches = reg.get_matching(make_mask());
     expect(matches.length).toBe(reg.count);
   });
 
@@ -157,7 +168,7 @@ describe("ArchetypeRegistry", () => {
     reg.get_or_create([comp_id(1), comp_id(2)]);
     reg.get_or_create([comp_id(2), comp_id(3)]);
 
-    const matches = reg.get_matching([comp_id(1)]);
+    const matches = reg.get_matching(make_mask(1));
     expect(matches.length).toBe(2); // [1] and [1,2]
   });
 
@@ -165,7 +176,7 @@ describe("ArchetypeRegistry", () => {
     const reg = new ArchetypeRegistry();
     reg.get_or_create([comp_id(1)]);
 
-    const matches = reg.get_matching([comp_id(99)]);
+    const matches = reg.get_matching(make_mask(99));
     expect(matches.length).toBe(0);
   });
 
@@ -175,7 +186,7 @@ describe("ArchetypeRegistry", () => {
     reg.get_or_create([comp_id(1), comp_id(3)]);
     reg.get_or_create([comp_id(1), comp_id(2), comp_id(3)]);
 
-    const matches = reg.get_matching([comp_id(1), comp_id(2)]);
+    const matches = reg.get_matching(make_mask(1, 2));
     expect(matches.length).toBe(2); // [1,2] and [1,2,3]
   });
 
@@ -189,11 +200,11 @@ describe("ArchetypeRegistry", () => {
     reg.get_or_create([comp_id(1), comp_id(2)]);
 
     // Both archetypes with comp_id(1) should be found
-    const matches = reg.get_matching([comp_id(1)]);
+    const matches = reg.get_matching(make_mask(1));
     expect(matches.length).toBe(2);
 
     // Only one archetype has comp_id(2)
-    const matches2 = reg.get_matching([comp_id(2)]);
+    const matches2 = reg.get_matching(make_mask(2));
     expect(matches2.length).toBe(1);
   });
 

@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../store";
 import { get_entity_index } from "../../entity/entity";
 import type { ComponentID } from "../../component/component";
+import { BitSet } from "../../collections/bitset";
+
+function make_mask(...ids: (number | ComponentID)[]): BitSet {
+  const mask = new BitSet();
+  for (const id of ids) mask.set(id as number);
+  return mask;
+}
 
 // Schemas
 const Position = { x: "f32", y: "f32", z: "f32" } as const;
@@ -229,7 +236,7 @@ describe("Store", () => {
 
     // Query for [Pos] - 3 archetypes match: [Pos] (empty intermediate),
     // [Pos, Vel], and [Pos, Hp]. Both entities' final archetypes are included.
-    const pos_matches = store.get_matching_archetypes([Pos as ComponentID]);
+    const pos_matches = store.get_matching_archetypes(make_mask(Pos as ComponentID));
     expect(pos_matches.length).toBe(3);
 
     // Both entities are found across matching archetypes
@@ -238,15 +245,12 @@ describe("Store", () => {
     expect(all_entities).toContain(e2);
 
     // Query for [Pos, Vel] - only e1's archetype matches
-    const pos_vel_matches = store.get_matching_archetypes([
-      Pos as ComponentID,
-      Vel as ComponentID,
-    ]);
+    const pos_vel_matches = store.get_matching_archetypes(make_mask(Pos as ComponentID, Vel as ComponentID));
     expect(pos_vel_matches.length).toBe(1);
     expect(pos_vel_matches[0].entity_list).toContain(e1);
 
     // Query for [Hp] - only e2's archetype matches
-    const hp_matches = store.get_matching_archetypes([Hp as ComponentID]);
+    const hp_matches = store.get_matching_archetypes(make_mask(Hp as ComponentID));
     expect(hp_matches.length).toBe(1);
     expect(hp_matches[0].entity_list).toContain(e2);
   });
@@ -261,10 +265,7 @@ describe("Store", () => {
     store.add_component(e1, Pos, { x: 0, y: 0, z: 0 });
 
     // No entity has Vel + Hp
-    const matches = store.get_matching_archetypes([
-      Vel as ComponentID,
-      Hp as ComponentID,
-    ]);
+    const matches = store.get_matching_archetypes(make_mask(Vel as ComponentID, Hp as ComponentID));
     expect(matches.length).toBe(0);
   });
 
@@ -276,7 +277,7 @@ describe("Store", () => {
     const e2 = store.create_entity();
     store.add_component(e2, Pos, { x: 0, y: 0, z: 0 });
 
-    const matches = store.get_matching_archetypes([]);
+    const matches = store.get_matching_archetypes(make_mask());
     expect(matches.length).toBe(store.archetype_count);
   });
 
@@ -293,7 +294,7 @@ describe("Store", () => {
     store.add_component(e1, Pos, { x: 1, y: 0, z: 0 });
     store.add_component(e2, Pos, { x: 2, y: 0, z: 0 });
 
-    const archetypes = store.get_matching_archetypes([Pos as ComponentID]);
+    const archetypes = store.get_matching_archetypes(make_mask(Pos as ComponentID));
     expect(archetypes.length).toBe(1);
     expect(archetypes[0].entity_count).toBe(2);
 
@@ -418,9 +419,7 @@ describe("Store", () => {
     expect(store.has_component(e1, Marker)).toBe(true);
     expect(store.has_component(e2, Marker)).toBe(false);
 
-    const marker_archetypes = store.get_matching_archetypes([
-      Marker as ComponentID,
-    ]);
+    const marker_archetypes = store.get_matching_archetypes(make_mask(Marker as ComponentID));
     expect(marker_archetypes.length).toBe(1);
     expect(marker_archetypes[0].entity_list).toContain(e1);
   });
@@ -469,7 +468,7 @@ describe("Store", () => {
     const id = store.create_entity();
     store.add_component(id, Pos, { x: 10, y: 20, z: 30 });
 
-    const archetypes = store.get_matching_archetypes([Pos as ComponentID]);
+    const archetypes = store.get_matching_archetypes(make_mask(Pos as ComponentID));
     expect(archetypes[0].entity_count).toBe(1);
 
     store.destroy_entity_deferred(id);

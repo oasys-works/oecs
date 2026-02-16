@@ -7,9 +7,9 @@
  * arrays indexed by entity index. Moving an entity between archetypes
  * only changes membership lists; no component data is copied.
  *
- * The signature is a sorted, frozen array of ComponentIDs. Sorting
- * ensures deterministic hashing and enables binary search for
- * has_component / matches checks.
+ * The signature is a BitSet where each set bit corresponds to a
+ * ComponentID. This enables O(1) has_component checks and O(words)
+ * superset checks for query matching.
  *
  * Entity membership uses a classic sparse-set backed by typed arrays:
  *   - entity_ids (Uint32Array, dense) holds packed EntityIDs
@@ -20,7 +20,8 @@
  *
  * Graph edges cache archetype transitions: "if I add/remove component X,
  * which archetype do I end up in?" These are lazily populated by the
- * Store and make repeated transitions O(1).
+ * Store and make repeated transitions O(1). Edges use a plain array
+ * indexed by ComponentID instead of a Map for faster lookup.
  *
  ***/
 
@@ -28,6 +29,7 @@ import { Brand, validate_and_cast } from "type_primitives";
 import type { ComponentID } from "../component/component";
 import { get_entity_index, type EntityID } from "../entity/entity";
 import { ECS_ERROR, ECSError } from "../utils/error";
+import type { BitSet } from "../collections/bitset";
 
 const INITIAL_DENSE_CAPACITY = 16;
 const INITIAL_SPARSE_CAPACITY = 64;
@@ -56,47 +58,25 @@ export interface ArchetypeEdge {
 }
 
 //=========================================================
-// Binary search on sorted ComponentID array
-//=========================================================
-
-// TODO: Move this to util
-function binary_search(
-  sorted: readonly ComponentID[],
-  target: ComponentID,
-): number {
-  let lo = 0;
-  let hi = sorted.length - 1;
-  const tgt = target as number;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    const val = sorted[mid] as number;
-    if (val === tgt) return mid;
-    if (val < tgt) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  return -1;
-}
-
-//=========================================================
 // Archetype
 //=========================================================
 
 export class Archetype {
   readonly id: ArchetypeID;
-  readonly signature: readonly ComponentID[];
+  readonly mask: BitSet;
 
   private entity_ids: Uint32Array;
   private index_to_row: Int32Array;
-  private len: number = 0;
+  private length: number = 0;
   private edges: Map<ComponentID, ArchetypeEdge> = new Map();
 
   /**
    * @param id - Archetype identifier
-   * @param sorted_signature - Pre-sorted array of ComponentIDs (caller must sort)
+   * @param mask - BitSet representing the component signature
    */
-  constructor(id: ArchetypeID, sorted_signature: readonly ComponentID[]) {
+  constructor(id: ArchetypeID, mask: BitSet) {
     this.id = id;
-    this.signature = Object.freeze(sorted_signature);
+    this.mask = mask;
     this.entity_ids = new Uint32Array(INITIAL_DENSE_CAPACITY);
     this.index_to_row = new Int32Array(INITIAL_SPARSE_CAPACITY).fill(EMPTY_ROW);
   }
@@ -106,23 +86,20 @@ export class Archetype {
   //=========================================================
 
   public get entity_count(): number {
-    return this.len;
+    return this.length;
   }
 
   public get entity_list(): Uint32Array {
-    return this.entity_ids.subarray(0, this.len);
+    return this.entity_ids.subarray(0, this.length);
   }
 
   public has_component(id: ComponentID): boolean {
-    return binary_search(this.signature, id) !== -1;
+    return this.mask.has(id as number);
   }
 
-  /** Check if this archetype's signature is a superset of `required`. */
-  public matches(required: readonly ComponentID[]): boolean {
-    for (let i = 0; i < required.length; i++) {
-      if (binary_search(this.signature, required[i]) === -1) return false;
-    }
-    return true;
+  /** Check if this archetype's mask is a superset of `required`. */
+  public matches(required: BitSet): boolean {
+    return this.mask.contains(required);
   }
 
   public has_entity(entity_index: number): boolean {
@@ -137,14 +114,14 @@ export class Archetype {
   //=========================================================
 
   public add_entity(entity_id: EntityID, entity_index: number): void {
-    if (this.len >= this.entity_ids.length) this.grow_entity_ids();
+    if (this.length >= this.entity_ids.length) this.grow_entity_ids();
     if (entity_index >= this.index_to_row.length)
       this.grow_index_to_row(entity_index + 1);
 
-    const row = this.len;
+    const row = this.length;
     this.entity_ids[row] = entity_id as number;
     this.index_to_row[entity_index] = row;
-    this.len++;
+    this.length++;
   }
 
   /**
@@ -168,7 +145,7 @@ export class Archetype {
     }
 
     const row = this.index_to_row[entity_index];
-    const last_row = this.len - 1;
+    const last_row = this.length - 1;
 
     this.index_to_row[entity_index] = EMPTY_ROW;
 
@@ -176,11 +153,11 @@ export class Archetype {
       this.entity_ids[row] = this.entity_ids[last_row];
       const swapped_index = get_entity_index(this.entity_ids[row] as EntityID);
       this.index_to_row[swapped_index] = row;
-      this.len--;
+      this.length--;
       return swapped_index;
     }
 
-    this.len--;
+    this.length--;
     return -1;
   }
 
@@ -203,7 +180,7 @@ export class Archetype {
   }
 
   //=========================================================
-  // Graph edges (called by Store only)
+  // Graph edges (called by ArchetypeRegistry only)
   //=========================================================
 
   public get_edge(component_id: ComponentID): ArchetypeEdge | undefined {

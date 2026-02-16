@@ -2,7 +2,7 @@
  *
  * ArchetypeRegistry - Manages archetype creation, deduplication, and transitions
  *
- * Owns the archetype dense array, signature dedup map, graph edge
+ * Owns the archetype dense array, BitSet-based dedup map, graph edge
  * resolution, and component index (for query matching).
  *
  * Store delegates all archetype operations here, keeping itself as a
@@ -11,6 +11,7 @@
  ***/
 
 import type { ComponentID } from "../component/component";
+import { BitSet } from "../collections/bitset";
 import {
   Archetype,
   as_archetype_id,
@@ -67,26 +68,43 @@ export class ArchetypeRegistry {
   }
 
   /**
-   * Find all archetypes whose signature is a superset of `required`.
+   * Find all archetypes whose mask is a superset of `required`.
    *
    * Uses component_index intersection with smallest-set-first optimization.
    */
-  get_matching(required: readonly ComponentID[]): readonly Archetype[] {
-    if (required.length === 0) {
+  get_matching(required: BitSet): readonly Archetype[] {
+    // Empty mask means match all
+    let has_any_bit = false;
+    for (let i = 0; i < required._words.length; i++) {
+      if (required._words[i] !== 0) { has_any_bit = true; break; }
+    }
+    if (!has_any_bit) {
       return this.archetypes.slice();
     }
 
-    // Find the component with the fewest archetypes (smallest set)
+    // Collect component IDs from the mask and find smallest set
     let smallest_set: Set<ArchetypeID> | undefined;
-    for (const component_id of required) {
-      const set = this.component_index.get(component_id);
-      if (!set || set.size === 0) return [];
+    required.for_each((bit) => {
+      const set = this.component_index.get(bit as ComponentID);
+      if (!set || set.size === 0) {
+        smallest_set = undefined;
+        return;
+      }
       if (!smallest_set || set.size < smallest_set.size) {
         smallest_set = set;
       }
-    }
+    });
 
-    // Intersect: start with smallest set, filter by matches
+    // Check if any component had no archetypes
+    // We need a more careful check: re-scan to detect zeros
+    let has_empty = false;
+    required.for_each((bit) => {
+      const set = this.component_index.get(bit as ComponentID);
+      if (!set || set.size === 0) has_empty = true;
+    });
+    if (has_empty) return [];
+
+    // Intersect: start with smallest set, filter by contains
     const result: Archetype[] = [];
     for (const archetype_id of smallest_set!) {
       const arch = this.get(archetype_id);
@@ -103,24 +121,27 @@ export class ArchetypeRegistry {
   //=========================================================
 
   get_or_create(signature: readonly ComponentID[]): ArchetypeID {
-    const sorted = [...signature].sort((a, b) => a - b);
-    return this.get_or_create_sorted(sorted);
+    const mask = new BitSet();
+    for (let i = 0; i < signature.length; i++) {
+      mask.set(signature[i] as number);
+    }
+    return this.get_or_create_from_mask(mask);
   }
 
-  private get_or_create_sorted(sorted: readonly ComponentID[]): ArchetypeID {
-    const hash = this.hash_signature(sorted);
+  get_or_create_from_mask(mask: BitSet): ArchetypeID {
+    const hash = mask.hash();
 
     const bucket = this.archetype_map.get(hash);
     if (bucket !== undefined) {
       for (let i = 0; i < bucket.length; i++) {
-        if (this.signatures_equal(this.archetypes[bucket[i]].signature, sorted)) {
+        if (this.archetypes[bucket[i]].mask.equals(mask)) {
           return bucket[i];
         }
       }
     }
 
     const id = as_archetype_id(this.next_archetype_id++);
-    const archetype = new Archetype(id, sorted);
+    const archetype = new Archetype(id, mask);
 
     this.archetypes.push(archetype);
     if (bucket !== undefined) {
@@ -130,15 +151,15 @@ export class ArchetypeRegistry {
     }
 
     // Update component index
-    for (let i = 0; i < sorted.length; i++) {
-      const component_id = sorted[i];
+    mask.for_each((bit) => {
+      const component_id = bit as ComponentID;
       let set = this.component_index.get(component_id);
       if (!set) {
         set = new Set();
         this.component_index.set(component_id, set);
       }
       set.add(id);
-    }
+    });
 
     return id;
   }
@@ -147,16 +168,15 @@ export class ArchetypeRegistry {
     const current = this.get(archetype_id);
 
     // Already has this component — no transition needed
-    if (current.has_component(component_id)) return archetype_id;
+    if (current.mask.has(component_id as number)) return archetype_id;
 
     // Check cached edge
     const edge = current.get_edge(component_id);
     if (edge?.add != null) return edge.add;
 
-    // Cache miss: build sorted signature via sorted insertion
-    // current.signature is already sorted, insert component_id in order
-    const target_id = this.get_or_create_sorted(
-      this.sorted_insert(current.signature, component_id),
+    // Cache miss: build new mask with the added component
+    const target_id = this.get_or_create_from_mask(
+      current.mask.copy_with_set(component_id as number),
     );
 
     // Cache bidirectional edges
@@ -169,15 +189,16 @@ export class ArchetypeRegistry {
     const current = this.get(archetype_id);
 
     // Doesn't have this component — no transition needed
-    if (!current.has_component(component_id)) return archetype_id;
+    if (!current.mask.has(component_id as number)) return archetype_id;
 
     // Check cached edge
     const edge = current.get_edge(component_id);
     if (edge?.remove != null) return edge.remove;
 
-    // Cache miss: filter produces a sorted result since source is sorted
-    const new_sig = current.signature.filter((c) => c !== component_id);
-    const target_id = this.get_or_create_sorted(new_sig);
+    // Cache miss: build new mask without the component
+    const target_id = this.get_or_create_from_mask(
+      current.mask.copy_with_clear(component_id as number),
+    );
 
     // Cache bidirectional edges (reversed: target --add--> current, current --remove--> target)
     this.cache_edge(this.get(target_id), current, component_id);
@@ -209,48 +230,5 @@ export class ArchetypeRegistry {
     };
     to_edge.remove = from.id;
     to.set_edge(component_id, to_edge);
-  }
-
-  /** Insert a component ID into an already-sorted signature, maintaining sort order. */
-  private sorted_insert(
-    sorted: readonly ComponentID[],
-    id: ComponentID,
-  ): ComponentID[] {
-    const result = new Array<ComponentID>(sorted.length + 1);
-    let inserted = false;
-    let j = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      if (!inserted && (id as number) < (sorted[i] as number)) {
-        result[j++] = id;
-        inserted = true;
-      }
-      result[j++] = sorted[i];
-    }
-    if (!inserted) {
-      result[j] = id;
-    }
-    return result;
-  }
-
-  /** FNV-1a hash over a sorted ComponentID array. Zero allocation. */
-  private hash_signature(sig: readonly ComponentID[]): number {
-    let h = 0x811c9dc5; // FNV offset basis (32-bit)
-    for (let i = 0; i < sig.length; i++) {
-      h ^= sig[i] as number;
-      h = Math.imul(h, 0x01000193); // FNV prime (32-bit)
-    }
-    return h;
-  }
-
-  /** Compare two sorted ComponentID arrays for equality. */
-  private signatures_equal(
-    a: readonly ComponentID[],
-    b: readonly ComponentID[],
-  ): boolean {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return false;
-    }
-    return true;
   }
 }
