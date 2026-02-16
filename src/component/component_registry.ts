@@ -37,7 +37,7 @@ interface ComponentStore {
   field_names: string[];
   field_tags: TypeTag[];
   columns: TypedArray[];
-  field_index: Map<string, number>;
+  field_index: Record<string, number>;
   capacity: number;
 }
 
@@ -111,9 +111,9 @@ export class ComponentRegistry {
       (tag) => new TYPED_ARRAY_MAP[tag](INITIAL_CAPACITY),
     );
 
-    const field_index = new Map<string, number>();
+    const field_index: Record<string, number> = Object.create(null);
     for (let i = 0; i < field_names.length; i++) {
-      field_index.set(field_names[i], i);
+      field_index[field_names[i]] = i;
     }
 
     this.stores.push({
@@ -168,7 +168,7 @@ export class ComponentRegistry {
       this.grow_store(store, index + 1);
     }
 
-    const col = store.field_index.get(field);
+    const col = store.field_index[field];
     if (col === undefined) {
       if (__DEV__) {
         throw new ECSError(
@@ -190,7 +190,7 @@ export class ComponentRegistry {
     const index = get_entity_index(entity_id);
     const store = this.stores[def];
 
-    const col = store.field_index.get(field);
+    const col = store.field_index[field];
     if (col === undefined) {
       if (__DEV__) {
         throw new ECSError(
@@ -216,7 +216,7 @@ export class ComponentRegistry {
     field: F,
   ): TypedArrayFor<S[F]> {
     const store = this.stores[def];
-    const col = store.field_index.get(field);
+    const col = store.field_index[field];
 
     if (col === undefined) {
       if (__DEV__) {

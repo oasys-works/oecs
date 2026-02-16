@@ -31,6 +31,9 @@ export class ArchetypeRegistry {
   // Component index: ComponentID → Set<ArchetypeID>
   private component_index: Map<ComponentID, Set<ArchetypeID>> = new Map();
 
+  // Registered queries: push-based update when new archetypes are created
+  private registered_queries: { mask: BitSet, result: Archetype[] }[] = [];
+
   // The empty archetype (no components)
   private _empty_archetype_id: ArchetypeID;
 
@@ -74,45 +77,53 @@ export class ArchetypeRegistry {
    */
   get_matching(required: BitSet): readonly Archetype[] {
     // Empty mask means match all
+    const words = required._words;
     let has_any_bit = false;
-    for (let i = 0; i < required._words.length; i++) {
-      if (required._words[i] !== 0) { has_any_bit = true; break; }
+    for (let i = 0; i < words.length; i++) {
+      if (words[i] !== 0) { has_any_bit = true; break; }
     }
     if (!has_any_bit) {
       return this.archetypes.slice();
     }
 
-    // Collect component IDs from the mask and find smallest set
+    // Single pass: find smallest set and detect empties (inlined for_each to avoid closure)
     let smallest_set: Set<ArchetypeID> | undefined;
-    required.for_each((bit) => {
-      const set = this.component_index.get(bit as ComponentID);
-      if (!set || set.size === 0) {
-        smallest_set = undefined;
-        return;
-      }
-      if (!smallest_set || set.size < smallest_set.size) {
-        smallest_set = set;
-      }
-    });
-
-    // Check if any component had no archetypes
-    // We need a more careful check: re-scan to detect zeros
     let has_empty = false;
-    required.for_each((bit) => {
-      const set = this.component_index.get(bit as ComponentID);
-      if (!set || set.size === 0) has_empty = true;
-    });
-    if (has_empty) return [];
+    for (let wi = 0; wi < words.length; wi++) {
+      let word = words[wi];
+      if (word === 0) continue;
+      const base = wi << 5;
+      while (word !== 0) {
+        const t = word & (-word >>> 0);
+        const bit = base + (31 - Math.clz32(t));
+        word ^= t;
+        const set = this.component_index.get(bit as ComponentID);
+        if (!set || set.size === 0) { has_empty = true; break; }
+        if (!smallest_set || set.size < smallest_set.size) smallest_set = set;
+      }
+      if (has_empty) break;
+    }
+    if (has_empty || !smallest_set) return [];
 
     // Intersect: start with smallest set, filter by contains
     const result: Archetype[] = [];
-    for (const archetype_id of smallest_set!) {
+    for (const archetype_id of smallest_set) {
       const arch = this.get(archetype_id);
       if (arch.matches(required)) {
         result.push(arch);
       }
     }
 
+    return result;
+  }
+
+  /**
+   * Register a query for push-based updates. Returns a live array that
+   * grows automatically when new matching archetypes are created.
+   */
+  register_query(mask: BitSet): Archetype[] {
+    const result = this.get_matching(mask) as Archetype[];
+    this.registered_queries.push({ mask: mask.copy(), result });
     return result;
   }
 
@@ -141,6 +152,10 @@ export class ArchetypeRegistry {
     }
 
     const id = as_archetype_id(this.next_archetype_id++);
+
+    // Freeze the mask to signal immutability to V8 JIT
+    Object.freeze(mask);
+
     const archetype = new Archetype(id, mask);
 
     this.archetypes.push(archetype);
@@ -160,6 +175,14 @@ export class ArchetypeRegistry {
       }
       set.add(id);
     });
+
+    // Push new archetype to matching registered queries
+    const rqs = this.registered_queries;
+    for (let i = 0; i < rqs.length; i++) {
+      if (archetype.matches(rqs[i].mask)) {
+        rqs[i].result.push(archetype);
+      }
+    }
 
     return id;
   }

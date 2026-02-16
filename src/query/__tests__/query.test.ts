@@ -55,7 +55,7 @@ describe("SystemContext", () => {
   // Cache behavior
   //=========================================================
 
-  it("cached query returns same result on repeated calls", () => {
+  it("cached query returns same reference on repeated calls", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
     const ctx = new SystemContext(store);
@@ -66,11 +66,11 @@ describe("SystemContext", () => {
     const first = ctx.query(Pos);
     const second = ctx.query(Pos);
 
-    // Same reference - cache hit
+    // Same reference - live array
     expect(first).toBe(second);
   });
 
-  it("cache invalidates when new archetype is created", () => {
+  it("live query result grows when new matching archetype is created", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
     const Vel = store.register_component(Velocity);
@@ -79,20 +79,19 @@ describe("SystemContext", () => {
     const e1 = store.create_entity();
     store.add_component(e1, Pos, { x: 1, y: 2 });
 
-    const before = ctx.query(Pos);
-    expect(before.length).toBeGreaterThan(0);
+    const result = ctx.query(Pos);
+    const length_before = result.length;
+    expect(length_before).toBeGreaterThan(0);
 
     // Adding a new component combo creates a new archetype containing Pos
     const e2 = store.create_entity();
     store.add_component(e2, Pos, { x: 0, y: 0 });
     store.add_component(e2, Vel, { vx: 0, vy: 0 });
 
+    // Same reference — live array was updated in-place by the registry
     const after = ctx.query(Pos);
-
-    // Different reference - cache was invalidated
-    expect(after).not.toBe(before);
-    // And now includes the new archetype
-    expect(after.length).toBeGreaterThan(before.length);
+    expect(after).toBe(result);
+    expect(after.length).toBeGreaterThan(length_before);
   });
 
   it("cache is stable when no new archetypes are created", () => {
@@ -111,11 +110,12 @@ describe("SystemContext", () => {
 
     const second = ctx.query(Pos);
 
-    // Same reference - fingerprint unchanged
+    // Same reference, same length
     expect(second).toBe(first);
+    expect(second.length).toBe(first.length);
   });
 
-  it("unrelated archetype does not invalidate cache", () => {
+  it("unrelated archetype does not grow the query result", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
     const Hp = store.register_component(Health);
@@ -124,7 +124,8 @@ describe("SystemContext", () => {
     const e1 = store.create_entity();
     store.add_component(e1, Pos, { x: 1, y: 2 });
 
-    const before = ctx.query(Pos);
+    const result = ctx.query(Pos);
+    const length_before = result.length;
 
     // Create an entity with only Health — unrelated to Pos query
     const e2 = store.create_entity();
@@ -132,8 +133,9 @@ describe("SystemContext", () => {
 
     const after = ctx.query(Pos);
 
-    // Same reference — Pos fingerprint unchanged
-    expect(after).toBe(before);
+    // Same reference, same length
+    expect(after).toBe(result);
+    expect(after.length).toBe(length_before);
   });
 
   //=========================================================
@@ -212,7 +214,7 @@ describe("SystemContext", () => {
   // Deferred structural changes + query consistency
   //=========================================================
 
-  it("deferred add_component does not change query result until flush", () => {
+  it("deferred add_component does not change query result length until flush", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
     const Vel = store.register_component(Velocity);
@@ -230,7 +232,7 @@ describe("SystemContext", () => {
     const still_before = ctx.query(Pos, Vel);
     expect(still_before.length).toBe(0);
 
-    // After flush, re-query picks up the new archetype
+    // After flush, the live array has grown
     ctx.flush();
     const after = ctx.query(Pos, Vel);
     expect(after.length).toBe(1);
@@ -283,7 +285,7 @@ describe("SystemContext", () => {
     // Flush between phases
     ctx.flush();
 
-    // Now re-query sees updated state
+    // Now re-query sees updated state (live array grew)
     const after = ctx.query(Pos, Vel);
     expect(after.length).toBe(1);
     expect(after[0].entity_list).toContain(e1);

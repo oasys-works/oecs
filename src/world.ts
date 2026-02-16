@@ -84,6 +84,13 @@ export class World {
     this.store.add_component(entity_id, def, values);
   }
 
+  add_components(
+    entity_id: EntityID,
+    entries: { def: ComponentDef<ComponentSchema>; values: Record<string, number> }[],
+  ): void {
+    this.store.add_components(entity_id, entries);
+  }
+
   remove_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentSchema>,

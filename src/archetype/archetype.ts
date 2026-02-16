@@ -69,6 +69,7 @@ export class Archetype {
   private index_to_row: Int32Array;
   private length: number = 0;
   private edges: Map<ComponentID, ArchetypeEdge> = new Map();
+  private _cached_list: Uint32Array | null = null;
 
   /**
    * @param id - Archetype identifier
@@ -90,7 +91,10 @@ export class Archetype {
   }
 
   public get entity_list(): Uint32Array {
-    return this.entity_ids.subarray(0, this.length);
+    if (this._cached_list === null) {
+      this._cached_list = this.entity_ids.subarray(0, this.length);
+    }
+    return this._cached_list;
   }
 
   public has_component(id: ComponentID): boolean {
@@ -122,6 +126,7 @@ export class Archetype {
     this.entity_ids[row] = entity_id as number;
     this.index_to_row[entity_index] = row;
     this.length++;
+    this._cached_list = null;
   }
 
   /**
@@ -154,10 +159,12 @@ export class Archetype {
       const swapped_index = get_entity_index(this.entity_ids[row] as EntityID);
       this.index_to_row[swapped_index] = row;
       this.length--;
+      this._cached_list = null;
       return swapped_index;
     }
 
     this.length--;
+    this._cached_list = null;
     return -1;
   }
 
@@ -169,6 +176,7 @@ export class Archetype {
     const next = new Uint32Array(this.entity_ids.length * 2);
     next.set(this.entity_ids);
     this.entity_ids = next;
+    this._cached_list = null;
   }
 
   private grow_index_to_row(min_capacity: number): void {

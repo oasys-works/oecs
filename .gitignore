@@ -9,3 +9,4 @@ dist
 .env.staging
 .env.prod
 noctisjs
+CLAUDE.md

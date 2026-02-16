@@ -272,6 +272,35 @@ export class Store {
     this.entity_archetype[entity_index] = target_archetype_id;
   }
 
+  public add_components(
+    entity_id: EntityID,
+    entries: { def: ComponentDef<ComponentSchema>; values: Record<string, number> }[],
+  ): void {
+    if (!this.entities.is_alive(entity_id)) {
+      if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+      return;
+    }
+
+    const entity_index = get_entity_index(entity_id);
+    let current_archetype_id = this.get_entity_archetype_id(entity_index);
+    let target_archetype_id = current_archetype_id;
+
+    // Write all component data and resolve final archetype
+    for (let i = 0; i < entries.length; i++) {
+      const { def, values } = entries[i];
+      this.components.set(def, entity_id, values);
+      target_archetype_id = this.archetype_registry.resolve_add(target_archetype_id, def);
+    }
+
+    // Single membership move if archetype changed
+    if (target_archetype_id !== current_archetype_id) {
+      const source_arch = this.archetype_registry.get(current_archetype_id);
+      source_arch.remove_entity(entity_index);
+      this.archetype_registry.get(target_archetype_id).add_entity(entity_id, entity_index);
+      this.entity_archetype[entity_index] = target_archetype_id;
+    }
+  }
+
   public remove_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentSchema>,
@@ -339,6 +368,10 @@ export class Store {
     required: BitSet,
   ): readonly Archetype[] {
     return this.archetype_registry.get_matching(required);
+  }
+
+  public register_query(mask: BitSet): Archetype[] {
+    return this.archetype_registry.register_query(mask);
   }
 
   get archetype_count(): number {
