@@ -8,18 +8,22 @@
  * created. Subsequent calls are a pure hash-map lookup — no
  * fingerprint validation, no incremental scanning.
  *
+ * Systems primarily use arch.get_column(def, "field") for dense
+ * iteration over archetype-local columns.
+ *
  ***/
 
 import type { Store } from "../store/store";
 import type { Archetype } from "../archetype/archetype";
 import type { EntityID } from "../entity/entity";
-import type { ComponentRegistry } from "../component/component_registry";
+import { get_entity_index } from "../entity/entity";
 import type {
   ComponentDef,
+  ComponentID,
   ComponentSchema,
   SchemaValues,
 } from "../component/component";
-import { BitSet } from "../collections/bitset";
+import { BitSet } from "type_primitives";
 
 //=========================================================
 // Cache entry
@@ -49,9 +53,36 @@ export class SystemContext {
     return this.store.create_entity();
   }
 
-  /** Direct access to the component registry for reading/writing field data. */
-  get components(): ComponentRegistry {
-    return this.store.get_component_registry();
+  /**
+   * Get a single field value for a component on an entity.
+   * Looks up the entity's archetype and row.
+   */
+  get_field<S extends ComponentSchema>(
+    def: ComponentDef<S>,
+    entity_id: EntityID,
+    field: keyof S & string,
+  ): number {
+    const arch = this.store.get_entity_archetype(entity_id);
+    const entity_index = get_entity_index(entity_id);
+    const row = arch.get_row(entity_index);
+    return arch.read_field(row, def as ComponentID, field);
+  }
+
+  /**
+   * Set a single field value for a component on an entity.
+   * Looks up the entity's archetype and row.
+   */
+  set_field<S extends ComponentSchema>(
+    def: ComponentDef<S>,
+    entity_id: EntityID,
+    field: keyof S & string,
+    value: number,
+  ): void {
+    const arch = this.store.get_entity_archetype(entity_id);
+    const entity_index = get_entity_index(entity_id);
+    const row = arch.get_row(entity_index);
+    const col = arch.get_column(def, field);
+    col[row] = value;
   }
 
   /**
@@ -64,9 +95,21 @@ export class SystemContext {
    * Overloads avoid rest-parameter array allocation on the hot path.
    */
   query(a: ComponentDef<ComponentSchema>): readonly Archetype[];
-  query(a: ComponentDef<ComponentSchema>, b: ComponentDef<ComponentSchema>): readonly Archetype[];
-  query(a: ComponentDef<ComponentSchema>, b: ComponentDef<ComponentSchema>, c: ComponentDef<ComponentSchema>): readonly Archetype[];
-  query(a: ComponentDef<ComponentSchema>, b: ComponentDef<ComponentSchema>, c: ComponentDef<ComponentSchema>, d: ComponentDef<ComponentSchema>): readonly Archetype[];
+  query(
+    a: ComponentDef<ComponentSchema>,
+    b: ComponentDef<ComponentSchema>,
+  ): readonly Archetype[];
+  query(
+    a: ComponentDef<ComponentSchema>,
+    b: ComponentDef<ComponentSchema>,
+    c: ComponentDef<ComponentSchema>,
+  ): readonly Archetype[];
+  query(
+    a: ComponentDef<ComponentSchema>,
+    b: ComponentDef<ComponentSchema>,
+    c: ComponentDef<ComponentSchema>,
+    d: ComponentDef<ComponentSchema>,
+  ): readonly Archetype[];
   query(...defs: ComponentDef<ComponentSchema>[]): readonly Archetype[];
   query(): readonly Archetype[] {
     // Build scratch mask — clear and set bits (uses arguments to avoid rest-param allocation)

@@ -16,7 +16,6 @@ import { Store } from "./store/store";
 import { SystemRegistry } from "./system/system_registry";
 import { Schedule, type SCHEDULE } from "./schedule/schedule";
 import { SystemContext } from "./query/query";
-import type { ComponentRegistry } from "./component/component_registry";
 import type { EntityID } from "./entity/entity";
 import type {
   ComponentDef,
@@ -103,14 +102,6 @@ export class World {
     def: ComponentDef<ComponentSchema>,
   ): boolean {
     return this.store.has_component(entity_id, def);
-  }
-
-  //=========================================================
-  // Data access
-  //=========================================================
-
-  get components(): ComponentRegistry {
-    return this.store.get_component_registry();
   }
 
   //=========================================================

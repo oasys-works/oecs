@@ -5,18 +5,18 @@
  * Owns the archetype dense array, BitSet-based dedup map, graph edge
  * resolution, and component index (for query matching).
  *
+ * Takes a ComponentRegistry reference to build column layouts for new
+ * archetypes based on their component schemas.
+ *
  * Store delegates all archetype operations here, keeping itself as a
  * pure orchestrator of registries.
  *
  ***/
 
 import type { ComponentID } from "../component/component";
-import { BitSet } from "../collections/bitset";
-import {
-  Archetype,
-  as_archetype_id,
-  type ArchetypeID,
-} from "./archetype";
+import type { ComponentRegistry } from "../component/component_registry";
+import { BitSet } from "type_primitives";
+import { Archetype, as_archetype_id, type ArchetypeColumnLayout, type ArchetypeID } from "./archetype";
 import { ECS_ERROR, ECSError } from "../utils/error";
 
 //=========================================================
@@ -32,12 +32,16 @@ export class ArchetypeRegistry {
   private component_index: Map<ComponentID, Set<ArchetypeID>> = new Map();
 
   // Registered queries: push-based update when new archetypes are created
-  private registered_queries: { mask: BitSet, result: Archetype[] }[] = [];
+  private registered_queries: { mask: BitSet; result: Archetype[] }[] = [];
 
   // The empty archetype (no components)
   private _empty_archetype_id: ArchetypeID;
 
-  constructor() {
+  // Reference to component registry for schema lookups
+  private component_registry: ComponentRegistry;
+
+  constructor(component_registry: ComponentRegistry) {
+    this.component_registry = component_registry;
     this._empty_archetype_id = this.get_or_create([]);
   }
 
@@ -80,7 +84,10 @@ export class ArchetypeRegistry {
     const words = required._words;
     let has_any_bit = false;
     for (let i = 0; i < words.length; i++) {
-      if (words[i] !== 0) { has_any_bit = true; break; }
+      if (words[i] !== 0) {
+        has_any_bit = true;
+        break;
+      }
     }
     if (!has_any_bit) {
       return this.archetypes.slice();
@@ -98,7 +105,10 @@ export class ArchetypeRegistry {
         const bit = base + (31 - Math.clz32(t));
         word ^= t;
         const set = this.component_index.get(bit as ComponentID);
-        if (!set || set.size === 0) { has_empty = true; break; }
+        if (!set || set.size === 0) {
+          has_empty = true;
+          break;
+        }
         if (!smallest_set || set.size < smallest_set.size) smallest_set = set;
       }
       if (has_empty) break;
@@ -153,10 +163,25 @@ export class ArchetypeRegistry {
 
     const id = as_archetype_id(this.next_archetype_id++);
 
+    // Build column layouts from component registry schemas
+    const layouts: ArchetypeColumnLayout[] = [];
+    mask.for_each((bit) => {
+      const comp_id = bit as ComponentID;
+      const field_names = this.component_registry.get_field_names(comp_id);
+      if (field_names.length > 0) {
+        layouts.push({
+          component_id: comp_id,
+          field_names,
+          field_tags: this.component_registry.get_field_tags(comp_id),
+          field_index: this.component_registry.get_field_index(comp_id),
+        });
+      }
+    });
+
     // Freeze the mask to signal immutability to V8 JIT
     Object.freeze(mask);
 
-    const archetype = new Archetype(id, mask);
+    const archetype = new Archetype(id, mask, layouts);
 
     this.archetypes.push(archetype);
     if (bucket !== undefined) {
@@ -187,7 +212,10 @@ export class ArchetypeRegistry {
     return id;
   }
 
-  resolve_add(archetype_id: ArchetypeID, component_id: ComponentID): ArchetypeID {
+  resolve_add(
+    archetype_id: ArchetypeID,
+    component_id: ComponentID,
+  ): ArchetypeID {
     const current = this.get(archetype_id);
 
     // Already has this component — no transition needed
@@ -208,7 +236,10 @@ export class ArchetypeRegistry {
     return target_id;
   }
 
-  resolve_remove(archetype_id: ArchetypeID, component_id: ComponentID): ArchetypeID {
+  resolve_remove(
+    archetype_id: ArchetypeID,
+    component_id: ComponentID,
+  ): ArchetypeID {
     const current = this.get(archetype_id);
 
     // Doesn't have this component — no transition needed

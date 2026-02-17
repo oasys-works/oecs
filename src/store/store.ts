@@ -7,10 +7,10 @@
  * operations. Archetypes are lazily created when a new component
  * combination appears, never explicitly by external code.
  *
- * Key architectural win: zero-cost archetype transitions. Since
- * ComponentRegistry indexes data by entity index (not by archetype row),
- * moving an entity between archetypes only changes membership lists.
- * No component data is copied.
+ * Key architectural change: component data now lives in archetype-local
+ * dense columns. Archetype transitions copy component data between
+ * source and target archetypes. Iteration is sequential within each
+ * archetype, maximizing cache locality.
  *
  ***/
 
@@ -26,7 +26,7 @@ import type {
 import type { Archetype, ArchetypeID } from "../archetype/archetype";
 import { ArchetypeRegistry } from "../archetype/archetype_registry";
 import { ECS_ERROR, ECSError } from "../utils/error";
-import type { BitSet } from "../collections/bitset";
+import type { BitSet } from "type_primitives";
 
 //=========================================================
 // Constants
@@ -73,7 +73,7 @@ export class Store {
   constructor() {
     this.entities = new EntityRegistry();
     this.components = new ComponentRegistry();
-    this.archetype_registry = new ArchetypeRegistry();
+    this.archetype_registry = new ArchetypeRegistry(this.components);
     this.entity_archetype = new Int32Array(
       INITIAL_ENTITY_ARCHETYPE_CAPACITY,
     ).fill(UNASSIGNED);
@@ -114,14 +114,9 @@ export class Store {
       return;
     }
 
-    // Remove from archetype membership
+    // Remove from archetype membership (swap-and-pop handles column cleanup)
     const arch = this.archetype_registry.get(archetype_id);
     arch.remove_entity(index);
-
-    // Zero out component data for all components in this archetype
-    arch.mask.for_each((component_id) => {
-      this.components.clear(component_id as ComponentID, index);
-    });
 
     // Clear entity-archetype mapping
     this.entity_archetype[index] = UNASSIGNED;
@@ -196,7 +191,8 @@ export class Store {
   }
 
   public flush_structural(): void {
-    if (this.pending_add.length === 0 && this.pending_remove.length === 0) return;
+    if (this.pending_add.length === 0 && this.pending_remove.length === 0)
+      return;
 
     // Adds first, then removes
     const adds = this.pending_add;
@@ -250,12 +246,10 @@ export class Store {
 
     // Already has component → overwrite data in-place (no transition)
     if (current_arch.has_component(def)) {
-      this.components.set(def, entity_id, values);
+      const row = current_arch.get_row(entity_index);
+      current_arch.write_fields(row, def as ComponentID, values as Record<string, number>);
       return;
     }
-
-    // Write data to ComponentRegistry
-    this.components.set(def, entity_id, values);
 
     // Resolve target archetype via graph edges
     const target_archetype_id = this.archetype_registry.resolve_add(
@@ -264,9 +258,20 @@ export class Store {
     );
     const target_arch = this.archetype_registry.get(target_archetype_id);
 
-    // Move membership: remove from current, add to target
+    // Get source row before removing
+    const src_row = current_arch.get_row(entity_index);
+
+    // Add entity to target archetype (gets new row)
+    const dst_row = target_arch.add_entity(entity_id, entity_index);
+
+    // Copy shared component data from source to target
+    target_arch.copy_shared_from(current_arch, src_row, dst_row);
+
+    // Write new component data to target
+    target_arch.write_fields(dst_row, def as ComponentID, values as Record<string, number>);
+
+    // Remove from source archetype (swap-and-pop handles column cleanup)
     current_arch.remove_entity(entity_index);
-    target_arch.add_entity(entity_id, entity_index);
 
     // Update entity-archetype mapping
     this.entity_archetype[entity_index] = target_archetype_id;
@@ -274,7 +279,10 @@ export class Store {
 
   public add_components(
     entity_id: EntityID,
-    entries: { def: ComponentDef<ComponentSchema>; values: Record<string, number> }[],
+    entries: {
+      def: ComponentDef<ComponentSchema>;
+      values: Record<string, number>;
+    }[],
   ): void {
     if (!this.entities.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -283,21 +291,41 @@ export class Store {
 
     const entity_index = get_entity_index(entity_id);
     let current_archetype_id = this.get_entity_archetype_id(entity_index);
-    let target_archetype_id = current_archetype_id;
 
-    // Write all component data and resolve final archetype
+    // Resolve final archetype through all adds
+    let target_archetype_id = current_archetype_id;
     for (let i = 0; i < entries.length; i++) {
-      const { def, values } = entries[i];
-      this.components.set(def, entity_id, values);
-      target_archetype_id = this.archetype_registry.resolve_add(target_archetype_id, def);
+      target_archetype_id = this.archetype_registry.resolve_add(
+        target_archetype_id,
+        entries[i].def,
+      );
     }
 
     // Single membership move if archetype changed
     if (target_archetype_id !== current_archetype_id) {
       const source_arch = this.archetype_registry.get(current_archetype_id);
+      const target_arch = this.archetype_registry.get(target_archetype_id);
+
+      const src_row = source_arch.get_row(entity_index);
+      const dst_row = target_arch.add_entity(entity_id, entity_index);
+
+      // Copy shared component data
+      target_arch.copy_shared_from(source_arch, src_row, dst_row);
+
+      // Write all new component data
+      for (let i = 0; i < entries.length; i++) {
+        target_arch.write_fields(dst_row, entries[i].def as ComponentID, entries[i].values);
+      }
+
       source_arch.remove_entity(entity_index);
-      this.archetype_registry.get(target_archetype_id).add_entity(entity_id, entity_index);
       this.entity_archetype[entity_index] = target_archetype_id;
+    } else {
+      // All components already present — overwrite in-place
+      const arch = this.archetype_registry.get(current_archetype_id);
+      const row = arch.get_row(entity_index);
+      for (let i = 0; i < entries.length; i++) {
+        arch.write_fields(row, entries[i].def as ComponentID, entries[i].values);
+      }
     }
   }
 
@@ -319,9 +347,6 @@ export class Store {
       return;
     }
 
-    // Zero out component data
-    this.components.clear(def, entity_index);
-
     // Resolve target archetype via graph edges
     const target_archetype_id = this.archetype_registry.resolve_remove(
       current_archetype_id,
@@ -329,9 +354,17 @@ export class Store {
     );
     const target_arch = this.archetype_registry.get(target_archetype_id);
 
-    // Move membership
+    // Get source row before removing
+    const src_row = current_arch.get_row(entity_index);
+
+    // Add entity to target archetype
+    const dst_row = target_arch.add_entity(entity_id, entity_index);
+
+    // Copy shared component data (excludes the removed component since target doesn't have it)
+    target_arch.copy_shared_from(current_arch, src_row, dst_row);
+
+    // Remove from source archetype
     current_arch.remove_entity(entity_index);
-    target_arch.add_entity(entity_id, entity_index);
 
     // Update entity-archetype mapping
     this.entity_archetype[entity_index] = target_archetype_id;
@@ -360,13 +393,18 @@ export class Store {
     return this.components;
   }
 
+  /** Get the archetype an entity currently belongs to. */
+  public get_entity_archetype(entity_id: EntityID): Archetype {
+    const entity_index = get_entity_index(entity_id);
+    const archetype_id = this.get_entity_archetype_id(entity_index);
+    return this.archetype_registry.get(archetype_id);
+  }
+
   //=========================================================
   // Query support (delegated to ArchetypeRegistry)
   //=========================================================
 
-  public get_matching_archetypes(
-    required: BitSet,
-  ): readonly Archetype[] {
+  public get_matching_archetypes(required: BitSet): readonly Archetype[] {
     return this.archetype_registry.get_matching(required);
   }
 

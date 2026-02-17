@@ -187,7 +187,7 @@ describe("SystemContext", () => {
   // Column access integration
   //=========================================================
 
-  it("allows column access through store's component registry", () => {
+  it("allows column access through archetype dense columns", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
     const Vel = store.register_component(Velocity);
@@ -197,13 +197,10 @@ describe("SystemContext", () => {
     store.add_component(e1, Pos, { x: 10, y: 20 });
     store.add_component(e1, Vel, { vx: 1, vy: 2 });
 
-    const reg = ctx.components;
-    const px = reg.get_column(Pos, "x");
-    const vy = reg.get_column(Vel, "vy");
-
     for (const arch of ctx.query(Pos, Vel)) {
-      for (const eid of arch.entity_list) {
-        const i = eid & 0xfffff; // get_entity_index
+      const px = arch.get_column(Pos, "x");
+      const vy = arch.get_column(Vel, "vy");
+      for (let i = 0; i < arch.entity_count; i++) {
         expect(px[i]).toBe(10);
         expect(vy[i]).toBe(2);
       }
