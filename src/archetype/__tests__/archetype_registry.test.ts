@@ -258,7 +258,7 @@ describe("ArchetypeRegistry", () => {
     // Should be able to get columns
     const col_x = arch.get_column(Pos, "x");
     const col_y = arch.get_column(Pos, "y");
-    expect(col_x).toBeInstanceOf(Float32Array);
-    expect(col_y).toBeInstanceOf(Float32Array);
+    expect(Array.isArray(col_x)).toBe(true);
+    expect(Array.isArray(col_y)).toBe(true);
   });
 });

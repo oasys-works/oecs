@@ -14,14 +14,8 @@ import type { ComponentID } from "../component/component";
 import type { ComponentSchema, ComponentDef, ColumnsForSchema } from "../component/component";
 import { get_entity_index, type EntityID } from "../entity/entity";
 import { ECS_ERROR, ECSError } from "../utils/error";
-import { grow_int32_array } from "../utils/arrays";
+import { grow_number_array } from "../utils/arrays";
 import type { BitSet } from "type_primitives";
-import {
-  TYPED_ARRAY_MAP,
-  type TypedArray,
-  type TypeTag,
-  type TypedArrayFor,
-} from "type_primitives";
 
 const INITIAL_DENSE_CAPACITY = 16;
 const INITIAL_SPARSE_CAPACITY = 64;
@@ -56,14 +50,13 @@ export interface ArchetypeEdge {
 export interface ArchetypeColumnLayout {
   component_id: ComponentID;
   field_names: string[];
-  field_tags: TypeTag[];
   field_index: Record<string, number>;
 }
 
 interface ArchetypeColumnGroup {
   layout: ArchetypeColumnLayout;
-  columns: TypedArray[];
-  _record: Record<string, TypedArray> | null; // lazy; null = needs rebuild
+  columns: number[][];
+  _record: Record<string, number[]> | null; // lazy; null = needs rebuild
 }
 
 //=========================================================
@@ -74,12 +67,12 @@ export class Archetype {
   readonly id: ArchetypeID;
   readonly mask: BitSet;
 
-  private entity_ids: Uint32Array;
-  private index_to_row: Int32Array;
+  private entity_ids: number[];
+  private index_to_row: number[];
   private length: number = 0;
   private capacity: number;
   private edges: Map<ComponentID, ArchetypeEdge> = new Map();
-  private _cached_list: Uint32Array | null = null;
+  private _cached_list: number[] | null = null;
 
   // Component columns: ComponentID → column group
   private column_groups: Map<ComponentID, ArchetypeColumnGroup> = new Map();
@@ -97,15 +90,15 @@ export class Archetype {
     this.id = id;
     this.mask = mask;
     this.capacity = INITIAL_DENSE_CAPACITY;
-    this.entity_ids = new Uint32Array(this.capacity);
-    this.index_to_row = new Int32Array(INITIAL_SPARSE_CAPACITY).fill(EMPTY_ROW);
+    this.entity_ids = new Array(this.capacity).fill(0);
+    this.index_to_row = new Array(INITIAL_SPARSE_CAPACITY).fill(EMPTY_ROW);
 
     if (layouts) {
       for (let i = 0; i < layouts.length; i++) {
         const layout = layouts[i];
-        const columns: TypedArray[] = new Array(layout.field_tags.length);
-        for (let j = 0; j < layout.field_tags.length; j++) {
-          columns[j] = new TYPED_ARRAY_MAP[layout.field_tags[j]](this.capacity);
+        const columns: number[][] = new Array(layout.field_names.length);
+        for (let j = 0; j < layout.field_names.length; j++) {
+          columns[j] = new Array(this.capacity).fill(0);
         }
         this.column_groups.set(layout.component_id, { layout, columns, _record: null });
       }
@@ -120,9 +113,9 @@ export class Archetype {
     return this.length;
   }
 
-  public get entity_list(): Uint32Array {
+  public get entity_list(): number[] {
     if (this._cached_list === null) {
-      this._cached_list = this.entity_ids.subarray(0, this.length);
+      this._cached_list = this.entity_ids.slice(0, this.length);
     }
     return this._cached_list;
   }
@@ -151,7 +144,7 @@ export class Archetype {
   public get_column<S extends ComponentSchema, F extends keyof S & string>(
     def: ComponentDef<S>,
     field: F,
-  ): TypedArrayFor<S[F]> {
+  ): number[] {
     const group = this.column_groups.get(def);
     if (__DEV__) {
       if (!group) {
@@ -170,7 +163,7 @@ export class Archetype {
         );
       }
     }
-    return group!.columns[col_idx] as TypedArrayFor<S[F]>;
+    return group!.columns[col_idx];
   }
 
   /** Get all columns for a component as a typed record. Lazily cached per archetype-component pair. */
@@ -178,7 +171,7 @@ export class Archetype {
     const group = this.column_groups.get(def);
     if (!group) return {} as ColumnsForSchema<S>; // tag component — no columns
     if (group._record === null) {
-      const rec: Record<string, TypedArray> = Object.create(null);
+      const rec: Record<string, number[]> = Object.create(null);
       const { field_names } = group.layout;
       for (let i = 0; i < field_names.length; i++) rec[field_names[i]] = group.columns[i];
       group._record = rec;
@@ -322,19 +315,15 @@ export class Archetype {
   private grow(): void {
     const new_capacity = this.capacity * 2;
 
-    // Grow entity_ids
-    const next_ids = new Uint32Array(new_capacity);
-    next_ids.set(this.entity_ids);
+    const next_ids = new Array(new_capacity).fill(0);
+    for (let i = 0; i < this.length; i++) next_ids[i] = this.entity_ids[i];
     this.entity_ids = next_ids;
 
-    // Grow all component columns
     for (const [, group] of this.column_groups) {
       for (let i = 0; i < group.columns.length; i++) {
         const old = group.columns[i];
-        const next = new TYPED_ARRAY_MAP[group.layout.field_tags[i]](
-          new_capacity,
-        );
-        next.set(old);
+        const next = new Array(new_capacity).fill(0);
+        for (let j = 0; j < old.length; j++) next[j] = old[j];
         group.columns[i] = next;
       }
       group._record = null; // invalidate lazy column record cache
@@ -344,11 +333,7 @@ export class Archetype {
   }
 
   private grow_index_to_row(min_capacity: number): void {
-    this.index_to_row = grow_int32_array(
-      this.index_to_row,
-      min_capacity,
-      EMPTY_ROW,
-    );
+    this.index_to_row = grow_number_array(this.index_to_row, min_capacity, EMPTY_ROW);
   }
 
   //=========================================================

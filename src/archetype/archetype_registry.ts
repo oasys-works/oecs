@@ -191,7 +191,6 @@ export class ArchetypeRegistry {
         layouts.push({
           component_id: comp_id,
           field_names,
-          field_tags: this.component_registry.get_field_tags(comp_id),
           field_index: this.component_registry.get_field_index(comp_id),
         });
       }

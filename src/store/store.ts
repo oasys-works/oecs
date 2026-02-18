@@ -17,7 +17,7 @@ import type {
 import type { Archetype, ArchetypeID } from "../archetype/archetype";
 import { ArchetypeRegistry } from "../archetype/archetype_registry";
 import { ECS_ERROR, ECSError } from "../utils/error";
-import { grow_int32_array } from "../utils/arrays";
+import { grow_number_array } from "../utils/arrays";
 import type { BitSet } from "type_primitives";
 
 //=========================================================
@@ -52,8 +52,8 @@ export class Store {
   private archetype_registry: ArchetypeRegistry;
 
   // Entity → archetype mapping
-  // Int32Array indexed by entity_index. Value = ArchetypeID or -1 (unassigned).
-  private entity_archetype: Int32Array;
+  // number[] indexed by entity_index. Value = ArchetypeID or -1 (unassigned).
+  private entity_archetype: number[];
 
   // Deferred destruction buffer — filled by systems, flushed between phases
   private pending_destroy: EntityID[] = [];
@@ -66,9 +66,7 @@ export class Store {
     this.entities = new EntityRegistry();
     this.components = new ComponentRegistry();
     this.archetype_registry = new ArchetypeRegistry(this.components);
-    this.entity_archetype = new Int32Array(
-      INITIAL_ENTITY_ARCHETYPE_CAPACITY,
-    ).fill(UNASSIGNED);
+    this.entity_archetype = new Array(INITIAL_ENTITY_ARCHETYPE_CAPACITY).fill(UNASSIGNED);
   }
 
   //=========================================================
@@ -433,6 +431,6 @@ export class Store {
   }
 
   private grow_entity_archetype(min_capacity: number): void {
-    this.entity_archetype = grow_int32_array(this.entity_archetype, min_capacity, UNASSIGNED);
+    this.entity_archetype = grow_number_array(this.entity_archetype, min_capacity, UNASSIGNED);
   }
 }

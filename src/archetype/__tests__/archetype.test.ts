@@ -17,18 +17,15 @@ function make_mask(...ids: number[]): BitSet {
 
 function make_layout(
   component_id: number,
-  fields: { name: string; tag: "f32" | "i32" | "u8" }[],
+  fields: string[],
 ): ArchetypeColumnLayout {
-  const field_names = fields.map((f) => f.name);
-  const field_tags = fields.map((f) => f.tag);
   const field_index: Record<string, number> = Object.create(null);
-  for (let i = 0; i < field_names.length; i++) {
-    field_index[field_names[i]] = i;
+  for (let i = 0; i < fields.length; i++) {
+    field_index[fields[i]] = i;
   }
   return {
     component_id: comp_id(component_id),
-    field_names,
-    field_tags,
+    field_names: fields,
     field_index,
   };
 }
@@ -228,10 +225,7 @@ describe("Archetype", () => {
   //=========================================================
 
   it("write_fields and read_field round-trip", () => {
-    const layout = make_layout(1, [
-      { name: "x", tag: "f32" },
-      { name: "y", tag: "f32" },
-    ]);
+    const layout = make_layout(1, ["x", "y"]);
     const a = new Archetype(arch_id(0), make_mask(1), [layout]);
 
     const row = a.add_entity(entity(0), 0);
@@ -242,7 +236,7 @@ describe("Archetype", () => {
   });
 
   it("get_column returns dense array for iteration", () => {
-    const layout = make_layout(1, [{ name: "x", tag: "f32" }]);
+    const layout = make_layout(1, ["x"]);
     const a = new Archetype(arch_id(0), make_mask(1), [layout]);
 
     a.add_entity(entity(0), 0);
@@ -270,10 +264,7 @@ describe("Archetype", () => {
   });
 
   it("swap-and-pop preserves column data integrity", () => {
-    const layout = make_layout(1, [
-      { name: "x", tag: "f32" },
-      { name: "y", tag: "f32" },
-    ]);
+    const layout = make_layout(1, ["x", "y"]);
     const a = new Archetype(arch_id(0), make_mask(1), [layout]);
 
     // Add 3 entities with distinct data
@@ -304,8 +295,8 @@ describe("Archetype", () => {
   });
 
   it("multiple component columns swap together", () => {
-    const layout_a = make_layout(1, [{ name: "a", tag: "f32" }]);
-    const layout_b = make_layout(2, [{ name: "b", tag: "i32" }]);
+    const layout_a = make_layout(1, ["a"]);
+    const layout_b = make_layout(2, ["b"]);
     const a = new Archetype(arch_id(0), make_mask(1, 2), [layout_a, layout_b]);
 
     a.add_entity(entity(0), 0);
@@ -326,7 +317,7 @@ describe("Archetype", () => {
   });
 
   it("copy_shared_from copies matching component data", () => {
-    const layout = make_layout(1, [{ name: "x", tag: "f32" }]);
+    const layout = make_layout(1, ["x"]);
     const src = new Archetype(arch_id(0), make_mask(1), [layout]);
     const dst = new Archetype(arch_id(1), make_mask(1), [layout]);
 
@@ -340,7 +331,7 @@ describe("Archetype", () => {
   });
 
   it("columns grow when capacity is exceeded", () => {
-    const layout = make_layout(1, [{ name: "v", tag: "f32" }]);
+    const layout = make_layout(1, ["v"]);
     const a = new Archetype(arch_id(0), make_mask(1), [layout]);
 
     // Add more entities than initial capacity (16)

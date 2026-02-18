@@ -62,13 +62,6 @@ describe("ComponentRegistry", () => {
     expect(reg.get_field_names(def)).toEqual(["x", "y", "z"]);
   });
 
-  it("get_field_tags returns type tags in order", () => {
-    const reg = new ComponentRegistry();
-    const def = reg.register({ x: "f32", y: "u16", z: "i32" });
-
-    expect(reg.get_field_tags(def)).toEqual(["f32", "u16", "i32"]);
-  });
-
   it("get_field_index returns name-to-index mapping", () => {
     const reg = new ComponentRegistry();
     const def = reg.register({ x: "f32", y: "f32", z: "f32" });
@@ -84,18 +77,12 @@ describe("ComponentRegistry", () => {
     const def = reg.register({});
 
     expect(reg.get_field_names(def)).toEqual([]);
-    expect(reg.get_field_tags(def)).toEqual([]);
     expect(reg.get_field_index(def)).toEqual({});
   });
 
   it("throws on get_field_names for unregistered ID", () => {
     const reg = new ComponentRegistry();
     expect(() => reg.get_field_names(as_component_id(999))).toThrow();
-  });
-
-  it("throws on get_field_tags for unregistered ID", () => {
-    const reg = new ComponentRegistry();
-    expect(() => reg.get_field_tags(as_component_id(999))).toThrow();
   });
 
   it("throws on get_field_index for unregistered ID", () => {

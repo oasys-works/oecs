@@ -1,11 +1,10 @@
 /***
  *
- * Component - Schema-defined components backed by typed arrays
+ * Component - Schema-defined components backed by plain arrays
  *
- * Instead of class-based components (old design), components are now
- * defined as schemas: plain objects mapping field names to TypeTag values.
- * The actual data lives in flat typed arrays indexed by entity index,
- * giving us cache-friendly, allocation-free access on hot paths.
+ * Components are defined as schemas: plain objects mapping field names to
+ * string labels. The actual data lives in flat number[] arrays indexed by
+ * entity index, giving us cache-friendly, allocation-free access on hot paths.
  *
  * A ComponentDef<S> is a phantom-typed handle: at runtime it's just a
  * ComponentID (number), but at compile-time it carries the schema S so
@@ -14,7 +13,6 @@
  ***/
 
 import { Brand, validate_and_cast, is_non_negative_integer } from "type_primitives";
-import type { TypeTag, TypedArrayFor } from "type_primitives";
 
 //=========================================================
 // ComponentID
@@ -31,17 +29,17 @@ export const as_component_id = (value: number) =>
 // Schema types
 //=========================================================
 
-/** A component schema: field names mapped to their TypeTag (e.g. { x: "f32", y: "f32" }). */
-export type ComponentSchema = Record<string, TypeTag>;
+/** A component schema: field names mapped to string labels (e.g. { x: "f32", y: "f32" }). */
+export type ComponentSchema = Record<string, string>;
 
-/** Maps a schema to its JS-side value object. All typed array values are numbers. */
+/** Maps a schema to its JS-side value object. All values are numbers. */
 export type SchemaValues<S extends ComponentSchema> = {
   [K in keyof S]: number;
 };
 
-/** Maps a schema to a record of typed arrays — one per field. */
+/** Maps a schema to a record of plain number arrays — one per field. */
 export type ColumnsForSchema<S extends ComponentSchema> = {
-  readonly [K in keyof S & string]: TypedArrayFor<S[K]>
+  readonly [K in keyof S & string]: number[]
 };
 
 //=========================================================

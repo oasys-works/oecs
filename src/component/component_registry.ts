@@ -7,7 +7,6 @@
  *
  ***/
 
-import type { TypeTag } from "type_primitives";
 import { unsafe_cast } from "type_primitives";
 import {
   as_component_id,
@@ -24,7 +23,6 @@ import { ECS_ERROR, ECSError } from "../utils/error";
 interface ComponentMeta {
   schema: ComponentSchema;
   field_names: string[];
-  field_tags: TypeTag[];
   field_index: Record<string, number>;
 }
 
@@ -57,12 +55,6 @@ export class ComponentRegistry {
     return this.metas[id].field_names;
   }
 
-  /** Get field type tags for a registered component. */
-  public get_field_tags(id: ComponentID): TypeTag[] {
-    if (__DEV__) this._assert_valid(id);
-    return this.metas[id].field_tags;
-  }
-
   /** Get field name → index mapping for a registered component. */
   public get_field_index(id: ComponentID): Record<string, number> {
     if (__DEV__) this._assert_valid(id);
@@ -92,7 +84,6 @@ export class ComponentRegistry {
     const id = as_component_id(this.component_count++);
 
     const field_names = Object.keys(schema);
-    const field_tags = field_names.map((name) => schema[name]);
 
     const field_index: Record<string, number> = Object.create(null);
     for (let i = 0; i < field_names.length; i++) {
@@ -102,7 +93,6 @@ export class ComponentRegistry {
     this.metas.push({
       schema,
       field_names,
-      field_tags,
       field_index,
     });
 

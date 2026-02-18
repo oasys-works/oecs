@@ -1,17 +1,17 @@
 /**
- * Grow an Int32Array to hold at least `min_capacity` elements.
+ * Grow a number[] to hold at least `min_capacity` elements.
  * Doubles from the current length until sufficient, fills new slots
  * with `fill`, and copies existing data into the new buffer.
  */
-export function grow_int32_array(
-  arr: Int32Array,
+export function grow_number_array(
+  arr: number[],
   min_capacity: number,
   fill: number,
-): Int32Array {
+): number[] {
   let cap = arr.length;
   while (cap < min_capacity) cap *= 2;
-  const next = new Int32Array(cap).fill(fill);
-  next.set(arr);
+  const next = new Array(cap).fill(fill);
+  for (let i = 0; i < arr.length; i++) next[i] = arr[i];
   return next;
 }
 

@@ -17,7 +17,7 @@ import { ECS_ERROR, ECSError } from "../utils/error";
 export const INITIAL_CAPACITY = 64;
 
 export class EntityRegistry {
-  private generations = new Uint16Array(INITIAL_CAPACITY);
+  private generations: number[] = new Array(INITIAL_CAPACITY).fill(0);
   private high_water = 0;
   private free_indices: number[] = [];
   private alive_count = 0;
@@ -114,8 +114,8 @@ export class EntityRegistry {
 
   // optimization*9
   private grow(): void {
-    const next = new Uint16Array(this.generations.length * 2);
-    next.set(this.generations);
+    const next = new Array(this.generations.length * 2).fill(0);
+    for (let i = 0; i < this.generations.length; i++) next[i] = this.generations[i];
     this.generations = next;
   }
 }
