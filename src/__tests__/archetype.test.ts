@@ -4,7 +4,7 @@ import {
   as_archetype_id,
   type ArchetypeColumnLayout,
 } from "../archetype";
-import { as_component_id, type ComponentID } from "../component";
+import { as_component_id } from "../component";
 import { create_entity_id } from "../entity";
 import { BitSet } from "type_primitives";
 

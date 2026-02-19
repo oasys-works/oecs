@@ -134,32 +134,12 @@ export class World implements QueryResolver {
   // Query (setup-time)
   //=========================================================
 
-  query<A extends ComponentDef<ComponentFields>>(a: A): Query<[A]>;
-  query<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-  >(a: A, b: B): Query<[A, B]>;
-  query<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-    C extends ComponentDef<ComponentFields>,
-  >(a: A, b: B, c: C): Query<[A, B, C]>;
-  query<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-    C extends ComponentDef<ComponentFields>,
-    D extends ComponentDef<ComponentFields>,
-  >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
-  query(
-    ...defs: ComponentDef<ComponentFields>[]
-  ): Query<ComponentDef<ComponentFields>[]>;
-  query(): Query<ComponentDef<ComponentFields>[]> {
+  query<T extends ComponentDef<ComponentFields>[]>(...defs: T): Query<T> {
     const mask = this.scratch_mask;
     mask._words.fill(0);
-    for (let i = 0; i < arguments.length; i++) {
-      mask.set(arguments[i] as unknown as number);
+    for (let i = 0; i < defs.length; i++) {
+      mask.set(defs[i] as unknown as number);
     }
-    const defs = Array.from(arguments) as ComponentDef<ComponentFields>[];
     return this._resolve_query(mask.copy(), null, null, defs);
   }
 

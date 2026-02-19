@@ -119,24 +119,9 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   }
 
   /** Extend required component set — returns a new (cached) Query with extended include mask. */
-  and<D extends ComponentDef<ComponentFields>>(d: D): Query<[...Defs, D]>;
-  and<
-    D1 extends ComponentDef<ComponentFields>,
-    D2 extends ComponentDef<ComponentFields>,
-  >(d1: D1, d2: D2): Query<[...Defs, D1, D2]>;
-  and<
-    D1 extends ComponentDef<ComponentFields>,
-    D2 extends ComponentDef<ComponentFields>,
-    D3 extends ComponentDef<ComponentFields>,
-  >(d1: D1, d2: D2, d3: D3): Query<[...Defs, D1, D2, D3]>;
-  and<
-    D1 extends ComponentDef<ComponentFields>,
-    D2 extends ComponentDef<ComponentFields>,
-    D3 extends ComponentDef<ComponentFields>,
-    D4 extends ComponentDef<ComponentFields>,
-  >(d1: D1, d2: D2, d3: D3, d4: D4): Query<[...Defs, D1, D2, D3, D4]>;
-  and(...comps: ComponentDef<ComponentFields>[]): Query<any>;
-  and(...comps: ComponentDef<ComponentFields>[]): Query<any> {
+  and<D extends ComponentDef<ComponentFields>[]>(
+    ...comps: D
+  ): Query<[...Defs, ...D]> {
     const new_include = this._include.copy();
     const new_defs = this._defs.slice() as ComponentDef<ComponentFields>[];
     for (let i = 0; i < comps.length; i++) {
@@ -185,26 +170,7 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
 export class QueryBuilder {
   constructor(private readonly _resolver: QueryResolver) {}
 
-  every<A extends ComponentDef<ComponentFields>>(a: A): Query<[A]>;
-  every<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-  >(a: A, b: B): Query<[A, B]>;
-  every<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-    C extends ComponentDef<ComponentFields>,
-  >(a: A, b: B, c: C): Query<[A, B, C]>;
-  every<
-    A extends ComponentDef<ComponentFields>,
-    B extends ComponentDef<ComponentFields>,
-    C extends ComponentDef<ComponentFields>,
-    D extends ComponentDef<ComponentFields>,
-  >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
-  every(
-    ...defs: ComponentDef<ComponentFields>[]
-  ): Query<ComponentDef<ComponentFields>[]>;
-  every(...defs: ComponentDef<ComponentFields>[]): Query<any> {
+  every<T extends ComponentDef<ComponentFields>[]>(...defs: T): Query<T> {
     const mask = new BitSet();
     for (let i = 0; i < defs.length; i++) mask.set(defs[i] as number);
     return this._resolver._resolve_query(mask, null, null, defs);
