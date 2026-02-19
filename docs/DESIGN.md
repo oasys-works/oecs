@@ -1,13 +1,13 @@
 # OECS Design Notes
 
-Optimization rationale extracted from source comments. Code sites are marked with
-`// optimization*N` (single-line) or `// optimization*N start/end` (multi-line blocks).
+Optimization rationale for performance-sensitive design decisions.
+Code sites are marked with `// optimization*N` (single-line) or `// optimization*N start/end` (multi-line blocks).
 
 ---
 
 ## [opt:1] Packed generational entity ID
 
-**Files:** `entity/entity.ts`, `entity/entity_registry.ts`
+**Files:** `entity/entity.ts`, `store/store.ts`
 
 Every entity is represented as a single 32-bit integer with two packed fields:
 
@@ -16,7 +16,7 @@ Bits:  [31 ........... 20][19 ........... 0]
         generation (12)     index (20)
 ```
 
-- **index** — which slot in the entity array (seat number). 20 bits → up to ~1 million concurrent entities.
+- **index** — which slot in the entity arrays (seat number). 20 bits → up to ~1 million concurrent entities.
 - **generation** — how many times that slot has been reused. 12 bits → wraps after 4 096 reuses per slot,
   sufficient to catch virtually all stale references in practice.
 
@@ -29,36 +29,46 @@ values (high bit set) are not misinterpreted as negative by JS bitwise operators
 
 ---
 
-## [opt:2] Sparse-set membership in Archetype
+## [opt:2] Entity membership: dense list in Archetype + sparse row map in Store
 
-**Files:** `archetype/archetype.ts`
+**Files:** `archetype/archetype.ts`, `store/store.ts`
 
-Entity membership uses a classic sparse-set backed by typed arrays:
+Entity membership is split across two structures:
 
-- **`entity_ids` (Uint32Array, dense)** — holds packed EntityIDs at positions 0..N-1.
-  `Uint32Array` is required because EntityIDs use unsigned coercion (`>>> 0`) and can exceed the
-  `Int32` range; a signed array would silently corrupt high-generation IDs.
-- **`index_to_row` (Int32Array, sparse)** — maps `entity_index → row`. The sentinel `EMPTY_ROW = -1`
-  marks unused slots; valid rows are always non-negative, so `-1` is unambiguous even in a signed array.
+- **`entity_ids: EntityID[]`** (in `Archetype`, dense) — a plain JS array holding packed EntityIDs at
+  positions 0..N-1. JS arrays use V8's fast elements mode for integer-indexed values, giving O(1)
+  `push` / `pop` / indexed write with no GC pressure for numeric content.
 
-Swap-and-pop on remove applies to ALL component columns simultaneously, keeping data dense.
+- **`entity_row: Int32Array`** (in `Store`, sparse) — maps `entity_index → row` within the entity's
+  current archetype. The sentinel `UNASSIGNED = -1` marks either recycled slots or newly created entities
+  that have not yet received their first component. `Int32Array` is used for compact memory and fast
+  indexed reads — one cache-line-friendly integer per entity slot.
+
+Swap-and-pop on removal applies to `entity_ids` and all component columns simultaneously:
+`remove_entity(row)` moves the last entity's data into `row`, pops the last slot, and returns the entity
+index of the entity that was moved (so Store can update its `entity_row` entry for that entity).
 
 ---
 
-## [opt:3] Archetype graph edge cache
+## [opt:3] Archetype graph edge cache: sparse array instead of Map
 
 **Files:** `archetype/archetype.ts`, `archetype/archetype_registry.ts`
 
-Each `Archetype` stores a `Map<ComponentID, ArchetypeEdge>` where an edge records:
+Each `Archetype` stores a sparse `ArchetypeEdge[]` array where an edge records:
 
 ```ts
 { add: ArchetypeID | null, remove: ArchetypeID | null }
 ```
 
+ComponentIDs are sequential integers starting from 0, making them ideal as direct array indices. Array
+slot access (`this.edges[component_id]`) is a single bounds check + memory read. A `Map<ComponentID, ...>`
+would require hashing the integer key, looking it up in a hash table, and allocating an entry object —
+all avoidable overhead on the hot path of every `add_component` / `remove_component`.
+
 Edges are lazily populated by `ArchetypeRegistry` the first time a transition is resolved. On a cache
 miss, the registry builds the target mask, gets-or-creates the target archetype, and then writes **both
-directions** of the edge atomically (`cache_edge`). Subsequent add/remove transitions for the same
-component are O(1) Map lookups with no mask arithmetic.
+directions** of the edge atomically (`cache_edge`). Subsequent transitions for the same component are
+O(1) array reads with no mask arithmetic.
 
 ---
 
@@ -75,57 +85,97 @@ The bit-scan over the query mask is inlined rather than delegated to `BitSet.for
 
 ---
 
-## [opt:5] `Object.freeze(mask)` after archetype creation
+## [opt:5] Write-once archetype masks
 
 **Files:** `archetype/archetype_registry.ts`
 
-After a new archetype's `BitSet` mask is built, it is frozen with `Object.freeze`. This signals to the
-V8 JIT that the object's shape will never change, allowing V8 to treat it as a monomorphic hidden class
-throughout its lifetime. Mutable objects with the same initial shape can de-optimise to megamorphic IC
-sites if V8 observes property additions/deletions; freezing prevents that.
+After a new archetype's `BitSet` mask is built and the archetype is created, the mask is never mutated.
+All mask operations that produce a new state (`copy_with_set`, `copy_with_clear`, `copy`) return a new
+`BitSet`. This write-once invariant means the mask object's V8 hidden class never changes shape after
+construction. V8 can treat it as a stable monomorphic hidden class throughout its lifetime, avoiding
+de-optimisation to megamorphic IC sites that occur when V8 observes property additions or shape changes.
 
 ---
 
-## [opt:6] Query scratch mask + `arguments` iteration
+## [opt:6] `World.query()` scratch mask + `arguments` iteration
 
-**Files:** `query/query.ts`
+**Files:** `world.ts`
 
-`SystemContext.query()` maintains a single reusable `scratch_mask: BitSet` on the context object. On
-each call the mask is cleared (words filled to zero) and bits are set for each argument. Using
-`arguments` instead of a rest parameter (`...defs`) avoids allocating a temporary array for the
+`World.query()` maintains a single reusable `scratch_mask: BitSet` on the World object. On each call
+the mask is cleared (words filled to zero) and bits are set for each argument. A fresh copy is made
+before passing the mask downstream to `_resolve_query`.
+
+Using `arguments` instead of a rest parameter (`...defs`) avoids allocating a temporary array for the
 arguments on every call — rest parameters always materialise a new `Array` even when the callee is
-inlined.
+inlined. This matters because `World.query()` is also invoked internally by `QueryBuilder.every()`.
 
 ---
 
 ## [opt:7] Query method overloads
 
-**Files:** `query/query.ts`
+**Files:** `query/query.ts`, `world.ts`
 
-The `query()` method is declared with explicit single-argument overloads in addition to the variadic
-signature. This gives TypeScript callers precise return types without a rest-parameter array allocation
-at the call site for the common case of querying a single component.
+`World.query()` and `QueryBuilder.every()` are declared with explicit typed overloads for 1–4 components
+in addition to the variadic signature. This gives TypeScript callers precise phantom-typed return types
+(`Query<[Pos, Vel]>` rather than `Query<ComponentDef<ComponentSchema>[]>`) without a rest-parameter
+array allocation at the call site for the common case of querying a small fixed number of components.
 
 ---
 
-## [opt:8] Kahn's algorithm + binary min-heap for topological sort
+## [opt:8] Kahn's algorithm for topological sort
 
 **Files:** `schedule/schedule.ts`
 
 Systems within a phase are sorted by a topological sort that respects `before`/`after` ordering
-constraints. Kahn's algorithm processes nodes by in-degree (edges satisfied = eligible to emit), using a
-binary min-heap keyed by insertion order as a tiebreaker for deterministic output.
+constraints. Kahn's algorithm processes nodes by in-degree (edges satisfied = eligible to emit), using
+insertion order as a tiebreaker for deterministic output when multiple systems are simultaneously ready.
 
-Complexity: **O((V+E) log V)** where V = system count and E = ordering edges. The previous
-implementation re-sorted an array on every insert, giving O(V² log V).
+The ready queue is maintained as a plain array and sorted by insertion order each time new nodes become
+eligible. This is correct and efficient for the typical case of a small number of systems per phase
+(V is small). If `V` systems remain after the sort, all edges have been satisfied. If nodes remain after
+the algorithm completes, a cycle exists — an error is thrown immediately at sort time (not at runtime
+during a frame update), giving a fast feedback loop during development.
+
+Sorted order is cached per phase and only recomputed when the system list for that phase changes.
 
 ---
 
-## [opt:9] Amortised O(1) array growth via capacity doubling
+## [opt:9] Geometrically-grown arrays for entity slot maps
 
-**Files:** `entity/entity_registry.ts`, `archetype/archetype.ts`, `utils/arrays.ts`
+**Files:** `store/store.ts`
 
-Several fixed-size typed arrays (`Uint16Array` for entity generations, `Uint32Array`/typed columns in
-archetypes, `Int32Array` for `index_to_row`) start at a small initial capacity and double when they
-outgrow it. Doubling amortises the cost of copying to O(1) per element appended. This avoids per-element
-boxing or GC pressure on hot allocation paths while keeping memory compact for small worlds.
+`Store` maintains two parallel `Int32Array`s indexed by entity slot index:
+
+- `entity_archetype: Int32Array` — which archetype the entity is in
+- `entity_row: Int32Array` — which row within that archetype
+
+Both start at 256 capacity and double when `ensure_entity_capacity` needs a larger index. Geometric
+doubling amortises the cost of copying to O(1) per entity slot appended, while keeping the arrays
+compact for small worlds. `Int32Array` is used rather than a plain `number[]` for its predictable
+memory layout and fast integer read/write without boxing.
+
+Archetype column arrays (`number[][]`) and `entity_ids: EntityID[]` use native JS array `push` / `pop`
+directly. V8's fast elements mode handles growth automatically for arrays containing only numbers.
+
+---
+
+## [opt:10] Skip empty archetype bounce on `create_entity()`
+
+**Files:** `store/store.ts`
+
+When a new entity is created, it has no components yet. Previously the entity was immediately added to
+the empty archetype (an archetype with no components, used as the starting point for all transitions).
+This wasted one archetype transition for every entity that would immediately receive components.
+
+The current design uses the `UNASSIGNED = -1` sentinel in `entity_row` to represent "this entity exists
+but has no archetype row yet". On the first `add_component` call:
+
+- `entity_row[index] === UNASSIGNED` → skip `copy_shared_from` (nothing to copy) and skip `remove_entity`
+  (not in any archetype's dense list).
+- Just add to the target archetype and write fields directly.
+
+`entity_archetype[index]` is still set to `empty_archetype_id` at creation so that `has_component` and
+`get_entity_archetype` work correctly before any components are added.
+
+This eliminates one wasted membership write and one wasted swap-and-pop per entity creation, which is
+measurable in benchmarks that create and destroy large numbers of entities per frame.

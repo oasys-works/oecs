@@ -96,7 +96,10 @@ export class World implements QueryResolver {
 
   add_components(
     entity_id: EntityID,
-    entries: { def: ComponentDef<ComponentSchema>; values: Record<string, number> }[],
+    entries: {
+      def: ComponentDef<ComponentSchema>;
+      values: Record<string, number>;
+    }[],
   ): void {
     this.store.add_components(entity_id, entries);
   }
@@ -120,16 +123,24 @@ export class World implements QueryResolver {
   //=========================================================
 
   query<A extends ComponentDef<ComponentSchema>>(a: A): Query<[A]>;
-  query<A extends ComponentDef<ComponentSchema>,
-        B extends ComponentDef<ComponentSchema>>(a: A, b: B): Query<[A, B]>;
-  query<A extends ComponentDef<ComponentSchema>,
-        B extends ComponentDef<ComponentSchema>,
-        C extends ComponentDef<ComponentSchema>>(a: A, b: B, c: C): Query<[A, B, C]>;
-  query<A extends ComponentDef<ComponentSchema>,
-        B extends ComponentDef<ComponentSchema>,
-        C extends ComponentDef<ComponentSchema>,
-        D extends ComponentDef<ComponentSchema>>(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
-  query(...defs: ComponentDef<ComponentSchema>[]): Query<ComponentDef<ComponentSchema>[]>;
+  query<
+    A extends ComponentDef<ComponentSchema>,
+    B extends ComponentDef<ComponentSchema>,
+  >(a: A, b: B): Query<[A, B]>;
+  query<
+    A extends ComponentDef<ComponentSchema>,
+    B extends ComponentDef<ComponentSchema>,
+    C extends ComponentDef<ComponentSchema>,
+  >(a: A, b: B, c: C): Query<[A, B, C]>;
+  query<
+    A extends ComponentDef<ComponentSchema>,
+    B extends ComponentDef<ComponentSchema>,
+    C extends ComponentDef<ComponentSchema>,
+    D extends ComponentDef<ComponentSchema>,
+  >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
+  query(
+    ...defs: ComponentDef<ComponentSchema>[]
+  ): Query<ComponentDef<ComponentSchema>[]>;
   query(): Query<ComponentDef<ComponentSchema>[]> {
     const mask = this.scratch_mask;
     mask._words.fill(0);
@@ -152,24 +163,33 @@ export class World implements QueryResolver {
   ): Query<any> {
     const inc_hash = include.hash();
     const exc_hash = exclude ? exclude.hash() : 0;
-    const any_hash = any_of  ? any_of.hash()  : 0;
-    const key = ((inc_hash ^ Math.imul(exc_hash, 0x9e3779b9))
-                             ^ Math.imul(any_hash, 0x517cc1b7)) | 0;
+    const any_hash = any_of ? any_of.hash() : 0;
+    const key =
+      (inc_hash ^
+        Math.imul(exc_hash, 0x9e3779b9) ^
+        Math.imul(any_hash, 0x517cc1b7)) |
+      0;
 
     const cached = this._find_cached(key, include, exclude, any_of);
     if (cached !== undefined) return cached.query;
 
     const result = this.store.register_query(
-      include, exclude ?? undefined, any_of ?? undefined
+      include,
+      exclude ?? undefined,
+      any_of ?? undefined,
     );
     const q = new Query(
-      result, defs as ComponentDef<ComponentSchema>[], this,
-      include.copy(), exclude?.copy() ?? null, any_of?.copy() ?? null,
+      result,
+      defs as ComponentDef<ComponentSchema>[],
+      this,
+      include.copy(),
+      exclude?.copy() ?? null,
+      any_of?.copy() ?? null,
     );
     bucket_push(this.query_cache, key, {
       include_mask: include.copy(),
       exclude_mask: exclude?.copy() ?? null,
-      any_of_mask:  any_of?.copy()  ?? null,
+      any_of_mask: any_of?.copy() ?? null,
       query: q,
     });
     return q;
@@ -186,13 +206,15 @@ export class World implements QueryResolver {
     for (let i = 0; i < bucket.length; i++) {
       const e = bucket[i];
       if (!e.include_mask.equals(include)) continue;
-      const exc_ok = exclude === null
-        ? e.exclude_mask === null
-        : e.exclude_mask !== null && e.exclude_mask.equals(exclude);
+      const exc_ok =
+        exclude === null
+          ? e.exclude_mask === null
+          : e.exclude_mask !== null && e.exclude_mask.equals(exclude);
       if (!exc_ok) continue;
-      const any_ok = any_of === null
-        ? e.any_of_mask === null
-        : e.any_of_mask !== null && e.any_of_mask.equals(any_of);
+      const any_ok =
+        any_of === null
+          ? e.any_of_mask === null
+          : e.any_of_mask !== null && e.any_of_mask.equals(any_of);
       if (!any_ok) continue;
       return e;
     }
@@ -209,13 +231,17 @@ export class World implements QueryResolver {
   ): SystemDescriptor;
   register_system(config: SystemConfig): SystemDescriptor;
   register_system(
-    fn_or_config: ((q: Query<any>, ctx: SystemContext, dt: number) => void) | SystemConfig,
+    fn_or_config:
+      | ((q: Query<any>, ctx: SystemContext, dt: number) => void)
+      | SystemConfig,
     query_fn?: (qb: QueryBuilder) => Query<any>,
   ): SystemDescriptor {
-    if (typeof fn_or_config === 'function') {
+    if (typeof fn_or_config === "function") {
       const q = query_fn!(new QueryBuilder(this));
       const ctx = this.ctx;
-      return this.system_registry.register({ fn: (_ctx, dt) => fn_or_config(q, ctx, dt) });
+      return this.system_registry.register({
+        fn: (_ctx, dt) => fn_or_config(q, ctx, dt),
+      });
     }
     return this.system_registry.register(fn_or_config as SystemConfig);
   }
