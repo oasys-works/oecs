@@ -1,7 +1,25 @@
 /***
+ * Store — Internal ECS data orchestrator.
  *
- * Store - Top-level ECS orchestrator.
- * Owns all state: entity ID management, component metadata, and archetypes.
+ * Owns all mutable state: entity ID allocation, component metadata,
+ * archetype graph, and entity-to-archetype mapping. World delegates
+ * every data operation here; Store is never exposed to systems or
+ * external code.
+ *
+ * Architecture: Archetype-based storage with cached graph edges.
+ * Component data lives in plain number[] columns within each Archetype.
+ * Moving an entity between archetypes copies its column data from the
+ * source row to a fresh row in the target archetype, then swap-removes
+ * the source row.
+ *
+ * The archetype graph caches add/remove edges, so repeated transitions
+ * (e.g. "add Velocity to [Position]") resolve in O(1) after the first
+ * occurrence.
+ *
+ * Deferred operations (add_component_deferred, remove_component_deferred,
+ * destroy_entity_deferred) buffer changes in flat parallel arrays and
+ * flush them in batch — avoiding per-operation archetype transitions
+ * during system execution.
  *
  ***/
 
@@ -31,42 +49,39 @@ import {
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { bucket_push } from "./utils/arrays";
 
-//=========================================================
-// Constants
-//=========================================================
-
 const UNASSIGNED = -1;
 const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
-
-//=========================================================
-// ComponentMeta — schema info needed to build archetype columns
-//=========================================================
 
 interface ComponentMeta {
   field_names: string[];
   field_index: Record<string, number>;
 }
 
-//=========================================================
-// Store
-//=========================================================
-
 export class Store {
-  // Entity ID management
+  // --- Entity ID management ---
+  // Generational slot allocator: entity_generations[index] holds the current
+  // generation for that slot. Free indices are recycled via a stack.
   private entity_generations: number[] = [];
   private entity_high_water = 0;
   private entity_free_indices: number[] = [];
   private entity_alive_count = 0;
 
-  // Component metadata
+  // --- Component metadata ---
+  // Parallel array indexed by ComponentID: field_names and field_index
+  // for building archetype column layouts.
   private component_metas: ComponentMeta[] = [];
   private component_count = 0;
 
-  // Archetype management
+  // --- Archetype management ---
   private archetypes: Archetype[] = [];
+  // Hash-bucketed lookup: BitSet.hash() → ArchetypeID[] for deduplication
   private archetype_map: Map<number, ArchetypeID[]> = new Map();
   private next_archetype_id = 0;
+  // Inverted index: ComponentID → set of ArchetypeIDs containing that component.
+  // Used by get_matching_archetypes to start from the smallest set.
   private component_index: Map<ComponentID, Set<ArchetypeID>> = new Map();
+  // Registered queries: the Store pushes newly-created archetypes into matching
+  // query result arrays, so queries are always up-to-date.
   private registered_queries: {
     include_mask: BitSet;
     exclude_mask: BitSet | null;
@@ -75,15 +90,15 @@ export class Store {
   }[] = [];
   private empty_archetype_id: ArchetypeID;
 
-  // entity_index → ArchetypeID (-1 = unassigned)
+  // entity_index → ArchetypeID (UNASSIGNED = not in any archetype)
   private entity_archetype: number[] = [];
-  // entity_index → row within its archetype (-1 = unassigned)
+  // entity_index → row within its archetype (UNASSIGNED = no row)
   private entity_row: number[] = [];
 
-  // Deferred destruction buffer
+  // --- Deferred operation buffers ---
+  // Flat parallel arrays: pending_add_ids[i], pending_add_defs[i], pending_add_values[i]
+  // describe one deferred add. No per-operation object allocation.
   private pending_destroy: EntityID[] = [];
-
-  // Deferred structural change buffers — flat parallel arrays (no per-op allocation)
   private pending_add_ids: EntityID[] = [];
   private pending_add_defs: ComponentDef<ComponentFields>[] = [];
   private pending_add_values: Record<string, number>[] = [];
@@ -94,9 +109,9 @@ export class Store {
     this.empty_archetype_id = this.arch_get_or_create_from_mask(new BitSet());
   }
 
-  //=========================================================
-  // Internal: archetype management
-  //=========================================================
+  // =======================================================
+  // Archetype graph
+  // =======================================================
 
   private arch_get(id: ArchetypeID): Archetype {
     if (__DEV__) {
@@ -110,9 +125,14 @@ export class Store {
     return this.archetypes[id];
   }
 
+  /**
+   * Find or create an archetype for the given component mask.
+   * Also updates the component_index and pushes into matching registered queries.
+   */
   private arch_get_or_create_from_mask(mask: BitSet): ArchetypeID {
     const hash = mask.hash();
 
+    // Check hash-bucketed map for an existing archetype with the same mask
     const bucket = this.archetype_map.get(hash);
     if (bucket !== undefined) {
       for (let i = 0; i < bucket.length; i++) {
@@ -124,7 +144,7 @@ export class Store {
 
     const id = as_archetype_id(this.next_archetype_id++);
 
-    // Build column layouts from component metadata
+    // Build column layouts from component metadata (tags have no fields → no layout)
     const layouts: ArchetypeColumnLayout[] = [];
     mask.for_each((bit) => {
       const comp_id = bit as ComponentID;
@@ -142,7 +162,7 @@ export class Store {
     this.archetypes.push(archetype);
     bucket_push(this.archetype_map, hash, id);
 
-    // Update component index
+    // Update inverted component index
     mask.for_each((bit) => {
       const component_id = bit as ComponentID;
       let set = this.component_index.get(component_id);
@@ -153,7 +173,7 @@ export class Store {
       set.add(id);
     });
 
-    // Push new archetype to matching registered queries
+    // Push new archetype into any registered query whose masks it satisfies
     const rqs = this.registered_queries;
     for (let i = 0; i < rqs.length; i++) {
       const rq = rqs[i];
@@ -169,6 +189,7 @@ export class Store {
     return id;
   }
 
+  /** Resolve "add component_id to archetype_id" → target ArchetypeID. Caches the edge. */
   private arch_resolve_add(
     archetype_id: ArchetypeID,
     component_id: ComponentID,
@@ -184,6 +205,7 @@ export class Store {
     return target_id;
   }
 
+  /** Resolve "remove component_id from archetype_id" → target ArchetypeID. Caches the edge. */
   private arch_resolve_remove(
     archetype_id: ArchetypeID,
     component_id: ComponentID,
@@ -199,6 +221,7 @@ export class Store {
     return target_id;
   }
 
+  /** Cache a bidirectional add/remove edge between two archetypes. */
   private arch_cache_edge(
     from: Archetype,
     to: Archetype,
@@ -216,9 +239,9 @@ export class Store {
     to.set_edge(component_id, to_edge);
   }
 
-  //=========================================================
+  // =======================================================
   // Entity lifecycle
-  //=========================================================
+  // =======================================================
 
   public create_entity(): EntityID {
     let index: number;
@@ -236,12 +259,14 @@ export class Store {
     this.entity_alive_count++;
     const id = create_entity_id(index, generation);
 
+    // New entities start in the empty archetype with no row assignment
     this.entity_archetype[index] = this.empty_archetype_id;
     this.entity_row[index] = UNASSIGNED;
 
     return id;
   }
 
+  /** Immediately destroy an entity, removing it from its archetype. */
   public destroy_entity(id: EntityID): void {
     if (!this.is_alive(id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -253,6 +278,7 @@ export class Store {
 
     if (row !== UNASSIGNED) {
       const arch = this.arch_get(this.entity_archetype[index] as ArchetypeID);
+      // swap-and-pop returns the entity_index that was swapped into our row
       const swapped_idx = arch.remove_entity(row);
       if (swapped_idx !== -1) this.entity_row[swapped_idx] = row;
     }
@@ -260,6 +286,7 @@ export class Store {
     this.entity_archetype[index] = UNASSIGNED;
     this.entity_row[index] = UNASSIGNED;
 
+    // Bump generation so stale IDs referencing this slot are detected as dead
     const generation = get_entity_generation(id);
     this.entity_generations[index] = (generation + 1) & MAX_GENERATION;
     this.entity_free_indices.push(index);
@@ -278,9 +305,9 @@ export class Store {
     return this.entity_alive_count;
   }
 
-  //=========================================================
+  // =======================================================
   // Deferred destruction
-  //=========================================================
+  // =======================================================
 
   public destroy_entity_deferred(id: EntityID): void {
     if (__DEV__ && !this.is_alive(id))
@@ -288,10 +315,12 @@ export class Store {
     this.pending_destroy.push(id);
   }
 
+  /** Flush all buffered entity destructions in batch. */
   public flush_destroyed(): void {
     const buf = this.pending_destroy;
     if (buf.length === 0) return;
 
+    // Hot loop — hoist fields to locals for faster access
     const ent_arch = this.entity_archetype;
     const ent_row = this.entity_row;
     const ent_gens = this.entity_generations;
@@ -300,13 +329,16 @@ export class Store {
 
     for (let i = 0; i < buf.length; i++) {
       const eid = buf[i];
+      // Inline entity ID unpacking (avoids function call overhead in hot path)
       const idx = (eid as number) & INDEX_MASK;
       const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      // Skip if entity was already destroyed (stale generation)
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
       const row = ent_row[idx];
       if (row !== UNASSIGNED) {
         const arch = archs[ent_arch[idx] as ArchetypeID];
+        // Tag-only archetypes skip column operations entirely
         const sw = arch.has_columns
           ? arch.remove_entity(row)
           : arch.remove_entity_tag(row);
@@ -327,9 +359,9 @@ export class Store {
     return this.pending_destroy.length;
   }
 
-  //=========================================================
+  // =======================================================
   // Deferred structural changes
-  //=========================================================
+  // =======================================================
 
   public add_component_deferred(
     entity_id: EntityID,
@@ -367,6 +399,7 @@ export class Store {
     if (this.pending_remove_ids.length > 0) this._flush_removes();
   }
 
+  /** Batch-apply all deferred component additions. */
   private _flush_adds(): void {
     const ids = this.pending_add_ids;
     const defs = this.pending_add_defs;
@@ -382,6 +415,7 @@ export class Store {
 
     for (let i = 0; i < n; i++) {
       const eid = ids[i];
+      // Inline entity ID unpacking
       const idx = (eid as number) & INDEX_MASK;
       const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
       if (idx >= hw || ent_gens[idx] !== gen) continue;
@@ -390,7 +424,7 @@ export class Store {
       const comp_id = defs[i] as unknown as ComponentID;
       const src = archs[src_arch_id];
 
-      // Overwrite in-place if already has component
+      // Already has this component → overwrite field values in-place (no transition)
       if (src.mask.has(comp_id as number)) {
         if (metas[comp_id as number].field_names.length > 0) {
           src.write_fields(ent_row[idx], comp_id, vals[i]);
@@ -401,6 +435,7 @@ export class Store {
       const tgt_id = this.arch_resolve_add(src_arch_id, comp_id);
       const tgt = archs[tgt_id];
       const src_row = ent_row[idx];
+      // Tag-only optimization: if neither archetype has columns, skip all column work
       const tag_only = !tgt.has_columns && !src.has_columns;
 
       const dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
@@ -413,6 +448,7 @@ export class Store {
         if (sw !== -1) ent_row[sw] = src_row;
       }
 
+      // Write the new component's field values
       if (metas[comp_id as number].field_names.length > 0) {
         tgt.write_fields(dst_row, comp_id, vals[i]);
       }
@@ -426,6 +462,7 @@ export class Store {
     vals.length = 0;
   }
 
+  /** Batch-apply all deferred component removals. */
   private _flush_removes(): void {
     const ids = this.pending_remove_ids;
     const defs = this.pending_remove_defs;
@@ -475,9 +512,9 @@ export class Store {
     return this.pending_add_ids.length + this.pending_remove_ids.length;
   }
 
-  //=========================================================
+  // =======================================================
   // Component registration
-  //=========================================================
+  // =======================================================
 
   public register_component<F extends readonly string[]>(
     fields: F,
@@ -492,9 +529,9 @@ export class Store {
     return unsafe_cast<ComponentDef<F>>(id);
   }
 
-  //=========================================================
-  // Component operations
-  //=========================================================
+  // =======================================================
+  // Immediate component operations (for setup/spawning)
+  // =======================================================
 
   public add_component(
     entity_id: EntityID,
@@ -521,7 +558,7 @@ export class Store {
     ] as ArchetypeID;
     const current_arch = this.arch_get(current_archetype_id);
 
-    // Already has component → overwrite in-place (no transition)
+    // Already has this component → overwrite in-place (no archetype transition)
     if (current_arch.has_component(def)) {
       current_arch.write_fields(
         this.entity_row[entity_index],
@@ -555,6 +592,7 @@ export class Store {
     this.entity_row[entity_index] = dst_row;
   }
 
+  /** Add multiple components in one transition (resolves final archetype, then moves once). */
   public add_components(
     entity_id: EntityID,
     entries: {
@@ -572,7 +610,7 @@ export class Store {
       entity_index
     ] as ArchetypeID;
 
-    // Resolve final archetype through all adds
+    // Walk the graph through all adds to find the final target archetype
     let target_archetype_id: ArchetypeID = current_archetype_id;
     for (let i = 0; i < entries.length; i++) {
       target_archetype_id = this.arch_resolve_add(
@@ -666,9 +704,9 @@ export class Store {
     ).has_component(def);
   }
 
-  //=========================================================
-  // Direct data access
-  //=========================================================
+  // =======================================================
+  // Direct data access (used by SystemContext)
+  // =======================================================
 
   public get_entity_archetype(entity_id: EntityID): Archetype {
     return this.arch_get(
@@ -680,10 +718,15 @@ export class Store {
     return this.entity_row[get_entity_index(entity_id)];
   }
 
-  //=========================================================
+  // =======================================================
   // Query support
-  //=========================================================
+  // =======================================================
 
+  /**
+   * Find all archetypes matching the given masks.
+   * Uses the inverted component_index to start from the component with the
+   * fewest archetypes, minimizing the number of superset checks.
+   */
   public get_matching_archetypes(
     required: BitSet,
     excluded?: BitSet,
@@ -697,6 +740,7 @@ export class Store {
         break;
       }
     }
+    // Empty required mask → match all archetypes (only filter by exclude/any_of)
     if (!has_any_bit) {
       return this.archetypes.filter(
         (arch) =>
@@ -705,6 +749,8 @@ export class Store {
       );
     }
 
+    // Find the smallest component_index set among all required components.
+    // This is the tightest starting point for intersection.
     let smallest_set: Set<ArchetypeID> | undefined;
     let has_empty = false;
     for (let wi = 0; wi < words.length; wi++) {
@@ -712,6 +758,7 @@ export class Store {
       if (word === 0) continue;
       const base = wi << 5;
       while (word !== 0) {
+        // Extract lowest set bit
         const t = word & (-word >>> 0);
         const bit = base + (31 - Math.clz32(t));
         word ^= t;
@@ -724,6 +771,7 @@ export class Store {
       }
       if (has_empty) break;
     }
+    // If any required component has zero archetypes, no match is possible
     if (has_empty || !smallest_set) return [];
 
     const result: Archetype[] = [];
@@ -740,6 +788,10 @@ export class Store {
     return result;
   }
 
+  /**
+   * Register a live query. Returns a mutable Archetype[] that this Store will
+   * push newly-created matching archetypes into, keeping the query always up-to-date.
+   */
   public register_query(
     include: BitSet,
     exclude?: BitSet,

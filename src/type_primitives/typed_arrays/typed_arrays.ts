@@ -1,20 +1,15 @@
 /***
+ * GrowableTypedArray — TypedArray wrapper with amortised O(1) append.
  *
- * GrowableTypedArray — typed array with amortised O(1) append
+ * TypedArrays have fixed length — resizing requires allocating a new
+ * buffer and copying. GrowableTypedArray wraps one with a separate
+ * logical length and doubles the backing buffer on overflow.
  *
- * TypedArrays have fixed length — resizing requires allocating a new buffer
- * and copying. GrowableTypedArray wraps a TypedArray with a separate logical
- * length and doubles the backing buffer whenever capacity is exceeded.
- *
- * Named subclasses (GrowableFloat32Array etc.) are provided for each numeric
- * type. TypedArrayFor maps the schema TypeTag strings to their class so
- * component column arrays can be allocated by tag.
+ * Named subclasses (GrowableFloat32Array etc.) are provided for each
+ * numeric type. TypedArrayFor maps TypeTag strings to their class so
+ * component columns can be allocated by tag.
  *
  ***/
-
-//=========================================================
-// TypeTag
-//=========================================================
 
 export type TypedArrayTag =
   | "f32"
@@ -26,10 +21,6 @@ export type TypedArrayTag =
   | "u16"
   | "u32";
 
-//=========================================================
-// Union of all concrete typed arrays
-//=========================================================
-
 export type AnyTypedArray =
   | Float32Array
   | Float64Array
@@ -39,10 +30,6 @@ export type AnyTypedArray =
   | Uint8Array
   | Uint16Array
   | Uint32Array;
-
-//=========================================================
-// GrowableTypedArray<T>
-//=========================================================
 
 export class GrowableTypedArray<T extends AnyTypedArray> {
   private _buf: T;
@@ -59,23 +46,19 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
     return this._len;
   }
 
-  /** Append a value. Doubles backing buffer if at capacity. */
   push(value: number): void {
     if (this._len >= this._buf.length) this._grow();
     this._buf[this._len++] = value;
   }
 
-  /** Remove and return the last value. Caller must ensure length > 0. */
   pop(): number {
     return this._buf[--this._len];
   }
 
-  /** Read value at index i. */
   get(i: number): number {
     return this._buf[i];
   }
 
-  /** Write value at index i. */
   set_at(i: number, value: number): void {
     this._buf[i] = value;
   }
@@ -83,7 +66,6 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
   /**
    * Move the last element into slot i, decrement length.
    * Returns the value that was removed from slot i.
-   * Caller must ensure i < length.
    */
   swap_remove(i: number): number {
     const removed = this._buf[i];
@@ -91,28 +73,24 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
     return removed;
   }
 
-  /** Reset to empty without freeing the backing buffer. */
   clear(): void {
     this._len = 0;
   }
 
   /**
-   * The current backing buffer. Valid data occupies indices 0..length-1.
-   * Slice access (col.buf[i]) is the fastest way to read/write elements.
-   * This reference is stable until the next push() that triggers a
-   * buffer reallocation — do not cache across entity additions.
+   * Raw backing buffer. Valid data: indices 0..length-1.
+   * This reference is stable until the next push() that triggers a grow —
+   * do not cache across entity additions.
    */
   get buf(): T {
     return this._buf;
   }
 
   /**
-   * Live subarray view of the valid data (indices 0..length-1). No copy.
-   * This view shares the backing buffer — it is invalidated if a subsequent
-   * push() triggers a buffer reallocation.
+   * Zero-copy subarray view of valid data (0..length-1).
+   * Shares the backing buffer — invalidated if a subsequent push() grows.
    */
   view(): T {
-    // TypedArray.subarray returns the same concrete type — safe cast.
     return this._buf.subarray(0, this._len) as unknown as T;
   }
 
@@ -128,20 +106,12 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
     };
   }
 
-  //=========================================================
-  // Internal
-  //=========================================================
-
   private _grow(): void {
     const next = new this._ctor(this._buf.length * 2);
     next.set(this._buf);
     this._buf = next;
   }
 }
-
-//=========================================================
-// Named subclasses — one per TypedArrayTag
-//=========================================================
 
 export class GrowableFloat32Array extends GrowableTypedArray<Float32Array> {
   constructor(initial_capacity = 16) {
@@ -190,10 +160,6 @@ export class GrowableUint32Array extends GrowableTypedArray<Uint32Array> {
     super(Uint32Array, initial_capacity);
   }
 }
-
-//=========================================================
-// TypedArrayFor — map TypedArrayTag → named class
-//=========================================================
 
 export const TypedArrayFor = {
   f32: GrowableFloat32Array,

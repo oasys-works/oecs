@@ -1,14 +1,47 @@
 /***
+ * World — Public ECS facade.
  *
- * World - Unified ECS facade
+ * Single entry point that composes Store (data), Schedule (execution),
+ * and SystemContext (system interface) into a unified API. External code
+ * interacts exclusively through World; systems receive a SystemContext
+ * instead, preventing direct access to internals.
  *
- * Composes Store + Schedule + SystemContext into a single entry point
- * that owns the full ECS lifecycle. External code creates a World,
- * registers components/systems, calls startup(), then update(dt)
- * each frame.
+ * Architecture: Facade pattern over an archetype-based ECS.
+ * - Entities are generational IDs (no object allocation)
+ * - Components are plain number[] columns grouped by archetype
+ * - Queries are cached and live-updated as new archetypes appear
+ * - Systems are plain functions scheduled across 6 lifecycle phases
  *
- * Systems receive a SystemContext (not the World) — the World is not
- * exposed inside system functions.
+ * Usage:
+ *
+ *   const world = new World();
+ *
+ *   const Pos = world.register_component(["x", "y"] as const);
+ *   const Vel = world.register_component(["vx", "vy"] as const);
+ *   const IsEnemy = world.register_tag();
+ *
+ *   const e = world.create_entity();
+ *   world.add_component(e, Pos, { x: 0, y: 0 });
+ *   world.add_component(e, Vel, { vx: 1, vy: 2 });
+ *   world.add_component(e, IsEnemy);
+ *
+ *   const moveSys = world.register_system(
+ *     (q, _ctx, dt) => {
+ *       q.each((pos, vel, n) => {
+ *         for (let i = 0; i < n; i++) {
+ *           pos.x[i] += vel.vx[i] * dt;
+ *           pos.y[i] += vel.vy[i] * dt;
+ *         }
+ *       });
+ *     },
+ *     (qb) => qb.every(Pos, Vel),
+ *   );
+ *
+ *   world.add_systems(SCHEDULE.UPDATE, moveSys);
+ *   world.startup();
+ *
+ *   // game loop
+ *   world.update(1 / 60);
  *
  ***/
 
@@ -34,10 +67,6 @@ import { bucket_push } from "./utils/arrays";
 
 const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
 
-//=========================================================
-// World
-//=========================================================
-
 export class World implements QueryResolver {
   private readonly store: Store;
   private readonly schedule: Schedule;
@@ -46,7 +75,10 @@ export class World implements QueryResolver {
   private systems: Set<SystemDescriptor> = new Set();
   private next_system_id = 0;
 
+  // Query deduplication: hash(include, exclude, any_of) → bucket of cache entries.
+  // Multiple queries can share the same hash (collision), so each bucket is an array.
   private query_cache: Map<number, QueryCacheEntry[]> = new Map();
+  // Reusable BitSet for building query masks — avoids allocation per query() call
   private scratch_mask: BitSet = new BitSet();
 
   constructor() {
@@ -54,10 +86,6 @@ export class World implements QueryResolver {
     this.schedule = new Schedule();
     this.ctx = new SystemContext(this.store);
   }
-
-  //=========================================================
-  // Component registration
-  //=========================================================
 
   register_component<F extends readonly string[]>(fields: F): ComponentDef<F> {
     return this.store.register_component(fields);
@@ -67,15 +95,10 @@ export class World implements QueryResolver {
     return this.store.register_component([] as const);
   }
 
-  //=========================================================
-  // Entity lifecycle
-  //=========================================================
-
   create_entity(): EntityID {
     return this.store.create_entity();
   }
 
-  /** Deferred destroy — entity stays alive until the next flush. */
   destroy_entity(id: EntityID): void {
     this.store.destroy_entity_deferred(id);
   }
@@ -87,10 +110,6 @@ export class World implements QueryResolver {
   get entity_count(): number {
     return this.store.entity_count;
   }
-
-  //=========================================================
-  // Component operations (immediate, for setup/spawning)
-  //=========================================================
 
   add_component(entity_id: EntityID, def: ComponentDef<readonly []>): void;
   add_component<F extends ComponentFields>(
@@ -130,11 +149,9 @@ export class World implements QueryResolver {
     return this.store.has_component(entity_id, def);
   }
 
-  //=========================================================
-  // Query (setup-time)
-  //=========================================================
-
   query<T extends ComponentDef<ComponentFields>[]>(...defs: T): Query<T> {
+    // Reuse scratch_mask to avoid allocating a new BitSet per query call.
+    // Zero it out, set bits, then copy for the cache key.
     const mask = this.scratch_mask;
     mask._words.fill(0);
     for (let i = 0; i < defs.length; i++) {
@@ -143,16 +160,15 @@ export class World implements QueryResolver {
     return this._resolve_query(mask.copy(), null, null, defs);
   }
 
-  //=========================================================
-  // QueryResolver implementation
-  //=========================================================
-
+  /** QueryResolver implementation — creates or retrieves a cached Query. */
   _resolve_query(
     include: BitSet,
     exclude: BitSet | null,
     any_of: BitSet | null,
     defs: readonly ComponentDef<ComponentFields>[],
   ): Query<any> {
+    // Combine three hashes into one cache key using xor with golden-ratio
+    // multipliers to reduce collision probability between masks
     const inc_hash = include.hash();
     const exc_hash = exclude ? exclude.hash() : 0;
     const any_hash = any_of ? any_of.hash() : 0;
@@ -165,6 +181,8 @@ export class World implements QueryResolver {
     const cached = this._find_cached(key, include, exclude, any_of);
     if (cached !== undefined) return cached.query;
 
+    // Store.register_query returns a live Archetype[] that the Store will
+    // push new matching archetypes into as they are created
     const result = this.store.register_query(
       include,
       exclude ?? undefined,
@@ -195,6 +213,7 @@ export class World implements QueryResolver {
   ): QueryCacheEntry | undefined {
     const bucket = this.query_cache.get(key);
     if (!bucket) return undefined;
+    // Linear scan within the bucket — buckets are typically 1-2 entries
     for (let i = 0; i < bucket.length; i++) {
       const e = bucket[i];
       if (!e.include_mask.equals(include)) continue;
@@ -213,10 +232,18 @@ export class World implements QueryResolver {
     return undefined;
   }
 
-  //=========================================================
-  // System registration
-  //=========================================================
-
+  /**
+   * Register a system with a typed query.
+   *
+   *   world.register_system(
+   *     (q, ctx, dt) => q.each((pos, vel, n) => { ... }),
+   *     (qb) => qb.every(Pos, Vel),
+   *   );
+   *
+   * Or with a raw config for systems that don't need a query:
+   *
+   *   world.register_system({ fn(ctx, dt) { ... } });
+   */
   register_system<Defs extends readonly ComponentDef<ComponentFields>[]>(
     fn: (q: Query<Defs>, ctx: SystemContext, dt: number) => void,
     query_fn: (qb: QueryBuilder) => Query<Defs>,
@@ -231,6 +258,9 @@ export class World implements QueryResolver {
     let config: SystemConfig;
 
     if (typeof fn_or_config === "function") {
+      // Resolve the query once at registration time, then close over it.
+      // The system's fn(ctx, dt) wrapper captures the resolved query and
+      // ctx so the schedule only needs to call fn(ctx, dt) each frame.
       const q = query_fn!(new QueryBuilder(this));
       const ctx = this.ctx;
       config = { fn: (_ctx, dt) => fn_or_config(q, ctx, dt) };
@@ -263,11 +293,6 @@ export class World implements QueryResolver {
     return this.systems.size;
   }
 
-  //=========================================================
-  // Execution
-  //=========================================================
-
-  /** Initialize all systems and run startup phases. */
   startup(): void {
     for (const descriptor of this.systems.values()) {
       descriptor.on_added?.(this.store);
@@ -275,21 +300,14 @@ export class World implements QueryResolver {
     this.schedule.run_startup(this.ctx);
   }
 
-  /** Run update phases for one frame. */
   update(delta_time: number): void {
     this.schedule.run_update(this.ctx, delta_time);
   }
 
-  /** Flush all deferred changes: structural first, then destructions. */
   flush(): void {
     this.ctx.flush();
   }
 
-  //=========================================================
-  // Cleanup
-  //=========================================================
-
-  /** Dispose all systems and clear the schedule. */
   dispose(): void {
     for (const descriptor of this.systems.values()) {
       descriptor.dispose?.();

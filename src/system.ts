@@ -1,11 +1,16 @@
 /***
+ * System — Function-based system types.
  *
- * System - Function-based system types
+ * Systems are plain functions, not classes. A SystemConfig defines the
+ * system's update function and optional lifecycle hooks.
+ * World.register_system() assigns a unique SystemID and returns a frozen
+ * SystemDescriptor — the identity handle used for scheduling and ordering.
  *
- * Systems are plain functions, not abstract classes. A SystemConfig
- * defines the system's update function and optional lifecycle hooks.
- * World.register_system assigns a SystemID and returns a frozen
- * SystemDescriptor - the identity handle used for ordering constraints.
+ * Lifecycle:
+ *   on_added(store)  — called once during world.startup()
+ *   fn(ctx, dt)      — called every frame by the schedule
+ *   on_removed()     — called when the system is unregistered
+ *   dispose()        — called during world.dispose()
  *
  ***/
 
@@ -17,10 +22,6 @@ import {
 import type { SystemContext } from "./query";
 import type { Store } from "./store";
 
-//=========================================================
-// SystemID
-//=========================================================
-
 export type SystemID = Brand<number, "system_id">;
 
 export const as_system_id = (value: number) =>
@@ -30,15 +31,7 @@ export const as_system_id = (value: number) =>
     "SystemID must be a non-negative integer",
   );
 
-//=========================================================
-// SystemFn
-//=========================================================
-
 export type SystemFn = (ctx: SystemContext, delta_time: number) => void;
-
-//=========================================================
-// SystemConfig (user provides this to register)
-//=========================================================
 
 export interface SystemConfig {
   fn: SystemFn;
@@ -46,10 +39,6 @@ export interface SystemConfig {
   on_removed?: () => void;
   dispose?: () => void;
 }
-
-//=========================================================
-// SystemDescriptor (returned by World.register_system)
-//=========================================================
 
 export interface SystemDescriptor extends Readonly<SystemConfig> {
   readonly id: SystemID;

@@ -1,6 +1,8 @@
-/**
- * Push `value` into a hash-bucket map, creating the bucket if absent.
- */
+/***
+ * Array utilities — helpers for hash-bucketed maps.
+ ***/
+
+/** Push a value into a hash-bucket map, creating the bucket array if absent. */
 export function bucket_push<T>(
   map: Map<number, T[]>,
   key: number,

@@ -1,3 +1,13 @@
+/***
+ * Assertions — Dev-only runtime validation and branded casting.
+ *
+ * All checks are guarded by __DEV__ and tree-shaken in production builds.
+ * validate_and_cast is the primary tool for creating branded IDs:
+ * it validates the input in dev and returns the value as the branded type.
+ * unsafe_cast bypasses all checks (used when the caller guarantees validity).
+ *
+ ***/
+
 import { TYPE_ERROR, TypeError } from "./error";
 
 export const is_non_negative_integer = (v: number): boolean =>

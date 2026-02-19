@@ -1,8 +1,33 @@
 /***
+ * Query, QueryBuilder, SystemContext — System-facing ECS interface.
  *
- * SystemContext - Store wrapper passed to every system function.
- * Provides deferred structural changes (add/remove component, destroy entity).
- * See docs/DESIGN.md [opt:6, opt:7] for query performance design.
+ * Query<Defs> is a live, cached view over all archetypes matching a
+ * component mask. It supports typed batch iteration via each(), which
+ * calls a function once per archetype with column groups and entity count
+ * (not once per entity — the system loops over the count itself).
+ *
+ * QueryBuilder is the entry point for creating queries inside
+ * register_system(fn, qb => qb.every(Pos, Vel)).
+ *
+ * SystemContext wraps Store for use inside system functions, exposing
+ * only deferred operations (add/remove component, destroy entity) that
+ * buffer changes until the phase flush. This prevents iterator
+ * invalidation during system execution.
+ *
+ * Usage (inside a system):
+ *
+ *   q.each((pos, vel, n) => {
+ *     for (let i = 0; i < n; i++) {
+ *       pos.x[i] += vel.vx[i] * dt;
+ *       pos.y[i] += vel.vy[i] * dt;
+ *     }
+ *   });
+ *
+ * Queries compose via chaining:
+ *
+ *   q.and(Health)          — extend required components
+ *   q.not(Dead)            — exclude archetypes with Dead
+ *   q.or(Poison, Fire)     — require at least one of these
  *
  ***/
 
@@ -20,23 +45,20 @@ import { BitSet } from "type_primitives";
 
 const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
 
-//=========================================================
-// Type utilities
-//=========================================================
-
+// Maps a tuple of ComponentDefs to a tuple of their column-group records.
+// e.g. [ComponentDef<["x","y"]>, ComponentDef<["vx","vy"]>]
+//    → [{ x: number[], y: number[] }, { vx: number[], vy: number[] }]
 type DefsToColumns<Defs extends readonly ComponentDef<ComponentFields>[]> = {
   [K in keyof Defs]: ColumnsForSchema<
     Defs[K] extends ComponentDef<infer F> ? F : never
   >;
 };
 
+// The callback signature for each(): column groups for each def, then entity count.
+// e.g. (pos: {x: number[], y: number[]}, vel: {vx: number[], vy: number[]}, count: number) => void
 type EachFn<Defs extends readonly ComponentDef<ComponentFields>[]> = (
   ...args: [...DefsToColumns<Defs>, number]
 ) => void;
-
-//=========================================================
-// Cache entry
-//=========================================================
 
 export interface QueryCacheEntry {
   include_mask: BitSet;
@@ -44,10 +66,6 @@ export interface QueryCacheEntry {
   any_of_mask: BitSet | null;
   query: Query<any>;
 }
-
-//=========================================================
-// QueryResolver interface
-//=========================================================
 
 export interface QueryResolver {
   _resolve_query(
@@ -58,10 +76,6 @@ export interface QueryResolver {
   ): Query<any>;
 }
 
-//=========================================================
-// Query<Defs>
-//=========================================================
-
 export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   private readonly _archetypes: Archetype[];
   private readonly _defs: Defs;
@@ -69,7 +83,9 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   readonly _include: BitSet;
   readonly _exclude: BitSet | null;
   readonly _any_of: BitSet | null;
-  private readonly _args_buf: unknown[]; // pre-allocated: defs.length + 1 slots
+  // Pre-allocated args buffer for each() — avoids allocating a new array per
+  // archetype. Holds [columnGroup0, columnGroup1, ..., entityCount].
+  private readonly _args_buf: unknown[];
 
   constructor(
     archetypes: Archetype[],
@@ -88,12 +104,14 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
     this._args_buf = new Array(defs.length + 1);
   }
 
+  /** Number of matching archetypes (including empty ones). */
   get length(): number {
     return this._archetypes.length;
   }
   get archetypes(): readonly Archetype[] {
     return this._archetypes;
   }
+  /** Iterate non-empty archetypes. Skips archetypes with zero entities. */
   *[Symbol.iterator](): Iterator<Archetype> {
     const archs = this._archetypes;
     for (let i = 0; i < archs.length; i++) {
@@ -101,7 +119,11 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
     }
   }
 
-  /** Typed per-archetype iteration — one closure call per archetype, not per entity. */
+  /**
+   * Typed per-archetype iteration. Calls fn once per non-empty archetype
+   * with column groups for each queried component, plus the entity count.
+   * The system is responsible for the inner loop over entities.
+   */
   each(fn: EachFn<Defs>): void {
     const archs = this._archetypes;
     const defs = this._defs;
@@ -110,15 +132,17 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
       const arch = archs[ai];
       const count = arch.entity_count;
       if (count === 0) continue;
+      // Fill the pre-allocated buffer with column groups for this archetype
       for (let di = 0; di < defs.length; di++) {
         buf[di] = arch.get_column_group(defs[di]);
       }
       buf[defs.length] = count;
+      // Use apply to spread the buffer as individual arguments
       (fn as (...a: unknown[]) => void).apply(null, buf);
     }
   }
 
-  /** Extend required component set — returns a new (cached) Query with extended include mask. */
+  /** Extend required component set. Returns a new (cached) Query. */
   and<D extends ComponentDef<ComponentFields>[]>(
     ...comps: D
   ): Query<[...Defs, ...D]> {
@@ -138,7 +162,7 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
     );
   }
 
-  /** Exclude archetypes that have any of these components. Returns same typed Query. */
+  /** Exclude archetypes that have any of these components. */
   not(...comps: ComponentDef<ComponentFields>[]): Query<Defs> {
     const new_exclude = this._exclude ? this._exclude.copy() : new BitSet();
     for (let i = 0; i < comps.length; i++) new_exclude.set(comps[i] as number);
@@ -150,7 +174,7 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
     ) as Query<Defs>;
   }
 
-  /** Require archetypes that have at least one of these components. Returns same typed Query. */
+  /** Require at least one of these components. */
   or(...comps: ComponentDef<ComponentFields>[]): Query<Defs> {
     const new_any_of = this._any_of ? this._any_of.copy() : new BitSet();
     for (let i = 0; i < comps.length; i++) new_any_of.set(comps[i] as number);
@@ -163,10 +187,6 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   }
 }
 
-//=========================================================
-// QueryBuilder
-//=========================================================
-
 export class QueryBuilder {
   constructor(private readonly _resolver: QueryResolver) {}
 
@@ -177,10 +197,6 @@ export class QueryBuilder {
   }
 }
 
-//=========================================================
-// SystemContext
-//=========================================================
-
 export class SystemContext {
   private readonly store: Store;
 
@@ -188,15 +204,10 @@ export class SystemContext {
     this.store = store;
   }
 
-  /** Create a new entity. Returns immediately (not deferred). */
   create_entity(): EntityID {
     return this.store.create_entity();
   }
 
-  /**
-   * Get a single field value for a component on an entity.
-   * Looks up the entity's archetype and row.
-   */
   get_field<F extends ComponentFields>(
     def: ComponentDef<F>,
     entity_id: EntityID,
@@ -207,10 +218,6 @@ export class SystemContext {
     return arch.read_field(row, def as ComponentID, field);
   }
 
-  /**
-   * Set a single field value for a component on an entity.
-   * Looks up the entity's archetype and row.
-   */
   set_field<F extends ComponentFields>(
     def: ComponentDef<F>,
     entity_id: EntityID,
@@ -223,26 +230,15 @@ export class SystemContext {
     col[row] = value;
   }
 
-  /**
-   * Buffer an entity for deferred destruction.
-   * The entity stays alive until flush_destroyed() is called.
-   */
+  /** Buffer an entity for deferred destruction (applied at phase flush). */
   destroy_entity(id: EntityID): void {
     this.store.destroy_entity_deferred(id);
   }
 
-  /**
-   * Flush all deferred entity destructions.
-   * Called by Schedule between phases — not intended for system code.
-   */
   flush_destroyed(): void {
     this.store.flush_destroyed();
   }
 
-  /**
-   * Buffer a component addition for deferred processing.
-   * The entity keeps its current archetype until flush() is called.
-   */
   add_component(entity_id: EntityID, def: ComponentDef<readonly []>): void;
   add_component<F extends ComponentFields>(
     entity_id: EntityID,
@@ -257,10 +253,6 @@ export class SystemContext {
     this.store.add_component_deferred(entity_id, def, values ?? EMPTY_VALUES);
   }
 
-  /**
-   * Buffer a component removal for deferred processing.
-   * The entity keeps its current archetype until flush() is called.
-   */
   remove_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentFields>,
@@ -268,10 +260,7 @@ export class SystemContext {
     this.store.remove_component_deferred(entity_id, def);
   }
 
-  /**
-   * Flush all deferred changes: structural (add/remove) first, then destructions.
-   * Called by Schedule between phases — not intended for system code.
-   */
+  /** Flush all deferred changes: structural (add/remove) first, then destructions. */
   flush(): void {
     this.store.flush_structural();
     this.store.flush_destroyed();

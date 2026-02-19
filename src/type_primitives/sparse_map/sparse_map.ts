@@ -1,13 +1,12 @@
 /***
+ * SparseMap — O(1) integer-keyed map with cache-friendly dense iteration.
  *
- * SparseMap — O(1) integer-keyed map with cache-friendly dense value storage
+ * Keys are non-negative integers. Two parallel dense arrays (keys + values)
+ * enable linear iteration. A sparse number[] maps key → dense index for
+ * O(1) get/set/delete.
  *
- * Keys are non-negative integers. Two parallel dense arrays (keys and values)
- * enable fast linear iteration over entries. A sparse number[] maps
- * key → dense index for O(1) get/set/delete. Membership is verified by
- * cross-referencing the dense key array (piecs-style), so stale sparse
- * entries are harmless.
- * Deletion uses swap-and-pop to keep data dense.
+ * Membership is verified by cross-referencing dense_keys[sparse[key]] === key,
+ * so stale sparse entries are harmless. Deletion uses swap-and-pop.
  *
  ***/
 
@@ -20,7 +19,6 @@ export class SparseMap<V> {
     return this._dense_keys.length;
   }
 
-  /** Live view of keys. Valid indices: 0..size-1. Do not mutate. */
   get keys(): readonly number[] {
     return this._dense_keys;
   }
@@ -33,9 +31,6 @@ export class SparseMap<V> {
     return this.has(key) ? this._dense_vals[this._sparse[key]] : undefined;
   }
 
-  /**
-   * Insert or overwrite an entry. O(1) amortised.
-   */
   set(key: number, value: V): void {
     if (this.has(key)) {
       this._dense_vals[this._sparse[key]] = value;
@@ -46,14 +41,11 @@ export class SparseMap<V> {
     this._dense_vals.push(value);
   }
 
-  /**
-   * Remove an entry via swap-and-pop. O(1).
-   * Returns true if the key was present, false if it was absent.
-   */
   delete(key: number): boolean {
     if (!this.has(key)) return false;
     const row = this._sparse[key];
     const last_key = this._dense_keys[this._dense_keys.length - 1];
+    // Swap-and-pop: move last entry into the deleted slot
     this._dense_keys[row] = last_key;
     this._dense_vals[row] = this._dense_vals[this._dense_vals.length - 1];
     this._sparse[last_key] = row;

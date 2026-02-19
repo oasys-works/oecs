@@ -1,13 +1,20 @@
 /***
+ * Component — Schema definition and phantom-typed handles.
  *
- * Component - Field-name array components
+ * Components are defined as readonly string arrays of field names:
  *
- * Components are defined as readonly string arrays of field names.
- * Actual data lives in plain number[] columns inside each Archetype.
+ *   const Pos = world.register_component(["x", "y"] as const);
  *
- * A ComponentDef<F> is a phantom-typed handle: at runtime it's just a
- * ComponentID (number), but at compile-time it carries the field array F so
- * that get/set calls are fully type-checked without any casts.
+ * At runtime, a ComponentDef<F> is just a ComponentID (branded number).
+ * The generic F is erased but carried at compile-time, enabling
+ * type-safe column access: arch.get_column(Pos, "x") returns number[]
+ * and rejects invalid field names at compile time.
+ *
+ * Tag components (empty field array) participate in archetype matching
+ * but store no data:
+ *
+ *   const IsEnemy = world.register_tag();
+ *   world.add_component(e, IsEnemy);    // no values needed
  *
  ***/
 
@@ -17,9 +24,6 @@ import {
   is_non_negative_integer,
 } from "type_primitives";
 
-//=========================================================
-// ComponentID
-//=========================================================
 export type ComponentID = Brand<number, "component_id">;
 export const as_component_id = (value: number) =>
   validate_and_cast<number, ComponentID>(
@@ -28,36 +32,22 @@ export const as_component_id = (value: number) =>
     "ComponentID must be a non-negative integer",
   );
 
-//=========================================================
-// Schema types
-//=========================================================
-
-/** A component definition: a readonly array of field names. */
 export type ComponentFields = readonly string[];
 
-/** Maps component fields to their JS-side value object. All values are plain numbers. */
+/** Maps component fields to their value object: { x: number, y: number }. */
 export type FieldValues<F extends ComponentFields> = {
   readonly [K in F[number]]: number;
 };
 
-/** Maps component fields to plain number[] columns — one per field. */
+/** Maps component fields to column arrays: { x: number[], y: number[] }. */
 export type ColumnsForSchema<F extends ComponentFields> = {
   readonly [K in F[number]]: number[];
 };
 
-//=========================================================
-// ComponentDef<F> - phantom-typed component handle
-//=========================================================
-
+// Phantom symbol — never exists at runtime, only provides a type-level slot
+// for the field schema F so that ComponentDef<["x","y"]> and ComponentDef<["vx","vy"]>
+// are distinct types even though both are just branded numbers.
 declare const __schema: unique symbol;
 
-/**
- * A phantom-typed component handle.
- *
- * At runtime this is just a ComponentID (branded number).
- * The generic F is erased but carries field info at compile-time,
- * so get_column(Pos, "x") returns number[] and enforces that "x"
- * is a valid field name on Pos.
- */
 export type ComponentDef<F extends ComponentFields = ComponentFields> =
   ComponentID & { readonly [__schema]: F };

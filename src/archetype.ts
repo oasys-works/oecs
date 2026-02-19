@@ -1,7 +1,21 @@
 /***
+ * Archetype — Dense entity grouping by component signature.
  *
- * Archetype - Dense-storage grouping of entities by component signature.
- * See docs/DESIGN.md [opt:2, opt:3, opt:9] for sparse-set, edge cache, and growth strategy.
+ * An archetype represents a unique combination of components (its "mask").
+ * All entities sharing the exact same set of components live in the same
+ * archetype. Data is stored in Structure-of-Arrays (SoA) layout: each
+ * component field gets its own number[] column, and entity i's data is
+ * at index i across all columns.
+ *
+ * Membership is managed via swap-and-pop: removing entity at row i swaps
+ * it with the last row, keeping data packed with no holes. The Store is
+ * responsible for updating the swapped entity's row index.
+ *
+ * Tag-only archetypes (has_columns === false) skip all column operations
+ * since tags carry no data — only the entity_ids array is maintained.
+ *
+ * Graph edges (ArchetypeEdge) cache "add component X" / "remove component X"
+ * transitions so the Store can resolve the target archetype in O(1).
  *
  ***/
 
@@ -20,10 +34,6 @@ import { get_entity_index, type EntityID } from "./entity";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import type { BitSet } from "type_primitives";
 
-//=========================================================
-// ArchetypeID
-//=========================================================
-
 export type ArchetypeID = Brand<number, "archetype_id">;
 
 export const as_archetype_id = (value: number) =>
@@ -33,18 +43,10 @@ export const as_archetype_id = (value: number) =>
     "ArchetypeID must be a non-negative integer",
   );
 
-//=========================================================
-// ArchetypeEdge
-//=========================================================
-
 export interface ArchetypeEdge {
   add: ArchetypeID | null;
   remove: ArchetypeID | null;
 }
-
-//=========================================================
-// ArchetypeColumn — per-component column group
-//=========================================================
 
 export interface ArchetypeColumnLayout {
   component_id: ComponentID;
@@ -58,10 +60,6 @@ interface ArchetypeColumnGroup {
   record: Record<string, number[]>;
 }
 
-//=========================================================
-// Archetype
-//=========================================================
-
 export class Archetype {
   readonly id: ArchetypeID;
   readonly mask: BitSet;
@@ -71,9 +69,11 @@ export class Archetype {
   length: number = 0;
   private edges: ArchetypeEdge[] = [];
 
-  // Sparse array indexed by ComponentID — undefined for absent components
+  // Sparse array indexed by ComponentID — undefined for absent components.
+  // Allows O(1) column group lookup by component.
   readonly column_groups: (ArchetypeColumnGroup | undefined)[] = [];
-  // Ordered list of ComponentIDs that have columns — for dense iteration
+  // Dense list of ComponentIDs that have columns — used to iterate only
+  // data-bearing components in copy/add/remove operations.
   private _column_ids: number[] = [];
 
   constructor(
@@ -91,6 +91,8 @@ export class Archetype {
         for (let j = 0; j < layout.field_names.length; j++) {
           columns[j] = [];
         }
+        // Build a named record { fieldName: column } so Query.each() can pass
+        // e.g. { x: number[], y: number[] } directly to the system callback
         const record: Record<string, number[]> = Object.create(null);
         for (let k = 0; k < layout.field_names.length; k++) {
           record[layout.field_names[k]] = columns[k];
@@ -107,15 +109,10 @@ export class Archetype {
     this.has_columns = this._column_ids.length > 0;
   }
 
-  //=========================================================
-  // Queries
-  //=========================================================
-
   public get entity_count(): number {
     return this.length;
   }
 
-  /** Live view of entity IDs — valid indices 0..entity_count-1. Do not mutate. */
   public get entity_list(): readonly EntityID[] {
     return this.entity_ids;
   }
@@ -124,20 +121,11 @@ export class Archetype {
     return this.mask.has(id);
   }
 
-  /** Check if this archetype's mask is a superset of `required`. */
   public matches(required: BitSet): boolean {
     return this.mask.contains(required);
   }
 
-  //=========================================================
-  // Column data access
-  //=========================================================
-
-  /**
-   * Get the number[] column for a component field.
-   * Valid data occupies indices 0..entity_count-1.
-   * Use arch.entity_count (not col.length) as the loop bound.
-   */
+  /** Get a single field's column. Valid data: indices 0..entity_count-1. */
   public get_column<F extends ComponentFields, Field extends F[number]>(
     def: ComponentDef<F>,
     field: Field,
@@ -163,7 +151,7 @@ export class Archetype {
     return group!.columns[col_idx];
   }
 
-  /** Get all columns for a component as a record of number[] arrays. */
+  /** Get all columns for a component as { fieldName: number[] }. */
   public get_column_group<F extends ComponentFields>(
     def: ComponentDef<F>,
   ): ColumnsForSchema<F> {
@@ -172,7 +160,6 @@ export class Archetype {
     return group.record as unknown as ColumnsForSchema<F>;
   }
 
-  /** Write all fields for a component at a given row. */
   public write_fields(
     row: number,
     component_id: ComponentID,
@@ -186,7 +173,6 @@ export class Archetype {
     }
   }
 
-  /** Read a single field at a given row. */
   public read_field(
     row: number,
     component_id: ComponentID,
@@ -199,17 +185,15 @@ export class Archetype {
     return group.columns[col_idx][row] ?? NaN;
   }
 
-  //=========================================================
-  // Cross-archetype data copy
-  //=========================================================
-
-  /** Copy shared component data from source to target row. */
+  /** Copy all shared component columns from source archetype at src_row into dst_row. */
   public copy_shared_from(
     source: Archetype,
     src_row: number,
     dst_row: number,
   ): void {
     const src_groups = source.column_groups;
+    // Only iterate _column_ids (components with data) in this target archetype.
+    // If source doesn't have that component, skip — only shared columns are copied.
     const ids = this._column_ids;
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
@@ -222,12 +206,8 @@ export class Archetype {
     }
   }
 
-  //=========================================================
-  // Membership (called by Store only)
-  //=========================================================
-
   /**
-   * Add an entity to this archetype. Returns the assigned row.
+   * Add an entity. Pushes zeroes into all columns and returns the assigned row.
    * Store is responsible for tracking entity_index → row.
    */
   public add_entity(entity_id: EntityID): number {
@@ -245,15 +225,16 @@ export class Archetype {
   }
 
   /**
-   * Remove the entity at `row` via swap-and-pop.
-   * Returns the entity_index of the entity swapped into `row`, or -1 if no swap.
-   * Store must update entity_row for the swapped entity.
+   * Remove entity at row via swap-and-pop. Swaps the last entity into the
+   * vacated row to keep data dense. Returns the entity_index of the swapped
+   * entity (so Store can update its row), or -1 if no swap was needed.
    */
   public remove_entity(row: number): number {
     const last_row = this.length - 1;
     let swapped_entity_index = -1;
 
     if (row !== last_row) {
+      // Swap: move last entity's data into the vacated row
       this.entity_ids[row] = this.entity_ids[last_row];
       swapped_entity_index = get_entity_index(this.entity_ids[row]);
       const ids = this._column_ids;
@@ -265,6 +246,7 @@ export class Archetype {
       }
     }
 
+    // Pop: remove the last slot
     this.entity_ids.pop();
     const ids = this._column_ids;
     for (let i = 0; i < ids.length; i++) {
@@ -277,10 +259,7 @@ export class Archetype {
     return swapped_entity_index;
   }
 
-  /**
-   * Tag-optimized add: skip column push entirely.
-   * Only valid when has_columns === false.
-   */
+  /** Tag-optimized add: skip column push entirely (no data to store). */
   public add_entity_tag(entity_id: EntityID): number {
     const row = this.length;
     this.entity_ids.push(entity_id);
@@ -288,11 +267,7 @@ export class Archetype {
     return row;
   }
 
-  /**
-   * Tag-optimized remove via swap-and-pop: skip column swap/pop entirely.
-   * Only valid when has_columns === false.
-   * Returns the entity_index of the swapped entity, or -1 if no swap.
-   */
+  /** Tag-optimized remove via swap-and-pop: skip column swap/pop entirely. */
   public remove_entity_tag(row: number): number {
     const last_row = this.length - 1;
     let swapped_entity_index = -1;
@@ -306,10 +281,6 @@ export class Archetype {
     this.length--;
     return swapped_entity_index;
   }
-
-  //=========================================================
-  // Graph edges (called by ArchetypeRegistry only)
-  //=========================================================
 
   public get_edge(component_id: ComponentID): ArchetypeEdge | undefined {
     return this.edges[component_id];
