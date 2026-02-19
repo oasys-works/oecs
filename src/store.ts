@@ -9,6 +9,8 @@ import {
   get_entity_index,
   get_entity_generation,
   create_entity_id,
+  INDEX_BITS,
+  INDEX_MASK,
   MAX_GENERATION,
   type EntityID,
 } from "./entity";
@@ -34,7 +36,7 @@ import { bucket_push } from "./utils/arrays";
 //=========================================================
 
 const UNASSIGNED = -1;
-const INITIAL_CAPACITY = 256;
+const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
 
 //=========================================================
 // ComponentMeta — schema info needed to build archetype columns
@@ -73,15 +75,10 @@ export class Store {
   }[] = [];
   private empty_archetype_id: ArchetypeID;
 
-  // entity_index → ArchetypeID (-1 = unassigned). Grown geometrically.
-  private entity_archetype: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(
-    UNASSIGNED,
-  );
-  // entity_index → row within its archetype (-1 = unassigned). Grown geometrically.
-  private entity_row: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(
-    UNASSIGNED,
-  );
-  private entity_capacity: number = INITIAL_CAPACITY;
+  // entity_index → ArchetypeID (-1 = unassigned)
+  private entity_archetype: number[] = [];
+  // entity_index → row within its archetype (-1 = unassigned)
+  private entity_row: number[] = [];
 
   // Deferred destruction buffer
   private pending_destroy: EntityID[] = [];
@@ -95,23 +92,6 @@ export class Store {
 
   constructor() {
     this.empty_archetype_id = this.arch_get_or_create_from_mask(new BitSet());
-  }
-
-  //=========================================================
-  // Internal: entity capacity management
-  //=========================================================
-
-  private ensure_entity_capacity(index: number): void {
-    if (index < this.entity_capacity) return;
-    let cap = this.entity_capacity;
-    while (cap <= index) cap *= 2;
-    const new_arch = new Int32Array(cap).fill(UNASSIGNED);
-    const new_row = new Int32Array(cap).fill(UNASSIGNED);
-    new_arch.set(this.entity_archetype);
-    new_row.set(this.entity_row);
-    this.entity_archetype = new_arch;
-    this.entity_row = new_row;
-    this.entity_capacity = cap;
   }
 
   //=========================================================
@@ -256,7 +236,6 @@ export class Store {
     this.entity_alive_count++;
     const id = create_entity_id(index, generation);
 
-    this.ensure_entity_capacity(index);
     this.entity_archetype[index] = this.empty_archetype_id;
     this.entity_row[index] = UNASSIGNED;
 
@@ -312,11 +291,35 @@ export class Store {
   public flush_destroyed(): void {
     const buf = this.pending_destroy;
     if (buf.length === 0) return;
+
+    const ent_arch = this.entity_archetype;
+    const ent_row = this.entity_row;
+    const ent_gens = this.entity_generations;
+    const archs = this.archetypes;
+    const hw = this.entity_high_water;
+
     for (let i = 0; i < buf.length; i++) {
-      if (this.is_alive(buf[i])) {
-        this.destroy_entity(buf[i]);
+      const eid = buf[i];
+      const idx = (eid as number) & INDEX_MASK;
+      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      if (idx >= hw || ent_gens[idx] !== gen) continue;
+
+      const row = ent_row[idx];
+      if (row !== UNASSIGNED) {
+        const arch = archs[ent_arch[idx] as ArchetypeID];
+        const sw = arch.has_columns
+          ? arch.remove_entity(row)
+          : arch.remove_entity_tag(row);
+        if (sw !== -1) ent_row[sw] = row;
       }
+
+      ent_arch[idx] = UNASSIGNED;
+      ent_row[idx] = UNASSIGNED;
+      ent_gens[idx] = (gen + 1) & MAX_GENERATION;
+      this.entity_free_indices.push(idx);
+      this.entity_alive_count--;
     }
+
     buf.length = 0;
   }
 
@@ -346,7 +349,7 @@ export class Store {
       throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_add_ids.push(entity_id);
     this.pending_add_defs.push(def);
-    this.pending_add_values.push(values ?? {});
+    this.pending_add_values.push(values ?? EMPTY_VALUES);
   }
 
   public remove_component_deferred(
@@ -360,33 +363,112 @@ export class Store {
   }
 
   public flush_structural(): void {
-    const n_add = this.pending_add_ids.length;
-    const n_rem = this.pending_remove_ids.length;
-    if (n_add === 0 && n_rem === 0) return;
+    if (this.pending_add_ids.length > 0) this._flush_adds();
+    if (this.pending_remove_ids.length > 0) this._flush_removes();
+  }
 
-    for (let i = 0; i < n_add; i++) {
-      if (this.is_alive(this.pending_add_ids[i])) {
-        this.add_component(
-          this.pending_add_ids[i],
-          this.pending_add_defs[i],
-          this.pending_add_values[i],
-        );
-      }
-    }
-    this.pending_add_ids.length = 0;
-    this.pending_add_defs.length = 0;
-    this.pending_add_values.length = 0;
+  private _flush_adds(): void {
+    const ids = this.pending_add_ids;
+    const defs = this.pending_add_defs;
+    const vals = this.pending_add_values;
+    const n = ids.length;
 
-    for (let i = 0; i < n_rem; i++) {
-      if (this.is_alive(this.pending_remove_ids[i])) {
-        this.remove_component(
-          this.pending_remove_ids[i],
-          this.pending_remove_defs[i],
-        );
+    const ent_arch = this.entity_archetype;
+    const ent_row = this.entity_row;
+    const ent_gens = this.entity_generations;
+    const archs = this.archetypes;
+    const metas = this.component_metas;
+    const hw = this.entity_high_water;
+
+    for (let i = 0; i < n; i++) {
+      const eid = ids[i];
+      const idx = (eid as number) & INDEX_MASK;
+      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      if (idx >= hw || ent_gens[idx] !== gen) continue;
+
+      const src_arch_id = ent_arch[idx] as ArchetypeID;
+      const comp_id = defs[i] as unknown as ComponentID;
+      const src = archs[src_arch_id];
+
+      // Overwrite in-place if already has component
+      if (src.mask.has(comp_id as number)) {
+        if (metas[comp_id as number].field_names.length > 0) {
+          src.write_fields(ent_row[idx], comp_id, vals[i]);
+        }
+        continue;
       }
+
+      const tgt_id = this.arch_resolve_add(src_arch_id, comp_id);
+      const tgt = archs[tgt_id];
+      const src_row = ent_row[idx];
+      const tag_only = !tgt.has_columns && !src.has_columns;
+
+      const dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
+
+      if (src_row !== UNASSIGNED) {
+        if (!tag_only) tgt.copy_shared_from(src, src_row, dst_row);
+        const sw = tag_only
+          ? src.remove_entity_tag(src_row)
+          : src.remove_entity(src_row);
+        if (sw !== -1) ent_row[sw] = src_row;
+      }
+
+      if (metas[comp_id as number].field_names.length > 0) {
+        tgt.write_fields(dst_row, comp_id, vals[i]);
+      }
+
+      ent_arch[idx] = tgt_id;
+      ent_row[idx] = dst_row;
     }
-    this.pending_remove_ids.length = 0;
-    this.pending_remove_defs.length = 0;
+
+    ids.length = 0;
+    defs.length = 0;
+    vals.length = 0;
+  }
+
+  private _flush_removes(): void {
+    const ids = this.pending_remove_ids;
+    const defs = this.pending_remove_defs;
+    const n = ids.length;
+
+    const ent_arch = this.entity_archetype;
+    const ent_row = this.entity_row;
+    const ent_gens = this.entity_generations;
+    const archs = this.archetypes;
+    const hw = this.entity_high_water;
+
+    for (let i = 0; i < n; i++) {
+      const eid = ids[i];
+      const idx = (eid as number) & INDEX_MASK;
+      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      if (idx >= hw || ent_gens[idx] !== gen) continue;
+
+      const src_arch_id = ent_arch[idx] as ArchetypeID;
+      const comp_id = defs[i] as unknown as ComponentID;
+      const src = archs[src_arch_id];
+
+      if (!src.mask.has(comp_id as number)) continue;
+
+      const tgt_id = this.arch_resolve_remove(src_arch_id, comp_id);
+      const tgt = archs[tgt_id];
+      const src_row = ent_row[idx];
+      const tag_only = !tgt.has_columns && !src.has_columns;
+
+      const dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
+
+      if (!tag_only) tgt.copy_shared_from(src, src_row, dst_row);
+
+      const sw = tag_only
+        ? src.remove_entity_tag(src_row)
+        : src.remove_entity(src_row);
+      if (sw !== -1) ent_row[sw] = src_row;
+
+      ent_arch[idx] = tgt_id;
+      ent_row[idx] = dst_row;
+    }
+
+    ids.length = 0;
+    defs.length = 0;
   }
 
   public get pending_structural_count(): number {
@@ -477,7 +559,7 @@ export class Store {
     entity_id: EntityID,
     entries: {
       def: ComponentDef<ComponentFields>;
-      values: Record<string, number>;
+      values?: Record<string, number>;
     }[],
   ): void {
     if (!this.is_alive(entity_id)) {
@@ -515,7 +597,7 @@ export class Store {
         target_arch.write_fields(
           dst_row,
           entries[i].def as ComponentID,
-          entries[i].values,
+          entries[i].values ?? EMPTY_VALUES,
         );
       }
 
@@ -529,7 +611,7 @@ export class Store {
         arch.write_fields(
           row,
           entries[i].def as ComponentID,
-          entries[i].values,
+          entries[i].values ?? EMPTY_VALUES,
         );
       }
     }

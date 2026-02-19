@@ -38,7 +38,8 @@ export class BitSet {
 
   /** Intersection check: does this BitSet share any bit with `other`? */
   overlaps(other: BitSet): boolean {
-    const a = this._words, b = other._words;
+    const a = this._words,
+      b = other._words;
     const len = a.length < b.length ? a.length : b.length;
     for (let i = 0; i < len; i++) {
       if ((a[i] & b[i]) !== 0) return true;

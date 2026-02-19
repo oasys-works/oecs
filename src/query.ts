@@ -18,6 +18,8 @@ import type {
 } from "./component";
 import { BitSet } from "type_primitives";
 
+const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
+
 //=========================================================
 // Type utilities
 //=========================================================
@@ -86,7 +88,6 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
     this._args_buf = new Array(defs.length + 1);
   }
 
-  // Compat getters / iterability
   get length(): number {
     return this._archetypes.length;
   }
@@ -200,6 +201,9 @@ export class QueryBuilder {
     C extends ComponentDef<ComponentFields>,
     D extends ComponentDef<ComponentFields>,
   >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
+  every(
+    ...defs: ComponentDef<ComponentFields>[]
+  ): Query<ComponentDef<ComponentFields>[]>;
   every(...defs: ComponentDef<ComponentFields>[]): Query<any> {
     const mask = new BitSet();
     for (let i = 0; i < defs.length; i++) mask.set(defs[i] as number);
@@ -284,7 +288,7 @@ export class SystemContext {
     def: ComponentDef<ComponentFields>,
     values?: Record<string, number>,
   ): void {
-    this.store.add_component_deferred(entity_id, def, values ?? {});
+    this.store.add_component_deferred(entity_id, def, values ?? EMPTY_VALUES);
   }
 
   /**

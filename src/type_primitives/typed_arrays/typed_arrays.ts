@@ -16,7 +16,15 @@
 // TypeTag
 //=========================================================
 
-export type TypedArrayTag = "f32" | "f64" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32";
+export type TypedArrayTag =
+  | "f32"
+  | "f64"
+  | "i8"
+  | "i16"
+  | "i32"
+  | "u8"
+  | "u16"
+  | "u32";
 
 //=========================================================
 // Union of all concrete typed arrays
@@ -136,35 +144,51 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
 //=========================================================
 
 export class GrowableFloat32Array extends GrowableTypedArray<Float32Array> {
-  constructor(initial_capacity = 16) { super(Float32Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Float32Array, initial_capacity);
+  }
 }
 
 export class GrowableFloat64Array extends GrowableTypedArray<Float64Array> {
-  constructor(initial_capacity = 16) { super(Float64Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Float64Array, initial_capacity);
+  }
 }
 
 export class GrowableInt8Array extends GrowableTypedArray<Int8Array> {
-  constructor(initial_capacity = 16) { super(Int8Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Int8Array, initial_capacity);
+  }
 }
 
 export class GrowableInt16Array extends GrowableTypedArray<Int16Array> {
-  constructor(initial_capacity = 16) { super(Int16Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Int16Array, initial_capacity);
+  }
 }
 
 export class GrowableInt32Array extends GrowableTypedArray<Int32Array> {
-  constructor(initial_capacity = 16) { super(Int32Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Int32Array, initial_capacity);
+  }
 }
 
 export class GrowableUint8Array extends GrowableTypedArray<Uint8Array> {
-  constructor(initial_capacity = 16) { super(Uint8Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Uint8Array, initial_capacity);
+  }
 }
 
 export class GrowableUint16Array extends GrowableTypedArray<Uint16Array> {
-  constructor(initial_capacity = 16) { super(Uint16Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Uint16Array, initial_capacity);
+  }
 }
 
 export class GrowableUint32Array extends GrowableTypedArray<Uint32Array> {
-  constructor(initial_capacity = 16) { super(Uint32Array, initial_capacity); }
+  constructor(initial_capacity = 16) {
+    super(Uint32Array, initial_capacity);
+  }
 }
 
 //=========================================================
@@ -172,12 +196,15 @@ export class GrowableUint32Array extends GrowableTypedArray<Uint32Array> {
 //=========================================================
 
 export const TypedArrayFor = {
-  f32:  GrowableFloat32Array,
-  f64:  GrowableFloat64Array,
-  i8:   GrowableInt8Array,
-  i16:  GrowableInt16Array,
-  i32:  GrowableInt32Array,
-  u8:   GrowableUint8Array,
-  u16:  GrowableUint16Array,
-  u32:  GrowableUint32Array,
-} as const satisfies Record<TypedArrayTag, new (cap?: number) => GrowableTypedArray<AnyTypedArray>>;
+  f32: GrowableFloat32Array,
+  f64: GrowableFloat64Array,
+  i8: GrowableInt8Array,
+  i16: GrowableInt16Array,
+  i32: GrowableInt32Array,
+  u8: GrowableUint8Array,
+  u16: GrowableUint16Array,
+  u32: GrowableUint32Array,
+} as const satisfies Record<
+  TypedArrayTag,
+  new (cap?: number) => GrowableTypedArray<AnyTypedArray>
+>;

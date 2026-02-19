@@ -451,7 +451,7 @@ describe("Store", () => {
     const e2 = store.create_entity();
 
     store.add_component(e1, Pos, { x: 0, y: 0, z: 0 });
-    store.add_component(e1, Marker, {} as Record<string, number>);
+    store.add_component(e1, Marker, {});
 
     store.add_component(e2, Pos, { x: 0, y: 0, z: 0 });
 

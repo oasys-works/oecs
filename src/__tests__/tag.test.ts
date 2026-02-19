@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { World } from "../world";
+import { SCHEDULE } from "../schedule";
 
 const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
@@ -91,16 +92,13 @@ describe("Tag components", () => {
     expect(world.has_component(e, Pos)).toBe(true);
     expect(world.has_component(e, Tag)).toBe(false);
 
-    // Verify position data survived
-    const q = world.query(Pos);
-    for (const arch of q) {
-      const x = arch.get_column(Pos, "x");
-      const y = arch.get_column(Pos, "y");
-      for (let i = 0; i < arch.entity_count; i++) {
-        expect(x[i]).toBe(42);
-        expect(y[i]).toBe(99);
+    // Verify position data survived via query.each()
+    world.query(Pos).each((pos, n) => {
+      for (let i = 0; i < n; i++) {
+        expect(pos.x[i]).toBe(42);
+        expect(pos.y[i]).toBe(99);
       }
-    }
+    });
   });
 
   //=========================================================
@@ -151,29 +149,38 @@ describe("Tag components", () => {
     const e = world.create_entity();
     world.add_component(e, Tag);
 
-    // The archetype should exist but have an empty column group for the tag
-    const q = world.query(Tag);
-    for (const arch of q) {
-      const group = arch.get_column_group(Tag);
-      expect(Object.keys(group)).toHaveLength(0);
-    }
+    // Verify via query.each() — tag column group should be empty
+    let checked = false;
+    world.query(Tag).each((tag, n) => {
+      expect(n).toBe(1);
+      expect(Object.keys(tag)).toHaveLength(0);
+      checked = true;
+    });
+    expect(checked).toBe(true);
   });
 
   //=========================================================
-  // Deferred add_component with tag via SystemContext
+  // Deferred add_component with tag via system
   //=========================================================
 
-  it("deferred add_component with tag works via SystemContext", () => {
+  it("deferred add_component with tag works via system", () => {
     const world = new World();
     const Tag = world.register_tag();
 
     const e = world.create_entity();
-    world.ctx.add_component(e, Tag);
+
+    const sys = world.register_system({
+      fn(ctx) {
+        ctx.add_component(e, Tag);
+      },
+    });
+    world.add_systems(SCHEDULE.UPDATE, sys);
+    world.startup();
 
     // Not yet applied
     expect(world.has_component(e, Tag)).toBe(false);
 
-    world.ctx.flush();
+    world.update(0);
 
     expect(world.has_component(e, Tag)).toBe(true);
   });
@@ -241,7 +248,7 @@ describe("Tag components", () => {
     expect(bosses).toContain(boss);
 
     // Data columns still accessible alongside tags
-    q_bosses.each((pos: any, _enemy: any, _boss: any, n: any) => {
+    q_bosses.each((pos, _enemy, _boss, n) => {
       for (let i = 0; i < n; i++) {
         expect(pos.x[i]).toBe(10);
         expect(pos.y[i]).toBe(10);
@@ -264,7 +271,7 @@ describe("Tag components", () => {
 
     // Destroy entity to leave archetype empty
     world.destroy_entity(e1);
-    world.ctx.flush();
+    world.flush();
 
     const iterated: any[] = [];
     for (const arch of q) {
@@ -293,7 +300,7 @@ describe("Tag components", () => {
 
     // Destroy e1 to empty one archetype
     world.destroy_entity(e1);
-    world.ctx.flush();
+    world.flush();
 
     // Iterator should skip the empty one
     const iterated = [...q];

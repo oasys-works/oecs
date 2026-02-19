@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { World } from "../world";
+import { SCHEDULE } from "../schedule";
 
 // Field arrays
 const Position = ["x", "y"] as const;
@@ -152,24 +153,24 @@ describe("World query", () => {
   });
 
   //=========================================================
-  // Deferred destruction via world.ctx
+  // Deferred destruction via world
   //=========================================================
 
   it("destroy_entity defers — entity stays alive after call", () => {
     const world = new World();
 
     const id = world.create_entity();
-    world.ctx.destroy_entity(id);
+    world.destroy_entity(id);
 
     expect(world.is_alive(id)).toBe(true);
   });
 
-  it("flush_destroyed processes the deferred buffer", () => {
+  it("flush processes the deferred buffer", () => {
     const world = new World();
 
     const id = world.create_entity();
-    world.ctx.destroy_entity(id);
-    world.ctx.flush_destroyed();
+    world.destroy_entity(id);
+    world.flush();
 
     expect(world.is_alive(id)).toBe(false);
   });
@@ -213,13 +214,23 @@ describe("World query", () => {
     const before = world.query(Pos, Vel);
     expect(before.length).toBe(0);
 
-    // Deferred add — should NOT change cached query
-    world.ctx.add_component(e1, Vel, { vx: 3, vy: 4 });
-    const still_before = world.query(Pos, Vel);
-    expect(still_before.length).toBe(0);
+    // System defers an add_component
+    let len_during_system = -1;
+    const sys = world.register_system(
+      (q, ctx) => {
+        ctx.add_component(e1, Vel, { vx: 3, vy: 4 });
+        len_during_system = q.length;
+      },
+      (qb) => qb.every(Pos, Vel),
+    );
+    world.add_systems(SCHEDULE.UPDATE, sys);
+    world.startup();
+    world.update(0);
 
-    // After flush, the live array has grown
-    world.ctx.flush();
+    // During the system, the query was still empty
+    expect(len_during_system).toBe(0);
+
+    // After update (which flushes), the live array has grown
     const after = world.query(Pos, Vel);
     expect(after.length).toBe(1);
     expect(after.archetypes[0].entity_list).toContain(e1);
@@ -239,12 +250,23 @@ describe("World query", () => {
     expect(before.length).toBe(1);
     expect(before.archetypes[0].entity_count).toBe(1);
 
-    // Deferred remove — entity still appears in its archetype
-    world.ctx.remove_component(e1, Vel);
-    expect(before.archetypes[0].entity_count).toBe(1);
+    // System defers a remove_component
+    let count_during_system = -1;
+    const sys = world.register_system(
+      (q, ctx) => {
+        ctx.remove_component(e1, Vel);
+        count_during_system = q.archetypes[0].entity_count;
+      },
+      (qb) => qb.every(Pos, Vel),
+    );
+    world.add_systems(SCHEDULE.UPDATE, sys);
+    world.startup();
+    world.update(0);
 
-    // After flush, entity has moved out
-    world.ctx.flush();
+    // During the system, entity was still in its archetype
+    expect(count_during_system).toBe(1);
+
+    // After update (which flushes), entity has moved out
     expect(before.archetypes[0].entity_count).toBe(0);
   });
 
@@ -252,24 +274,40 @@ describe("World query", () => {
     const world = new World();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
-    world.register_component(Health);
 
     const e1 = world.create_entity();
     world.add_component(e1, Pos, { x: 1, y: 2 });
 
-    // "System 1" queries and defers a structural change
-    const system1_result = world.query(Pos);
-    expect([...system1_result].flatMap((a) => [...a.entity_list])).toContain(e1);
-    world.ctx.add_component(e1, Vel, { vx: 0, vy: 0 });
+    const pos_query = world.query(Pos);
+    const pos_vel_query = world.query(Pos, Vel);
 
-    // "System 2" queries — still sees old archetypes only
-    const system2_result_pos_vel = world.query(Pos, Vel);
-    expect(system2_result_pos_vel.length).toBe(0);
+    let sys1_saw_pos = false;
+    let sys2_vel_len = -1;
 
-    // Flush between phases
-    world.ctx.flush();
+    // System 1 observes Pos query and defers adding Vel
+    const s1 = world.register_system({
+      fn(ctx) {
+        const entities = [...pos_query].flatMap((a) => [...a.entity_list]);
+        if (entities.includes(e1)) sys1_saw_pos = true;
+        ctx.add_component(e1, Vel, { vx: 0, vy: 0 });
+      },
+    });
 
-    // Now re-query sees updated state (live array grew)
+    // System 2 observes Pos+Vel query — should still see old state
+    const s2 = world.register_system({
+      fn() {
+        sys2_vel_len = pos_vel_query.length;
+      },
+    });
+
+    world.add_systems(SCHEDULE.UPDATE, s1, s2);
+    world.startup();
+    world.update(0);
+
+    expect(sys1_saw_pos).toBe(true);
+    expect(sys2_vel_len).toBe(0);
+
+    // After update flush, re-query sees the change
     const after = world.query(Pos, Vel);
     expect(after.length).toBe(1);
     expect(after.archetypes[0].entity_list).toContain(e1);
@@ -283,12 +321,20 @@ describe("World query", () => {
     const e1 = world.create_entity();
     world.add_component(e1, Pos, { x: 1, y: 2 });
 
-    // Defer add then destroy
-    world.ctx.add_component(e1, Vel, { vx: 0, vy: 0 });
-    world.ctx.destroy_entity(e1);
+    // System defers both add and destroy
+    const sys = world.register_system(
+      (_q, ctx) => {
+        ctx.add_component(e1, Vel, { vx: 0, vy: 0 });
+        ctx.destroy_entity(e1);
+      },
+      (qb) => qb.every(Pos),
+    );
+
+    world.add_systems(SCHEDULE.UPDATE, sys);
+    world.startup();
+    world.update(0);
 
     // After flush: structural applies (add Vel), then destroy runs
-    world.ctx.flush();
     expect(world.is_alive(e1)).toBe(false);
   });
 
@@ -312,7 +358,7 @@ describe("World query", () => {
     let call_count = 0;
     let total_entities = 0;
 
-    world.query(Pos, Vel).each((pos: any, vel: any, n: any) => {
+    world.query(Pos, Vel).each((pos, vel, n) => {
       call_count++;
       total_entities += n;
       // Verify typed columns are accessible
@@ -338,11 +384,13 @@ describe("World query", () => {
     const q = world.query(Pos, Vel);
 
     // Deferred destroy + flush to empty the archetype
-    world.ctx.destroy_entity(e1);
-    world.ctx.flush();
+    world.destroy_entity(e1);
+    world.flush();
 
     let call_count = 0;
-    q.each((_pos: any, _vel: any, _n: any) => { call_count++; });
+    q.each((_pos, _vel, _n) => {
+      call_count++;
+    });
     expect(call_count).toBe(0);
   });
 
@@ -355,7 +403,7 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 5, y: 7 });
     world.add_component(e1, Vel, { vx: 2, vy: 3 });
 
-    world.query(Pos, Vel).each((pos: any, vel: any, n: any) => {
+    world.query(Pos, Vel).each((pos, vel, n) => {
       for (let i = 0; i < n; i++) {
         pos.x[i] += vel.vx[i]; // 5 + 2 = 7
         pos.y[i] += vel.vy[i]; // 7 + 3 = 10
@@ -454,7 +502,7 @@ describe("World query", () => {
     world.add_component(e1, Vel, { vx: 3, vy: 4 });
 
     const q_chained = world.query(Pos).and(Vel);
-    const q_direct  = world.query(Pos, Vel);
+    const q_direct = world.query(Pos, Vel);
 
     expect(q_chained).toBe(q_direct);
   });
@@ -499,7 +547,7 @@ describe("World query", () => {
     const world = new World();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
-    const Hp  = world.register_component(Health);
+    const Hp = world.register_component(Health);
 
     // e1: Pos + Vel
     const e1 = world.create_entity();
@@ -527,7 +575,7 @@ describe("World query", () => {
     const world = new World();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
-    const Hp  = world.register_component(Health);
+    const Hp = world.register_component(Health);
 
     const e1 = world.create_entity();
     world.add_component(e1, Pos, { x: 1, y: 2 });
@@ -550,7 +598,7 @@ describe("World query", () => {
     const world = new World();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
-    const Hp  = world.register_component(Health);
+    const Hp = world.register_component(Health);
 
     const e1 = world.create_entity();
     world.add_component(e1, Pos, { x: 1, y: 2 });
@@ -571,7 +619,7 @@ describe("World query", () => {
     const world = new World();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
-    const Hp  = world.register_component(Health);
+    const Hp = world.register_component(Health);
 
     const q1 = world.query(Pos).or(Vel, Hp);
     const q2 = world.query(Pos).or(Vel, Hp);
@@ -594,11 +642,13 @@ describe("World query", () => {
 
     let captured_q: any = null;
     const sys = world.register_system(
-      (q: any, _ctx: any, _dt: any) => { captured_q = q; },
-      (qb: any) => qb.every(Pos, Vel),
+      (q, _ctx, _dt) => {
+        captured_q = q;
+      },
+      (qb) => qb.every(Pos, Vel),
     );
 
-    world.add_systems("UPDATE" as any, sys);
+    world.add_systems(SCHEDULE.UPDATE, sys);
     world.startup();
     world.update(0.016);
 
@@ -609,8 +659,12 @@ describe("World query", () => {
   it("register_system with config object still works", () => {
     const world = new World();
     let ran = false;
-    const sys = world.register_system({ fn: (_ctx: any, _dt: any) => { ran = true; } });
-    world.add_systems("UPDATE" as any, sys);
+    const sys = world.register_system({
+      fn: (_ctx, _dt) => {
+        ran = true;
+      },
+    });
+    world.add_systems(SCHEDULE.UPDATE, sys);
     world.startup();
     world.update(0.016);
     expect(ran).toBe(true);

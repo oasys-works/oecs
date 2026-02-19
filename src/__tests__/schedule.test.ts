@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Schedule, SCHEDULE } from "../schedule";
 import { SystemContext } from "../query";
 import { Store } from "../store";
-import { as_system_id, type SystemConfig, type SystemDescriptor, type SystemFn } from "../system";
+import {
+  as_system_id,
+  type SystemConfig,
+  type SystemDescriptor,
+  type SystemFn,
+} from "../system";
 
 let next_id = 0;
 

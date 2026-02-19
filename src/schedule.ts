@@ -88,7 +88,7 @@ export class Schedule {
   ): void {
     for (const entry of entries) {
       const descriptor = "system" in entry ? entry.system : entry;
-      const ordering   = "system" in entry ? entry.ordering : undefined;
+      const ordering = "system" in entry ? entry.ordering : undefined;
 
       if (__DEV__) {
         if (this.system_index.has(descriptor)) {
@@ -284,5 +284,4 @@ export class Schedule {
 
     return result;
   }
-
 }

@@ -23,8 +23,8 @@ describe("World system registration", () => {
     const b = world.register_system(make_config());
 
     expect(a.id).not.toBe(b.id);
-    expect((a.id as number)).toBe(0);
-    expect((b.id as number)).toBe(1);
+    expect(a.id as number).toBe(0);
+    expect(b.id as number).toBe(1);
   });
 
   it("register_system returns a frozen descriptor", () => {

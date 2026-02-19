@@ -48,6 +48,7 @@ describe("entity lifecycle", () => {
     const ids: EntityID[] = [];
     for (let i = 0; i < 10_000; i++) ids.push(w.create_entity());
     for (let i = 0; i < ids.length; i++) w.destroy_entity(ids[i]);
+    w.update(0);
   });
 
   bench("entity_create_destroy_cycle", () => {
@@ -56,6 +57,7 @@ describe("entity lifecycle", () => {
       const ids: EntityID[] = [];
       for (let i = 0; i < 1_000; i++) ids.push(w.create_entity());
       for (let i = 0; i < ids.length; i++) w.destroy_entity(ids[i]);
+      w.update(0);
     }
   });
 });
@@ -424,13 +426,7 @@ describe("query and iteration", () => {
     }
 
     let result: unknown;
-    const sys = w.register_system({
-      fn(_ctx) {
-        for (let i = 0; i < 10_000; i++) result = w.query(Pos, Vel);
-      },
-    });
-    w.add_systems(SCHEDULE.STARTUP, sys);
-    w.startup();
+    for (let i = 0; i < 10_000; i++) result = w.query(Pos, Vel);
     void result;
   });
 
@@ -446,13 +442,7 @@ describe("query and iteration", () => {
       for (const d of defs) w.add_component(id, d, vals);
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        w.query(defs[0], defs[1]);
-      },
-    });
-    w.add_systems(SCHEDULE.STARTUP, sys);
-    w.startup();
+    w.query(defs[0], defs[1]);
   });
 
   bench("query_2_components_across_100_archetypes", () => {
@@ -471,13 +461,7 @@ describe("query and iteration", () => {
       w.add_component(id, extras[i], vals);
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        w.query(Shared1, Shared2);
-      },
-    });
-    w.add_systems(SCHEDULE.STARTUP, sys);
-    w.startup();
+    w.query(Shared1, Shared2);
   });
 
   bench("query_5_components_across_50_archetypes", () => {
@@ -496,40 +480,31 @@ describe("query and iteration", () => {
       w.add_component(id, extras[i], vals);
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        w.query(...shared);
-      },
-    });
-    w.add_systems(SCHEDULE.STARTUP, sys);
-    w.startup();
+    w.query(...shared);
   });
 
   bench("iterate_10k_2_components", () => {
     const w = new World();
-    const Pos = w.register_component(["x", "y"]);
-    const Vel = w.register_component(["vx", "vy"]);
+    const Pos = w.register_component(["x", "y"] as const);
+    const Vel = w.register_component(["vx", "vy"] as const);
     for (let i = 0; i < 10_000; i++) {
       const id = w.create_entity();
       w.add_component(id, Pos, { x: 0, y: 0 });
       w.add_component(id, Vel, { vx: 1, vy: 1 });
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        const archetypes = w.query(Pos, Vel);
-        for (const arch of archetypes) {
-          const px = arch.get_column(Pos, "x");
-          const py = arch.get_column(Pos, "y");
-          const vx = arch.get_column(Vel, "vx");
-          const vy = arch.get_column(Vel, "vy");
-          for (let i = 0; i < arch.entity_count; i++) {
-            px[i] += vx[i];
-            py[i] += vy[i];
+    const pv = w.query(Pos, Vel);
+    const sys = w.register_system(
+      (q, _ctx, _dt) => {
+        q.each((pos, vel, n) => {
+          for (let i = 0; i < n; i++) {
+            pos.x[i] += vel.vx[i];
+            pos.y[i] += vel.vy[i];
           }
-        }
+        });
       },
-    });
+      () => pv,
+    );
     w.add_systems(SCHEDULE.STARTUP, sys);
     w.startup();
   });
@@ -545,17 +520,17 @@ describe("query and iteration", () => {
       for (const d of defs) w.add_component(id, d, vals);
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        const archetypes = w.query(...defs);
-        for (const arch of archetypes) {
+    const sys = w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
           const cols = defs.map((d) => arch.get_column(d, "a"));
           for (let i = 0; i < arch.entity_count; i++) {
             for (let c = 0; c < cols.length; c++) cols[c][i] += 1;
           }
         }
       },
-    });
+      (qb) => qb.every(...defs),
+    );
     w.add_systems(SCHEDULE.STARTUP, sys);
     w.startup();
   });
@@ -569,46 +544,43 @@ describe("query and iteration", () => {
       for (const d of defs) w.add_component(id, d, vals);
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        const archetypes = w.query(...defs);
-        for (const arch of archetypes) {
+    const sys = w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
           const cols = defs.map((d) => arch.get_column(d, "a"));
           for (let i = 0; i < arch.entity_count; i++) {
             for (let c = 0; c < cols.length; c++) cols[c][i] += 1;
           }
         }
       },
-    });
+      (qb) => qb.every(...defs),
+    );
     w.add_systems(SCHEDULE.STARTUP, sys);
     w.startup();
   });
 
   bench("iterate_100k_2_components", () => {
     const w = new World();
-    const Pos = w.register_component(["x", "y"]);
-    const Vel = w.register_component(["vx", "vy"]);
+    const Pos = w.register_component(["x", "y"] as const);
+    const Vel = w.register_component(["vx", "vy"] as const);
     for (let i = 0; i < 100_000; i++) {
       const id = w.create_entity();
       w.add_component(id, Pos, { x: 0, y: 0 });
       w.add_component(id, Vel, { vx: 1, vy: 1 });
     }
 
-    const sys = w.register_system({
-      fn(_ctx) {
-        const archetypes = w.query(Pos, Vel);
-        for (const arch of archetypes) {
-          const px = arch.get_column(Pos, "x");
-          const py = arch.get_column(Pos, "y");
-          const vx = arch.get_column(Vel, "vx");
-          const vy = arch.get_column(Vel, "vy");
-          for (let i = 0; i < arch.entity_count; i++) {
-            px[i] += vx[i];
-            py[i] += vy[i];
+    const pv = w.query(Pos, Vel);
+    const sys = w.register_system(
+      (q, _ctx, _dt) => {
+        q.each((pos, vel, n) => {
+          for (let i = 0; i < n; i++) {
+            pos.x[i] += vel.vx[i];
+            pos.y[i] += vel.vy[i];
           }
-        }
+        });
       },
-    });
+      () => pv,
+    );
     w.add_systems(SCHEDULE.STARTUP, sys);
     w.startup();
   });
@@ -620,26 +592,25 @@ describe("query and iteration", () => {
 
 describe("frame_1_system_10k", () => {
   const w = new World();
-  const Pos = w.register_component(["x", "y"]);
-  const Vel = w.register_component(["vx", "vy"]);
+  const Pos = w.register_component(["x", "y"] as const);
+  const Vel = w.register_component(["vx", "vy"] as const);
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
     w.add_component(id, Pos, { x: 0, y: 0 });
     w.add_component(id, Vel, { vx: 1, vy: 1 });
   }
 
-  const sys = w.register_system({
-    fn(_ctx, _dt) {
-      const archetypes = w.query(Pos, Vel);
-      for (const arch of archetypes) {
-        const px = arch.get_column(Pos, "x");
-        const vx = arch.get_column(Vel, "vx");
-        for (let i = 0; i < arch.entity_count; i++) {
-          px[i] += vx[i];
+  const pv = w.query(Pos, Vel);
+  const sys = w.register_system(
+    (q, _ctx, _dt) => {
+      q.each((pos, vel, n) => {
+        for (let i = 0; i < n; i++) {
+          pos.x[i] += vel.vx[i];
         }
-      }
+      });
     },
-  });
+    () => pv,
+  );
   w.add_systems(SCHEDULE.UPDATE, sys);
   w.startup();
 
@@ -661,17 +632,17 @@ describe("frame_3_systems_10k", () => {
   }
 
   const make_sys = (...q: ComponentDef<ComponentFields>[]) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const archetypes = w.query(...q);
-        for (const arch of archetypes) {
+    w.register_system(
+      (query, _ctx, _dt) => {
+        for (const arch of query) {
           const col = arch.get_column(q[0], "x" as never);
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    });
+      (qb) => qb.every(...q),
+    );
 
   w.add_systems(
     SCHEDULE.UPDATE,
@@ -696,19 +667,17 @@ describe("frame_5_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -728,19 +697,17 @@ describe("frame_10_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -760,19 +727,17 @@ describe("frame_25_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -792,19 +757,17 @@ describe("frame_50_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -824,19 +787,17 @@ describe("frame_100_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -856,19 +817,17 @@ describe("frame_200_systems_10k", () => {
   }
 
   const systems = defs.map((_, si) =>
-    w.register_system({
-      fn(_ctx, _dt) {
-        const a = defs[si];
-        const b = defs[(si + 1) % defs.length];
-        const archetypes = w.query(a, b);
-        for (const arch of archetypes) {
-          const col = arch.get_column(a, "a");
+    w.register_system(
+      (q, _ctx, _dt) => {
+        for (const arch of q) {
+          const col = arch.get_column(defs[si], "a");
           for (let i = 0; i < arch.entity_count; i++) {
             col[i] += 1;
           }
         }
       },
-    }),
+      (qb) => qb.every(defs[si], defs[(si + 1) % defs.length]),
+    ),
   );
   w.add_systems(SCHEDULE.UPDATE, ...systems);
   w.startup();
@@ -880,8 +839,8 @@ describe("frame_200_systems_10k", () => {
 
 describe("frame_with_structural_churn", () => {
   const w = new World();
-  const Pos = w.register_component(["x", "y"]);
-  const Vel = w.register_component(["vx", "vy"]);
+  const Pos = w.register_component(["x", "y"] as const);
+  const Vel = w.register_component(["vx", "vy"] as const);
   w.register_component([]); // tag component (unused directly, creates archetype diversity)
   const Marker = w.register_component(["v"]);
 
@@ -891,19 +850,18 @@ describe("frame_with_structural_churn", () => {
     w.add_component(id, Vel, { vx: 1, vy: 1 });
   }
 
+  const pv = w.query(Pos, Vel);
   for (let s = 0; s < 100; s++) {
-    const sys = w.register_system({
-      fn(_ctx, _dt) {
-        const archetypes = w.query(Pos, Vel);
-        for (const arch of archetypes) {
-          const px = arch.get_column(Pos, "x");
-          const vx = arch.get_column(Vel, "vx");
-          for (let i = 0; i < arch.entity_count; i++) {
-            px[i] += vx[i];
+    const sys = w.register_system(
+      (q, _ctx, _dt) => {
+        q.each((pos, vel, n) => {
+          for (let i = 0; i < n; i++) {
+            pos.x[i] += vel.vx[i];
           }
-        }
+        });
       },
-    });
+      () => pv,
+    );
     w.add_systems(SCHEDULE.UPDATE, sys);
   }
 

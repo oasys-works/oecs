@@ -65,9 +65,10 @@ interface ArchetypeColumnGroup {
 export class Archetype {
   readonly id: ArchetypeID;
   readonly mask: BitSet;
+  readonly has_columns: boolean;
 
-  private entity_ids: EntityID[] = [];
-  private length: number = 0;
+  entity_ids: EntityID[] = [];
+  length: number = 0;
   private edges: ArchetypeEdge[] = [];
 
   // Sparse array indexed by ComponentID — undefined for absent components
@@ -102,6 +103,8 @@ export class Archetype {
         this._column_ids.push(layout.component_id as number);
       }
     }
+
+    this.has_columns = this._column_ids.length > 0;
   }
 
   //=========================================================
@@ -270,6 +273,36 @@ export class Archetype {
         group.columns[j].pop();
       }
     }
+    this.length--;
+    return swapped_entity_index;
+  }
+
+  /**
+   * Tag-optimized add: skip column push entirely.
+   * Only valid when has_columns === false.
+   */
+  public add_entity_tag(entity_id: EntityID): number {
+    const row = this.length;
+    this.entity_ids.push(entity_id);
+    this.length++;
+    return row;
+  }
+
+  /**
+   * Tag-optimized remove via swap-and-pop: skip column swap/pop entirely.
+   * Only valid when has_columns === false.
+   * Returns the entity_index of the swapped entity, or -1 if no swap.
+   */
+  public remove_entity_tag(row: number): number {
+    const last_row = this.length - 1;
+    let swapped_entity_index = -1;
+
+    if (row !== last_row) {
+      this.entity_ids[row] = this.entity_ids[last_row];
+      swapped_entity_index = get_entity_index(this.entity_ids[row]);
+    }
+
+    this.entity_ids.pop();
     this.length--;
     return swapped_entity_index;
   }

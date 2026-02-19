@@ -10,7 +10,7 @@ import { BitSet } from "type_primitives";
 
 // Helpers
 const arch_id = (n: number) => as_archetype_id(n);
-const comp_id = (n: number) => as_component_id(n) as ComponentID;
+const comp_id = (n: number) => as_component_id(n);
 const entity = (index: number, gen: number = 0) => create_entity_id(index, gen);
 
 function make_mask(...ids: number[]): BitSet {

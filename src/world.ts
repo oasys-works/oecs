@@ -32,6 +32,8 @@ import type { SystemEntry } from "./schedule";
 import { BitSet } from "type_primitives";
 import { bucket_push } from "./utils/arrays";
 
+const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
+
 //=========================================================
 // World
 //=========================================================
@@ -39,7 +41,7 @@ import { bucket_push } from "./utils/arrays";
 export class World implements QueryResolver {
   private readonly store: Store;
   private readonly schedule: Schedule;
-  readonly ctx: SystemContext;
+  private readonly ctx: SystemContext;
 
   private systems: Set<SystemDescriptor> = new Set();
   private next_system_id = 0;
@@ -101,14 +103,14 @@ export class World implements QueryResolver {
     def: ComponentDef<ComponentFields>,
     values?: Record<string, number>,
   ): void {
-    this.store.add_component(entity_id, def, values ?? {});
+    this.store.add_component(entity_id, def, values ?? EMPTY_VALUES);
   }
 
   add_components(
     entity_id: EntityID,
     entries: {
       def: ComponentDef<ComponentFields>;
-      values: Record<string, number>;
+      values?: Record<string, number>;
     }[],
   ): void {
     this.store.add_components(entity_id, entries);
@@ -296,6 +298,11 @@ export class World implements QueryResolver {
   /** Run update phases for one frame. */
   update(delta_time: number): void {
     this.schedule.run_update(this.ctx, delta_time);
+  }
+
+  /** Flush all deferred changes: structural first, then destructions. */
+  flush(): void {
+    this.ctx.flush();
   }
 
   //=========================================================
