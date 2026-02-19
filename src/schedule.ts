@@ -5,9 +5,9 @@
  *
  ***/
 
-import type { SystemContext } from "../query/query";
-import type { SystemDescriptor } from "../system/system";
-import { ECS_ERROR, ECSError } from "../utils/error";
+import type { SystemContext } from "./query";
+import type { SystemDescriptor } from "./system/system";
+import { ECS_ERROR, ECSError } from "./utils/error";
 
 //=========================================================
 // Schedule phases

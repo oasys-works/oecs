@@ -6,16 +6,16 @@
  *
  ***/
 
-import type { Store } from "../store/store";
-import type { Archetype } from "../archetype/archetype";
-import type { EntityID } from "../entity/entity";
+import type { Store } from "./store";
+import type { Archetype } from "./archetype";
+import type { EntityID } from "./entity";
 import type {
   ComponentDef,
   ComponentID,
   ComponentFields,
   FieldValues,
   ColumnsForSchema,
-} from "../component/component";
+} from "./component";
 import { BitSet } from "type_primitives";
 
 //=========================================================
@@ -23,7 +23,9 @@ import { BitSet } from "type_primitives";
 //=========================================================
 
 type DefsToColumns<Defs extends readonly ComponentDef<ComponentFields>[]> = {
-  [K in keyof Defs]: ColumnsForSchema<Defs[K] extends ComponentDef<infer F> ? F : never>;
+  [K in keyof Defs]: ColumnsForSchema<
+    Defs[K] extends ComponentDef<infer F> ? F : never
+  >;
 };
 
 type EachFn<Defs extends readonly ComponentDef<ComponentFields>[]> = (

@@ -10,10 +10,14 @@ import {
   validate_and_cast,
   is_non_negative_integer,
 } from "type_primitives";
-import type { ComponentID } from "../component/component";
-import type { ComponentFields, ComponentDef, ColumnsForSchema } from "../component/component";
-import { get_entity_index, type EntityID } from "../entity/entity";
-import { ECS_ERROR, ECSError } from "../utils/error";
+import type { ComponentID } from "./component";
+import type {
+  ComponentFields,
+  ComponentDef,
+  ColumnsForSchema,
+} from "./component";
+import { get_entity_index, type EntityID } from "./entity";
+import { ECS_ERROR, ECSError } from "./utils/error";
 import type { BitSet } from "type_primitives";
 
 //=========================================================
@@ -90,7 +94,11 @@ export class Archetype {
         for (let k = 0; k < layout.field_names.length; k++) {
           record[layout.field_names[k]] = columns[k];
         }
-        this.column_groups[layout.component_id as number] = { layout, columns, record };
+        this.column_groups[layout.component_id as number] = {
+          layout,
+          columns,
+          record,
+        };
         this._column_ids.push(layout.component_id as number);
       }
     }
@@ -153,7 +161,9 @@ export class Archetype {
   }
 
   /** Get all columns for a component as a record of number[] arrays. */
-  public get_column_group<F extends ComponentFields>(def: ComponentDef<F>): ColumnsForSchema<F> {
+  public get_column_group<F extends ComponentFields>(
+    def: ComponentDef<F>,
+  ): ColumnsForSchema<F> {
     const group = this.column_groups[def as unknown as number];
     if (!group) return {} as ColumnsForSchema<F>;
     return group.record as unknown as ColumnsForSchema<F>;

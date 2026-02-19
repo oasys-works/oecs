@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { World } from "../../world";
+import { World } from "../world";
 
 // Field arrays
 const Position = ["x", "y"] as const;
@@ -312,7 +312,7 @@ describe("World query", () => {
     let call_count = 0;
     let total_entities = 0;
 
-    world.query(Pos, Vel).each((pos, vel, n) => {
+    world.query(Pos, Vel).each((pos: any, vel: any, n: any) => {
       call_count++;
       total_entities += n;
       // Verify typed columns are accessible
@@ -342,7 +342,7 @@ describe("World query", () => {
     world.ctx.flush();
 
     let call_count = 0;
-    q.each((_pos, _vel, _n) => { call_count++; });
+    q.each((_pos: any, _vel: any, _n: any) => { call_count++; });
     expect(call_count).toBe(0);
   });
 
@@ -355,7 +355,7 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 5, y: 7 });
     world.add_component(e1, Vel, { vx: 2, vy: 3 });
 
-    world.query(Pos, Vel).each((pos, vel, n) => {
+    world.query(Pos, Vel).each((pos: any, vel: any, n: any) => {
       for (let i = 0; i < n; i++) {
         pos.x[i] += vel.vx[i]; // 5 + 2 = 7
         pos.y[i] += vel.vy[i]; // 7 + 3 = 10
@@ -594,8 +594,8 @@ describe("World query", () => {
 
     let captured_q: any = null;
     const sys = world.register_system(
-      (q, _ctx, _dt) => { captured_q = q; },
-      (qb) => qb.every(Pos, Vel),
+      (q: any, _ctx: any, _dt: any) => { captured_q = q; },
+      (qb: any) => qb.every(Pos, Vel),
     );
 
     world.add_systems("UPDATE" as any, sys);
@@ -609,7 +609,7 @@ describe("World query", () => {
   it("register_system with config object still works", () => {
     const world = new World();
     let ran = false;
-    const sys = world.register_system({ fn: (_ctx, _dt) => { ran = true; } });
+    const sys = world.register_system({ fn: (_ctx: any, _dt: any) => { ran = true; } });
     world.add_systems("UPDATE" as any, sys);
     world.startup();
     world.update(0.016);

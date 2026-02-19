@@ -12,24 +12,20 @@
  *
  ***/
 
-import { Store } from "./store/store";
+import { Store } from "./store";
 import { SystemRegistry } from "./system/system_registry";
-import { Schedule, type SCHEDULE } from "./schedule/schedule";
+import { Schedule, type SCHEDULE } from "./schedule";
 import {
   SystemContext,
   Query,
   QueryBuilder,
   type QueryResolver,
   type QueryCacheEntry,
-} from "./query/query";
-import type { EntityID } from "./entity/entity";
-import type {
-  ComponentDef,
-  ComponentFields,
-  FieldValues,
-} from "./component/component";
+} from "./query";
+import type { EntityID } from "./entity";
+import type { ComponentDef, ComponentFields, FieldValues } from "./component";
 import type { SystemConfig, SystemDescriptor } from "./system/system";
-import type { SystemEntry } from "./schedule/schedule";
+import type { SystemEntry } from "./schedule";
 import { BitSet } from "type_primitives";
 import { bucket_push } from "./utils/arrays";
 

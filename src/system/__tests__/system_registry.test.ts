@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SystemRegistry } from "../system_registry";
-import { Store } from "../../store/store";
-import type { SystemContext } from "../../query/query";
+import { Store } from "../../store";
+import type { SystemContext } from "../../query";
 import type { SystemConfig } from "../system";
 
 function make_config(overrides?: Partial<SystemConfig>): SystemConfig {

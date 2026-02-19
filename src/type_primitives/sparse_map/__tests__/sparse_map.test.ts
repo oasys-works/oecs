@@ -157,14 +157,14 @@ describe("SparseMap", () => {
   //=========================================================
 
   it("auto-grows when key exceeds initial capacity", () => {
-    const m = new SparseMap<number>(8);
+    const m = new SparseMap<number>();
     m.set(1000, 42);
     expect(m.get(1000)).toBe(42);
     expect(m.has(1000)).toBe(true);
   });
 
   it("existing entries survive a growth", () => {
-    const m = new SparseMap<string>(8);
+    const m = new SparseMap<string>();
     m.set(3, "three");
     m.set(5, "five");
     m.set(500, "big"); // triggers growth

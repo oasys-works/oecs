@@ -6,7 +6,7 @@
  ***/
 
 import { Brand, unsafe_cast } from "type_primitives";
-import { ECS_ERROR, ECSError } from "../utils/error";
+import { ECS_ERROR, ECSError } from "./utils/error";
 
 export type EntityID = Brand<number, "entity_id">;
 

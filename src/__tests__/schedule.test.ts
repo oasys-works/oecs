@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Schedule, SCHEDULE } from "../schedule";
-import { SystemRegistry } from "../../system/system_registry";
-import { SystemContext } from "../../query/query";
-import { Store } from "../../store/store";
-import type { SystemDescriptor } from "../../system/system";
+import { SystemRegistry } from "../system/system_registry";
+import { SystemContext } from "../query";
+import { Store } from "../store";
+import type { SystemDescriptor } from "../system/system";
 
 function make_ctx(): SystemContext {
   return new SystemContext(new Store());
@@ -206,11 +206,10 @@ describe("Schedule", () => {
     const b = registry.register({ fn: () => order.push("b") });
 
     // b runs after a
-    schedule.add_systems(
-      SCHEDULE.UPDATE,
-      a,
-      { system: b, ordering: { after: [a] } },
-    );
+    schedule.add_systems(SCHEDULE.UPDATE, a, {
+      system: b,
+      ordering: { after: [a] },
+    });
 
     schedule.run_update(ctx, 0);
     expect(order).toEqual(["a", "b"]);
@@ -265,10 +264,10 @@ describe("Schedule", () => {
 
     // b is in a different label, so "after b" constraint is ignored
     schedule.add_systems(SCHEDULE.PRE_UPDATE, b);
-    schedule.add_systems(
-      SCHEDULE.UPDATE,
-      { system: a, ordering: { after: [b] } },
-    );
+    schedule.add_systems(SCHEDULE.UPDATE, {
+      system: a,
+      ordering: { after: [b] },
+    });
 
     schedule.run_update(ctx, 0);
     expect(order).toEqual(["b", "a"]);

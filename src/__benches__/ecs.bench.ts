@@ -1,8 +1,8 @@
 import { bench, describe } from "vitest";
 import { World } from "../world";
-import { SCHEDULE } from "../schedule/schedule";
-import type { EntityID } from "../entity/entity";
-import type { ComponentDef, ComponentFields } from "../component/component";
+import { SCHEDULE } from "../schedule";
+import type { EntityID } from "../entity";
+import type { ComponentDef, ComponentFields } from "../component";
 
 //=========================================================
 // Helpers
@@ -562,9 +562,7 @@ describe("query and iteration", () => {
 
   bench("iterate_10k_10_components", () => {
     const w = new World();
-    const defs = Array.from({ length: 10 }, () =>
-      w.register_component(["a"]),
-    );
+    const defs = Array.from({ length: 10 }, () => w.register_component(["a"]));
     const vals = { a: 0 };
     for (let i = 0; i < 10_000; i++) {
       const id = w.create_entity();
@@ -690,9 +688,7 @@ describe("frame_3_systems_10k", () => {
 
 describe("frame_5_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 5 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 5 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
@@ -724,9 +720,7 @@ describe("frame_5_systems_10k", () => {
 
 describe("frame_10_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 10 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 10 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
@@ -758,9 +752,7 @@ describe("frame_10_systems_10k", () => {
 
 describe("frame_25_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 25 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 25 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
@@ -792,9 +784,7 @@ describe("frame_25_systems_10k", () => {
 
 describe("frame_50_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 50 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 50 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
@@ -826,9 +816,7 @@ describe("frame_50_systems_10k", () => {
 
 describe("frame_100_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 100 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 100 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();
@@ -860,9 +848,7 @@ describe("frame_100_systems_10k", () => {
 
 describe("frame_200_systems_10k", () => {
   const w = new World();
-  const defs = Array.from({ length: 200 }, () =>
-    w.register_component(["a"]),
-  );
+  const defs = Array.from({ length: 200 }, () => w.register_component(["a"]));
   const vals = { a: 0 };
   for (let i = 0; i < 10_000; i++) {
     const id = w.create_entity();

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Store } from "../store";
-import { get_entity_index } from "../../entity/entity";
+import { get_entity_index } from "../entity";
 
-import type { ComponentID } from "../../component/component";
+import type { ComponentID } from "../component";
 import { BitSet } from "type_primitives";
 
 function make_mask(...ids: (number | ComponentID)[]): BitSet {

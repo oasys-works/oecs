@@ -5,7 +5,7 @@
  *
  ***/
 
-import type { Store } from "../store/store";
+import type { Store } from "../store";
 import { ECS_ERROR, ECSError } from "../utils/error";
 import {
   as_system_id,

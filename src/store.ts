@@ -11,19 +11,23 @@ import {
   create_entity_id,
   MAX_GENERATION,
   type EntityID,
-} from "../entity/entity";
+} from "./entity";
 import {
   as_component_id,
   type ComponentDef,
   type ComponentID,
   type ComponentFields,
   type FieldValues,
-} from "../component/component";
-import { unsafe_cast } from "type_primitives";
-import type { Archetype, ArchetypeID } from "../archetype/archetype";
-import { ArchetypeRegistry, type ComponentMeta } from "../archetype/archetype_registry";
-import { ECS_ERROR, ECSError } from "../utils/error";
-import type { BitSet } from "type_primitives";
+} from "./component";
+import { unsafe_cast, BitSet } from "type_primitives";
+import {
+  Archetype,
+  as_archetype_id,
+  type ArchetypeColumnLayout,
+  type ArchetypeID,
+} from "./archetype";
+import { ECS_ERROR, ECSError } from "./utils/error";
+import { bucket_push } from "./utils/arrays";
 
 //=========================================================
 // Constants
@@ -33,26 +37,50 @@ const UNASSIGNED = -1;
 const INITIAL_CAPACITY = 256;
 
 //=========================================================
+// ComponentMeta — schema info needed to build archetype columns
+//=========================================================
+
+interface ComponentMeta {
+  field_names: string[];
+  field_index: Record<string, number>;
+}
+
+//=========================================================
 // Store
 //=========================================================
 
 export class Store {
-  // Entity ID management (was EntityRegistry)
+  // Entity ID management
   private entity_generations: number[] = [];
   private entity_high_water = 0;
   private entity_free_indices: number[] = [];
   private entity_alive_count = 0;
 
-  // Component metadata (was ComponentRegistry)
+  // Component metadata
   private component_metas: ComponentMeta[] = [];
   private component_count = 0;
 
-  private archetype_registry: ArchetypeRegistry;
+  // Archetype management
+  private archetypes: Archetype[] = [];
+  private archetype_map: Map<number, ArchetypeID[]> = new Map();
+  private next_archetype_id = 0;
+  private component_index: Map<ComponentID, Set<ArchetypeID>> = new Map();
+  private registered_queries: {
+    include_mask: BitSet;
+    exclude_mask: BitSet | null;
+    any_of_mask: BitSet | null;
+    result: Archetype[];
+  }[] = [];
+  private empty_archetype_id: ArchetypeID;
 
   // entity_index → ArchetypeID (-1 = unassigned). Grown geometrically.
-  private entity_archetype: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(UNASSIGNED);
+  private entity_archetype: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(
+    UNASSIGNED,
+  );
   // entity_index → row within its archetype (-1 = unassigned). Grown geometrically.
-  private entity_row: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(UNASSIGNED);
+  private entity_row: Int32Array = new Int32Array(INITIAL_CAPACITY).fill(
+    UNASSIGNED,
+  );
   private entity_capacity: number = INITIAL_CAPACITY;
 
   // Deferred destruction buffer
@@ -66,11 +94,11 @@ export class Store {
   private pending_remove_defs: ComponentDef<ComponentFields>[] = [];
 
   constructor() {
-    this.archetype_registry = new ArchetypeRegistry(this.component_metas);
+    this.empty_archetype_id = this.arch_get_or_create_from_mask(new BitSet());
   }
 
   //=========================================================
-  // Internal: capacity management
+  // Internal: entity capacity management
   //=========================================================
 
   private ensure_entity_capacity(index: number): void {
@@ -78,12 +106,134 @@ export class Store {
     let cap = this.entity_capacity;
     while (cap <= index) cap *= 2;
     const new_arch = new Int32Array(cap).fill(UNASSIGNED);
-    const new_row  = new Int32Array(cap).fill(UNASSIGNED);
+    const new_row = new Int32Array(cap).fill(UNASSIGNED);
     new_arch.set(this.entity_archetype);
     new_row.set(this.entity_row);
     this.entity_archetype = new_arch;
     this.entity_row = new_row;
     this.entity_capacity = cap;
+  }
+
+  //=========================================================
+  // Internal: archetype management
+  //=========================================================
+
+  private arch_get(id: ArchetypeID): Archetype {
+    if (__DEV__) {
+      if (id < 0 || id >= this.archetypes.length) {
+        throw new ECSError(
+          ECS_ERROR.ARCHETYPE_NOT_FOUND,
+          `Archetype with ID ${id} not found`,
+        );
+      }
+    }
+    return this.archetypes[id];
+  }
+
+  private arch_get_or_create_from_mask(mask: BitSet): ArchetypeID {
+    const hash = mask.hash();
+
+    const bucket = this.archetype_map.get(hash);
+    if (bucket !== undefined) {
+      for (let i = 0; i < bucket.length; i++) {
+        if (this.archetypes[bucket[i]].mask.equals(mask)) {
+          return bucket[i];
+        }
+      }
+    }
+
+    const id = as_archetype_id(this.next_archetype_id++);
+
+    // Build column layouts from component metadata
+    const layouts: ArchetypeColumnLayout[] = [];
+    mask.for_each((bit) => {
+      const comp_id = bit as ComponentID;
+      const meta = this.component_metas[comp_id as number];
+      if (meta && meta.field_names.length > 0) {
+        layouts.push({
+          component_id: comp_id,
+          field_names: meta.field_names,
+          field_index: meta.field_index,
+        });
+      }
+    });
+
+    const archetype = new Archetype(id, mask, layouts);
+    this.archetypes.push(archetype);
+    bucket_push(this.archetype_map, hash, id);
+
+    // Update component index
+    mask.for_each((bit) => {
+      const component_id = bit as ComponentID;
+      let set = this.component_index.get(component_id);
+      if (!set) {
+        set = new Set();
+        this.component_index.set(component_id, set);
+      }
+      set.add(id);
+    });
+
+    // Push new archetype to matching registered queries
+    const rqs = this.registered_queries;
+    for (let i = 0; i < rqs.length; i++) {
+      const rq = rqs[i];
+      if (
+        archetype.matches(rq.include_mask) &&
+        (!rq.exclude_mask || !archetype.mask.overlaps(rq.exclude_mask)) &&
+        (!rq.any_of_mask || archetype.mask.overlaps(rq.any_of_mask))
+      ) {
+        rq.result.push(archetype);
+      }
+    }
+
+    return id;
+  }
+
+  private arch_resolve_add(
+    archetype_id: ArchetypeID,
+    component_id: ComponentID,
+  ): ArchetypeID {
+    const current = this.arch_get(archetype_id);
+    if (current.mask.has(component_id as number)) return archetype_id;
+    const edge = current.get_edge(component_id);
+    if (edge?.add != null) return edge.add;
+    const target_id = this.arch_get_or_create_from_mask(
+      current.mask.copy_with_set(component_id as number),
+    );
+    this.arch_cache_edge(current, this.arch_get(target_id), component_id);
+    return target_id;
+  }
+
+  private arch_resolve_remove(
+    archetype_id: ArchetypeID,
+    component_id: ComponentID,
+  ): ArchetypeID {
+    const current = this.arch_get(archetype_id);
+    if (!current.mask.has(component_id as number)) return archetype_id;
+    const edge = current.get_edge(component_id);
+    if (edge?.remove != null) return edge.remove;
+    const target_id = this.arch_get_or_create_from_mask(
+      current.mask.copy_with_clear(component_id as number),
+    );
+    this.arch_cache_edge(this.arch_get(target_id), current, component_id);
+    return target_id;
+  }
+
+  private arch_cache_edge(
+    from: Archetype,
+    to: Archetype,
+    component_id: ComponentID,
+  ): void {
+    const from_edge = from.get_edge(component_id) ?? {
+      add: null,
+      remove: null,
+    };
+    from_edge.add = to.id;
+    from.set_edge(component_id, from_edge);
+
+    const to_edge = to.get_edge(component_id) ?? { add: null, remove: null };
+    to_edge.remove = from.id;
+    to.set_edge(component_id, to_edge);
   }
 
   //=========================================================
@@ -107,7 +257,7 @@ export class Store {
     const id = create_entity_id(index, generation);
 
     this.ensure_entity_capacity(index);
-    this.entity_archetype[index] = this.archetype_registry.empty_archetype_id;
+    this.entity_archetype[index] = this.empty_archetype_id;
     this.entity_row[index] = UNASSIGNED;
 
     return id;
@@ -123,7 +273,7 @@ export class Store {
     const row = this.entity_row[index];
 
     if (row !== UNASSIGNED) {
-      const arch = this.archetype_registry.get(this.entity_archetype[index] as ArchetypeID);
+      const arch = this.arch_get(this.entity_archetype[index] as ArchetypeID);
       const swapped_idx = arch.remove_entity(row);
       if (swapped_idx !== -1) this.entity_row[swapped_idx] = row;
     }
@@ -154,7 +304,8 @@ export class Store {
   //=========================================================
 
   public destroy_entity_deferred(id: EntityID): void {
-    if (__DEV__ && !this.is_alive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+    if (__DEV__ && !this.is_alive(id))
+      throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_destroy.push(id);
   }
 
@@ -182,7 +333,8 @@ export class Store {
     def: ComponentDef<F>,
     values: FieldValues<F>,
   ): void {
-    if (__DEV__ && !this.is_alive(entity_id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+    if (__DEV__ && !this.is_alive(entity_id))
+      throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_add_ids.push(entity_id);
     this.pending_add_defs.push(def);
     this.pending_add_values.push(values as Record<string, number>);
@@ -192,7 +344,8 @@ export class Store {
     entity_id: EntityID,
     def: ComponentDef<ComponentFields>,
   ): void {
-    if (__DEV__ && !this.is_alive(entity_id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+    if (__DEV__ && !this.is_alive(entity_id))
+      throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_remove_ids.push(entity_id);
     this.pending_remove_defs.push(def);
   }
@@ -204,7 +357,11 @@ export class Store {
 
     for (let i = 0; i < n_add; i++) {
       if (this.is_alive(this.pending_add_ids[i])) {
-        this.add_component(this.pending_add_ids[i], this.pending_add_defs[i], this.pending_add_values[i]);
+        this.add_component(
+          this.pending_add_ids[i],
+          this.pending_add_defs[i],
+          this.pending_add_values[i],
+        );
       }
     }
     this.pending_add_ids.length = 0;
@@ -213,7 +370,10 @@ export class Store {
 
     for (let i = 0; i < n_rem; i++) {
       if (this.is_alive(this.pending_remove_ids[i])) {
-        this.remove_component(this.pending_remove_ids[i], this.pending_remove_defs[i]);
+        this.remove_component(
+          this.pending_remove_ids[i],
+          this.pending_remove_defs[i],
+        );
       }
     }
     this.pending_remove_ids.length = 0;
@@ -228,7 +388,9 @@ export class Store {
   // Component registration
   //=========================================================
 
-  public register_component<F extends readonly string[]>(fields: F): ComponentDef<F> {
+  public register_component<F extends readonly string[]>(
+    fields: F,
+  ): ComponentDef<F> {
     const id = as_component_id(this.component_count++);
     const field_names = fields as unknown as string[];
     const field_index: Record<string, number> = Object.create(null);
@@ -254,8 +416,10 @@ export class Store {
     }
 
     const entity_index = get_entity_index(entity_id);
-    const current_archetype_id = this.entity_archetype[entity_index] as ArchetypeID;
-    const current_arch = this.archetype_registry.get(current_archetype_id);
+    const current_archetype_id = this.entity_archetype[
+      entity_index
+    ] as ArchetypeID;
+    const current_arch = this.arch_get(current_archetype_id);
 
     // Already has component → overwrite in-place (no transition)
     if (current_arch.has_component(def)) {
@@ -267,8 +431,11 @@ export class Store {
       return;
     }
 
-    const target_archetype_id = this.archetype_registry.resolve_add(current_archetype_id, def);
-    const target_arch = this.archetype_registry.get(target_archetype_id);
+    const target_archetype_id = this.arch_resolve_add(
+      current_archetype_id,
+      def,
+    );
+    const target_arch = this.arch_get(target_archetype_id);
 
     const src_row = this.entity_row[entity_index];
     const dst_row = target_arch.add_entity(entity_id);
@@ -278,7 +445,11 @@ export class Store {
       const swapped_idx = current_arch.remove_entity(src_row);
       if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
     }
-    target_arch.write_fields(dst_row, def as ComponentID, values as Record<string, number>);
+    target_arch.write_fields(
+      dst_row,
+      def as ComponentID,
+      values as Record<string, number>,
+    );
 
     this.entity_archetype[entity_index] = target_archetype_id;
     this.entity_row[entity_index] = dst_row;
@@ -286,7 +457,10 @@ export class Store {
 
   public add_components(
     entity_id: EntityID,
-    entries: { def: ComponentDef<ComponentFields>; values: Record<string, number> }[],
+    entries: {
+      def: ComponentDef<ComponentFields>;
+      values: Record<string, number>;
+    }[],
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -294,17 +468,22 @@ export class Store {
     }
 
     const entity_index = get_entity_index(entity_id);
-    const current_archetype_id = this.entity_archetype[entity_index] as ArchetypeID;
+    const current_archetype_id = this.entity_archetype[
+      entity_index
+    ] as ArchetypeID;
 
     // Resolve final archetype through all adds
     let target_archetype_id: ArchetypeID = current_archetype_id;
     for (let i = 0; i < entries.length; i++) {
-      target_archetype_id = this.archetype_registry.resolve_add(target_archetype_id, entries[i].def);
+      target_archetype_id = this.arch_resolve_add(
+        target_archetype_id,
+        entries[i].def,
+      );
     }
 
     if (target_archetype_id !== current_archetype_id) {
-      const source_arch = this.archetype_registry.get(current_archetype_id);
-      const target_arch = this.archetype_registry.get(target_archetype_id);
+      const source_arch = this.arch_get(current_archetype_id);
+      const target_arch = this.arch_get(target_archetype_id);
 
       const src_row = this.entity_row[entity_index];
       const dst_row = target_arch.add_entity(entity_id);
@@ -315,17 +494,25 @@ export class Store {
         if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
       }
       for (let i = 0; i < entries.length; i++) {
-        target_arch.write_fields(dst_row, entries[i].def as ComponentID, entries[i].values);
+        target_arch.write_fields(
+          dst_row,
+          entries[i].def as ComponentID,
+          entries[i].values,
+        );
       }
 
       this.entity_archetype[entity_index] = target_archetype_id;
       this.entity_row[entity_index] = dst_row;
     } else {
       // All components already present — overwrite in-place
-      const arch = this.archetype_registry.get(current_archetype_id);
+      const arch = this.arch_get(current_archetype_id);
       const row = this.entity_row[entity_index];
       for (let i = 0; i < entries.length; i++) {
-        arch.write_fields(row, entries[i].def as ComponentID, entries[i].values);
+        arch.write_fields(
+          row,
+          entries[i].def as ComponentID,
+          entries[i].values,
+        );
       }
     }
   }
@@ -340,13 +527,18 @@ export class Store {
     }
 
     const entity_index = get_entity_index(entity_id);
-    const current_archetype_id = this.entity_archetype[entity_index] as ArchetypeID;
-    const current_arch = this.archetype_registry.get(current_archetype_id);
+    const current_archetype_id = this.entity_archetype[
+      entity_index
+    ] as ArchetypeID;
+    const current_arch = this.arch_get(current_archetype_id);
 
     if (!current_arch.has_component(def)) return;
 
-    const target_archetype_id = this.archetype_registry.resolve_remove(current_archetype_id, def);
-    const target_arch = this.archetype_registry.get(target_archetype_id);
+    const target_archetype_id = this.arch_resolve_remove(
+      current_archetype_id,
+      def,
+    );
+    const target_arch = this.arch_get(target_archetype_id);
 
     const src_row = this.entity_row[entity_index];
     const dst_row = target_arch.add_entity(entity_id);
@@ -369,7 +561,9 @@ export class Store {
       return false;
     }
     const entity_index = get_entity_index(entity_id);
-    return this.archetype_registry.get(this.entity_archetype[entity_index] as ArchetypeID).has_component(def);
+    return this.arch_get(
+      this.entity_archetype[entity_index] as ArchetypeID,
+    ).has_component(def);
   }
 
   //=========================================================
@@ -377,8 +571,8 @@ export class Store {
   //=========================================================
 
   public get_entity_archetype(entity_id: EntityID): Archetype {
-    return this.archetype_registry.get(
-      this.entity_archetype[get_entity_index(entity_id)] as ArchetypeID
+    return this.arch_get(
+      this.entity_archetype[get_entity_index(entity_id)] as ArchetypeID,
     );
   }
 
@@ -387,19 +581,85 @@ export class Store {
   }
 
   //=========================================================
-  // Query support (delegated to ArchetypeRegistry)
+  // Query support
   //=========================================================
 
-  public get_matching_archetypes(required: BitSet): readonly Archetype[] {
-    return this.archetype_registry.get_matching(required);
+  public get_matching_archetypes(
+    required: BitSet,
+    excluded?: BitSet,
+    any_of?: BitSet,
+  ): readonly Archetype[] {
+    const words = required._words;
+    let has_any_bit = false;
+    for (let i = 0; i < words.length; i++) {
+      if (words[i] !== 0) {
+        has_any_bit = true;
+        break;
+      }
+    }
+    if (!has_any_bit) {
+      return this.archetypes.filter(
+        (arch) =>
+          (!excluded || !arch.mask.overlaps(excluded)) &&
+          (!any_of || arch.mask.overlaps(any_of)),
+      );
+    }
+
+    let smallest_set: Set<ArchetypeID> | undefined;
+    let has_empty = false;
+    for (let wi = 0; wi < words.length; wi++) {
+      let word = words[wi];
+      if (word === 0) continue;
+      const base = wi << 5;
+      while (word !== 0) {
+        const t = word & (-word >>> 0);
+        const bit = base + (31 - Math.clz32(t));
+        word ^= t;
+        const set = this.component_index.get(bit as ComponentID);
+        if (!set || set.size === 0) {
+          has_empty = true;
+          break;
+        }
+        if (!smallest_set || set.size < smallest_set.size) smallest_set = set;
+      }
+      if (has_empty) break;
+    }
+    if (has_empty || !smallest_set) return [];
+
+    const result: Archetype[] = [];
+    for (const archetype_id of smallest_set) {
+      const arch = this.arch_get(archetype_id);
+      if (
+        arch.matches(required) &&
+        (!excluded || !arch.mask.overlaps(excluded)) &&
+        (!any_of || arch.mask.overlaps(any_of))
+      ) {
+        result.push(arch);
+      }
+    }
+    return result;
   }
 
-  public register_query(mask: BitSet, exclude_mask?: BitSet, any_of?: BitSet): Archetype[] {
-    return this.archetype_registry.register_query(mask, exclude_mask, any_of);
+  public register_query(
+    include: BitSet,
+    exclude?: BitSet,
+    any_of?: BitSet,
+  ): Archetype[] {
+    const result = this.get_matching_archetypes(
+      include,
+      exclude,
+      any_of,
+    ) as Archetype[];
+    this.registered_queries.push({
+      include_mask: include.copy(),
+      exclude_mask: exclude ? exclude.copy() : null,
+      any_of_mask: any_of ? any_of.copy() : null,
+      result,
+    });
+    return result;
   }
 
   get archetype_count(): number {
-    return this.archetype_registry.count;
+    return this.archetypes.length;
   }
-
 }

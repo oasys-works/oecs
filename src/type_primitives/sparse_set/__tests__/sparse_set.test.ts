@@ -152,14 +152,14 @@ describe("SparseSet", () => {
   //=========================================================
 
   it("auto-grows when key exceeds initial capacity", () => {
-    const s = new SparseSet(8); // small initial capacity
+    const s = new SparseSet();
     s.add(1000);
     expect(s.has(1000)).toBe(true);
     expect(s.size).toBe(1);
   });
 
   it("previous members survive a growth", () => {
-    const s = new SparseSet(8);
+    const s = new SparseSet();
     s.add(3);
     s.add(5);
     s.add(500); // triggers growth
@@ -169,7 +169,7 @@ describe("SparseSet", () => {
   });
 
   it("has returns false for out-of-bounds key without growing", () => {
-    const s = new SparseSet(8);
+    const s = new SparseSet();
     expect(s.has(999)).toBe(false);
     expect(s.size).toBe(0);
   });

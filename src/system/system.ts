@@ -9,9 +9,13 @@
  *
  ***/
 
-import { Brand, validate_and_cast, is_non_negative_integer } from "type_primitives";
-import type { SystemContext } from "../query/query";
-import type { Store } from "../store/store";
+import {
+  Brand,
+  validate_and_cast,
+  is_non_negative_integer,
+} from "type_primitives";
+import type { SystemContext } from "../query";
+import type { Store } from "../store";
 
 //=========================================================
 // SystemID
