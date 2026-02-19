@@ -61,6 +61,10 @@ export class World implements QueryResolver {
     return this.store.register_component(fields);
   }
 
+  register_tag(): ComponentDef<readonly []> {
+    return this.store.register_component([] as const);
+  }
+
   //=========================================================
   // Entity lifecycle
   //=========================================================
@@ -86,12 +90,18 @@ export class World implements QueryResolver {
   // Component operations (immediate, for setup/spawning)
   //=========================================================
 
+  add_component(entity_id: EntityID, def: ComponentDef<readonly []>): void;
   add_component<F extends ComponentFields>(
     entity_id: EntityID,
     def: ComponentDef<F>,
     values: FieldValues<F>,
+  ): void;
+  add_component(
+    entity_id: EntityID,
+    def: ComponentDef<ComponentFields>,
+    values?: Record<string, number>,
   ): void {
-    this.store.add_component(entity_id, def, values);
+    this.store.add_component(entity_id, def, values ?? {});
   }
 
   add_components(

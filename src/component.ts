@@ -11,7 +11,11 @@
  *
  ***/
 
-import { Brand, validate_and_cast, is_non_negative_integer } from "type_primitives";
+import {
+  Brand,
+  validate_and_cast,
+  is_non_negative_integer,
+} from "type_primitives";
 
 //=========================================================
 // ComponentID
@@ -40,9 +44,6 @@ export type FieldValues<F extends ComponentFields> = {
 export type ColumnsForSchema<F extends ComponentFields> = {
   readonly [K in F[number]]: number[];
 };
-
-/** Backward compat alias. */
-export type SchemaValues<F extends ComponentFields> = FieldValues<F>;
 
 //=========================================================
 // ComponentDef<F> - phantom-typed component handle

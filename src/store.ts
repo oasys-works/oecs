@@ -328,16 +328,25 @@ export class Store {
   // Deferred structural changes
   //=========================================================
 
+  public add_component_deferred(
+    entity_id: EntityID,
+    def: ComponentDef<readonly []>,
+  ): void;
   public add_component_deferred<F extends ComponentFields>(
     entity_id: EntityID,
     def: ComponentDef<F>,
     values: FieldValues<F>,
+  ): void;
+  public add_component_deferred(
+    entity_id: EntityID,
+    def: ComponentDef<ComponentFields>,
+    values?: Record<string, number>,
   ): void {
     if (__DEV__ && !this.is_alive(entity_id))
       throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_add_ids.push(entity_id);
     this.pending_add_defs.push(def);
-    this.pending_add_values.push(values as Record<string, number>);
+    this.pending_add_values.push(values ?? {});
   }
 
   public remove_component_deferred(
@@ -405,10 +414,19 @@ export class Store {
   // Component operations
   //=========================================================
 
+  public add_component(
+    entity_id: EntityID,
+    def: ComponentDef<readonly []>,
+  ): void;
   public add_component<F extends ComponentFields>(
     entity_id: EntityID,
     def: ComponentDef<F>,
     values: FieldValues<F>,
+  ): void;
+  public add_component(
+    entity_id: EntityID,
+    def: ComponentDef<ComponentFields>,
+    values?: Record<string, number>,
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);

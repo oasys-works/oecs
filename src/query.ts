@@ -93,8 +93,11 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   get archetypes(): readonly Archetype[] {
     return this._archetypes;
   }
-  [Symbol.iterator](): Iterator<Archetype> {
-    return this._archetypes[Symbol.iterator]();
+  *[Symbol.iterator](): Iterator<Archetype> {
+    const archs = this._archetypes;
+    for (let i = 0; i < archs.length; i++) {
+      if (archs[i].entity_count > 0) yield archs[i];
+    }
   }
 
   /** Typed per-archetype iteration — one closure call per archetype, not per entity. */
@@ -270,12 +273,18 @@ export class SystemContext {
    * Buffer a component addition for deferred processing.
    * The entity keeps its current archetype until flush() is called.
    */
+  add_component(entity_id: EntityID, def: ComponentDef<readonly []>): void;
   add_component<F extends ComponentFields>(
     entity_id: EntityID,
     def: ComponentDef<F>,
     values: FieldValues<F>,
+  ): void;
+  add_component(
+    entity_id: EntityID,
+    def: ComponentDef<ComponentFields>,
+    values?: Record<string, number>,
   ): void {
-    this.store.add_component_deferred(entity_id, def, values);
+    this.store.add_component_deferred(entity_id, def, values ?? {});
   }
 
   /**
