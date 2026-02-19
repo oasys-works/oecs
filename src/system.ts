@@ -4,7 +4,7 @@
  *
  * Systems are plain functions, not abstract classes. A SystemConfig
  * defines the system's update function and optional lifecycle hooks.
- * The SystemRegistry assigns a SystemID and returns a frozen
+ * World.register_system assigns a SystemID and returns a frozen
  * SystemDescriptor - the identity handle used for ordering constraints.
  *
  ***/
@@ -14,8 +14,8 @@ import {
   validate_and_cast,
   is_non_negative_integer,
 } from "type_primitives";
-import type { SystemContext } from "../query";
-import type { Store } from "../store";
+import type { SystemContext } from "./query";
+import type { Store } from "./store";
 
 //=========================================================
 // SystemID
@@ -48,7 +48,7 @@ export interface SystemConfig {
 }
 
 //=========================================================
-// SystemDescriptor (returned by SystemRegistry.register)
+// SystemDescriptor (returned by World.register_system)
 //=========================================================
 
 export interface SystemDescriptor extends Readonly<SystemConfig> {

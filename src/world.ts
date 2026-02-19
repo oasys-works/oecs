@@ -2,10 +2,10 @@
  *
  * World - Unified ECS facade
  *
- * Composes Store + SystemRegistry + Schedule + SystemContext into a
- * single entry point that owns the full ECS lifecycle. External code
- * creates a World, registers components/systems, calls startup(),
- * then update(dt) each frame.
+ * Composes Store + Schedule + SystemContext into a single entry point
+ * that owns the full ECS lifecycle. External code creates a World,
+ * registers components/systems, calls startup(), then update(dt)
+ * each frame.
  *
  * Systems receive a SystemContext (not the World) — the World is not
  * exposed inside system functions.
@@ -13,7 +13,6 @@
  ***/
 
 import { Store } from "./store";
-import { SystemRegistry } from "./system/system_registry";
 import { Schedule, type SCHEDULE } from "./schedule";
 import {
   SystemContext,
@@ -24,7 +23,11 @@ import {
 } from "./query";
 import type { EntityID } from "./entity";
 import type { ComponentDef, ComponentFields, FieldValues } from "./component";
-import type { SystemConfig, SystemDescriptor } from "./system/system";
+import {
+  as_system_id,
+  type SystemConfig,
+  type SystemDescriptor,
+} from "./system";
 import type { SystemEntry } from "./schedule";
 import { BitSet } from "type_primitives";
 import { bucket_push } from "./utils/arrays";
@@ -35,16 +38,17 @@ import { bucket_push } from "./utils/arrays";
 
 export class World implements QueryResolver {
   private readonly store: Store;
-  private readonly system_registry: SystemRegistry;
   private readonly schedule: Schedule;
   readonly ctx: SystemContext;
+
+  private systems: Set<SystemDescriptor> = new Set();
+  private next_system_id = 0;
 
   private query_cache: Map<number, QueryCacheEntry[]> = new Map();
   private scratch_mask: BitSet = new BitSet();
 
   constructor() {
     this.store = new Store();
-    this.system_registry = new SystemRegistry();
     this.schedule = new Schedule();
     this.ctx = new SystemContext(this.store);
   }
@@ -232,14 +236,22 @@ export class World implements QueryResolver {
       | SystemConfig,
     query_fn?: (qb: QueryBuilder) => Query<any>,
   ): SystemDescriptor {
+    let config: SystemConfig;
+
     if (typeof fn_or_config === "function") {
       const q = query_fn!(new QueryBuilder(this));
       const ctx = this.ctx;
-      return this.system_registry.register({
-        fn: (_ctx, dt) => fn_or_config(q, ctx, dt),
-      });
+      config = { fn: (_ctx, dt) => fn_or_config(q, ctx, dt) };
+    } else {
+      config = fn_or_config as SystemConfig;
     }
-    return this.system_registry.register(fn_or_config as SystemConfig);
+
+    const id = as_system_id(this.next_system_id++);
+    const descriptor: SystemDescriptor = Object.freeze(
+      Object.assign({ id }, config),
+    );
+    this.systems.add(descriptor);
+    return descriptor;
   }
 
   add_systems(
@@ -251,7 +263,12 @@ export class World implements QueryResolver {
 
   remove_system(system: SystemDescriptor): void {
     this.schedule.remove_system(system);
-    this.system_registry.remove(system.id);
+    system.on_removed?.();
+    this.systems.delete(system);
+  }
+
+  get system_count(): number {
+    return this.systems.size;
   }
 
   //=========================================================
@@ -260,7 +277,9 @@ export class World implements QueryResolver {
 
   /** Initialize all systems and run startup phases. */
   startup(): void {
-    this.system_registry.init_all(this.store);
+    for (const descriptor of this.systems.values()) {
+      descriptor.on_added?.(this.store);
+    }
     this.schedule.run_startup(this.ctx);
   }
 
@@ -275,7 +294,11 @@ export class World implements QueryResolver {
 
   /** Dispose all systems and clear the schedule. */
   dispose(): void {
-    this.system_registry.dispose_all();
+    for (const descriptor of this.systems.values()) {
+      descriptor.dispose?.();
+      descriptor.on_removed?.();
+    }
+    this.systems.clear();
     this.schedule.clear();
   }
 }

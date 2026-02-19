@@ -6,7 +6,7 @@
  ***/
 
 import type { SystemContext } from "./query";
-import type { SystemDescriptor } from "./system/system";
+import type { SystemDescriptor } from "./system";
 import { ECS_ERROR, ECSError } from "./utils/error";
 
 //=========================================================
@@ -114,7 +114,7 @@ export class Schedule {
 
   /**
    * Remove a system from the schedule.
-   * Does NOT call lifecycle hooks - that is SystemRegistry's job.
+   * Does NOT call lifecycle hooks - that is World's job.
    */
   remove_system(system: SystemDescriptor): void {
     const label = this.system_index.get(system);
@@ -180,7 +180,6 @@ export class Schedule {
 
   /**
    * Clear all systems from the schedule.
-   * Does NOT call lifecycle hooks - that is SystemRegistry's job.
    */
   clear(): void {
     for (const nodes of this.label_systems.values()) {
@@ -255,19 +254,19 @@ export class Schedule {
     for (const node of nodes) {
       if (in_degree.get(node.descriptor) === 0) ready.push(node.descriptor);
     }
-    ready.sort((a, b) => insertion_order.get(a)! - insertion_order.get(b)!);
+    ready.sort((a, b) => insertion_order.get(b)! - insertion_order.get(a)!);
 
     const result: SystemDescriptor[] = [];
 
     while (ready.length > 0) {
-      const current = ready.shift()!;
+      const current = ready.pop()!;
       result.push(current);
       for (const neighbor of adjacency.get(current)!) {
         const d = in_degree.get(neighbor)! - 1;
         in_degree.set(neighbor, d);
         if (d === 0) ready.push(neighbor);
       }
-      ready.sort((a, b) => insertion_order.get(a)! - insertion_order.get(b)!);
+      ready.sort((a, b) => insertion_order.get(b)! - insertion_order.get(a)!);
     }
 
     // Cycle detection
