@@ -107,11 +107,8 @@ export class Store {
     const id = create_entity_id(index, generation);
 
     this.ensure_entity_capacity(index);
-    const empty_id = this.archetype_registry.empty_archetype_id;
-    const empty = this.archetype_registry.get(empty_id);
-    const row = empty.add_entity(id);
-    this.entity_archetype[index] = empty_id;
-    this.entity_row[index] = row;
+    this.entity_archetype[index] = this.archetype_registry.empty_archetype_id;
+    this.entity_row[index] = UNASSIGNED;
 
     return id;
   }
@@ -123,11 +120,13 @@ export class Store {
     }
 
     const index = get_entity_index(id);
-    const archetype_id = this.entity_archetype[index];
     const row = this.entity_row[index];
-    const arch = this.archetype_registry.get(archetype_id as ArchetypeID);
-    const swapped_idx = arch.remove_entity(row);
-    if (swapped_idx !== -1) this.entity_row[swapped_idx] = row;
+
+    if (row !== UNASSIGNED) {
+      const arch = this.archetype_registry.get(this.entity_archetype[index] as ArchetypeID);
+      const swapped_idx = arch.remove_entity(row);
+      if (swapped_idx !== -1) this.entity_row[swapped_idx] = row;
+    }
 
     this.entity_archetype[index] = UNASSIGNED;
     this.entity_row[index] = UNASSIGNED;
@@ -276,11 +275,12 @@ export class Store {
     const src_row = this.entity_row[entity_index];
     const dst_row = target_arch.add_entity(entity_id);
 
-    target_arch.copy_shared_from(current_arch, src_row, dst_row);
+    if (src_row !== UNASSIGNED) {
+      target_arch.copy_shared_from(current_arch, src_row, dst_row);
+      const swapped_idx = current_arch.remove_entity(src_row);
+      if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+    }
     target_arch.write_fields(dst_row, def as ComponentID, values as Record<string, number>);
-
-    const swapped_idx = current_arch.remove_entity(src_row);
-    if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
 
     this.entity_archetype[entity_index] = target_archetype_id;
     this.entity_row[entity_index] = dst_row;
@@ -311,13 +311,14 @@ export class Store {
       const src_row = this.entity_row[entity_index];
       const dst_row = target_arch.add_entity(entity_id);
 
-      target_arch.copy_shared_from(source_arch, src_row, dst_row);
+      if (src_row !== UNASSIGNED) {
+        target_arch.copy_shared_from(source_arch, src_row, dst_row);
+        const swapped_idx = source_arch.remove_entity(src_row);
+        if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+      }
       for (let i = 0; i < entries.length; i++) {
         target_arch.write_fields(dst_row, entries[i].def as ComponentID, entries[i].values);
       }
-
-      const swapped_idx = source_arch.remove_entity(src_row);
-      if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
 
       this.entity_archetype[entity_index] = target_archetype_id;
       this.entity_row[entity_index] = dst_row;

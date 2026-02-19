@@ -308,8 +308,8 @@ describe("Store", () => {
     store.add_component(e2, Pos, { x: 0, y: 0, z: 0 });
     store.add_component(e2, Hp, { current: 100, max: 100 });
 
-    // Query for [Pos] - 3 archetypes match: [Pos] (empty intermediate),
-    // [Pos, Vel], and [Pos, Hp]. Both entities' final archetypes are included.
+    // Query for [Pos] - 3 archetypes match: [Pos] (intermediate, created during
+    // e1's first add_component), [Pos, Vel], and [Pos, Hp].
     const pos_matches = store.get_matching_archetypes(
       make_mask(Pos as ComponentID),
     );
@@ -355,7 +355,7 @@ describe("Store", () => {
     const store = new Store();
     const Pos = store.register_component(Position);
 
-    store.create_entity(); // in empty archetype
+    store.create_entity(); // alive but has no archetype row yet
     const e2 = store.create_entity();
     store.add_component(e2, Pos, { x: 0, y: 0, z: 0 });
 
