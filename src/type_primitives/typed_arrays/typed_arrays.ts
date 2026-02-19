@@ -89,6 +89,16 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
   }
 
   /**
+   * The current backing buffer. Valid data occupies indices 0..length-1.
+   * Slice access (col.buf[i]) is the fastest way to read/write elements.
+   * This reference is stable until the next push() that triggers a
+   * buffer reallocation — do not cache across entity additions.
+   */
+  get buf(): T {
+    return this._buf;
+  }
+
+  /**
    * Live subarray view of the valid data (indices 0..length-1). No copy.
    * This view shares the backing buffer — it is invalidated if a subsequent
    * push() triggers a buffer reallocation.

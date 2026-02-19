@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { World } from "../../world";
 
-// Schemas
-const Position = { x: "f32", y: "f32" } as const;
-const Velocity = { vx: "f32", vy: "f32" } as const;
-const Health = { hp: "f32" } as const;
-const Static = {} as const; // tag component
+// Field arrays
+const Position = ["x", "y"] as const;
+const Velocity = ["vx", "vy"] as const;
+const Health = ["hp"] as const;
+const Static = [] as const; // tag component
 
 describe("World query", () => {
   //=========================================================

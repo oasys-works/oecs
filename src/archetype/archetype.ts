@@ -11,7 +11,7 @@ import {
   is_non_negative_integer,
 } from "type_primitives";
 import type { ComponentID } from "../component/component";
-import type { ComponentSchema, ComponentDef, ColumnsForSchema } from "../component/component";
+import type { ComponentFields, ComponentDef, ColumnsForSchema } from "../component/component";
 import { get_entity_index, type EntityID } from "../entity/entity";
 import { ECS_ERROR, ECSError } from "../utils/error";
 import type { BitSet } from "type_primitives";
@@ -122,10 +122,14 @@ export class Archetype {
   // Column data access
   //=========================================================
 
-  /** Get the dense column for a component field. Rows 0..entity_count-1. */
-  public get_column<S extends ComponentSchema, F extends keyof S & string>(
-    def: ComponentDef<S>,
-    field: F,
+  /**
+   * Get the number[] column for a component field.
+   * Valid data occupies indices 0..entity_count-1.
+   * Use arch.entity_count (not col.length) as the loop bound.
+   */
+  public get_column<F extends ComponentFields, Field extends F[number]>(
+    def: ComponentDef<F>,
+    field: Field,
   ): number[] {
     const group = this.column_groups[def as unknown as number];
     if (__DEV__) {
@@ -148,11 +152,11 @@ export class Archetype {
     return group!.columns[col_idx];
   }
 
-  /** Get all columns for a component as a typed record. */
-  public get_column_group<S extends ComponentSchema>(def: ComponentDef<S>): ColumnsForSchema<S> {
+  /** Get all columns for a component as a record of number[] arrays. */
+  public get_column_group<F extends ComponentFields>(def: ComponentDef<F>): ColumnsForSchema<F> {
     const group = this.column_groups[def as unknown as number];
-    if (!group) return {} as ColumnsForSchema<S>;
-    return group.record as ColumnsForSchema<S>;
+    if (!group) return {} as ColumnsForSchema<F>;
+    return group.record as unknown as ColumnsForSchema<F>;
   }
 
   /** Write all fields for a component at a given row. */
@@ -179,7 +183,7 @@ export class Archetype {
     if (!group) return NaN;
     const col_idx = group.layout.field_index[field];
     if (col_idx === undefined) return NaN;
-    return group.columns[col_idx][row];
+    return group.columns[col_idx][row] ?? NaN;
   }
 
   //=========================================================

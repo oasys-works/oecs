@@ -12,23 +12,21 @@ import type { EntityID } from "../entity/entity";
 import type {
   ComponentDef,
   ComponentID,
-  ComponentSchema,
-  SchemaValues,
+  ComponentFields,
+  FieldValues,
+  ColumnsForSchema,
 } from "../component/component";
-import type { ColumnsForSchema } from "../component/component";
 import { BitSet } from "type_primitives";
 
 //=========================================================
 // Type utilities
 //=========================================================
 
-type SchemaOf<D> = D extends ComponentDef<infer S> ? S : never;
-
-type DefsToColumns<Defs extends readonly ComponentDef<ComponentSchema>[]> = {
-  [I in keyof Defs]: ColumnsForSchema<SchemaOf<Defs[I]>>;
+type DefsToColumns<Defs extends readonly ComponentDef<ComponentFields>[]> = {
+  [K in keyof Defs]: ColumnsForSchema<Defs[K] extends ComponentDef<infer F> ? F : never>;
 };
 
-type EachFn<Defs extends readonly ComponentDef<ComponentSchema>[]> = (
+type EachFn<Defs extends readonly ComponentDef<ComponentFields>[]> = (
   ...args: [...DefsToColumns<Defs>, number]
 ) => void;
 
@@ -52,7 +50,7 @@ export interface QueryResolver {
     include: BitSet,
     exclude: BitSet | null,
     any_of: BitSet | null,
-    defs: readonly ComponentDef<ComponentSchema>[],
+    defs: readonly ComponentDef<ComponentFields>[],
   ): Query<any>;
 }
 
@@ -60,7 +58,7 @@ export interface QueryResolver {
 // Query<Defs>
 //=========================================================
 
-export class Query<Defs extends readonly ComponentDef<ComponentSchema>[]> {
+export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   private readonly _archetypes: Archetype[];
   private readonly _defs: Defs;
   readonly _resolver: QueryResolver;
@@ -115,26 +113,26 @@ export class Query<Defs extends readonly ComponentDef<ComponentSchema>[]> {
   }
 
   /** Extend required component set — returns a new (cached) Query with extended include mask. */
-  and<D extends ComponentDef<ComponentSchema>>(d: D): Query<[...Defs, D]>;
+  and<D extends ComponentDef<ComponentFields>>(d: D): Query<[...Defs, D]>;
   and<
-    D1 extends ComponentDef<ComponentSchema>,
-    D2 extends ComponentDef<ComponentSchema>,
+    D1 extends ComponentDef<ComponentFields>,
+    D2 extends ComponentDef<ComponentFields>,
   >(d1: D1, d2: D2): Query<[...Defs, D1, D2]>;
   and<
-    D1 extends ComponentDef<ComponentSchema>,
-    D2 extends ComponentDef<ComponentSchema>,
-    D3 extends ComponentDef<ComponentSchema>,
+    D1 extends ComponentDef<ComponentFields>,
+    D2 extends ComponentDef<ComponentFields>,
+    D3 extends ComponentDef<ComponentFields>,
   >(d1: D1, d2: D2, d3: D3): Query<[...Defs, D1, D2, D3]>;
   and<
-    D1 extends ComponentDef<ComponentSchema>,
-    D2 extends ComponentDef<ComponentSchema>,
-    D3 extends ComponentDef<ComponentSchema>,
-    D4 extends ComponentDef<ComponentSchema>,
+    D1 extends ComponentDef<ComponentFields>,
+    D2 extends ComponentDef<ComponentFields>,
+    D3 extends ComponentDef<ComponentFields>,
+    D4 extends ComponentDef<ComponentFields>,
   >(d1: D1, d2: D2, d3: D3, d4: D4): Query<[...Defs, D1, D2, D3, D4]>;
-  and(...comps: ComponentDef<ComponentSchema>[]): Query<any>;
-  and(...comps: ComponentDef<ComponentSchema>[]): Query<any> {
+  and(...comps: ComponentDef<ComponentFields>[]): Query<any>;
+  and(...comps: ComponentDef<ComponentFields>[]): Query<any> {
     const new_include = this._include.copy();
-    const new_defs = this._defs.slice() as ComponentDef<ComponentSchema>[];
+    const new_defs = this._defs.slice() as ComponentDef<ComponentFields>[];
     for (let i = 0; i < comps.length; i++) {
       if (!new_include.has(comps[i] as number)) {
         new_include.set(comps[i] as number);
@@ -150,7 +148,7 @@ export class Query<Defs extends readonly ComponentDef<ComponentSchema>[]> {
   }
 
   /** Exclude archetypes that have any of these components. Returns same typed Query. */
-  not(...comps: ComponentDef<ComponentSchema>[]): Query<Defs> {
+  not(...comps: ComponentDef<ComponentFields>[]): Query<Defs> {
     const new_exclude = this._exclude ? this._exclude.copy() : new BitSet();
     for (let i = 0; i < comps.length; i++) new_exclude.set(comps[i] as number);
     return this._resolver._resolve_query(
@@ -162,7 +160,7 @@ export class Query<Defs extends readonly ComponentDef<ComponentSchema>[]> {
   }
 
   /** Require archetypes that have at least one of these components. Returns same typed Query. */
-  or(...comps: ComponentDef<ComponentSchema>[]): Query<Defs> {
+  or(...comps: ComponentDef<ComponentFields>[]): Query<Defs> {
     const new_any_of = this._any_of ? this._any_of.copy() : new BitSet();
     for (let i = 0; i < comps.length; i++) new_any_of.set(comps[i] as number);
     return this._resolver._resolve_query(
@@ -181,23 +179,23 @@ export class Query<Defs extends readonly ComponentDef<ComponentSchema>[]> {
 export class QueryBuilder {
   constructor(private readonly _resolver: QueryResolver) {}
 
-  every<A extends ComponentDef<ComponentSchema>>(a: A): Query<[A]>;
+  every<A extends ComponentDef<ComponentFields>>(a: A): Query<[A]>;
   every<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
   >(a: A, b: B): Query<[A, B]>;
   every<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
-    C extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
+    C extends ComponentDef<ComponentFields>,
   >(a: A, b: B, c: C): Query<[A, B, C]>;
   every<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
-    C extends ComponentDef<ComponentSchema>,
-    D extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
+    C extends ComponentDef<ComponentFields>,
+    D extends ComponentDef<ComponentFields>,
   >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
-  every(...defs: ComponentDef<ComponentSchema>[]): Query<any> {
+  every(...defs: ComponentDef<ComponentFields>[]): Query<any> {
     const mask = new BitSet();
     for (let i = 0; i < defs.length; i++) mask.set(defs[i] as number);
     return this._resolver._resolve_query(mask, null, null, defs);
@@ -224,10 +222,10 @@ export class SystemContext {
    * Get a single field value for a component on an entity.
    * Looks up the entity's archetype and row.
    */
-  get_field<S extends ComponentSchema>(
-    def: ComponentDef<S>,
+  get_field<F extends ComponentFields>(
+    def: ComponentDef<F>,
     entity_id: EntityID,
-    field: keyof S & string,
+    field: F[number],
   ): number {
     const arch = this.store.get_entity_archetype(entity_id);
     const row = this.store.get_entity_row(entity_id);
@@ -238,10 +236,10 @@ export class SystemContext {
    * Set a single field value for a component on an entity.
    * Looks up the entity's archetype and row.
    */
-  set_field<S extends ComponentSchema>(
-    def: ComponentDef<S>,
+  set_field<F extends ComponentFields>(
+    def: ComponentDef<F>,
     entity_id: EntityID,
-    field: keyof S & string,
+    field: F[number],
     value: number,
   ): void {
     const arch = this.store.get_entity_archetype(entity_id);
@@ -270,10 +268,10 @@ export class SystemContext {
    * Buffer a component addition for deferred processing.
    * The entity keeps its current archetype until flush() is called.
    */
-  add_component<S extends ComponentSchema>(
+  add_component<F extends ComponentFields>(
     entity_id: EntityID,
-    def: ComponentDef<S>,
-    values: SchemaValues<S>,
+    def: ComponentDef<F>,
+    values: FieldValues<F>,
   ): void {
     this.store.add_component_deferred(entity_id, def, values);
   }
@@ -284,7 +282,7 @@ export class SystemContext {
    */
   remove_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): void {
     this.store.remove_component_deferred(entity_id, def);
   }

@@ -262,7 +262,7 @@ describe("ArchetypeRegistry", () => {
     const id = arch_reg.get_or_create([Pos]);
     const arch = arch_reg.get(id);
 
-    // Should be able to get columns
+    // Columns are plain number[]
     const col_x = arch.get_column(Pos as any, "x");
     const col_y = arch.get_column(Pos as any, "y");
     expect(Array.isArray(col_x)).toBe(true);

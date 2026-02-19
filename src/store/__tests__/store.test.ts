@@ -11,11 +11,11 @@ function make_mask(...ids: (number | ComponentID)[]): BitSet {
   return mask;
 }
 
-// Schemas
-const Position = { x: "f32", y: "f32", z: "f32" } as const;
-const Velocity = { vx: "f32", vy: "f32", vz: "f32" } as const;
-const Health = { current: "i32", max: "i32" } as const;
-const Tag = {} as const; // empty schema (marker component)
+// Field arrays
+const Position = ["x", "y", "z"] as const;
+const Velocity = ["vx", "vy", "vz"] as const;
+const Health = ["current", "max"] as const;
+const Tag = [] as const; // empty (marker component)
 
 describe("Store", () => {
   //=========================================================

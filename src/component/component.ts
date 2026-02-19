@@ -1,13 +1,12 @@
 /***
  *
- * Component - Schema-defined components backed by plain arrays
+ * Component - Field-name array components
  *
- * Components are defined as schemas: plain objects mapping field names to
- * string labels. The actual data lives in flat number[] arrays indexed by
- * entity index, giving us cache-friendly, allocation-free access on hot paths.
+ * Components are defined as readonly string arrays of field names.
+ * Actual data lives in plain number[] columns inside each Archetype.
  *
- * A ComponentDef<S> is a phantom-typed handle: at runtime it's just a
- * ComponentID (number), but at compile-time it carries the schema S so
+ * A ComponentDef<F> is a phantom-typed handle: at runtime it's just a
+ * ComponentID (number), but at compile-time it carries the field array F so
  * that get/set calls are fully type-checked without any casts.
  *
  ***/
@@ -29,21 +28,24 @@ export const as_component_id = (value: number) =>
 // Schema types
 //=========================================================
 
-/** A component schema: field names mapped to string labels (e.g. { x: "f32", y: "f32" }). */
-export type ComponentSchema = Record<string, string>;
+/** A component definition: a readonly array of field names. */
+export type ComponentFields = readonly string[];
 
-/** Maps a schema to its JS-side value object. All values are numbers. */
-export type SchemaValues<S extends ComponentSchema> = {
-  [K in keyof S]: number;
+/** Maps component fields to their JS-side value object. All values are plain numbers. */
+export type FieldValues<F extends ComponentFields> = {
+  readonly [K in F[number]]: number;
 };
 
-/** Maps a schema to a record of plain number arrays — one per field. */
-export type ColumnsForSchema<S extends ComponentSchema> = {
-  readonly [K in keyof S & string]: number[]
+/** Maps component fields to plain number[] columns — one per field. */
+export type ColumnsForSchema<F extends ComponentFields> = {
+  readonly [K in F[number]]: number[];
 };
+
+/** Backward compat alias. */
+export type SchemaValues<F extends ComponentFields> = FieldValues<F>;
 
 //=========================================================
-// ComponentDef<S> - phantom-typed component handle
+// ComponentDef<F> - phantom-typed component handle
 //=========================================================
 
 declare const __schema: unique symbol;
@@ -52,9 +54,9 @@ declare const __schema: unique symbol;
  * A phantom-typed component handle.
  *
  * At runtime this is just a ComponentID (branded number).
- * The generic S is erased but carries schema info at compile-time,
- * so registry.get(Position, entity) returns { x: number, y: number, z: number }
- * and registry.set enforces all required fields.
+ * The generic F is erased but carries field info at compile-time,
+ * so get_column(Pos, "x") returns number[] and enforces that "x"
+ * is a valid field name on Pos.
  */
-export type ComponentDef<S extends ComponentSchema = ComponentSchema> =
-  ComponentID & { readonly [__schema]: S };
+export type ComponentDef<F extends ComponentFields = ComponentFields> =
+  ComponentID & { readonly [__schema]: F };

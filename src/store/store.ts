@@ -16,8 +16,8 @@ import {
   as_component_id,
   type ComponentDef,
   type ComponentID,
-  type ComponentSchema,
-  type SchemaValues,
+  type ComponentFields,
+  type FieldValues,
 } from "../component/component";
 import { unsafe_cast } from "type_primitives";
 import type { Archetype, ArchetypeID } from "../archetype/archetype";
@@ -60,10 +60,10 @@ export class Store {
 
   // Deferred structural change buffers — flat parallel arrays (no per-op allocation)
   private pending_add_ids: EntityID[] = [];
-  private pending_add_defs: ComponentDef<ComponentSchema>[] = [];
+  private pending_add_defs: ComponentDef<ComponentFields>[] = [];
   private pending_add_values: Record<string, number>[] = [];
   private pending_remove_ids: EntityID[] = [];
-  private pending_remove_defs: ComponentDef<ComponentSchema>[] = [];
+  private pending_remove_defs: ComponentDef<ComponentFields>[] = [];
 
   constructor() {
     this.archetype_registry = new ArchetypeRegistry(this.component_metas);
@@ -177,10 +177,10 @@ export class Store {
   // Deferred structural changes
   //=========================================================
 
-  public add_component_deferred<S extends ComponentSchema>(
+  public add_component_deferred<F extends ComponentFields>(
     entity_id: EntityID,
-    def: ComponentDef<S>,
-    values: SchemaValues<S>,
+    def: ComponentDef<F>,
+    values: FieldValues<F>,
   ): void {
     if (__DEV__ && !this.is_alive(entity_id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_add_ids.push(entity_id);
@@ -190,7 +190,7 @@ export class Store {
 
   public remove_component_deferred(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): void {
     if (__DEV__ && !this.is_alive(entity_id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
     this.pending_remove_ids.push(entity_id);
@@ -228,27 +228,25 @@ export class Store {
   // Component registration
   //=========================================================
 
-  public register_component<S extends ComponentSchema>(schema: S): ComponentDef<S> {
+  public register_component<F extends readonly string[]>(fields: F): ComponentDef<F> {
     const id = as_component_id(this.component_count++);
-
-    const field_names = Object.keys(schema);
+    const field_names = fields as unknown as string[];
     const field_index: Record<string, number> = Object.create(null);
     for (let i = 0; i < field_names.length; i++) {
       field_index[field_names[i]] = i;
     }
     this.component_metas.push({ field_names, field_index });
-
-    return unsafe_cast<ComponentDef<S>>(id);
+    return unsafe_cast<ComponentDef<F>>(id);
   }
 
   //=========================================================
   // Component operations
   //=========================================================
 
-  public add_component<S extends ComponentSchema>(
+  public add_component<F extends ComponentFields>(
     entity_id: EntityID,
-    def: ComponentDef<S>,
-    values: SchemaValues<S>,
+    def: ComponentDef<F>,
+    values: FieldValues<F>,
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -288,7 +286,7 @@ export class Store {
 
   public add_components(
     entity_id: EntityID,
-    entries: { def: ComponentDef<ComponentSchema>; values: Record<string, number> }[],
+    entries: { def: ComponentDef<ComponentFields>; values: Record<string, number> }[],
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -334,7 +332,7 @@ export class Store {
 
   public remove_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -364,7 +362,7 @@ export class Store {
 
   public has_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): boolean {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);

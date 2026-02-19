@@ -3,25 +3,18 @@
  * SparseMap — O(1) integer-keyed map with cache-friendly dense value storage
  *
  * Keys are non-negative integers. Two parallel dense arrays (keys and values)
- * enable fast linear iteration over entries. A sparse Int32Array maps
- * key → dense index for O(1) get/set/delete.
+ * enable fast linear iteration over entries. A sparse number[] maps
+ * key → dense index for O(1) get/set/delete. Membership is verified by
+ * cross-referencing the dense key array (piecs-style), so stale sparse
+ * entries are harmless.
  * Deletion uses swap-and-pop to keep data dense.
  *
  ***/
 
-const ABSENT = -1;
-const INITIAL_CAPACITY = 64;
-
 export class SparseMap<V> {
   private _dense_keys: number[] = [];
   private _dense_vals: V[] = [];
-  private _sparse: Int32Array;
-  private _capacity: number;
-
-  constructor(initial_capacity = INITIAL_CAPACITY) {
-    this._capacity = initial_capacity;
-    this._sparse = new Int32Array(initial_capacity).fill(ABSENT);
-  }
+  private _sparse: number[] = [];
 
   get size(): number {
     return this._dense_keys.length;
@@ -33,12 +26,11 @@ export class SparseMap<V> {
   }
 
   has(key: number): boolean {
-    return key >= 0 && key < this._capacity && this._sparse[key] !== ABSENT;
+    return this._dense_keys[this._sparse[key]] === key;
   }
 
   get(key: number): V | undefined {
-    if (!this.has(key)) return undefined;
-    return this._dense_vals[this._sparse[key]];
+    return this.has(key) ? this._dense_vals[this._sparse[key]] : undefined;
   }
 
   /**
@@ -49,7 +41,6 @@ export class SparseMap<V> {
       this._dense_vals[this._sparse[key]] = value;
       return;
     }
-    this._ensure(key);
     this._sparse[key] = this._dense_keys.length;
     this._dense_keys.push(key);
     this._dense_vals.push(value);
@@ -68,16 +59,13 @@ export class SparseMap<V> {
     this._sparse[last_key] = row;
     this._dense_keys.pop();
     this._dense_vals.pop();
-    this._sparse[key] = ABSENT;
     return true;
   }
 
   clear(): void {
-    for (let i = 0; i < this._dense_keys.length; i++) {
-      this._sparse[this._dense_keys[i]] = ABSENT;
-    }
     this._dense_keys.length = 0;
     this._dense_vals.length = 0;
+    this._sparse.length = 0;
   }
 
   for_each(fn: (key: number, value: V) => void): void {
@@ -98,19 +86,5 @@ export class SparseMap<V> {
         return { value: undefined as unknown as [number, V], done: true };
       },
     };
-  }
-
-  //=========================================================
-  // Internal
-  //=========================================================
-
-  private _ensure(key: number): void {
-    if (key < this._capacity) return;
-    let cap = this._capacity;
-    while (cap <= key) cap *= 2;
-    const next = new Int32Array(cap).fill(ABSENT);
-    next.set(this._sparse);
-    this._sparse = next;
-    this._capacity = cap;
   }
 }

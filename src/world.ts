@@ -25,8 +25,8 @@ import {
 import type { EntityID } from "./entity/entity";
 import type {
   ComponentDef,
-  ComponentSchema,
-  SchemaValues,
+  ComponentFields,
+  FieldValues,
 } from "./component/component";
 import type { SystemConfig, SystemDescriptor } from "./system/system";
 import type { SystemEntry } from "./schedule/schedule";
@@ -57,8 +57,8 @@ export class World implements QueryResolver {
   // Component registration
   //=========================================================
 
-  register_component<S extends ComponentSchema>(schema: S): ComponentDef<S> {
-    return this.store.register_component(schema);
+  register_component<F extends readonly string[]>(fields: F): ComponentDef<F> {
+    return this.store.register_component(fields);
   }
 
   //=========================================================
@@ -86,10 +86,10 @@ export class World implements QueryResolver {
   // Component operations (immediate, for setup/spawning)
   //=========================================================
 
-  add_component<S extends ComponentSchema>(
+  add_component<F extends ComponentFields>(
     entity_id: EntityID,
-    def: ComponentDef<S>,
-    values: SchemaValues<S>,
+    def: ComponentDef<F>,
+    values: FieldValues<F>,
   ): void {
     this.store.add_component(entity_id, def, values);
   }
@@ -97,7 +97,7 @@ export class World implements QueryResolver {
   add_components(
     entity_id: EntityID,
     entries: {
-      def: ComponentDef<ComponentSchema>;
+      def: ComponentDef<ComponentFields>;
       values: Record<string, number>;
     }[],
   ): void {
@@ -106,14 +106,14 @@ export class World implements QueryResolver {
 
   remove_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): void {
     this.store.remove_component(entity_id, def);
   }
 
   has_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentSchema>,
+    def: ComponentDef<ComponentFields>,
   ): boolean {
     return this.store.has_component(entity_id, def);
   }
@@ -122,32 +122,32 @@ export class World implements QueryResolver {
   // Query (setup-time)
   //=========================================================
 
-  query<A extends ComponentDef<ComponentSchema>>(a: A): Query<[A]>;
+  query<A extends ComponentDef<ComponentFields>>(a: A): Query<[A]>;
   query<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
   >(a: A, b: B): Query<[A, B]>;
   query<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
-    C extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
+    C extends ComponentDef<ComponentFields>,
   >(a: A, b: B, c: C): Query<[A, B, C]>;
   query<
-    A extends ComponentDef<ComponentSchema>,
-    B extends ComponentDef<ComponentSchema>,
-    C extends ComponentDef<ComponentSchema>,
-    D extends ComponentDef<ComponentSchema>,
+    A extends ComponentDef<ComponentFields>,
+    B extends ComponentDef<ComponentFields>,
+    C extends ComponentDef<ComponentFields>,
+    D extends ComponentDef<ComponentFields>,
   >(a: A, b: B, c: C, d: D): Query<[A, B, C, D]>;
   query(
-    ...defs: ComponentDef<ComponentSchema>[]
-  ): Query<ComponentDef<ComponentSchema>[]>;
-  query(): Query<ComponentDef<ComponentSchema>[]> {
+    ...defs: ComponentDef<ComponentFields>[]
+  ): Query<ComponentDef<ComponentFields>[]>;
+  query(): Query<ComponentDef<ComponentFields>[]> {
     const mask = this.scratch_mask;
     mask._words.fill(0);
     for (let i = 0; i < arguments.length; i++) {
       mask.set(arguments[i] as unknown as number);
     }
-    const defs = Array.from(arguments) as ComponentDef<ComponentSchema>[];
+    const defs = Array.from(arguments) as ComponentDef<ComponentFields>[];
     return this._resolve_query(mask.copy(), null, null, defs);
   }
 
@@ -159,7 +159,7 @@ export class World implements QueryResolver {
     include: BitSet,
     exclude: BitSet | null,
     any_of: BitSet | null,
-    defs: readonly ComponentDef<ComponentSchema>[],
+    defs: readonly ComponentDef<ComponentFields>[],
   ): Query<any> {
     const inc_hash = include.hash();
     const exc_hash = exclude ? exclude.hash() : 0;
@@ -180,7 +180,7 @@ export class World implements QueryResolver {
     );
     const q = new Query(
       result,
-      defs as ComponentDef<ComponentSchema>[],
+      defs as ComponentDef<ComponentFields>[],
       this,
       include.copy(),
       exclude?.copy() ?? null,
@@ -225,7 +225,7 @@ export class World implements QueryResolver {
   // System registration
   //=========================================================
 
-  register_system<Defs extends readonly ComponentDef<ComponentSchema>[]>(
+  register_system<Defs extends readonly ComponentDef<ComponentFields>[]>(
     fn: (q: Query<Defs>, ctx: SystemContext, dt: number) => void,
     query_fn: (qb: QueryBuilder) => Query<Defs>,
   ): SystemDescriptor;
