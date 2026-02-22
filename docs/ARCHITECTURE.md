@@ -98,8 +98,8 @@ At registration, the Store assigns a `ComponentID` (sequential integer) and reco
 
 ```ts
 interface ComponentMeta {
-  field_names: string[];       // ["x", "y"]
-  field_index: Record<string, number>;  // { x: 0, y: 1 }
+  field_names: string[]; // ["x", "y"]
+  field_index: Record<string, number>; // { x: 0, y: 1 }
 }
 ```
 
@@ -162,8 +162,8 @@ Columns are organized into `ArchetypeColumnGroup` objects, one per data-bearing 
 
 ```ts
 interface ArchetypeColumnGroup {
-  layout: ArchetypeColumnLayout;  // field_names, field_index
-  columns: number[][];            // indexed by field_index
+  layout: ArchetypeColumnLayout; // field_names, field_index
+  columns: number[][]; // indexed by field_index
   record: Record<string, number[]>; // { "x": columns[0], "y": columns[1] }
 }
 ```
@@ -199,8 +199,8 @@ Each archetype caches add/remove transitions to other archetypes:
 
 ```ts
 interface ArchetypeEdge {
-  add: ArchetypeID | null;     // "add component X" → target archetype
-  remove: ArchetypeID | null;  // "remove component X" → target archetype
+  add: ArchetypeID | null; // "add component X" → target archetype
+  remove: ArchetypeID | null; // "remove component X" → target archetype
 }
 ```
 
@@ -335,7 +335,7 @@ hash(include, exclude, any_of) → Map<number, QueryCacheEntry[]>
 The hash combines three BitSet hashes using xor with golden-ratio multipliers to reduce collisions:
 
 ```ts
-key = (inc_hash ^ imul(exc_hash, 0x9e3779b9) ^ imul(any_hash, 0x517cc1b7)) | 0
+key = (inc_hash ^ imul(exc_hash, 0x9e3779b9) ^ imul(any_hash, 0x517cc1b7)) | 0;
 ```
 
 Within a bucket, entries are matched by exact `BitSet.equals()` on all three masks.
@@ -406,12 +406,15 @@ When registered, the World assigns a `SystemID` and returns a frozen `SystemDesc
 
 ### Schedule phases
 
-The Schedule manages six phases:
+The Schedule manages seven phases:
 
 ```
-Startup (once):     PRE_STARTUP → STARTUP → POST_STARTUP
-Update (per frame): PRE_UPDATE  → UPDATE  → POST_UPDATE
+Startup (once):          PRE_STARTUP → STARTUP → POST_STARTUP
+Fixed update (per tick): FIXED_UPDATE
+Update (per frame):      PRE_UPDATE  → UPDATE  → POST_UPDATE
 ```
+
+`FIXED_UPDATE` runs at a configurable fixed timestep (default 1/60s) using an accumulator. On each `world.update(dt)`, the accumulator is incremented by `dt` and the fixed phase runs zero or more times to catch up. Spiral-of-death protection caps at `max_fixed_steps` iterations per frame (default 4). `world.fixed_alpha` exposes `accumulator / fixed_timestep` for rendering interpolation. If no systems are registered in `FIXED_UPDATE`, the accumulator loop is skipped entirely.
 
 Each phase holds a list of `SystemNode` objects:
 
@@ -419,8 +422,8 @@ Each phase holds a list of `SystemNode` objects:
 interface SystemNode {
   descriptor: SystemDescriptor;
   insertion_order: number;
-  before: Set<SystemDescriptor>;  // "I must run before these"
-  after: Set<SystemDescriptor>;   // "I must run after these"
+  before: Set<SystemDescriptor>; // "I must run before these"
+  after: Set<SystemDescriptor>; // "I must run after these"
 }
 ```
 
@@ -452,6 +455,25 @@ run_label(label, ctx, dt):
 ```
 
 The flush after each phase ensures that the next phase sees a consistent state.
+
+### Fixed update loop
+
+Inside `world.update(dt)`:
+
+```
+1. clear events
+2. if FIXED_UPDATE has systems:
+     accumulator += dt
+     clamp accumulator to max_fixed_steps * fixed_timestep
+     while accumulator >= fixed_timestep:
+       run FIXED_UPDATE (fixed_timestep)
+       accumulator -= fixed_timestep
+3. run PRE_UPDATE  (dt)
+4. run UPDATE      (dt)
+5. run POST_UPDATE (dt)
+```
+
+Fixed phase runs before variable phases so variable systems always see the latest fixed-step state.
 
 ---
 
@@ -495,8 +517,8 @@ This ordering ensures that a component added and the entity destroyed in the sam
 The `_flush_adds` and `_flush_destroyed` methods inline entity ID unpacking (avoiding function call overhead) and hoist frequently-accessed arrays to locals:
 
 ```ts
-const idx = (eid as number) & INDEX_MASK;   // inline get_entity_index
-const gen = (eid as number) >> INDEX_BITS;   // inline get_entity_generation
+const idx = (eid as number) & INDEX_MASK; // inline get_entity_index
+const gen = (eid as number) >> INDEX_BITS; // inline get_entity_generation
 ```
 
 They also check for stale entities (generation mismatch) and skip them silently — an entity destroyed in one deferred op shouldn't crash a subsequent deferred op targeting the same entity.
@@ -515,9 +537,9 @@ Each event type gets an `EventChannel` that stores data in SoA layout, matching 
 
 ```ts
 class EventChannel {
-  field_names: string[];     // ["target", "amount"]
-  columns: number[][];       // [[...targets], [...amounts]]
-  reader: EventReader<F>;    // { length, target: number[], amount: number[] }
+  field_names: string[]; // ["target", "amount"]
+  columns: number[][]; // [[...targets], [...amounts]]
+  reader: EventReader<F>; // { length, target: number[], amount: number[] }
 }
 ```
 
@@ -535,7 +557,9 @@ ctx.emit(OnReset);
 
 // Read — check count
 const r = ctx.read(OnReset);
-if (r.length > 0) { /* signal fired */ }
+if (r.length > 0) {
+  /* signal fired */
+}
 ```
 
 ### Data events
@@ -611,23 +635,23 @@ The query is resolved once and captured in the closure. Each frame, the schedule
 
 `number[]`-backed bit set with auto-grow. Each 32-bit word holds 32 component bits. Operations:
 
-| Operation | Complexity | Method |
-|---|---|---|
-| Has bit | O(1) | `has(bit)` |
-| Set bit | O(1) amortized | `set(bit)` |
-| Clear bit | O(1) | `clear(bit)` |
-| Superset check | O(words) | `contains(other)` |
-| Intersection check | O(words) | `overlaps(other)` |
-| Equality | O(words) | `equals(other)` |
-| Hash (FNV-1a) | O(words) | `hash()` |
-| Iterate set bits | O(set bits) | `for_each(fn)` |
+| Operation          | Complexity     | Method            |
+| ------------------ | -------------- | ----------------- |
+| Has bit            | O(1)           | `has(bit)`        |
+| Set bit            | O(1) amortized | `set(bit)`        |
+| Clear bit          | O(1)           | `clear(bit)`      |
+| Superset check     | O(words)       | `contains(other)` |
+| Intersection check | O(words)       | `overlaps(other)` |
+| Equality           | O(words)       | `equals(other)`   |
+| Hash (FNV-1a)      | O(words)       | `hash()`          |
+| Iterate set bits   | O(set bits)    | `for_each(fn)`    |
 
 **Bit extraction in `for_each`:**
 
 ```ts
-const t = word & (-word >>> 0);      // isolate lowest set bit
-const bit_pos = 31 - Math.clz32(t);  // find its position
-word ^= t;                           // clear it
+const t = word & (-word >>> 0); // isolate lowest set bit
+const bit_pos = 31 - Math.clz32(t); // find its position
+word ^= t; // clear it
 ```
 
 `-word >>> 0` computes the two's complement negation as an unsigned 32-bit integer. AND-ing with the original isolates the lowest set bit. `Math.clz32` counts leading zeros to find the bit position.
@@ -650,9 +674,9 @@ TypedArrays have fixed length. `GrowableTypedArray<T>` wraps one with a separate
 
 ---
 
-## Dev/Prod guards
+## Dev guards
 
-The codebase uses compile-time `__DEV__` and `__PROD__` flags. Dev-only code is wrapped in `if (__DEV__) { ... }` blocks.
+The codebase uses compile-time `__DEV__` flag. Dev-only code is wrapped in `if (__DEV__) { ... }` blocks.
 
 **During development** (Vite dev server, tests): `__DEV__` is statically replaced with `true`, so all guards are active.
 

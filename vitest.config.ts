@@ -5,7 +5,6 @@ import path from "path";
 export default defineConfig({
   define: {
     __DEV__: true,
-    __PROD__: false,
   },
   test: {
     environment: "node",

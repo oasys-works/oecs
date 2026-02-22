@@ -14,7 +14,7 @@
  *
  * Usage:
  *
- *   const world = new World();
+ *   const world = new World({ fixed_timestep: 1/50 });
  *
  *   const Pos = world.register_component(["x", "y"] as const);
  *   const Vel = world.register_component(["vx", "vy"] as const);
@@ -68,6 +68,11 @@ import { bucket_push } from "./utils/arrays";
 
 const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
 
+export interface WorldOptions {
+  fixed_timestep?: number;
+  max_fixed_steps?: number;
+}
+
 export class World implements QueryResolver {
   private readonly store: Store;
   private readonly schedule: Schedule;
@@ -76,16 +81,35 @@ export class World implements QueryResolver {
   private systems: Set<SystemDescriptor> = new Set();
   private next_system_id = 0;
 
+  // Fixed timestep accumulator
+  private _fixed_timestep: number;
+  private _accumulator = 0;
+  private _max_fixed_steps: number;
+
   // Query deduplication: hash(include, exclude, any_of) → bucket of cache entries.
   // Multiple queries can share the same hash (collision), so each bucket is an array.
   private query_cache: Map<number, QueryCacheEntry[]> = new Map();
   // Reusable BitSet for building query masks — avoids allocation per query() call
   private scratch_mask: BitSet = new BitSet();
 
-  constructor() {
+  constructor(options?: WorldOptions) {
     this.store = new Store();
     this.schedule = new Schedule();
     this.ctx = new SystemContext(this.store);
+    this._fixed_timestep = options?.fixed_timestep ?? 1 / 60;
+    this._max_fixed_steps = options?.max_fixed_steps ?? 4;
+  }
+
+  get fixed_timestep(): number {
+    return this._fixed_timestep;
+  }
+
+  set fixed_timestep(value: number) {
+    this._fixed_timestep = value;
+  }
+
+  get fixed_alpha(): number {
+    return this._accumulator / this._fixed_timestep;
   }
 
   register_component<F extends readonly string[]>(fields: F): ComponentDef<F> {
@@ -346,6 +370,19 @@ export class World implements QueryResolver {
 
   update(delta_time: number): void {
     this.store.clear_events();
+
+    if (this.schedule.has_fixed_systems()) {
+      this._accumulator += delta_time;
+      const max_acc = this._max_fixed_steps * this._fixed_timestep;
+      if (this._accumulator > max_acc) {
+        this._accumulator = max_acc;
+      }
+      while (this._accumulator >= this._fixed_timestep) {
+        this.schedule.run_fixed_update(this.ctx, this._fixed_timestep);
+        this._accumulator -= this._fixed_timestep;
+      }
+    }
+
     this.schedule.run_update(this.ctx, delta_time);
   }
 

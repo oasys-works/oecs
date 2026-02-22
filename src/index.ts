@@ -2,6 +2,7 @@
 export { World } from "./world";
 export { Query, QueryBuilder, SystemContext } from "./query";
 export { SCHEDULE } from "./schedule";
+export type { WorldOptions } from "./world";
 
 // Types
 export type { EntityID } from "./entity";

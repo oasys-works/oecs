@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
@@ -30,11 +30,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/2khan/oecs.git"
+    "url": "https://github.com/oasys-works/oecs.git"
   },
-  "homepage": "https://github.com/2khan/oecs#readme",
+  "homepage": "https://github.com/oasys-works/oecs#readme",
   "bugs": {
-    "url": "https://github.com/2khan/oecs/issues"
+    "url": "https://github.com/oasys-works/oecs/issues"
   },
   "license": "MIT",
   "keywords": [

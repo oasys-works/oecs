@@ -401,4 +401,63 @@ describe("Schedule", () => {
     expect(() => schedule.run_startup(ctx)).not.toThrow();
     expect(() => schedule.run_update(ctx, 0.016)).not.toThrow();
   });
+
+  //=========================================================
+  // Fixed update
+  //=========================================================
+
+  it("has_fixed_systems returns false when no systems registered", () => {
+    const schedule = new Schedule();
+    expect(schedule.has_fixed_systems()).toBe(false);
+  });
+
+  it("has_fixed_systems returns true after adding a system", () => {
+    const schedule = new Schedule();
+    const sys = make_system();
+    schedule.add_systems(SCHEDULE.FIXED_UPDATE, sys);
+    expect(schedule.has_fixed_systems()).toBe(true);
+  });
+
+  it("has_fixed_systems returns false after removing the only system", () => {
+    const schedule = new Schedule();
+    const sys = make_system();
+    schedule.add_systems(SCHEDULE.FIXED_UPDATE, sys);
+    schedule.remove_system(sys);
+    expect(schedule.has_fixed_systems()).toBe(false);
+  });
+
+  it("run_fixed_update executes FIXED_UPDATE systems with fixed_dt", () => {
+    const schedule = new Schedule();
+    const ctx = make_ctx();
+
+    let received_dt = 0;
+    const sys = make_system({
+      fn: (_ctx, dt) => {
+        received_dt = dt;
+      },
+    });
+
+    schedule.add_systems(SCHEDULE.FIXED_UPDATE, sys);
+    schedule.run_fixed_update(ctx, 1 / 50);
+
+    expect(received_dt).toBeCloseTo(1 / 50);
+  });
+
+  it("run_fixed_update respects ordering constraints", () => {
+    const schedule = new Schedule();
+    const ctx = make_ctx();
+    const order: string[] = [];
+
+    const a = make_system({ fn: () => order.push("a") });
+    const b = make_system({ fn: () => order.push("b") });
+
+    schedule.add_systems(
+      SCHEDULE.FIXED_UPDATE,
+      { system: b, ordering: { after: [a] } },
+      a,
+    );
+
+    schedule.run_fixed_update(ctx, 1 / 60);
+    expect(order).toEqual(["a", "b"]);
+  });
 });

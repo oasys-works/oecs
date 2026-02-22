@@ -12,9 +12,10 @@ function replaceDevGlobals(): Plugin {
     name: "replace-dev-globals",
     transform(code, id) {
       if (id.includes("node_modules")) return null;
-      const result = code
-        .replace(/\b__DEV__\b/g, 'process.env.NODE_ENV !== "production"')
-        .replace(/\b__PROD__\b/g, 'process.env.NODE_ENV === "production"');
+      const result = code.replace(
+        /\b__DEV__\b/g,
+        'process.env.NODE_ENV !== "production"',
+      );
       return result !== code ? result : null;
     },
   };
@@ -33,7 +34,6 @@ export default defineConfig(({ command }) => ({
       ? {}
       : {
           __DEV__: "true",
-          __PROD__: "false",
         },
 
   resolve: {
@@ -50,6 +50,7 @@ export default defineConfig(({ command }) => ({
   },
 
   build: {
+    target: "es2022",
     lib: {
       entry: path.resolve(__dirname, "src/index.ts"),
       formats: ["es", "cjs"],

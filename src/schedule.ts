@@ -1,9 +1,10 @@
 /***
  * Schedule — System execution lifecycle with topological ordering.
  *
- * Systems are organized into 6 phases:
- *   PRE_STARTUP → STARTUP → POST_STARTUP  (run once via world.startup())
- *   PRE_UPDATE  → UPDATE  → POST_UPDATE   (run every frame via world.update(dt))
+ * Systems are organized into 7 phases:
+ *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via world.startup())
+ *   FIXED_UPDATE                            (run at fixed timestep via world.update(dt))
+ *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via world.update(dt))
  *
  * Within each phase, systems are topologically sorted using Kahn's
  * algorithm, respecting before/after ordering constraints. Insertion
@@ -32,6 +33,7 @@ export enum SCHEDULE {
   PRE_STARTUP = "PRE_STARTUP",
   STARTUP = "STARTUP",
   POST_STARTUP = "POST_STARTUP",
+  FIXED_UPDATE = "FIXED_UPDATE",
   PRE_UPDATE = "PRE_UPDATE",
   UPDATE = "UPDATE",
   POST_UPDATE = "POST_UPDATE",
@@ -76,6 +78,7 @@ export class Schedule {
     for (let i = 0; i < STARTUP_LABELS.length; i++) {
       this.label_systems.set(STARTUP_LABELS[i], []);
     }
+    this.label_systems.set(SCHEDULE.FIXED_UPDATE, []);
     for (let i = 0; i < UPDATE_LABELS.length; i++) {
       this.label_systems.set(UPDATE_LABELS[i], []);
     }
@@ -146,6 +149,14 @@ export class Schedule {
     for (const label of UPDATE_LABELS) {
       this.run_label(label, ctx, delta_time);
     }
+  }
+
+  run_fixed_update(ctx: SystemContext, fixed_dt: number): void {
+    this.run_label(SCHEDULE.FIXED_UPDATE, ctx, fixed_dt);
+  }
+
+  has_fixed_systems(): boolean {
+    return this.label_systems.get(SCHEDULE.FIXED_UPDATE)!.length > 0;
   }
 
   get_all_systems(): SystemDescriptor[] {
