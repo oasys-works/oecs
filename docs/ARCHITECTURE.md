@@ -13,9 +13,10 @@ This document explains the internal design of OECS: how data is stored, how enti
 7. [Queries](#queries)
 8. [Systems and scheduling](#systems-and-scheduling)
 9. [Deferred operations](#deferred-operations)
-10. [World facade](#world-facade)
-11. [Type primitives](#type-primitives)
-12. [Dev/Prod guards](#devprod-guards)
+10. [Events](#events)
+11. [World facade](#world-facade)
+12. [Type primitives](#type-primitives)
+13. [Dev/Prod guards](#devprod-guards)
 
 ---
 
@@ -28,14 +29,15 @@ World (public API facade)
   │     ├── Component metadata registry
   │     ├── Archetype graph (BitSet masks, edge cache)
   │     ├── Entity → archetype/row mapping
-  │     └── Deferred operation buffers
+  │     ├── Deferred operation buffers
+  │     └── Event channels
   ├── Schedule (system execution)
   │     └── Per-phase topological sort (Kahn's algorithm)
   └── SystemContext (system interface)
-        └── Deferred add/remove/destroy wrappers
+        └── Deferred add/remove/destroy + event emit/read
 ```
 
-External code talks to **World**. Systems receive a **SystemContext**. Nothing else is public.
+External code talks to **World**. Systems receive a **SystemContext**. The Store and Schedule are never exposed outside World.
 
 ---
 
@@ -43,18 +45,18 @@ External code talks to **World**. Systems receive a **SystemContext**. Nothing e
 
 **File:** `src/entity.ts`
 
-An EntityID is a 32-bit integer packing two fields:
+An EntityID is a packed integer using 31 of 32 bits. The sign bit is never set, so all bitwise results stay positive — no unsigned coercion is needed.
 
 ```
-  31        20 19           0
+  30        20 19           0
   ┌──────────┬──────────────┐
   │generation│    index     │
-  │ (12 bit) │  (20 bit)   │
+  │ (11 bit) │  (20 bit)   │
   └──────────┴──────────────┘
 ```
 
-- **Index** (bits 0-19): Slot number in the entity arrays. Max 1,048,575 entities.
-- **Generation** (bits 20-31): Reuse counter. Max 4,095 before wrapping.
+- **Index** (bits 0–19): Slot number in the entity arrays. Max 1,048,575 entities.
+- **Generation** (bits 20–30): Reuse counter. Max 2,047 before overflow.
 
 ### Why generational IDs?
 
@@ -63,12 +65,12 @@ When an entity is destroyed, its slot is recycled. Without generations, a stale 
 ### Operations
 
 ```
-create_entity_id(index, gen) → ((gen << 20) | index) >>> 0
+create_entity_id(index, gen) → (gen << 20) | index
 get_entity_index(id)         → id & 0xFFFFF
-get_entity_generation(id)    → (id >>> 20) & 0xFFF
+get_entity_generation(id)    → id >> 20
 ```
 
-The `>>> 0` in `create_entity_id` coerces the result to an unsigned 32-bit integer, preventing negative values when the generation fills the sign bit.
+Since the packed value fits in 31 bits, signed right-shift (`>>`) extracts the generation cleanly without masking.
 
 ### Slot allocator
 
@@ -217,7 +219,8 @@ The Store is the internal data orchestrator. It owns:
 3. **Archetype graph** — all archetypes, hash-bucketed lookup, graph edge cache
 4. **Entity mapping** — `entity_archetype[index]` and `entity_row[index]` arrays
 5. **Deferred buffers** — pending adds, removes, and destroys
-6. **Registered queries** — live Archetype[] arrays pushed into as new archetypes appear
+6. **Event channels** — SoA-based event storage and readers
+7. **Registered queries** — live Archetype[] arrays pushed into as new archetypes appear
 
 ### Archetype lookup
 
@@ -227,7 +230,7 @@ Archetypes are deduplicated by their BitSet mask. The Store uses a hash-bucketed
 BitSet.hash() → Map<number, ArchetypeID[]>
 ```
 
-To find an archetype for a mask: compute the hash, scan the bucket for an exact `BitSet.equals()` match. Buckets are typically 1-2 entries, so this is effectively O(1).
+To find an archetype for a mask: compute the hash, scan the bucket for an exact `BitSet.equals()` match. Buckets are typically 1–2 entries, so this is effectively O(1).
 
 ### Component index
 
@@ -266,9 +269,11 @@ add_component(entity, def, values):
   8. Update entity_archetype and entity_row
 ```
 
-### Adding multiple components at once
+### Batch add / remove
 
-`add_components` walks the archetype graph through all component additions to find the final target, then does a single move. This avoids intermediate transitions.
+`add_components` walks the archetype graph through all component additions to find the final target, then does a single entity move. This avoids intermediate archetype transitions when adding multiple components at once.
+
+`remove_components` works the same way via `arch_resolve_remove` — it walks through all removals to reach the final target archetype, then performs one transition. If no components were actually present (target equals source), it's a no-op.
 
 ---
 
@@ -351,6 +356,10 @@ The pre-allocated `args_buf` avoids creating a new array per archetype. `apply` 
 
 The system callback receives typed column-group objects (thanks to the `DefsToColumns` mapped type) and the entity count. The system is responsible for the inner `for` loop — this design pushes one function call per archetype instead of per entity.
 
+### `count()`
+
+`Query.count()` sums `entity_count` across all matching archetypes, giving a total entity count without iteration.
+
 ### Query composition
 
 Queries compose immutably via chaining:
@@ -400,7 +409,7 @@ When registered, the World assigns a `SystemID` and returns a frozen `SystemDesc
 The Schedule manages six phases:
 
 ```
-Startup (once):    PRE_STARTUP → STARTUP → POST_STARTUP
+Startup (once):     PRE_STARTUP → STARTUP → POST_STARTUP
 Update (per frame): PRE_UPDATE  → UPDATE  → POST_UPDATE
 ```
 
@@ -424,7 +433,7 @@ Within each phase, systems are sorted using **Kahn's algorithm** (BFS-based topo
 3. Pop the node with the **lowest insertion order** (stable tiebreaker)
 4. Decrement in-degrees of its neighbors; add newly-zero nodes to the ready queue
 5. Repeat until empty
-6. If result length ≠ node count → circular dependency detected → throw
+6. If result length != node count → circular dependency detected → throw
 
 The ready queue is sorted descending by insertion order so that `pop()` yields the lowest (earliest-registered) system first.
 
@@ -486,11 +495,74 @@ This ordering ensures that a component added and the entity destroyed in the sam
 The `_flush_adds` and `_flush_destroyed` methods inline entity ID unpacking (avoiding function call overhead) and hoist frequently-accessed arrays to locals:
 
 ```ts
-const idx = (eid as number) & INDEX_MASK;          // inline get_entity_index
-const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;  // inline get_entity_generation
+const idx = (eid as number) & INDEX_MASK;   // inline get_entity_index
+const gen = (eid as number) >> INDEX_BITS;   // inline get_entity_generation
 ```
 
 They also check for stale entities (generation mismatch) and skip them silently — an entity destroyed in one deferred op shouldn't crash a subsequent deferred op targeting the same entity.
+
+---
+
+## Events
+
+**File:** `src/event.ts`
+
+Events are fire-and-forget messages that systems emit within a frame and other systems can read during the same frame. They are auto-cleared at the start of each `world.update()` cycle.
+
+### Event channels
+
+Each event type gets an `EventChannel` that stores data in SoA layout, matching the component pattern:
+
+```ts
+class EventChannel {
+  field_names: string[];     // ["target", "amount"]
+  columns: number[][];       // [[...targets], [...amounts]]
+  reader: EventReader<F>;    // { length, target: number[], amount: number[] }
+}
+```
+
+The `reader` object is a pre-built view over the channel's columns. Its field properties are the actual backing arrays, so reads are zero-copy. The `length` property tracks how many events have been emitted this frame.
+
+### Signals
+
+Signals are zero-field events — they carry no data, just a count of how many times they were emitted. Internally, `emit_signal()` only increments `reader.length` without touching any columns.
+
+```ts
+const OnReset = world.register_signal();
+
+// Emit
+ctx.emit(OnReset);
+
+// Read — check count
+const r = ctx.read(OnReset);
+if (r.length > 0) { /* signal fired */ }
+```
+
+### Data events
+
+Events with fields store values in SoA columns:
+
+```ts
+const Damage = world.register_event(["target", "amount"] as const);
+
+// Emit
+ctx.emit(Damage, { target: entityId, amount: 50 });
+
+// Read
+const dmg = ctx.read(Damage);
+for (let i = 0; i < dmg.length; i++) {
+  const target = dmg.target[i];
+  const amount = dmg.amount[i];
+}
+```
+
+### Phantom typing
+
+`EventDef<F>` follows the same phantom-typing pattern as `ComponentDef<F>` — a branded `EventID` at runtime, carrying the field tuple `F` at compile time. This makes `emit()` and `read()` type-safe: the values object and reader fields are checked against the event's schema.
+
+### Lifecycle
+
+Events are cleared at the start of `world.update()` via `store.clear_events()`, which resets every channel's length and column arrays. This means events are only visible within the frame they were emitted.
 
 ---
 
@@ -503,7 +575,15 @@ World composes Store, Schedule, and SystemContext into a single public API. It:
 1. **Delegates data operations** to Store (create_entity, add_component, etc.)
 2. **Owns the query cache** — implements `QueryResolver` so queries created via `query()`, `QueryBuilder`, and `Query.and()/not()/or()` all share the same cache
 3. **Manages system lifecycle** — registration, scheduling, startup, update, dispose
-4. **Hides internals** — SystemContext is private; systems cannot access the Store or Schedule directly
+4. **Hides internals** — the Store and Schedule instances are private. Systems interact only through the SystemContext they receive as `ctx`
+
+### Convenience methods
+
+World exposes several methods that delegate to internal APIs, keeping common operations simple:
+
+- `get_field(def, entity, field)` — reads a single field value by looking up the entity's archetype and row
+- `emit(def, values?)` — emits events outside of systems, delegating to `store.emit_event` or `store.emit_signal`
+- `remove_components(entity, ...defs)` — batch remove delegating to `store.remove_components`
 
 ### System registration flow
 
@@ -525,7 +605,7 @@ The query is resolved once and captured in the closure. Each frame, the schedule
 
 ### Brand
 
-`Brand<T, Name>` adds a phantom symbol property to type `T`, creating nominal typing. Used for `EntityID`, `ComponentID`, `ArchetypeID`, `SystemID` — all are `number` at runtime but incompatible at compile time.
+`Brand<T, Name>` adds a phantom symbol property to type `T`, creating nominal typing. Used for `EntityID`, `ComponentID`, `ArchetypeID`, `SystemID`, `EventID` — all are `number` at runtime but incompatible at compile time.
 
 ### BitSet
 
@@ -572,16 +652,11 @@ TypedArrays have fixed length. `GrowableTypedArray<T>` wraps one with a separate
 
 ## Dev/Prod guards
 
-The codebase uses compile-time `__DEV__` and `__PROD__` flags defined in `vite.config.ts`:
+The codebase uses compile-time `__DEV__` and `__PROD__` flags. Dev-only code is wrapped in `if (__DEV__) { ... }` blocks.
 
-```ts
-define: {
-  __DEV__: JSON.stringify(process.env.NODE_ENV === "development"),
-  __PROD__: JSON.stringify(process.env.NODE_ENV === "production"),
-}
-```
+**During development** (Vite dev server, tests): `__DEV__` is statically replaced with `true`, so all guards are active.
 
-Dev-only code is wrapped in `if (__DEV__) { ... }` blocks. Vite replaces `__DEV__` with `false` in production builds, and the bundler tree-shakes the dead branches.
+**In the library build**: `__DEV__` is replaced with `process.env.NODE_ENV !== "production"`. This defers the decision to the consumer's bundler — in production builds, the expression evaluates to `false` and the bundler tree-shakes the dead branches. In development, the guards remain active.
 
 What's guarded:
 
@@ -592,4 +667,4 @@ What's guarded:
 - Duplicate system detection
 - Circular dependency detection in topological sort
 
-Production builds contain zero validation overhead — all guards are eliminated at build time.
+Production builds contain zero validation overhead.
