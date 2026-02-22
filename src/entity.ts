@@ -1,19 +1,20 @@
 /***
- * Entity — Packed generational ID (20-bit index | 12-bit generation).
+ * Entity — Packed generational ID (20-bit index | 11-bit generation).
  *
  * Each entity ID encodes a slot index (low 20 bits, max ~1M entities)
- * and a generation counter (high 12 bits, max 4095). When an entity is
+ * and a generation counter (high 11 bits, max 2047). When an entity is
  * destroyed, its slot's generation increments. Subsequent lookups with
  * the old ID detect the stale generation and treat the entity as dead.
  *
- * The packed layout fits in a single 32-bit integer, avoiding object
- * allocation and enabling fast bitwise extract/compose.
+ * The packed layout fits in 31 bits, so the sign bit is never set.
+ * This means all bitwise results are positive — no unsigned coercion
+ * needed, and signed right-shift extracts generation cleanly.
  *
- * Layout: [generation:12][index:20]
+ * Layout: [generation:11][index:20]
  *
  *   create_entity_id(index, gen) → (gen << 20) | index
  *   get_entity_index(id)         → id & 0xFFFFF
- *   get_entity_generation(id)    → (id >>> 20) & 0xFFF
+ *   get_entity_generation(id)    → id >> 20
  *
  ***/
 
@@ -25,7 +26,8 @@ export type EntityID = Brand<number, "entity_id">;
 export const INDEX_BITS = 20;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1; // 0xFFFFF — 20-bit mask
 export const MAX_INDEX = INDEX_MASK; // 1,048,575
-export const MAX_GENERATION = (1 << (32 - INDEX_BITS)) - 1; // 0xFFF (4095)
+export const GENERATION_BITS = 31 - INDEX_BITS; // 11
+export const MAX_GENERATION = (1 << GENERATION_BITS) - 1; // 0x7FF (2047)
 
 export const create_entity_id = (
   index: number,
@@ -40,12 +42,10 @@ export const create_entity_id = (
       throw new ECSError(ECS_ERROR.EID_MAX_GEN_OVERFLOW);
     }
   }
-  // >>> 0 coerces to unsigned 32-bit so the result is always a positive number,
-  // even when the generation fills the sign bit
-  return unsafe_cast<EntityID>(((generation << INDEX_BITS) | index) >>> 0);
+  return unsafe_cast<EntityID>((generation << INDEX_BITS) | index);
 };
 
 export const get_entity_index = (id: EntityID): number => id & INDEX_MASK;
 
 export const get_entity_generation = (id: EntityID): number =>
-  (id >>> INDEX_BITS) & MAX_GENERATION;
+  (id as number) >> INDEX_BITS;

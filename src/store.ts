@@ -299,6 +299,8 @@ export class Store {
 
     // Bump generation so stale IDs referencing this slot are detected as dead
     const generation = get_entity_generation(id);
+    if (__DEV__ && generation >= MAX_GENERATION)
+      throw new ECSError(ECS_ERROR.EID_MAX_GEN_OVERFLOW);
     this.entity_generations[index] = (generation + 1) & MAX_GENERATION;
     this.entity_free_indices.push(index);
     this.entity_alive_count--;
@@ -342,7 +344,7 @@ export class Store {
       const eid = buf[i];
       // Inline entity ID unpacking (avoids function call overhead in hot path)
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       // Skip if entity was already destroyed (stale generation)
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
@@ -358,6 +360,8 @@ export class Store {
 
       ent_arch[idx] = UNASSIGNED;
       ent_row[idx] = UNASSIGNED;
+      if (__DEV__ && gen >= MAX_GENERATION)
+        throw new ECSError(ECS_ERROR.EID_MAX_GEN_OVERFLOW);
       ent_gens[idx] = (gen + 1) & MAX_GENERATION;
       this.entity_free_indices.push(idx);
       this.entity_alive_count--;
@@ -428,7 +432,7 @@ export class Store {
       const eid = ids[i];
       // Inline entity ID unpacking
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
       const src_arch_id = ent_arch[idx] as ArchetypeID;
@@ -488,7 +492,7 @@ export class Store {
     for (let i = 0; i < n; i++) {
       const eid = ids[i];
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
       const src_arch_id = ent_arch[idx] as ArchetypeID;
