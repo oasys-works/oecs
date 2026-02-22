@@ -232,29 +232,30 @@ export class Archetype {
   public remove_entity(row: number): number {
     const last_row = this.length - 1;
     let swapped_entity_index = -1;
+    const ids = this._column_ids;
 
     if (row !== last_row) {
-      // Swap: move last entity's data into the vacated row
+      // Swap last entity into the vacated row, then shrink — single pass
       this.entity_ids[row] = this.entity_ids[last_row];
       swapped_entity_index = get_entity_index(this.entity_ids[row]);
-      const ids = this._column_ids;
       for (let i = 0; i < ids.length; i++) {
         const group = this.column_groups[ids[i]]!;
         for (let j = 0; j < group.columns.length; j++) {
           group.columns[j][row] = group.columns[j][last_row];
+          group.columns[j].pop();
+        }
+      }
+    } else {
+      // Last row — no swap needed, just shrink
+      for (let i = 0; i < ids.length; i++) {
+        const group = this.column_groups[ids[i]]!;
+        for (let j = 0; j < group.columns.length; j++) {
+          group.columns[j].pop();
         }
       }
     }
 
-    // Pop: remove the last slot
     this.entity_ids.pop();
-    const ids = this._column_ids;
-    for (let i = 0; i < ids.length; i++) {
-      const group = this.column_groups[ids[i]]!;
-      for (let j = 0; j < group.columns.length; j++) {
-        group.columns[j].pop();
-      }
-    }
     this.length--;
     return swapped_entity_index;
   }

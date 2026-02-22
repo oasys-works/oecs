@@ -12,7 +12,7 @@ A fast, minimal archetype-based Entity Component System written in TypeScript.
 ## Quick start
 
 ```ts
-import { World, SCHEDULE } from "oecs";
+import { World, SCHEDULE } from "@oasys/ecs";
 
 const world = new World();
 

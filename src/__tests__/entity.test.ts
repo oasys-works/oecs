@@ -77,7 +77,7 @@ describe("entity_id with generation", () => {
   it("encodes generation in high bits", () => {
     const id = create_entity_id(0, 1);
 
-    expect(id >>> 0).toBe(1 << INDEX_BITS);
+    expect(id).toBe(1 << INDEX_BITS);
   });
 
   it("MAX_INTEGER does not affect generation unpacking", () => {

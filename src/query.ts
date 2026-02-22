@@ -41,6 +41,7 @@ import type {
   FieldValues,
   ColumnsForSchema,
 } from "./component";
+import type { EventDef, EventReader } from "./event";
 import { BitSet } from "type_primitives";
 
 const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
@@ -107,6 +108,14 @@ export class Query<Defs extends readonly ComponentDef<ComponentFields>[]> {
   /** Number of matching archetypes (including empty ones). */
   get length(): number {
     return this._archetypes.length;
+  }
+
+  /** Total entity count across all matching archetypes. */
+  count(): number {
+    const archs = this._archetypes;
+    let total = 0;
+    for (let i = 0; i < archs.length; i++) total += archs[i].entity_count;
+    return total;
   }
   get archetypes(): readonly Archetype[] {
     return this._archetypes;
@@ -231,38 +240,65 @@ export class SystemContext {
   }
 
   /** Buffer an entity for deferred destruction (applied at phase flush). */
-  destroy_entity(id: EntityID): void {
+  destroy_entity(id: EntityID): this {
     this.store.destroy_entity_deferred(id);
+    return this;
   }
 
   flush_destroyed(): void {
     this.store.flush_destroyed();
   }
 
-  add_component(entity_id: EntityID, def: ComponentDef<readonly []>): void;
+  add_component(entity_id: EntityID, def: ComponentDef<readonly []>): this;
   add_component<F extends ComponentFields>(
     entity_id: EntityID,
     def: ComponentDef<F>,
     values: FieldValues<F>,
-  ): void;
+  ): this;
   add_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentFields>,
     values?: Record<string, number>,
-  ): void {
+  ): this {
     this.store.add_component_deferred(entity_id, def, values ?? EMPTY_VALUES);
+    return this;
   }
 
   remove_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentFields>,
-  ): void {
+  ): this {
     this.store.remove_component_deferred(entity_id, def);
+    return this;
   }
 
   /** Flush all deferred changes: structural (add/remove) first, then destructions. */
   flush(): void {
     this.store.flush_structural();
     this.store.flush_destroyed();
+  }
+
+  // =======================================================
+  // Events
+  // =======================================================
+
+  emit(def: EventDef<readonly []>): void;
+  emit<F extends ComponentFields>(
+    def: EventDef<F>,
+    values: FieldValues<F>,
+  ): void;
+  emit(
+    def: EventDef<ComponentFields>,
+    values?: Record<string, number>,
+  ): void {
+    if (values === undefined) {
+      this.store.emit_signal(def as EventDef<readonly []>);
+    } else {
+      this.store.emit_event(def, values);
+    }
+  }
+
+  read<F extends ComponentFields>(def: EventDef<F>): EventReader<F> {
+    return this.store.get_event_reader(def);
   }
 }

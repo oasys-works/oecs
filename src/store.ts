@@ -39,6 +39,12 @@ import {
   type ComponentFields,
   type FieldValues,
 } from "./component";
+import {
+  EventChannel,
+  as_event_id,
+  type EventDef,
+  type EventReader,
+} from "./event";
 import { unsafe_cast, BitSet } from "type_primitives";
 import {
   Archetype,
@@ -71,6 +77,11 @@ export class Store {
   // for building archetype column layouts.
   private component_metas: ComponentMeta[] = [];
   private component_count = 0;
+
+  // --- Event channels ---
+  // Parallel array indexed by EventID: each channel holds SoA columns + reader.
+  private event_channels: EventChannel[] = [];
+  private event_count = 0;
 
   // --- Archetype management ---
   private archetypes: Archetype[] = [];
@@ -288,6 +299,8 @@ export class Store {
 
     // Bump generation so stale IDs referencing this slot are detected as dead
     const generation = get_entity_generation(id);
+    if (__DEV__ && generation >= MAX_GENERATION)
+      throw new ECSError(ECS_ERROR.EID_MAX_GEN_OVERFLOW);
     this.entity_generations[index] = (generation + 1) & MAX_GENERATION;
     this.entity_free_indices.push(index);
     this.entity_alive_count--;
@@ -331,7 +344,7 @@ export class Store {
       const eid = buf[i];
       // Inline entity ID unpacking (avoids function call overhead in hot path)
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       // Skip if entity was already destroyed (stale generation)
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
@@ -347,6 +360,8 @@ export class Store {
 
       ent_arch[idx] = UNASSIGNED;
       ent_row[idx] = UNASSIGNED;
+      if (__DEV__ && gen >= MAX_GENERATION)
+        throw new ECSError(ECS_ERROR.EID_MAX_GEN_OVERFLOW);
       ent_gens[idx] = (gen + 1) & MAX_GENERATION;
       this.entity_free_indices.push(idx);
       this.entity_alive_count--;
@@ -417,7 +432,7 @@ export class Store {
       const eid = ids[i];
       // Inline entity ID unpacking
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
       const src_arch_id = ent_arch[idx] as ArchetypeID;
@@ -477,7 +492,7 @@ export class Store {
     for (let i = 0; i < n; i++) {
       const eid = ids[i];
       const idx = (eid as number) & INDEX_MASK;
-      const gen = ((eid as number) >>> INDEX_BITS) & MAX_GENERATION;
+      const gen = (eid as number) >> INDEX_BITS;
       if (idx >= hw || ent_gens[idx] !== gen) continue;
 
       const src_arch_id = ent_arch[idx] as ArchetypeID;
@@ -690,6 +705,48 @@ export class Store {
     this.entity_row[entity_index] = dst_row;
   }
 
+  /** Remove multiple components in one transition (resolves final archetype, then moves once). */
+  public remove_components(
+    entity_id: EntityID,
+    defs: ComponentDef<ComponentFields>[],
+  ): void {
+    if (!this.is_alive(entity_id)) {
+      if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+      return;
+    }
+
+    const entity_index = get_entity_index(entity_id);
+    const current_archetype_id = this.entity_archetype[
+      entity_index
+    ] as ArchetypeID;
+
+    // Walk the graph through all removes to find the final target archetype
+    let target_archetype_id: ArchetypeID = current_archetype_id;
+    for (let i = 0; i < defs.length; i++) {
+      target_archetype_id = this.arch_resolve_remove(
+        target_archetype_id,
+        defs[i] as unknown as ComponentID,
+      );
+    }
+
+    // If target === source, none of the components were present — no-op
+    if (target_archetype_id === current_archetype_id) return;
+
+    const source_arch = this.arch_get(current_archetype_id);
+    const target_arch = this.arch_get(target_archetype_id);
+
+    const src_row = this.entity_row[entity_index];
+    const dst_row = target_arch.add_entity(entity_id);
+
+    target_arch.copy_shared_from(source_arch, src_row, dst_row);
+
+    const swapped_idx = source_arch.remove_entity(src_row);
+    if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+
+    this.entity_archetype[entity_index] = target_archetype_id;
+    this.entity_row[entity_index] = dst_row;
+  }
+
   public has_component(
     entity_id: EntityID,
     def: ComponentDef<ComponentFields>,
@@ -813,5 +870,42 @@ export class Store {
 
   get archetype_count(): number {
     return this.archetypes.length;
+  }
+
+  // =======================================================
+  // Event channels
+  // =======================================================
+
+  public register_event<F extends readonly string[]>(
+    fields: F,
+  ): EventDef<F> {
+    const id = as_event_id(this.event_count++);
+    const channel = new EventChannel(fields as unknown as string[]);
+    this.event_channels.push(channel);
+    return unsafe_cast<EventDef<F>>(id);
+  }
+
+  public emit_event<F extends ComponentFields>(
+    def: EventDef<F>,
+    values: Record<string, number>,
+  ): void {
+    this.event_channels[def as unknown as number].emit(values);
+  }
+
+  public emit_signal(def: EventDef<readonly []>): void {
+    this.event_channels[def as unknown as number].emit_signal();
+  }
+
+  public get_event_reader<F extends ComponentFields>(
+    def: EventDef<F>,
+  ): EventReader<F> {
+    return this.event_channels[def as unknown as number].reader as EventReader<F>;
+  }
+
+  public clear_events(): void {
+    const channels = this.event_channels;
+    for (let i = 0; i < channels.length; i++) {
+      channels[i].clear();
+    }
   }
 }
