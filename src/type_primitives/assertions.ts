@@ -13,6 +13,8 @@ import { TYPE_ERROR, TypeError } from "./error";
 export const is_non_negative_integer = (v: number): boolean =>
   Number.isInteger(v) && v >= 0;
 
+export const is_non_null = (v: unknown): boolean => v !== null;
+
 export function assert<T, Result extends T = T>(
   value: T,
   condition: (v: T) => v is Result,

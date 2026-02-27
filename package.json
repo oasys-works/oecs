@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
@@ -26,6 +26,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest",
+    "bench": "vitest bench",
     "prepublishOnly": "pnpm build"
   },
   "repository": {

@@ -11,6 +11,11 @@
  *
  ***/
 
+import {
+  DEFAULT_INITIAL_CAPACITY,
+  GROWTH_FACTOR,
+} from "../../utils/constants";
+
 export type TypedArrayTag =
   | "f32"
   | "f64"
@@ -37,29 +42,29 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
 
   constructor(
     private readonly _ctor: new (n: number) => T,
-    initial_capacity = 16,
+    initial_capacity = DEFAULT_INITIAL_CAPACITY,
   ) {
     this._buf = new _ctor(initial_capacity);
   }
 
-  get length(): number {
+  public get length(): number {
     return this._len;
   }
 
-  push(value: number): void {
+  public push(value: number): void {
     if (this._len >= this._buf.length) this._grow();
     this._buf[this._len++] = value;
   }
 
-  pop(): number {
+  public pop(): number {
     return this._buf[--this._len];
   }
 
-  get(i: number): number {
+  public get(i: number): number {
     return this._buf[i];
   }
 
-  set_at(i: number, value: number): void {
+  public set_at(i: number, value: number): void {
     this._buf[i] = value;
   }
 
@@ -67,13 +72,13 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
    * Move the last element into slot i, decrement length.
    * Returns the value that was removed from slot i.
    */
-  swap_remove(i: number): number {
+  public swap_remove(i: number): number {
     const removed = this._buf[i];
     this._buf[i] = this._buf[--this._len];
     return removed;
   }
 
-  clear(): void {
+  public clear(): void {
     this._len = 0;
   }
 
@@ -82,7 +87,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
    * This reference is stable until the next push() that triggers a grow —
    * do not cache across entity additions.
    */
-  get buf(): T {
+  public get buf(): T {
     return this._buf;
   }
 
@@ -90,7 +95,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
    * Zero-copy subarray view of valid data (0..length-1).
    * Shares the backing buffer — invalidated if a subsequent push() grows.
    */
-  view(): T {
+  public view(): T {
     return this._buf.subarray(0, this._len) as unknown as T;
   }
 
@@ -106,57 +111,84 @@ export class GrowableTypedArray<T extends AnyTypedArray> {
     };
   }
 
+  /** Ensure the backing buffer can hold at least `capacity` elements without growing. */
+  public ensure_capacity(capacity: number): void {
+    if (capacity <= this._buf.length) return;
+    let new_cap = this._buf.length || 1;
+    while (new_cap < capacity) new_cap *= GROWTH_FACTOR;
+    const next = new this._ctor(new_cap);
+    next.set(this._buf.subarray(0, this._len));
+    this._buf = next;
+  }
+
+  /**
+   * Append `count` elements from `src` starting at `src_offset`.
+   * Grows if needed. Equivalent to push() in a loop but uses TypedArray.set().
+   */
+  public bulk_append(src: T, src_offset: number, count: number): void {
+    this.ensure_capacity(this._len + count);
+    this._buf.set(src.subarray(src_offset, src_offset + count) as any, this._len);
+    this._len += count;
+  }
+
+  /** Append `count` zeroes. Grows if needed. */
+  public bulk_append_zeroes(count: number): void {
+    this.ensure_capacity(this._len + count);
+    this._buf.fill(0, this._len, this._len + count);
+    this._len += count;
+  }
+
   private _grow(): void {
-    const next = new this._ctor(this._buf.length * 2);
+    const next = new this._ctor(this._buf.length * GROWTH_FACTOR);
     next.set(this._buf);
     this._buf = next;
   }
 }
 
 export class GrowableFloat32Array extends GrowableTypedArray<Float32Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Float32Array, initial_capacity);
   }
 }
 
 export class GrowableFloat64Array extends GrowableTypedArray<Float64Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Float64Array, initial_capacity);
   }
 }
 
 export class GrowableInt8Array extends GrowableTypedArray<Int8Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Int8Array, initial_capacity);
   }
 }
 
 export class GrowableInt16Array extends GrowableTypedArray<Int16Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Int16Array, initial_capacity);
   }
 }
 
 export class GrowableInt32Array extends GrowableTypedArray<Int32Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Int32Array, initial_capacity);
   }
 }
 
 export class GrowableUint8Array extends GrowableTypedArray<Uint8Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Uint8Array, initial_capacity);
   }
 }
 
 export class GrowableUint16Array extends GrowableTypedArray<Uint16Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Uint16Array, initial_capacity);
   }
 }
 
 export class GrowableUint32Array extends GrowableTypedArray<Uint32Array> {
-  constructor(initial_capacity = 16) {
+  constructor(initial_capacity = DEFAULT_INITIAL_CAPACITY) {
     super(Uint32Array, initial_capacity);
   }
 }

@@ -7,7 +7,7 @@
  * SystemDescriptor — the identity handle used for scheduling and ordering.
  *
  * Lifecycle:
- *   on_added(store)  — called once during world.startup()
+ *   on_added(ctx)    — called once during world.startup()
  *   fn(ctx, dt)      — called every frame by the schedule
  *   on_removed()     — called when the system is unregistered
  *   dispose()        — called during world.dispose()
@@ -20,7 +20,6 @@ import {
   is_non_negative_integer,
 } from "type_primitives";
 import type { SystemContext } from "./query";
-import type { Store } from "./store";
 
 export type SystemID = Brand<number, "system_id">;
 
@@ -35,7 +34,8 @@ export type SystemFn = (ctx: SystemContext, delta_time: number) => void;
 
 export interface SystemConfig {
   fn: SystemFn;
-  on_added?: (store: Store) => void;
+  name?: string;
+  on_added?: (ctx: SystemContext) => void;
   on_removed?: () => void;
   dispose?: () => void;
 }

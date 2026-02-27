@@ -20,13 +20,14 @@
 
 import { Brand, unsafe_cast } from "type_primitives";
 import { ECS_ERROR, ECSError } from "./utils/error";
+import { TOTAL_PACKED_BITS } from "./utils/constants";
 
 export type EntityID = Brand<number, "entity_id">;
 
 export const INDEX_BITS = 20;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1; // 0xFFFFF — 20-bit mask
 export const MAX_INDEX = INDEX_MASK; // 1,048,575
-export const GENERATION_BITS = 31 - INDEX_BITS; // 11
+export const GENERATION_BITS = TOTAL_PACKED_BITS - INDEX_BITS; // 11
 export const MAX_GENERATION = (1 << GENERATION_BITS) - 1; // 0x7FF (2047)
 
 export const create_entity_id = (

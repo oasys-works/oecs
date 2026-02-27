@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { World } from "../world";
+import { ECS } from "../ecs";
 import { SCHEDULE } from "../schedule";
 import type { SystemContext } from "../query";
 
 describe("Event system", () => {
   it("emit in one system, read in a later system within the same update", () => {
-    const world = new World();
+    const world = new ECS();
     const Damage = world.register_event(["target", "amount"] as const);
     const received: { target: number; amount: number }[] = [];
 
@@ -34,17 +34,17 @@ describe("Event system", () => {
   });
 
   it("events are cleared between frames", () => {
-    const world = new World();
+    const world = new ECS();
     const Hit = world.register_event(["damage"] as const);
 
-    let readLength = -1;
+    let read_length = -1;
     let frame = 0;
     const sys = world.register_system({
       fn(ctx: SystemContext) {
         if (frame === 0) {
           ctx.emit(Hit, { damage: 99 });
         }
-        readLength = ctx.read(Hit).length;
+        read_length = ctx.read(Hit).length;
       },
     });
 
@@ -53,15 +53,15 @@ describe("Event system", () => {
 
     frame = 0;
     world.update(0);
-    expect(readLength).toBe(1);
+    expect(read_length).toBe(1);
 
     frame = 1;
     world.update(0);
-    expect(readLength).toBe(0);
+    expect(read_length).toBe(0);
   });
 
   it("signal (zero-field) events work", () => {
-    const world = new World();
+    const world = new ECS();
     const GameOver = world.register_signal();
     let fired = false;
 
@@ -89,7 +89,7 @@ describe("Event system", () => {
   });
 
   it("multiple emits accumulate within a frame", () => {
-    const world = new World();
+    const world = new ECS();
     const Score = world.register_event(["points"] as const);
     const totals: number[] = [];
 
@@ -120,9 +120,9 @@ describe("Event system", () => {
   });
 
   it("startup events are readable in POST_STARTUP", () => {
-    const world = new World();
+    const world = new ECS();
     const Ready = world.register_signal();
-    let readCount = 0;
+    let read_count = 0;
 
     const emitter = world.register_system({
       fn(ctx: SystemContext) {
@@ -132,7 +132,7 @@ describe("Event system", () => {
     });
     const reader = world.register_system({
       fn(ctx: SystemContext) {
-        readCount = ctx.read(Ready).length;
+        read_count = ctx.read(Ready).length;
       },
     });
 
@@ -140,17 +140,17 @@ describe("Event system", () => {
     world.add_systems(SCHEDULE.POST_STARTUP, reader);
     world.startup();
 
-    expect(readCount).toBe(2);
+    expect(read_count).toBe(2);
   });
 
   it("reading an event with no emits returns length 0", () => {
-    const world = new World();
+    const world = new ECS();
     const Nothing = world.register_event(["value"] as const);
-    let readLength = -1;
+    let read_length = -1;
 
     const reader = world.register_system({
       fn(ctx: SystemContext) {
-        readLength = ctx.read(Nothing).length;
+        read_length = ctx.read(Nothing).length;
       },
     });
 
@@ -158,11 +158,11 @@ describe("Event system", () => {
     world.startup();
     world.update(0);
 
-    expect(readLength).toBe(0);
+    expect(read_length).toBe(0);
   });
 
   it("multiple signal emits accumulate", () => {
-    const world = new World();
+    const world = new ECS();
     const Tick = world.register_signal();
     let count = 0;
 
@@ -190,34 +190,34 @@ describe("Event system", () => {
   });
 
   it("events emitted in PRE_UPDATE are readable in UPDATE and POST_UPDATE", () => {
-    const world = new World();
+    const world = new ECS();
     const Input = world.register_event(["key"] as const);
-    let updateLen = 0;
-    let postUpdateLen = 0;
+    let update_len = 0;
+    let post_update_len = 0;
 
     const emitter = world.register_system({
       fn(ctx: SystemContext) {
         ctx.emit(Input, { key: 65 });
       },
     });
-    const updateReader = world.register_system({
+    const update_reader = world.register_system({
       fn(ctx: SystemContext) {
-        updateLen = ctx.read(Input).length;
+        update_len = ctx.read(Input).length;
       },
     });
-    const postUpdateReader = world.register_system({
+    const post_update_reader = world.register_system({
       fn(ctx: SystemContext) {
-        postUpdateLen = ctx.read(Input).length;
+        post_update_len = ctx.read(Input).length;
       },
     });
 
     world.add_systems(SCHEDULE.PRE_UPDATE, emitter);
-    world.add_systems(SCHEDULE.UPDATE, updateReader);
-    world.add_systems(SCHEDULE.POST_UPDATE, postUpdateReader);
+    world.add_systems(SCHEDULE.UPDATE, update_reader);
+    world.add_systems(SCHEDULE.POST_UPDATE, post_update_reader);
     world.startup();
     world.update(0);
 
-    expect(updateLen).toBe(1);
-    expect(postUpdateLen).toBe(1);
+    expect(update_len).toBe(1);
+    expect(post_update_len).toBe(1);
   });
 });

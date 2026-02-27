@@ -28,6 +28,7 @@
 import type { SystemContext } from "./query";
 import type { SystemDescriptor } from "./system";
 import { ECS_ERROR, ECSError } from "./utils/error";
+import { STARTUP_DELTA_TIME } from "./utils/constants";
 
 export enum SCHEDULE {
   PRE_STARTUP = "PRE_STARTUP",
@@ -69,9 +70,9 @@ interface SystemNode {
 }
 
 export class Schedule {
-  private label_systems: Map<SCHEDULE, SystemNode[]> = new Map();
-  private sorted_cache: Map<SCHEDULE, SystemDescriptor[]> = new Map();
-  private system_index: Map<SystemDescriptor, SCHEDULE> = new Map();
+  private readonly label_systems: Map<SCHEDULE, SystemNode[]> = new Map();
+  private readonly sorted_cache: Map<SCHEDULE, SystemDescriptor[]> = new Map();
+  private readonly system_index: Map<SystemDescriptor, SCHEDULE> = new Map();
   private next_insertion_order = 0;
 
   constructor() {
@@ -84,7 +85,7 @@ export class Schedule {
     }
   }
 
-  add_systems(
+  public add_systems(
     label: SCHEDULE,
     ...entries: (SystemDescriptor | SystemEntry)[]
   ): void {
@@ -96,7 +97,7 @@ export class Schedule {
         if (this.system_index.has(descriptor)) {
           throw new ECSError(
             ECS_ERROR.DUPLICATE_SYSTEM,
-            `System ${descriptor.id} is already scheduled`,
+            `System ${descriptor.name ?? descriptor.id} is already scheduled`,
           );
         }
       }
@@ -108,16 +109,18 @@ export class Schedule {
         after: new Set(ordering?.after ?? []),
       };
 
+      // ! safe: constructor pre-populates all SCHEDULE enum keys
       this.label_systems.get(label)!.push(node);
       this.system_index.set(descriptor, label);
       this.sorted_cache.delete(label);
     }
   }
 
-  remove_system(system: SystemDescriptor): void {
+  public remove_system(system: SystemDescriptor): void {
     const label = this.system_index.get(system);
     if (label === undefined) return;
 
+    // ! safe: label came from system_index which only stores valid SCHEDULE keys
     const nodes = this.label_systems.get(label)!;
     const index = nodes.findIndex((n) => n.descriptor === system);
     if (index !== -1) {
@@ -139,27 +142,28 @@ export class Schedule {
     this.sorted_cache.delete(label);
   }
 
-  run_startup(ctx: SystemContext): void {
+  public run_startup(ctx: SystemContext): void {
     for (const label of STARTUP_LABELS) {
-      this.run_label(label, ctx, 0);
+      this.run_label(label, ctx, STARTUP_DELTA_TIME);
     }
   }
 
-  run_update(ctx: SystemContext, delta_time: number): void {
+  public run_update(ctx: SystemContext, delta_time: number): void {
     for (const label of UPDATE_LABELS) {
       this.run_label(label, ctx, delta_time);
     }
   }
 
-  run_fixed_update(ctx: SystemContext, fixed_dt: number): void {
+  public run_fixed_update(ctx: SystemContext, fixed_dt: number): void {
     this.run_label(SCHEDULE.FIXED_UPDATE, ctx, fixed_dt);
   }
 
-  has_fixed_systems(): boolean {
+  public has_fixed_systems(): boolean {
+    // ! safe: constructor pre-populates all SCHEDULE enum keys
     return this.label_systems.get(SCHEDULE.FIXED_UPDATE)!.length > 0;
   }
 
-  get_all_systems(): SystemDescriptor[] {
+  public get_all_systems(): SystemDescriptor[] {
     const all: SystemDescriptor[] = [];
     for (const nodes of this.label_systems.values()) {
       for (const node of nodes) {
@@ -169,11 +173,11 @@ export class Schedule {
     return all;
   }
 
-  has_system(system: SystemDescriptor): boolean {
+  public has_system(system: SystemDescriptor): boolean {
     return this.system_index.has(system);
   }
 
-  clear(): void {
+  public clear(): void {
     for (const nodes of this.label_systems.values()) {
       nodes.length = 0;
     }
@@ -198,6 +202,7 @@ export class Schedule {
     const cached = this.sorted_cache.get(label);
     if (cached !== undefined) return cached;
 
+    // ! safe: constructor pre-populates all SCHEDULE enum keys
     const nodes = this.label_systems.get(label)!;
     const sorted = this.topological_sort(nodes, label);
     this.sorted_cache.set(label, sorted);
@@ -226,6 +231,8 @@ export class Schedule {
       node_set.add(node.descriptor);
     }
 
+    // ! safe in this block: all nodes were inserted into adjacency, in_degree,
+    // and insertion_order maps above, and node_set guards skip unknown descriptors
     for (const node of nodes) {
       // "this system runs before X" → edge: this → X
       for (const target of node.before) {
@@ -248,6 +255,8 @@ export class Schedule {
     for (const node of nodes) {
       if (in_degree.get(node.descriptor) === 0) ready.push(node.descriptor);
     }
+    // ! safe in sort/BFS: all descriptors come from the seeded maps above,
+    // and ready.length > 0 guarantees pop() returns a value
     ready.sort((a, b) => insertion_order.get(b)! - insertion_order.get(a)!);
 
     const result: SystemDescriptor[] = [];
@@ -260,7 +269,6 @@ export class Schedule {
         in_degree.set(neighbor, d);
         if (d === 0) ready.push(neighbor);
       }
-      // Re-sort after each addition to maintain insertion-order tiebreaking
       ready.sort((a, b) => insertion_order.get(b)! - insertion_order.get(a)!);
     }
 
@@ -268,7 +276,7 @@ export class Schedule {
       const result_set = new Set(result);
       const remaining = nodes
         .filter((n) => !result_set.has(n.descriptor))
-        .map((n) => `system_${n.descriptor.id}`);
+        .map((n) => n.descriptor.name ?? `system_${n.descriptor.id}`);
 
       throw new ECSError(
         ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY,

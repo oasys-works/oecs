@@ -1,21 +1,34 @@
-// Public API
-export { World } from "./world";
-export { Query, QueryBuilder, SystemContext } from "./query";
-export { SCHEDULE } from "./schedule";
-export type { WorldOptions } from "./world";
+// World
+export { ECS, type WorldOptions } from "./ecs";
 
-// Types
+// Schedule
+export { SCHEDULE, type SystemEntry, type SystemOrdering } from "./schedule";
+
+// Systems
+export { SystemContext } from "./query";
+export type { SystemConfig, SystemDescriptor } from "./system";
+
+// Ref
+export type { ComponentRef } from "./ref";
+
+// Queries
+export { Query, QueryBuilder } from "./query";
+
+// Entities
 export type { EntityID } from "./entity";
+
+// Components
 export type {
   ComponentDef,
+  ComponentSchema,
   ComponentFields,
   FieldValues,
+  TagToTypedArray,
   ColumnsForSchema,
 } from "./component";
+
+// Events
 export type { EventDef, EventReader } from "./event";
-export type {
-  SystemFn,
-  SystemConfig,
-  SystemDescriptor,
-} from "./system";
-export type { SystemEntry, SystemOrdering } from "./schedule";
+
+// Resources
+export type { ResourceDef, ResourceReader } from "./resource";

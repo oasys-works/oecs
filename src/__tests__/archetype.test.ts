@@ -4,9 +4,9 @@ import {
   as_archetype_id,
   type ArchetypeColumnLayout,
 } from "../archetype";
-import { as_component_id } from "../component";
+import { as_component_id, type ComponentDef } from "../component";
 import { create_entity_id } from "../entity";
-import { BitSet } from "type_primitives";
+import { BitSet, unsafe_cast } from "type_primitives";
 
 // Helpers
 const arch_id = (n: number) => as_archetype_id(n);
@@ -22,15 +22,19 @@ function make_mask(...ids: number[]): BitSet {
 function make_layout(
   component_id: number,
   fields: string[],
+  tag: "f32" | "f64" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32" = "f64",
 ): ArchetypeColumnLayout {
   const field_index: Record<string, number> = Object.create(null);
+  const field_types: ("f32" | "f64" | "i8" | "i16" | "i32" | "u8" | "u16" | "u32")[] = [];
   for (let i = 0; i < fields.length; i++) {
     field_index[fields[i]] = i;
+    field_types.push(tag);
   }
   return {
     component_id: comp_id(component_id),
     field_names: fields,
     field_index,
+    field_types,
   };
 }
 
@@ -258,7 +262,8 @@ describe("Archetype", () => {
     a.write_fields(1, comp_id(1), { x: 200 });
     a.write_fields(2, comp_id(1), { x: 300 });
 
-    const col = a.get_column(comp_id(1) as any, "x" as any);
+    const def = unsafe_cast<ComponentDef<{ x: "f64" }>>(comp_id(1));
+    const col = a.get_column(def, "x");
     expect(col[0]).toBe(100);
     expect(col[1]).toBe(200);
     expect(col[2]).toBe(300);

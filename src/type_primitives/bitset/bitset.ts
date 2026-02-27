@@ -7,43 +7,50 @@
  * words = ceil(maxComponentId / 32).
  *
  * Bit layout within each 32-bit word:
- *   word_index = bit >>> 5       (divide by 32)
- *   bit_offset = bit & 31       (mod 32)
+ *   word_index = bit >>> BITS_PER_WORD_SHIFT   (divide by 32)
+ *   bit_offset = bit & BITS_PER_WORD_MASK      (mod 32)
  *   test:  word & (1 << offset)
  *   set:   word |= (1 << offset)
  *   clear: word &= ~(1 << offset)
  *
  ***/
 
+import {
+  BITS_PER_WORD_SHIFT,
+  BITS_PER_WORD_MASK,
+  FNV_OFFSET_BASIS,
+  FNV_PRIME,
+} from "../../utils/constants";
+
 const INITIAL_WORD_COUNT = 4; // 128 component IDs before first grow
 
 export class BitSet {
-  _words: number[];
+  public _words: number[];
 
   constructor(words?: number[]) {
     this._words = words ?? new Array(INITIAL_WORD_COUNT).fill(0);
   }
 
-  has(bit: number): boolean {
-    const word_index = bit >>> 5;
+  public has(bit: number): boolean {
+    const word_index = bit >>> BITS_PER_WORD_SHIFT;
     if (word_index >= this._words.length) return false;
-    return (this._words[word_index] & (1 << (bit & 31))) !== 0;
+    return (this._words[word_index] & (1 << (bit & BITS_PER_WORD_MASK))) !== 0;
   }
 
-  set(bit: number): void {
-    const word_index = bit >>> 5;
+  public set(bit: number): void {
+    const word_index = bit >>> BITS_PER_WORD_SHIFT;
     if (word_index >= this._words.length) this.grow(word_index + 1);
-    this._words[word_index] |= 1 << (bit & 31);
+    this._words[word_index] |= 1 << (bit & BITS_PER_WORD_MASK);
   }
 
-  clear(bit: number): void {
-    const word_index = bit >>> 5;
+  public clear(bit: number): void {
+    const word_index = bit >>> BITS_PER_WORD_SHIFT;
     if (word_index >= this._words.length) return;
-    this._words[word_index] &= ~(1 << (bit & 31));
+    this._words[word_index] &= ~(1 << (bit & BITS_PER_WORD_MASK));
   }
 
   /** True if any bit is set in both this and other (non-empty intersection). */
-  overlaps(other: BitSet): boolean {
+  public overlaps(other: BitSet): boolean {
     const a = this._words,
       b = other._words;
     const len = a.length < b.length ? a.length : b.length;
@@ -54,7 +61,7 @@ export class BitSet {
   }
 
   /** True if this is a superset of other (all bits in other are set in this). */
-  contains(other: BitSet): boolean {
+  public contains(other: BitSet): boolean {
     const other_words = other._words;
     const this_words = this._words;
     const this_len = this_words.length;
@@ -69,7 +76,7 @@ export class BitSet {
     return true;
   }
 
-  equals(other: BitSet): boolean {
+  public equals(other: BitSet): boolean {
     const a = this._words;
     const b = other._words;
     const max = a.length > b.length ? a.length : b.length;
@@ -82,56 +89,56 @@ export class BitSet {
     return true;
   }
 
-  copy(): BitSet {
+  public copy(): BitSet {
     return new BitSet(this._words.slice());
   }
 
-  copy_with_set(bit: number): BitSet {
-    const word_index = bit >>> 5;
+  public copy_with_set(bit: number): BitSet {
+    const word_index = bit >>> BITS_PER_WORD_SHIFT;
     const min_len = word_index + 1;
     const len = this._words.length > min_len ? this._words.length : min_len;
     const words = new Array(len).fill(0);
     for (let i = 0; i < this._words.length; i++) words[i] = this._words[i];
-    words[word_index] |= 1 << (bit & 31);
+    words[word_index] |= 1 << (bit & BITS_PER_WORD_MASK);
     return new BitSet(words);
   }
 
-  copy_with_clear(bit: number): BitSet {
+  public copy_with_clear(bit: number): BitSet {
     const words = this._words.slice();
-    const word_index = bit >>> 5;
+    const word_index = bit >>> BITS_PER_WORD_SHIFT;
     if (word_index < words.length) {
-      words[word_index] &= ~(1 << (bit & 31));
+      words[word_index] &= ~(1 << (bit & BITS_PER_WORD_MASK));
     }
     return new BitSet(words);
   }
 
   /** FNV-1a hash. Skips trailing zero words so differently-sized arrays with the same bits hash equally. */
-  hash(): number {
-    let h = 0x811c9dc5; // FNV offset basis
+  public hash(): number {
+    let h = FNV_OFFSET_BASIS;
     const words = this._words;
     let last = words.length - 1;
     while (last >= 0 && words[last] === 0) last--;
 
     for (let i = 0; i <= last; i++) {
       h ^= words[i];
-      h = Math.imul(h, 0x01000193); // FNV prime
+      h = Math.imul(h, FNV_PRIME);
     }
     return h;
   }
 
   /** Iterate all set bits via lowest-set-bit extraction. */
-  for_each(fn: (bit: number) => void): void {
+  public for_each(fn: (bit: number) => void): void {
     const words = this._words;
     for (let i = 0; i < words.length; i++) {
       let word = words[i];
       if (word === 0) continue;
-      const base = i << 5; // i * 32
+      const base = i << BITS_PER_WORD_SHIFT; // i * 32
       while (word !== 0) {
         // Isolate lowest set bit: e.g. 0b1010 → 0b0010
         // (-word >>> 0) converts to unsigned to handle the sign bit correctly
         const t = word & (-word >>> 0);
         // Count leading zeros to find bit position: clz32(0b0010) = 30 → bit = 31-30 = 1
-        const bit_pos = 31 - Math.clz32(t);
+        const bit_pos = BITS_PER_WORD_MASK - Math.clz32(t);
         fn(base + bit_pos);
         // Clear the bit we just processed
         word ^= t;

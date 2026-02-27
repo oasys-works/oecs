@@ -7,7 +7,7 @@
  * external code.
  *
  * Architecture: Archetype-based storage with cached graph edges.
- * Component data lives in plain number[] columns within each Archetype.
+ * Component data lives in typed array columns within each Archetype.
  * Moving an entity between archetypes copies its column data from the
  * source row to a fresh row in the target archetype, then swap-removes
  * the source row.
@@ -36,6 +36,7 @@ import {
   as_component_id,
   type ComponentDef,
   type ComponentID,
+  type ComponentSchema,
   type ComponentFields,
   type FieldValues,
 } from "./component";
@@ -45,55 +46,77 @@ import {
   type EventDef,
   type EventReader,
 } from "./event";
-import { unsafe_cast, BitSet } from "type_primitives";
+import {
+  ResourceChannel,
+  as_resource_id,
+  type ResourceDef,
+  type ResourceReader,
+} from "./resource";
+import { unsafe_cast, BitSet, type TypedArrayTag } from "type_primitives";
 import {
   Archetype,
   as_archetype_id,
+  build_transition_map,
+  _move_result,
   type ArchetypeColumnLayout,
+  type ArchetypeEdge,
   type ArchetypeID,
 } from "./archetype";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { bucket_push } from "./utils/arrays";
-
-const UNASSIGNED = -1;
-const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(null));
+import {
+  UNASSIGNED,
+  NO_SWAP,
+  EMPTY_VALUES,
+  BITS_PER_WORD_SHIFT,
+  BITS_PER_WORD_MASK,
+  INITIAL_GENERATION,
+  DEFAULT_COLUMN_CAPACITY,
+} from "./utils/constants";
 
 interface ComponentMeta {
   field_names: string[];
   field_index: Record<string, number>;
+  field_types: TypedArrayTag[];
 }
 
 export class Store {
   // --- Entity ID management ---
   // Generational slot allocator: entity_generations[index] holds the current
   // generation for that slot. Free indices are recycled via a stack.
-  private entity_generations: number[] = [];
+  private readonly entity_generations: number[] = [];
   private entity_high_water = 0;
-  private entity_free_indices: number[] = [];
+  private readonly entity_free_indices: number[] = [];
   private entity_alive_count = 0;
 
   // --- Component metadata ---
-  // Parallel array indexed by ComponentID: field_names and field_index
+  // Parallel array indexed by ComponentID: field_names, field_index, and field_types
   // for building archetype column layouts.
-  private component_metas: ComponentMeta[] = [];
+  private readonly component_metas: ComponentMeta[] = [];
   private component_count = 0;
 
   // --- Event channels ---
   // Parallel array indexed by EventID: each channel holds SoA columns + reader.
-  private event_channels: EventChannel[] = [];
+  private readonly event_channels: EventChannel[] = [];
   private event_count = 0;
 
+  // --- Resource channels ---
+  // Parallel array indexed by ResourceID: each channel holds a single row of SoA columns.
+  private readonly resource_channels: ResourceChannel[] = [];
+  private resource_count = 0;
+
   // --- Archetype management ---
-  private archetypes: Archetype[] = [];
+  private readonly archetypes: Archetype[] = [];
   // Hash-bucketed lookup: BitSet.hash() → ArchetypeID[] for deduplication
-  private archetype_map: Map<number, ArchetypeID[]> = new Map();
+  private readonly archetype_map: Map<number, ArchetypeID[]> = new Map();
   private next_archetype_id = 0;
   // Inverted index: ComponentID → set of ArchetypeIDs containing that component.
   // Used by get_matching_archetypes to start from the smallest set.
-  private component_index: Map<ComponentID, Set<ArchetypeID>> = new Map();
+  private readonly component_index: Map<ComponentID, Set<ArchetypeID>> =
+    new Map();
   // Registered queries: the Store pushes newly-created archetypes into matching
   // query result arrays, so queries are always up-to-date.
-  private registered_queries: {
+  private readonly registered_queries: {
     include_mask: BitSet;
     exclude_mask: BitSet | null;
     any_of_mask: BitSet | null;
@@ -102,21 +125,24 @@ export class Store {
   private empty_archetype_id: ArchetypeID;
 
   // entity_index → ArchetypeID (UNASSIGNED = not in any archetype)
-  private entity_archetype: number[] = [];
+  private readonly entity_archetype: number[] = [];
   // entity_index → row within its archetype (UNASSIGNED = no row)
-  private entity_row: number[] = [];
+  private readonly entity_row: number[] = [];
 
   // --- Deferred operation buffers ---
   // Flat parallel arrays: pending_add_ids[i], pending_add_defs[i], pending_add_values[i]
   // describe one deferred add. No per-operation object allocation.
-  private pending_destroy: EntityID[] = [];
-  private pending_add_ids: EntityID[] = [];
-  private pending_add_defs: ComponentDef<ComponentFields>[] = [];
-  private pending_add_values: Record<string, number>[] = [];
-  private pending_remove_ids: EntityID[] = [];
-  private pending_remove_defs: ComponentDef<ComponentFields>[] = [];
+  private readonly pending_destroy: EntityID[] = [];
+  private readonly pending_add_ids: EntityID[] = [];
+  private readonly pending_add_defs: ComponentDef[] = [];
+  private readonly pending_add_values: Record<string, number>[] = [];
+  private readonly pending_remove_ids: EntityID[] = [];
+  private readonly pending_remove_defs: ComponentDef[] = [];
 
-  constructor() {
+  private readonly initial_capacity: number;
+
+  constructor(initial_capacity?: number) {
+    this.initial_capacity = initial_capacity ?? DEFAULT_COLUMN_CAPACITY;
     this.empty_archetype_id = this.arch_get_or_create_from_mask(new BitSet());
   }
 
@@ -165,11 +191,12 @@ export class Store {
           component_id: comp_id,
           field_names: meta.field_names,
           field_index: meta.field_index,
+          field_types: meta.field_types,
         });
       }
     });
 
-    const archetype = new Archetype(id, mask, layouts);
+    const archetype = new Archetype(id, mask, layouts, this.initial_capacity);
     this.archetypes.push(archetype);
     bucket_push(this.archetype_map, hash, id);
 
@@ -238,15 +265,26 @@ export class Store {
     to: Archetype,
     component_id: ComponentID,
   ): void {
-    const from_edge = from.get_edge(component_id) ?? {
+    // from + component_id → to (add edge)
+    const from_edge: ArchetypeEdge = from.get_edge(component_id) ?? {
       add: null,
       remove: null,
+      add_map: null,
+      remove_map: null,
     };
     from_edge.add = to.id;
+    from_edge.add_map = build_transition_map(from, to);
     from.set_edge(component_id, from_edge);
 
-    const to_edge = to.get_edge(component_id) ?? { add: null, remove: null };
+    // to - component_id → from (remove edge)
+    const to_edge: ArchetypeEdge = to.get_edge(component_id) ?? {
+      add: null,
+      remove: null,
+      add_map: null,
+      remove_map: null,
+    };
     to_edge.remove = from.id;
+    to_edge.remove_map = build_transition_map(to, from);
     to.set_edge(component_id, to_edge);
   }
 
@@ -259,12 +297,13 @@ export class Store {
     let generation: number;
 
     if (this.entity_free_indices.length > 0) {
+      // ! safe: length > 0 guarantees pop() returns a value
       index = this.entity_free_indices.pop()!;
       generation = this.entity_generations[index];
     } else {
       index = this.entity_high_water++;
-      this.entity_generations[index] = 0;
-      generation = 0;
+      this.entity_generations[index] = INITIAL_GENERATION;
+      generation = INITIAL_GENERATION;
     }
 
     this.entity_alive_count++;
@@ -291,7 +330,7 @@ export class Store {
       const arch = this.arch_get(this.entity_archetype[index] as ArchetypeID);
       // swap-and-pop returns the entity_index that was swapped into our row
       const swapped_idx = arch.remove_entity(row);
-      if (swapped_idx !== -1) this.entity_row[swapped_idx] = row;
+      if (swapped_idx !== NO_SWAP) this.entity_row[swapped_idx] = row;
     }
 
     this.entity_archetype[index] = UNASSIGNED;
@@ -355,7 +394,7 @@ export class Store {
         const sw = arch.has_columns
           ? arch.remove_entity(row)
           : arch.remove_entity_tag(row);
-        if (sw !== -1) ent_row[sw] = row;
+        if (sw !== NO_SWAP) ent_row[sw] = row;
       }
 
       ent_arch[idx] = UNASSIGNED;
@@ -380,16 +419,16 @@ export class Store {
 
   public add_component_deferred(
     entity_id: EntityID,
-    def: ComponentDef<readonly []>,
+    def: ComponentDef<Record<string, never>>,
   ): void;
-  public add_component_deferred<F extends ComponentFields>(
+  public add_component_deferred<S extends ComponentSchema>(
     entity_id: EntityID,
-    def: ComponentDef<F>,
-    values: FieldValues<F>,
+    def: ComponentDef<S>,
+    values: FieldValues<S>,
   ): void;
   public add_component_deferred(
     entity_id: EntityID,
-    def: ComponentDef<ComponentFields>,
+    def: ComponentDef,
     values?: Record<string, number>,
   ): void {
     if (__DEV__ && !this.is_alive(entity_id))
@@ -401,7 +440,7 @@ export class Store {
 
   public remove_component_deferred(
     entity_id: EntityID,
-    def: ComponentDef<ComponentFields>,
+    def: ComponentDef,
   ): void {
     if (__DEV__ && !this.is_alive(entity_id))
       throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -450,17 +489,21 @@ export class Store {
       const tgt_id = this.arch_resolve_add(src_arch_id, comp_id);
       const tgt = archs[tgt_id];
       const src_row = ent_row[idx];
-      // Tag-only optimization: if neither archetype has columns, skip all column work
       const tag_only = !tgt.has_columns && !src.has_columns;
 
-      const dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
+      let dst_row: number;
 
       if (src_row !== UNASSIGNED) {
-        if (!tag_only) tgt.copy_shared_from(src, src_row, dst_row);
-        const sw = tag_only
-          ? src.remove_entity_tag(src_row)
-          : src.remove_entity(src_row);
-        if (sw !== -1) ent_row[sw] = src_row;
+        if (tag_only) {
+          tgt.move_entity_from_tag(src, src_row, eid);
+        } else {
+          const edge = src.get_edge(comp_id)!;
+          tgt.move_entity_from(src, src_row, eid, edge.add_map!);
+        }
+        dst_row = _move_result[0];
+        if (_move_result[1] !== NO_SWAP) ent_row[_move_result[1]] = src_row;
+      } else {
+        dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
       }
 
       // Write the new component's field values
@@ -506,17 +549,16 @@ export class Store {
       const src_row = ent_row[idx];
       const tag_only = !tgt.has_columns && !src.has_columns;
 
-      const dst_row = tag_only ? tgt.add_entity_tag(eid) : tgt.add_entity(eid);
-
-      if (!tag_only) tgt.copy_shared_from(src, src_row, dst_row);
-
-      const sw = tag_only
-        ? src.remove_entity_tag(src_row)
-        : src.remove_entity(src_row);
-      if (sw !== -1) ent_row[sw] = src_row;
+      if (tag_only) {
+        tgt.move_entity_from_tag(src, src_row, eid);
+      } else {
+        const edge = src.get_edge(comp_id)!;
+        tgt.move_entity_from(src, src_row, eid, edge.remove_map!);
+      }
+      if (_move_result[1] !== NO_SWAP) ent_row[_move_result[1]] = src_row;
 
       ent_arch[idx] = tgt_id;
-      ent_row[idx] = dst_row;
+      ent_row[idx] = _move_result[0];
     }
 
     ids.length = 0;
@@ -531,17 +573,19 @@ export class Store {
   // Component registration
   // =======================================================
 
-  public register_component<F extends readonly string[]>(
-    fields: F,
-  ): ComponentDef<F> {
+  public register_component<S extends Record<string, TypedArrayTag>>(
+    schema: S,
+  ): ComponentDef<S> {
     const id = as_component_id(this.component_count++);
-    const field_names = fields as unknown as string[];
+    const field_names = Object.keys(schema);
+    const field_types: TypedArrayTag[] = new Array(field_names.length);
     const field_index: Record<string, number> = Object.create(null);
     for (let i = 0; i < field_names.length; i++) {
       field_index[field_names[i]] = i;
+      field_types[i] = schema[field_names[i]];
     }
-    this.component_metas.push({ field_names, field_index });
-    return unsafe_cast<ComponentDef<F>>(id);
+    this.component_metas.push({ field_names, field_index, field_types });
+    return unsafe_cast<ComponentDef<S>>(id);
   }
 
   // =======================================================
@@ -550,16 +594,16 @@ export class Store {
 
   public add_component(
     entity_id: EntityID,
-    def: ComponentDef<readonly []>,
+    def: ComponentDef<Record<string, never>>,
   ): void;
-  public add_component<F extends ComponentFields>(
+  public add_component<S extends ComponentSchema>(
     entity_id: EntityID,
-    def: ComponentDef<F>,
-    values: FieldValues<F>,
+    def: ComponentDef<S>,
+    values: FieldValues<S>,
   ): void;
   public add_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentFields>,
+    def: ComponentDef,
     values?: Record<string, number>,
   ): void {
     if (!this.is_alive(entity_id)) {
@@ -588,15 +632,27 @@ export class Store {
       def,
     );
     const target_arch = this.arch_get(target_archetype_id);
-
     const src_row = this.entity_row[entity_index];
-    const dst_row = target_arch.add_entity(entity_id);
+
+    let dst_row: number;
 
     if (src_row !== UNASSIGNED) {
-      target_arch.copy_shared_from(current_arch, src_row, dst_row);
-      const swapped_idx = current_arch.remove_entity(src_row);
-      if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+      const edge = current_arch.get_edge(def as unknown as ComponentID)!;
+      const tag_only = !target_arch.has_columns && !current_arch.has_columns;
+
+      if (tag_only) {
+        target_arch.move_entity_from_tag(current_arch, src_row, entity_id);
+      } else {
+        target_arch.move_entity_from(current_arch, src_row, entity_id, edge.add_map!);
+      }
+      dst_row = _move_result[0];
+      if (_move_result[1] !== NO_SWAP) this.entity_row[_move_result[1]] = src_row;
+    } else {
+      dst_row = target_arch.has_columns
+        ? target_arch.add_entity(entity_id)
+        : target_arch.add_entity_tag(entity_id);
     }
+
     target_arch.write_fields(
       dst_row,
       def as ComponentID,
@@ -611,7 +667,7 @@ export class Store {
   public add_components(
     entity_id: EntityID,
     entries: {
-      def: ComponentDef<ComponentFields>;
+      def: ComponentDef;
       values?: Record<string, number>;
     }[],
   ): void {
@@ -637,15 +693,19 @@ export class Store {
     if (target_archetype_id !== current_archetype_id) {
       const source_arch = this.arch_get(current_archetype_id);
       const target_arch = this.arch_get(target_archetype_id);
-
       const src_row = this.entity_row[entity_index];
-      const dst_row = target_arch.add_entity(entity_id);
+
+      let dst_row: number;
 
       if (src_row !== UNASSIGNED) {
-        target_arch.copy_shared_from(source_arch, src_row, dst_row);
-        const swapped_idx = source_arch.remove_entity(src_row);
-        if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+        const map = build_transition_map(source_arch, target_arch);
+        target_arch.move_entity_from(source_arch, src_row, entity_id, map);
+        dst_row = _move_result[0];
+        if (_move_result[1] !== NO_SWAP) this.entity_row[_move_result[1]] = src_row;
+      } else {
+        dst_row = target_arch.add_entity(entity_id);
       }
+
       for (let i = 0; i < entries.length; i++) {
         target_arch.write_fields(
           dst_row,
@@ -672,7 +732,7 @@ export class Store {
 
   public remove_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentFields>,
+    def: ComponentDef,
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -692,23 +752,25 @@ export class Store {
       def,
     );
     const target_arch = this.arch_get(target_archetype_id);
-
     const src_row = this.entity_row[entity_index];
-    const dst_row = target_arch.add_entity(entity_id);
+    const edge = current_arch.get_edge(def as unknown as ComponentID)!;
+    const tag_only = !target_arch.has_columns && !current_arch.has_columns;
 
-    target_arch.copy_shared_from(current_arch, src_row, dst_row);
-
-    const swapped_idx = current_arch.remove_entity(src_row);
-    if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+    if (tag_only) {
+      target_arch.move_entity_from_tag(current_arch, src_row, entity_id);
+    } else {
+      target_arch.move_entity_from(current_arch, src_row, entity_id, edge.remove_map!);
+    }
+    if (_move_result[1] !== NO_SWAP) this.entity_row[_move_result[1]] = src_row;
 
     this.entity_archetype[entity_index] = target_archetype_id;
-    this.entity_row[entity_index] = dst_row;
+    this.entity_row[entity_index] = _move_result[0];
   }
 
   /** Remove multiple components in one transition (resolves final archetype, then moves once). */
   public remove_components(
     entity_id: EntityID,
-    defs: ComponentDef<ComponentFields>[],
+    defs: ComponentDef[],
   ): void {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -734,22 +796,19 @@ export class Store {
 
     const source_arch = this.arch_get(current_archetype_id);
     const target_arch = this.arch_get(target_archetype_id);
-
     const src_row = this.entity_row[entity_index];
-    const dst_row = target_arch.add_entity(entity_id);
 
-    target_arch.copy_shared_from(source_arch, src_row, dst_row);
-
-    const swapped_idx = source_arch.remove_entity(src_row);
-    if (swapped_idx !== -1) this.entity_row[swapped_idx] = src_row;
+    const map = build_transition_map(source_arch, target_arch);
+    target_arch.move_entity_from(source_arch, src_row, entity_id, map);
+    if (_move_result[1] !== NO_SWAP) this.entity_row[_move_result[1]] = src_row;
 
     this.entity_archetype[entity_index] = target_archetype_id;
-    this.entity_row[entity_index] = dst_row;
+    this.entity_row[entity_index] = _move_result[0];
   }
 
   public has_component(
     entity_id: EntityID,
-    def: ComponentDef<ComponentFields>,
+    def: ComponentDef,
   ): boolean {
     if (!this.is_alive(entity_id)) {
       if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
@@ -759,6 +818,78 @@ export class Store {
     return this.arch_get(
       this.entity_archetype[entity_index] as ArchetypeID,
     ).has_component(def);
+  }
+
+  /**
+   * Bulk add a component to ALL entities in the given archetype.
+   * Uses TypedArray.set() for O(columns) instead of O(N×columns).
+   * The archetype must not already contain this component.
+   */
+  public batch_add_component(
+    src_arch: Archetype,
+    def: ComponentDef,
+    values?: Record<string, number>,
+  ): void {
+    if (src_arch.length === 0) return;
+    const comp_id = def as unknown as ComponentID;
+    if (src_arch.mask.has(comp_id as number)) return;
+
+    const tgt_id = this.arch_resolve_add(src_arch.id, comp_id);
+    const tgt = this.arch_get(tgt_id);
+    const edge = src_arch.get_edge(comp_id)!;
+    const count = src_arch.length;
+
+    // Record entity indices before bulk move (entity_ids will be cleared)
+    const src_eids = src_arch._entity_ids.buf;
+    const ent_arch = this.entity_archetype;
+    const ent_row = this.entity_row;
+
+    const dst_start = tgt.bulk_move_all_from(src_arch, edge.add_map!);
+
+    // Update entity→archetype/row mappings for all moved entities
+    for (let i = 0; i < count; i++) {
+      const idx = get_entity_index(tgt.entity_ids[dst_start + i] as EntityID);
+      ent_arch[idx] = tgt_id;
+      ent_row[idx] = dst_start + i;
+    }
+
+    // Write field values to all new entries
+    const meta = this.component_metas[comp_id as number];
+    if (meta.field_names.length > 0 && values) {
+      for (let i = 0; i < count; i++) {
+        tgt.write_fields(dst_start + i, comp_id, values);
+      }
+    }
+  }
+
+  /**
+   * Bulk remove a component from ALL entities in the given archetype.
+   * Uses TypedArray.set() for O(columns) instead of O(N×columns).
+   * The archetype must contain this component.
+   */
+  public batch_remove_component(
+    src_arch: Archetype,
+    def: ComponentDef,
+  ): void {
+    if (src_arch.length === 0) return;
+    const comp_id = def as unknown as ComponentID;
+    if (!src_arch.mask.has(comp_id as number)) return;
+
+    const tgt_id = this.arch_resolve_remove(src_arch.id, comp_id);
+    const tgt = this.arch_get(tgt_id);
+    const edge = src_arch.get_edge(comp_id)!;
+    const count = src_arch.length;
+
+    const dst_start = tgt.bulk_move_all_from(src_arch, edge.remove_map!);
+
+    // Update entity→archetype/row mappings for all moved entities
+    const ent_arch = this.entity_archetype;
+    const ent_row = this.entity_row;
+    for (let i = 0; i < count; i++) {
+      const idx = get_entity_index(tgt.entity_ids[dst_start + i] as EntityID);
+      ent_arch[idx] = tgt_id;
+      ent_row[idx] = dst_start + i;
+    }
   }
 
   // =======================================================
@@ -813,11 +944,11 @@ export class Store {
     for (let wi = 0; wi < words.length; wi++) {
       let word = words[wi];
       if (word === 0) continue;
-      const base = wi << 5;
+      const base = wi << BITS_PER_WORD_SHIFT;
       while (word !== 0) {
         // Extract lowest set bit
         const t = word & (-word >>> 0);
-        const bit = base + (31 - Math.clz32(t));
+        const bit = base + (BITS_PER_WORD_MASK - Math.clz32(t));
         word ^= t;
         const set = this.component_index.get(bit as ComponentID);
         if (!set || set.size === 0) {
@@ -868,7 +999,7 @@ export class Store {
     return result;
   }
 
-  get archetype_count(): number {
+  public get archetype_count(): number {
     return this.archetypes.length;
   }
 
@@ -876,9 +1007,7 @@ export class Store {
   // Event channels
   // =======================================================
 
-  public register_event<F extends readonly string[]>(
-    fields: F,
-  ): EventDef<F> {
+  public register_event<F extends readonly string[]>(fields: F): EventDef<F> {
     const id = as_event_id(this.event_count++);
     const channel = new EventChannel(fields as unknown as string[]);
     this.event_channels.push(channel);
@@ -899,7 +1028,8 @@ export class Store {
   public get_event_reader<F extends ComponentFields>(
     def: EventDef<F>,
   ): EventReader<F> {
-    return this.event_channels[def as unknown as number].reader as EventReader<F>;
+    return this.event_channels[def as unknown as number]
+      .reader as EventReader<F>;
   }
 
   public clear_events(): void {
@@ -907,5 +1037,50 @@ export class Store {
     for (let i = 0; i < channels.length; i++) {
       channels[i].clear();
     }
+  }
+
+  // =======================================================
+  // Resource channels
+  // =======================================================
+
+  public register_resource<F extends readonly string[]>(
+    fields: F,
+    initial: Record<string, number>,
+  ): ResourceDef<F> {
+    const id = as_resource_id(this.resource_count++);
+    const channel = new ResourceChannel(fields as unknown as string[], initial);
+    this.resource_channels.push(channel);
+    return unsafe_cast<ResourceDef<F>>(id);
+  }
+
+  public get_resource_reader<F extends ComponentFields>(
+    def: ResourceDef<F>,
+  ): ResourceReader<F> {
+    if (__DEV__) {
+      const idx = def as unknown as number;
+      if (idx < 0 || idx >= this.resource_channels.length) {
+        throw new ECSError(
+          ECS_ERROR.RESOURCE_NOT_REGISTERED,
+          `Resource with ID ${idx} not registered`,
+        );
+      }
+    }
+    return this.resource_channels[def as unknown as number]
+      .reader as ResourceReader<F>;
+  }
+
+  public get_resource_channel(
+    def: ResourceDef<ComponentFields>,
+  ): ResourceChannel {
+    if (__DEV__) {
+      const idx = def as unknown as number;
+      if (idx < 0 || idx >= this.resource_channels.length) {
+        throw new ECSError(
+          ECS_ERROR.RESOURCE_NOT_REGISTERED,
+          `Resource with ID ${idx} not registered`,
+        );
+      }
+    }
+    return this.resource_channels[def as unknown as number];
   }
 }

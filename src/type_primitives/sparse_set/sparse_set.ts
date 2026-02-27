@@ -15,25 +15,25 @@ export class SparseSet {
   private _dense: number[] = [];
   private _sparse: number[] = [];
 
-  get size(): number {
+  public get size(): number {
     return this._dense.length;
   }
 
-  get values(): readonly number[] {
+  public get values(): readonly number[] {
     return this._dense;
   }
 
-  has(key: number): boolean {
+  public has(key: number): boolean {
     return this._dense[this._sparse[key]] === key;
   }
 
-  add(key: number): void {
+  public add(key: number): void {
     if (this.has(key)) return;
     this._sparse[key] = this._dense.length;
     this._dense.push(key);
   }
 
-  delete(key: number): boolean {
+  public delete(key: number): boolean {
     if (!this.has(key)) return false;
     const row = this._sparse[key];
     const last = this._dense[this._dense.length - 1];
@@ -44,7 +44,7 @@ export class SparseSet {
     return true;
   }
 
-  clear(): void {
+  public clear(): void {
     this._dense.length = 0;
     this._sparse.length = 0;
   }

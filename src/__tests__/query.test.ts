@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { World } from "../world";
+import { ECS } from "../ecs";
 import { SCHEDULE } from "../schedule";
 
 // Field arrays
@@ -8,13 +8,13 @@ const Velocity = ["vx", "vy"] as const;
 const Health = ["hp"] as const;
 const Static = [] as const; // tag component
 
-describe("World query", () => {
+describe("ECS query", () => {
   //=========================================================
   // Basic query
   //=========================================================
 
   it("query returns matching archetypes", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -27,12 +27,12 @@ describe("World query", () => {
 
     // Query [Pos, Vel] should match only e1's archetype
     const matches = world.query(Pos, Vel);
-    expect(matches.length).toBe(1);
+    expect(matches.archetype_count).toBe(1);
     expect(matches.archetypes[0].entity_list).toContain(e1);
   });
 
   it("query with single component returns all archetypes containing it", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -55,7 +55,7 @@ describe("World query", () => {
   //=========================================================
 
   it("cached query returns same reference on repeated calls", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
 
     const e1 = world.create_entity();
@@ -69,7 +69,7 @@ describe("World query", () => {
   });
 
   it("live query result grows when new matching archetype is created", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -77,7 +77,7 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 1, y: 2 });
 
     const result = world.query(Pos);
-    const length_before = result.length;
+    const length_before = result.archetype_count;
     expect(length_before).toBeGreaterThan(0);
 
     // Adding a new component combo creates a new archetype containing Pos
@@ -88,11 +88,11 @@ describe("World query", () => {
     // Same reference — live array was updated in-place by the registry
     const after = world.query(Pos);
     expect(after).toBe(result);
-    expect(after.length).toBeGreaterThan(length_before);
+    expect(after.archetype_count).toBeGreaterThan(length_before);
   });
 
   it("cache is stable when no new archetypes are created", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
 
     const e1 = world.create_entity();
@@ -108,11 +108,11 @@ describe("World query", () => {
 
     // Same reference, same length
     expect(second).toBe(first);
-    expect(second.length).toBe(first.length);
+    expect(second.archetype_count).toBe(first.archetype_count);
   });
 
   it("unrelated archetype does not grow the query result", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Hp = world.register_component(Health);
 
@@ -120,7 +120,7 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 1, y: 2 });
 
     const result = world.query(Pos);
-    const length_before = result.length;
+    const length_before = result.archetype_count;
 
     // Create an entity with only Health — unrelated to Pos query
     const e2 = world.create_entity();
@@ -128,9 +128,9 @@ describe("World query", () => {
 
     const after = world.query(Pos);
 
-    // Same reference, same length
+    // Same reference, same archetype_count
     expect(after).toBe(result);
-    expect(after.length).toBe(length_before);
+    expect(after.archetype_count).toBe(length_before);
   });
 
   //=========================================================
@@ -138,7 +138,7 @@ describe("World query", () => {
   //=========================================================
 
   it("query result is the same regardless of component order", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -156,20 +156,20 @@ describe("World query", () => {
   // Deferred destruction via world
   //=========================================================
 
-  it("destroy_entity defers — entity stays alive after call", () => {
-    const world = new World();
+  it("destroy_entity_deferred defers — entity stays alive after call", () => {
+    const world = new ECS();
 
     const id = world.create_entity();
-    world.destroy_entity(id);
+    world.destroy_entity_deferred(id);
 
     expect(world.is_alive(id)).toBe(true);
   });
 
-  it("flush processes the deferred buffer", () => {
-    const world = new World();
+  it("flush processes the deferred destroy buffer", () => {
+    const world = new ECS();
 
     const id = world.create_entity();
-    world.destroy_entity(id);
+    world.destroy_entity_deferred(id);
     world.flush();
 
     expect(world.is_alive(id)).toBe(false);
@@ -180,7 +180,7 @@ describe("World query", () => {
   //=========================================================
 
   it("allows column access through archetype dense columns", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -203,7 +203,7 @@ describe("World query", () => {
   //=========================================================
 
   it("deferred add_component does not change query result length until flush", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -212,14 +212,14 @@ describe("World query", () => {
 
     // Cache a query for [Pos, Vel] — currently empty
     const before = world.query(Pos, Vel);
-    expect(before.length).toBe(0);
+    expect(before.archetype_count).toBe(0);
 
     // System defers an add_component
     let len_during_system = -1;
     const sys = world.register_system(
       (q, ctx) => {
         ctx.add_component(e1, Vel, { vx: 3, vy: 4 });
-        len_during_system = q.length;
+        len_during_system = q.archetype_count;
       },
       (qb) => qb.every(Pos, Vel),
     );
@@ -232,12 +232,12 @@ describe("World query", () => {
 
     // After update (which flushes), the live array has grown
     const after = world.query(Pos, Vel);
-    expect(after.length).toBe(1);
+    expect(after.archetype_count).toBe(1);
     expect(after.archetypes[0].entity_list).toContain(e1);
   });
 
   it("deferred remove_component does not change query result until flush", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -247,7 +247,7 @@ describe("World query", () => {
 
     // Cache a query for [Pos, Vel] — entity e1 is in it
     const before = world.query(Pos, Vel);
-    expect(before.length).toBe(1);
+    expect(before.archetype_count).toBe(1);
     expect(before.archetypes[0].entity_count).toBe(1);
 
     // System defers a remove_component
@@ -271,7 +271,7 @@ describe("World query", () => {
   });
 
   it("two systems in sequence see consistent state until flush", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -296,7 +296,7 @@ describe("World query", () => {
     // System 2 observes Pos+Vel query — should still see old state
     const s2 = world.register_system({
       fn() {
-        sys2_vel_len = pos_vel_query.length;
+        sys2_vel_len = pos_vel_query.archetype_count;
       },
     });
 
@@ -309,12 +309,12 @@ describe("World query", () => {
 
     // After update flush, re-query sees the change
     const after = world.query(Pos, Vel);
-    expect(after.length).toBe(1);
+    expect(after.archetype_count).toBe(1);
     expect(after.archetypes[0].entity_list).toContain(e1);
   });
 
   it("flush processes structural changes before destructions", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -339,11 +339,11 @@ describe("World query", () => {
   });
 
   //=========================================================
-  // Query.each() — typed column iteration
+  // for..of iteration
   //=========================================================
 
-  it("each() calls fn once per non-empty archetype with correct columns and count", () => {
-    const world = new World();
+  it("for..of yields non-empty archetypes with correct columns and count", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -355,25 +355,27 @@ describe("World query", () => {
     world.add_component(e2, Pos, { x: 30, y: 40 });
     world.add_component(e2, Vel, { vx: 3, vy: 4 });
 
-    let call_count = 0;
+    let arch_count = 0;
     let total_entities = 0;
 
-    world.query(Pos, Vel).each((pos, vel, n) => {
-      call_count++;
-      total_entities += n;
+    for (const arch of world.query(Pos, Vel)) {
+      arch_count++;
+      total_entities += arch.entity_count;
       // Verify typed columns are accessible
-      for (let i = 0; i < n; i++) {
-        expect(typeof pos.x[i]).toBe("number");
-        expect(typeof vel.vx[i]).toBe("number");
+      const px = arch.get_column(Pos, "x");
+      const vx = arch.get_column(Vel, "vx");
+      for (let i = 0; i < arch.entity_count; i++) {
+        expect(typeof px[i]).toBe("number");
+        expect(typeof vx[i]).toBe("number");
       }
-    });
+    }
 
-    expect(call_count).toBe(1); // one archetype
+    expect(arch_count).toBe(1); // one archetype
     expect(total_entities).toBe(2);
   });
 
-  it("each() skips archetypes with zero entities", () => {
-    const world = new World();
+  it("for..of skips archetypes with zero entities", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -384,18 +386,18 @@ describe("World query", () => {
     const q = world.query(Pos, Vel);
 
     // Deferred destroy + flush to empty the archetype
-    world.destroy_entity(e1);
+    world.destroy_entity_deferred(e1);
     world.flush();
 
-    let call_count = 0;
-    q.each((_pos, _vel, _n) => {
-      call_count++;
-    });
-    expect(call_count).toBe(0);
+    let arch_count = 0;
+    for (const _arch of q) {
+      arch_count++;
+    }
+    expect(arch_count).toBe(0);
   });
 
-  it("each() reflects correct typed array values", () => {
-    const world = new World();
+  it("for..of iteration allows column mutation", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -403,12 +405,16 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 5, y: 7 });
     world.add_component(e1, Vel, { vx: 2, vy: 3 });
 
-    world.query(Pos, Vel).each((pos, vel, n) => {
-      for (let i = 0; i < n; i++) {
-        pos.x[i] += vel.vx[i]; // 5 + 2 = 7
-        pos.y[i] += vel.vy[i]; // 7 + 3 = 10
+    for (const arch of world.query(Pos, Vel)) {
+      const px = arch.get_column(Pos, "x");
+      const py = arch.get_column(Pos, "y");
+      const vx = arch.get_column(Vel, "vx");
+      const vy = arch.get_column(Vel, "vy");
+      for (let i = 0; i < arch.entity_count; i++) {
+        px[i] += vx[i]; // 5 + 2 = 7
+        py[i] += vy[i]; // 7 + 3 = 10
       }
-    });
+    }
 
     // Verify mutation via get_column
     for (const arch of world.query(Pos, Vel)) {
@@ -426,7 +432,7 @@ describe("World query", () => {
   //=========================================================
 
   it("not() excludes archetypes that have the given component", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Stat = world.register_component(Static);
@@ -445,7 +451,7 @@ describe("World query", () => {
     const q = world.query(Pos, Vel).not(Stat);
 
     // Only e1's archetype should match
-    expect(q.length).toBe(1);
+    expect(q.archetype_count).toBe(1);
 
     // e2 should not appear in any archetype
     const entity_ids = [...q].flatMap((a) => [...a.entity_list]);
@@ -454,7 +460,7 @@ describe("World query", () => {
   });
 
   it("not() live — newly created excluded archetype does not appear", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Stat = world.register_component(Static);
@@ -464,7 +470,7 @@ describe("World query", () => {
     world.add_component(e1, Vel, { vx: 3, vy: 4 });
 
     const q = world.query(Pos, Vel).not(Stat);
-    const before_len = q.length;
+    const before_len = q.archetype_count;
 
     // Create a new entity with the excluded component
     const e2 = world.create_entity();
@@ -473,11 +479,11 @@ describe("World query", () => {
     world.add_component(e2, Stat, {});
 
     // Live array should NOT have grown — excluded archetype rejected
-    expect(q.length).toBe(before_len);
+    expect(q.archetype_count).toBe(before_len);
   });
 
   it("not() cache hit — same Query reference returned on repeated calls", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Stat = world.register_component(Static);
@@ -493,7 +499,7 @@ describe("World query", () => {
   //=========================================================
 
   it("and() returns same cached Query as query() with both components", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -508,7 +514,7 @@ describe("World query", () => {
   });
 
   it("and() chaining is order-independent — same mask → same result", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -519,7 +525,7 @@ describe("World query", () => {
   });
 
   it("and() cache hit — same Query reference on repeated chains", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -530,7 +536,7 @@ describe("World query", () => {
   });
 
   it("and() skips duplicate components already in include mask", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
 
     const q1 = world.query(Pos).and(Pos);
@@ -540,11 +546,11 @@ describe("World query", () => {
   });
 
   //=========================================================
-  // Query.or() — any-of filtering
+  // Query.any_of() — any-of filtering
   //=========================================================
 
-  it("or() passes archetypes with at least one of the or-components", () => {
-    const world = new World();
+  it("any_of() passes archetypes with at least one of the any_of-components", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Hp = world.register_component(Health);
@@ -563,7 +569,7 @@ describe("World query", () => {
     const e3 = world.create_entity();
     world.add_component(e3, Pos, { x: 7, y: 8 });
 
-    const q = world.query(Pos).or(Vel, Hp);
+    const q = world.query(Pos).any_of(Vel, Hp);
 
     const entity_ids = [...q].flatMap((a) => [...a.entity_list]);
     expect(entity_ids).toContain(e1);
@@ -571,8 +577,8 @@ describe("World query", () => {
     expect(entity_ids).not.toContain(e3);
   });
 
-  it("or() live — new matching archetype gets added to live array", () => {
-    const world = new World();
+  it("any_of() live — new matching archetype gets added to live array", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Hp = world.register_component(Health);
@@ -581,21 +587,21 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 1, y: 2 });
     world.add_component(e1, Vel, { vx: 3, vy: 4 });
 
-    const q = world.query(Pos).or(Vel, Hp);
-    const before_len = q.length;
+    const q = world.query(Pos).any_of(Vel, Hp);
+    const before_len = q.archetype_count;
 
     // New archetype with Pos + Hp should be picked up
     const e2 = world.create_entity();
     world.add_component(e2, Pos, { x: 5, y: 6 });
     world.add_component(e2, Hp, { hp: 50 });
 
-    expect(q.length).toBeGreaterThan(before_len);
+    expect(q.archetype_count).toBeGreaterThan(before_len);
     const entity_ids = [...q].flatMap((a) => [...a.entity_list]);
     expect(entity_ids).toContain(e2);
   });
 
-  it("or() live — archetype with none of the or-components is not added", () => {
-    const world = new World();
+  it("any_of() live — archetype with none of the any_of-components is not added", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Hp = world.register_component(Health);
@@ -604,25 +610,25 @@ describe("World query", () => {
     world.add_component(e1, Pos, { x: 1, y: 2 });
     world.add_component(e1, Vel, { vx: 3, vy: 4 });
 
-    const q = world.query(Pos).or(Vel);
-    const before_len = q.length;
+    const q = world.query(Pos).any_of(Vel);
+    const before_len = q.archetype_count;
 
     // New archetype with Pos + Hp — Hp is NOT in the or-mask
     const e2 = world.create_entity();
     world.add_component(e2, Pos, { x: 5, y: 6 });
     world.add_component(e2, Hp, { hp: 50 });
 
-    expect(q.length).toBe(before_len);
+    expect(q.archetype_count).toBe(before_len);
   });
 
-  it("or() cache hit — same Query reference on repeated calls", () => {
-    const world = new World();
+  it("any_of() cache hit — same Query reference on repeated calls", () => {
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
     const Hp = world.register_component(Health);
 
-    const q1 = world.query(Pos).or(Vel, Hp);
-    const q2 = world.query(Pos).or(Vel, Hp);
+    const q1 = world.query(Pos).any_of(Vel, Hp);
+    const q2 = world.query(Pos).any_of(Vel, Hp);
 
     expect(q1).toBe(q2);
   });
@@ -632,7 +638,7 @@ describe("World query", () => {
   //=========================================================
 
   it("register_system with query builder resolves query at registration time", () => {
-    const world = new World();
+    const world = new ECS();
     const Pos = world.register_component(Position);
     const Vel = world.register_component(Velocity);
 
@@ -653,11 +659,11 @@ describe("World query", () => {
     world.update(0.016);
 
     expect(captured_q).not.toBeNull();
-    expect(captured_q.length).toBe(1);
+    expect(captured_q.archetype_count).toBe(1);
   });
 
   it("register_system with config object still works", () => {
-    const world = new World();
+    const world = new ECS();
     let ran = false;
     const sys = world.register_system({
       fn: (_ctx, _dt) => {
@@ -669,4 +675,5 @@ describe("World query", () => {
     world.update(0.016);
     expect(ran).toBe(true);
   });
+
 });

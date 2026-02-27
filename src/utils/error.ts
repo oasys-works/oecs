@@ -1,12 +1,3 @@
-/***
- * Error — Base error types and ECS error categories.
- *
- * AppError is the base class for all application errors, carrying an
- * is_operational flag (recoverable vs programmer error) and optional context.
- * ECSError extends it with an ECS_ERROR category enum for structured matching.
- *
- ***/
-
 export abstract class AppError extends Error {
   constructor(
     message: string,
@@ -27,6 +18,7 @@ export enum ECS_ERROR {
   CIRCULAR_SYSTEM_DEPENDENCY = "CIRCULAR_SYSTEM_DEPENDENCY",
   DUPLICATE_SYSTEM = "DUPLICATE_SYSTEM",
   ARCHETYPE_NOT_FOUND = "ARCHETYPE_NOT_FOUND",
+  RESOURCE_NOT_REGISTERED = "RESOURCE_NOT_REGISTERED",
 }
 
 export class ECSError extends AppError {

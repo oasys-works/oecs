@@ -9,17 +9,16 @@ import {
   type SystemFn,
 } from "../system";
 
-let next_id = 0;
-
 const noop: SystemFn = () => {};
 
 function make_ctx(): SystemContext {
   return new SystemContext(new Store());
 }
 
+let _schedule_test_next_id = 0;
 function make_system(overrides?: Partial<SystemConfig>): SystemDescriptor {
   return Object.freeze({
-    id: as_system_id(next_id++),
+    id: as_system_id(_schedule_test_next_id++),
     fn: overrides?.fn ?? noop,
     on_added: overrides?.on_added,
     on_removed: overrides?.on_removed,

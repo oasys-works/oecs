@@ -15,23 +15,23 @@ export class SparseMap<V> {
   private _dense_vals: V[] = [];
   private _sparse: number[] = [];
 
-  get size(): number {
+  public get size(): number {
     return this._dense_keys.length;
   }
 
-  get keys(): readonly number[] {
+  public get keys(): readonly number[] {
     return this._dense_keys;
   }
 
-  has(key: number): boolean {
+  public has(key: number): boolean {
     return this._dense_keys[this._sparse[key]] === key;
   }
 
-  get(key: number): V | undefined {
+  public get(key: number): V | undefined {
     return this.has(key) ? this._dense_vals[this._sparse[key]] : undefined;
   }
 
-  set(key: number, value: V): void {
+  public set(key: number, value: V): void {
     if (this.has(key)) {
       this._dense_vals[this._sparse[key]] = value;
       return;
@@ -41,7 +41,7 @@ export class SparseMap<V> {
     this._dense_vals.push(value);
   }
 
-  delete(key: number): boolean {
+  public delete(key: number): boolean {
     if (!this.has(key)) return false;
     const row = this._sparse[key];
     const last_key = this._dense_keys[this._dense_keys.length - 1];
@@ -54,13 +54,13 @@ export class SparseMap<V> {
     return true;
   }
 
-  clear(): void {
+  public clear(): void {
     this._dense_keys.length = 0;
     this._dense_vals.length = 0;
     this._sparse.length = 0;
   }
 
-  for_each(fn: (key: number, value: V) => void): void {
+  public for_each(fn: (key: number, value: V) => void): void {
     for (let i = 0; i < this._dense_keys.length; i++) {
       fn(this._dense_keys[i], this._dense_vals[i]);
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { World } from "../world";
+import { ECS } from "../ecs";
 import { SCHEDULE } from "../schedule";
 import type { SystemContext } from "../query";
 import type { SystemConfig } from "../system";
@@ -13,13 +13,13 @@ function make_config(overrides?: Partial<SystemConfig>): SystemConfig {
   };
 }
 
-describe("World system registration", () => {
+describe("ECS system registration", () => {
   //=========================================================
   // Registration
   //=========================================================
 
   it("register_system assigns unique SystemIDs", () => {
-    const world = new World();
+    const world = new ECS();
     const a = world.register_system(make_config());
     const b = world.register_system(make_config());
 
@@ -29,14 +29,14 @@ describe("World system registration", () => {
   });
 
   it("register_system returns a frozen descriptor", () => {
-    const world = new World();
+    const world = new ECS();
     const descriptor = world.register_system(make_config());
 
     expect(Object.isFrozen(descriptor)).toBe(true);
   });
 
   it("system_count tracks registrations", () => {
-    const world = new World();
+    const world = new ECS();
     expect(world.system_count).toBe(0);
 
     world.register_system(make_config());
@@ -52,7 +52,7 @@ describe("World system registration", () => {
 
   it("remove_system calls on_removed and removes from registry", () => {
     const on_removed = vi.fn();
-    const world = new World();
+    const world = new ECS();
     const descriptor = world.register_system(make_config({ on_removed }));
 
     world.remove_system(descriptor);
@@ -69,7 +69,7 @@ describe("World system registration", () => {
     const on_added_a = vi.fn();
     const on_added_b = vi.fn();
 
-    const world = new World();
+    const world = new ECS();
     world.register_system(make_config({ on_added: on_added_a }));
     world.register_system(make_config({ on_added: on_added_b }));
 
@@ -80,7 +80,7 @@ describe("World system registration", () => {
   });
 
   it("startup skips systems without on_added", () => {
-    const world = new World();
+    const world = new ECS();
     world.register_system(make_config()); // no on_added
 
     expect(() => world.startup()).not.toThrow();
@@ -92,7 +92,7 @@ describe("World system registration", () => {
 
   it("dispose calls dispose then on_removed, then clears", () => {
     const call_order: string[] = [];
-    const world = new World();
+    const world = new ECS();
 
     world.register_system(
       make_config({
@@ -108,7 +108,7 @@ describe("World system registration", () => {
   });
 
   it("dispose handles systems without lifecycle hooks", () => {
-    const world = new World();
+    const world = new ECS();
     world.register_system(make_config());
 
     expect(() => world.dispose()).not.toThrow();
@@ -121,19 +121,23 @@ describe("World system registration", () => {
 
   it("descriptor preserves the system function", () => {
     const fn = vi.fn();
-    const world = new World();
+    const world = new ECS();
     const descriptor = world.register_system(make_config({ fn }));
 
     expect(descriptor.fn).toBe(fn);
   });
 });
 
-describe("World fixed timestep", () => {
+describe("ECS fixed timestep", () => {
   it("runs FIXED_UPDATE the correct number of times per frame", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     let tick_count = 0;
     const sys = world.register_system(
-      make_config({ fn: () => { tick_count++; } }),
+      make_config({
+        fn: () => {
+          tick_count++;
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();
@@ -144,10 +148,14 @@ describe("World fixed timestep", () => {
   });
 
   it("accumulates partial frames across updates", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     let tick_count = 0;
     const sys = world.register_system(
-      make_config({ fn: () => { tick_count++; } }),
+      make_config({
+        fn: () => {
+          tick_count++;
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();
@@ -163,10 +171,14 @@ describe("World fixed timestep", () => {
 
   it("passes fixed_timestep as dt to FIXED_UPDATE systems", () => {
     const fixed_dt = 1 / 50;
-    const world = new World({ fixed_timestep: fixed_dt });
+    const world = new ECS({ fixed_timestep: fixed_dt });
     let received_dt = 0;
     const sys = world.register_system(
-      make_config({ fn: (_ctx, dt) => { received_dt = dt; } }),
+      make_config({
+        fn: (_ctx, dt) => {
+          received_dt = dt;
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();
@@ -176,10 +188,14 @@ describe("World fixed timestep", () => {
   });
 
   it("clamps accumulator to prevent spiral of death", () => {
-    const world = new World({ fixed_timestep: 1 / 60, max_fixed_steps: 4 });
+    const world = new ECS({ fixed_timestep: 1 / 60, max_fixed_steps: 4 });
     let tick_count = 0;
     const sys = world.register_system(
-      make_config({ fn: () => { tick_count++; } }),
+      make_config({
+        fn: () => {
+          tick_count++;
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();
@@ -190,10 +206,14 @@ describe("World fixed timestep", () => {
   });
 
   it("skips accumulator loop when no FIXED_UPDATE systems exist", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     const order: string[] = [];
     const sys = world.register_system(
-      make_config({ fn: () => { order.push("update"); } }),
+      make_config({
+        fn: () => {
+          order.push("update");
+        },
+      }),
     );
     world.add_systems(SCHEDULE.UPDATE, sys);
     world.startup();
@@ -204,14 +224,22 @@ describe("World fixed timestep", () => {
   });
 
   it("FIXED_UPDATE runs before variable UPDATE phases", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     const order: string[] = [];
 
     const fixed = world.register_system(
-      make_config({ fn: () => { order.push("fixed"); } }),
+      make_config({
+        fn: () => {
+          order.push("fixed");
+        },
+      }),
     );
     const update = world.register_system(
-      make_config({ fn: () => { order.push("update"); } }),
+      make_config({
+        fn: () => {
+          order.push("update");
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, fixed);
     world.add_systems(SCHEDULE.UPDATE, update);
@@ -222,7 +250,7 @@ describe("World fixed timestep", () => {
   });
 
   it("fixed_alpha exposes interpolation factor", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     const sys = world.register_system(make_config());
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();
@@ -233,7 +261,7 @@ describe("World fixed timestep", () => {
   });
 
   it("fixed_timestep getter/setter works", () => {
-    const world = new World({ fixed_timestep: 1 / 60 });
+    const world = new ECS({ fixed_timestep: 1 / 60 });
     expect(world.fixed_timestep).toBeCloseTo(1 / 60);
 
     world.fixed_timestep = 1 / 30;
@@ -241,13 +269,17 @@ describe("World fixed timestep", () => {
   });
 
   it("defaults to 1/60 timestep and 4 max steps", () => {
-    const world = new World();
+    const world = new ECS();
     expect(world.fixed_timestep).toBeCloseTo(1 / 60);
 
     // Verify max_fixed_steps defaults to 4 by testing clamping
     let tick_count = 0;
     const sys = world.register_system(
-      make_config({ fn: () => { tick_count++; } }),
+      make_config({
+        fn: () => {
+          tick_count++;
+        },
+      }),
     );
     world.add_systems(SCHEDULE.FIXED_UPDATE, sys);
     world.startup();

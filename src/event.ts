@@ -30,7 +30,7 @@ import {
   validate_and_cast,
   is_non_negative_integer,
 } from "type_primitives";
-import type { ComponentFields, ColumnsForSchema } from "./component";
+import type { ComponentFields, ColumnsForFields } from "./component";
 
 export type EventID = Brand<number, "event_id">;
 export const as_event_id = (value: number) =>
@@ -43,16 +43,20 @@ export const as_event_id = (value: number) =>
 // Phantom symbol for the field schema — never exists at runtime.
 declare const __event_schema: unique symbol;
 
-export type EventDef<F extends ComponentFields = ComponentFields> =
-  EventID & { readonly [__event_schema]: F };
+export type EventDef<F extends ComponentFields = ComponentFields> = EventID & {
+  readonly [__event_schema]: F;
+};
 
 /** Reader view over an event channel's SoA columns. */
-export type EventReader<F extends ComponentFields> = { length: number } & ColumnsForSchema<F>;
+export type EventReader<F extends ComponentFields> = {
+  length: number;
+} & ColumnsForFields<F>;
 
 export class EventChannel {
-  readonly field_names: string[];
-  readonly columns: number[][];
-  readonly reader: EventReader<any>;
+  public readonly field_names: string[];
+  public readonly columns: number[][];
+  // any: type-erased storage — channel is stored in Map<number, EventChannel>, F is lost
+  public readonly reader: EventReader<any>;
 
   constructor(field_names: string[]) {
     this.field_names = field_names;
@@ -62,6 +66,7 @@ export class EventChannel {
     }
 
     // Build the reader object: { length: 0, [field]: columns[i] }
+    // any: partially-constructed EventReader<F> — dynamically assigned columns become mapped type
     const reader: any = { length: 0 };
     for (let i = 0; i < field_names.length; i++) {
       reader[field_names[i]] = this.columns[i];
@@ -69,7 +74,7 @@ export class EventChannel {
     this.reader = reader;
   }
 
-  emit(values: Record<string, number>): void {
+  public emit(values: Record<string, number>): void {
     const names = this.field_names;
     const cols = this.columns;
     for (let i = 0; i < names.length; i++) {
@@ -79,11 +84,11 @@ export class EventChannel {
   }
 
   /** Emit a signal (zero-field event). */
-  emit_signal(): void {
+  public emit_signal(): void {
     this.reader.length++;
   }
 
-  clear(): void {
+  public clear(): void {
     this.reader.length = 0;
     const cols = this.columns;
     for (let i = 0; i < cols.length; i++) {
