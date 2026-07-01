@@ -14,85 +14,89 @@
 
 export type CompareFn<T> = (a: T, b: T) => number;
 
+/**
+ * Generic array-backed binary heap with configurable comparator.
+ *
+ */
 export class BinaryHeap<T> {
-  private readonly _compare: CompareFn<T>;
-  private readonly _data: T[] = [];
+	private readonly _compare: CompareFn<T>;
+	private readonly _data: T[] = [];
 
-  constructor(compare: CompareFn<T>) {
-    this._compare = compare;
-  }
+	constructor(compare: CompareFn<T>) {
+		this._compare = compare;
+	}
 
-  public get size(): number {
-    return this._data.length;
-  }
+	public get size(): number {
+		return this._data.length;
+	}
 
-  /** Returns the highest-priority element without removing it, or undefined if empty. */
-  public peek(): T | undefined {
-    return this._data[0];
-  }
+	/** Returns the highest-priority element without removing it, or undefined if empty. */
+	public peek(): T | undefined {
+		return this._data[0];
+	}
 
-  /** Inserts a value and restores heap order by sifting up. O(log n). */
-  public push(value: T): void {
-    this._data.push(value);
-    this._sift_up(this._data.length - 1);
-  }
+	/** Inserts a value and restores heap order by sifting up. O(log n). */
+	public push(value: T): void {
+		this._data.push(value);
+		this._siftUp(this._data.length - 1);
+	}
 
-  /** Removes and returns the highest-priority element, or undefined if empty. O(log n). */
-  public pop(): T | undefined {
-    const data = this._data;
-    const len = data.length;
-    if (len === 0) return undefined;
+	/** Removes and returns the highest-priority element, or undefined if empty. O(log n). */
+	public pop(): T | undefined {
+		const data = this._data;
+		const len = data.length;
+		if (len === 0) return undefined;
 
-    const top = data[0];
-    const last = data.pop()!;
-    if (data.length > 0) {
-      data[0] = last;
-      this._sift_down(0);
-    }
-    return top;
-  }
+		const top = data[0];
+		const last = data.pop()!;
+		if (data.length > 0) {
+			data[0] = last;
+			this._siftDown(0);
+		}
+		return top;
+	}
 
-  /** Removes all elements. O(1). */
-  public clear(): void {
-    this._data.length = 0;
-  }
+	/** Removes all elements. O(1). */
+	public clear(): void {
+		this._data.length = 0;
+	}
 
-  /** Moves a node up toward the root until heap order is restored. */
-  private _sift_up(index: number): void {
-    const data = this._data;
-    const compare = this._compare;
-    const value = data[index];
+	/** Moves a node up toward the root until heap order is restored. */
+	private _siftUp(index: number): void {
+		const data = this._data;
+		const compare = this._compare;
+		const value = data[index];
 
-    while (index > 0) {
-      const parent = (index - 1) >> 1;
-      if (compare(value, data[parent]) >= 0) break;
-      data[index] = data[parent];
-      index = parent;
-    }
-    data[index] = value;
-  }
+		while (index > 0) {
+			const parent = (index - 1) >> 1;
+			if (compare(value, data[parent]) >= 0) break;
+			data[index] = data[parent];
+			index = parent;
+		}
+		data[index] = value;
+	}
 
-  /** Moves a node down away from the root until heap order is restored. */
-  private _sift_down(index: number): void {
-    const data = this._data;
-    const compare = this._compare;
-    const len = data.length;
-    const half = len >> 1; // nodes at index >= half are leaves
-    const value = data[index];
+	/** Moves a node down away from the root until heap order is restored. */
+	private _siftDown(index: number): void {
+		const data = this._data;
+		const compare = this._compare;
+		const len = data.length;
+		const half = len >> 1; // nodes at index >= half are leaves
+		const value = data[index];
 
-    while (index < half) {
-      let best = (index << 1) + 1; // left child
-      const right = best + 1;
+		while (index < half) {
+			let best = (index << 1) + 1; // left child
+			const right = best + 1;
 
-      // Pick the child with higher priority (smaller compare value)
-      if (right < len && compare(data[right], data[best]) < 0) {
-        best = right;
-      }
+			// Pick the child with higher priority (smaller compare value)
+			if (right < len && compare(data[right], data[best]) < 0) {
+				best = right;
+			}
 
-      if (compare(data[best], value) >= 0) break;
-      data[index] = data[best];
-      index = best;
-    }
-    data[index] = value;
-  }
+			if (compare(data[best], value) >= 0) break;
+			data[index] = data[best];
+			index = best;
+		}
+		data[index] = value;
+	}
 }

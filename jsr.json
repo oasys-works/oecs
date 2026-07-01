@@ -1,13 +1,23 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "license": "MIT",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./primitives": "./src/primitives.ts",
+    "./reactive": "./src/core/reactive/index.ts",
+    "./reactive-sync": "./src/extensions/reactive/index.ts",
+    "./editor": "./src/extensions/editor/index.ts",
+    "./solid": "./src/extensions/solid/index.ts",
+    "./shared": "./src/shared.ts"
+  },
+  "imports": {
+    "solid-js": "npm:solid-js@^1.9.3"
+  },
   "publish": {
     "exclude": [
       "dist",
       "node_modules",
-      "src/__tests__",
       "**/*.test.ts",
       "**/*.bench.ts",
       "vite.config.ts",

@@ -1,0 +1,95 @@
+# Observers
+
+An **observer** runs a callback when a component is added, removed, changed, or when its entity is enabled/disabled. It's the push-based counterpart to polling with a [`changed()`](./change-detection.md) query: register once, get called at the right moment.
+
+```ts
+const handle = ecs.observe(Health, {
+  access: { reads: [Health], writes: [], spawns: [[Corpse]] },  // declare what the callbacks touch
+  onRemove: (eid, ctx) => ctx.commands.spawn(Corpse({ /* … */ })),
+});
+
+handle.dispose();   // unregister when done (idempotent)
+```
+
+## `observe`
+
+```ts
+observe<S>(def: ComponentDef<S>, config: ObserverConfig): ObserverHandle;
+interface ObserverHandle { dispose(): void; }
+```
+
+The `config` shape decides which callbacks are allowed:
+
+```ts
+// Structural — add/remove/enable/disable:
+interface StructuralObserverConfig {
+  onAdd?: (eid: EntityID, ctx: SystemContext) => void;
+  onRemove?: (eid: EntityID, ctx: SystemContext) => void;
+  onDisable?: (eid: EntityID, ctx: SystemContext) => void;
+  onEnable?: (eid: EntityID, ctx: SystemContext) => void;
+  access?: Partial<SystemAccessDeclaration>;   // + the reads/writes/spawns the callbacks need
+  yieldExisting?: boolean;
+}
+
+// onSet, archetype-granular (the default) — one call per changed archetype-column:
+interface ArchetypeSetObserverConfig extends /* the base above */ {
+  onSet: (arch: ArchetypeView, ctx: SystemContext) => void;
+  granularity?: "archetype";
+}
+
+// onSet, entity-granular — one call per changed entity:
+interface EntitySetObserverConfig extends /* the base above */ {
+  onSet: (eid: EntityID, ctx: SystemContext) => void;
+  granularity: "entity";
+}
+```
+
+## When each callback fires
+
+- **`onAdd` / `onRemove`** fire at the **structural-flush boundary** — after the deferred batch commits, so an observer never sees a torn, half-applied state. They loop to a fixed point, so cascades (an `onAdd` that adds another component) settle within the same flush.
+- **`onDisable` / `onEnable`** fire at the same boundary, **once per net transition** across a drain (disable → enable → disable in one tick fires a single `onDisable`), for every component the entity carries.
+- **`onSet`** fires at the post-update detection point (the tick tail):
+  - *archetype-granular* (default) — `(arch, ctx)` per changed archetype-column, reusing the free change tick. You iterate `arch.entityCount` rows yourself.
+  - *entity-granular* — `(eid, ctx)` per changed entity, draining an opt-in per-row dirty list.
+
+```ts
+// React to every entity whose HexPos changed, precisely once each:
+ecs.observe(HexPos, {
+  access: { reads: [HexPos], writes: [] },
+  granularity: "entity",
+  onSet: (eid, ctx) => reindexSpatial(eid, ctx.getField(eid, HexPos, "q")),
+});
+```
+
+## Caveats
+
+> [!IMPORTANT]
+> **Declare `access`.** Callbacks run inside an access span; state they touch (reads, writes, `spawns`, `despawns`, resources) must be declared on the observer config, or it throws in dev. These declarations also drive the firing order (below), so a wrong declaration can silently reorder an observer relative to others.
+
+> [!WARNING]
+> **`onSet` is not a per-write hook** — it's *derived* change detection. Archetype grain reuses the change tick (free, but fires per changed archetype-column, so you get all its rows even if one changed). Entity grain fires exactly once per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Choose by change density.
+
+> [!WARNING]
+> **Only deferred, in-schedule ops fire observers.** An *immediate* host-side `ecs.addComponent` / `ecs.disable` fires nothing — only the deferred `ctx.commands.add` / `ctx.disable` (which drain at the flush) do. Register observers at build time, **before `startup()`**, so the archetypes they spawn into are prewarmed.
+
+> [!WARNING]
+> **Don't emit events from `onSet`** — it runs where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev). See [events](./events.md).
+
+> [!NOTE]
+> `yieldExisting: true` replays `onAdd` over the current **enabled** matches at registration — handy to seed a derived structure from entities that already exist (a disabled entity is skipped at seed). `dispose()` is idempotent and safe mid-flush.
+
+## Firing order (determinism)
+
+When it matters — e.g. for [deterministic](./determinism.md) replay — observers fire in a stable order:
+
+- **Across observers:** access-topological (a writer of `X` before readers of `X`, derived from each observer's declared `access`), tie-broken by component id then registration id. This is "glitch-free" ordering.
+- **Within one observer:** ascending `EntityID`.
+- **Within one structural round:** remove, then add, then disable, then enable — "leaving" edges before "entering" ones.
+
+Observer state (like the change tick) is excluded from `stateHash` and snapshots but produced in canonical order, so replays reproduce it.
+
+## See also
+
+- [change detection](./change-detection.md) — the polling alternative and the shared tick
+- [entities](./entities.md) — enable/disable, which `onDisable`/`onEnable` observe
+- [relations](./relations.md) — cleanup policies are a related "react to structural change" mechanism

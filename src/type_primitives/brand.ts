@@ -6,13 +6,18 @@
  * accidental assignment between structurally identical types.
  *
  * Example: EntityID and ComponentID are both numbers at runtime, but
- * Brand<number, "entity_id"> and Brand<number, "component_id"> are
+ * Brand<number, "entityId"> and Brand<number, "component_id"> are
  * incompatible at compile time.
  *
  ***/
 
 declare const brand: unique symbol;
 
+/**
+ * Nominal typing helper — intersects T with a phantom readonly symbol
+ * so structurally identical types become compile-time incompatible.
+ *
+ */
 export type Brand<T, BrandName extends string> = T & {
-  readonly [brand]: BrandName;
+	readonly [brand]: BrandName;
 };

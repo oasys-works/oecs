@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BinaryHeap } from "../binary_heap";
 
-const min_num = (a: number, b: number) => a - b;
-const max_num = (a: number, b: number) => b - a;
+const minNum = (a: number, b: number) => a - b;
+const maxNum = (a: number, b: number) => b - a;
 
 describe("BinaryHeap", () => {
   //=========================================================
@@ -10,17 +10,17 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("empty heap has size 0", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     expect(h.size).toBe(0);
   });
 
   it("pop on empty heap returns undefined", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     expect(h.pop()).toBeUndefined();
   });
 
   it("peek on empty heap returns undefined", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     expect(h.peek()).toBeUndefined();
   });
 
@@ -29,7 +29,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("push increases size", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(10);
     expect(h.size).toBe(1);
     h.push(20);
@@ -43,7 +43,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("peek returns the minimum without removing it", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(5);
     h.push(3);
     h.push(8);
@@ -52,7 +52,7 @@ describe("BinaryHeap", () => {
   });
 
   it("peek returns same value on consecutive calls", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(7);
     h.push(2);
     expect(h.peek()).toBe(2);
@@ -64,7 +64,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("pop returns elements in ascending order (min-heap)", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(5);
     h.push(3);
     h.push(8);
@@ -79,7 +79,7 @@ describe("BinaryHeap", () => {
   });
 
   it("pop decreases size", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(10);
     h.push(20);
     h.push(30);
@@ -96,7 +96,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("max-heap returns elements in descending order", () => {
-    const h = new BinaryHeap<number>(max_num);
+    const h = new BinaryHeap<number>(maxNum);
     h.push(5);
     h.push(3);
     h.push(8);
@@ -114,7 +114,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("handles duplicate values correctly", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(3);
     h.push(3);
     h.push(1);
@@ -133,7 +133,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("single element: push then pop", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(42);
     expect(h.peek()).toBe(42);
     expect(h.pop()).toBe(42);
@@ -145,7 +145,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("clear resets size to 0", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(1);
     h.push(2);
     h.push(3);
@@ -156,7 +156,7 @@ describe("BinaryHeap", () => {
   });
 
   it("can push after clear", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(10);
     h.push(20);
     h.clear();
@@ -170,7 +170,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("interleaved push and pop maintain heap property", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     h.push(10);
     h.push(5);
     expect(h.pop()).toBe(5);
@@ -189,7 +189,7 @@ describe("BinaryHeap", () => {
   //=========================================================
 
   it("1000 elements are popped in sorted order", () => {
-    const h = new BinaryHeap<number>(min_num);
+    const h = new BinaryHeap<number>(minNum);
     const values: number[] = [];
     for (let i = 0; i < 1000; i++) {
       values.push(Math.floor(Math.random() * 10000));

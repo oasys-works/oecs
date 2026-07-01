@@ -1,13 +1,37 @@
-# Best Practices (v0.3.0)
+# Best Practices (v0.4)
 
-Practical guidance for building with oecs: patterns that work with the engine's grain, the trade-offs they imply, and pitfalls that bite if ignored.
+Practical guidance for building with oecs: patterns that work with the engine's grain, the trade-offs they imply, and the pitfalls that bite if ignored.
 
-This document does **not** repeat API reference or describe internals. For those, see:
+This document does **not** repeat the API reference or describe internals. For those, see:
 
-- API reference: [`docs/api/`](./api/) — one file per subsystem.
-- Internals: [`ARCHITECTURE.md`](./ARCHITECTURE.md) — data layout, flush model, cache invalidation rules.
+- API reference: [`docs/api/`](./api/) — one page per subsystem, indexed by [`api/index.md`](./api/index.md).
+- Internals: [`ARCHITECTURE.md`](./ARCHITECTURE.md) — data layout, the flush model, cache-invalidation rules, the column store.
 
-Every example compiles against v0.3.0. Most are adapted directly from `src/__tests__/integration/` — that directory is the canonical reference for "does this actually work".
+Examples name the instance `ecs` and use the 0.4 surface (camelCase methods, the config-form `registerSystem`, `eachChunk`, `ctx.ref`). The canonical compiling example is the README quick-start; `src/core/ecs/__tests__/` is the canonical "does this actually work" reference (see [§20](#20-testing)).
+
+## Contents
+
+1. [Designing components](#1-designing-components)
+2. [Dense vs sparse storage](#2-dense-vs-sparse-storage)
+3. [Keys at module scope](#3-keys-at-module-scope)
+4. [Declaring system access](#4-declaring-system-access)
+5. [Querying](#5-querying)
+6. [Reading vs writing columns](#6-reading-vs-writing-columns)
+7. [Immediate vs deferred structural ops](#7-immediate-vs-deferred-structural-ops)
+8. [System ordering, sets, and run conditions](#8-system-ordering-sets-and-run-conditions)
+9. [Change detection](#9-change-detection)
+10. [Observers](#10-observers)
+11. [Entity lifecycle](#11-entity-lifecycle)
+12. [Relations](#12-relations)
+13. [Events vs signals](#13-events-vs-signals)
+14. [Resources](#14-resources)
+15. [Determinism](#15-determinism)
+16. [The host-write seam and editor](#16-the-host-write-seam-and-editor)
+17. [Memory sizing](#17-memory-sizing)
+18. [The reactive UI seam](#18-the-reactive-ui-seam)
+19. [Using type primitives directly](#19-using-type-primitives-directly)
+20. [Testing](#20-testing)
+21. [Anti-patterns](#21-anti-patterns)
 
 ---
 
@@ -15,462 +39,599 @@ Every example compiles against v0.3.0. Most are adapted directly from `src/__tes
 
 ### Prefer many small components over one fat component
 
-Archetypes are keyed by the exact set of components attached to an entity. Queries filter on component masks. Both of these favour small, focused components:
+Archetypes are keyed by the exact set of components on an entity, and queries filter on component masks — both favour small, focused components:
 
-- **Query selectivity.** A system that only needs `Pos` can write `world.query(Pos)` and iterate every entity that has a position, regardless of what else they have. If `Pos` is part of a fat `Transform { x, y, rotation, scale, parent, … }`, you iterate all of those fields' columns whether you touch them or not.
-- **Archetype specialisation.** Adding a marker (e.g. `Frozen`) produces a new archetype. Systems that act only on frozen entities iterate just that archetype's rows. Bundling the frozen flag as `Transform.frozen` forces every consumer to branch in the inner loop.
-- **Partial writes stamp fewer ticks.** `_changed_tick` is per `(archetype, component)` (see [change-detection.md](./api/change-detection.md)). Touching one field of `Pos` stamps `Pos` — not `Vel`, not `Health`. Fat components force change-detection observers to wake up for changes they don't care about.
+- **Query selectivity.** A system that needs only `Pos` writes `ecs.query(Pos)` and iterates every entity with a position, regardless of what else they have. Bundle `Pos` into a fat `Transform { x, y, rotation, scale, parent, … }` and you drag all those columns through every loop that touches position.
+- **Archetype specialisation.** Adding a marker (e.g. `Frozen`) produces a new archetype; systems that act only on frozen entities iterate just those rows. As a `Transform.frozen` field it forces every consumer to branch in the inner loop.
+- **Partial writes stamp fewer ticks.** Change ticks are per `(archetype, component)`. Touching `Pos` stamps `Pos` — not `Vel`, not `Health`. A fat component wakes `changed()` observers for changes they don't care about.
 
 ```ts
-// Good — each component has one responsibility
-const Pos = world.register_component({ x: "f64", y: "f64" });
-const Vel = world.register_component({ vx: "f64", vy: "f64" });
-const Health = world.register_component({ current: "i32", max: "i32" });
+// Good — one responsibility each
+const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+const Vel = ecs.registerComponent(["vx", "vy"] as const);
+const Health = ecs.registerComponent({ current: "i32", max: "i32" });
 
 // Avoid — one fat component forces every consumer to see every field
-const Entity = world.register_component({
-  x: "f64", y: "f64", vx: "f64", vy: "f64",
-  hp: "i32", hp_max: "i32", frozen: "u8",
-});
+const Entity = ecs.registerComponent({ x: "f64", y: "f64", vx: "f64", vy: "f64", hp: "i32" });
 ```
 
-The counterpoint is **archetype fragmentation**: every unique component combination is a distinct archetype. Three independent boolean tags yield up to 2³ = 8 archetypes. Many of them may have only a handful of entities. When the combinations are large and sparse, consider packing related flags into a single `u8`-field component so you keep one archetype and filter per-entity in the loop. Trade ergonomics and query precision against archetype count.
+The counterpoint is **archetype fragmentation**: every unique combination is a distinct archetype, and three independent boolean tags yield up to 2³ = 8 archetypes, many nearly empty. When combinations are large and sparse, pack related flags into a single `u8` field, or move rare/churny flags to [sparse storage](#2-dense-vs-sparse-storage).
 
 ### Pick the narrowest typed-array tag that fits
 
-Columns are backed by concrete typed arrays (`component.ts` field_types → `TypedArrayFor[tag]`). Narrow types mean denser memory and better cache utilisation during iteration.
+Columns are concrete typed arrays; narrow types mean denser memory and better cache use.
 
-| Data                               | Tag           | Range                     |
-| ---------------------------------- | ------------- | ------------------------- |
-| Physics positions, velocities      | `"f64"`       | double precision          |
-| Pixel coordinates, small reals     | `"f32"`       | 32-bit float              |
-| Health, counters, signed integers  | `"i32"`       | ±2.1 × 10⁹                |
-| Tile indices, small counts         | `"u16"`       | 0–65,535                  |
-| Flags, small enums                 | `"u8"`        | 0–255                     |
+| Data | Tag |
+| --- | --- |
+| Physics positions, velocities | `"f64"` |
+| Pixel coordinates, small reals | `"f32"` |
+| Health, counters, signed integers | `"i32"` |
+| Tile indices, small counts | `"u16"` |
+| Flags, small enums | `"u8"` |
 
-```ts
-const Pos = world.register_component({ x: "f64", y: "f64" });
-const Health = world.register_component({ current: "i32", max: "i32" });
-const Tile = world.register_component({ type: "u8", variant: "u8" });
-```
-
-Use array shorthand when every field shares a type. The default is `"f64"`:
+Use the array shorthand when every field shares a type (default `"f64"`), and keep `as const` — without it TypeScript widens the field names to `string[]` and you lose per-field inference on `addComponent`, `getField`, columns, and refs.
 
 ```ts
-const Vel = world.register_component(["vx", "vy"] as const);         // all f64
-const Flags = world.register_component(["a", "b", "c"] as const, "u8"); // all u8
+const Vel = ecs.registerComponent(["vx", "vy"] as const);           // all f64
+const Flags = ecs.registerComponent(["a", "b", "c"] as const, "u8"); // all u8
 ```
 
-`as const` is load-bearing — without it, TypeScript widens to `string[]` and you lose field-level inference on `add_component`, `get_field`, `get_column`, and refs.
+There is **no boolean, string, or 64-bit-integer field type** — every field is a JS `number`. Model a flag as a tag or `u8`, an enum as a small integer, and keep strings in a resource or a side table keyed by `EntityID`.
 
-### Use tags for classification
+### Use tags for classification, and the callable form for bundles
 
-A tag is `register_tag()` — a component with no fields. Tag archetypes take a fast path that skips column operations entirely (`Archetype.add_entity_tag` / `move_entity_from_tag`), and they're the cleanest way to express "this entity is a kind of X":
+A tag (`registerTag()`) is a component with no fields — the cleanest way to express "this entity is a kind of X", and it takes column-free fast paths.
 
 ```ts
-const IsEnemy = world.register_tag();
-const IsPlayer = world.register_tag();
-const Frozen = world.register_tag();
-const Dead = world.register_tag();
+const IsEnemy = ecs.registerTag();
+const Frozen = ecs.registerTag();
+
+const enemies = ecs.query(Pos, Health).and(IsEnemy);
+const thawed = ecs.query(Health).without(Frozen);
 ```
 
-Tags shine with `not()` and `and()`:
+A `ComponentDef` is **callable** — `Pos({ x: 10, y: 20 })` produces a bundle, and the varargs spawn/add paths take bundles. This is the ergonomic way to build a multi-component entity at once, and it's the *only* attach path that zero-fills omitted fields:
 
 ```ts
-const alive = world.query(Health).not(Dead);
-const enemies = world.query(Pos, Health).and(IsEnemy);
+const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 ```
 
-Tags have no columns, so `ctx.ref(Tag, e)` cannot be constructed. Tags participate in mask matching only.
+The plain `ecs.addComponent(e, Pos, values)` path demands the **complete** `FieldValues<S>` (every field); provide `0` explicitly there, or use a bundle.
 
 ---
 
-## 2. Keys at module scope
+## 2. Dense vs sparse storage
 
-`event_key`, `signal_key`, and `resource_key` each mint a fresh symbol on every call. Identity only survives across registrations if the key is a single module-scope `const`:
+Dense components live in the archetype identity: adding or removing one moves the entity to a new archetype, copying its **entire** payload row. A sparse component (`registerSparseComponent` / `registerSparseTag`) lives *outside* identity — add/remove is a flat sparse-set insert/delete with no transition, no row copy, and no dense-identity bit consumed.
+
+| Use **sparse** for | Use **dense** for |
+| --- | --- |
+| data present on a small fraction of entities | data present on most matching entities |
+| flags/values that flip on and off constantly | stable structural identity |
+| cooldowns, transient markers, relation targets | anything iterated in a hot column loop |
+| escaping the **128-component dense cap** | — |
+
+```ts
+const Cooldown = ecs.registerSparseComponent({ ready: "u32" });
+ecs.addSparse(e, Cooldown, { ready: 90 });   // immediate, no archetype change
+```
+
+The cost: sparse membership isn't in the archetype mask, so it's invisible to a plain dense query and has no SoA span. Filter with `withSparse`/`withoutSparse` and iterate with `forEachEntity`:
+
+```ts
+ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
+  const ready = ecs.getSparseField(e, Cooldown, "ready");
+});
+```
+
+> [!WARNING]
+> The **128-slot dense budget is a hard cap** — each `registerComponent`/`registerTag` claims one archetype-mask bit and the 129th throws `COMPONENT_LIMIT_EXCEEDED`. Rare, churny, or budget-blowing data belongs in sparse storage, which is uncapped.
+
+Because sparse ops apply immediately, mutating the *driving* sparse membership during a `forEachEntity` walk shifts the live key array under you — buffer such edits and apply them after the loop.
+
+---
+
+## 3. Keys at module scope
+
+`eventKey`, `signalKey`, and `resourceKey` each mint a fresh symbol on every call. Identity only survives across registrations if the key is a single module-scope `const`:
 
 ```ts
 // keys.ts
-import { event_key, signal_key, resource_key } from "oecs";
+import { eventKey, signalKey, resourceKey } from "@oasys/oecs";
 
-export const DamageEvent = event_key<readonly ["target", "amount"]>("Damage");
-export const GameOver = signal_key("GameOver");
-export const Time = resource_key<{ delta: number; elapsed: number }>("Time");
+export const DamageEvent = eventKey<{ target: EntityID; amount: number }>("Damage");
+export const GameOver = signalKey("GameOver");
+export const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 ```
 
 Then import the key everywhere you emit, read, or access the resource:
 
 ```ts
-import { DamageEvent, GameOver, Time } from "./keys";
-
-world.register_event(DamageEvent, ["target", "amount"] as const);
-world.register_signal(GameOver);
-world.register_resource(Time, { delta: 0, elapsed: 0 });
+ecs.registerEvent(DamageEvent, ["target", "amount"]);
+ecs.registerSignal(GameOver);
+ecs.registerResource(Time, { delta: 0, elapsed: 0 });
 ```
 
-Why this matters:
+`resourceKey("Time")` inside a function body would produce a new symbol per call, and two sites would not see the same resource. Module scope also documents ownership: this key lives here, register it once, import it elsewhere. Duplicate registration throws loudly (`RESOURCE_ALREADY_REGISTERED`, `EVENT_ALREADY_REGISTERED`).
 
-- `resource_key("Time")` inside a function body would produce a new symbol per call. Two sites that both call it would not see the same resource.
-- Module scope also documents ownership: "this key lives here; register it once; import it elsewhere". Duplicate registration throws (`RESOURCE_ALREADY_REGISTERED`, `EVENT_ALREADY_REGISTERED`) — the error is loud, but the design intent is to avoid re-creating symbols at all.
+> [!TIP]
+> Declare an event schema as a **type literal**, not an `interface` — `eventKey<{ a: EntityID }>("…")` works, but an `interface` lacks the implicit index signature the `EventSchema` constraint needs.
 
 ---
 
-## 3. Querying
+## 4. Declaring system access
+
+Real work goes in the **config form** of `registerSystem`, which declares the components the system touches. A dev-mode access checker (tree-shaken from production) enforces those declarations, so a system that reads or writes something it didn't declare throws in dev — catching a whole class of "I forgot this system also touches Health" bugs before they ship.
+
+```ts
+const movers = ecs.query(Pos, Vel);
+
+const move = ecs.registerSystem({
+  name: "move",
+  reads: [Vel],
+  writes: [Pos],          // a write implies a read, and authorizes addComponent(Pos)
+  queries: [[Pos, Vel]],  // lint: every queried component must be in reads ∪ writes
+  fn: (ctx, dt) => {
+    movers.eachChunk((cols, count) => {
+      const { x, y } = cols.mut(Pos);
+      const { vx, vy } = cols.read(Vel);
+      for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
+    });
+  },
+});
+```
+
+Rules worth internalizing:
+
+- **`reads`/`writes` are mandatory** — pass empty arrays to say "touches no columns" explicitly. Every other declaration field defaults to empty.
+- **A write implies a read** and authorizes `addComponent` on that column.
+- **`destroyEntity` removes every component** — declare the superset in `despawns`.
+- **Sparse and relation ids are separate id spaces** — declare them in `sparseReads`/`sparseWrites` and `relationReads`/`relationWrites`, never in `reads`/`writes`.
+- **`queries` is a registration-time lint**, not a runtime term: it checks `queries ⊆ reads ∪ writes`. Keep it mirroring your actual `ctx.query(...)`/closed-over query terms.
+
+> [!WARNING]
+> The **bare-function** and **function + query-builder** overloads register with *empty* access — any component access they attempt throws in dev. They're only for trivial no-access systems (bump a counter, read a resource you wired in, drive rendering off a closed-over query). Use `exclusive: true` sparingly, for systems that genuinely touch everything (the host-command apply system, save/load, debug tooling) — it grants full access and bypasses every check.
+
+---
+
+## 5. Querying
 
 ### Narrow filters beat broad-plus-filter
 
-`world.query(...)` uses an include mask, optional `not(...)` exclude, and optional `any_of(...)` — all three combine and are cached (see [queries.md](./api/queries.md)). The store keeps a live `Archetype[]` per registered query; iteration visits only non-empty archetypes.
-
-Prefer the narrowest include set that expresses what the system needs:
+Prefer the narrowest include set that expresses what the system needs. `ecs.query(A, B)` matches every archetype with *at least* `A` and `B`; refine with `without`, `anyOf`, `optional`, `changed`, `withSparse`/`withRelation`. Each verb returns a new **cached** query, and composition is memoized, so equivalent filters are the same instance.
 
 ```ts
-// Good — include mask directly matches what the system reads
-const moveSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      const px = arch.get_column_mut(Pos, "x", ctx.world_tick);
-      const vx = arch.get_column(Vel, "vx");
-      for (let i = 0; i < arch.entity_count; i++) px[i] += vx[i] * dt;
-    });
-  },
-  (qb) => qb.every(Pos, Vel),
-);
-
-// Avoid — iterate everything with Pos, then branch
-const moveSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      if (!arch.has_component(Vel as unknown as number)) return;
-      // ...
-    });
-  },
-  (qb) => qb.every(Pos),
-);
+ecs.query(Pos)
+  .and(Vel)             // require Vel too
+  .without(Frozen)      // drop frozen entities
+  .anyOf(Player, NPC);  // and be a Player OR an NPC
 ```
 
-### Pair queries with the system that reads them
+Iterating everything with `Pos` and branching on `has(Vel)` in the loop is slower and noisier than just querying `(Pos, Vel)`.
 
-Use the two-arg `register_system(fn, qb => qb.every(...))` form. The query resolves once at registration; the returned `Query` is captured in the system's closure. No repeated mask construction per frame:
+### Build queries once and close over them
+
+Declare a query with `ecs.query(...)` at setup and capture it in the system's closure. The store keeps pushing newly-matching archetypes into it, so it never goes stale, and you pay no per-frame mask construction:
 
 ```ts
-const physicsSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => { /* ... */ });
-  },
-  (qb) => qb.every(Pos, Vel),
-);
+const movers = ecs.query(Pos, Vel);   // live, cached — build once
+const move = ecs.registerSystem({ reads: [Pos, Vel], writes: [Pos], fn: () => movers.eachChunk(/* … */) });
 ```
 
-Ad-hoc `world.query(...)` calls are still cached — equivalent filters return the same `Query` instance — but the builder form makes the query's owner obvious and keeps it co-located with the system body.
+The `registerSystem(fn, qb => qb.with(...))` builder overload is equivalent, but the closed-over form co-locates the query with the system and reads more clearly. Ad-hoc `ecs.query(...)` calls are still cached (equivalent filters return the same instance).
 
-### React to writes with `ChangedQuery`, not dirty flags
+### Pick the right terminal
 
-Every write through `get_column_mut`, `set_field`, `ref_mut`, or an archetype transition stamps the archetype's `_changed_tick[component]`. `ChangedQuery` yields archetypes whose stamp is `>= ctx.last_run_tick`:
+| Terminal | Callback | Mutate? | Use for |
+| --- | --- | --- | --- |
+| `forEach` | read-only `ArchetypeView` | no | reading columns |
+| `eachChunk` | mutable `cols` + `count` | **yes** | the mutating hot loop |
+| `forEachEntity` | one `EntityID` | via `ctx` | any query with a sparse / relation / hierarchy term |
 
-```ts
-const syncSys = world.register_system(
-  (q, ctx) => {
-    q.changed(Pos).for_each((arch) => {
-      const px = arch.get_column(Pos, "x");
-      const tx = arch.get_column_mut(Transform, "x", ctx.world_tick);
-      for (let i = 0; i < arch.entity_count; i++) tx[i] = px[i];
-    });
-  },
-  (qb) => qb.every(Pos, Transform),
-);
-```
+`forEach`, `eachChunk`, and `count` are **dense-only** — a query carrying a sparse, relation, or hierarchy term throws `SPARSE_QUERY_DENSE_PATH` in dev, because there's no column span. Use `forEachEntity` (or `forEachRelatedTo`) for those.
 
-This is cheaper and more reliable than a `u8 dirty` field you maintain by hand: no forgotten resets, no accidental iteration over stale flags, no extra column. Granularity is per-archetype — see section 7.
+> [!WARNING]
+> **Always loop to `arch.entityCount`, never a column's `.length`.** The raw buffer includes capacity and disabled rows past the live count; iterating `.length` reads garbage. `entityCount` is the enabled-row count. The `eachChunk` `count` parameter exists precisely to remove this trap.
 
 ---
 
-## 4. `ref` vs `ref_mut`
+## 6. Reading vs writing columns
 
-`ctx.ref(def, e)` returns a read-only `ReadonlyComponentRef<S>`; writing through it is a compile error. `ctx.ref_mut(def, e)` returns a writable `ComponentRef<S>` **and** stamps `_changed_tick[def] = store._tick` at the moment of creation (`query.ts:269`).
+Mutability is encoded in the accessor name, and the mutable ones **stamp the change tick eagerly** — the moment you acquire them, before any write, and even if you never write. That's what keeps `changed()` conservative. So reach for the read-only variant whenever you're only reading, both to avoid false change-detection *and* to signal intent.
 
-The two cost the same per field access; the only extra work `ref_mut` does is one array write at construction. But that single write is visible to every downstream `query.changed(def)` consumer:
+| | Bumps the tick | Read-only, no bump |
+| --- | --- | --- |
+| Hot column loop | `cols.mut(def)` | `cols.read(def)` |
+| One entity by id | `ctx.ref(def, e)` | `ctx.refRead(def, e)` |
+| One field | `ctx.setField` / `ctx.updateField` | `ctx.getField` |
+
+### `eachChunk` for the mutating hot loop
+
+```ts
+movers.eachChunk((cols, count) => {
+  const { x, y } = cols.mut(Pos);     // writable columns; stamps Pos once
+  const { vx, vy } = cols.read(Vel);  // read-only; no bump
+  for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
+});
+```
+
+Destructure `cols.mut(Pos)` immediately — the group object is cached per `(archetype, component)` and refreshed in place on the next call, so don't stash it across iterations.
+
+### `ctx.ref` / `ctx.refRead` for cold, per-entity paths
+
+Reach for a ref when the hot column loop doesn't fit: reacting to a single event, touching a specific entity by id, an occasional cross-entity write. Creating one is cheap (one `Object.create` over a cached prototype); each field access is a single typed-array index.
 
 ```ts
 // Read-only: no tick bump
-const pos = ctx.ref(Pos, player);
+const pos = ctx.refRead(Pos, player);
 ctx.emit(LogPos, { x: pos.x, y: pos.y });
 
-// Mutable: stamps Pos even if you never assign
-const pos = ctx.ref_mut(Pos, player);
-pos.x += dt; pos.y += dt;
+// Mutable: stamps Pos at creation, even if you never assign
+const pos = ctx.ref(Pos, player);
+pos.x += vel.vx * dt;
 ```
 
-Guard rails:
+> [!WARNING]
+> **A ref does not survive an archetype transition.** It's safe to hold across immediate reads/writes within a system (structural changes are deferred, so the entity can't move until the phase flush), but once the entity gains or loses a component its row moves — re-create the ref. Refs *are* grow-safe: they read the live column backing, which refreshes in place across a grow.
 
-- **Writing through `ref` is a type error**, not a silent no-op. The compiler catches it.
-- **Creating `ref_mut` you never write through still bumps the tick.** This will wake up every `q.changed(Pos)` observer this frame. Use `ref` when reading, `ref_mut` at the point of mutation.
-- **Do not hold refs across a flush.** Refs snapshot the archetype's column buffers and the entity's row. Any structural change (add/remove component, destroy, manual `ctx.flush()`) may move the entity, invalidating the snapshot. Rebuild the ref after the flush.
-- **Refs are for per-entity access**, not bulk iteration. For hot loops, read columns directly via `arch.get_column` / `arch.get_column_mut`.
+`ReadonlyColumn` / `ReadonlyComponentRef` are compile-time barriers only — a cast can write through them, but that skips the change-tick bump and silently desyncs change detection. Don't. To mutate a query result, use `eachChunk` or write per entity through `ctx.ref` / `ctx.setField`.
 
 ---
 
-## 5. System ordering
+## 7. Immediate vs deferred structural ops
 
-### Use labels and `before` / `after`
+The single most important timing rule: the same-named op behaves differently depending on **who** calls it.
 
-Within a phase, systems are topologically sorted using `before` / `after` constraints, with `insertion_order` as a deterministic tiebreaker (see [schedule.md](./api/schedule.md)). Always express real dependencies as constraints — never rely on phase boundaries between unrelated systems:
+| Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
+| --- | --- | --- |
+| `createEntity` | immediate | immediate |
+| `addComponent` / `removeComponent` | **immediate** | **deferred** to the phase flush |
+| `destroyEntity` / `despawn` | **deferred** | **deferred** |
+| `disable` / `enable` | immediate | deferred |
+| sparse & relation ops | immediate | immediate |
+
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so those ops apply immediately.
+
+**Inside a system, prefer `ctx.commands`.** It is *always* deferred and reads that way at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`:
 
 ```ts
-world.add_systems(
-  SCHEDULE.UPDATE,
-  inputSys,
-  { system: moveSys, ordering: { after: [inputSys] } },
-  { system: collisionSys, ordering: { after: [moveSys] } },
+ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy);
+ctx.commands.add(entity, Frozen);
+ctx.commands.despawn(entity);
+```
+
+Note `ctx.commands.spawn` returns the new id immediately (the create isn't deferred) but the components attach at the flush — a query later in the *same* phase can observe the entity half-built. To learn a spawned id after its data lands, spawn from the [host-write seam](#16-the-host-write-seam-and-editor) with an `onSpawned` callback.
+
+### One flush boundary over many
+
+Every structural change costs an archetype move. When building an entity, reach its final archetype in one move — use a bundle spawn or a template, not a create-then-add-then-add chain:
+
+```ts
+const e = ecs.spawnBundle(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 2 }), Health({ current: 100, max: 100 }));
+```
+
+For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch, Def)` / `batchRemoveComponent`, which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
+
+---
+
+## 8. System ordering, sets, and run conditions
+
+### Express real dependencies with `before` / `after`
+
+Within a phase, systems are topologically sorted from `before`/`after` constraints, with insertion order as a deterministic tiebreaker. Always encode a real data dependency as a constraint — never lean on a phase boundary between unrelated systems:
+
+```ts
+ecs.addSystems(SCHEDULE.UPDATE,
+  input,
+  { system: move, ordering: { after: [input] } },
+  { system: collide, ordering: { after: [move] } },
 );
 ```
 
-If A must see B's writes this frame, put them in the same phase with an explicit `after: [B]`. Don't put A in `POST_UPDATE` and B in `UPDATE` unless the phase split is itself semantically meaningful.
+If A must see B's writes this frame, put them in the same phase with `after: [B]`. Cycles throw `CIRCULAR_SYSTEM_DEPENDENCY` on the first sort of that phase — this check is **never** stripped in production, so design your ordering as a DAG.
 
-Cycles throw `ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY` on the first run after the cycle is introduced. The check is never stripped in production — design your ordering as a DAG.
+> [!WARNING]
+> **Ordering is phase-local.** A target scheduled in a different phase is silently ignored; a target scheduled in *no* phase (a typo, or a system you forgot to `addSystems`) is dropped with a dev-only warning and the constraint just vanishes. And `registerSystem` does not schedule — you must also `addSystems(phase, descriptor)`.
+
+### Group with system sets; gate with run conditions
+
+A `systemSet` shares a run condition and/or ordering across its members. `configureSet` is additive and order-independent with respect to `addSystems`:
+
+```ts
+const physics = systemSet("physics");
+ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: integrate, set: physics }, { system: collide, set: physics });
+ecs.configureSet(physics, { runIf: notPaused, before: [render] });
+```
+
+A run condition is a per-tick gate — a pure, read-only function of ECS state (`runIfResourceEq`, `runEveryNTicks`, `runIfAnyMatch`, or your own). A member's effective gate is the AND of its own conditions and every set it belongs to.
+
+> [!WARNING]
+> A run condition **must be deterministic and read-only** — no wall-clock, no RNG, no mutation; it runs in a reads-only access span (undeclared reads or any mutation throw in dev). A skipped system does **not** advance its last-run tick, so it still sees everything that changed while it was paused — nothing is missed across a gated pause. A schedule that uses no sets and no conditions runs a byte-for-byte fast path; you pay nothing for the feature until you use it.
 
 ### Keep systems single-purpose
 
-One observable effect per system. This makes ordering easy to reason about and lets you schedule independently:
-
-```ts
-// Good
-const applyInputSys = /* read Input resource → write Vel */;
-const moveSys = /* read Vel → write Pos */;
-const collideSys = /* read Pos → write Vel, emit Collision events */;
-
-// Avoid
-const everythingSys = /* input + move + collide + render */;
-```
-
-Small systems also make change-detection cleaner: a change-detection observer that depends on moveSys's writes only needs `ordering: { after: [moveSys] }`, not a whole phase worth of unrelated systems.
-
-### Prefer `insertion_order` determinism over hidden assumptions
-
-When no `before` / `after` binds two systems, the scheduler falls back to insertion order. This is a feature — the sort is deterministic across runs for a fixed registration order — but don't lean on it for correctness-critical ordering. If system B must run after system A, say so:
-
-```ts
-// Explicit — survives reordering of add_systems calls
-world.add_systems(SCHEDULE.UPDATE, a, { system: b, ordering: { after: [a] } });
-```
+One observable effect per system makes ordering easy to reason about and change detection clean: an observer that depends on `move`'s writes needs only `after: [move]`, not a whole phase of unrelated systems.
 
 ---
 
-## 6. Change detection patterns
+## 9. Change detection
 
-### Observe writes with `q.changed(...)`
+### Poll with `changed()`
 
-Stand up a query that includes the watched component, then call `.changed(...)` inside the system body. This mirrors the integration test pattern: a writer system stamps a component, and an observer ordered `after` the writer reacts:
-
-```ts
-const detector = world.register_system(
-  (q) => {
-    q.changed(Pos).for_each((arch) => { /* react to Pos-touched archetypes */ });
-  },
-  (qb) => qb.every(Pos, Vel),
-);
-
-world.add_systems(
-  SCHEDULE.UPDATE,
-  writer,
-  { system: detector, ordering: { after: [writer] } },
-);
-```
-
-The `after: [writer]` is what makes the writer's tick visible: `ChangedQuery` yields archetypes whose stamp is `>= ctx.last_run_tick`, and `last_run_tick` is set per-dispatch.
-
-### The `last_run_tick = 0` first-run case
-
-A system's `last_run_tick` is `0` until it runs once. On the first dispatch, *every* non-empty matching archetype has `_changed_tick >= 0`, so a `ChangedQuery` fires for every row. If that's not what you want, guard explicitly:
+Stand up a query including the watched component, then call `.changed(...)` and order the reader `after` the writer so the writer's tick is visible:
 
 ```ts
-const observer = world.register_system(
-  (q, ctx) => {
-    if (ctx.last_run_tick === 0) return;   // skip the "everything looks changed" first run
-    q.changed(Pos).for_each((arch) => { /* ... */ });
-  },
-  (qb) => qb.every(Pos),
-);
-```
-
-### Structural transitions stamp the destination
-
-`add_component` / `remove_component` move the entity into a (possibly new) archetype. The destination's `_changed_tick` is stamped for every component present on it, not just the one that triggered the transition (`ARCHITECTURE.md` §14.10). A watcher on `q.changed(Pos)` fires when an entity gains `Frozen` if both archetypes include `Pos`.
-
-If you need to distinguish "field write" from "transition arrival", track it explicitly — for example by stamping a sidecar component on the write path and filtering on that.
-
-### Resources aren't tick-tracked; use an event
-
-`set_resource` writes into a `Map<symbol, unknown>` with no versioning. `ChangedQuery` cannot observe it. If another system needs to react to a resource change, emit an event instead:
-
-```ts
-const ConfigChanged = signal_key("ConfigChanged");
-world.register_signal(ConfigChanged);
-
-const setter = world.register_system((ctx) => {
-  ctx.set_resource(Config, { speed: 99 });
-  ctx.emit(ConfigChanged);
+const moved = ecs.query(Pos).changed(Pos);
+const sync = ecs.registerSystem({
+  reads: [Pos], writes: [],
+  fn: () => moved.forEach((arch) => {
+    const x = arch.getColumnRead(Pos, "x");
+    for (let i = 0; i < arch.entityCount; i++) pushToRenderer(arch.entityIds[i], x[i]);
+  }),
 });
-
-const reactor = world.register_system((ctx) => {
-  if (ctx.read(ConfigChanged).length === 0) return;
-  // Rebuild derived state here
-});
+ecs.addSystems(SCHEDULE.UPDATE, writer, { system: sync, ordering: { after: [writer] } });
 ```
 
-Alternatively, keep a version counter inside the resource value itself.
+`changed()` composes — `ecs.query(Pos).changed(Pos).without(Dead)` works, order-independently.
+
+### Know the first-run and granularity traps
+
+A system's last-run tick is 0 until it runs once, so on the **first dispatch** every non-empty matching archetype looks changed and a `changed()` query fires for everything. If that's not what you want, guard on `ctx.lastRunTick === 0`.
+
+**Granularity is per archetype, not per row.** If one entity in a 1000-row archetype writes `Pos`, the whole archetype trips as changed and the query hands you all 1000 rows. `changed()` tells you *which archetypes to look at*, not *which rows changed*.
+
+Also: **archetype transitions stamp the destination for every component on it** — a watcher on `changed(Pos)` fires when an entity gains `Frozen`, if both archetypes include `Pos`. If you must distinguish "field write" from "transition arrival", track it explicitly.
+
+### Resources aren't tick-tracked
+
+`setResource` writes to a plain map with no versioning; `changed()` can't observe it. If a system must react to a resource change, emit an event alongside the write, or keep a version counter inside the resource value.
 
 ---
 
-## 7. Events vs signals
+## 10. Observers
 
-Signals and events share the same lifecycle — emit during one `update()` call, visible to every subsequent system in that call, cleared before the next one. The difference is payload storage:
-
-- `event_key<F>(name)` + `register_event(key, fields)` — structured payload, one column per field.
-- `signal_key(name)` + `register_signal(key)` — no payload, just a counter.
-
-Use the simpler one:
+An observer is the push-based counterpart to polling with `changed()`: register once, get called at the right moment. Reach for it when you'd otherwise poll every frame, or when you need **per-entity** precision that `changed()`'s archetype granularity can't give.
 
 ```ts
-// Structured: you need per-emit data
-export const Damage = event_key<readonly ["target", "amount"]>("Damage");
-world.register_event(Damage, ["target", "amount"] as const);
+const handle = ecs.observe(Health, {
+  access: { reads: [Health], writes: [], spawns: [[Corpse]] },  // callbacks run in an access span
+  onRemove: (eid, ctx) => ctx.commands.spawn(Corpse()),
+});
+handle.dispose();   // idempotent
+```
 
-ctx.emit(Damage, { target: e, amount: 50 });
+Choose the grain deliberately:
 
-const dmg = ctx.read(Damage);
-for (let i = 0; i < dmg.length; i++) {
-  apply_damage(dmg.target[i] as EntityID, dmg.amount[i]);
+- **`onAdd` / `onRemove` / `onDisable` / `onEnable`** fire at the structural-flush boundary, after the batch commits, looping to a fixed point so cascades settle.
+- **`onSet` archetype-granular** (the default) reuses the free change tick — `(arch, ctx)` per changed archetype-column; you iterate the rows.
+- **`onSet` entity-granular** (`granularity: "entity"`) gives `(eid, ctx)` per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Pick it only when changes are sparse enough that per-entity precision beats sweeping the archetype.
+
+> [!WARNING]
+> **Declare `access`** — callbacks run in an access span, and the declarations also drive firing order, so a wrong one can silently reorder the observer. **Register observers before `startup()`** so the archetypes they spawn into are prewarmed. **Only deferred, in-schedule ops fire observers** — an immediate host-side `ecs.addComponent` / `ecs.disable` fires nothing; only the deferred `ctx.commands.add` / `ctx.disable` do. And **do not emit events from `onSet`** — it runs at the tick tail where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev); bridge a detected change to a next-tick event from a normal system reading the dirty list.
+
+If you write a component through the **raw** mutable column (not `setField`/`ref`), an entity-granular `onSet` won't see it unless you call `ctx.markChanged(entity, def)` in the loop.
+
+---
+
+## 11. Entity lifecycle
+
+### Handles are packed integers, not pointers
+
+An `EntityID` packs `[generation:11][index:20]`. Destroying an entity bumps the slot's generation (or retires the slot), so a stale handle fails `isAlive`. In dev, a stale handle to `getField`/`ref`/`addComponent`/etc. throws `ENTITY_NOT_ALIVE`; in production those guards are gone, so a dead handle silently targets whatever now lives in the (possibly-recycled) slot.
+
+### Revalidate handles stored across frames
+
+Entity ids held in events, closures, resources, or plain variables must be re-checked with `isAlive` before use:
+
+```ts
+if (ecs.isAlive(target)) {
+  const hp = ctx.getField(target, Health, "current");
+  ctx.setField(target, Health, "current", hp - damage);
 }
+```
 
-// Signal: you only need "did this happen"
-export const OnPause = signal_key("OnPause");
-world.register_signal(OnPause);
+Ids obtained inside `forEach`/`eachChunk`/`forEachEntity` are implicitly alive for that callback — iteration never yields dead rows.
 
+### Disable to hide, destroy to remove
+
+`disable` hides an entity from queries **without** removing its data or changing its id — it sits in the disabled tail of its archetype (a single row swap, no transition), and `entityCount` excludes it. Prefer it over destroy-and-respawn for entities that toggle in and out of play (a pooled bullet, a paused unit); re-include them with `.includeDisabled()`. A disabled entity must hold at least one component. Note that an *immediate* `ecs.disable`/`ecs.enable` fires no observer — only the deferred `ctx.disable`/`ctx.enable` do.
+
+### Templates for bulk spawns
+
+A template resolves a component set + defaults to a target archetype **once**, so every later spawn skips the per-component transitions and lands directly in the archetype:
+
+```ts
+const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }, { def: Vel, values: { vx: 0, vy: 0 } }]);
+const b = ecs.createEntity(Bullet, { x: 5, y: 10 });   // per-field overrides
+const swarm = ecs.createEntities(Bullet, 500);          // O(columns) writes, not O(500 × columns)
+```
+
+Templates pay off for multi-component and bulk spawns (and prewarm their archetypes — required before `restoreInto` a snapshot). A single-component template is no faster than `createEntity()` + `addComponent()`.
+
+---
+
+## 12. Relations
+
+Relations link two entities as a `(relation, target)` pair — hierarchies, ownership, targeting, instance-of. They're built on sparse storage, so they cause no archetype transition, consume no dense-identity bit, and all relation ops are **immediate**.
+
+```ts
+import { registerChildOf } from "@oasys/oecs";
+const ChildOf = registerChildOf(ecs);        // built-in preset, a free function
+ecs.addRelation(child, ChildOf, parent);
+ecs.targetOf(child, ChildOf);                 // parent
+ecs.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "who points at me"
+```
+
+- **Exclusive by default** (one target per source; a new `addRelation` silently replaces the old target). Pass `{ multi: true }` for a target *set*; use `targetsOf` for multi, `targetOf` for exclusive (it throws on a multi relation in dev).
+- **Compose into queries** with `withRelation`/`withoutRelation` (the `(R, *)` term) and iterate with `forEachEntity`; `forEachRelatedTo(target, cb)` is the `(*, T)` wildcard. Wildcard queries need authorization: `relationReads: [R]`, or `[ANY_RELATION]` for `forEachRelatedTo`.
+- **Traverse** exclusive chains with `ancestorsOf` / `rootOf` / `cascadeOf` (a cycle throws `RELATION_CYCLE` in dev, never a hang).
+
+> [!CAUTION]
+> **`registerChildOf` defaults to a cascading destroy** (`onDeleteTarget: "delete"`) — destroy a parent and the whole subtree goes with it. Pass `{ onDeleteTarget: "clear" }` to let children survive as new roots, or `"orphan"` to leave a dangling `targetOf`. `registerIsA` defaults to `"clear"` and records the link only — **there is no component inheritance**.
+
+> [!WARNING]
+> **`orphan` leaks the reverse index** — a destroyed target's reverse entries linger until each source re-targets or dies, and `targetOf` returns a *dead handle* rather than `undefined`. Call `ecs.compactRelations()` at scene/snapshot boundaries to reclaim them; it changes no observable state and doesn't affect `stateHash`.
+
+---
+
+## 13. Events vs signals
+
+Events and signals share one lifecycle — emit during one `update()`, visible to every later system in that call, cleared before the next. The difference is payload:
+
+```ts
+// Structured event — you need per-emit data:
+export const Damage = eventKey<{ target: EntityID; amount: number }>("Damage");
+ecs.registerEvent(Damage, ["target", "amount"]);
+ctx.emit(Damage, { target: e, amount: 50 });
+const dmg = ctx.read(Damage);
+for (let i = 0; i < dmg.length; i++) applyDamage(dmg.target[i], dmg.amount[i]);
+
+// Signal — you only need "did this happen":
+export const OnPause = signalKey("OnPause");
+ecs.registerSignal(OnPause);
 ctx.emit(OnPause);
 if (ctx.read(OnPause).length > 0) { /* paused */ }
 ```
 
-Don't register events you don't emit every frame — each channel holds its columns across the run and `clear()` still touches them per `update()`. For rare one-offs, prefer a resource or a direct method call at the right seam.
+Branded number fields (like `EntityID`) round-trip through the reader with no cast. Events live exactly one frame — for durable state use a resource or a component, not an event you re-emit. Don't emit from an `onSet` observer (see [§10](#10-observers)).
 
 ---
 
-## 8. Entity lifecycle
+## 14. Resources
 
-### `EntityID` is a 31-bit packed handle, not a pointer
-
-`[generation:11][index:20]`. Destruction bumps the slot's generation and pushes the index onto a free list. A stale handle still points at the right slot, but the generation no longer matches and `is_alive(id)` returns `false`.
-
-In `__DEV__`, stale handles passed to `get_field`, `set_field`, `ref`, `ref_mut`, `has_component`, `add_component`, `remove_component`, and `destroy_entity` throw `ECS_ERROR.ENTITY_NOT_ALIVE`. In production these guards are tree-shaken, so reads and writes against a dead handle silently target whatever lives in the (possibly-recycled) slot.
-
-### Revalidate handles stored across frames
-
-Entity IDs held in events, closures, resources, or plain variables must be re-checked with `is_alive` before use:
+Resources are the right home for frame- or world-scoped singletons: time/delta, input snapshots, camera transforms, config, an RNG seed. Mint the key at module scope, register with an initial value, read/write anywhere.
 
 ```ts
-// BAD — target could have been destroyed this frame by another system
-const hp = ctx.get_field(target, Health, "current");
-
-// GOOD — guard first
-if (world.is_alive(target)) {
-  const hp = ctx.get_field(target, Health, "current");
-  ctx.set_field(target, Health, "current", hp - damage);
-}
-```
-
-Entity IDs obtained inside `q.for_each` are implicitly alive for the duration of that callback — `for_each` never yields dead rows.
-
-### Prefer one flush boundary over many
-
-Every structural change (add component, remove component, transition) costs an archetype move: allocate a row in the destination, copy shared columns, swap-remove from the source. When building an entity, use `add_components` so the entity reaches its final archetype in a single move:
-
-```ts
-// Single archetype transition — one move
-world.add_components(e, [
-  { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 1, vy: 2 } },
-  { def: Health, values: { current: 100, max: 100 } },
-  { def: IsEnemy },
-]);
-```
-
-For whole-archetype changes — e.g. "every entity with `Frozen` gets `Slow`" — use `world.batch_add_component(arch, Def)` / `world.batch_remove_component(arch, Def)`. These use `bulk_move_all_from`, which delegates to `TypedArray.set()` for column-copy — much faster than per-entity moves.
-
----
-
-## 9. Resources
-
-Resources are the right home for frame-scoped or world-scoped singletons: time/delta, input snapshots, camera transforms, config objects, asset tables, audio engines.
-
-```ts
-export const Time = resource_key<{ delta: number; elapsed: number }>("Time");
-world.register_resource(Time, { delta: 0, elapsed: 0 });
-
-const advanceTime = world.register_system((ctx, dt) => {
-  const t = ctx.resource(Time);
-  t.delta = dt;
-  t.elapsed += dt;
+const advanceTime = ecs.registerSystem({
+  reads: [], writes: [], resourceReads: [Time], resourceWrites: [Time],
+  fn: (ctx, dt) => { const t = ctx.resource(Time); t.delta = dt; t.elapsed += dt; },
 });
-world.add_systems(SCHEDULE.PRE_UPDATE, advanceTime);
 ```
 
-When they are the wrong tool:
+Inside a system, resource access is declared and checked (`resourceReads` / `resourceWrites`). Resources return the same reference on every read — mutate an object resource through `ctx.resource(key)` and use `setResource` only to swap the whole value. `removeResource` frees the key for re-registration and fails closed on a missing key.
 
-- **Per-entity data.** Use components. Resources are singletons — not filterable, iterable, or tick-tracked.
-- **Cross-frame persistence of structured data.** If it needs change detection, query filtering, or lifecycle tracking, it wants to be components on entities.
-- **A fake singleton entity.** Don't create an entity carrying a `GlobalState` component — that's what resources are.
-
-Resources return the same reference on every read. Mutating an object-shaped resource through `ctx.resource(key)` avoids allocating a new object; use `set_resource` only to swap the whole value.
+When they're the *wrong* tool: per-entity data (use components — resources aren't filterable, iterable, or tick-tracked), or a fake singleton entity carrying a `GlobalState` component. And resources are **excluded from `stateHash` and snapshot/restore** — sim-affecting state you need to reproduce must live in a component or be re-seeded after restore.
 
 ---
 
-## 10. Working with the store directly
+## 15. Determinism
 
-`SystemContext.store` is publicly exposed as an escape hatch. Reaching for it is almost always a sign that a query would do the job — iterate archetypes via `world.query(...)` / `q.for_each`; look up a component's field on a single entity via `ctx.ref` / `ctx.ref_mut` / `ctx.get_field` / `ctx.set_field`.
+Determinism is opt-in (`new ECS({ deterministic: true })`) because it costs a little — canonical ordering and an integer-only column rule — and buys lockstep multiplayer, replay, deterministic debugging, and save/load. The flag gates `stateHash`, `snapshot`/`restoreInto`, and the sparse variants (each throws `DETERMINISM_DISABLED` when off).
 
-Genuine reasons to touch `ctx.store`: debugging / diagnostics (counting archetypes, dumping metadata), or building a low-level utility the public facade does not express.
+If you need it:
 
-When you do reach in, stay within the flush contract: structural changes routed through `SystemContext` (`ctx.add_component`, `ctx.remove_component`, `ctx.destroy_entity`) are buffered and applied at phase boundaries so iterators stay valid. Calling the immediate `ECS`-facade variants (`world.add_component`, …) from inside a system bypasses the buffer and can shuffle archetype membership mid-iteration.
+- **Use integer columns.** Float columns are rejected at registration (`NON_DETERMINISTIC_COLUMN_TYPE`) because IEEE-754 rounds differently across engines. Since the array shorthand defaults to `"f64"`, pass an explicit integer type — `ecs.registerComponent(["x", "y"], "i32")` — and represent fractions as fixed-point.
+- **Seed RNG deterministically** and store its state in a component; keep all non-lockstep input (wall-clock, network jitter) out of column bytes.
+- **Compare `stateHash` only at a tick boundary** (between `update()` calls) or a `phaseBoundary` settle point. The digest is opaque — never compare it against a hard-coded literal.
+- **Size both instances identically** before `restoreInto` and register the same components/templates in the same order; restore validates completely and fails closed before touching live state, but only if the target's archetype set and entity-index capacity match. Re-seed resources after a restore (they aren't captured).
 
----
-
-## 11. Using type primitives directly
-
-`BitSet`, `SparseSet`, `SparseMap<V>`, `GrowableTypedArray` (+ all concrete subclasses), `BinaryHeap<T>`, and `topological_sort` are exported from the package root. See [type-primitives.md](./api/type-primitives.md) for the full API.
-
-Reach for them when:
-
-- You need an O(1) integer-keyed set (entities seen this frame) — `SparseSet`.
-- You need a priority queue (scheduler, A*, event timeline) — `BinaryHeap<T>` with a `CompareFn<T>`.
-- You need a growable numeric buffer you can hand to WebGL/WebGPU or batch-copy with `TypedArray.set()` — `GrowableFloat32Array` / `GrowableInt32Array` / etc.
-- You need a dense bitmask with `contains` / `overlaps` — `BitSet`.
-
-These are the same primitives the ECS uses internally (archetype columns, scheduler ready queue, archetype masks). If you're reimplementing swap-and-pop over a `number[]`, you want `SparseSet`; if you're building a growable numeric array, you want `GrowableTypedArray`.
+Because every host/UI mutation crosses one apply chokepoint, `replayCommandLog(..., { hash: true })` returns the per-tick `stateHash` sequence — replaying the same log must reproduce it, and that equality *is* the fidelity check.
 
 ---
 
-## 12. Anti-patterns
+## 16. The host-write seam and editor
 
-**Iterating past `arch.entity_count`.** Typed-array columns are backed by doubling `GrowableTypedArray` buffers — the raw `.buf` is longer than the logical length. Always loop to `arch.entity_count`, never to `column.length`. Hoist `arch.get_column(...)` once per archetype; the reference is stable for the `for_each` callback but not across frames.
+Writes that originate **outside** the schedule — a UI, editor, network handler, or worker — must not touch the ECS mid-frame. The seam turns every outside write into a typed command applied at one blessed point.
 
-**Storing refs in plain objects.** `ctx.ref(def, e)` / `ctx.ref_mut(def, e)` snapshot the archetype, the row, and the backing buffers. Stashing a ref on an object that outlives the system body invites use-after-flush — the next `add_component` / `destroy` can move the entity. Rebuild refs each frame; `Object.create(proto)` is near-free.
+```ts
+import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
-**Using resources as per-entity storage.** A `Map<EntityID, {...}>` inside a resource re-implements component storage, poorly: you lose archetype co-location, query filtering, SoA iteration, change detection, and orphan destroyed entities. If the data is per-entity, it's a component.
+const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup()
+ecs.addSystems(/* your systems */);
+ecs.startup();
 
-**Casting `ReadonlyComponentRef` to `ComponentRef`.** The readonly marker is how the compiler enforces "this system only reads Pos" so `q.changed(Pos)` observers stay correct. If you mean to write, use `ref_mut` at the point of mutation.
+queue.addComponent(entity, Health, { hp: 100 });
+queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (id) => console.log("spawned", id));
+ecs.update(1 / 60);   // the apply system drains the queue at PRE_UPDATE
+```
 
-**Using `ref_mut` for reads.** `ref_mut` stamps the archetype at construction, before any assignment. A `ref_mut` you never write through still wakes up every `q.changed(...)` observer. Reach for `ref_mut` at the point of mutation; read through `ref`.
+> [!WARNING]
+> Install the seam **before** adding your own systems and **before `startup()`** — insertion order is what places the apply system at the phase head. `spawnEntry` values must be **complete** (the deferred add doesn't zero-default — an omitted `f64` reads back `NaN`). And **don't add-then-set in the same frame**: `setField` applies immediately at the drain while structural commands are deferred to the phase flush, so `addComponent(e, C)` then `setField(e, C, …)` fails — carry the value in the `addComponent`/`spawnEntry`, or set it next frame. `onSpawned` is the only way to learn a spawned id.
+
+The **editor** layer (`@oasys/oecs/editor`) adds undo/redo and two-way field handles on top of this queue — every edit is a transaction of forward + inverse commands, and undo is just another command on the same bus. Note that despawn → undo round-trips the *data* but re-spawns with a **fresh `EntityID`**; don't hold an old id across an undo of its despawn.
 
 ---
 
-## 13. Testing
+## 17. Memory sizing
 
-`src/__tests__/integration/` is the canonical usage reference. Each file exercises one subsystem end-to-end against a real `ECS` instance:
+The default needs no configuration — a growable heap `ArrayBuffer` capped at 256 MiB, no `SharedArrayBuffer`, no cross-origin isolation. Reach for the `memory` option only to size deliberately or switch backing.
 
-- `query.test.ts`, `tag.test.ts` — query caching, `not()` / `any_of()`, live archetype growth.
-- `change_detection.test.ts` — tick stamping, `ChangedQuery`, structural transitions.
-- `event.test.ts`, `resource.test.ts` — emit/read within a frame; register/read/write.
-- `ref.test.ts` — `ref` / `ref_mut`, readonly enforcement, invalidation after flush.
-- `schedule.test.ts`, `system.test.ts` — phase order, ordering, lifecycle hooks, flush.
-- `store.test.ts` — archetype graph, entity lifecycle, generational handle behaviour.
+```ts
+new ECS();                                              // heap default
+new ECS({ memory: { budget: { entities: 50_000 } } }); // size from an entity budget
+new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });   // explicit byte cap
+new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (workers / WASM)
+```
 
-Prefer integration-style tests for your own code: construct a world, register what you need, drive `world.update(dt)`, assert on observable state. Mocking `SystemContext` or the store tends to fossilise internals and miss cross-subsystem bugs (flush ordering, change-tick propagation, ref invalidation after transitions). The API is cheap enough to stand up in a test — use it. When a test fails, read the matching integration test for that subsystem; if the invariant you're relying on isn't asserted there, it may not exist.
+> [!TIP]
+> **`budget` is the arm to reach for** — give it an entity count and it derives column capacity, entity-index reservation, byte cap, and cap-error wording in your terms. `entities > 2^20` throws.
+
+The byte cap is a **hard ceiling** — exceeding it throws `STORE_CAP_EXCEEDED` with no grow-beyond fallback. And because the entity-index region is reserved eagerly at construction (≈12 MiB at the default cap), an unreasonably small cap fails *at construction*, not later — size it to your actual peak. Inspect what `memory` resolved to via `ecs.memoryPlan` (it carries a human-readable `derivation` trace). The shared/WASM allocators live behind `@oasys/oecs/shared` and throw `SabUnavailableError` if `SharedArrayBuffer` is absent — serve cross-origin-isolated, or stay on heap (which needs neither).
+
+---
+
+## 18. The reactive UI seam
+
+The ECS is framework-agnostic and never pulls a UI library. The reactive stack is three opt-in entry points that bridge ECS state into a reactive UI *without* re-rendering everything each frame: `@oasys/oecs/reactive` (the signals kernel), `@oasys/oecs/reactive-sync` (the ECS → reactive bridge, publishing only dirty entities/columns), and `@oasys/oecs/solid` (the SolidJS adapter).
+
+```ts
+import { syncComponentToMap, shallow, batchedUpdate } from "@oasys/oecs/reactive-sync";
+
+const positions = syncComponentToMap(ecs, Pos, (row) => ({ x: row.field("x"), y: row.field("y") }), { eq: shallow });
+batchedUpdate(ecs, 1 / 60);   // = batch(() => ecs.update(dt)) — one tick, one coalesced UI flush
+```
+
+> [!WARNING]
+> **Pass `eq: shallow` (or a scalar projection) for object values** — under the default `Object.is`, a projection that returns a fresh object each tick compares unequal every time and wakes every subscriber every frame. This is the single most common reactive-sync mistake. **Key a Solid `<For>` on the stable `EntityID`**, never on a per-tick value object.
+
+Reading a *second* component inside a projection goes stale — use `syncJoinToMap`, which subscribes all defs. Wrap ticks in `batchedUpdate` so a whole frame's publishes coalesce into one UI flush.
+
+---
+
+## 19. Using type primitives directly
+
+`BitSet`, `SparseSet`, `SparseMap<V>`, the `GrowableTypedArray` family, `BinaryHeap<T>`, and `topologicalSort` are exported from `@oasys/oecs/primitives`. These are the same primitives the ECS uses internally (archetype masks, sparse stores, columns, the scheduler ready queue). Reach for them when:
+
+- you need an O(1) integer-keyed set (entities seen this frame) — `SparseSet`;
+- a priority queue (A*, an event timeline) — `BinaryHeap<T>` with a `CompareFn<T>`;
+- a growable numeric buffer to hand to WebGL/WebGPU or batch-copy with `TypedArray.set()` — `GrowableFloat32Array` / `GrowableInt32Array` / etc.;
+- a dense bitmask with `contains` / `overlaps` — `BitSet`.
+
+`buf`/`view()` on a growable array are invalidated by any append that triggers a grow — re-fetch after appending, don't cache across.
+
+---
+
+## 20. Testing
+
+`src/core/ecs/__tests__/` is the canonical usage reference. It's organized as:
+
+- `integration/` — each file exercises one subsystem end-to-end against a real `ECS` (`query.test.ts`, `change_detection.test.ts`, `commands.test.ts`, `each_chunk.test.ts`, `observers.test.ts`, `relations*.test.ts`, `sparse_query.test.ts`, `run_condition.test.ts`, `bundles.test.ts`, …).
+- `unit/` — focused mechanics (`archetype.test.ts`, `store_state_hash.test.ts`, `host_commands.test.ts`, `command_log.test.ts`, `deterministic_column_guard.test.ts`, `disable.test.ts`, `template.test.ts`, `world_resume.test.ts`, …).
+- `limits/` — scale and soak (`entity_scale.test.ts`, `component_count_cap.test.ts`, `lifecycle_soak.test.ts`, …).
+- `breakage/` — the invariants that must not regress (`destroy_mid_iteration.test.ts`, `structural_mid_system.test.ts`, `deferred_ordering.test.ts`, `query_cache_coherence.test.ts`, …).
+
+Prefer integration-style tests for your own code: construct a world, register what you need, drive `ecs.update(dt)`, and assert on observable state. Mocking `SystemContext` or the store fossilises internals and misses the cross-subsystem bugs that actually bite — flush ordering, change-tick propagation, ref invalidation after transitions, observer firing order. The API is cheap enough to stand up in a test. When a test fails, read the matching integration test for that subsystem; if the invariant you're relying on isn't asserted there, it may not exist.
+
+---
+
+## 21. Anti-patterns
+
+**Iterating past `arch.entityCount`.** Columns are backed by doubling buffers whose raw `.length` exceeds the live count and spans disabled rows — always loop to `arch.entityCount` (or use `eachChunk`'s `count`). Hoist `arch.getColumnRead(...)` once per archetype; the reference is stable for the callback but not across frames.
+
+**Using `cols.mut` / `ctx.ref` when you're only reading.** Both stamp the change tick at acquisition, before any write — a read-through-mutable wakes every `changed()` observer for nothing. Use `cols.read` / `ctx.refRead`.
+
+**Casting `ReadonlyColumn` / `ReadonlyComponentRef` to write.** The readonly marker is how the compiler enforces "this system only reads Pos" so `changed(Pos)` observers stay correct — and a cast-write skips the tick bump, silently desyncing change detection. Mutate through `eachChunk` or `ctx.ref` at the point of mutation.
+
+**Calling immediate `ecs.*` structural ops from inside a system.** `ecs.addComponent` / `ecs.disable` bypass the deferred buffer and can shuffle archetype membership mid-iteration. Inside a system, use `ctx.commands`.
+
+**Add-then-set across the host seam in one frame.** `setField` drains immediately, structural commands defer to the phase flush — carry values in the `addComponent`/`spawnEntry`, or set next frame.
+
+**Storing refs in plain objects.** A ref snapshots the entity's row; the next `addComponent`/`destroy` can move the entity. Rebuild refs each frame — it's near-free.
+
+**Using resources or a `Map<EntityID, …>` as per-entity storage.** That re-implements component storage, poorly — you lose archetype co-location, query filtering, SoA iteration, change detection, and you orphan destroyed entities. If it's per-entity, it's a component (or a sparse component).
+
+**Emitting an event from an `onSet` observer.** It runs at the tick tail where events are about to be cleared — the emission is dropped and breaks snapshot determinism (throws in dev). Bridge to a next-tick event from a normal system.
+
+**Float columns on a deterministic ECS.** Rejected at registration — use integers and fixed-point.
+
+**Registering a churny or rarely-present component as dense.** Every add/remove copies the whole payload row and burns one of the 128 identity bits. Use sparse storage.

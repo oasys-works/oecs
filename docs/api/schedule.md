@@ -1,165 +1,157 @@
 # Schedule
 
-The scheduler orders systems within each lifecycle phase under user-declared
-`before` / `after` constraints, then runs them in that order. Execution is
-driven by the world: `world.startup()` runs the startup phases once, and
-`world.update(dt)` runs the fixed-update loop (when populated) followed by the
-update phases every frame. After every phase, `ctx.flush()` is called so the
-next phase observes a consistent store.
-
-The sort result is cached per phase and invalidated when systems are added or
-removed.
-
-## Exports
+The schedule decides **when** systems run. Systems live in one of seven **phases**; within a phase they're ordered topologically from `before`/`after` constraints. Startup phases run once; update phases run every frame; the fixed-update phase runs at a fixed timestep.
 
 ```ts
-import {
-  SCHEDULE,
-  type SystemEntry,
-  type SystemOrdering,
-} from "oecs";
+import { ECS, SCHEDULE } from "@oasys/oecs";
+
+ecs.addSystems(SCHEDULE.UPDATE, move, collide);
+ecs.startup();          // runs the startup phases once
+ecs.update(1 / 60);     // runs fixed-update (as needed) + the update phases
 ```
 
-The `Schedule` class itself is internal; user code interacts with it through
-`ECS.add_systems`, `ECS.remove_system`, `ECS.startup`, and `ECS.update`.
-
-## Phases
-
-Seven phases execute in a fixed order:
-
-```
-Startup (once):           PRE_STARTUP → STARTUP → POST_STARTUP
-Fixed update (per step):  FIXED_UPDATE
-Update (per frame):       PRE_UPDATE  → UPDATE  → POST_UPDATE
-```
-
-| Phase | Fires | Driven by |
-|---|---|---|
-| `PRE_STARTUP` | Once, before `STARTUP` | `world.startup()` |
-| `STARTUP` | Once | `world.startup()` |
-| `POST_STARTUP` | Once, after `STARTUP` | `world.startup()` |
-| `FIXED_UPDATE` | Zero or more times per frame at a fixed `dt` | `world.update(dt)` accumulator loop |
-| `PRE_UPDATE` | Every frame, first | `world.update(dt)` |
-| `UPDATE` | Every frame | `world.update(dt)` |
-| `POST_UPDATE` | Every frame, last | `world.update(dt)` |
-
-`world.update(dt)` first advances the fixed-update accumulator and drains it at
-`fixed_timestep` intervals (skipped entirely when `FIXED_UPDATE` has no
-systems), then runs `PRE_UPDATE → UPDATE → POST_UPDATE` with the original `dt`.
-
-## Ordering Constraints
-
-`add_systems` accepts either a bare `SystemDescriptor` or a `SystemEntry` with
-an `ordering` object:
+## The seven phases
 
 ```ts
-interface SystemOrdering {
-  before?: SystemDescriptor[];
-  after?: SystemDescriptor[];
+enum SCHEDULE {
+  PRE_STARTUP, STARTUP, POST_STARTUP,   // once, via startup()
+  FIXED_UPDATE,                         // fixed timestep, inside update()
+  PRE_UPDATE, UPDATE, POST_UPDATE,      // once per frame, via update()
 }
+```
+
+| Phase | Runs | Delta time |
+| --- | --- | --- |
+| `PRE_STARTUP` → `STARTUP` → `POST_STARTUP` | once, in order, on `ecs.startup()` | `0` |
+| `FIXED_UPDATE` | 0…`maxFixedSteps` times per `update()`, *before* the variable phases | `fixedTimestep` |
+| `PRE_UPDATE` → `UPDATE` → `POST_UPDATE` | once per `ecs.update(dt)`, in order | the `dt` you passed |
+
+> [!IMPORTANT]
+> After every phase, deferred structural changes are **flushed** before the next phase begins. So a component `ctx.commands.add`-ed in `PRE_UPDATE` is visible to queries in `UPDATE`. Within a *single* phase, deferred changes are not yet applied.
+
+## The frame loop
+
+**`ecs.startup()`** — call once after wiring systems and observers. It prewarms archetypes, runs every system's `onAdded` hook, runs the three startup phases, and drains any events they emitted (so frame 1 doesn't see stale startup events).
+
+**`ecs.update(dt)`** — one frame. It runs the fixed-update catch-up loop, then `PRE_UPDATE`/`UPDATE`/`POST_UPDATE`, then dispatches `onSet` observers, clears events, and bumps the tick.
+
+**`ecs.flush()`** — force-apply buffered deferred structural ops right now (rarely needed; phase boundaries and `update()` already flush).
+
+## Adding & ordering systems
+
+```ts
+addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this;
 
 interface SystemEntry {
   system: SystemDescriptor;
-  ordering?: SystemOrdering;
+  ordering?: { before?: OrderingTarget[]; after?: OrderingTarget[] };
+  runIf?: RunCondition | RunCondition[];   // ANDed with any set conditions
+  set?: SystemSet | SystemSet[];
 }
+// OrderingTarget = SystemDescriptor | SystemSet
 ```
-
-Both arrays hold system labels (the descriptors returned by
-`world.register_system`). References to systems in other phases are ignored —
-ordering only constrains peers within the same phase.
 
 ```ts
-world.add_systems(SCHEDULE.UPDATE, moveSys, {
-  system: physicsSys,
-  ordering: { after: [moveSys] },
-});
-
-world.add_systems(SCHEDULE.UPDATE, {
-  system: aiSys,
-  ordering: { before: [moveSys] },
-});
+ecs.addSystems(SCHEDULE.UPDATE,
+  input,                                              // bare descriptor
+  { system: move, ordering: { after: [input] } },     // ordered
+  { system: render, ordering: { after: [move] }, runIf: notPaused },
+);
 ```
 
-In dev builds, adding the same system twice throws
-`ECSError(DUPLICATE_SYSTEM)`.
+`before: [X]` puts this system before `X`; `after: [X]` after it. A `SystemSet` target expands to all its members.
 
-## Tie-Breaking
+> [!WARNING]
+> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning, and the constraint just vanishes; the system falls back to insertion-order tiebreak.
 
-Every system receives an `insertion_order` counter when it is added. When two
-or more systems are simultaneously ready (their dependencies have all run), the
-one with the lower `insertion_order` runs first. This guarantees deterministic
-output: the sort result for a given set of systems and constraints is always
-identical across runs.
+> [!WARNING]
+> Adding the same descriptor to two phases throws `DUPLICATE_SYSTEM` in dev. Register a second system if you need the same logic in two phases.
 
-## Topological Ordering
+### Topological ordering & cycles
 
-Sorting delegates to the shared `topological_sort` primitive (`Kahn's algorithm`
-with a `BinaryHeap`-backed ready queue, seeded by the `insertion_order`
-comparator). The schedule builds an adjacency map from the `before` / `after`
-constraints:
+Within each phase, systems are sorted by Kahn's algorithm over the `before`/`after` edges, with **insertion order as the deterministic tiebreaker**. The result is cached per phase and invalidated on changes.
 
-- `before: [X]` on a system adds edge `this → X`.
-- `after: [X]` on a system adds edge `X → this`.
+> [!CAUTION]
+> A cycle in the ordering constraints throws `CIRCULAR_SYSTEM_DEPENDENCY`, naming the phase. It's raised lazily on the first run/sort of that phase, not at `addSystems` time. This check is **always active**, even in production.
 
-Edges that point at systems in other phases are filtered out before the sort,
-so cross-phase labels are silent no-ops rather than errors. See the
-type-primitives module for the full primitive contract.
+## System sets
 
-## Cycle Detection
-
-The `topological_sort` primitive throws a built-in `TypeError` when some nodes
-cannot be scheduled. The schedule catches it and re-throws as
-`ECSError(CIRCULAR_SYSTEM_DEPENDENCY)` with a message containing the phase
-label and the names of the systems still pending:
-
-```
-Circular system dependency detected in UPDATE: Cycle detected in topological sort.
-Nodes still pending: physicsSys, moveSys
-```
-
-Cycles are checked eagerly on the first run after systems change — the error
-throws from `world.update` or `world.startup`, not from `add_systems`.
-
-## Per-System Tick Bookkeeping
-
-The schedule keeps a `system_last_run` map keyed by descriptor. Before invoking
-each system, the schedule writes the current tick into that map and assigns it
-to `ctx.last_run_tick`. Systems read it through the shared `SystemContext`:
+A **system set** is a named group that shares a run condition and/or ordering, inherited by every member.
 
 ```ts
-const ageSys = world.register_system((ctx, dt) => {
-  const since = ctx.world_tick - ctx.last_run_tick;
-  // ...
-});
+systemSet(name: string): SystemSet;
+configureSet(set: SystemSet, config: { runIf?; before?; after? }): this;
+
+const physics = systemSet("physics");
+ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: integrate, set: physics });
+ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: collide,   set: physics });
+ecs.configureSet(physics, { runIf: notPaused, before: [render] });
 ```
 
-`ctx.last_run_tick` reflects the tick the currently running system last
-executed; `ctx.world_tick` reflects the tick the world is currently on.
-`ChangedQuery` uses this value internally to report rows modified since the
-system's previous run.
+A member's effective gate is the **AND** of its own conditions and every set it belongs to. `configureSet` is additive and order-independent with respect to `addSystems` — configure the set before or after adding members, either works.
 
-`remove_system` clears the descriptor's entry; `clear()` drops the whole map.
+> [!NOTE]
+> Sets are identified by **object identity, not name** — two `systemSet("x")` calls are two different sets. Hold the handle and reuse it; `name` is only for diagnostics.
 
-## Driving the Schedule Directly
+## Run conditions
 
-`ECS.update()` wires the tick automatically. Drivers that bypass the world
-facade must pass an explicit `tick: number`:
+A **run condition** is a per-tick gate: return `true` to run the system/set this tick, `false` to skip it.
 
 ```ts
-class Schedule {
-  run_startup(ctx: SystemContext, tick: number): void;
-  run_update(ctx: SystemContext, delta_time: number, tick: number): void;
-  run_fixed_update(ctx: SystemContext, fixed_dt: number, tick: number): void;
-  has_fixed_systems(): boolean;
+interface RunCondition {
+  readonly name: string;
+  readonly evaluate: (ctx: ConditionContext) => boolean;
+  readonly reads?: readonly ComponentDef[];
+  readonly resourceReads?: readonly ResourceKey<unknown>[];
 }
+// ConditionContext exposes only { ecsTick, resource(key), hasResource(key) } — read-only.
 ```
 
-- `run_startup` executes `PRE_STARTUP → STARTUP → POST_STARTUP` using the
-  constant `STARTUP_DELTA_TIME` as the delta.
-- `run_update` executes `PRE_UPDATE → UPDATE → POST_UPDATE` with `delta_time`.
-- `run_fixed_update` executes `FIXED_UPDATE` once with `fixed_dt`; call it in a
-  loop off your own accumulator.
+Shipped built-ins:
 
-Each of these flushes `ctx` between phases and after the final phase. Pass a
-monotonically increasing `tick` so `last_run_tick` bookkeeping stays coherent
-with any change-detection queries.
+```ts
+runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition;   // strict === (identity for objects)
+runEveryNTicks(n: number, offset?: number): RunCondition;            // ticks offset, offset+n, offset+2n…
+runIfAnyMatch(query: Query): RunCondition;                           // query.count() > 0
+```
+
+```ts
+const notPaused = runIfResourceEq(PausedRes, false);
+ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
+ecs.configureSet(physics, { runIf: notPaused });
+```
+
+> [!WARNING]
+> A run condition **must be deterministic and read-only** — a pure function of `ECS` state, no wall-clock, no RNG, no mutation. It's evaluated in a reads-only access span; touching an undeclared resource or mutating anything throws in dev. A non-deterministic condition diverges `stateHash` across [deterministic](./determinism.md) peers.
+
+> [!NOTE]
+> When a condition returns `false`, the system's last-run tick does **not** advance — a skipped tick is indistinguishable from the system being absent that tick, which matters for [`changed()`](./change-detection.md) queries inside it.
+
+> [!NOTE]
+> `runIfAnyMatch` needs a **dense-only** query (`count()` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
+
+A schedule that uses no sets and no conditions runs a byte-for-byte fast path — you pay nothing for the feature until you use it.
+
+## Fixed timestep
+
+`FIXED_UPDATE` systems run on a fixed clock, decoupled from render frame rate — the standard setup for stable physics.
+
+```ts
+const ecs = new ECS({ fixedTimestep: 1 / 50, maxFixedSteps: 4 });
+get fixedTimestep(): number;   set fixedTimestep(value: number);   // revalidates
+get fixedAlpha(): number;      // accumulator / fixedTimestep — the render interpolation factor in [0, 1)
+```
+
+Each `update(dt)` adds `dt` to an accumulator and runs `FIXED_UPDATE` once per whole `fixedTimestep` it contains — 0 times for a small `dt`, several for a large one. Fixed systems always see delta `= fixedTimestep`, never the frame `dt`.
+
+> [!WARNING]
+> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`); `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`). Both are validated at construction and on the setter.
+
+> [!TIP]
+> Use `ecs.fixedAlpha` to interpolate rendering between fixed steps: `renderPos = lerp(prevPos, pos, ecs.fixedAlpha)`.
+
+## See also
+
+- [systems](./systems.md) — declaring and writing the systems you schedule here
+- [resources](./resources.md) — the state `runIfResourceEq` gates on
+- [determinism](./determinism.md) — why run conditions must stay pure

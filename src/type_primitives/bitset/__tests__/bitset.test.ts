@@ -185,7 +185,7 @@ describe("BitSet", () => {
   });
 
   //=========================================================
-  // copy / copy_with_set / copy_with_clear
+  // copy / copyWithSet / copyWithClear
   //=========================================================
 
   it("copy creates an independent clone", () => {
@@ -205,7 +205,7 @@ describe("BitSet", () => {
     const a = new BitSet();
     a.set(1);
 
-    const b = a.copy_with_set(5);
+    const b = a.copyWithSet(5);
     expect(b.has(1)).toBe(true);
     expect(b.has(5)).toBe(true);
     expect(a.has(5)).toBe(false);
@@ -215,7 +215,7 @@ describe("BitSet", () => {
     const a = new BitSet();
     a.set(0);
 
-    const b = a.copy_with_set(200);
+    const b = a.copyWithSet(200);
     expect(b.has(0)).toBe(true);
     expect(b.has(200)).toBe(true);
   });
@@ -225,7 +225,7 @@ describe("BitSet", () => {
     a.set(1);
     a.set(5);
 
-    const b = a.copy_with_clear(5);
+    const b = a.copyWithClear(5);
     expect(b.has(1)).toBe(true);
     expect(b.has(5)).toBe(false);
     expect(a.has(5)).toBe(true);
@@ -270,13 +270,13 @@ describe("BitSet", () => {
   });
 
   //=========================================================
-  // for_each
+  // forEach
   //=========================================================
 
   it("for_each iterates no bits on empty bitset", () => {
     const bs = new BitSet();
     const bits: number[] = [];
-    bs.for_each((b) => bits.push(b));
+    bs.forEach((b) => bits.push(b));
     expect(bits).toEqual([]);
   });
 
@@ -289,7 +289,7 @@ describe("BitSet", () => {
     bs.set(64);
 
     const bits: number[] = [];
-    bs.for_each((b) => bits.push(b));
+    bs.forEach((b) => bits.push(b));
     expect(bits).toEqual([0, 3, 31, 32, 64]);
   });
 
@@ -301,7 +301,7 @@ describe("BitSet", () => {
     bs.set(97);
 
     const bits: number[] = [];
-    bs.for_each((b) => bits.push(b));
+    bs.forEach((b) => bits.push(b));
     expect(bits).toEqual([1, 33, 65, 97]);
   });
 });

@@ -3,7 +3,7 @@
  ***/
 
 /** Push a value into a hash-bucket map, creating the bucket array if absent. */
-export function bucket_push<T>(map: Map<number, T[]>, key: number, value: T): void {
+export function bucketPush<T>(map: Map<number, T[]>, key: number, value: T): void {
   const bucket = map.get(key);
   if (bucket !== undefined) {
     bucket.push(value);

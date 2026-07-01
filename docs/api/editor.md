@@ -1,0 +1,94 @@
+# Editor
+
+> **Optional.** `@oasys/oecs/editor` adds **undo/redo** and two-way **field handles** on top of the [host-write seam](./host-write-seam.md). It's for building editors and inspectors; a game runtime doesn't need it.
+
+Every edit is reified as a transaction with a **forward** and an **inverse** command list. Undo enqueues the inverse on the same command bus; redo re-enqueues the forward. Undo is just another command — it applies at the next schedule head like any other host write.
+
+```ts
+import { Editor, fieldHandle } from "@oasys/oecs/editor";
+import { installHostCommandSeam } from "@oasys/oecs";
+
+const queue = installHostCommandSeam(ecs);
+// readField: how the editor reads current values to build inverses (from your read channel)
+const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
+
+editor.setField(player, Health, "hp", 50);   // enqueues forward + inverse; applies next tick
+editor.undo();   // → true (enqueues the inverse)
+editor.redo();   // → true
+```
+
+## `Editor`
+
+```ts
+class Editor {
+  constructor(queue: HostCommandQueue, readField: FieldReader);
+
+  // Each single-action method enqueues a one-command transaction and returns it:
+  spawn(components: readonly SpawnEntry[], onSpawned?): EditorTransaction;
+  despawn(eid, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to rebuild on undo
+  setField<S>(eid, def, field, value): EditorTransaction;
+  addComponent<S>(eid, def, values: FieldValues<S>): EditorTransaction;
+  removeComponent<S>(eid, def, restore: FieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
+  disable(eid): EditorTransaction;   enable(eid): EditorTransaction;
+
+  transaction(build: (tx: TransactionBuilder) => void): EditorTransaction;   // group many edits → one undo entry
+
+  undo(): boolean;    // false if the undo stack is empty
+  redo(): boolean;    // false if the redo stack is empty
+  clear(): void;      // drop both stacks (does not touch the ECS)
+  depths(): { undo: number; redo: number };
+  pendingField(eid, def, field): number | undefined;   // optimistic, not-yet-committed value
+}
+
+type FieldReader = (eid: EntityID, def: ComponentDef, field: string) => number | undefined;
+interface EditorTransaction { readonly forward: readonly HostCommand[]; readonly inverse: readonly HostCommand[]; }
+```
+
+Group several edits into a **single** undo entry with `transaction`:
+
+```ts
+editor.transaction((tx) => {
+  tx.setField(e, Pos, "x", 10)
+    .setField(e, Pos, "y", 20)
+    .addComponent(e, Selected, {});
+});
+editor.undo();   // reverts all three at once
+```
+
+`TransactionBuilder` mirrors the single-action methods (`spawn`, `despawn`, `setField`, `addComponent`, `removeComponent`, `disable`, `enable`), each returning `this` to chain. You get it from `transaction`; you don't construct it.
+
+> [!WARNING]
+> **Entity identity is not preserved across despawn → undo.** The data round-trips (rebuilt from the `restore` you supplied), but the re-spawned entity gets a **fresh** `EntityID`. Don't hold an old id across an undo of its despawn.
+
+> [!NOTE]
+> `setField` inverses come from a per-`(entity, component, field)` shadow seeded via the `FieldReader` you passed (falling back to `0`). `pendingField` returns the editor's optimistic value before the read channel catches up, then self-resolves to `undefined`.
+
+## Field handles
+
+`fieldHandle` wraps one field as a two-way bound value — a read (reactive) plus an undoable write — ideal for an inspector input.
+
+```ts
+fieldHandle<S>(editor: Editor, eid: EntityID, def: ComponentDef<S>, field: string & keyof S,
+               read: () => number | undefined): FieldHandle;
+
+interface FieldHandle {
+  readonly value: number | undefined;    // reactive read of the channel (tracked in a tracking scope)
+  set(value: number): void;               // enqueue an undoable setField; applies next tick
+  readonly pending: number | undefined;   // NON-reactive optimistic echo of the editor's shadow
+}
+```
+
+`read` is a caller-supplied thunk into your [reactive read channel](./reactive.md), which keeps the handle framework-agnostic:
+
+```ts
+const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.get(player)?.hp);
+// in a Solid input: value={hpHandle.value} onInput={(e) => hpHandle.set(+e.target.value)}
+```
+
+> [!NOTE]
+> `pending` is an optimistic echo, not a substitute for `value` in a tracking scope — it does **not** subscribe. Bind UI display to `value`.
+
+## See also
+
+- [host-write seam](./host-write-seam.md) — the command bus undo/redo rides on
+- [reactive](./reactive.md) — the read channel a `FieldHandle` reads from
