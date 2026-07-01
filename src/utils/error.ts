@@ -1,39 +1,14 @@
+// Shared base error for the package. The ECS-specific error vocabulary
+// (`ECSError` + the `ECS_ERROR` category enum) lives next to the core it
+// belongs to, in `core/ecs/utils/error.ts`, and extends this class.
 export abstract class AppError extends Error {
   constructor(
     message: string,
-    public readonly is_operational: boolean,
+    public readonly isOperational: boolean,
     public readonly context?: Record<string, unknown>,
   ) {
     super(message);
     this.name = this.constructor.name;
     Error.captureStackTrace(this, this.constructor);
   }
-}
-
-export enum ECS_ERROR {
-  EID_MAX_INDEX_OVERFLOW = "EID_MAX_INDEX_OVERFLOW",
-  EID_MAX_GEN_OVERFLOW = "EID_MAX_GEN_OVERFLOW",
-  COMPONENT_NOT_REGISTERED = "COMPONENT_NOT_REGISTERED",
-  ENTITY_NOT_ALIVE = "ENTITY_NOT_ALIVE",
-  CIRCULAR_SYSTEM_DEPENDENCY = "CIRCULAR_SYSTEM_DEPENDENCY",
-  DUPLICATE_SYSTEM = "DUPLICATE_SYSTEM",
-  ARCHETYPE_NOT_FOUND = "ARCHETYPE_NOT_FOUND",
-  RESOURCE_NOT_REGISTERED = "RESOURCE_NOT_REGISTERED",
-  RESOURCE_ALREADY_REGISTERED = "RESOURCE_ALREADY_REGISTERED",
-  EVENT_ALREADY_REGISTERED = "EVENT_ALREADY_REGISTERED",
-  EVENT_NOT_REGISTERED = "EVENT_NOT_REGISTERED",
-}
-
-export class ECSError extends AppError {
-  constructor(
-    public readonly category: ECS_ERROR,
-    message?: string,
-    context?: Record<string, unknown>,
-  ) {
-    super(message ?? category, true, context);
-  }
-}
-
-export function is_ecs_error(error: unknown): error is ECSError {
-  return error instanceof ECSError;
 }

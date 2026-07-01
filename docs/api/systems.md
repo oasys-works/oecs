@@ -1,218 +1,194 @@
 # Systems
 
-A system in oecs is a plain function from a `SystemContext` (plus `delta_time`) to side effects on the world. Systems carry no hidden state: all world access goes through the `ctx` argument they receive each frame. Systems are registered with `world.register_system(...)`, which returns a `SystemDescriptor`, and then scheduled into a phase (for example `SCHEDULE.UPDATE`) via `world.add_systems(...)`. Within a phase, systems are topologically sorted by `before` / `after` constraints and run in that order.
-
-## Exports
-
-From the package root:
-
-- `SystemContext` — class, the runtime handle passed to every system.
-- `SystemFn` — `(ctx: SystemContext, delta_time: number) => void`.
-- `SystemConfig` — `{ fn, name?, on_added?, on_removed?, dispose? }`.
-- `SystemDescriptor` — frozen handle returned by `register_system`.
-- `SCHEDULE` — enum of phase labels.
-- `SystemEntry`, `SystemOrdering` — ordering payload for `add_systems`.
-
-## Defining a system
-
-`register_system` has three overloads. All three return a `SystemDescriptor`.
-
-### Bare function
+A **system** is a plain function that runs over queries each frame. You register it, declare what it `reads` and `writes`, and add it to a [schedule](./schedule.md) phase. The function receives a **`SystemContext`** (`ctx`) — its window onto the `ECS` — and the frame's delta time.
 
 ```ts
-const logSys = world.register_system((ctx, dt) => {
-  // runs every frame while scheduled
-});
-```
+import { ECS, SCHEDULE } from "@oasys/oecs";
+const ecs = new ECS();
 
-### Function + query builder
+const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+const Vel = ecs.registerComponent(["vx", "vy"] as const);
+const movers = ecs.query(Pos, Vel);
 
-The query is resolved once at registration time and captured in the closure.
-
-```ts
-const moveSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      const px = arch.get_column(Pos, "x");
-      const vx = arch.get_column(Vel, "vx");
-      for (let i = 0; i < arch.entity_count; i++) px[i] += vx[i] * dt;
+const move = ecs.registerSystem({
+  name: "move",
+  reads: [Vel],
+  writes: [Pos],
+  queries: [[Pos, Vel]],
+  fn: (ctx, dt) => {
+    movers.eachChunk((cols, count) => {
+      const { x, y } = cols.mut(Pos);
+      const { vx, vy } = cols.read(Vel);
+      for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
     });
   },
-  (qb) => qb.every(Pos, Vel),
-);
+});
+
+ecs.addSystems(SCHEDULE.UPDATE, move);   // registration ≠ scheduling — do both
 ```
 
-### Full config
+> [!IMPORTANT]
+> `registerSystem` returns a handle but does **not** schedule anything. You must also call `ecs.addSystems(phase, descriptor)` (see [schedule](./schedule.md)) or the system never runs.
 
-Use this form when you need lifecycle hooks or a label.
+## `registerSystem` — three forms
+
+```ts
+// 1. Config form — the one you'll use for real work.
+registerSystem(config: SystemConfig): SystemDescriptor;
+
+// 2. Bare function — no query, NO declared access.
+registerSystem(fn: (ctx, dt) => void): SystemDescriptor;
+
+// 3. Function + query builder — query resolved once at registration.
+registerSystem<Defs>(
+  fn: (q: Query<Defs>, ctx, dt) => void,
+  queryFn: (qb: QueryBuilder) => Query<Defs>,
+): SystemDescriptor;
+```
+
+> [!WARNING]
+> The **bare** and **function + builder** forms register with **empty access declarations**. Any component/resource/relation access they attempt throws in dev (they touch nothing, by declaration). They're only for trivial no-access systems — bump a counter, read a resource you *did* wire in, drive rendering off a query you closed over. Real work that reads/writes components uses the **config form** so the access checker can protect you.
+
+> [!WARNING]
+> **Arity trap.** A bare 3-parameter function is almost certainly the `(q, ctx, dt)` builder form with the second `queryFn` argument forgotten — which would silently bind `q := ctx`, `dt := undefined` and `NaN` your math. In dev this throws `SYSTEM_FN_ARITY`. In prod the guard is gone; get the second argument right.
+
+## `SystemConfig`
 
 ```ts
 interface SystemConfig {
-  fn: (ctx: SystemContext, delta_time: number) => void;
-  name?: string;
-  on_added?: (ctx: SystemContext) => void;
-  on_removed?: () => void;
-  dispose?: () => void;
+  fn: (ctx: SystemContext, dt: number) => void;   // required — the update body
+
+  // --- Access declarations (dev-checked) ---
+  reads:  readonly ComponentDef[];                // required (empty = "touches no columns")
+  writes: readonly ComponentDef[];                // required; a write implies a read
+  spawns?:    readonly (readonly ComponentDef[] | Template)[];
+  despawns?:  readonly (ComponentDef | Template)[];
+  transitions?: readonly SystemTransition[];      // mid-tick add/remove sets
+  resourceReads?:  readonly ResourceKey<unknown>[];
+  resourceWrites?: readonly ResourceKey<unknown>[];
+  sparseReads?:   readonly SparseComponentDef[];
+  sparseWrites?:  readonly SparseComponentDef[];
+  relationReads?:  readonly RelationDef[];        // include ANY_RELATION for forEachRelatedTo
+  relationWrites?: readonly RelationDef[];
+  queries?: readonly (readonly ComponentDef[])[]; // one entry per ctx.query(...) — lint only
+
+  // --- Optional ---
+  name?: string;                                  // diagnostics
+  exclusive?: boolean;                            // full-access bypass (see below)
+  backendHandle?: BackendSystemHandle;            // route body to a compute backend
+  onAdded?: (ctx) => void;                        // once, during startup()
+  onRemoved?: () => void;                         // on removeSystem
+  dispose?: () => void;                           // on ecs.dispose()
 }
-
-const sys = world.register_system({
-  name: "physics",
-  fn(ctx, dt) { /* every frame */ },
-  on_added(ctx) { /* once, during world.startup() */ },
-  on_removed() { /* when world.remove_system(sys) is called */ },
-  dispose() { /* during world.dispose() */ },
-});
 ```
 
-`SystemDescriptor` is `Readonly<SystemConfig> & { readonly id: SystemID }` and is frozen at registration.
+Key rules the access checker enforces (dev only):
 
-## `SystemContext` API
+- **`reads`/`writes` are mandatory** — pass empty arrays to say "this system touches no columns" explicitly. Every other declaration field defaults to empty.
+- **A write implies a read**, and authorizes `addComponent` on that column.
+- **`destroyEntity` removes every component** on the entity — declare the superset in `despawns`.
+- **Sparse and relation ids live in separate id spaces.** Declare them in `sparse*`/`relation*`, never in `reads`/`writes`.
+- **`queries`** is a *lint*, not a runtime term: at registration it checks `queries ⊆ reads ∪ writes` and throws `QUERY_ACCESS_UNDECLARED` if you query a component you didn't declare. It can't catch a component missing from *both*, so keep it mirroring your actual `ctx.query(...)` terms.
 
-Every system receives a single shared `SystemContext` bound to the world's `Store`. It wraps the store with deferred structural operations so that iterators stay valid while a system runs.
-
-### World access
-
-- **`public readonly store: Store`** — the underlying data store. Exposed publicly so systems and helpers can reach into lower-level APIs when needed.
-
-### Queries and resources
-
-Queries are not created through `ctx`; they come from the `QueryBuilder` at registration time, or from `world.query(...)`. `ctx` exposes resources by key:
-
-- `resource<T>(key: ResourceKey<T>): T` — read a registered resource. (tick)
-- `set_resource<T>(key: ResourceKey<T>, value: T): void` — replace a resource.
-- `has_resource<T>(key: ResourceKey<T>): boolean` — test presence.
-
-### Events
-
-- `emit(key: EventKey<readonly []>): void` — emit a signal (payload-less).
-- `emit<F>(key: EventKey<F>, values: { [K in F[number]]: number }): void` — emit a structured event.
-- `read<F>(key: EventKey<F>): EventReader<F>` — obtain this frame's event reader.
-
-### Entities
-
-- `create_entity(): EntityID` — **immediate**; returns a live id.
-- `destroy_entity(id: EntityID): this` — **deferred** until the next flush.
-- `add_component(entity, def): this` — deferred (tag overload).
-- `add_component(entity, def, values): this` — deferred.
-- `remove_component(entity, def): this` — deferred.
-- `flush(): void` — apply buffered structural changes, then destructions. Called automatically after each phase; call it manually only when a system must observe its own structural edits.
-
-### Per-entity field access
-
-- `get_field(entity, def, field): number` — direct read; looks up archetype + row each call.
-- `set_field(entity, def, field, value): void` — direct write; marks the column as changed this tick.
-- `ref(def, entity): ReadonlyComponentRef<S>` — cached read-only reference.
-- `ref_mut(def, entity): ComponentRef<S>` — cached mutable reference; marks the component as changed this tick.
-
-### Change detection (tick)
-
-- **`public last_run_tick: number`** — tick value at the start of this system's most recent run. `0` on the first run. Set by the schedule immediately before `fn` is invoked. (tick)
-- **`public get world_tick(): number`** — the current world tick, read from `store._tick`. Use this as the write tick when calling `arch.get_column_mut(def, field, tick)` directly from inside a system. (tick)
-
-`ChangedQuery.for_each` consults `ctx.last_run_tick` (via the query resolver) to decide which archetypes to visit — see the example below.
-
-## Phases
-
-`SCHEDULE` defines seven phases, grouped into three run windows:
-
-| Phase                    | Runs in                | When                                         |
-| ------------------------ | ---------------------- | -------------------------------------------- |
-| `SCHEDULE.PRE_STARTUP`   | `world.startup()`      | Once, before `STARTUP`.                      |
-| `SCHEDULE.STARTUP`       | `world.startup()`      | Once.                                        |
-| `SCHEDULE.POST_STARTUP`  | `world.startup()`      | Once, after `STARTUP`.                       |
-| `SCHEDULE.FIXED_UPDATE`  | `world.update(dt)`     | Zero or more times per call, at a fixed dt. |
-| `SCHEDULE.PRE_UPDATE`    | `world.update(dt)`     | Every call.                                  |
-| `SCHEDULE.UPDATE`        | `world.update(dt)`     | Every call.                                  |
-| `SCHEDULE.POST_UPDATE`   | `world.update(dt)`     | Every call.                                  |
-
-Startup phases run in order `PRE_STARTUP → STARTUP → POST_STARTUP`. Each `world.update(dt)` advances the fixed-timestep accumulator, runs `FIXED_UPDATE` zero or more times at `world.fixed_timestep`, then runs `PRE_UPDATE → UPDATE → POST_UPDATE`, clears transient events, and increments the world tick. Startup systems receive `STARTUP_DELTA_TIME` as `dt`.
-
-After every phase, `ctx.flush()` is called so the next phase sees a consistent world.
-
-## Ordering with labels
-
-Within a phase, systems are sorted topologically using Kahn's algorithm. Insertion order is a stable tiebreaker. Attach constraints via a `SystemEntry`:
+### `exclusive` systems
 
 ```ts
-import { SCHEDULE } from "oecs";
-
-world.add_systems(
-  SCHEDULE.UPDATE,
-  inputSys,
-  { system: moveSys, ordering: { after: [inputSys] } },
-  { system: renderSys, ordering: { after: [moveSys] } },
-);
+ecs.registerSystem({ exclusive: true, reads: [], writes: [], fn: (ctx) => { /* anything */ } });
 ```
 
-`ordering.before` / `ordering.after` take `SystemDescriptor[]`. A cycle inside a single phase throws `ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY`. Ordering constraints only apply within the same phase; to sequence across phases, place systems in different `SCHEDULE` labels. See `schedule.md` for the full execution model.
+`exclusive: true` grants **full `ECS` access** for the system's whole run — every access check passes, and `reads`/`writes` may be empty. Use it sparingly for systems that genuinely touch everything: the [host-command apply system](./host-write-seam.md), save/load, debug tooling. The schedule is sequential today, so this is purely the access-bypass grant.
 
-## Examples
-
-### A typical system
+### `SystemTransition`
 
 ```ts
-const physicsSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      const px = arch.get_column_mut(Pos, "x", ctx.world_tick);
-      const py = arch.get_column_mut(Pos, "y", ctx.world_tick);
-      const vx = arch.get_column(Vel, "vx");
-      const vy = arch.get_column(Vel, "vy");
-      for (let i = 0; i < arch.entity_count; i++) {
-        px[i] += vx[i] * dt;
-        py[i] += vy[i] * dt;
-      }
-    });
-  },
-  (qb) => qb.every(Pos, Vel),
-);
-
-world.add_systems(SCHEDULE.UPDATE, physicsSys);
+interface SystemTransition {
+  readonly whenHas: readonly ComponentDef[];   // entities with all of these...
+  readonly add?: readonly ComponentDef[];       // ...may gain these
+  readonly remove?: readonly ComponentDef[];    // ...may lose these
+}
 ```
 
-### Change-detection aware system
+Declares an archetype transition a system performs mid-tick, so the access checker allows the add/remove and the target archetypes are prewarmed.
 
-`ChangedQuery.for_each` iterates only archetypes whose change tick for one of the requested components is `>= ctx.last_run_tick`. On the first run, `last_run_tick` is `0`, so every non-empty matching archetype is visited once.
+## The system context (`ctx`)
+
+`ctx` is a `SystemContext` — the only handle a system gets. It splits cleanly into **deferred** structural ops (buffered to the phase flush, so iteration stays safe) and **immediate** reads/writes.
+
+### Component reads & writes (immediate)
 
 ```ts
-const syncTransformSys = world.register_system(
-  (q, ctx, _dt) => {
-    const changed = q.changed(Pos);
-    changed.for_each((arch) => {
-      const px = arch.get_column(Pos, "x");
-      const py = arch.get_column(Pos, "y");
-      const tx = arch.get_column_mut(Transform, "x", ctx.world_tick);
-      const ty = arch.get_column_mut(Transform, "y", ctx.world_tick);
-      for (let i = 0; i < arch.entity_count; i++) {
-        tx[i] = px[i];
-        ty[i] = py[i];
-      }
-    });
-  },
-  (qb) => qb.every(Pos, Transform),
-);
+ref<S>(def, entityId): ComponentRef<S>;         // mutable cached accessor — bumps the change tick
+refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only — no tick bump
+getField<S>(entityId, def, field): number;
+setField<S>(entityId, def, field, value): void; // writes + bumps the change tick
+updateField<S>(entityId, def, field, fn): number;     // read-modify-write; returns the new value
+markChanged(entityId, def): void;               // manually flag a per-entity onSet (hot raw loops)
 ```
 
-### Signal-handling system
+See [refs](./refs.md) for `ref`/`refRead`, and [change detection](./change-detection.md) for what "bumps the tick" means.
+
+### `ctx.commands` — deferred structural ops
 
 ```ts
-const ResetSignal = signal_key("game/reset");
-world.register_signal(ResetSignal);
-
-const resetSys = world.register_system((ctx, _dt) => {
-  const reader = ctx.read(ResetSignal);
-  if (reader.length === 0) return;
-  // Respond once per emission this frame.
-  ctx.set_resource(Score, { value: 0 });
-});
-
-world.add_systems(SCHEDULE.PRE_UPDATE, resetSys);
+ctx.commands.spawn(...items: BundleOrDef[]): EntityID;   // create immediate, attaches deferred
+ctx.commands.add(entityId, ...items): this;
+ctx.commands.remove(entityId, def): this;
+ctx.commands.despawn(entityId): this;
+ctx.commands.disable(entityId): this;
+ctx.commands.enable(entityId): this;
 ```
 
-## Notes
+> [!TIP]
+> Prefer `ctx.commands.*` over the bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.destroyEntity`. They do the same deferred thing, but `ctx.commands` reads unambiguously as "deferred" at the call site — where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
 
-- System functions should be pure-ish with respect to their arguments: they may mutate world state through `ctx`, but should not rely on hidden module-level state that would break if the system is re-registered, removed, or called after `world.dispose()`.
-- `ctx.last_run_tick` is `0` on a system's first run. Guard against this when a change-detection system needs to distinguish "first run" from "nothing changed".
-- Structural edits (`add_component`, `remove_component`, `destroy_entity`) are deferred to the end of the phase. If a system needs its own writes visible before the phase ends, call `ctx.flush()` explicitly.
-- `ctx.create_entity()` is immediate, but a newly created entity has no components until an `add_component` call is flushed.
-- `on_added` runs once during `world.startup()`, before any `PRE_STARTUP` systems execute; `on_removed` runs synchronously inside `world.remove_system(sys)` and again during `world.dispose()`; `dispose` runs during `world.dispose()`.
+> [!NOTE]
+> `ctx.commands.spawn` returns the new id **immediately** (the create isn't deferred), but the components attach at the flush. A query later in the *same phase* can observe the entity half-built. To learn a spawned id after its data lands, spawn from the [host-write seam](./host-write-seam.md) with an `onSpawned` callback instead.
+
+### The rest of `ctx`
+
+```ts
+createEntity(): EntityID;        isAlive(id): boolean;       hasComponent(id, def): boolean;
+destroyEntity(id): this;         disable(id): this;          enable(id): this;   isDisabled(id): boolean;
+addComponent(id, def, values?): this;    removeComponent(id, def): this;   // bare deferred ops (prefer ctx.commands)
+
+// Sparse & relation ops — IMMEDIATE (see sparse-storage.md / relations.md)
+addSparse / removeSparse / hasSparse / getSparseField / setSparseField
+addRelation / removeRelation / targetOf / targetsOf / sourcesOf / hasRelation
+
+// Events & resources (see events.md / resources.md)
+emit(key, values?): void;   read(key): EventReader;
+resource(key): T;   setResource(key, value): void;   removeResource(key): void;   hasResource(key): boolean;
+
+get ecsTick(): number;   // current store write tick
+flush(): void;           // force-apply buffered structural ops now
+```
+
+> [!WARNING]
+> `ctx.createEntity`, `ctx.disable`/`ctx.enable`, and every sparse/relation op are **immediate**; `ctx.addComponent`/`removeComponent`/`destroyEntity` and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
+
+## Lifecycle hooks
+
+- **`onAdded(ctx)`** — runs once during `ecs.startup()`, inside the system's access span (so its access *is* checked). Use it to spawn initial entities or seed resources.
+- **`onRemoved()`** — runs when you `ecs.removeSystem(descriptor)`.
+- **`dispose()`** — runs on `ecs.dispose()`.
+
+## `SystemDescriptor`
+
+`registerSystem` returns a frozen `SystemDescriptor` — the identity handle. Use it (by object identity) to schedule the system, to order it relative to others, and to remove it:
+
+```ts
+ecs.addSystems(SCHEDULE.UPDATE, move);
+ecs.addSystems(SCHEDULE.UPDATE, { system: render, ordering: { after: [move] } });
+ecs.removeSystem(move);
+```
+
+## Compute backend (advanced)
+
+If the system carries a `backendHandle` **and** a [compute backend](./memory.md#compute-backend) is attached via `ecs.attachBackend(...)`, the schedule runs `backend.run(handle)` **instead of** `fn`. Still declare `reads`/`writes` accurately — they authorize the shared-memory columns the backend touches. With no backend attached, `fn` runs as the pure-TS fallback.
+
+## See also
+
+- [schedule](./schedule.md) — phases, ordering, system sets, run conditions, the frame loop
+- [queries](./queries.md) — the iteration terminals a system body uses
+- [refs](./refs.md) · [change detection](./change-detection.md) — the mutation surface and the tick
+- [host-write seam](./host-write-seam.md) — feeding writes in from outside the schedule

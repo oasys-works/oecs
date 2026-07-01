@@ -1,84 +1,84 @@
 import { describe, expect, it } from "vitest";
 import {
   assert,
-  assert_non_null,
-  is_non_negative_integer,
-  is_non_null,
-  unsafe_cast,
-  validate_and_cast,
+  assertNonNull,
+  isNonNegativeInteger,
+  isNonNull,
+  unsafeCast,
+  validateAndCast,
 } from "../assertions";
 import { TypeError, TYPE_ERROR } from "../error";
 
 describe("assertions", () => {
   //=========================================================
-  // is_non_negative_integer
+  // isNonNegativeInteger
   //=========================================================
 
   it("is_non_negative_integer returns true for zero", () => {
-    expect(is_non_negative_integer(0)).toBe(true);
+    expect(isNonNegativeInteger(0)).toBe(true);
   });
 
   it("is_non_negative_integer returns true for positive integers", () => {
-    expect(is_non_negative_integer(1)).toBe(true);
-    expect(is_non_negative_integer(42)).toBe(true);
-    expect(is_non_negative_integer(999_999)).toBe(true);
+    expect(isNonNegativeInteger(1)).toBe(true);
+    expect(isNonNegativeInteger(42)).toBe(true);
+    expect(isNonNegativeInteger(999_999)).toBe(true);
   });
 
   it("is_non_negative_integer returns false for negative numbers", () => {
-    expect(is_non_negative_integer(-1)).toBe(false);
-    expect(is_non_negative_integer(-100)).toBe(false);
+    expect(isNonNegativeInteger(-1)).toBe(false);
+    expect(isNonNegativeInteger(-100)).toBe(false);
   });
 
   it("is_non_negative_integer returns false for non-integer numbers", () => {
-    expect(is_non_negative_integer(1.5)).toBe(false);
-    expect(is_non_negative_integer(0.1)).toBe(false);
-    expect(is_non_negative_integer(NaN)).toBe(false);
-    expect(is_non_negative_integer(Infinity)).toBe(false);
+    expect(isNonNegativeInteger(1.5)).toBe(false);
+    expect(isNonNegativeInteger(0.1)).toBe(false);
+    expect(isNonNegativeInteger(NaN)).toBe(false);
+    expect(isNonNegativeInteger(Infinity)).toBe(false);
   });
 
   //=========================================================
-  // is_non_null
+  // isNonNull
   //=========================================================
 
   it("is_non_null returns false for null", () => {
-    expect(is_non_null(null)).toBe(false);
+    expect(isNonNull(null)).toBe(false);
   });
 
   it("is_non_null returns true for undefined", () => {
-    // is_non_null only checks !== null, not == null
-    expect(is_non_null(undefined)).toBe(true);
+    // isNonNull only checks !== null, not == null
+    expect(isNonNull(undefined)).toBe(true);
   });
 
   it("is_non_null returns true for non-null values", () => {
-    expect(is_non_null(0)).toBe(true);
-    expect(is_non_null("")).toBe(true);
-    expect(is_non_null(false)).toBe(true);
-    expect(is_non_null({})).toBe(true);
+    expect(isNonNull(0)).toBe(true);
+    expect(isNonNull("")).toBe(true);
+    expect(isNonNull(false)).toBe(true);
+    expect(isNonNull({})).toBe(true);
   });
 
   //=========================================================
-  // assert_non_null
+  // assertNonNull
   //=========================================================
 
   it("assert_non_null does not throw for a defined value", () => {
-    expect(() => assert_non_null(42)).not.toThrow();
-    expect(() => assert_non_null("hello")).not.toThrow();
-    expect(() => assert_non_null(0)).not.toThrow();
-    expect(() => assert_non_null(false)).not.toThrow();
-    expect(() => assert_non_null("")).not.toThrow();
+    expect(() => assertNonNull(42)).not.toThrow();
+    expect(() => assertNonNull("hello")).not.toThrow();
+    expect(() => assertNonNull(0)).not.toThrow();
+    expect(() => assertNonNull(false)).not.toThrow();
+    expect(() => assertNonNull("")).not.toThrow();
   });
 
   it("assert_non_null throws TypeError for null", () => {
-    expect(() => assert_non_null(null)).toThrow(TypeError);
+    expect(() => assertNonNull(null)).toThrow(TypeError);
   });
 
   it("assert_non_null throws TypeError for undefined", () => {
-    expect(() => assert_non_null(undefined)).toThrow(TypeError);
+    expect(() => assertNonNull(undefined)).toThrow(TypeError);
   });
 
   it("assert_non_null error has ASSERTION_FAIL_NON_NULLABLE category", () => {
     try {
-      assert_non_null(null);
+      assertNonNull(null);
     } catch (e) {
       expect(e).toBeInstanceOf(TypeError);
       expect((e as TypeError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE);
@@ -90,19 +90,19 @@ describe("assertions", () => {
   //=========================================================
 
   it("assert does not throw when condition passes", () => {
-    const is_positive = (v: number): v is number => v > 0;
-    expect(() => assert(5, is_positive, "must be positive")).not.toThrow();
+    const isPositive = (v: number): v is number => v > 0;
+    expect(() => assert(5, isPositive, "must be positive")).not.toThrow();
   });
 
   it("assert throws TypeError when condition fails", () => {
-    const is_positive = (v: number): v is number => v > 0;
-    expect(() => assert(-1, is_positive, "must be positive")).toThrow(TypeError);
+    const isPositive = (v: number): v is number => v > 0;
+    expect(() => assert(-1, isPositive, "must be positive")).toThrow(TypeError);
   });
 
   it("assert error has ASSERTION_FAIL_CONDITION category", () => {
-    const is_positive = (v: number): v is number => v > 0;
+    const isPositive = (v: number): v is number => v > 0;
     try {
-      assert(-1, is_positive, "must be positive");
+      assert(-1, isPositive, "must be positive");
     } catch (e) {
       expect(e).toBeInstanceOf(TypeError);
       expect((e as TypeError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_CONDITION);
@@ -110,30 +110,30 @@ describe("assertions", () => {
   });
 
   it("assert error message includes the provided description", () => {
-    const is_positive = (v: number): v is number => v > 0;
+    const isPositive = (v: number): v is number => v > 0;
     try {
-      assert(-1, is_positive, "must be positive");
+      assert(-1, isPositive, "must be positive");
     } catch (e) {
       expect((e as TypeError).message).toContain("must be positive");
     }
   });
 
   //=========================================================
-  // validate_and_cast
+  // validateAndCast
   //=========================================================
 
   it("validate_and_cast returns the value when validation passes", () => {
-    const result = validate_and_cast(42, (v) => Number.isInteger(v) && v > 0, "positive integer");
+    const result = validateAndCast(42, (v) => Number.isInteger(v) && v > 0, "positive integer");
     expect(result).toBe(42);
   });
 
   it("validate_and_cast throws TypeError when validation fails", () => {
-    expect(() => validate_and_cast(-1, (v) => v > 0, "positive number")).toThrow(TypeError);
+    expect(() => validateAndCast(-1, (v) => v > 0, "positive number")).toThrow(TypeError);
   });
 
   it("validate_and_cast error has VALIDATION_FAIL_CONDITION category", () => {
     try {
-      validate_and_cast(-1, (v) => v > 0, "positive number");
+      validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
       expect(e).toBeInstanceOf(TypeError);
       expect((e as TypeError).category).toBe(TYPE_ERROR.VALIDATION_FAIL_CONDITION);
@@ -142,30 +142,30 @@ describe("assertions", () => {
 
   it("validate_and_cast error message includes the provided description", () => {
     try {
-      validate_and_cast(-1, (v) => v > 0, "positive number");
+      validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
       expect((e as TypeError).message).toContain("positive number");
     }
   });
 
   //=========================================================
-  // unsafe_cast
+  // unsafeCast
   //=========================================================
 
   it("unsafe_cast returns the same value unchanged", () => {
     const value = 42;
-    const result = unsafe_cast<number>(value);
+    const result = unsafeCast<number>(value);
     expect(result).toBe(42);
   });
 
   it("unsafe_cast returns the same reference for objects", () => {
     const obj = { x: 1 };
-    const result = unsafe_cast<{ x: number }>(obj);
+    const result = unsafeCast<{ x: number }>(obj);
     expect(result).toBe(obj);
   });
 
   it("unsafe_cast passes through null and undefined", () => {
-    expect(unsafe_cast<string>(null)).toBeNull();
-    expect(unsafe_cast<string>(undefined)).toBeUndefined();
+    expect(unsafeCast<string>(null)).toBeNull();
+    expect(unsafeCast<string>(undefined)).toBeUndefined();
   });
 });

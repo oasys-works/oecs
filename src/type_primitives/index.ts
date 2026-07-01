@@ -1,3 +1,7 @@
+/**
+ * Type-primitives barrel — assertions, brands, errors, plus data-structure primitives.
+ */
+
 export * from "./assertions";
 export * from "./brand";
 export * from "./error";

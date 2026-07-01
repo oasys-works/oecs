@@ -15,10 +15,10 @@ describe("Brand", () => {
   });
 
   it("branded values with same underlying value are equal at runtime", () => {
-    const entity_id = 7 as EntityID;
-    const component_id = 7 as ComponentID;
+    const entityId = 7 as EntityID;
+    const componentId = 7 as ComponentID;
     // At runtime these are the same number, branding is compile-time only
-    expect(entity_id === (component_id as unknown as EntityID)).toBe(true);
+    expect(entityId === (componentId as unknown as EntityID)).toBe(true);
   });
 
   it("branded value can be used in arithmetic like a plain number", () => {

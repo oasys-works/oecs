@@ -191,7 +191,7 @@ describe("SparseMap", () => {
     m.set(2, 20);
     m.set(3, 30);
     const seen = new Map<number, number>();
-    m.for_each((k, v) => seen.set(k, v));
+    m.forEach((k, v) => seen.set(k, v));
     expect(seen.size).toBe(3);
     expect(seen.get(1)).toBe(10);
     expect(seen.get(2)).toBe(20);

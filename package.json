@@ -1,18 +1,36 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.cjs"
-      }
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.ts", "default": "./dist/index.cjs" }
+    },
+    "./primitives": {
+      "import": { "types": "./dist/primitives.d.ts", "default": "./dist/primitives.js" },
+      "require": { "types": "./dist/primitives.d.ts", "default": "./dist/primitives.cjs" }
+    },
+    "./reactive": {
+      "import": { "types": "./dist/core/reactive/index.d.ts", "default": "./dist/core/reactive/index.js" },
+      "require": { "types": "./dist/core/reactive/index.d.ts", "default": "./dist/core/reactive/index.cjs" }
+    },
+    "./reactive-sync": {
+      "import": { "types": "./dist/extensions/reactive/index.d.ts", "default": "./dist/extensions/reactive/index.js" },
+      "require": { "types": "./dist/extensions/reactive/index.d.ts", "default": "./dist/extensions/reactive/index.cjs" }
+    },
+    "./editor": {
+      "import": { "types": "./dist/extensions/editor/index.d.ts", "default": "./dist/extensions/editor/index.js" },
+      "require": { "types": "./dist/extensions/editor/index.d.ts", "default": "./dist/extensions/editor/index.cjs" }
+    },
+    "./solid": {
+      "import": { "types": "./dist/extensions/solid/index.d.ts", "default": "./dist/extensions/solid/index.js" },
+      "require": { "types": "./dist/extensions/solid/index.d.ts", "default": "./dist/extensions/solid/index.cjs" }
+    },
+    "./shared": {
+      "import": { "types": "./dist/shared.d.ts", "default": "./dist/shared.js" },
+      "require": { "types": "./dist/shared.d.ts", "default": "./dist/shared.cjs" }
     }
   },
   "main": "./dist/index.cjs",
@@ -44,7 +62,16 @@
     "archetype",
     "gamedev"
   ],
+  "peerDependencies": {
+    "solid-js": "^1.9.3"
+  },
+  "peerDependenciesMeta": {
+    "solid-js": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "solid-js": "^1.9.3",
     "@types/node": "^25.0.3",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",

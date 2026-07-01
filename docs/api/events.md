@@ -1,154 +1,77 @@
 # Events
 
-Events are fire-and-forget messages that systems emit within a frame and other systems read during the same frame. Fields are stored in SoA (Structure of Arrays) layout -- each field is a backing `number[]` column exposed by the reader. All event channels are cleared automatically at the end of every `world.update()` call, after all phases have run.
-
-Signals are zero-field events: they carry no payload, just a count of how many times they were emitted.
-
-## Exports
+An **event** is a fire-and-forget message with a typed payload. Systems `emit` them and other systems `read` them within the same frame. Events are stored struct-of-arrays (one column per field) and **cleared at the end of every `update()`** — they exist for exactly one frame.
 
 ```ts
-import {
-  event_key,
-  signal_key,
-  type EventKey,
-  type EventReader,
-} from "oecs";
+import { eventKey, signalKey } from "@oasys/oecs";
+
+// A typed event and a payload-less signal, minted at module scope.
+const Contact = eventKey<{ a: EntityID; b: EntityID }>("Contact");
+const Jumped  = signalKey("Jumped");
+
+ecs.registerEvent(Contact, ["a", "b"]);   // enumerate fields (defines column order)
+ecs.registerSignal(Jumped);
 ```
 
-Worlds expose `register_event`, `register_signal`, `emit`, and `read`. Systems receive the same `emit` / `read` on their `SystemContext`.
+## Emitting & reading
 
-## Defining events
-
-Events are identified by module-scope `EventKey` symbols. Create a key once with `event_key<F>(name)`, passing the field tuple as a type parameter, then import that key anywhere you need to emit or read.
+`emit` and `read` are identical on `ecs` and on `ctx`:
 
 ```ts
-import { event_key } from "oecs";
-
-export const DamageEvent = event_key<readonly ["target", "amount"]>("Damage");
-export const ScoreEvent = event_key<readonly ["value"]>("Score");
+emit(key: SignalKey): void;                     // signal — no payload
+emit<S>(key: EventKey<S>, values: S): void;     // event — full payload
+read<S>(key: EventKey<S>): EventReader<S>;
 ```
 
-The type parameter `F` is a phantom -- it lives only at compile time and flows through `emit`/`read` for type safety. The string argument is the Symbol description, useful in debugging.
-
-`EventKey<F>` is a branded `symbol`. Module scope keeps identity stable across imports.
-
-## Registering an event
-
-`world.register_event(KEY, fields)` creates the SoA channel for a key. It returns `void` -- the `EventKey` itself is the handle used everywhere else.
+The reader is an SoA view: one read-only column array per field, plus a live `length`.
 
 ```ts
-world.register_event(DamageEvent, ["target", "amount"] as const);
-world.register_event(ScoreEvent, ["value"] as const);
-```
+// producer system:
+ctx.emit(Contact, { a: e1, b: e2 });
+ctx.emit(Jumped);
 
-Each key must be registered exactly once; re-registering the same key throws `EVENT_ALREADY_REGISTERED`. Registration is typically done in plugin/setup code, before `world.startup()`.
-
-The `fields` tuple at runtime must match the phantom `F` the key was declared with. Use `as const` so the tuple narrows to literal strings.
-
-## Signals
-
-Signals are zero-field events. Use the `signal_key(name)` factory and `world.register_signal(KEY)` to register them.
-
-```ts
-import { signal_key } from "oecs";
-
-export const GameOver = signal_key("GameOver");
-
-world.register_signal(GameOver);
-```
-
-`signal_key` returns `EventKey<readonly []>`, which makes the zero-argument `emit` overload the only one that type-checks for this key.
-
-Signals skip the column-push entirely and only increment a counter, so they are significantly cheaper than data events.
-
-## Emitting
-
-`world.emit(KEY, data)` appends one row to the event channel. The `data` object is typed against the key's field tuple.
-
-```ts
-// Outside systems (setup, input handlers)
-world.emit(DamageEvent, { target: entityId, amount: 50 });
-world.emit(GameOver);
-```
-
-Inside systems, use `ctx.emit`:
-
-```ts
-const attackSystem = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      // ...
-      ctx.emit(DamageEvent, { target: victim, amount: dmg });
-      ctx.emit(GameOver);
-    });
-  },
-  (qb) => qb.every(Attack),
-);
-```
-
-The two `emit` overloads are:
-
-```ts
-emit(key: EventKey<readonly []>): void;
-emit<F>(key: EventKey<F>, values: { readonly [K in F[number]]: number }): void;
-```
-
-TypeScript picks the right one from the key's phantom field tuple. Passing `values` to a signal key, or omitting them for a data event, is a compile error.
-
-## Reading
-
-`ctx.read(KEY)` (or `world.read(KEY)`) returns an `EventReader<F>` -- a live view over the channel's SoA columns.
-
-```ts
-type EventReader<F> = { length: number } & {
-  readonly [K in F[number]]: readonly number[];
-};
-```
-
-The reader exposes one `number[]` per field plus a `length` property. Each field property **is** the backing column -- access is zero-copy, no allocation per read.
-
-```ts
-const dmg = ctx.read(DamageEvent);
-for (let i = 0; i < dmg.length; i++) {
-  const target = dmg.target[i]; // number
-  const amount = dmg.amount[i]; // number
+// consumer system (same frame):
+const hits = ctx.read(Contact);
+for (let i = 0; i < hits.length; i++) {
+  const a = hits.a[i];   // typed as EntityID — the brand survives emit → read
+  const b = hits.b[i];
 }
+const jumps = ctx.read(Jumped).length;   // a signal carries only its count
 ```
-
-For signals, only `length` is meaningful:
 
 ```ts
-if (ctx.read(GameOver).length > 0) {
-  // fired at least once this frame
-}
+type EventReader<S> = { length: number } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 ```
 
-The reader object is stable: the same reference is reused across frames. Don't hold onto column slices -- iterate up to `length` and read in-place.
+## Keys & schemas
 
-## Lifecycle
-
-Events live for exactly one frame. `world.update(dt)` runs, in order:
-
-```
-world.update(dt)
-  -> run FIXED_UPDATE phases (if any, via accumulator)
-  -> run PRE_UPDATE phase         <- systems can emit events
-  -> run UPDATE phase             <- systems can read events emitted earlier this frame
-  -> run POST_UPDATE phase        <- last chance to read events
-  -> clear all event channels     <- length resets to 0, columns truncated
-  -> tick++
+```ts
+eventKey<S extends EventSchema>(name: string): EventKey<S>;
+signalKey(name: string): SignalKey;
+type EventSchema = Readonly<Record<string, number>>;   // field → value-type map
 ```
 
-The flush happens in `world.update()` after `schedule.run_update(...)` returns and before the tick increments. Events emitted during one `update` call are visible to every subsequent system in the same call, then discarded before the next one.
+A `SignalKey` is a distinct zero-field event — the type system stops you passing a payload to a signal or reading a signal's absent columns.
 
-Signals follow the same lifecycle: their count resets to 0 each frame.
+> [!TIP]
+> Declare the schema as a **type literal**, not an `interface`: `eventKey<{ a: EntityID }>("…")` works, but an `interface` fails the `EventSchema` constraint (interfaces lack the implicit index signature that literals get).
 
-## Why key-based
+> [!TIP]
+> **Branded number fields round-trip.** A field typed `EntityID` (or any branded number) reads back branded from the `EventReader` with no cast — the brand is compile-time only, so at runtime it's just a `number` in a typed column.
 
-`EventKey<F>` is a branded symbol carrying the field schema as a phantom type:
+## Lifetime
 
-- **Compile-time safety.** The phantom `F` flows through `emit` and `read`, so the value object for `emit` and the column names on the reader are fully typed from the key alone. Misspelling a field or mixing up keys is a type error.
-- **Module-scope identity.** Keys are defined at module scope (like `ResourceKey`) and imported wherever needed. No central registry, no registration-order coupling -- the key you import is the one the world registered.
-- **Decoupled definition and registration.** A key can be declared in a shared module and registered by whichever plugin owns it. Consumers import the key; they don't need to know which plugin owns the channel.
+> [!IMPORTANT]
+> **Events live exactly one frame.** `ecs.update()` clears every channel as its final act, so an event emitted this frame is readable only this frame. Same-frame cross-system reads work; there is no cross-frame delivery. (`startup()` also drains events its phases emit, so frame 1 never sees stale startup events.) If you need durable state, use a [resource](./resources.md) or a component.
 
-This mirrors the pattern used by `ResourceKey` / `resource_key`, keeping the API surface consistent across events and resources.
+> [!WARNING]
+> **Do not emit from an `onSet` [observer](./observers.md).** `onSet` runs at the tick tail, inside the window where events are about to be cleared — an emission there would be wiped before any reader sees it and would break snapshot/restore. In dev this throws `OBSERVER_ONSET_EMIT`; emit from a normal system instead.
+
+> [!NOTE]
+> The `EventReader` columns are the **live** backing arrays, read-only by type only. A cast can write through them, but that corrupts the channel — don't. Events, like resources, sit outside `stateHash` and snapshots (they're a per-frame scheduling artifact).
+
+## See also
+
+- [systems](./systems.md) — where you emit and read
+- [observers](./observers.md) — the `onSet`/`onAdd` callbacks (and why they can't emit)
+- [resources](./resources.md) — durable global state, in contrast to per-frame events

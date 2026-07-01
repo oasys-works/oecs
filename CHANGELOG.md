@@ -5,6 +5,107 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-06-24
+
+Major release. oecs is **re-derived from the upstream oasys engine ECS** — its modern descendant — and
+gains whole subsystems while staying pure-TS and zero-dependency by default. The public API moves to
+the engine's surface, so **every consumer touches breaking changes** — chiefly a global
+`snake_case` → `camelCase` rename. See [docs/MIGRATION-0.3-to-0.4.md](docs/MIGRATION-0.3-to-0.4.md).
+
+### Changed (breaking)
+
+- **The entire public API is now `camelCase`.** Every method, property, parameter, and field renamed
+  from `snake_case` (`create_entity` → `createEntity`, `add_component` → `addComponent`, `get_field` →
+  `getField`, `is_alive` → `isAlive`, `register_system` → `registerSystem`, …). Types and handles stay
+  PascalCase and SCREAMING_SNAKE constants are unchanged. A `vitest` casing guard prevents regressions.
+- **Renamed query/context verbs.** `QueryBuilder.every` → `with`; `query.not` → `without`;
+  `query.any_of` → `anyOf`; `query.for_each` → `forEach`; `archetype.get_column` → `getColumnRead`;
+  `event_key` / `signal_key` / `resource_key` → `eventKey` / `signalKey` / `resourceKey`;
+  `is_ecs_error` → `isEcsError`; `destroy_entity_deferred` → `destroyEntity` (still deferred).
+- **Ref mutability flipped on the unsuffixed name.** `ctx.ref` is now the **mutable** default (was
+  read-only in 0.3); the read-only variant is `ctx.refRead` (was `ctx.ref_mut` for the mutable one).
+  Same rule for columns: mutable `getColumn` (internal) vs read-only `getColumnRead`.
+- **`WorldOptions` → `ECSOptions`; `fixed_timestep` → `fixedTimestep`.**
+- **`initial_capacity` removed** — replaced by the `memory` surface (`memory: { budget }` /
+  `{ maxBytes }` / `{ columnCapacity }` pin / `{ shared }` / `{ wasm }` / `{ allocator }`). Passing the
+  old option keys throws at construction, pointing at `memory`.
+- **Component-touching systems must declare `reads` / `writes`.** A new `__DEV__` access checker
+  (tree-shaken from production) validates every column / ref / field / resource access against a
+  system's declared surface. The bare `(ctx, dt)` and `(q, ctx, dt)` + query-builder `registerSystem`
+  overloads declare no access, so a system that touches ECS data through them throws in dev — move it
+  to the config form (`registerSystem({ reads, writes, fn })`). `exclusive: true` systems bypass the
+  checker. A registration-time lint (`QUERY_ACCESS_UNDECLARED`) additionally checks any declared
+  `queries ⊆ reads ∪ writes`.
+- **`removeComponents` takes an array, not varargs** (`removeComponents(e, [A, B])`);
+  `batchAddComponent` / `batchRemoveComponent` key on `ArchetypeID` instead of an `Archetype` object.
+- **Event schema shape.** `eventKey`'s type parameter is now a field → value-type record
+  (`eventKey<{ target: EntityID; amount: number }>("Damage")`) rather than a tuple of field names, so
+  branded fields round-trip through `emit` / `read`. `registerEvent(key, [...fieldNames])` unchanged
+  otherwise.
+
+### Added
+
+- **Two storage profiles over one backing-neutral `ColumnStore`.** Default is pure-TS **heap** (a plain
+  resizable `ArrayBuffer`) — no `SharedArrayBuffer`, no cross-origin isolation. Opt-in
+  `@oasys/oecs/shared` (`memory: { shared: {} }`) uses a `SharedArrayBuffer` for worker offload / a WASM
+  compute backend. Same code path; identical state hash.
+- **Determinism** (opt-in `deterministic: true`): a state hash over column bytes + `snapshot()` /
+  `restoreInto()` (and `snapshotSparse` / `restoreSparse`), **backing-agnostic** — a heap world and a
+  shared world with identical history agree. `WorldRestoreError` / `SparseRestoreError` fail closed
+  before overwriting live backing.
+- **Observers** — `world.observe(def, { onAdd, onRemove, onSet, onDisable, onEnable })`, structural +
+  per-entity.
+- **Relations** — `(relation, target)` pairs, `ChildOf` / `IsA` presets (`registerChildOf` /
+  `registerIsA`), `(R,*)` / `(*,T)` wildcard queries (`withRelation`, `forEachRelatedTo`,
+  `ANY_RELATION`), hierarchy queries (`query.hierarchy`), traversal (`ancestorsOf` / `rootOf` /
+  `cascadeOf`), and on-delete cleanup policies.
+- **Sparse component storage** (`registerSparseComponent` / `addSparse` / `query.withSparse`),
+  **run conditions / system sets** (`systemSet` + `configureSet`; `runIfResourceEq` / `runEveryNTicks`
+  / `runIfAnyMatch`), **entity enable/disable** (row-partitioned; `disable` / `enable` /
+  `includeDisabled`), and **templates** (`world.template([...])` + `createEntity(template, overrides)`
+  / `createEntities(template, count)` for zero-transition spawns).
+- **Typed host→ECS write seam** — `installHostCommandSeam(world)` + `applyHostCommand` + a
+  `HostCommandQueue` drained by a blessed `exclusive` apply system; a cross-thread ring transport
+  (`HostCommandDispatcher`); record/replay (`HostCommandRecorder`, `replayCommandLog`,
+  `serializeCommandLog`); and an undo/redo + field-handle layer at `@oasys/oecs/editor`.
+- **Frame trace** — `world.setTrace(sink)` + `FrameTraceRecorder` emit a structured per-frame event
+  stream (`__DEV__`-gated). **Compute backend seam** — `world.attachBackend(backend)` runs a system's
+  body on a compiled backend instead of its TS closure.
+- **Reactive UI seam (optional):** zero-dependency kernel at `@oasys/oecs/reactive`; ECS→reactive
+  bridge at `@oasys/oecs/reactive-sync` (publish-only-dirty, O(changed)); SolidJS adapter at
+  `@oasys/oecs/solid` with `solid-js` as an **optional** peer dependency.
+- **`memory` sizing surface** on the constructor: `budget` (by expected `entities`) / `maxBytes` /
+  `columnCapacity` / `shared` / `wasm` / `allocator` arms; `resolveECSMemory(...)` exported to inspect
+  what an intent resolves to.
+- **Hot-path iteration ergonomics:**
+  - **`query.eachChunk((cols, count) => …)`** — the mutable per-archetype iterator. `cols.mut(def)` /
+    `cols.read(def)` resolve a whole component's field columns at once into a destructurable group
+    (`const { x, y } = cols.mut(Pos)`), stamping the change tick once inside `mut` and handing back
+    `count` (= `entityCount`). The only mutable column accessor reachable through iteration (the
+    `ArchetypeView` from `forEach` stays read-only). Honours `includeDisabled()`; dense-only like `forEach`.
+  - **`ctx.commands`** — a Bevy-`Commands`-style facade namespacing the **deferred** structural ops
+    (`spawn` / `add` / `remove` / `despawn` / `disable` / `enable`), unambiguously deferred vs the
+    immediate `world.addComponent`.
+  - **Callable bundles** — `bundle(def, values)` pairs a def with field values (omitted fields
+    zero-fill); `world.spawnBundle(...)` (immediate) and `ctx.commands.spawn` / `.add` (deferred)
+    accept a `bundle(...)` or a bare def (tag / all-zero), unifying the attach shapes.
+  - **`ctx.updateField` / `ctx.markChanged`**, and optional-component queries (`query.optional(...)` +
+    `getOptionalColumnRead`).
+- **Composable change-detection queries** — `query.changed(...)` returns a `ChangedQuery` that now
+  mirrors the dense query verbs (`and` / `without` / `anyOf` / `optional`), so
+  `q.changed(Pos).without(Dead)` works (refining *after* `changed()`, previously a dead end).
+- **New public exports** — entity-ID codec (`createEntityId` / `getEntityIndex` / `getEntityGeneration`
+  + `MAX_*` bounds) for snapshot/replication decode; the error taxonomy (`ECSError`, `ECS_ERROR`,
+  `isEcsError`) for catch-and-branch; and `@oasys/oecs/primitives` (`BitSet`, `SparseSet`, `SparseMap`,
+  growable typed arrays, `BinaryHeap`, `topologicalSort`).
+
+### Packaging
+
+- **Multi-entry build** → `dist/` emits ESM + CJS + `.d.ts` for every subpath (`.`, `/primitives`,
+  `/shared`, `/reactive`, `/reactive-sync`, `/editor`, `/solid`); `sideEffects:false` + tree-shaking
+  keep core consumers from pulling SAB / Solid. `solid-js` is an optional peer dependency. `jsr.json`
+  exports updated.
+
 ## [0.3.3] — 2026-04-30
 
 Release-process and packaging hygiene. No runtime changes.

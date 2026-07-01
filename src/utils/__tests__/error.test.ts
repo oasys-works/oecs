@@ -1,46 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../error";
-import { ECSError, ECS_ERROR, is_ecs_error } from "../error";
 
-describe("ECSError", () => {
+// `AppError` is abstract; exercise it through a minimal concrete subclass.
+// (The ECS-specific `ECSError` is tested next to its definition in
+// `core/ecs/utils/__tests__/error.test.ts`.)
+class TestError extends AppError {
+  constructor(message: string, isOperational = true, context?: Record<string, unknown>) {
+    super(message, isOperational, context);
+  }
+}
+
+describe("AppError", () => {
   //=========================================================
   // Construction & properties
   //=========================================================
 
-  it("stores the category", () => {
-    const err = new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-    expect(err.category).toBe(ECS_ERROR.ENTITY_NOT_ALIVE);
+  it("stores the message", () => {
+    const err = new TestError("boom");
+    expect(err.message).toBe("boom");
   });
 
-  it("uses category as default message when message is omitted", () => {
-    const err = new ECSError(ECS_ERROR.COMPONENT_NOT_REGISTERED);
-    expect(err.message).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
-  });
-
-  it("uses provided message when given", () => {
-    const err = new ECSError(ECS_ERROR.EID_MAX_INDEX_OVERFLOW, "index exceeded limit");
-    expect(err.message).toBe("index exceeded limit");
-  });
-
-  it("is always operational", () => {
-    const err = new ECSError(ECS_ERROR.ARCHETYPE_NOT_FOUND);
-    expect(err.is_operational).toBe(true);
+  it("stores the operational flag", () => {
+    expect(new TestError("a", true).isOperational).toBe(true);
+    expect(new TestError("b", false).isOperational).toBe(false);
   });
 
   it("context is undefined when not provided", () => {
-    const err = new ECSError(ECS_ERROR.DUPLICATE_SYSTEM);
+    const err = new TestError("a");
     expect(err.context).toBeUndefined();
   });
 
   it("stores provided context", () => {
     const ctx = { system: "physics", phase: "init" };
-    const err = new ECSError(ECS_ERROR.DUPLICATE_SYSTEM, "dup", ctx);
+    const err = new TestError("dup", true, ctx);
     expect(err.context).toEqual({ system: "physics", phase: "init" });
   });
 
-  it("sets name to ECSError", () => {
-    const err = new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-    expect(err.name).toBe("ECSError");
+  it("sets name to the concrete subclass name", () => {
+    const err = new TestError("a");
+    expect(err.name).toBe("TestError");
   });
 
   //=========================================================
@@ -48,44 +46,10 @@ describe("ECSError", () => {
   //=========================================================
 
   it("is an instance of AppError", () => {
-    const err = new ECSError(ECS_ERROR.RESOURCE_NOT_REGISTERED);
-    expect(err).toBeInstanceOf(AppError);
+    expect(new TestError("a")).toBeInstanceOf(AppError);
   });
 
   it("is an instance of Error", () => {
-    const err = new ECSError(ECS_ERROR.RESOURCE_NOT_REGISTERED);
-    expect(err).toBeInstanceOf(Error);
-  });
-
-  //=========================================================
-  // ECS_ERROR enum values
-  //=========================================================
-
-  it("all ECS_ERROR enum members are distinct strings", () => {
-    const values = Object.values(ECS_ERROR);
-    const unique = new Set(values);
-    expect(unique.size).toBe(values.length);
-  });
-
-  //=========================================================
-  // is_ecs_error guard
-  //=========================================================
-
-  it("is_ecs_error returns true for ECSError instances", () => {
-    const err = new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-    expect(is_ecs_error(err)).toBe(true);
-  });
-
-  it("is_ecs_error returns false for plain Error", () => {
-    const err = new Error("plain");
-    expect(is_ecs_error(err)).toBe(false);
-  });
-
-  it("is_ecs_error returns false for non-error values", () => {
-    expect(is_ecs_error(null)).toBe(false);
-    expect(is_ecs_error(undefined)).toBe(false);
-    expect(is_ecs_error("string")).toBe(false);
-    expect(is_ecs_error(42)).toBe(false);
-    expect(is_ecs_error({})).toBe(false);
+    expect(new TestError("a")).toBeInstanceOf(Error);
   });
 });

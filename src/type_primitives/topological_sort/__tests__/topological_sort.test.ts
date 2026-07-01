@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { topological_sort } from "../topological_sort";
+import { topologicalSort } from "../topological_sort";
 
 describe("topological_sort", () => {
   it("returns empty array for empty input", () => {
-    const result = topological_sort([], new Map(), (a, b) => a - b);
+    const result = topologicalSort([], new Map(), (a, b) => a - b);
     expect(result).toEqual([]);
   });
 
   it("returns single node", () => {
-    const result = topological_sort([1], new Map(), (a, b) => a - b);
+    const result = topologicalSort([1], new Map(), (a, b) => a - b);
     expect(result).toEqual([1]);
   });
 
@@ -21,7 +21,7 @@ describe("topological_sort", () => {
       ["B", 1],
       ["C", 2],
     ]);
-    const result = topological_sort(
+    const result = topologicalSort(
       ["A", "B", "C"],
       edges,
       (a, b) => order.get(a)! - order.get(b)!,
@@ -40,7 +40,7 @@ describe("topological_sort", () => {
       ["C", 2],
       ["D", 3],
     ]);
-    const result = topological_sort(
+    const result = topologicalSort(
       ["A", "B", "C", "D"],
       edges,
       (a, b) => order.get(a)! - order.get(b)!,
@@ -58,7 +58,7 @@ describe("topological_sort", () => {
       ["Y", 1],
       ["Z", 2],
     ]);
-    const result = topological_sort(
+    const result = topologicalSort(
       ["X", "Y", "Z"],
       edges,
       (a, b) => order.get(a)! - order.get(b)!,
@@ -73,7 +73,7 @@ describe("topological_sort", () => {
       ["Y", 1],
       ["Z", 0],
     ]);
-    const result = topological_sort(
+    const result = topologicalSort(
       ["X", "Y", "Z"],
       edges,
       (a, b) => order.get(a)! - order.get(b)!,
@@ -85,7 +85,7 @@ describe("topological_sort", () => {
     const edges = new Map<string, string[]>();
     edges.set("A", ["B"]);
     edges.set("B", ["A"]);
-    expect(() => topological_sort(["A", "B"], edges, () => 0)).toThrow();
+    expect(() => topologicalSort(["A", "B"], edges, () => 0)).toThrow();
   });
 
   it("cycle error includes node names via node_name param", () => {
@@ -93,7 +93,7 @@ describe("topological_sort", () => {
     edges.set("A", ["B"]);
     edges.set("B", ["A"]);
     expect(() =>
-      topological_sort(
+      topologicalSort(
         ["A", "B"],
         edges,
         () => 0,
@@ -111,7 +111,7 @@ describe("topological_sort", () => {
       ["C", 2],
       ["D", 3],
     ]);
-    const result = topological_sort(
+    const result = topologicalSort(
       ["A", "B", "C", "D"],
       edges,
       (a, b) => order.get(a)! - order.get(b)!,

@@ -1,216 +1,180 @@
 # Queries
 
-Queries are the system-facing view over an archetype-based world. A `Query<Defs>` matches archetypes whose component mask satisfies a set of include / exclude / any-of filters, and exposes those archetypes for direct Structure-of-Arrays iteration.
-
-Queries operate at the archetype level, not per entity: iteration hands you each matching `Archetype`, and you write the inner loop yourself using the typed-array columns. Matching is lazy and live — the result set is populated once from the existing archetype graph, then new archetypes are pushed into it as they are created.
-
-Three filter kinds combine freely:
-
-- `include` — required components (every archetype must contain all of these).
-- `exclude` (`not`) — archetypes containing any of these are filtered out.
-- `any_of` — archetype must contain at least one of these.
-
-## Exports
-
-From `oecs`:
-
-- `Query` — live, filtered view over archetypes.
-- `QueryBuilder` — used inside `register_system` to resolve a query at registration time.
-- `ChangedQuery` — filters a base query's archetypes by component change tick.
-- `SystemContext` — the `ctx` parameter passed to systems; exposes `ref`, `ref_mut`, deferred mutations, events, and resources.
-
-## Building a query
-
-`world.query(...defs)` is variadic and returns a `Query<Defs>` whose include mask is the set of passed components. Component order does not matter.
+A **query** is a live, cached view over every archetype that matches a set of components. You build it once and reuse it every frame — the store keeps pushing newly-matching archetypes into it as they appear, so it never goes stale.
 
 ```ts
-const q = world.query(Pos, Vel);
+const movers = ecs.query(Pos, Vel);   // every archetype with (at least) Pos AND Vel
 ```
 
-To add exclude or any-of filters, chain:
+`ecs.query(A, B, C)` matches entities that have **all** of `A`, `B`, and `C` (and possibly more). Order doesn't matter, and repeated calls with the same set return the **same cached instance**.
+
+## Reading vs writing — pick your terminal
+
+The single most important decision in a query is how you iterate it, because that decides whether you can mutate:
+
+| Terminal | Callback gets | Mutate? | Use for |
+| --- | --- | --- | --- |
+| [`forEach`](#foreach--read-only) | a read-only `ArchetypeView` | no | reading columns |
+| [`eachChunk`](#eachchunk--mutable-hot-path) | mutable `cols` + `count` | **yes** | the mutating hot loop |
+| [`forEachEntity`](#foreachentity--non-dense-terms) | one `EntityID` at a time | via `ctx` | queries with sparse/relation/hierarchy terms |
 
 ```ts
-// Extend required components (adds to include mask)
-const q = world.query(Pos).and(Vel);
+// Read-only pass:
+movers.forEach((arch) => {
+  const x = arch.getColumnRead(Pos, "x");           // read-only column
+  for (let i = 0; i < arch.entityCount; i++) sum += x[i];
+});
 
-// Exclude archetypes containing any of these components
-const alive = world.query(Pos).not(Dead);
-
-// Require at least one of these
-const damaged = world.query(Health).any_of(Poison, Fire);
-
-// Combine freely
-const targets = world
-  .query(Pos)
-  .and(Health)
-  .not(Shield)
-  .any_of(IsEnemy, IsBoss);
-```
-
-Each chain method returns a new (cached) `Query`; the original is unchanged.
-
-Inside `register_system`, use `QueryBuilder.every(...)` to build the query once at registration:
-
-```ts
-const moveSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      // ...
-    });
-  },
-  (qb) => qb.every(Pos, Vel),
-);
-```
-
-Counts:
-
-```ts
-q.count();            // total entities across all matching archetypes
-q.archetype_count;    // number of matching archetypes (including empty ones)
-q.archetypes;         // readonly Archetype[] — all matches (empties included)
-```
-
-## Iterating with `for_each`
-
-Iterate non-empty archetypes via the callback form. `Symbol.iterator` is not implemented — use `for_each` exclusively.
-
-```ts
-q.for_each((arch) => {
-  const px = arch.get_column(Pos, "x");
-  const py = arch.get_column(Pos, "y");
-  const vx = arch.get_column(Vel, "vx");
-  const vy = arch.get_column(Vel, "vy");
-  const n = arch.entity_count;
-  for (let i = 0; i < n; i++) {
-    px[i] += vx[i];
-    py[i] += vy[i];
+// Mutating pass — the recommended default when you write:
+movers.eachChunk((cols, count) => {
+  const { x, y } = cols.mut(Pos);                   // mutable columns; stamps Pos's change tick
+  const { vx, vy } = cols.read(Vel);                // read-only columns; no tick bump
+  for (let i = 0; i < count; i++) {
+    x[i] += vx[i] * dt;
+    y[i] += vy[i] * dt;
   }
 });
 ```
 
-Key archetype members used inside the callback:
+## Building queries
 
-- `arch.entity_count` — number of live entities in this archetype.
-- `arch.entity_ids` — `ReadonlyUint32Array` of entity IDs; valid at indices `0..entity_count-1`.
-- `arch.get_column(def, field)` — read-only typed-array column.
-- `arch.get_column_mut(def, field, tick)` — mutable typed-array column; records `tick` as the component's change tick (see `ctx.world_tick`).
-
-Empty archetypes are skipped automatically. The non-empty list is cached and invalidated lazily when entities are added, removed, or moved between archetypes.
-
-If you need the entity ID for side effects:
+Two entry points, same result:
 
 ```ts
-q.for_each((arch) => {
-  const ids = arch.entity_ids;
-  const hp = arch.get_column(Health, "current");
-  const n = arch.entity_count;
-  for (let i = 0; i < n; i++) {
-    if (hp[i] <= 0) ctx.destroy_entity(ids[i] as EntityID);
-  }
-});
-```
+// Host side / stored on the ECS:
+query<T extends ComponentDef[]>(...defs: T): Query<T>;
+const movers = ecs.query(Pos, Vel);
 
-## Single-entity refs: `ctx.ref` and `ctx.ref_mut`
-
-When you need repeated field access to a single entity (not bulk iteration), use refs from the system context. These are not query methods — they live on `SystemContext` — but they pair naturally with queries that produce individual entity IDs.
-
-```ts
-// Read-only ref
-const pos: ReadonlyComponentRef<PosSchema> = ctx.ref(Pos, entity);
-const x = pos.x;
-
-// Mutable ref — records a write tick on the component's archetype
-const vel: ComponentRef<VelSchema> = ctx.ref_mut(Vel, entity);
-vel.vx += 1;
-```
-
-`ctx.ref(def, entity)` returns a `ReadonlyComponentRef<S>`: each schema field is readable as a `number` property.
-
-`ctx.ref_mut(def, entity)` returns a mutable `ComponentRef<S>` and sets `archetype._changed_tick[def] = store._tick` at the moment of creation. This is what makes the entity (and its archetype) visible to `ChangedQuery` consumers on the next run.
-
-See [refs.md](./refs.md) for the full ref lifecycle and when to prefer them over `get_column` / `get_field`.
-
-## `ChangedQuery` — filtering by change tick
-
-`query.changed(...defs)` produces a `ChangedQuery<Defs>` that iterates only archetypes where at least one of the listed components was written after the system's last run.
-
-```ts
-const qMoved = q.changed(Pos);
-
-qMoved.for_each((arch) => {
-  // Only archetypes whose Pos column was touched since ctx.last_run_tick.
-  const px = arch.get_column(Pos, "x");
-  const py = arch.get_column(Pos, "y");
-  // ...
-});
-```
-
-Behavior:
-
-- Each listed component must be part of the base query's include mask; otherwise `changed()` throws in dev.
-- The threshold is `ctx.last_run_tick`, read from the ECS at iteration time.
-- An archetype is emitted if any of the tracked components has `_changed_tick >= last_run_tick`.
-- Writes that bump `_changed_tick` come from `get_column_mut`, `ref_mut`, `set_field`, `write_fields`, `write_fields_positional`, and archetype transitions (add / remove / move).
-
-`ChangedQuery` reuses the base query's non-empty archetype cache — it does not allocate a new result set.
-
-## Query caching
-
-`world.query(...)` is internally deduplicated. The ECS hashes `(include, exclude, any_of)` into a bucketed cache and returns the same `Query` instance for equivalent filter sets. Calls like `world.query(Pos, Vel)` and `world.query(Vel, Pos)` resolve to the same object.
-
-Each cached query holds two things:
-
-1. A live `Archetype[]` result set. The store pushes every newly created archetype into every registered query whose masks it satisfies, so queries never go stale.
-2. A non-empty subset list, rebuilt lazily. It is marked dirty on structural change (new archetype, entity add/remove) and recomputed on the next `for_each` call.
-
-Cache hits skip mask construction entirely; cache misses allocate a new `Query`, copy the masks, and register the result with the store.
-
-## Common patterns
-
-**System-scoped query** — resolve once, iterate every frame:
-
-```ts
-world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      // ...
-    });
-  },
-  (qb) => qb.every(Pos, Vel),
+// Inside a system via the query-builder overload of registerSystem:
+const move = ecs.registerSystem(
+  (q, ctx, dt) => { q.eachChunk(/* ... */); },
+  (qb) => qb.with(Pos, Vel),   // resolved ONCE at registration
 );
 ```
 
-**Ad-hoc query** — build when needed; still cached:
+`QueryBuilder.with(...)` is identical to `ecs.query(...)`; it's just the form handed to systems. Most code declares queries with `ecs.query(...)` and closes over them — see [systems](./systems.md) for why that's usually cleaner than the builder overload.
+
+## Refine verbs
+
+Each verb returns a **new cached query**; the receiver is never mutated. Composition is memoized, so `q.and(A).and(B)` and `q.and(A, B)` are the same instance.
 
 ```ts
-const living = world.query(Health).not(Dead);
-console.log("alive:", living.count());
+and<D>(...comps: D): Query<[...Defs, ...D]>;   // also require these  (narrows the set)
+without(...comps): Query<Defs>;                 // exclude archetypes holding ANY of these
+anyOf(...comps): Query<Defs>;                   // require AT LEAST ONE of these
+optional(...defs): Query<Defs>;                 // fetch-if-present (does NOT narrow the set)
+changed(...defs): ChangedQuery<Defs>;           // only archetypes changed since last run
+includeDisabled(): Query<Defs>;                 // opt disabled entities back in
 ```
-
-**Change-detection system** — react only to modified entities:
 
 ```ts
-world.register_system(
-  (q, ctx, dt) => {
-    const moved = q.changed(Pos);
-    moved.for_each((arch) => {
-      // rebuild spatial index for this archetype's slice
-    });
-  },
-  (qb) => qb.every(Pos),
-);
+ecs.query(Pos)
+  .and(Vel)              // require Vel too
+  .without(Frozen)       // drop frozen entities
+  .anyOf(Player, NPC);   // and be a Player OR an NPC
 ```
 
-**Narrow vs. broad filters** — prefer narrow include masks for hot loops; broad masks with `not(...)` when the exclusion set is small. Both produce the same correct result; the non-empty archetype list and cache hit behavior make either shape cheap at iteration time.
+- **`without`** excludes an archetype if it holds *any* listed component. **`anyOf`** requires *at least one*; successive `anyOf` calls union into one "≥1 of these" set.
+- **`optional(T)`** widens what you can *read*, not what you *match* — iteration still spans archetypes with and without `T`. Read it with `arch.getOptionalColumnRead(T, field)`, which returns the column when present and `undefined` when absent. `.optional(T)` is also the **authorization** to fetch `T` optionally; you still need `T` in the system's `reads` (both checks fire).
+- **`changed(...)`** returns a [`ChangedQuery`](./change-detection.md) — see that page; note the granularity is *archetype*, not row.
+- **`includeDisabled()`** widens iteration to cover [disabled](./entities.md#enable--disable) entities, which are excluded by default.
 
-**Deferred mutation inside iteration** — use `ctx.destroy_entity`, `ctx.add_component`, `ctx.remove_component`; these buffer until the schedule flush, so archetype membership does not shift mid-`for_each`.
+## `forEach` — read-only
 
-## Notes and pitfalls
+```ts
+forEach(cb: (arch: ArchetypeView) => void): void;
+forEachUntil(cb: (arch: ArchetypeView) => boolean): boolean;   // stop when cb returns true
+```
 
-- `Symbol.iterator` is not defined on `Query`. `for (const arch of q)` will not work; always use `q.for_each(...)`.
-- `ChangedQuery.changed(def)` requires `def` to be in the base query's include mask — otherwise there is no column to track.
-- `ctx.ref_mut` bumps the change tick at ref-creation time, not on assignment. Creating a mutable ref you never write to still marks the component changed for this archetype.
-- `arch.get_column` is read-only; `arch.get_column_mut(def, field, ctx.world_tick)` is what triggers change detection for bulk writes.
-- The non-empty archetype list is invalidated on structural changes only. Per-field writes do not invalidate it, so the same cached list is reused across `for_each` calls in the same frame.
-- `q.archetype_count` includes empty archetypes; `q.count()` sums `entity_count` across all matching archetypes.
-- Queries never expose entity IDs as a flat list — always iterate archetypes and read `arch.entity_ids`.
+`forEach` calls back once per **non-empty** matching archetype with a read-only `ArchetypeView`:
+
+```ts
+interface ArchetypeView {
+  readonly id: ArchetypeID;
+  readonly entityCount: number;   // ← your loop bound (enabled rows)
+  readonly totalCount: number;    // includes disabled rows
+  readonly disabledCount: number;
+  readonly entityIds: ReadonlyEntityIdArray;
+  hasComponent(id): boolean;
+  getColumnRead(def, field): ReadonlyColumn;                 // read-only column
+  getColumnsRead(def, ...fields): [ReadonlyColumn, ...];      // several at once
+  getOptionalColumnRead(def, field): ReadonlyColumn | undefined;  // for .optional(def)
+}
+```
+
+> [!WARNING]
+> **Always loop to `arch.entityCount`, never a column's `.length`.** A column's raw buffer includes capacity and disabled slots past the live count; iterating `.length` reads stale/garbage rows. `entityCount` is the enabled-row count (or all rows under `includeDisabled`). The [`eachChunk`](#eachchunk--mutable-hot-path) `count` parameter exists precisely to remove this trap.
+
+> [!NOTE]
+> The `ArchetypeView` deliberately **omits any mutable column accessor** — you cannot write through `forEach`. To mutate, either use [`eachChunk`](#eachchunk--mutable-hot-path), or write per entity with [`ctx.ref`](./refs.md) / `ctx.setField` (both bump the change tick). `ReadonlyColumn` is a compile-time barrier only; a cast can write through it, but doing so skips change detection and corrupts it — don't.
+
+## `eachChunk` — mutable hot path
+
+```ts
+eachChunk(cb: (cols: ChunkColumns, count: number) => void): void;
+```
+
+The recommended default for **mutating** systems. `cols` resolves whole components into destructurable column groups; `count` is the enabled-row count.
+
+```ts
+interface ChunkColumns {
+  mut<S>(def: ComponentDef<S>): MutableColumnsForSchema<S>;   // writable; stamps the change tick
+  read<S>(def: ComponentDef<S>): ColumnsForSchema<S>;         // read-only; no tick bump
+}
+
+movers.eachChunk((cols, count) => {
+  const { x, y } = cols.mut(Pos);     // { x: Float64Array, y: Float64Array }, writable
+  const { vx, vy } = cols.read(Vel);
+  for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
+});
+```
+
+> [!IMPORTANT]
+> `cols.mut(def)` stamps `def`'s change tick for this archetype **once, when you call it** — before you've written anything. That's what makes [`changed(def)`](./change-detection.md) queries see this archetype next tick. If you only read, call `cols.read(def)` so you don't trip false positives. The tick value is captured once per `eachChunk` pass and reused across archetypes.
+
+> [!WARNING]
+> **Destructure the group immediately; don't retain it.** The object `cols.mut(Pos)` returns is cached per `(archetype, component)` and refreshed **in place** on the next call — grab `{ x, y }` and use the arrays, don't stash the group object across iterations.
+
+## `forEachEntity` — non-dense terms
+
+```ts
+forEachEntity(cb: (entityId: EntityID) => void): void;
+```
+
+Yields matching entities one id at a time. This is **required** for any query carrying a [sparse](./sparse-storage.md), [relation](./relations.md), or hierarchy term — those members scatter across archetypes, so there's no column span to hand you. Read fields on the yielded entity with `ctx.getField` (dense) or `ctx.getSparseField` (sparse).
+
+> [!WARNING]
+> Iteration walks the store's **live** key array. Mutating the driving sparse/relation membership *during* the walk (which applies immediately) shifts the array under you. Buffer such edits and apply them after the loop.
+
+## Dense-only restriction
+
+`forEach`, `eachChunk`, `count`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
+
+## Introspection
+
+```ts
+count(): number;                            // enabled rows (or all, under includeDisabled)
+get archetypeCount(): number;               // matching archetypes, including empty ones
+get archetypes(): readonly ArchetypeView[]; // the raw list (not filtered to non-empty)
+```
+
+## Non-dense query terms (summary)
+
+These carry a term that isn't part of the dense archetype mask. They compose with `and`/`without`/`anyOf` but must be iterated with `forEachEntity`/`forEachRelatedTo`. Full detail on their own pages:
+
+```ts
+withSparse(...defs): Query<Defs>;     withoutSparse(...defs): Query<Defs>;      // → sparse storage
+withRelation(...defs): Query<Defs>;   withoutRelation(...defs): Query<Defs>;    // (R, *) → relations
+forEachRelatedTo(target, cb): void;                                             // (*, T) → relations
+hierarchy(relation, maxDepth?): Query<Defs>;                                    // depth-order → relations
+```
+
+> [!NOTE]
+> Iterating a `(R, *)` / `(*, T)` query requires the system to authorize it: list the relation in `relationReads` (or `ANY_RELATION` for the `(*, T)` `forEachRelatedTo`). See [relations](./relations.md).
+
+## See also
+
+- [systems](./systems.md) — running queries, `ctx`, and the mutable write surface
+- [change detection](./change-detection.md) — `changed()` and how the tick works
+- [relations](./relations.md) · [sparse storage](./sparse-storage.md) — the non-dense terms
+- [entities](./entities.md) — enable/disable and `includeDisabled`

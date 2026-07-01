@@ -41,20 +41,20 @@ describe("GrowableTypedArray", () => {
   });
 
   //=========================================================
-  // get / set_at
+  // get / setAt
   //=========================================================
 
   it("set_at overwrites value at index", () => {
     const a = new GrowableFloat32Array();
     a.push(1.0);
     a.push(2.0);
-    a.set_at(0, 99.0);
+    a.setAt(0, 99.0);
     expect(a.get(0)).toBeCloseTo(99.0);
     expect(a.get(1)).toBeCloseTo(2.0);
   });
 
   //=========================================================
-  // swap_remove
+  // swapRemove
   //=========================================================
 
   it("swap_remove on last element just decrements length", () => {
@@ -62,7 +62,7 @@ describe("GrowableTypedArray", () => {
     a.push(1.0);
     a.push(2.0);
     a.push(3.0);
-    const removed = a.swap_remove(2);
+    const removed = a.swapRemove(2);
     expect(removed).toBeCloseTo(3.0);
     expect(a.length).toBe(2);
     expect(a.get(0)).toBeCloseTo(1.0);
@@ -74,7 +74,7 @@ describe("GrowableTypedArray", () => {
     a.push(10.0);
     a.push(20.0);
     a.push(30.0);
-    const removed = a.swap_remove(0);
+    const removed = a.swapRemove(0);
     expect(removed).toBeCloseTo(10.0);
     expect(a.length).toBe(2);
     // 30 moved to slot 0
@@ -85,7 +85,7 @@ describe("GrowableTypedArray", () => {
   it("swap_remove on sole element leaves array empty", () => {
     const a = new GrowableFloat32Array();
     a.push(5.0);
-    a.swap_remove(0);
+    a.swapRemove(0);
     expect(a.length).toBe(0);
   });
 

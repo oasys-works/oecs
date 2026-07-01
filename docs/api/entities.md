@@ -1,130 +1,119 @@
 # Entities
 
-An entity in oecs is not an object — it's a lightweight **handle**. Each `EntityID` is a packed 31-bit integer encoding a slot **index** and a **generation** counter. Entities don't own storage; component data lives in typed-array columns grouped by archetype. The entity handle exists only to locate a row within some archetype.
-
-## Exports
+An **entity** is an integer id (`EntityID`) — nothing more. It has no fields of its own; it's a key that components hang off of. You create one, attach components, and later destroy it.
 
 ```ts
-import type { EntityID } from "oecs";
+const e = ecs.createEntity();
+ecs.addComponent(e, Pos, { x: 0, y: 0 });
+ecs.addComponent(e, Vel, { vx: 1, vy: 0 });
+ecs.isAlive(e);        // true
+ecs.destroyEntity(e);  // deferred — see below
 ```
 
-`EntityID` is the only entity-related type exported from the public surface. Creation and destruction happen through `ECS` and `SystemContext` methods.
+## Immediate vs deferred — the one thing to internalize
 
-## Creating Entities
+Structural operations behave differently depending on **who** calls them:
 
-Create a new entity with `create_entity()`. It returns an `EntityID` immediately and places the entity in the empty archetype with no components attached.
+| Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
+| --- | --- | --- |
+| `createEntity` | immediate (id returned now) | immediate (id returned now) |
+| `addComponent` / `removeComponent` | **immediate** | **deferred** to the phase flush |
+| `destroyEntity` / `despawn` | **deferred** to the phase flush | **deferred** to the phase flush |
+| `disable` / `enable` | **immediate** | **deferred** to the phase flush |
+| sparse & relation ops | immediate | immediate |
+
+> [!IMPORTANT]
+> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side (between `update()` calls) there is no live iteration to protect, so those same ops apply immediately. The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
+
+Deferred work lands at the next **phase boundary** flush, or when you call `ecs.flush()` explicitly. See [schedule](./schedule.md).
+
+## Creating entities
 
 ```ts
-const world = new ECS();
-const e = world.create_entity();
-world.add_component(e, Pos, { x: 0, y: 0 });
-world.add_component(e, Vel, { vx: 1, vy: 2 });
+createEntity(): EntityID;                                                    // empty entity
+createEntity<Defs>(template: Template<Defs>, overrides?: TemplateOverrides<Defs>): EntityID;
+createEntities(template: Template, count: number): EntityID[];               // bulk
+spawnBundle(...items: BundleOrDef[]): EntityID;                              // varargs bundles
 ```
 
-From inside a system, use the `SystemContext`:
+- **`createEntity()`** — an empty entity in the empty archetype. Add components afterward. This is the canonical create verb; there is no bare `spawn` on the `ECS` facade.
+- **`createEntity(template, overrides?)`** — land directly in a template's archetype with **zero archetype transitions**, applying optional per-field overrides.
+- **`createEntities(template, count)`** — bulk-spawn `count` identical entities. Field writes are `O(columns)` (one `fill` per column), not `O(count × columns)`. Returns ids in spawn order.
+- **`spawnBundle(...)`** — immediate host-side spawn from [bundles](./components.md#the-handle-is-callable--bundles): `ecs.spawnBundle(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`. The host analog of `ctx.commands.spawn`.
+
+## Templates
+
+A **template** resolves a component set + default values to a target archetype **once**, so every later spawn from it skips the per-component archetype transitions.
 
 ```ts
-const spawner = world.register_system((ctx, _dt) => {
-  const e = ctx.create_entity();
-  ctx.add_component(e, Pos, { x: 0, y: 0 });
-  ctx.add_component(e, IsEnemy);
-});
-```
+template<Defs>(entries: TemplateEntries<Defs>): Template<Defs>;
 
-There is no separate `spawn(...)` helper. To create an entity pre-populated with multiple components in a single archetype transition, use `add_components`:
-
-```ts
-const e = world.create_entity();
-world.add_components(e, [
+const Bullet = ecs.template([
   { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 1, vy: 2 } },
-  { def: IsEnemy },
+  { def: Vel, values: { vx: 0, vy: 0 } },
 ]);
+
+const b = ecs.createEntity(Bullet, { x: 5, y: 10 });   // flat per-field overrides
+const swarm = ecs.createEntities(Bullet, 500);   // 500 bullets, O(columns) writes
 ```
 
-This resolves the final archetype up front and moves the entity once, rather than once per component.
+> [!TIP]
+> Templates pay off for **multi-component** entities and **bulk** spawns. A single-component template is no faster than `createEntity()` + `addComponent()`, which already bump-allocates into the target archetype. Registering templates up front also *prewarms* their archetypes — required if you plan to `restoreInto` a [snapshot](./determinism.md).
 
-## Destroying Entities
-
-Both destruction entry points are **deferred** — they buffer the entity for later removal rather than tearing down storage immediately.
-
-From the `ECS` facade:
+## Destroying entities
 
 ```ts
-world.destroy_entity_deferred(e);
+destroyEntity(id: EntityID): void;   // DEFERRED on the host facade
+isAlive(id: EntityID): boolean;
 ```
 
-From a `SystemContext` (inside a system):
+`destroyEntity` buffers the entity for destruction at the next flush — matching the `SystemContext.destroyEntity` semantics, so the same code works inside and outside a system. `isAlive` is a **generational** check: a stale handle to a recycled slot, a retired slot, or an out-of-range id all read dead.
+
+## Enable / disable
+
+Disabling an entity hides it from queries **without** removing its data or changing its id.
 
 ```ts
-ctx.destroy_entity(e);
+disable(id: EntityID): this;        // immediate on the host facade; idempotent
+enable(id: EntityID): this;         // immediate on the host facade; idempotent
+isDisabled(id: EntityID): boolean;
 ```
 
-Deferral matters because systems are actively iterating archetype rows. Removing an entity mid-iteration would invalidate row indices and break the swap-remove loop. Buffered destructions run in batch at the end of each schedule phase.
+A disabled entity keeps its components, relations, sparse data, and stable `EntityID`, but is skipped by default queries — it sits in the **disabled tail** of its archetype, so `arch.entityCount` excludes it. There's no archetype transition; toggling is a single row swap. Re-include disabled entities in a query with [`.includeDisabled()`](./queries.md).
 
-Under the hood, both calls push into `pending_destroy`; the flush loop in `Store.flush_destroyed` swap-removes the entity from its archetype, bumps the slot's generation, and pushes the freed index onto the recycle stack.
+> [!NOTE]
+> A disabled entity must hold **at least one component** — a component-less entity has no archetype row to partition.
 
-## Liveness Checks
+> [!WARNING]
+> An **immediate** `ecs.disable()` / `ecs.enable()` fires **no** `onDisable`/`onEnable` [observer](./observers.md) — only the **deferred** `ctx.disable()` / `ctx.enable()` (which drain at the flush) do.
+
+## The `EntityID` codec
+
+An `EntityID` is a branded 31-bit number packing a **20-bit slot index** and an **11-bit generation**: `[generation:11][index:20]`. The generation is what makes stale handles detectable — recycling a slot bumps its generation, so an old id no longer matches.
+
+You rarely touch the codec; it's exposed for snapshot/replication paths that decode handles from semi-trusted bytes.
 
 ```ts
-world.is_alive(e); // boolean
+getEntityIndex(id: EntityID): number;                     // low 20 bits (dense slot)
+getEntityGeneration(id: EntityID): number;                // high 11 bits
+createEntityId(index: number, generation: number): EntityID;   // pack (inverse of the above)
+
+const MAX_INDEX = 1_048_575;        // 2^20 − 1
+const MAX_GENERATION = 2047;        // 2^11 − 1
+const RETIRED_GENERATION = 2047;    // tombstone — never issued to a live entity
+const MAX_LIVE_GENERATION = 2046;
+const MAX_ENTITY_ID = 0x7FFFFFFF;   // largest valid packed id
 ```
 
-`is_alive` returns `true` when both of these hold:
+> [!WARNING]
+> `createEntityId` and `getEntityIndex` do **no** aliveness check — the generational guard is the caller's job. `createEntityId` throws on out-of-range args **in dev only**; in production the checks are gone and it silently wraps. Use `MAX_ENTITY_ID` to bounds-check any handle you decoded from a snapshot or `postMessage` before it indexes a slot. For normal code, get ids from `createEntity` and never touch the codec.
 
-1. The entity's index is below the high-water mark (`entity_high_water`).
-2. The current generation stored at that slot equals the handle's generation.
+> [!NOTE]
+> `RETIRED_GENERATION` (2047) is a reserved tombstone. A slot that exhausts its 11-bit generation counter is **retired**, not recycled, which closes the ABA stale-handle window. Live generations only ever range `0..2046`.
 
-Any handle whose slot has since been recycled (generation bumped) returns `false`. This is the only guarantee — it does **not** verify that the entity has any particular component or archetype membership beyond existence.
+## See also
 
-## EntityID Structure
-
-`EntityID` is a branded `number`. Its bit layout is `[generation:11][index:20]`, packed into 31 bits so the sign bit stays clear:
-
-| Field      | Bits | Max value      |
-|------------|------|----------------|
-| index      | 20   | 1,048,575      |
-| generation | 11   | 2,047          |
-
-```ts
-// from src/entity.ts
-create_entity_id(index, gen) => (gen << 20) | index
-get_entity_index(id)         => id & 0xFFFFF
-get_entity_generation(id)    => id >> 20
-```
-
-When an entity is destroyed, its slot's generation is incremented (`(gen + 1) & MAX_GENERATION`) and the index is pushed onto a free list. The next `create_entity()` call pops that index and pairs it with the new generation, producing a fresh `EntityID`.
-
-This is what makes handles safe against reuse: an old, stale `EntityID` still points at the right slot, but the generation no longer matches, so `is_alive` returns `false`. No "dangling pointer" — just a provably-stale handle.
-
-## Lifecycle Across Frames
-
-The world tick is advanced once per `world.update(dt)` call. Within a tick, deferred changes flush **after each schedule phase** — the schedule calls `ctx.flush()` at the end of every phase run, which in turn runs:
-
-```ts
-// from src/query.ts — SystemContext.flush()
-store.flush_structural();   // deferred add/remove component
-store.flush_destroyed();    // deferred destroy
-```
-
-Structural changes flush **before** destructions within a single flush, so an entity that is both modified and destroyed in the same phase has its structural operations skipped by the stale-generation guard in the destroy flush (both flush loops re-check `ent_gens[idx] !== gen` and skip dead entities).
-
-You can also call `world.flush()` manually outside the schedule — useful during setup or between manual system invocations.
-
-Immediate (non-deferred) operations on the `ECS` facade — `create_entity`, `add_component`, `remove_component`, `add_components`, `remove_components`, `batch_add_component`, `batch_remove_component` — apply right away and do not go through the deferred buffers. Use these during setup or from code outside the schedule. Inside systems, prefer the `SystemContext` versions, which are all deferred.
-
-## Pitfalls
-
-**Storing an `EntityID` across frames without revalidating.** If code holds an `EntityID` in a resource, closure, or plain variable and uses it later without calling `is_alive`, and that entity has been destroyed and its slot recycled, reads and writes will silently target the new entity. In dev builds, `get_field`, `set_field`, `ref`, `ref_mut`, and `has_component` throw `ECS_ERROR.ENTITY_NOT_ALIVE` on stale handles; in production builds, the check is elided. Always gate long-lived handles:
-
-```ts
-if (world.is_alive(saved_id)) {
-  const hp = world.get_field(saved_id, Health, "current");
-}
-```
-
-**Assuming destruction is immediate.** After `destroy_entity_deferred(e)` (or `ctx.destroy_entity(e)`), the entity remains alive and fully indexed until the next flush. Queries running in the same phase will still see it. `is_alive(e)` returns `true` until the flush bumps the generation.
-
-**Generation overflow.** Generations are 11 bits (max 2047). A slot that is created, destroyed, and recycled 2048 times will hit the overflow guard — in dev builds this throws `ECS_ERROR.EID_MAX_GEN_OVERFLOW`. In practice this is unreachable for normal workloads, but be aware if you churn a very small entity pool at high frequency.
-
-**Index overflow.** The index field is 20 bits, capping a world at 1,048,575 concurrent entities. `create_entity_id` validates both bounds in dev builds.
+- [components](./components.md) — what you attach to entities
+- [systems](./systems.md) — the deferred `ctx.commands` write surface
+- [queries](./queries.md) — `.includeDisabled()` and iteration
+- [relations](./relations.md) — linking entities with `(relation, target)` pairs

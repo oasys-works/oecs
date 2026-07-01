@@ -1,289 +1,188 @@
 # oecs
 
-A fast, minimal, archetype-based Entity Component System for TypeScript.
+**A full-featured, archetype-based Entity Component System for TypeScript.**
 
-## Features
+`@oasys/oecs` is a complete ECS — not just storage-and-queries, but the whole toolkit you expect from a
+mature engine: observers, relations with wildcards, sparse storage, system sets and run conditions,
+entity enable/disable, templates, deterministic hashing with snapshot/restore, a typed host→ECS write
+seam, and an optional reactive UI bridge. It is **pure TypeScript and zero-dependency by default** — it
+runs over a plain resizable `ArrayBuffer`, so it needs no `SharedArrayBuffer` and no cross-origin
+isolation (COOP/COEP). An opt-in shared-memory profile swaps in a `SharedArrayBuffer` for worker offload
+or a WASM compute backend; both profiles share one core and agree, byte-for-byte, on `stateHash`.
 
-- **Archetype-based SoA storage.** Entities sharing a component set share contiguous typed-array columns — cache-friendly loops, no per-entity object allocation.
-- **Phantom-typed components.** `ComponentDef<{ x: "f64", y: "f64" }>` is a branded integer at runtime and a fully-typed schema at compile time. Misspelled fields are compile errors.
-- **Callback iteration.** `query.for_each(arch => ...)` yields non-empty archetypes; you write the row loop over typed-array columns.
-- **Tick-based change detection.** Each `(archetype, component)` tracks a change tick. `query.changed(Pos).for_each(...)` visits only archetypes mutated since the system's last run.
-- **Key-based events and resources.** `event_key<F>` / `resource_key<T>` create module-scope symbol handles carrying their schema as a phantom — import the key anywhere.
-- **Cached single-entity refs.** `ctx.ref` / `ctx.ref_mut` give ergonomic `pos.x += vel.vx * dt` that compiles to a direct typed-array index op.
-- **Deferred structural changes.** `ctx.add_component` / `ctx.remove_component` / `ctx.destroy_entity` buffer until the schedule flushes between phases, so iterators stay valid.
-- **Topological scheduler.** Per-phase Kahn's-algorithm sort over a binary heap, with insertion order as a deterministic tiebreaker.
-- **Fixed timestep.** Accumulator loop with configurable `fixed_timestep` and spiral-of-death protection.
-- **Reusable primitives.** `BitSet`, `SparseSet`, `SparseMap`, `GrowableTypedArray`, `BinaryHeap`, `topological_sort` all exported.
+- **Fast** — struct-of-arrays column storage grouped by archetype; iteration is a tight loop over typed
+  arrays with no per-entity object allocation.
+- **Type-safe** — components are branded integers at runtime and fully-typed schemas at compile time;
+  misspelled fields are compile errors.
+- **Deterministic** — an opt-in mode gives a backing-agnostic `stateHash` plus snapshot/restore and
+  command-log replay.
+- **Complete** — the feature surface below is the whole engine, not a starting point.
 
 ## Installation
 
 ```bash
-pnpm add @oasys/oecs
+pnpm add @oasys/oecs        # npm / pnpm / yarn
+# or
+deno add jsr:@oasys/oecs    # JSR (Deno)
+# or
+npx jsr add @oasys/oecs     # JSR (npm-compatible)
 ```
 
 ## Quick start
 
 ```ts
-import { ECS, SCHEDULE, event_key, resource_key } from "@oasys/oecs";
+import { ECS, SCHEDULE } from "@oasys/oecs";
 
-// Keys — module scope, phantom-typed
-const Time = resource_key<{ delta: number; elapsed: number }>("Time");
-const DamageEvent = event_key<readonly ["target", "amount"]>("Damage");
+const world = new ECS(); // pure-TS heap profile — no SharedArrayBuffer needed
 
-const world = new ECS();
+// Components — record syntax (per-field type) or array shorthand (defaults to "f64")
+const Pos = world.registerComponent({ x: "f64", y: "f64" });
+const Vel = world.registerComponent(["vx", "vy"] as const);
 
-// Components
-const Pos = world.register_component({ x: "f64", y: "f64" });
-const Vel = world.register_component(["vx", "vy"] as const);
+// A query is a live, cached view over matching archetypes — build it once, reuse it.
+const movers = world.query(Pos, Vel);
 
-// Resources & events
-world.register_resource(Time, { delta: 0, elapsed: 0 });
-world.register_event(DamageEvent, ["target", "amount"] as const);
-
-// Entities
-const e = world.create_entity();
-world.add_components(e, [
-  { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 100, vy: 50 } },
-]);
-
-// System — query resolved once at registration
-const moveSys = world.register_system(
-  (q, ctx, dt) => {
-    q.for_each((arch) => {
-      const px = arch.get_column_mut(Pos, "x", ctx.world_tick);
-      const py = arch.get_column_mut(Pos, "y", ctx.world_tick);
-      const vx = arch.get_column(Vel, "vx");
-      const vy = arch.get_column(Vel, "vy");
-      for (let i = 0; i < arch.entity_count; i++) {
-        px[i] += vx[i] * dt;
-        py[i] += vy[i] * dt;
+// Systems declare the components they read/write (checked in dev builds).
+const move = world.registerSystem({
+  reads: [Vel],
+  writes: [Pos], // a declared write implies read of the same component
+  fn: (ctx, dt) => {
+    movers.eachChunk((cols, count) => {
+      const { x, y } = cols.mut(Pos);    // whole group; stamps Pos's change tick once
+      const { vx, vy } = cols.read(Vel); // read-only group
+      for (let i = 0; i < count; i++) {
+        x[i] += vx[i] * dt;
+        y[i] += vy[i] * dt;
       }
     });
   },
-  (qb) => qb.every(Pos, Vel),
-);
+});
 
-world.add_systems(SCHEDULE.UPDATE, moveSys);
+world.addSystems(SCHEDULE.UPDATE, move);
 world.startup();
 
-let last = performance.now();
-function frame() {
-  const now = performance.now();
-  const dt = (now - last) / 1000;
-  last = now;
-  const t = world.resource(Time);
-  world.set_resource(Time, { delta: dt, elapsed: t.elapsed + dt });
-  world.update(dt);
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+const e = world.createEntity();
+world.addComponent(e, Pos, { x: 0, y: 0 });
+world.addComponent(e, Vel, { vx: 100, vy: 50 });
+
+world.update(1 / 60);
+world.getField(e, Pos, "x"); // ≈ 1.667
 ```
 
-## World options
+## Features
 
-```ts
-const world = new ECS({
-  initial_capacity: 4096,
-  fixed_timestep: 1 / 50,
-  max_fixed_steps: 4,
-});
-```
+**Storage & data model**
 
-| Option             | Type     | Default | Description |
-| ------------------ | -------- | ------- | ----------- |
-| `initial_capacity` | `number` | `1024`  | Starting size of each archetype's entity-ID and column buffers. Buffers double on overflow; pick close to your expected per-archetype entity count to avoid early reallocations. |
-| `fixed_timestep`   | `number` | `1/60`  | Interval (seconds) at which `SCHEDULE.FIXED_UPDATE` systems run. |
-| `max_fixed_steps`  | `number` | `5`     | Hard cap on fixed-update iterations per frame. Protects against spiral of death. |
+- **Archetype SoA storage** over a backing-neutral `ColumnStore` — entities with the same component set
+  share contiguous typed-array columns; cache-friendly loops, no per-entity object allocation.
+- **Phantom-typed components** — `registerComponent({ x: "f64", y: "f64" })` is a branded integer at
+  runtime and a fully-typed schema at compile time. Record syntax for per-field types, array shorthand
+  for uniform `f64`, and `registerTag()` for data-free markers. Field types: `f32 f64 i8 i16 i32 u8 u16 u32`.
+- **Two storage profiles, one core** — pure-TS heap (`ArrayBuffer`) by default; opt-in
+  `SharedArrayBuffer` for workers / WASM. Same code path, same `stateHash`, sized through a single
+  `memory` surface (entity budget, byte cap, or pinned capacity).
 
-## Components
+**Queries**
 
-Records give per-field type control; array shorthand defaults to `f64`. Tags have no fields.
+- **Live, cached queries** — `world.query(Pos, Vel)` refined with `.and()` / `.without()` / `.anyOf()`;
+  new matching archetypes are pushed in automatically.
+- **Two iteration verbs** — `forEach(arch => …)` for read-only archetype iteration, `eachChunk((cols, count) => …)`
+  for the mutable hot path (`cols.mut` / `cols.read` resolve a whole component's columns at once).
+- **Change detection** — per-`(archetype, component)` change ticks; `query.changed(Pos)` visits only
+  archetypes written since the system's threshold tick.
+- **Relation & hierarchy queries** — `(R, *)` / `(*, T)` wildcards, `forEachRelatedTo`, and
+  `query.hierarchy(rel, depth)`. **Sparse queries** via `query.withSparse(...)`; disabled entities are
+  skipped unless you opt in with `query.includeDisabled()`.
 
-```ts
-const Pos = world.register_component({ x: "f64", y: "f64" });
-const Health = world.register_component({ current: "i32", max: "i32" });
-const Vel = world.register_component(["vx", "vy"] as const);
-const IsEnemy = world.register_tag();
+**Systems & scheduling**
 
-world.add_components(e, [
-  { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 1, vy: 0 } },
-  { def: IsEnemy },
-]);
-```
+- **Declarative systems** — plain functions in a `SystemConfig` declaring `reads` / `writes`, enforced by
+  a dev-mode access checker (tree-shaken in production). Bare `(ctx, dt)` and `(q, ctx, dt)` +
+  query-builder overloads exist for access-free glue; lifecycle hooks `onAdded` / `onRemoved` / `dispose`;
+  `exclusive: true` for full-world setup/teardown.
+- **Topological scheduler** — seven phases (`PRE_STARTUP` → `STARTUP` → `POST_STARTUP`, `FIXED_UPDATE`,
+  `PRE_UPDATE` → `UPDATE` → `POST_UPDATE`); per-phase Kahn sort by `before` / `after`, with insertion
+  order as a deterministic tiebreaker. Always-on cycle detection.
+- **Fixed timestep** — accumulator loop with configurable `fixedTimestep` and spiral-of-death protection.
+- **System sets & run conditions** — `systemSet(...)` + `configureSet(...)`; `runIfResourceEq`,
+  `runEveryNTicks`, `runIfAnyMatch`, and custom `RunCondition`s.
 
-Supported tags: `f32`, `f64`, `i8`, `i16`, `i32`, `u8`, `u16`, `u32`.
+**Structural changes**
 
-See [docs/api/components.md](docs/api/components.md).
+- **Deferred by default** — `ctx.commands` (a Bevy-`Commands`-style facade) buffers
+  spawn / add / remove / despawn / enable / disable until the phase flush, so iterators stay valid.
+  `world.addComponent` etc. are the immediate counterparts.
+- **Entity enable/disable** — `disable` / `enable` / `isDisabled`; disabled rows sit in a partitioned
+  tail and are skipped by default queries.
+- **Templates & bundles** — `world.template([...])` blueprints consumed by `createEntity` /
+  `createEntities` for zero-transition spawns; `bundle(...)` + `spawnBundle(...)`.
 
-## Queries
+**Reactivity & relationships**
 
-Live, cached views over matching archetypes. Iterate with `for_each`.
+- **Observers** — `world.observe(...)` for `onAdd` / `onRemove` / `onSet` / `onEnable` / `onDisable`,
+  structural or per-entity.
+- **Relations** — `(relation, target)` pairs with `ChildOf` / `IsA` presets, exclusive / multi arities,
+  bidirectional queries (`targetOf` / `sourcesOf` / `ancestorsOf` / `rootOf` / `cascadeOf`), and
+  configurable on-delete cleanup (`delete` / `clear` / `orphan`). Stored sparsely — no archetype
+  transition, no identity bit.
+- **Sparse storage** — `registerSparseComponent` / `registerSparseTag`, `addSparse` / `removeSparse` for
+  churny or rare data that shouldn't cause archetype transitions.
+- **Resources** — typed global singletons via `resourceKey<T>`. **Events** — fire-and-forget SoA channels
+  via `eventKey<F>` / `signalKey`, cleared at the end of each `update`.
+- **Cached refs** — `ctx.ref(def, e)` (mutable, bumps the change tick) / `ctx.refRead(def, e)`
+  (read-only): resolve archetype + row + column once, then `pos.x += vel.vx * dt`.
 
-```ts
-const q = world.query(Pos, Vel);
+**Determinism, persistence & integration**
 
-q.for_each((arch) => {
-  const px = arch.get_column(Pos, "x");
-  const py = arch.get_column(Pos, "y");
-  for (let i = 0; i < arch.entity_count; i++) { /* ... */ }
-});
+- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `world.stateHash()` (FNV-1a over
+  live column bytes), `snapshot()` / `restoreInto(...)`, plus sparse variants. Backing-agnostic: a heap
+  world and a shared world with identical history produce identical hashes.
+- **Host → ECS write seam** — `installHostCommandSeam(world)` applies typed `HostCommand`s off-schedule
+  via a blessed `exclusive` system, with record/replay (`HostCommandRecorder`, `replayCommandLog`) and a
+  cross-thread ring transport.
+- **Reactive UI seam** (optional) — a zero-dep signals kernel (`@oasys/oecs/reactive`), an ECS→reactive
+  bridge that publishes only dirty entities/columns (`@oasys/oecs/reactive-sync`), and a SolidJS adapter
+  (`@oasys/oecs/solid`).
+- **Editor layer** — undo/redo + field handles over the write seam (`@oasys/oecs/editor`).
+- **Frame tracing** — `world.setTrace(sink)` + `FrameTraceRecorder` for a structured per-frame event
+  stream (dev-gated).
+- **Compute backend seam** — `world.attachBackend(...)` to run a system body on a compiled backend (WASM,
+  …) instead of its TS closure.
 
-// Chaining returns new cached queries
-const targets = world.query(Pos).and(Health).not(Shield).any_of(IsEnemy, IsBoss);
+**Reference**
 
-// Change detection — only archetypes whose Pos column changed since last run
-q.changed(Pos).for_each((arch) => { /* ... */ });
-```
+- **Typed errors** — an `ECSError` taxonomy with a `category` enum and an `isEcsError` guard, all exported.
+- **Reusable primitives** (`@oasys/oecs/primitives`) — `BitSet`, `SparseSet`, `SparseMap`,
+  `GrowableTypedArray`, `BinaryHeap`, and `topologicalSort`, usable standalone.
 
-See [docs/api/queries.md](docs/api/queries.md) and [docs/api/change-detection.md](docs/api/change-detection.md).
+## Entry points
 
-## Systems
+The core is `@oasys/oecs`; everything else is opt-in and costs nothing until imported.
 
-Systems are plain functions. Three registration shapes all return a `SystemDescriptor`.
+| Import | What it is |
+| --- | --- |
+| `@oasys/oecs` | the ECS — pure-TS heap profile by default |
+| `@oasys/oecs/shared` | opt-in `SharedArrayBuffer` allocators for worker offload / a WASM backend (needs COOP/COEP) |
+| `@oasys/oecs/reactive` | zero-dependency reactive kernel (`signal`/`computed`/`effect`, reactive collections) |
+| `@oasys/oecs/reactive-sync` | ECS→reactive bridge — publishes only dirty entities/columns |
+| `@oasys/oecs/editor` | undo/redo + field-handle layer over the host-write seam |
+| `@oasys/oecs/solid` | SolidJS adapter (`solid-js` is an **optional** peer dependency) |
+| `@oasys/oecs/primitives` | the standalone data structures oecs is built on |
 
-```ts
-// Bare function
-const logSys = world.register_system((ctx, dt) => { /* ... */ });
+## Dev vs prod
 
-// Function + query builder (query resolved once at registration)
-const moveSys = world.register_system(
-  (q, ctx, dt) => { q.for_each((arch) => { /* ... */ }); },
-  (qb) => qb.every(Pos, Vel),
-);
+A compile-time `__DEV__` flag gates every runtime check — bounds and liveness checks, duplicate-system
+detection, registration validation, and the system access checker (`reads`/`writes`). These are
+**tree-shaken out of production builds**, so treat "throws in dev" as a development tripwire, not a
+production guarantee. The scheduler's cycle detection is the one check that is always active.
 
-// Full config — lifecycle hooks, name
-const spawnSys = world.register_system({
-  name: "spawn",
-  fn(ctx, dt) { /* every frame */ },
-  on_added(ctx) { /* once during world.startup() */ },
-  dispose() { /* during world.dispose() */ },
-});
-```
+## Documentation
 
-`SystemContext` exposes deferred structural ops, per-entity access, events, resources, and tick bookkeeping (`ctx.world_tick`, `ctx.last_run_tick`).
-
-See [docs/api/systems.md](docs/api/systems.md).
-
-## Resources
-
-Global singletons keyed by `ResourceKey<T>`. Values can be any type — objects, typed arrays, class instances.
-
-```ts
-import { resource_key } from "@oasys/oecs";
-
-const Time = resource_key<{ delta: number; elapsed: number }>("Time");
-const Assets = resource_key<Map<string, ImageBitmap>>("Assets");
-
-world.register_resource(Time, { delta: 0, elapsed: 0 });
-world.register_resource(Assets, new Map());
-
-const t = world.resource(Time);                         // typed as { delta, elapsed }
-world.set_resource(Time, { delta: 0.016, elapsed: 0 }); // swap in a new value
-```
-
-See [docs/api/resources.md](docs/api/resources.md).
-
-## Events
-
-Fire-and-forget SoA channels. Data events carry typed fields; signals carry only a count. Cleared at the end of each `world.update(dt)`.
-
-```ts
-import { event_key, signal_key } from "@oasys/oecs";
-
-const DamageEvent = event_key<readonly ["target", "amount"]>("Damage");
-const GameOver = signal_key("GameOver");
-
-world.register_event(DamageEvent, ["target", "amount"] as const);
-world.register_signal(GameOver);
-
-ctx.emit(DamageEvent, { target: victimId, amount: 25 });
-ctx.emit(GameOver);
-
-const dmg = ctx.read(DamageEvent);
-for (let i = 0; i < dmg.length; i++) {
-  dmg.target[i]; dmg.amount[i]; // number columns
-}
-if (ctx.read(GameOver).length > 0) { /* fired */ }
-```
-
-See [docs/api/events.md](docs/api/events.md).
-
-## Refs
-
-Cached single-entity handles — resolve archetype + row + column once, then read/write fields by name.
-
-```ts
-const pos = ctx.ref_mut(Pos, entity); // writable; bumps Pos change tick
-const vel = ctx.ref(Vel, entity);     // readonly
-pos.x += vel.vx * dt;
-pos.y += vel.vy * dt;
-```
-
-Prefer `ctx.ref` by default; reach for `ctx.ref_mut` at the point of mutation. Do not hold refs across archetype transitions or phase flushes.
-
-See [docs/api/refs.md](docs/api/refs.md).
-
-## Schedule
-
-Seven phases run in a fixed order:
-
-| Phase          | When                             | Typical use             |
-| -------------- | -------------------------------- | ----------------------- |
-| `PRE_STARTUP`  | Once, before `STARTUP`           | Resource loading        |
-| `STARTUP`      | Once                             | Initial entity spawning |
-| `POST_STARTUP` | Once, after `STARTUP`            | Validation              |
-| `FIXED_UPDATE` | Zero+ times per frame (fixed dt) | Physics, simulation     |
-| `PRE_UPDATE`   | Every frame, first               | Input, time             |
-| `UPDATE`       | Every frame                      | Game logic, AI          |
-| `POST_UPDATE`  | Every frame, last                | Rendering, cleanup      |
-
-```ts
-world.add_systems(SCHEDULE.UPDATE, moveSys, damageSys, {
-  system: deathSys,
-  ordering: { after: [damageSys] },
-});
-```
-
-Within a phase, systems are topologically sorted by `before` / `after` constraints. `ctx.flush()` runs automatically between phases.
-
-See [docs/api/schedule.md](docs/api/schedule.md).
-
-## Entity lifecycle
-
-```ts
-const e = world.create_entity();
-world.is_alive(e);                // true
-world.destroy_entity_deferred(e);
-world.flush();
-world.is_alive(e);                // false
-```
-
-`EntityID` is a packed 31-bit integer (20-bit slot index, 11-bit generation). Destroying an entity bumps its slot's generation, so stale handles are detected as dead. Inside systems, use `ctx.create_entity()` (immediate) and `ctx.destroy_entity(e)` (deferred).
-
-See [docs/api/entities.md](docs/api/entities.md).
-
-## Dev vs Prod modes
-
-A compile-time `__DEV__` flag gates runtime sanity checks: bounds checks, liveness checks, duplicate-system detection, and registration validation. These are tree-shaken out of production bundles by the Vite build. Scheduler cycle detection is always active and throws `ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY` on the first offending run.
-
-## Development
-
-```bash
-pnpm install
-pnpm test            # vitest
-pnpm bench           # vitest bench
-pnpm build           # vite library build
-pnpm tsc --noEmit    # type check
-```
-
-## Guides
-
-- [Getting Started](docs/GETTING_STARTED.md) — step-by-step tutorial.
-- [Best Practices](docs/BEST_PRACTICES.md) — component design, query patterns, pitfalls.
-- [Architecture](docs/ARCHITECTURE.md) — data layout, flush model, cache invalidation.
-- API reference:
+- **New to oecs?** Start with the [Getting Started](docs/GETTING_STARTED.md) tutorial, then
+  [Best Practices](docs/BEST_PRACTICES.md) and the [Architecture](docs/ARCHITECTURE.md) overview.
+- **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md) and the
+  [CHANGELOG](CHANGELOG.md).
+- **Full API reference** — start at the [reference index](docs/api/index.md):
   [components](docs/api/components.md) ·
   [entities](docs/api/entities.md) ·
   [queries](docs/api/queries.md) ·
@@ -293,8 +192,38 @@ pnpm tsc --noEmit    # type check
   [events](docs/api/events.md) ·
   [refs](docs/api/refs.md) ·
   [change detection](docs/api/change-detection.md) ·
-  [type primitives](docs/api/type-primitives.md)
+  [observers](docs/api/observers.md) ·
+  [relations](docs/api/relations.md) ·
+  [sparse storage](docs/api/sparse-storage.md) ·
+  [determinism](docs/api/determinism.md) ·
+  [memory](docs/api/memory.md) ·
+  [host-write seam](docs/api/host-write-seam.md) ·
+  [reactive](docs/api/reactive.md) ·
+  [editor](docs/api/editor.md) ·
+  [tracing](docs/api/tracing.md) ·
+  [primitives](docs/api/primitives.md) ·
+  [errors](docs/api/errors.md)
+
+## Development
+
+```bash
+pnpm install
+pnpm test              # vitest
+pnpm bench             # vitest bench
+pnpm build             # vite library build (multi-entry → dist/)
+pnpm exec tsc --noEmit # type check
+```
+
+## Acknowledgements
+
+oecs stands on the shoulders of the ECS community. Special thanks to:
+
+- **[Bevy](https://bevyengine.org)**, **[Flecs](https://github.com/SanderMertens/flecs)**, and
+  **[bitECS](https://github.com/NateTheGreatt/bitECS)** — a constant source of inspiration; their
+  designs shaped how oecs approaches archetypes, relations, scheduling, and change detection.
+- **[@clinuxrulz](https://github.com/clinuxrulz)** — for his amazing showcase and invaluable input on
+  the ECS.
 
 ## License
 
-MIT
+[MIT](LICENSE)
