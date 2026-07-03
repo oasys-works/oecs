@@ -100,7 +100,7 @@ const player = world.createEntity();
 world.addComponent(player, Pos, { x: 400, y: 300 });
 world.addComponent(player, Health, { current: 100, max: 100 });
 
-// addComponents walks the archetype graph once — cheaper when spawning
+// addComponents resolves the final archetype once — cheaper when attaching several components
 const enemy = world.createEntity();
 world.addComponents(enemy, [
   { def: Pos, values: { x: 100, y: 100 } },
@@ -168,7 +168,7 @@ To write one entity at a time instead of per chunk, take a mutable ref with `ctx
 
 ### Bare / builder forms — no declared access
 
-Two overloads register with **empty** access declarations, so any component or resource touch inside them throws in dev. Use them only for glue that touches no ECS data (bump a counter, drive rendering off a query you closed over).
+Two overloads register with **empty** access declarations, so any component or resource touch inside them throws in dev. Use them only for glue that touches no ECS data (for example, bumping an external counter).
 
 ```ts
 // Bare (ctx, dt) — no query.

@@ -190,7 +190,7 @@ Rules worth internalizing:
 - **`queries` is a registration-time lint**, not a runtime term: it checks `queries ⊆ reads ∪ writes`. Keep it mirroring your actual `ctx.query(...)`/closed-over query terms.
 
 > [!WARNING]
-> The **bare-function** and **function + query-builder** overloads register with *empty* access — any component access they attempt throws in dev. They're only for trivial no-access systems (bump a counter, read a resource you wired in, drive rendering off a closed-over query). Use `exclusive: true` sparingly, for systems that genuinely touch everything (the host-command apply system, save/load, debug tooling) — it grants full access and bypasses every check.
+> The **bare-function** and **function + query-builder** overloads register with *empty* access — any component/resource/relation access they attempt throws in dev. They're only for trivial no-access systems, such as bumping an external counter. Use `exclusive: true` sparingly, for systems that genuinely touch everything (the host-command apply system, save/load, debug tooling) — it grants full access and bypasses every check.
 
 ---
 
@@ -316,7 +316,7 @@ const Enemy = ecs.template([
 const e = ecs.createEntity(Enemy);
 ```
 
-For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking a create-then-add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
+For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking an add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
 
 For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch, Def)` / `batchRemoveComponent`, which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
 

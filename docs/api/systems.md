@@ -47,7 +47,7 @@ registerSystem<Defs>(
 ```
 
 > [!WARNING]
-> The **bare** and **function + builder** forms register with **empty access declarations**. Any component/resource/relation access they attempt throws in dev (they touch nothing, by declaration). They're only for trivial no-access systems — bump a counter, read a resource you *did* wire in, drive rendering off a query you closed over. Real work that reads/writes components uses the **config form** so the access checker can protect you.
+> The **bare** and **function + builder** forms register with **empty access declarations**. Any component/resource/relation access they attempt throws in dev (they touch nothing, by declaration). They're only for trivial glue that touches no ECS state — for example, bumping an external counter. Real work that reads/writes ECS data uses the **config form** so the access checker can protect you.
 
 > [!WARNING]
 > **Arity trap.** A bare 3-parameter function is almost certainly the `(q, ctx, dt)` builder form with the second `queryFn` argument forgotten — which would silently bind `q := ctx`, `dt := undefined` and `NaN` your math. In dev this throws `SYSTEM_FN_ARITY`. In prod the guard is gone; get the second argument right.

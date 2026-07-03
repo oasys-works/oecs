@@ -12,7 +12,7 @@ or a WASM compute backend; both profiles share one core and agree, byte-for-byte
 
 - **Fast** — struct-of-arrays column storage grouped by archetype; iteration is a tight loop over typed
   arrays with no per-entity object allocation.
-- **Type-safe** — components are branded integers at runtime and fully-typed schemas at compile time;
+- **Type-safe** — component handles are callable defs with stable numeric ids at runtime and fully-typed schemas at compile time;
   misspelled fields are compile errors.
 - **Deterministic** — an opt-in mode gives a backing-agnostic `stateHash` plus snapshot/restore and
   command-log replay.
@@ -75,9 +75,10 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 - **Archetype SoA storage** over a backing-neutral `ColumnStore` — entities with the same component set
   share contiguous typed-array columns; cache-friendly loops, no per-entity object allocation.
-- **Phantom-typed components** — `registerComponent({ x: "f64", y: "f64" })` is a branded integer at
-  runtime and a fully-typed schema at compile time. Record syntax for per-field types, array shorthand
-  for uniform `f64`, and `registerTag()` for data-free markers. Field types: `f32 f64 i8 i16 i32 u8 u16 u32`.
+- **Phantom-typed components** — `registerComponent({ x: "f64", y: "f64" })` returns a callable
+  `ComponentDef` with a stable numeric `.id` at runtime and a fully-typed schema at compile time.
+  Record syntax for per-field types, array shorthand for uniform `f64`, and `registerTag()` for
+  data-free markers. Field types: `f32 f64 i8 i16 i32 u8 u16 u32`.
 - **Two storage profiles, one core** — pure-TS heap (`ArrayBuffer`) by default; opt-in
   `SharedArrayBuffer` for workers / WASM. Same code path, same `stateHash`, sized through a single
   `memory` surface (entity budget, byte cap, or pinned capacity).
@@ -98,7 +99,7 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 - **Declarative systems** — plain functions in a `SystemConfig` declaring `reads` / `writes`, enforced by
   a dev-mode access checker (tree-shaken in production). Bare `(ctx, dt)` and `(q, ctx, dt)` +
-  query-builder overloads exist for access-free glue; lifecycle hooks `onAdded` / `onRemoved` / `dispose`;
+  query-builder overloads exist for no-access glue; lifecycle hooks `onAdded` / `onRemoved` / `dispose`;
   `exclusive: true` for full-world setup/teardown.
 - **Topological scheduler** — seven phases (`PRE_STARTUP` → `STARTUP` → `POST_STARTUP`, `FIXED_UPDATE`,
   `PRE_UPDATE` → `UPDATE` → `POST_UPDATE`); per-phase Kahn sort by `before` / `after`, with insertion
