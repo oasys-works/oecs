@@ -183,6 +183,8 @@ production guarantee. The scheduler's cycle detection is the one check that is a
 
 - **New to oecs?** Start with the [Getting Started](docs/GETTING_STARTED.md) tutorial, then
   [Best Practices](docs/BEST_PRACTICES.md) and the [Architecture](docs/ARCHITECTURE.md) overview.
+- **Using optional extensions?** See the [Extensions guide](docs/EXTENSIONS.md) for reactive UI,
+  editor, Solid, shared-memory, and primitives usage.
 - **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md) and the
   [CHANGELOG](CHANGELOG.md).
 - **Full API reference** — start at the [reference index](docs/api/index.md):

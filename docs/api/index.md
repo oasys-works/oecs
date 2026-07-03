@@ -93,15 +93,16 @@ Read these in order for a working mental model.
 
 ### Host & UI integration
 
-17. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
-18. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
-19. [editor](./editor.md) — undo/redo + field handles
-20. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
+17. [extensions overview](../EXTENSIONS.md) — how optional entry points compose in real apps
+18. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
+19. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
+20. [editor](./editor.md) — undo/redo + field handles
+21. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
 
 ### Reference
 
-21. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
-22. [errors](./errors.md) — the `ECSError` taxonomy
+22. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
+23. [errors](./errors.md) — the `ECSError` taxonomy
 
 <a id="dev-vs-prod--read-this-once"></a>
 
