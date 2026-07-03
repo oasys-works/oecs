@@ -10,6 +10,8 @@ ecs.isAlive(e);        // true
 ecs.destroyEntity(e);  // deferred — see below
 ```
 
+<a id="immediate-vs-deferred--the-one-thing-to-internalize"></a>
+
 ## Immediate vs deferred — the one thing to internalize
 
 Structural operations behave differently depending on **who** calls them:
@@ -23,7 +25,7 @@ Structural operations behave differently depending on **who** calls them:
 | sparse & relation ops | immediate | immediate |
 
 > [!IMPORTANT]
-> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side (between `update()` calls) there is no live iteration to protect, so those same ops apply immediately. The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
+> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side calls happen outside live ECS iteration, so add/remove/toggle operations can apply immediately; destruction is still buffered so it matches `SystemContext.destroyEntity`. The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
 
 Deferred work lands at the next **phase boundary** flush, or when you call `ecs.flush()` explicitly. See [schedule](./schedule.md).
 
@@ -39,7 +41,7 @@ spawnBundle(...items: BundleOrDef[]): EntityID;                              // 
 - **`createEntity()`** — an empty entity in the empty archetype. Add components afterward. This is the canonical create verb; there is no bare `spawn` on the `ECS` facade.
 - **`createEntity(template, overrides?)`** — land directly in a template's archetype with **zero archetype transitions**, applying optional per-field overrides.
 - **`createEntities(template, count)`** — bulk-spawn `count` identical entities. Field writes are `O(columns)` (one `fill` per column), not `O(count × columns)`. Returns ids in spawn order.
-- **`spawnBundle(...)`** — immediate host-side spawn from [bundles](./components.md#the-handle-is-callable--bundles): `ecs.spawnBundle(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`. The host analog of `ctx.commands.spawn`.
+- **`spawnBundle(...)`** — immediate host-side spawn from [bundles](./components.md#the-handle-is-callable--bundles): `ecs.spawnBundle(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`. The host analog of `ctx.commands.spawn`; it currently applies each bundle through the normal immediate add path, so use templates when you need zero-transition spawns.
 
 ## Templates
 
@@ -68,6 +70,8 @@ isAlive(id: EntityID): boolean;
 ```
 
 `destroyEntity` buffers the entity for destruction at the next flush — matching the `SystemContext.destroyEntity` semantics, so the same code works inside and outside a system. `isAlive` is a **generational** check: a stale handle to a recycled slot, a retired slot, or an out-of-range id all read dead.
+
+<a id="enable--disable"></a>
 
 ## Enable / disable
 

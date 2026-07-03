@@ -83,7 +83,7 @@ bossQuery.forEachRelatedTo(boss, (attacker) => { /* … */ });
 >
 > These checks only fire *inside a system*; the same query run from host code skips them.
 
-`hierarchy(relation, maxDepth?)` reorders the matched set into depth order (roots first, parents before children) over an **exclusive** relation, optionally dropping entities deeper than `maxDepth` (`HIERARCHY_UNBOUNDED` = no limit). It reorders and depth-limits; it doesn't change *which* entities match. Iterate with `forEachEntity`.
+`hierarchy(relation, maxDepth?)` reorders the matched set into depth order (roots first, parents before children) over an **exclusive** relation, optionally dropping entities deeper than `maxDepth` (`HIERARCHY_UNBOUNDED` = no limit). Aside from that optional depth cap, it does not require an entity to carry the relation: entities with no parent in that relation are roots at depth 0 and still yield. Iterate with `forEachEntity`.
 
 ## Traversal helpers
 

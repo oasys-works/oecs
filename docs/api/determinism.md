@@ -27,7 +27,7 @@ The flag gates exactly the canonical-ordering surface: `stateHash`, `snapshot`/`
 stateHash(): number;
 ```
 
-An FNV-1a-32 digest folded over `(archetype id, live row count, enabled count, live column bytes)` for every archetype in id order. It is **backing-agnostic** — a heap `ECS` and a `SharedArrayBuffer` `ECS` with identical history produce the same number — and its cost scales with live entity count, not buffer capacity.
+An FNV-1a-32 digest folded over `(archetype id, live row count, enabled count, live column bytes)` for every archetype in id order, then over sparse stores in canonical entity-index order, then over multi-relation forward target sets in canonical order. It is **backing-agnostic** — a heap `ECS` and a `SharedArrayBuffer` `ECS` with identical history produce the same number — and its cost scales with live entity count / sparse membership, not buffer capacity.
 
 > [!IMPORTANT]
 > Compare hashes **only at a tick boundary** (between `update()` calls) or at a phase-boundary settle point (via [`ecs.setTrace`](./tracing.md), whose `phaseBoundary` hook is the safe seam to read `stateHash()` and bisect a divergence to one phase). The digest is **opaque** — never compare it against a hard-coded literal; endianness and the exact fold are implementation details, not a wire contract. It's valid only within one architecture/algorithm.

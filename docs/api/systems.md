@@ -127,6 +127,8 @@ markChanged(entityId, def): void;               // manually flag a per-entity on
 
 See [refs](./refs.md) for `ref`/`refRead`, and [change detection](./change-detection.md) for what "bumps the tick" means.
 
+<a id="ctxcommands--deferred-structural-ops"></a>
+
 ### `ctx.commands` — deferred structural ops
 
 ```ts
@@ -164,7 +166,7 @@ flush(): void;           // force-apply buffered structural ops now
 ```
 
 > [!WARNING]
-> `ctx.createEntity`, `ctx.disable`/`ctx.enable`, and every sparse/relation op are **immediate**; `ctx.addComponent`/`removeComponent`/`destroyEntity` and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
+> `ctx.createEntity` and every sparse/relation op are **immediate**. `ctx.addComponent`/`removeComponent`/`destroyEntity`, `ctx.disable`/`ctx.enable`, and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
 
 ## Lifecycle hooks
 

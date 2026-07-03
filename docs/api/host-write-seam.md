@@ -4,7 +4,7 @@
 
 The problem: those callers run off-schedule, but writing to the `ECS` mid-frame (or from another thread) would corrupt live iteration. The seam solves it by making every outside write a **typed command** that is buffered off-schedule and applied at one blessed point.
 
-**The model:** a host enqueues typed `HostCommand`s into a `HostCommandQueue` (pure buffering — nothing touches the `ECS`). A single blessed **`exclusive`** apply system drains the queue at the **schedule head** (`PRE_STARTUP` for seed-time, `PRE_UPDATE` each frame) through one dispatch, `applyHostCommand`, which issues the normal deferred `ctx` ops. Every outside write thus lands at the usual phase-tail flush, observers fire, and (if wired) the reactive bridge publishes one batched commit.
+**The model:** a host enqueues typed `HostCommand`s into a `HostCommandQueue` (pure buffering — nothing touches the `ECS`). A single blessed **`exclusive`** apply system drains the queue at the **schedule head** (`PRE_STARTUP` for seed-time, `PRE_UPDATE` each frame) through one dispatch, `applyHostCommand`, which issues the normal deferred `ctx` structural ops. The exception is `setField`, which applies immediately during the drain and bumps the change tick. Structural writes then land at the usual phase-tail flush, observers fire, and (if wired) the reactive bridge publishes one batched commit.
 
 ```ts
 import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
@@ -55,7 +55,7 @@ pending(): number;              // buffered-but-unapplied count
 > **Don't add-then-set in the same frame.** `setField` is applied **immediately** at the drain, but structural commands (`spawn`/`addComponent`/…) are **deferred** to the phase flush. So `addComponent(e, C)` then `setField(e, C, …)` in one frame fails — the add is still pending when the set runs (dev throws an actionable `COMPONENT_NOT_REGISTERED`). Carry the value in the `addComponent`/`spawnEntry` (which take complete field values), or `setField` next frame.
 
 > [!NOTE]
-> `onSpawned` is the **only** way to learn a spawned id — the create is deferred, so the id doesn't exist until the drain. Commands a `onSpawned` callback enqueues run on the *next* drain, keeping one frame's work within one tick.
+> `onSpawned` is the **only** way to learn a spawned id — the create is deferred from the host's point of view, so the id doesn't exist until the drain. The callback runs after the id is created and after its component adds have been queued, but before those adds flush; commands that the callback enqueues run on the *next* drain.
 
 ### `SpawnEntry`
 
@@ -65,7 +65,7 @@ interface SpawnEntry { readonly def: ComponentDef; readonly values: FieldValues<
 ```
 
 > [!WARNING]
-> **`spawnEntry` values must be complete** — the deferred add writes exactly the fields you give and does **not** zero-default omitted ones (unlike a [bundle](./components.md) or [template](./entities.md)). An omitted `f64` field reads back `NaN`. Pass every field (`0` for "default"); a tag takes `{}`.
+> **`spawnEntry` is typed for complete values** — pass every field (`0` for "default"); a tag takes `{}`. The shared field-write path zero-fills omitted fields if untyped command data reaches it, but the public TypeScript surface treats host-command values as complete `FieldValues<S>`.
 
 ## `HostCommand`
 
@@ -79,6 +79,8 @@ Plain, serializable data — the same vocabulary drives both the in-process queu
 | `"remove_component"` | deferred | `eid`, `def` |
 | `"set_field"` | **immediate** | `eid`, `def`, `field`, `value` |
 | `"disable"` / `"enable"` | deferred | `eid` |
+
+<a id="record--replay"></a>
 
 ## Record & replay
 

@@ -145,7 +145,7 @@ get fixedAlpha(): number;      // accumulator / fixedTimestep — the render int
 Each `update(dt)` adds `dt` to an accumulator and runs `FIXED_UPDATE` once per whole `fixedTimestep` it contains — 0 times for a small `dt`, several for a large one. Fixed systems always see delta `= fixedTimestep`, never the frame `dt`.
 
 > [!WARNING]
-> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`); `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`). Both are validated at construction and on the setter.
+> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`) and is revalidated by its setter. `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`) and is set at construction.
 
 > [!TIP]
 > Use `ecs.fixedAlpha` to interpolate rendering between fixed steps: `renderPos = lerp(prevPos, pos, ecs.fixedAlpha)`.

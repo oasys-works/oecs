@@ -79,6 +79,8 @@ ecs.query(Pos)
 - **`changed(...)`** returns a [`ChangedQuery`](./change-detection.md) — see that page; note the granularity is *archetype*, not row.
 - **`includeDisabled()`** widens iteration to cover [disabled](./entities.md#enable--disable) entities, which are excluded by default.
 
+<a id="foreach--read-only"></a>
+
 ## `forEach` — read-only
 
 ```ts
@@ -108,6 +110,8 @@ interface ArchetypeView {
 > [!NOTE]
 > The `ArchetypeView` deliberately **omits any mutable column accessor** — you cannot write through `forEach`. To mutate, either use [`eachChunk`](#eachchunk--mutable-hot-path), or write per entity with [`ctx.ref`](./refs.md) / `ctx.setField` (both bump the change tick). `ReadonlyColumn` is a compile-time barrier only; a cast can write through it, but doing so skips change detection and corrupts it — don't.
 
+<a id="eachchunk--mutable-hot-path"></a>
+
 ## `eachChunk` — mutable hot path
 
 ```ts
@@ -134,6 +138,8 @@ movers.eachChunk((cols, count) => {
 
 > [!WARNING]
 > **Destructure the group immediately; don't retain it.** The object `cols.mut(Pos)` returns is cached per `(archetype, component)` and refreshed **in place** on the next call — grab `{ x, y }` and use the arrays, don't stash the group object across iterations.
+
+<a id="foreachentity--non-dense-terms"></a>
 
 ## `forEachEntity` — non-dense terms
 

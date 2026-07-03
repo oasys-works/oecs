@@ -111,7 +111,8 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 - **Deferred by default** — `ctx.commands` (a Bevy-`Commands`-style facade) buffers
   spawn / add / remove / despawn / enable / disable until the phase flush, so iterators stay valid.
-  `world.addComponent` etc. are the immediate counterparts.
+  Host-side `world.addComponent` / `removeComponent` / `disable` / `enable` apply immediately;
+  `world.destroyEntity` is still deferred to match system-side despawn semantics.
 - **Entity enable/disable** — `disable` / `enable` / `isDisabled`; disabled rows sit in a partitioned
   tail and are skipped by default queries.
 - **Templates & bundles** — `world.template([...])` blueprints consumed by `createEntity` /
@@ -135,8 +136,9 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 **Determinism, persistence & integration**
 
 - **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `world.stateHash()` (FNV-1a over
-  live column bytes), `snapshot()` / `restoreInto(...)`, plus sparse variants. Backing-agnostic: a heap
-  world and a shared world with identical history produce identical hashes.
+  live dense bytes, sparse stores, and multi-relation target sets), `snapshot()` / `restoreInto(...)`,
+  plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
+  identical hashes.
 - **Host → ECS write seam** — `installHostCommandSeam(world)` applies typed `HostCommand`s off-schedule
   via a blessed `exclusive` system, with record/replay (`HostCommandRecorder`, `replayCommandLog`) and a
   cross-thread ring transport.

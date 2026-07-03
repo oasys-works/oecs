@@ -90,13 +90,13 @@ const enemies = ecs.query(Pos, Health).and(IsEnemy);
 const thawed = ecs.query(Health).without(Frozen);
 ```
 
-A `ComponentDef` is **callable** — `Pos({ x: 10, y: 20 })` produces a bundle, and the varargs spawn/add paths take bundles. This is the ergonomic way to build a multi-component entity at once, and it's the *only* attach path that zero-fills omitted fields:
+A `ComponentDef` is **callable** — `Pos({ x: 10, y: 20 })` produces a bundle, and the varargs spawn/add paths take bundles. This is the ergonomic way to spell a multi-component entity, and it's the *typed* attach path for partial values: omitted fields zero-fill.
 
 ```ts
 const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 ```
 
-The plain `ecs.addComponent(e, Pos, values)` path demands the **complete** `FieldValues<S>` (every field); provide `0` explicitly there, or use a bundle.
+The typed `ecs.addComponent(e, Pos, values)` overload demands the **complete** `FieldValues<S>` (every field); provide `0` explicitly there, or use a bundle.
 
 ---
 
@@ -290,7 +290,7 @@ The single most important timing rule: the same-named op behaves differently dep
 | `disable` / `enable` | immediate | deferred |
 | sparse & relation ops | immediate | immediate |
 
-Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so those ops apply immediately.
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so add/remove/toggle operations can apply immediately; `destroyEntity` is still buffered to match the system-side semantics.
 
 **Inside a system, prefer `ctx.commands`.** It is *always* deferred and reads that way at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`:
 
@@ -304,11 +304,19 @@ Note `ctx.commands.spawn` returns the new id immediately (the create isn't defer
 
 ### One flush boundary over many
 
-Every structural change costs an archetype move. When building an entity, reach its final archetype in one move — use a bundle spawn or a template, not a create-then-add-then-add chain:
+Every dense structural change costs an archetype move. When building an entity with known defaults, prefer a template so it lands directly in the target archetype:
 
 ```ts
-const e = ecs.spawnBundle(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 2 }), Health({ current: 100, max: 100 }));
+const Enemy = ecs.template([
+  { def: Pos, values: { x: 0, y: 0 } },
+  { def: Vel, values: { vx: 1, vy: 2 } },
+  { def: Health, values: { current: 100, max: 100 } },
+]);
+
+const e = ecs.createEntity(Enemy);
 ```
+
+For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking a create-then-add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
 
 For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch, Def)` / `batchRemoveComponent`, which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
 
@@ -546,7 +554,7 @@ ecs.update(1 / 60);   // the apply system drains the queue at PRE_UPDATE
 ```
 
 > [!WARNING]
-> Install the seam **before** adding your own systems and **before `startup()`** — insertion order is what places the apply system at the phase head. `spawnEntry` values must be **complete** (the deferred add doesn't zero-default — an omitted `f64` reads back `NaN`). And **don't add-then-set in the same frame**: `setField` applies immediately at the drain while structural commands are deferred to the phase flush, so `addComponent(e, C)` then `setField(e, C, …)` fails — carry the value in the `addComponent`/`spawnEntry`, or set it next frame. `onSpawned` is the only way to learn a spawned id.
+> Install the seam **before** adding your own systems and **before `startup()`** — insertion order is what places the apply system at the phase head. `spawnEntry` values are typed as **complete** `FieldValues<S>`; pass every field even though the shared write path zero-fills omitted fields in untyped command data. And **don't add-then-set in the same frame**: `setField` applies immediately at the drain while structural commands are deferred to the phase flush, so `addComponent(e, C)` then `setField(e, C, …)` fails — carry the value in the `addComponent`/`spawnEntry`, or set it next frame. `onSpawned` is the only way to learn a spawned id.
 
 The **editor** layer (`@oasys/oecs/editor`) adds undo/redo and two-way field handles on top of this queue — every edit is a transaction of forward + inverse commands, and undo is just another command on the same bus. Note that despawn → undo round-trips the *data* but re-spawns with a **fresh `EntityID`**; don't hold an old id across an undo of its despawn.
 

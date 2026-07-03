@@ -268,6 +268,8 @@ ctx.createEntity();                   // immediate (new entity, no components)
 ctx.addComponent(e, Pos, { x, y });   // deferred
 ctx.removeComponent(e, Vel);          // deferred
 ctx.destroyEntity(e);                 // deferred
+ctx.disable(e);                       // deferred
+ctx.enable(e);                        // deferred
 ```
 
 Prefer the `ctx.commands` facade for deferred structural ops — `ctx.commands.spawn(...)` / `add` / `remove` / `despawn` do the same deferred thing but read unambiguously as "deferred" at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `world.addComponent`.

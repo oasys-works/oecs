@@ -101,6 +101,8 @@ Read these in order for a working mental model.
 19. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
 20. [errors](./errors.md) — the `ECSError` taxonomy
 
+<a id="dev-vs-prod--read-this-once"></a>
+
 ## Dev vs prod — read this once
 
 A compile-time `__DEV__` flag gates every runtime check: bounds and liveness checks, duplicate-system detection, registration validation, and the **system access checker** (`reads`/`writes` enforcement). These are **tree-shaken out of production builds**.

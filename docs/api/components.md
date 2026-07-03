@@ -71,6 +71,8 @@ ecs.addComponent(e, Frozen);          // no values argument
 ecs.query(Pos).without(Frozen);       // exclude frozen entities
 ```
 
+<a id="the-handle-is-callable--bundles"></a>
+
 ## The handle is callable — bundles
 
 `registerComponent` returns a `ComponentDef<S>`, which is a **callable handle**:
@@ -98,7 +100,7 @@ const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 A **bare, uncalled** def (`IsEnemy` above, or `Pos`) doubles as an all-zero bundle / tag wherever a bundle is expected. The same shapes flow through `ctx.commands.spawn(...)` and `ctx.commands.add(...)` inside systems (see [systems](./systems.md)).
 
 > [!TIP]
-> **Partial values zero-fill.** When you build a bundle — `Pos({ x: 10 })` or `bundle(Pos, { x: 10 })` — omitted fields are written as `0`. This is the *only* attach path that accepts partial values. The plain `ecs.addComponent(e, Pos, values)` path demands the **complete** `FieldValues<S>` (every field). Provide `0` explicitly there, or use a bundle.
+> **Partial values zero-fill.** When you build a bundle — `Pos({ x: 10 })` or `bundle(Pos, { x: 10 })` — omitted fields are written as `0`. This is the typed attach path for partial values. The typed `ecs.addComponent(e, Pos, values)` overload demands the **complete** `FieldValues<S>` (every field). Provide `0` explicitly there, or use a bundle.
 
 ## Types you may reference
 
