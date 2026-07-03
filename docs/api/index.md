@@ -88,18 +88,20 @@ Read these in order for a working mental model.
 
 13. [determinism](./determinism.md) — `deterministic: true`, `stateHash`, snapshot / restore, command-log replay
 14. [memory](./memory.md) — the `memory` sizing surface and storage profiles
+15. [WASM backends](./wasm.md) — shared `WebAssembly.Memory`, `ComputeBackend`, and FFI ids
+16. [parallelism](./parallel.md) — shared-memory / worker seams and the sequential scheduler contract
 
 ### Host & UI integration
 
-15. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
-16. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
-17. [editor](./editor.md) — undo/redo + field handles
-18. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
+17. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
+18. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
+19. [editor](./editor.md) — undo/redo + field handles
+20. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
 
 ### Reference
 
-19. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
-20. [errors](./errors.md) — the `ECSError` taxonomy
+21. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
+22. [errors](./errors.md) — the `ECSError` taxonomy
 
 <a id="dev-vs-prod--read-this-once"></a>
 

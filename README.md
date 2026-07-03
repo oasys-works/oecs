@@ -200,6 +200,8 @@ production guarantee. The scheduler's cycle detection is the one check that is a
   [sparse storage](docs/api/sparse-storage.md) ·
   [determinism](docs/api/determinism.md) ·
   [memory](docs/api/memory.md) ·
+  [WASM backends](docs/api/wasm.md) ·
+  [parallelism](docs/api/parallel.md) ·
   [host-write seam](docs/api/host-write-seam.md) ·
   [reactive](docs/api/reactive.md) ·
   [editor](docs/api/editor.md) ·

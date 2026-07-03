@@ -104,5 +104,7 @@ type BackendSystemHandle = /* opaque branded number the backend mints */;
 ## See also
 
 - [determinism](./determinism.md) — heap and shared backings agree on `stateHash`; sizing both instances for restore
+- [WASM backends](./wasm.md) — wiring `WebAssembly.Memory`, `ComputeBackend`, and FFI ids
+- [parallelism](./parallel.md) — what shared-memory and worker support means today
 - [systems](./systems.md) — `backendHandle` on a system config
 - [components](./components.md) — `columnCapacity` and the field ids `fieldId` returns

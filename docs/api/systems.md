@@ -193,4 +193,5 @@ If the system carries a `backendHandle` **and** a [compute backend](./memory.md#
 - [schedule](./schedule.md) — phases, ordering, system sets, run conditions, the frame loop
 - [queries](./queries.md) — the iteration terminals a system body uses
 - [refs](./refs.md) · [change detection](./change-detection.md) — the mutation surface and the tick
+- [WASM backends](./wasm.md) · [parallelism](./parallel.md) — backend-routed systems and parallel-ready access declarations
 - [host-write seam](./host-write-seam.md) — feeding writes in from outside the schedule
