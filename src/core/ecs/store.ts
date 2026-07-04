@@ -58,14 +58,9 @@ import {
 	type RelationDef,
 	type RelationOptions
 } from "./relation";
-import {
-	EventChannel,
-	asEventId,
-	type EmptyEventSchema,
-	type EventDef,
-	type EventReader,
-	type EventSchema
-} from "./event";
+import type { EmptyEventSchema, EventDef, EventReader, EventSchema } from "./event";
+import { EventRegistry } from "./event_registry";
+import { ResourceRegistry } from "./resource_registry";
 import {
 	unsafeCast,
 	BitSet,
@@ -382,14 +377,9 @@ export class Store implements ObserverHost, QueryHost {
 	private readonly relationService: RelationService;
 
 	// --- Event channels ---
-	// Parallel array indexed by EventID: each channel holds SoA columns + reader.
-	private readonly eventChannels: EventChannel[] = [];
-	// IDs of channels emitted to since the last `clearEvents()`. An `emit*`
-	// only pushes when the channel was empty (`reader.length === 0`), so each
-	// dirty channel appears at most once per tick — `clearEvents` then walks
-	// just these instead of every registered channel.
-	private readonly dirtyEventChannels: number[] = [];
-	private eventCount = 0;
+	// Channel array + key map + per-tick dirty list live in `EventRegistry`
+	// (event_registry.ts, H1 step 2); the event methods below delegate.
+	private readonly events = new EventRegistry();
 
 	// --- Archetype management ---
 	private readonly archetypes: Archetype[] = [];
@@ -4227,135 +4217,77 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Event channels
+	// Event channels — delegations to `EventRegistry` (event_registry.ts)
 	// =======================================================
 
 	public registerEvent<S extends EventSchema>(fields: readonly (keyof S & string)[]): EventDef<S> {
-		const id = asEventId(this.eventCount++);
-		const channel = new EventChannel(fields as string[]);
-		this.eventChannels.push(channel);
-		return unsafeCast<EventDef<S>>(id);
+		return this.events.registerEvent<S>(fields);
 	}
 
 	public emitEvent(def: EventDef, values: Record<string, number>): void {
-		const id = def as unknown as number;
-		const channel = this.eventChannels[id];
-		// Sample emptiness, emit, THEN mark dirty: if `emit` throws (a __DEV__
-		// missing-field check), `reader.length` stays 0 and a later successful emit
-		// would push the id a second time — breaking the at-most-once-per-tick
-		// dirty-list invariant. Push only on a clean emit. #728.
-		const wasEmpty = channel.reader.length === 0;
-		channel.emit(values);
-		if (wasEmpty) this.dirtyEventChannels.push(id);
+		this.events.emitEvent(def, values);
 	}
 
 	public emitSignal(def: EventDef<EmptyEventSchema>): void {
-		const id = def as unknown as number;
-		const channel = this.eventChannels[id];
-		const wasEmpty = channel.reader.length === 0;
-		channel.emitSignal();
-		if (wasEmpty) this.dirtyEventChannels.push(id);
+		this.events.emitSignal(def);
 	}
 
 	public getEventReader<S extends EventSchema>(def: EventDef<S>): EventReader<S> {
-		return this.eventChannels[def as unknown as number].reader as EventReader<S>;
+		return this.events.getEventReader(def);
 	}
 
 	public clearEvents(): void {
-		const dirty = this.dirtyEventChannels;
-		const channels = this.eventChannels;
-		for (let i = 0; i < dirty.length; i++) {
-			channels[dirty[i]].clear();
-		}
-		dirty.length = 0;
+		this.events.clearEvents();
 	}
 
-	/** `__DEV__`-only: total events currently buffered across the dirty channels.
-	 * `ECS.update` samples this either side of `dispatchSet` to assert an onSet
-	 * observer emitted nothing — its emissions would be wiped by the tick-tail
-	 * `clearEvents` and break the empty-channel-at-boundary invariant snapshot /
-	 * restore relies on (#586). Walks only the dirty list, never the hot emit path. */
+	/** `__DEV__`-only mid-update emit detection — see
+	 * `EventRegistry.devBufferedEventCount`. */
 	public _devBufferedEventCount(): number {
-		const dirty = this.dirtyEventChannels;
-		const channels = this.eventChannels;
-		let n = 0;
-		for (let i = 0; i < dirty.length; i++) n += channels[dirty[i]].reader.length;
-		return n;
+		return this.events.devBufferedEventCount();
 	}
-
-	// =======================================================
-	// Event key storage
-	// =======================================================
-
-	// any: type-erased — EventDef<F> phantom is lost in the map, recovered by callers via EventKey<F>
-	private readonly eventKeyMap: Map<symbol, EventDef<any>> = new Map();
 
 	public registerEventByKey<S extends EventSchema>(
 		key: symbol,
 		fields: readonly (keyof S & string)[]
 	): EventDef<S> {
-		if (this.eventKeyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.EVENT_ALREADY_REGISTERED, "Event key already registered");
-		}
-		const def = this.registerEvent<S>(fields);
-		this.eventKeyMap.set(key, def);
-		return def;
+		return this.events.registerEventByKey<S>(key, fields);
 	}
 
 	// any: type-erased — caller recovers F from EventKey<F>
 	public getEventDefByKey(key: symbol): EventDef<any> {
-		const def = this.eventKeyMap.get(key);
-		if (def === undefined) {
-			throw new ECSError(ECS_ERROR.EVENT_NOT_REGISTERED, "Event key not registered");
-		}
-		return def;
+		return this.events.getEventDefByKey(key);
 	}
 
 	public hasEventKey(key: symbol): boolean {
-		return this.eventKeyMap.has(key);
+		return this.events.hasEventKey(key);
 	}
 
 	// =======================================================
-	// Resource storage
+	// Resource storage — delegations to `ResourceRegistry` (resource_registry.ts)
 	// =======================================================
 
-	private readonly resourceKeyMap: Map<symbol, unknown> = new Map();
+	private readonly resources = new ResourceRegistry();
 
 	public registerResource(key: symbol, value: unknown): void {
-		if (this.resourceKeyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.RESOURCE_ALREADY_REGISTERED, "Resource key already registered");
-		}
-		this.resourceKeyMap.set(key, value);
+		this.resources.register(key, value);
 	}
 
 	public getResource(key: symbol): unknown {
-		if (!this.resourceKeyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.RESOURCE_NOT_REGISTERED, "Resource key not registered");
-		}
-		return this.resourceKeyMap.get(key);
+		return this.resources.get(key);
 	}
 
 	public setResource(key: symbol, value: unknown): void {
-		if (!this.resourceKeyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.RESOURCE_NOT_REGISTERED, "Resource key not registered");
-		}
-		this.resourceKeyMap.set(key, value);
+		this.resources.set(key, value);
 	}
 
-	// Drop a resource from the world. Fails closed on a missing key (mirrors
-	// `getResource` / `setResource`); afterwards the key is free to
-	// `registerResource` again — the present → absent → present lifecycle (#798).
-	// Resources stay out of `stateHash` and out of snapshot/resume, so this is
-	// purely a host-side dictionary delete with no determinism-hash effect.
+	/** Fails closed on a missing key; the present → absent → present
+	 * lifecycle (#798) — see `ResourceRegistry.remove`. */
 	public removeResource(key: symbol): void {
-		if (!this.resourceKeyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.RESOURCE_NOT_REGISTERED, "Resource key not registered");
-		}
-		this.resourceKeyMap.delete(key);
+		this.resources.remove(key);
 	}
 
 	public hasResource(key: symbol): boolean {
-		return this.resourceKeyMap.has(key);
+		return this.resources.has(key);
 	}
 }
 
