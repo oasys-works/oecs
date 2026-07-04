@@ -13,8 +13,8 @@
       "require": { "types": "./dist/primitives.d.ts", "default": "./dist/primitives.cjs" }
     },
     "./reactive": {
-      "import": { "types": "./dist/core/reactive/index.d.ts", "default": "./dist/core/reactive/index.js" },
-      "require": { "types": "./dist/core/reactive/index.d.ts", "default": "./dist/core/reactive/index.cjs" }
+      "import": { "types": "./dist/reactive/index.d.ts", "default": "./dist/reactive/index.js" },
+      "require": { "types": "./dist/reactive/index.d.ts", "default": "./dist/reactive/index.cjs" }
     },
     "./reactive-sync": {
       "import": { "types": "./dist/extensions/reactive/index.d.ts", "default": "./dist/extensions/reactive/index.js" },

@@ -81,7 +81,7 @@ The package ships several import paths; everything past the core is opt-in and c
 | `@oasys/oecs` | `src/core/ecs` | the ECS — pure-TS heap profile by default |
 | `@oasys/oecs/primitives` | `src/primitives.ts` | standalone data structures (`BitSet`, `SparseSet`, …) |
 | `@oasys/oecs/shared` | `src/shared.ts` | `SharedArrayBuffer` / WASM allocators (needs COOP/COEP) |
-| `@oasys/oecs/reactive` | `src/core/reactive` | zero-dependency reactive kernel |
+| `@oasys/oecs/reactive` | `src/reactive` | zero-dependency reactive kernel |
 | `@oasys/oecs/reactive-sync` | `src/extensions/reactive` | ECS → reactive bridge (publishes only dirty) |
 | `@oasys/oecs/editor` | `src/extensions/editor` | undo/redo + field handles |
 | `@oasys/oecs/solid` | `src/extensions/solid` | SolidJS adapter (`solid-js` optional peer) |
@@ -537,9 +537,9 @@ Both tracers are gated by the compile-time `__DEV__` flag and tree-shaken to not
 
 These are optional extension entry points; the core ECS never imports a UI library.
 
-**The reactive kernel** (`@oasys/oecs/reactive`, `src/core/reactive/`) is a zero-dependency, fine-grained, glitch-free signals machine: `signal`/`computed`/`effect`/`batch`/`untrack`/`root`/`onCleanup` (`core/reactive/kernel.ts:408-476`). Values are pulled lazily through an intrusive doubly-linked dependency graph; a `computed` bumps its version only when its `eq` reports a changed value, so an equal recompute cuts propagation, and a flush that cascades past `MAX_CASCADE = 100_000` re-runs throws "did not settle" (`core/reactive/kernel.ts:54, 376-381`). Reactive collections (`reactiveMap`/`reactiveStruct`/`reactiveArray`, `core/reactive/{map,struct,array}.ts`) give per-key/per-slot/per-field channels so a reader subscribes to one key alone — `O(changed)`, not `O(all)`.
+**The reactive kernel** (`@oasys/oecs/reactive`, `src/reactive/`) is a zero-dependency, fine-grained, glitch-free signals machine: `signal`/`computed`/`effect`/`batch`/`untrack`/`root`/`onCleanup` (`reactive/kernel.ts:408-476`). Values are pulled lazily through an intrusive doubly-linked dependency graph; a `computed` bumps its version only when its `eq` reports a changed value, so an equal recompute cuts propagation, and a flush that cascades past `MAX_CASCADE = 100_000` re-runs throws "did not settle" (`reactive/kernel.ts:54, 376-381`). Reactive collections (`reactiveMap`/`reactiveStruct`/`reactiveArray`, `reactive/{map,struct,array}.ts`) give per-key/per-slot/per-field channels so a reader subscribes to one key alone — `O(changed)`, not `O(all)`.
 
-**The ECS → reactive bridge** (`@oasys/oecs/reactive-sync`, `src/extensions/reactive/ecs_sync.ts`) drains ECS observers into reactive collections, publishing only dirty entities/columns each tick. `syncComponentToMap` (`core/reactive`/`extensions/reactive/ecs_sync.ts:261`) is the workhorse — `grain: "entity"` drains the per-row dirty list, `grain: "column"` sweeps the archetype SoA for high-churn components; `batchedUpdate` wraps `ecs.update(dt)` in a `batch()` so a whole tick's publishes coalesce into one UI flush.
+**The ECS → reactive bridge** (`@oasys/oecs/reactive-sync`, `src/extensions/reactive/ecs_sync.ts`) drains ECS observers into reactive collections, publishing only dirty entities/columns each tick. `syncComponentToMap` (`reactive`/`extensions/reactive/ecs_sync.ts:261`) is the workhorse — `grain: "entity"` drains the per-row dirty list, `grain: "column"` sweeps the archetype SoA for high-churn components; `batchedUpdate` wraps `ecs.update(dt)` in a `batch()` so a whole tick's publishes coalesce into one UI flush.
 
 **The editor** (`@oasys/oecs/editor`, `src/extensions/editor/`) adds undo/redo and two-way field handles over the host-write seam. Every edit is a transaction of forward + inverse `HostCommand`s on the one bus; undo enqueues the inverse, redo re-enqueues the forward — undo is just another command applied at the next schedule head (`core/`/`extensions/editor/editor.ts:227-390`). `fieldHandle` wraps one field as a reactive read plus an undoable write for an inspector input.
 

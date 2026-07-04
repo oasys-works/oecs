@@ -5,7 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./primitives": "./src/primitives.ts",
-    "./reactive": "./src/core/reactive/index.ts",
+    "./reactive": "./src/reactive/index.ts",
     "./reactive-sync": "./src/extensions/reactive/index.ts",
     "./editor": "./src/extensions/editor/index.ts",
     "./solid": "./src/extensions/solid/index.ts",

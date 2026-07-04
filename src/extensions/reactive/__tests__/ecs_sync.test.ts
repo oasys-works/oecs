@@ -17,7 +17,7 @@ import {
 	reactiveStruct,
 	root,
 	type ReactiveArray
-} from "../../../core/reactive";
+} from "../../../reactive";
 import { ECS, SCHEDULE, type EntityID } from "../../../core/ecs";
 import {
 	syncComponentToMap,

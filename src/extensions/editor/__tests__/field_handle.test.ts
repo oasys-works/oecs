@@ -10,7 +10,7 @@
  * nothing mocked.
  */
 import { describe, expect, it } from "vitest";
-import { effect, root } from "../../../core/reactive";
+import { effect, root } from "../../../reactive";
 import { ECS, installHostCommandSeam, spawnEntry } from "../../../core/ecs";
 import type { ComponentDef, EntityID } from "../../../core/ecs";
 import { batchedUpdate, syncFieldsToMap } from "../../reactive";

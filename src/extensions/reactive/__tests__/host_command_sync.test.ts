@@ -9,7 +9,7 @@
  * → one batched UI commit per tick.
  */
 import { describe, expect, it } from "vitest";
-import { effect, root } from "../../../core/reactive";
+import { effect, root } from "../../../reactive";
 import {
 	ECS,
 	installHostCommandSeam,

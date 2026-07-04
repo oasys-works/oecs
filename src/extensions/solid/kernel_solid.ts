@@ -1,6 +1,6 @@
 /**
  * kernel_solid — bridge the engine's in-house reactive kernel
- * (`../../core/reactive`) into SolidJS.
+ * (`../../reactive`) into SolidJS.
  *
  * The kernel and Solid are SEPARATE reactive graphs: a bare kernel read inside a
  * Solid scope subscribes Solid to nothing. Every kernel value a Solid component
@@ -21,7 +21,7 @@
  * `solid-js` dependency lives here in the extension, never in the core.
  */
 import { createSignal, onCleanup, type Accessor } from "solid-js";
-import { subscribe, type ReactiveArray, type ReactiveMap } from "../../core/reactive";
+import { subscribe, type ReactiveArray, type ReactiveMap } from "../../reactive";
 
 /**
  * Mirror a kernel accessor into a Solid accessor. The returned accessor tracks in
@@ -70,7 +70,7 @@ export function fromKernelStruct<T extends object>(struct: T): T {
 	for (const k of keys) {
 		reads[k] = fromKernel(() => struct[k]);
 	}
-	// Mirror the kernel struct proxy (`core/reactive/struct.ts`): enumerable, and safe
+	// Mirror the kernel struct proxy (`reactive/struct.ts`): enumerable, and safe
 	// on non-field keys. A get-only proxy threw on `then` / `Symbol.iterator` / `toJSON`
 	// (Solid reconcile + JSX, `await`, `JSON.stringify` all probe them), and an empty
 	// `ownKeys` made the bridged view non-enumerable to Solid / `Object.keys`.

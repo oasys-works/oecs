@@ -35,7 +35,7 @@
  * deletes, membership drift) and localises it to a minimal repro.
  */
 import { describe, expect, it } from "vitest";
-import { effect, reactiveMap, root, type ReactiveMap } from "../../../core/reactive";
+import { effect, reactiveMap, root, type ReactiveMap } from "../../../reactive";
 import {
 	ECS,
 	SCHEDULE,

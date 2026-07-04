@@ -37,9 +37,9 @@ export default defineConfig(({ command }) => ({
       entry: {
         index: path.resolve(__dirname, "src/index.ts"),
         shared: path.resolve(__dirname, "src/shared.ts"),
-        "core/reactive/index": path.resolve(
+        "reactive/index": path.resolve(
           __dirname,
-          "src/core/reactive/index.ts",
+          "src/reactive/index.ts",
         ),
         "extensions/reactive/index": path.resolve(
           __dirname,

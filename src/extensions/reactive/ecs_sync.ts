@@ -82,7 +82,7 @@ import {
 	type ReactiveArray,
 	type ReactiveMap,
 	type StructSetters
-} from "../../core/reactive";
+} from "../../reactive";
 import type {
 	ArchetypeView,
 	ComponentDef,
