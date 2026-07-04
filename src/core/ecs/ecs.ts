@@ -325,22 +325,6 @@ export class ECS implements QueryResolver {
 		);
 	}
 
-	/** Resolve a consumer-declared SAB region's byte offset by `region_id`, or
-	 * 0 when absent. Generic, de-gamed replacement (#623) for the removed
-	 * game-named accessors; pair with the consumer's own region module to
-	 * materialise a typed view. Delegates to `Store.regionOffset`. */
-	public regionOffset(regionId: number): number {
-		return this.store.regionOffset(regionId);
-	}
-
-	/** A handle (`{ buffer, view, offset, bytes }`) to a consumer-declared SAB
-	 * region resolved by `region_id`, or `null` when absent. A consumer's
-	 * region module builds a TypedArray view over the region's span from this.
-	 * Re-fetch after a SAB grow. Delegates to `Store.regionHandle`. (#623) */
-	public regionHandle(regionId: number): ColumnStoreRegionHandle | null {
-		return this.store.regionHandle(regionId);
-	}
-
 	/** Batch variant of `regionHandle` for hosts wiring several consumer
 	 * regions at startup: returns the handles in argument order, never null —
 	 * throws ONE `REGION_NOT_DECLARED` naming every missing region id instead
@@ -415,6 +399,620 @@ export class ECS implements QueryResolver {
 		};
 	}
 
+	public get fixedTimestep(): number {
+		return this._fixedTimestep;
+	}
+
+	public set fixedTimestep(value: number) {
+		this._fixedTimestep = validateFixedTimestep(value);
+	}
+
+	public get fixedAlpha(): number {
+		return this._accumulator / this._fixedTimestep;
+	}
+
+	/** Attach (or detach with `null`) a per-world frame-trace sink (ADR-0030):
+	 * the engine then fires structured `FrameTraceSink` events at each system,
+	 * flush, command, observer firing, and event during `update()`, so a consumer
+	 * can reconstruct exactly what travelled through the ECS each frame. The sink
+	 * also receives a `phaseBoundary(phase)` at each phase's post-flush settle
+	 * point — the safe seam to read `stateHash()` between phases of one frame and
+	 * bisect a divergence to the exact phase (#797 / ADR-0032). The seam is
+	 * `__DEV__`-gated end to end — in a production build this setter keeps an empty
+	 * body and the world never retains a sink. The sink only observes; it does not
+	 * perturb `stateHash`, ordering, or any behaviour. */
+	public setTrace(sink: FrameTraceSink | null): void {
+		if (__DEV__) this.store._trace = sink;
+	}
+
+	// Overload 1: record syntax (per-field types)
+	public registerComponent<S extends Record<string, TypedArrayTag>>(schema: S): ComponentDef<S>;
+	// Overload 2: array shorthand (uniform type, defaults to "f64"). On a
+	// `{ deterministic: true }` world the "f64" default is REJECTED (#777) — pass
+	// an explicit integer type, e.g. `registerComponent(["x","y"], "i32")`.
+	public registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
+		fields: F,
+		type?: T
+	): ComponentDef<{ readonly [K in F[number]]: T }>;
+	// Implementation
+	public registerComponent(
+		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
+		type?: TypedArrayTag
+	): ComponentDef<any> {
+		if (Array.isArray(schemaOrFields)) {
+			const t = type ?? "f64";
+			const schema: Record<string, TypedArrayTag> = Object.create(null);
+			for (const f of schemaOrFields) schema[f] = t;
+			return this.store.registerComponent(schema);
+		}
+		return this.store.registerComponent(schemaOrFields as Record<string, TypedArrayTag>);
+	}
+
+	// Overload 1: record syntax (per-field types)
+	public registerSparseComponent<S extends Record<string, TypedArrayTag>>(
+		schema: S
+	): SparseComponentDef<S>;
+	// Overload 2: array shorthand (uniform type, defaults to "f64"). Same #777
+	// float ban as `registerComponent` on a `{ deterministic: true }` world.
+	public registerSparseComponent<
+		const F extends readonly string[],
+		T extends TypedArrayTag = "f64"
+	>(fields: F, type?: T): SparseComponentDef<{ readonly [K in F[number]]: T }>;
+	// Implementation
+	/** Register an out-of-identity sparse component (#468 / ADR-0011). Mirrors
+	 * `registerComponent`, but the result lives in an engine-managed sparse set
+	 * outside the archetype mask: add/remove cause **no** archetype transition
+	 * and consume **no** identity bit (it does not count against the 128-component
+	 * cap). Use for churny or rarely-queried data (relation targets, cooldowns,
+	 * transient markers). */
+	public registerSparseComponent(
+		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
+		type?: TypedArrayTag
+	): SparseComponentDef<any> {
+		if (Array.isArray(schemaOrFields)) {
+			const t = type ?? "f64";
+			const schema: Record<string, TypedArrayTag> = Object.create(null);
+			for (const f of schemaOrFields) schema[f] = t;
+			return this.store.registerSparseComponent(schema);
+		}
+		return this.store.registerSparseComponent(schemaOrFields as Record<string, TypedArrayTag>);
+	}
+
+	public registerResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
+		if (__DEV__ && dispatchTrace.isActive()) {
+			dispatchTrace.recordResourceRegister(key.description ?? "");
+		}
+		this.store.registerResource(key, value);
+	}
+
+	public resource<T>(key: ResourceKey<T>): T {
+		if (__DEV__) {
+			accessCheck.checkResourceRead(key);
+			if (dispatchTrace.isActive()) {
+				dispatchTrace.recordResourceRead(key.description ?? "");
+			}
+		}
+		return unsafeCast<T>(this.store.getResource(key));
+	}
+
+	public setResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
+		if (__DEV__) {
+			accessCheck.checkResourceWrite(key);
+			if (dispatchTrace.isActive()) {
+				dispatchTrace.recordResourceWrite(key.description ?? "");
+			}
+		}
+		this.store.setResource(key, value);
+	}
+
+	/** Drop a resource from the world (#798). Unlike {@link registerResource}
+	 * — a one-time world-setup op — this is a runtime mutation, so it is access-
+	 * checked as a *write* (a system removing a resource must declare it in
+	 * `resourceWrites`, which is what serialises it against readers/writers of the
+	 * same key). Fails closed on a missing key. Afterwards the key is free to
+	 * `registerResource` again — the present → absent → present lifecycle.
+	 * Resources are out of `stateHash` and snapshot/resume, so a remove never
+	 * perturbs the determinism hash. */
+	public removeResource<T>(key: ResourceKey<T>): void {
+		if (__DEV__) {
+			accessCheck.checkResourceWrite(key);
+			if (dispatchTrace.isActive()) {
+				dispatchTrace.recordResourceRemove(key.description ?? "");
+			}
+		}
+		this.store.removeResource(key);
+	}
+
+	public createEntity(): EntityID;
+    	public createEntity<Defs extends readonly ComponentDef[]>(
+    		template: Template<Defs>,
+    		overrides?: TemplateOverrides<Defs>
+    	): EntityID;
+    	public createEntity<Defs extends readonly ComponentDef[]>(
+    		template?: Template<Defs>,
+    		overrides?: TemplateOverrides<Defs>
+    	): EntityID {
+    		if (template === undefined) return this.store.createEntity();
+    		return this.store.spawn(template, overrides);
+    	}
+
+	/**
+	 * Spawn an entity from varargs bundles (§bundles) — the immediate
+	 * host-side analog of `ctx.commands.spawn`. `ecs.spawnBundle(bundle(Pos,{x,y}),
+	 * bundle(Vel,{vx:1}), IsEnemy)` collapses the five attach shapes into one. Each
+	 * bundle is applied immediately; a single combined-archetype insertion (one
+	 * transition instead of one-per-component) is a later optimization — for the
+	 * prototype this mirrors the existing per-component `addComponent` path.
+	 */
+	public spawnBundle(...items: BundleOrDef[]): EntityID {
+		const e = this.store.createEntity();
+		for (let i = 0; i < items.length; i++) {
+			const def = bundleDef(items[i]);
+			if (__DEV__) accessCheck.checkAdd(def);
+			this.store.addComponent(e, def, bundleValues(items[i]));
+		}
+		return e;
+	}
+
+	/** Buffer an entity for deferred destruction (applied at the next phase
+	 *  flush — matches the semantics of `SystemContext.destroyEntity`). The
+	 *  ECS surface is unsuffixed because the context (`ECS` vs Store) already
+	 *  implies the mode; `Store.destroyEntity` is the immediate path. */
+	public destroyEntity(id: EntityID): void {
+		if (__DEV__) accessCheck.checkDestroy();
+		this.store.destroyEntityDeferred(id);
+	}
+
+	public addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;
+	public addComponent<S extends ComponentSchema>(
+		entityId: EntityID,
+		def: ComponentDef<S>,
+		values: CompleteFieldValues<S>
+	): this;
+	public addComponent(
+		entityId: EntityID,
+		def: ComponentDef,
+		values?: Record<string, number>
+	): this {
+		if (__DEV__) accessCheck.checkAdd(def);
+		this.store.addComponent(entityId, def, values ?? EMPTY_VALUES);
+		return this;
+	}
+
+	/** Batch-attach several components in one archetype transition. Each
+	 * entry's `values` is checked against its own def's schema (a misspelled
+	 * field is a compile error; tags refuse `values`) — same typing as
+	 * `ECS.template` entries. Omitted fields zero-fill. */
+	public addComponents<Defs extends readonly ComponentDef[]>(
+		entityId: EntityID,
+		entries: TemplateEntries<Defs>
+	): void {
+		if (__DEV__) {
+			for (let i = 0; i < entries.length; i++) accessCheck.checkAdd(entries[i].def);
+		}
+		this.store.addComponents(entityId, entries);
+	}
+
+	public removeComponent(entityId: EntityID, def: ComponentDef): this {
+		if (__DEV__) accessCheck.checkRemove(def);
+		this.store.removeComponent(entityId, def);
+		return this;
+	}
+
+	public removeComponents(entityId: EntityID, defs: ComponentDef[]): void {
+		if (__DEV__) {
+			for (let i = 0; i < defs.length; i++) accessCheck.checkRemove(defs[i]);
+		}
+		this.store.removeComponents(entityId, defs);
+	}
+
+	/**
+	 * Bulk add a component to ALL entities in the given archetype.
+	 * O(columns) via TypedArray.set() instead of O(N×columns).
+	 *
+	 * Takes an `ArchetypeID` (from `ArchetypeView.id`) rather than a concrete
+	 * `Archetype` — the concrete type is internal (issue #378).
+	 */
+	public batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): void;
+	public batchAddComponent<S extends ComponentSchema>(
+		src: ArchetypeID,
+		def: ComponentDef<S>,
+		values: CompleteFieldValues<S>
+	): void;
+	public batchAddComponent(
+		src: ArchetypeID,
+		def: ComponentDef,
+		values?: Record<string, number>
+	): void {
+		if (__DEV__) accessCheck.checkAdd(def);
+		this.store.batchAddComponent(src, def, values);
+	}
+
+	/**
+	 * Bulk remove a component from ALL entities in the given archetype.
+	 * O(columns) via TypedArray.set() instead of O(N×columns).
+	 *
+	 * Takes an `ArchetypeID` (from `ArchetypeView.id`); see `batchAddComponent`.
+	 */
+	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): void {
+		if (__DEV__) accessCheck.checkRemove(def);
+		this.store.batchRemoveComponent(src, def);
+	}
+
+	public getField<S extends ComponentSchema>(
+		entityId: EntityID,
+		def: ComponentDef<S>,
+		field: string & keyof S
+	): number {
+		if (__DEV__) {
+			accessCheck.checkRead(def);
+			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		return arch.readField(row, def.id, field);
+	}
+
+	public setField<S extends ComponentSchema>(
+		entityId: EntityID,
+		def: ComponentDef<S>,
+		field: string & keyof S,
+		value: number
+	): void {
+		if (__DEV__) {
+			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		const col = arch.getColumn(def, field, this.store._tick);
+		col[row] = value;
+		// Per-entity onSet observers drain the opt-in dirty list (#531); record
+		// this host-side write so an entity-granular observer sees it, matching
+		// `SystemContext.setField`. Gated so the no-observer path pays nothing.
+		if (this.store._anyDirtyTracked) this.store._noteSet(def, entityId);
+	}
+
+	/** Read-modify-write one field: `updateField(e, Gold, "value", v => v - cost)`
+	 * is the one-line form of the `getField` → compute → `setField` round trip.
+	 * Returns the written value. Same access-check and observer semantics as the
+	 * two calls it composes. */
+	public updateField<S extends ComponentSchema>(
+		entityId: EntityID,
+		def: ComponentDef<S>,
+		field: string & keyof S,
+		fn: (current: number) => number
+	): number {
+		const next = fn(this.getField(entityId, def, field));
+		this.setField(entityId, def, field, next);
+		return next;
+	}
+
+	public emit(key: SignalKey): void;
+	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
+	public emit(key: EventKey, values?: Record<string, number>): void {
+		if (__DEV__ && dispatchTrace.isActive()) {
+			dispatchTrace.recordEmit(key.description ?? "");
+		}
+		const def = this.store.getEventDefByKey(key);
+		if (values === undefined) {
+			this.store.emitSignal(def as EventDef<EmptyEventSchema>);
+		} else {
+			this.store.emitEvent(def, values);
+		}
+	}
+
+	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
+		if (__DEV__ && dispatchTrace.isActive()) {
+			dispatchTrace.recordRead(key.description ?? "");
+		}
+		const def = this.store.getEventDefByKey(key);
+		return this.store.getEventReader(def) as EventReader<S>;
+	}
+
+	public query<T extends ComponentDef[]>(...defs: T): Query<T> {
+		// Reuse scratchMask to avoid allocating a new BitSet per query call.
+		// Zero it out, set bits, then copy for the cache key.
+		const mask = this.scratchMask;
+		mask._words.fill(0);
+		for (let i = 0; i < defs.length; i++) {
+			mask.set(defs[i].id);
+		}
+		return this._resolveQuery(mask.copy(), null, null, defs);
+	}
+
+	public _nextQueryId(): number {
+		return this._nextQueryIdCounter++;
+	}
+
+	/** QueryResolver implementation — creates or retrieves a cached Query. */
+	public _resolveQuery(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		defs: readonly ComponentDef[]
+	): Query<any> {
+		// Combine three hashes into one cache key using xor with golden-ratio
+		// multipliers to reduce collision probability between masks
+		const incHash = include.hash();
+		const excHash = exclude ? exclude.hash() : 0;
+		const anyHash = anyOf ? anyOf.hash() : 0;
+		const key =
+			(incHash ^
+				Math.imul(excHash, HASH_GOLDEN_RATIO) ^
+				Math.imul(anyHash, HASH_SECONDARY_PRIME)) |
+			0;
+
+		const cached = this._caches.findDedup(key, include, exclude, anyOf);
+		if (cached !== undefined) return cached.query;
+
+		// Store.registerQuery returns a live Archetype[] that the Store will
+		// push new matching archetypes into as they are created
+		const result = this.store.registerQuery(include, exclude ?? undefined, anyOf ?? undefined);
+		const q = new Query(
+			result,
+			defs as ComponentDef[],
+			this,
+			include.copy(),
+			exclude?.copy() ?? null,
+			anyOf?.copy() ?? null,
+			this._nextQueryIdCounter++
+		);
+		this.store.updateQueryRef(result, q);
+		this._caches.addDedup(key, {
+			includeMask: include.copy(),
+			excludeMask: exclude?.copy() ?? null,
+			anyOfMask: anyOf?.copy() ?? null,
+			query: q
+		});
+		return q;
+	}
+
+	/**
+	 * Register a system.
+	 *
+	 *   // Bare function (no query, no lifecycle hooks)
+	 *   world.registerSystem((ctx, dt) => { ... });
+	 *
+	 *   // Function + query builder (query resolved at registration time)
+	 *   world.registerSystem(
+	 *     (q, ctx, dt) => { q.forEach((arch) => { ... }); },
+	 *     (qb) => qb.with(Pos, Vel),
+	 *   );
+	 *
+	 *   // Full config — declares reads/writes (dev-checked) + optional lifecycle hooks
+	 *   world.registerSystem({ reads: [Pos, Vel], writes: [Pos], fn(ctx, dt) { ... } });
+	 */
+	public registerSystem(fn: SystemFn): SystemDescriptor;
+	public registerSystem<Defs extends readonly ComponentDef[]>(
+		fn: (q: Query<Defs>, ctx: SystemContext, dt: number) => void,
+		queryFn: (qb: QueryBuilder) => Query<Defs>
+	): SystemDescriptor;
+	public registerSystem(config: SystemConfig): SystemDescriptor;
+	// any: overload implementation must unify bare fn, (fn, queryFn), and SystemConfig
+	public registerSystem(
+		fnOrConfig:
+			| ((q: Query<any>, ctx: SystemContext, dt: number) => void)
+			| SystemFn
+			| SystemConfig,
+		queryFn?: (qb: QueryBuilder) => Query<any>
+	): SystemDescriptor {
+		let config: SystemConfig;
+
+		if (typeof fnOrConfig === "function") {
+			if (queryFn !== undefined) {
+				// (fn, queryFn) overload — resolve query at registration time
+				const q = queryFn(new QueryBuilder(this));
+				const ctx = this.ctx;
+				const fn = fnOrConfig as (q: Query<any>, ctx: SystemContext, dt: number) => void;
+				config = { ..._INTERNAL_EMPTY_ACCESS, fn: (_ctx, dt) => fn(q, ctx, dt) };
+			} else {
+				// Bare function overload — access surface unannotated; Phase B
+				// will require config-form to enforce per-system declarations.
+				//
+				// Footgun guard (#213 H4): a bare `SystemFn` is `(ctx, dt)` — arity
+				// ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
+				// query form with its `queryFn` second arg forgotten, which would
+				// otherwise silently bind `q := SystemContext`, `ctx := dt`, and
+				// `dt := undefined` (a NaN trap on the first arithmetic). Fail fast
+				// in `__DEV__` instead. Compiled out of production builds.
+				if (__DEV__ && fnOrConfig.length >= 3) {
+					throw new ECSError(
+						ECS_ERROR.SYSTEM_FN_ARITY,
+						`registerSystem was passed a ${fnOrConfig.length}-parameter function with no ` +
+							`query builder. A bare system function is (ctx, dt); a query system is ` +
+							`(q, ctx, dt) and needs the query builder as the second argument: ` +
+							`registerSystem((q, ctx, dt) => …, (qb) => qb.with(…)). ` +
+							`Without it, q would receive the SystemContext and dt would be undefined.`
+					);
+				}
+				config = { ..._INTERNAL_EMPTY_ACCESS, fn: fnOrConfig as SystemFn };
+			}
+		} else {
+			config = fnOrConfig as SystemConfig;
+		}
+
+		// Phase D lint (#213): catch a `queries` declaration that outruns
+		// `reads ∪ writes` at registration, before the system's first iteration.
+		if (__DEV__) _assertQueriesDeclared(config);
+
+		const id = asSystemId(this.nextSystemId++);
+		const descriptor: SystemDescriptor = Object.freeze({
+			...config,
+			..._normalizeAccess(config),
+			id
+		});
+		this.systems.add(descriptor);
+		return descriptor;
+	}
+
+	public removeSystem(system: SystemDescriptor): void {
+		this.schedule.removeSystem(system);
+		system.onRemoved?.();
+		this.systems.delete(system);
+	}
+
+	public get systemCount(): number {
+		return this.systems.size;
+	}
+
+	public startup(): void {
+		// Phase C of issue #213 — walk every registered system's `spawns` +
+		// `transitions` to compute the archetype closure they can produce,
+		// and plant the whole set in a single `extendColumnStore` call. After
+		// this returns, every spawn / transition target hits the cached
+		// `archGetOrCreateFromMask` path — no per-add SAB extends, which
+		// was the O(N²) cost #211 surfaced. Dynamically-generated masks not
+		// covered by the closure still hit the lazy single-mask fallback.
+		this.prewarmArchetypes();
+
+		for (const descriptor of this.systems.values()) {
+			if (descriptor.onAdded === undefined) continue;
+			if (__DEV__) accessCheck.enter(descriptor);
+			try {
+				descriptor.onAdded(this.ctx);
+			} finally {
+				if (__DEV__) accessCheck.leave();
+			}
+		}
+		this.schedule.runStartup(this.ctx, this._tick);
+
+		// Events live exactly one *update* tick. Startup is setup, not an
+		// update tick, so any event a startup phase emits (readable across the
+		// PRE_STARTUP→STARTUP→POST_STARTUP run above) must be drained here —
+		// otherwise it sits in the channel until the first `update()` clears it
+		// at its tail, and a frame-1 PRE_UPDATE/UPDATE reader sees it as if
+		// emitted this frame. Mirrors `update()`'s tail.
+		this.store.clearEvents();
+	}
+
+	/** Compute the archetype closure from every registered system's AND
+	 * observer's `spawns` + `transitions` and ask the store to plant the
+	 * whole set in one `extendColumnStore` call. Observers carry the same
+	 * access shape systems do (a synthesized `SystemDescriptor`), so an
+	 * observer that spawns/transitions gets its target archetype prewarmed
+	 * too rather than first-touching lazily mid-tick (#768). Exposed as
+	 * `private` because the only caller is `startup()`; visible to tests via
+	 * the `archetype_count` delta on the public ECS facade. */
+	private prewarmArchetypes(): void {
+		const closure = computeArchetypeClosure([...this.systems, ...this._observers.descriptors()]);
+		if (closure.length === 0) return;
+		this.store.archCreateManyFromMasks(closure);
+	}
+
+	public update(dt: number): void {
+		// #785 multi-world re-entrancy: a system may drive a *second* world's
+		// tick from inside its own open access span — e.g. a host running N
+		// worlds where world A's system calls `worldB.update()`. The schedule's
+		// per-system `enter`/`leave` writes the single process-global
+		// `accessCheck` slot, so B's tick ends with the slot nulled, silently
+		// disabling dev access enforcement for the rest of A's system body (the
+		// `check*` guards early-return when no span is active). Snapshot the
+		// caller's span and restore it after the tick — the same save/restore the
+		// observer dispatch already performs for nested spans (see observer.ts
+		// `dispatchStructural` / `dispatchSet`). Dev-only; `prevAccessSpan` is
+		// null on the normal host-driven (non-nested) path, so the restore is a
+		// no-op there. See `docs/PATTERNS.md` §97 (multi-world isolation).
+		const prevAccessSpan = __DEV__ ? accessCheck.current() : null;
+		try {
+			this.store._tick = this._tick;
+			if (__DEV__) this.store._trace?.tickBegin(this._tick, dt);
+
+			// Publish row counts before the first phase runs. Covers any
+			// immediate-mode `addComponents` / `removeComponents` /
+			// `destroyEntity` (followed by `flush`) the host did
+			// between updates — those mutate archetype lengths without
+			// touching the SAB descriptor. Subsequent phase boundaries
+			// re-publish via `ctx.flush()`, so any WASM scan in any phase
+			// sees fresh `row_count` fields.
+			this.store.publishRowCountsToDescriptor();
+
+			if (this.schedule.hasFixedSystems()) {
+				this._accumulator += dt;
+				const maxAcc = this._maxFixedSteps * this._fixedTimestep;
+				if (this._accumulator > maxAcc) {
+					this._accumulator = maxAcc;
+				}
+				while (this._accumulator >= this._fixedTimestep) {
+					this.schedule.runFixedUpdate(this.ctx, this._fixedTimestep, this._tick);
+					this._accumulator -= this._fixedTimestep;
+				}
+			}
+
+			this.schedule.runUpdate(this.ctx, dt, this._tick);
+			// Post-update detection point for onSet observers (#517 §1 / ADR-0013, #586):
+			// per-entity onSet drains the dirty list, archetype-granular onSet scans
+			// the change tick, both in canonical order. `store._tick` still equals
+			// this tick here (it tracks `this._tick`, bumped below), so the change-tick
+			// comparison sees exactly this tick's writes. onSet runs INSIDE the event
+			// window — `clearEvents` is the tick's last act, so onSet reads the settled
+			// component snapshot *and* this tick's events, and the channel is empty at
+			// the tick boundary (snapshot/restore excludes event state and relies on
+			// that). Any structural ops an onSet observer enqueues flush at the next
+			// tick's first phase boundary.
+			const evBefore = __DEV__ ? this.store._devBufferedEventCount() : 0;
+			this._observers.dispatchSet(this._tick);
+			if (__DEV__ && this.store._devBufferedEventCount() !== evBefore) {
+				// An onSet observer emitted: `clearEvents` below would wipe it before
+				// any reader, so it is silently dropped — and would break snapshot/
+				// restore determinism if it survived (#586). Bridge a detected change to
+				// a next-tick event from a system reading the dirty list, not from onSet.
+				throw new ECSError(
+					ECS_ERROR.OBSERVER_ONSET_EMIT,
+					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clear_events. Emit from a system instead."
+				);
+			}
+			this.store.clearEvents();
+			if (__DEV__) this.store._trace?.tickEnd(this._tick);
+			this._tick++;
+		} finally {
+			// Restore the outer world's access span (no-op when not nested).
+			if (__DEV__ && prevAccessSpan !== null) accessCheck.enter(prevAccessSpan);
+		}
+	}
+
+	public dispose(): void {
+		for (const descriptor of this.systems.values()) {
+			descriptor.dispose?.();
+			descriptor.onRemoved?.();
+		}
+		this.systems.clear();
+		this.schedule.clear();
+	}
+
+
+	// ============================================================================
+	// === BEGIN STORE PASS-THROUGH BAND ===
+	//
+	// Every member below is a single mechanical delegation to a collaborator
+	// (`this.store` / `this.schedule` / `this.ctx` / `this._observers`):
+	// exactly one call or property read, optionally followed by `return this`
+	// for chaining. No branches, no loops, no dev checks, no argument
+	// adaptation beyond literal defaults. This section MUST stay logic-free —
+	// a method that outgrows this shape (gains a check, adapts a result,
+	// combines calls) moves ABOVE the band, next to the other real logic.
+	//
+	// Enforced by src/core/ecs/__tests__/unit/ecs_passthrough_guard.test.ts,
+	// which parses this file and asserts the shape of every member between
+	// the BEGIN/END markers. (plans/H3-ecs-facade-slimming.md, phase 1.)
+	// ============================================================================
+
+
+	/** Resolve a consumer-declared SAB region's byte offset by `region_id`, or
+	 * 0 when absent. Generic, de-gamed replacement (#623) for the removed
+	 * game-named accessors; pair with the consumer's own region module to
+	 * materialise a typed view. Delegates to `Store.regionOffset`. */
+	public regionOffset(regionId: number): number {
+		return this.store.regionOffset(regionId);
+	}
+
+	/** A handle (`{ buffer, view, offset, bytes }`) to a consumer-declared SAB
+	 * region resolved by `region_id`, or `null` when absent. A consumer's
+	 * region module builds a TypedArray view over the region's span from this.
+	 * Re-fetch after a SAB grow. Delegates to `Store.regionHandle`. (#623) */
+	public regionHandle(regionId: number): ColumnStoreRegionHandle | null {
+		return this.store.regionHandle(regionId);
+	}
+
 	/** Look up the field index a component reserves for `fieldName`. The
 	 * index is assigned by `registerComponent` in insertion order and is
 	 * stable for the lifetime of the ECS. Used by systems that need to
@@ -435,18 +1033,6 @@ export class ECS implements QueryResolver {
 	 * PR 4D) */
 	public entityIdAtRow(archetypeId: number, row: number): EntityID {
 		return this.store.entityIdAtRow(archetypeId, row);
-	}
-
-	public get fixedTimestep(): number {
-		return this._fixedTimestep;
-	}
-
-	public set fixedTimestep(value: number) {
-		this._fixedTimestep = validateFixedTimestep(value);
-	}
-
-	public get fixedAlpha(): number {
-		return this._accumulator / this._fixedTimestep;
 	}
 
 	/** The single SAB backing every archetype's column views. Exposed for
@@ -478,20 +1064,6 @@ export class ECS implements QueryResolver {
 	 * `DETERMINISM_DISABLED`. Opt in via `new ECS({ deterministic: true })`. */
 	public get deterministic(): boolean {
 		return this.store.deterministic;
-	}
-
-	/** Attach (or detach with `null`) a per-world frame-trace sink (ADR-0030):
-	 * the engine then fires structured `FrameTraceSink` events at each system,
-	 * flush, command, observer firing, and event during `update()`, so a consumer
-	 * can reconstruct exactly what travelled through the ECS each frame. The sink
-	 * also receives a `phaseBoundary(phase)` at each phase's post-flush settle
-	 * point — the safe seam to read `stateHash()` between phases of one frame and
-	 * bisect a divergence to the exact phase (#797 / ADR-0032). The seam is
-	 * `__DEV__`-gated end to end — in a production build this setter keeps an empty
-	 * body and the world never retains a sink. The sink only observes; it does not
-	 * perturb `stateHash`, ordering, or any behaviour. */
-	public setTrace(sink: FrameTraceSink | null): void {
-		if (__DEV__) this.store._trace = sink;
 	}
 
 	/** FNV-1a 32 over (archetype_id, live row count, live column bytes)
@@ -562,61 +1134,8 @@ export class ECS implements QueryResolver {
 		this.store.restoreInto(bytes);
 	}
 
-	// Overload 1: record syntax (per-field types)
-	public registerComponent<S extends Record<string, TypedArrayTag>>(schema: S): ComponentDef<S>;
-	// Overload 2: array shorthand (uniform type, defaults to "f64"). On a
-	// `{ deterministic: true }` world the "f64" default is REJECTED (#777) — pass
-	// an explicit integer type, e.g. `registerComponent(["x","y"], "i32")`.
-	public registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
-		fields: F,
-		type?: T
-	): ComponentDef<{ readonly [K in F[number]]: T }>;
-	// Implementation
-	public registerComponent(
-		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
-		type?: TypedArrayTag
-	): ComponentDef<any> {
-		if (Array.isArray(schemaOrFields)) {
-			const t = type ?? "f64";
-			const schema: Record<string, TypedArrayTag> = Object.create(null);
-			for (const f of schemaOrFields) schema[f] = t;
-			return this.store.registerComponent(schema);
-		}
-		return this.store.registerComponent(schemaOrFields as Record<string, TypedArrayTag>);
-	}
-
 	public registerTag(): ComponentDef<Record<string, never>> {
 		return this.store.registerComponent({} as Record<string, never>);
-	}
-
-	// Overload 1: record syntax (per-field types)
-	public registerSparseComponent<S extends Record<string, TypedArrayTag>>(
-		schema: S
-	): SparseComponentDef<S>;
-	// Overload 2: array shorthand (uniform type, defaults to "f64"). Same #777
-	// float ban as `registerComponent` on a `{ deterministic: true }` world.
-	public registerSparseComponent<
-		const F extends readonly string[],
-		T extends TypedArrayTag = "f64"
-	>(fields: F, type?: T): SparseComponentDef<{ readonly [K in F[number]]: T }>;
-	// Implementation
-	/** Register an out-of-identity sparse component (#468 / ADR-0011). Mirrors
-	 * `registerComponent`, but the result lives in an engine-managed sparse set
-	 * outside the archetype mask: add/remove cause **no** archetype transition
-	 * and consume **no** identity bit (it does not count against the 128-component
-	 * cap). Use for churny or rarely-queried data (relation targets, cooldowns,
-	 * transient markers). */
-	public registerSparseComponent(
-		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
-		type?: TypedArrayTag
-	): SparseComponentDef<any> {
-		if (Array.isArray(schemaOrFields)) {
-			const t = type ?? "f64";
-			const schema: Record<string, TypedArrayTag> = Object.create(null);
-			for (const f of schemaOrFields) schema[f] = t;
-			return this.store.registerSparseComponent(schema);
-		}
-		return this.store.registerSparseComponent(schemaOrFields as Record<string, TypedArrayTag>);
 	}
 
 	/** Register a sparse tag (empty schema) — membership only, no data. */
@@ -638,67 +1157,9 @@ export class ECS implements QueryResolver {
 		this.store.registerEventByKey<EmptyEventSchema>(key, []);
 	}
 
-	public registerResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
-			dispatchTrace.recordResourceRegister(key.description ?? "");
-		}
-		this.store.registerResource(key, value);
-	}
-
-	public resource<T>(key: ResourceKey<T>): T {
-		if (__DEV__) {
-			accessCheck.checkResourceRead(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceRead(key.description ?? "");
-			}
-		}
-		return unsafeCast<T>(this.store.getResource(key));
-	}
-
-	public setResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
-		if (__DEV__) {
-			accessCheck.checkResourceWrite(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceWrite(key.description ?? "");
-			}
-		}
-		this.store.setResource(key, value);
-	}
-
-	/** Drop a resource from the world (#798). Unlike {@link registerResource}
-	 * — a one-time world-setup op — this is a runtime mutation, so it is access-
-	 * checked as a *write* (a system removing a resource must declare it in
-	 * `resourceWrites`, which is what serialises it against readers/writers of the
-	 * same key). Fails closed on a missing key. Afterwards the key is free to
-	 * `registerResource` again — the present → absent → present lifecycle.
-	 * Resources are out of `stateHash` and snapshot/resume, so a remove never
-	 * perturbs the determinism hash. */
-	public removeResource<T>(key: ResourceKey<T>): void {
-		if (__DEV__) {
-			accessCheck.checkResourceWrite(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceRemove(key.description ?? "");
-			}
-		}
-		this.store.removeResource(key);
-	}
-
 	public hasResource<T>(key: ResourceKey<T>): boolean {
 		return this.store.hasResource(key);
 	}
-
-	public createEntity(): EntityID;
-    	public createEntity<Defs extends readonly ComponentDef[]>(
-    		template: Template<Defs>,
-    		overrides?: TemplateOverrides<Defs>
-    	): EntityID;
-    	public createEntity<Defs extends readonly ComponentDef[]>(
-    		template?: Template<Defs>,
-    		overrides?: TemplateOverrides<Defs>
-    	): EntityID {
-    		if (template === undefined) return this.store.createEntity();
-    		return this.store.spawn(template, overrides);
-    	}
 
 	/** Register an archetype template (#462). Resolves the component set +
 	 * default field values to a target archetype once (creating it if absent —
@@ -727,82 +1188,12 @@ export class ECS implements QueryResolver {
 		return this.store.spawnMany(template, count);
 	}
 
-	/**
-	 * Spawn an entity from varargs bundles (§bundles) — the immediate
-	 * host-side analog of `ctx.commands.spawn`. `ecs.spawnBundle(bundle(Pos,{x,y}),
-	 * bundle(Vel,{vx:1}), IsEnemy)` collapses the five attach shapes into one. Each
-	 * bundle is applied immediately; a single combined-archetype insertion (one
-	 * transition instead of one-per-component) is a later optimization — for the
-	 * prototype this mirrors the existing per-component `addComponent` path.
-	 */
-	public spawnBundle(...items: BundleOrDef[]): EntityID {
-		const e = this.store.createEntity();
-		for (let i = 0; i < items.length; i++) {
-			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
-			this.store.addComponent(e, def, bundleValues(items[i]));
-		}
-		return e;
-	}
-
-	/** Buffer an entity for deferred destruction (applied at the next phase
-	 *  flush — matches the semantics of `SystemContext.destroyEntity`). The
-	 *  ECS surface is unsuffixed because the context (`ECS` vs Store) already
-	 *  implies the mode; `Store.destroyEntity` is the immediate path. */
-	public destroyEntity(id: EntityID): void {
-		if (__DEV__) accessCheck.checkDestroy();
-		this.store.destroyEntityDeferred(id);
-	}
-
 	public isAlive(id: EntityID): boolean {
 		return this.store.isAlive(id);
 	}
 
 	public get entityCount(): number {
 		return this.store.entityCount;
-	}
-
-	public addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;
-	public addComponent<S extends ComponentSchema>(
-		entityId: EntityID,
-		def: ComponentDef<S>,
-		values: CompleteFieldValues<S>
-	): this;
-	public addComponent(
-		entityId: EntityID,
-		def: ComponentDef,
-		values?: Record<string, number>
-	): this {
-		if (__DEV__) accessCheck.checkAdd(def);
-		this.store.addComponent(entityId, def, values ?? EMPTY_VALUES);
-		return this;
-	}
-
-	/** Batch-attach several components in one archetype transition. Each
-	 * entry's `values` is checked against its own def's schema (a misspelled
-	 * field is a compile error; tags refuse `values`) — same typing as
-	 * `ECS.template` entries. Omitted fields zero-fill. */
-	public addComponents<Defs extends readonly ComponentDef[]>(
-		entityId: EntityID,
-		entries: TemplateEntries<Defs>
-	): void {
-		if (__DEV__) {
-			for (let i = 0; i < entries.length; i++) accessCheck.checkAdd(entries[i].def);
-		}
-		this.store.addComponents(entityId, entries);
-	}
-
-	public removeComponent(entityId: EntityID, def: ComponentDef): this {
-		if (__DEV__) accessCheck.checkRemove(def);
-		this.store.removeComponent(entityId, def);
-		return this;
-	}
-
-	public removeComponents(entityId: EntityID, defs: ComponentDef[]): void {
-		if (__DEV__) {
-			for (let i = 0; i < defs.length; i++) accessCheck.checkRemove(defs[i]);
-		}
-		this.store.removeComponents(entityId, defs);
 	}
 
 	public hasComponent(entityId: EntityID, def: ComponentDef): boolean {
@@ -979,120 +1370,6 @@ export class ECS implements QueryResolver {
 		return this.store.cascadeOf(root, def);
 	}
 
-	/**
-	 * Bulk add a component to ALL entities in the given archetype.
-	 * O(columns) via TypedArray.set() instead of O(N×columns).
-	 *
-	 * Takes an `ArchetypeID` (from `ArchetypeView.id`) rather than a concrete
-	 * `Archetype` — the concrete type is internal (issue #378).
-	 */
-	public batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): void;
-	public batchAddComponent<S extends ComponentSchema>(
-		src: ArchetypeID,
-		def: ComponentDef<S>,
-		values: CompleteFieldValues<S>
-	): void;
-	public batchAddComponent(
-		src: ArchetypeID,
-		def: ComponentDef,
-		values?: Record<string, number>
-	): void {
-		if (__DEV__) accessCheck.checkAdd(def);
-		this.store.batchAddComponent(src, def, values);
-	}
-
-	/**
-	 * Bulk remove a component from ALL entities in the given archetype.
-	 * O(columns) via TypedArray.set() instead of O(N×columns).
-	 *
-	 * Takes an `ArchetypeID` (from `ArchetypeView.id`); see `batchAddComponent`.
-	 */
-	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): void {
-		if (__DEV__) accessCheck.checkRemove(def);
-		this.store.batchRemoveComponent(src, def);
-	}
-
-	public getField<S extends ComponentSchema>(
-		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S
-	): number {
-		if (__DEV__) {
-			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		}
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
-		return arch.readField(row, def.id, field);
-	}
-
-	public setField<S extends ComponentSchema>(
-		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S,
-		value: number
-	): void {
-		if (__DEV__) {
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		}
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
-		const col = arch.getColumn(def, field, this.store._tick);
-		col[row] = value;
-		// Per-entity onSet observers drain the opt-in dirty list (#531); record
-		// this host-side write so an entity-granular observer sees it, matching
-		// `SystemContext.setField`. Gated so the no-observer path pays nothing.
-		if (this.store._anyDirtyTracked) this.store._noteSet(def, entityId);
-	}
-
-	/** Read-modify-write one field: `updateField(e, Gold, "value", v => v - cost)`
-	 * is the one-line form of the `getField` → compute → `setField` round trip.
-	 * Returns the written value. Same access-check and observer semantics as the
-	 * two calls it composes. */
-	public updateField<S extends ComponentSchema>(
-		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S,
-		fn: (current: number) => number
-	): number {
-		const next = fn(this.getField(entityId, def, field));
-		this.setField(entityId, def, field, next);
-		return next;
-	}
-
-	public emit(key: SignalKey): void;
-	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
-	public emit(key: EventKey, values?: Record<string, number>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
-			dispatchTrace.recordEmit(key.description ?? "");
-		}
-		const def = this.store.getEventDefByKey(key);
-		if (values === undefined) {
-			this.store.emitSignal(def as EventDef<EmptyEventSchema>);
-		} else {
-			this.store.emitEvent(def, values);
-		}
-	}
-
-	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
-		if (__DEV__ && dispatchTrace.isActive()) {
-			dispatchTrace.recordRead(key.description ?? "");
-		}
-		const def = this.store.getEventDefByKey(key);
-		return this.store.getEventReader(def) as EventReader<S>;
-	}
-
-	public query<T extends ComponentDef[]>(...defs: T): Query<T> {
-		// Reuse scratchMask to avoid allocating a new BitSet per query call.
-		// Zero it out, set bits, then copy for the cache key.
-		const mask = this.scratchMask;
-		mask._words.fill(0);
-		for (let i = 0; i < defs.length; i++) {
-			mask.set(defs[i].id);
-		}
-		return this._resolveQuery(mask.copy(), null, null, defs);
-	}
-
 	public _getLastRunTick(): number {
 		return this.ctx.lastRunTick;
 	}
@@ -1104,10 +1381,6 @@ export class ECS implements QueryResolver {
 
 	public _getQueryDirtyEpoch(): number {
 		return this.store._queryDirtyEpoch;
-	}
-
-	public _nextQueryId(): number {
-		return this._nextQueryIdCounter++;
 	}
 
 	/** QueryResolver implementation — sparse-membership match path (#469). */
@@ -1189,127 +1462,6 @@ export class ECS implements QueryResolver {
 		);
 	}
 
-	/** QueryResolver implementation — creates or retrieves a cached Query. */
-	public _resolveQuery(
-		include: BitSet,
-		exclude: BitSet | null,
-		anyOf: BitSet | null,
-		defs: readonly ComponentDef[]
-	): Query<any> {
-		// Combine three hashes into one cache key using xor with golden-ratio
-		// multipliers to reduce collision probability between masks
-		const incHash = include.hash();
-		const excHash = exclude ? exclude.hash() : 0;
-		const anyHash = anyOf ? anyOf.hash() : 0;
-		const key =
-			(incHash ^
-				Math.imul(excHash, HASH_GOLDEN_RATIO) ^
-				Math.imul(anyHash, HASH_SECONDARY_PRIME)) |
-			0;
-
-		const cached = this._caches.findDedup(key, include, exclude, anyOf);
-		if (cached !== undefined) return cached.query;
-
-		// Store.registerQuery returns a live Archetype[] that the Store will
-		// push new matching archetypes into as they are created
-		const result = this.store.registerQuery(include, exclude ?? undefined, anyOf ?? undefined);
-		const q = new Query(
-			result,
-			defs as ComponentDef[],
-			this,
-			include.copy(),
-			exclude?.copy() ?? null,
-			anyOf?.copy() ?? null,
-			this._nextQueryIdCounter++
-		);
-		this.store.updateQueryRef(result, q);
-		this._caches.addDedup(key, {
-			includeMask: include.copy(),
-			excludeMask: exclude?.copy() ?? null,
-			anyOfMask: anyOf?.copy() ?? null,
-			query: q
-		});
-		return q;
-	}
-
-	/**
-	 * Register a system.
-	 *
-	 *   // Bare function (no query, no lifecycle hooks)
-	 *   world.registerSystem((ctx, dt) => { ... });
-	 *
-	 *   // Function + query builder (query resolved at registration time)
-	 *   world.registerSystem(
-	 *     (q, ctx, dt) => { q.forEach((arch) => { ... }); },
-	 *     (qb) => qb.with(Pos, Vel),
-	 *   );
-	 *
-	 *   // Full config — declares reads/writes (dev-checked) + optional lifecycle hooks
-	 *   world.registerSystem({ reads: [Pos, Vel], writes: [Pos], fn(ctx, dt) { ... } });
-	 */
-	public registerSystem(fn: SystemFn): SystemDescriptor;
-	public registerSystem<Defs extends readonly ComponentDef[]>(
-		fn: (q: Query<Defs>, ctx: SystemContext, dt: number) => void,
-		queryFn: (qb: QueryBuilder) => Query<Defs>
-	): SystemDescriptor;
-	public registerSystem(config: SystemConfig): SystemDescriptor;
-	// any: overload implementation must unify bare fn, (fn, queryFn), and SystemConfig
-	public registerSystem(
-		fnOrConfig:
-			| ((q: Query<any>, ctx: SystemContext, dt: number) => void)
-			| SystemFn
-			| SystemConfig,
-		queryFn?: (qb: QueryBuilder) => Query<any>
-	): SystemDescriptor {
-		let config: SystemConfig;
-
-		if (typeof fnOrConfig === "function") {
-			if (queryFn !== undefined) {
-				// (fn, queryFn) overload — resolve query at registration time
-				const q = queryFn(new QueryBuilder(this));
-				const ctx = this.ctx;
-				const fn = fnOrConfig as (q: Query<any>, ctx: SystemContext, dt: number) => void;
-				config = { ..._INTERNAL_EMPTY_ACCESS, fn: (_ctx, dt) => fn(q, ctx, dt) };
-			} else {
-				// Bare function overload — access surface unannotated; Phase B
-				// will require config-form to enforce per-system declarations.
-				//
-				// Footgun guard (#213 H4): a bare `SystemFn` is `(ctx, dt)` — arity
-				// ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
-				// query form with its `queryFn` second arg forgotten, which would
-				// otherwise silently bind `q := SystemContext`, `ctx := dt`, and
-				// `dt := undefined` (a NaN trap on the first arithmetic). Fail fast
-				// in `__DEV__` instead. Compiled out of production builds.
-				if (__DEV__ && fnOrConfig.length >= 3) {
-					throw new ECSError(
-						ECS_ERROR.SYSTEM_FN_ARITY,
-						`registerSystem was passed a ${fnOrConfig.length}-parameter function with no ` +
-							`query builder. A bare system function is (ctx, dt); a query system is ` +
-							`(q, ctx, dt) and needs the query builder as the second argument: ` +
-							`registerSystem((q, ctx, dt) => …, (qb) => qb.with(…)). ` +
-							`Without it, q would receive the SystemContext and dt would be undefined.`
-					);
-				}
-				config = { ..._INTERNAL_EMPTY_ACCESS, fn: fnOrConfig as SystemFn };
-			}
-		} else {
-			config = fnOrConfig as SystemConfig;
-		}
-
-		// Phase D lint (#213): catch a `queries` declaration that outruns
-		// `reads ∪ writes` at registration, before the system's first iteration.
-		if (__DEV__) _assertQueriesDeclared(config);
-
-		const id = asSystemId(this.nextSystemId++);
-		const descriptor: SystemDescriptor = Object.freeze({
-			...config,
-			..._normalizeAccess(config),
-			id
-		});
-		this.systems.add(descriptor);
-		return descriptor;
-	}
-
 	public addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this {
 		this.schedule.addSystems(label, ...entries);
 		return this;
@@ -1323,16 +1475,6 @@ export class ECS implements QueryResolver {
 	public configureSet(set: SystemSet, config: SystemSetConfig): this {
 		this.schedule.configureSet(set, config);
 		return this;
-	}
-
-	public removeSystem(system: SystemDescriptor): void {
-		this.schedule.removeSystem(system);
-		system.onRemoved?.();
-		this.systems.delete(system);
-	}
-
-	public get systemCount(): number {
-		return this.systems.size;
 	}
 
 	/**
@@ -1382,121 +1524,6 @@ export class ECS implements QueryResolver {
 		return this._observers.register(def, config);
 	}
 
-	public startup(): void {
-		// Phase C of issue #213 — walk every registered system's `spawns` +
-		// `transitions` to compute the archetype closure they can produce,
-		// and plant the whole set in a single `extendColumnStore` call. After
-		// this returns, every spawn / transition target hits the cached
-		// `archGetOrCreateFromMask` path — no per-add SAB extends, which
-		// was the O(N²) cost #211 surfaced. Dynamically-generated masks not
-		// covered by the closure still hit the lazy single-mask fallback.
-		this.prewarmArchetypes();
-
-		for (const descriptor of this.systems.values()) {
-			if (descriptor.onAdded === undefined) continue;
-			if (__DEV__) accessCheck.enter(descriptor);
-			try {
-				descriptor.onAdded(this.ctx);
-			} finally {
-				if (__DEV__) accessCheck.leave();
-			}
-		}
-		this.schedule.runStartup(this.ctx, this._tick);
-
-		// Events live exactly one *update* tick. Startup is setup, not an
-		// update tick, so any event a startup phase emits (readable across the
-		// PRE_STARTUP→STARTUP→POST_STARTUP run above) must be drained here —
-		// otherwise it sits in the channel until the first `update()` clears it
-		// at its tail, and a frame-1 PRE_UPDATE/UPDATE reader sees it as if
-		// emitted this frame. Mirrors `update()`'s tail.
-		this.store.clearEvents();
-	}
-
-	/** Compute the archetype closure from every registered system's AND
-	 * observer's `spawns` + `transitions` and ask the store to plant the
-	 * whole set in one `extendColumnStore` call. Observers carry the same
-	 * access shape systems do (a synthesized `SystemDescriptor`), so an
-	 * observer that spawns/transitions gets its target archetype prewarmed
-	 * too rather than first-touching lazily mid-tick (#768). Exposed as
-	 * `private` because the only caller is `startup()`; visible to tests via
-	 * the `archetype_count` delta on the public ECS facade. */
-	private prewarmArchetypes(): void {
-		const closure = computeArchetypeClosure([...this.systems, ...this._observers.descriptors()]);
-		if (closure.length === 0) return;
-		this.store.archCreateManyFromMasks(closure);
-	}
-
-	public update(dt: number): void {
-		// #785 multi-world re-entrancy: a system may drive a *second* world's
-		// tick from inside its own open access span — e.g. a host running N
-		// worlds where world A's system calls `worldB.update()`. The schedule's
-		// per-system `enter`/`leave` writes the single process-global
-		// `accessCheck` slot, so B's tick ends with the slot nulled, silently
-		// disabling dev access enforcement for the rest of A's system body (the
-		// `check*` guards early-return when no span is active). Snapshot the
-		// caller's span and restore it after the tick — the same save/restore the
-		// observer dispatch already performs for nested spans (see observer.ts
-		// `dispatchStructural` / `dispatchSet`). Dev-only; `prevAccessSpan` is
-		// null on the normal host-driven (non-nested) path, so the restore is a
-		// no-op there. See `docs/PATTERNS.md` §97 (multi-world isolation).
-		const prevAccessSpan = __DEV__ ? accessCheck.current() : null;
-		try {
-			this.store._tick = this._tick;
-			if (__DEV__) this.store._trace?.tickBegin(this._tick, dt);
-
-			// Publish row counts before the first phase runs. Covers any
-			// immediate-mode `addComponents` / `removeComponents` /
-			// `destroyEntity` (followed by `flush`) the host did
-			// between updates — those mutate archetype lengths without
-			// touching the SAB descriptor. Subsequent phase boundaries
-			// re-publish via `ctx.flush()`, so any WASM scan in any phase
-			// sees fresh `row_count` fields.
-			this.store.publishRowCountsToDescriptor();
-
-			if (this.schedule.hasFixedSystems()) {
-				this._accumulator += dt;
-				const maxAcc = this._maxFixedSteps * this._fixedTimestep;
-				if (this._accumulator > maxAcc) {
-					this._accumulator = maxAcc;
-				}
-				while (this._accumulator >= this._fixedTimestep) {
-					this.schedule.runFixedUpdate(this.ctx, this._fixedTimestep, this._tick);
-					this._accumulator -= this._fixedTimestep;
-				}
-			}
-
-			this.schedule.runUpdate(this.ctx, dt, this._tick);
-			// Post-update detection point for onSet observers (#517 §1 / ADR-0013, #586):
-			// per-entity onSet drains the dirty list, archetype-granular onSet scans
-			// the change tick, both in canonical order. `store._tick` still equals
-			// this tick here (it tracks `this._tick`, bumped below), so the change-tick
-			// comparison sees exactly this tick's writes. onSet runs INSIDE the event
-			// window — `clearEvents` is the tick's last act, so onSet reads the settled
-			// component snapshot *and* this tick's events, and the channel is empty at
-			// the tick boundary (snapshot/restore excludes event state and relies on
-			// that). Any structural ops an onSet observer enqueues flush at the next
-			// tick's first phase boundary.
-			const evBefore = __DEV__ ? this.store._devBufferedEventCount() : 0;
-			this._observers.dispatchSet(this._tick);
-			if (__DEV__ && this.store._devBufferedEventCount() !== evBefore) {
-				// An onSet observer emitted: `clearEvents` below would wipe it before
-				// any reader, so it is silently dropped — and would break snapshot/
-				// restore determinism if it survived (#586). Bridge a detected change to
-				// a next-tick event from a system reading the dirty list, not from onSet.
-				throw new ECSError(
-					ECS_ERROR.OBSERVER_ONSET_EMIT,
-					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clear_events. Emit from a system instead."
-				);
-			}
-			this.store.clearEvents();
-			if (__DEV__) this.store._trace?.tickEnd(this._tick);
-			this._tick++;
-		} finally {
-			// Restore the outer world's access span (no-op when not nested).
-			if (__DEV__ && prevAccessSpan !== null) accessCheck.enter(prevAccessSpan);
-		}
-	}
-
 	/**
 	 * Stamp every SAB-backed archetype's live `length` into its SAB
 	 * descriptor's `row_count` field. **You usually don't need to call
@@ -1516,15 +1543,7 @@ export class ECS implements QueryResolver {
 	public flush(): void {
 		this.ctx.flush();
 	}
-
-	public dispose(): void {
-		for (const descriptor of this.systems.values()) {
-			descriptor.dispose?.();
-			descriptor.onRemoved?.();
-		}
-		this.systems.clear();
-		this.schedule.clear();
-	}
+	// === END STORE PASS-THROUGH BAND ===
 }
 
 /** Phase C of issue #213 — archetype closure from a descriptor set.
