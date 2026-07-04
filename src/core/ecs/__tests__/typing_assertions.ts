@@ -10,7 +10,7 @@
  ***/
 
 import type { ECS } from "../ecs";
-import type { ComponentDef } from "../component";
+import type { ComponentDef, ComponentSchema } from "../component";
 import type { EntityID } from "../entity";
 import type { EventKey } from "../event";
 import type { HostCommandQueue } from "../host_commands";
@@ -136,9 +136,19 @@ function noInferAssertions(): void {
 	world.emit(ContactEvent, { a: e });
 }
 
+function observeHandleAssertions<S extends ComponentSchema>(genericDef: ComponentDef<S>): void {
+	// `observe` takes `ComponentHandle`, so a GENERIC `ComponentDef<S>` (whose
+	// unresolved schema is not assignable to the erased `ComponentDef` — the
+	// invariance ComponentHandle exists for) registers without a cast. This is
+	// what the reactive bridge's generic sync functions rely on.
+	void world.observe(genericDef, { onAdd: () => {} });
+	void world.observe(Frozen, { onRemove: () => {} });
+}
+
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
 void registerEventAssertions;
 void hostSeamAssertions;
 void noInferAssertions;
+void observeHandleAssertions;

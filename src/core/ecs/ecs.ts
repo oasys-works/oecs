@@ -84,7 +84,13 @@ import {
 	type QueryCacheEntry
 } from "./query";
 import type { EntityID } from "./entity";
-import type { ComponentDef, ComponentSchema, CompleteFieldValues, BundleOrDef } from "./component";
+import type {
+	ComponentDef,
+	ComponentHandle,
+	ComponentSchema,
+	CompleteFieldValues,
+	BundleOrDef
+} from "./component";
 import { bundleDef, bundleValues } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
 import type { RelationDef, RelationOptions } from "./relation";
@@ -1411,19 +1417,18 @@ export class ECS implements QueryResolver {
 	 * `onAdd` over current matches on registration. Register at world-build time
 	 * (before `startup()`); the returned handle's `dispose()` unregisters.
 	 */
-	public observe<S extends ComponentSchema>(
-		def: ComponentDef<S>,
-		config: StructuralObserverConfig
-	): ObserverHandle;
-	public observe<S extends ComponentSchema>(
-		def: ComponentDef<S>,
-		config: EntitySetObserverConfig
-	): ObserverHandle;
-	public observe<S extends ComponentSchema>(
-		def: ComponentDef<S>,
-		config: ArchetypeSetObserverConfig
-	): ObserverHandle;
-	public observe(def: ComponentDef, config: ObserverConfig): ObserverHandle {
+	// Deliberately non-generic: the callbacks receive `(eid, ctx)` / `(arch,
+	// ctx)` and read data through def-carrying APIs (`ctx.getField(eid, def,
+	// …)`), which are already schema-checked — a `<S>` here would bind from
+	// `def` and flow nowhere. `ComponentHandle` (not the erased `ComponentDef`)
+	// so generic callers holding a `ComponentDef<S>` can register without a
+	// cast — only the `.id` is read. If a schema-typed row/column argument is
+	// ever handed to `onSet`, that's a runtime feature (cursor resolution on
+	// the observer hot path), not a signature change.
+	public observe(def: ComponentHandle, config: StructuralObserverConfig): ObserverHandle;
+	public observe(def: ComponentHandle, config: EntitySetObserverConfig): ObserverHandle;
+	public observe(def: ComponentHandle, config: ArchetypeSetObserverConfig): ObserverHandle;
+	public observe(def: ComponentHandle, config: ObserverConfig): ObserverHandle {
 		return this._observers.register(def, config);
 	}
 

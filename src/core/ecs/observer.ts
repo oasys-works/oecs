@@ -52,7 +52,7 @@
 
 import { unsafeCast } from "../../type_primitives";
 import type { ArchetypeView } from "./archetype";
-import type { ComponentDef } from "./component";
+import type { ComponentDef, ComponentHandle } from "./component";
 import type { EntityID } from "./entity";
 import type { ObserverOp } from "./frame_trace";
 import type { SystemContext } from "./query";
@@ -133,9 +133,9 @@ export interface ObserverHandle {
 interface ObserverEntry {
 	readonly id: number;
 	readonly cid: number;
-	/** The observed component's callable def — carried so per-entity onSet can
+	/** The observed component's handle — carried so per-entity onSet can
 	 *  call `hasComponent(eid, def)` without re-minting a def from `cid`. */
-	readonly def: ComponentDef;
+	readonly def: ComponentHandle;
 	readonly onAdd: ObserverFn | undefined;
 	readonly onRemove: ObserverFn | undefined;
 	readonly onDisable: ObserverFn | undefined;
@@ -294,7 +294,7 @@ export class ObserverRegistry {
 		return out;
 	}
 
-	register(def: ComponentDef, config: ObserverConfig): ObserverHandle {
+	register(def: ComponentHandle, config: ObserverConfig): ObserverHandle {
 		const cid = def.id;
 		const granularity = config.granularity ?? "archetype";
 		const isEntitySet = config.onSet !== undefined && granularity === "entity";

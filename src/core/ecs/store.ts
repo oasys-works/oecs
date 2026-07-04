@@ -4468,7 +4468,7 @@ export class Store {
 		this._onArchGrow(targetArch, tgtPre, tgtPreE);
 	}
 
-	public hasComponent(entityId: EntityID, def: ComponentDef): boolean {
+	public hasComponent(entityId: EntityID, def: ComponentHandle): boolean {
 		if (!this.isAlive(entityId)) {
 			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return false;
