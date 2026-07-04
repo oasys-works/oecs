@@ -62,7 +62,7 @@ ecs.addSystems(SCHEDULE.UPDATE,
 `before: [X]` puts this system before `X`; `after: [X]` after it. A `SystemSet` target expands to all its members.
 
 > [!WARNING]
-> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning, and the constraint just vanishes; the system falls back to insertion-order tiebreak.
+> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning (routed through `ECSOptions.onWarn`, default `console.warn`), and the constraint just vanishes; the system falls back to insertion-order tiebreak.
 
 > [!WARNING]
 > Adding the same descriptor to two phases throws `DUPLICATE_SYSTEM` in dev. Register a second system if you need the same logic in two phases.
