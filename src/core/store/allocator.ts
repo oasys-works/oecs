@@ -144,6 +144,64 @@ export const DEFAULT_SAB_ALLOCATOR: BufferAllocator = (bytes) => {
 /** WASM linear-memory page size; `memory.grow(n)` adds `n` of these. */
 const WASM_PAGE_BYTES = 64 * 1024;
 
+/** The buffer primitive a growable single-buffer allocator runs over (M9).
+ * `growableSabAllocator` and `heapArraybufferAllocator` are the same
+ * allocator — cap arithmetic, hard-ceiling semantics (#380), `isInPlace`
+ * reporting — differing only in these two operations. */
+interface BufferStrategy {
+	create(byteLength: number, maxByteLength: number): ArrayBufferLike;
+	growTo(buffer: ArrayBufferLike, byteLength: number): void;
+}
+
+/** One home for the growable single-buffer allocator: first call allocates a
+ * resizable buffer with `maxByteLength: maxBytes`; later calls grow it in
+ * place and return the same buffer. The cap check, the hard-ceiling throw
+ * (#380 — deliberately no grow-beyond-cap fallback), and the `isInPlace`
+ * marker live here exactly once; the public wrappers contribute only the
+ * buffer primitive and any availability guard. */
+function makeGrowableAllocator(
+	label: string,
+	strategy: BufferStrategy,
+	maxBytes: number
+): InPlaceBufferAllocator {
+	if (maxBytes <= 0 || !Number.isInteger(maxBytes)) {
+		throw new Error(`${label}: max_bytes must be a positive integer (got ${maxBytes})`);
+	}
+	let buffer: ArrayBufferLike | null = null;
+	const alloc = (bytes: number): ArrayBufferLike => {
+		if (bytes > maxBytes) {
+			// BY DESIGN: the cap is a hard ceiling, not a soft target. We do
+			// NOT fall back to a fresh allocator or compact here — see #380 and
+			// the footprint analysis on `growableSabAllocator`. A real workload
+			// uses ~16 MiB of the 256 MiB cap and columns never grow, so
+			// reaching this throw means something upstream is creating entities
+			// without bound (or `maxBytes` was set too low for an intentionally
+			// huge world). Treat it as a fatal to diagnose, not a limit to
+			// route around.
+			throw new StoreCapExceededError(
+				`${label}: requested ${bytes} bytes exceeds the by-design ` +
+					`max_bytes cap of ${maxBytes}. This is a hard ceiling with no ` +
+					`grow-beyond-cap fallback (#380); a real workload stays ~16 MiB. ` +
+					`Reaching it signals runaway entity/column growth upstream — ` +
+					`diagnose that rather than raising the cap blindly.`,
+				bytes,
+				maxBytes
+			);
+		}
+		if (buffer === null) {
+			buffer = strategy.create(bytes, maxBytes);
+			return buffer;
+		}
+		if (bytes > buffer.byteLength) {
+			strategy.growTo(buffer, bytes);
+		}
+		return buffer;
+	};
+	// `isInPlace` lets `extendColumnStore` detect the growable path.
+	Object.defineProperty(alloc, "isInPlace", { value: true, enumerable: true });
+	return alloc as InPlaceBufferAllocator;
+}
+
 /**
  * Allocator that backs the SAB by a single growable `SharedArrayBuffer`
  * (created with `{ maxByteLength: maxBytes }`). First call allocates;
@@ -202,59 +260,34 @@ const WASM_PAGE_BYTES = 64 * 1024;
  * `refreshViews` is a no-op for old archetypes.
  */
 export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPlaceBufferAllocator {
-	if (maxBytes <= 0 || !Number.isInteger(maxBytes)) {
-		throw new Error(
-			`growable_sab_allocator: max_bytes must be a positive integer (got ${maxBytes})`
-		);
-	}
 	// Fail fast (at construction, not first grow) in a SAB-less runtime — this
 	// allocator produces SharedArrayBuffers. The heap profile uses
-	// `heapArraybufferAllocator` instead and never reaches here.
+	// `heapArraybufferAllocator` instead and never reaches here. The guard
+	// stays in this wrapper (not the shared core) — availability is a property
+	// of the buffer primitive, and only this one needs SAB.
 	if (typeof SharedArrayBuffer === "undefined") throw new SabUnavailableError();
-	let buffer: SharedArrayBuffer | null = null;
-	const alloc = (bytes: number): SharedArrayBuffer => {
-		if (bytes > maxBytes) {
-			// BY DESIGN: the cap is a hard ceiling, not a soft target. We do
-			// NOT fall back to a fresh allocator or compact here — see #380 and
-			// the footprint analysis in this function's doc comment. A real
-			// workload uses ~16 MiB of the 256 MiB cap and columns never grow, so
-			// reaching this throw means something upstream is creating entities
-			// without bound (or `maxBytes` was set too low for an intentionally
-			// huge world). Treat it as a fatal to diagnose, not a limit to
-			// route around.
-			throw new StoreCapExceededError(
-				`growable_sab_allocator: requested ${bytes} bytes exceeds the by-design ` +
-					`max_bytes cap of ${maxBytes}. This is a hard ceiling with no ` +
-					`grow-beyond-cap fallback (#380); a real workload stays ~16 MiB. ` +
-					`Reaching it signals runaway entity/column growth upstream — ` +
-					`diagnose that rather than raising the cap blindly.`,
-				bytes,
-				maxBytes
-			);
-		}
-		if (buffer === null) {
-			// boundary: `SharedArrayBuffer` constructor with `{ maxByteLength }`
-			// is in the ES2024 spec and supported by Bun + V8, but the lib types
-			// for ES2022 (this project) only declare the 1-arg overload.
-			// Cast the constructor here so the rest of the layer stays
-			// strictly typed.
-			const SabCtor = SharedArrayBuffer as unknown as new (
-				len: number,
-				opts: { maxByteLength: number }
-			) => SharedArrayBuffer;
-			buffer = new SabCtor(bytes, { maxByteLength: maxBytes });
-			return buffer;
-		}
-		if (bytes > buffer.byteLength) {
+	return makeGrowableAllocator(
+		"growable_sab_allocator",
+		{
+			create: (byteLength, maxByteLength) => {
+				// boundary: `SharedArrayBuffer` constructor with `{ maxByteLength }`
+				// is in the ES2024 spec and supported by Bun + V8, but the lib types
+				// for ES2022 (this project) only declare the 1-arg overload.
+				// Cast the constructor here so the rest of the layer stays
+				// strictly typed.
+				const SabCtor = SharedArrayBuffer as unknown as new (
+					len: number,
+					opts: { maxByteLength: number }
+				) => SharedArrayBuffer;
+				return new SabCtor(byteLength, { maxByteLength });
+			},
 			// boundary: SharedArrayBuffer.grow is in the spec but not in all
 			// lib types; widen here so the rest of the layer doesn't need to.
-			(buffer as unknown as { grow(n: number): void }).grow(bytes);
-		}
-		return buffer;
-	};
-	// `isInPlace` lets `extendColumnStore` detect the growable path.
-	Object.defineProperty(alloc, "isInPlace", { value: true, enumerable: true });
-	return alloc as InPlaceBufferAllocator;
+			growTo: (buffer, byteLength) =>
+				(buffer as unknown as { grow(n: number): void }).grow(byteLength)
+		},
+		maxBytes
+	);
 }
 
 /**
@@ -281,45 +314,28 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
 export function heapArraybufferAllocator(
 	maxBytes: number = 256 * 1024 * 1024
 ): InPlaceBufferAllocator {
-	if (maxBytes <= 0 || !Number.isInteger(maxBytes)) {
-		throw new Error(
-			`heap_arraybuffer_allocator: max_bytes must be a positive integer (got ${maxBytes})`
-		);
-	}
-	let buffer: ArrayBuffer | null = null;
-	const alloc = (bytes: number): ArrayBuffer => {
-		if (bytes > maxBytes) {
-			throw new StoreCapExceededError(
-				`heap_arraybuffer_allocator: requested ${bytes} bytes exceeds the by-design ` +
-					`max_bytes cap of ${maxBytes}. This is a hard ceiling with no ` +
-					`grow-beyond-cap fallback (#380); reaching it signals runaway ` +
-					`entity/column growth upstream — diagnose that rather than raising the cap.`,
-				bytes,
-				maxBytes
-			);
-		}
-		if (buffer === null) {
-			// boundary: the resizable-`ArrayBuffer` constructor (`{ maxByteLength }`)
-			// is ES2024 / supported by Bun + V8, but the ES2022 lib types only
-			// declare the 1-arg overload. Cast the constructor here so the rest of
-			// the layer stays strictly typed (mirrors `growableSabAllocator`).
-			const AbCtor = ArrayBuffer as unknown as new (
-				len: number,
-				opts: { maxByteLength: number }
-			) => ArrayBuffer;
-			buffer = new AbCtor(bytes, { maxByteLength: maxBytes });
-			return buffer;
-		}
-		if (bytes > buffer.byteLength) {
+	return makeGrowableAllocator(
+		"heap_arraybuffer_allocator",
+		{
+			create: (byteLength, maxByteLength) => {
+				// boundary: the resizable-`ArrayBuffer` constructor (`{ maxByteLength }`)
+				// is ES2024 / supported by Bun + V8, but the ES2022 lib types only
+				// declare the 1-arg overload. Cast the constructor here so the rest of
+				// the layer stays strictly typed (mirrors `growableSabAllocator`).
+				const AbCtor = ArrayBuffer as unknown as new (
+					len: number,
+					opts: { maxByteLength: number }
+				) => ArrayBuffer;
+				return new AbCtor(byteLength, { maxByteLength });
+			},
 			// boundary: `ArrayBuffer.prototype.resize` is ES2024, not in the ES2022
 			// lib types; widen here. Resize keeps the same buffer object and
 			// preserves existing views (the in-place contract).
-			(buffer as unknown as { resize(n: number): void }).resize(bytes);
-		}
-		return buffer;
-	};
-	Object.defineProperty(alloc, "isInPlace", { value: true, enumerable: true });
-	return alloc as InPlaceBufferAllocator;
+			growTo: (buffer, byteLength) =>
+				(buffer as unknown as { resize(n: number): void }).resize(byteLength)
+		},
+		maxBytes
+	);
 }
 
 /**
