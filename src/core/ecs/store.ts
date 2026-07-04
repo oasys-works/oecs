@@ -83,13 +83,9 @@ import { RelationService } from "./relation_service";
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
 import { ECS_ERROR, ECSError } from "./utils/error";
+import { EntityAllocator } from "./entity_allocator";
 import { bucketPush } from "./utils/arrays";
-import {
-	UNASSIGNED,
-	EMPTY_VALUES,
-	INITIAL_GENERATION,
-	DEFAULT_COLUMN_CAPACITY
-} from "./utils/constants";
+import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import {
 	ACTION_RING_DEFAULT_CAPACITY_SLOTS,
 	buildEntityIndexViews,
@@ -337,24 +333,19 @@ export interface StoreOptions {
 
 export class Store implements ObserverHost, QueryHost {
 	// --- Entity ID management ---
-	// Generational slot allocator: entityGenerations[index] holds the current
-	// generation for that slot. Free indices are recycled via a stack. A slot
-	// whose generation counter is exhausted (would reach the reserved
-	// RETIRED_GENERATION tombstone) is retired rather than recycled, so its
-	// index never re-enters the free stack (#376).
+	// Generational slot allocation (generations view, high-water, free-list,
+	// alive count) lives in `EntityAllocator` (H1 step 3). `entityArchetype` /
+	// `entityRow` stay here — which archetype/row a live slot occupies is
+	// membership state, not allocation state.
 	//
-	// As of #245 (Phase 4 PR 4B), `entityGenerations`, `entityArchetype`,
-	// and `entityRow` are Int32Array views into the SAB's entity-index
-	// region, so Zig systems can resolve `entityId → (archetype_id, row)`
-	// during `sim.tick()` without callback-into-TS. The Int32Array
-	// objects themselves are NOT readonly — they get replaced whenever
-	// the SAB is reallocated (extend / grow); the engine refreshes them
-	// inside `_handleBufferResized` before any caller observes the new
-	// SAB.
-	private entityGenerations: Int32Array;
-	private entityHighWater = 0;
-	private readonly entityFreeIndices: number[] = [];
-	private entityAliveCount = 0;
+	// As of #245 (Phase 4 PR 4B), the generations/archetype/row views are
+	// Int32Arrays into the SAB's entity-index region, so Zig systems can
+	// resolve `entityId → (archetype_id, row)` during `sim.tick()` without
+	// callback-into-TS. The view objects get replaced whenever the SAB is
+	// reallocated (extend / grow); the engine refreshes them (and replants
+	// the allocator's) inside `_handleBufferResized` before any caller
+	// observes the new SAB.
+	private readonly entityAllocator: EntityAllocator;
 
 	// --- Component metadata ---
 	// Parallel array indexed by ComponentID: fieldNames, fieldIndex, and fieldTypes
@@ -591,13 +582,6 @@ export class Store implements ObserverHost, QueryHost {
 	// Phase 4 removal.
 	private _columnStore: ColumnStore;
 
-	/** Single-slot Uint32Array view over the entity-index region's `length`
-	 * header field. `createEntity`'s hot path writes `entityHighWater`
-	 * here on every high-water bump; using a pre-built typed-array view
-	 * skips the DataView lookup + setUint32 dispatch that #368 traced to
-	 * ~25 ns/op on `frame_loop_focused: createEntity` (closes the
-	 * post-#361 gap to oecs entirely). Rebuilt on SAB resize. */
-	private _entityIndexLengthView: Uint32Array;
 
 	/** Installed on every SAB-backed Archetype so the Archetype can
 	 * request a SAB grow when an insertion would exceed its column
@@ -692,7 +676,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * unchanged (#380: no grow-beyond-cap fallback). */
 	private _capExceededError(cause: StoreCapExceededError): ECSError {
 		const ctx = this._capContext;
-		const live = this.entityAliveCount;
+		const live = this.entityAllocator.aliveCount;
 		const requested =
 			`SAB grow refused: requested ${cause.requestedBytes} bytes exceeds ` +
 			(cause.capBytes !== null ? `the ${cause.capBytes}-byte cap.` : `the backing's ceiling.`);
@@ -781,7 +765,7 @@ export class Store implements ObserverHost, QueryHost {
 			pushSparseStore: (fieldNames, fieldTypes) => this._pushSparseStore(fieldNames, fieldTypes),
 			sparseStoreOf: (def) => this.sparseStoreOf(def),
 			sparseStores: () => this.sparseStores,
-			entityGenerations: () => this.entityGenerations,
+			entityGenerations: () => this.entityAllocator.generations,
 			entityArchetype: () => this.entityArchetype,
 			entityRow: () => this.entityRow,
 			archetypes: () => this.archetypes,
@@ -837,15 +821,19 @@ export class Store implements ObserverHost, QueryHost {
 			this._columnStore.header.entityIndexOff,
 			this._entityIndexCapacity
 		);
-		this.entityGenerations = views.generations;
 		this.entityArchetype = views.archetypes;
 		this.entityRow = views.rows;
-		// boundary: TypedArray interop. Single-slot view over the region's
-		// `length` field — see field doc for why.
-		this._entityIndexLengthView = new Uint32Array(
-			this._columnStore.buffer,
-			this._columnStore.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
-			1
+		// boundary: TypedArray interop. The allocator owns the generations
+		// view plus a single-slot view over the region's `length` field (the
+		// #368 pre-built-view optimization).
+		this.entityAllocator = new EntityAllocator(
+			this._entityIndexCapacity,
+			views.generations,
+			new Uint32Array(
+				this._columnStore.buffer,
+				this._columnStore.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
+				1
+			)
 		);
 		this.emptyArchetypeId = this.archGetOrCreateFromMask(new BitSet());
 	}
@@ -938,13 +926,11 @@ export class Store implements ObserverHost, QueryHost {
 		// via snapshot+restore in extend/grow) or untouched (in-place fast
 		// path). Re-derive the views from the new SAB.
 		const views = buildEntityIndexViews(this._columnStore.buffer, off, this._entityIndexCapacity);
-		this.entityGenerations = views.generations;
 		this.entityArchetype = views.archetypes;
 		this.entityRow = views.rows;
-		this._entityIndexLengthView = new Uint32Array(
-			this._columnStore.buffer,
-			off + ENTITY_INDEX_HEADER_OFFSETS.length,
-			1
+		this.entityAllocator.replantViews(
+			views.generations,
+			new Uint32Array(this._columnStore.buffer, off + ENTITY_INDEX_HEADER_OFFSETS.length, 1)
 		);
 	}
 
@@ -954,7 +940,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * then fires the user-supplied callback. */
 	private _handleBufferResized(): void {
 		this._refreshEntityIndexViews();
-		this._entityIndexLengthView[0] = this.entityHighWater;
+		this.entityAllocator.publishLength();
 		this._onBufferResized?.();
 	}
 
@@ -1599,36 +1585,8 @@ export class Store implements ObserverHost, QueryHost {
 	// =======================================================
 
 	public createEntity(): EntityID {
-		let index: number;
-		let generation: number;
-
-		if (this.entityFreeIndices.length > 0) {
-			// ! safe: length > 0 guarantees pop() returns a value
-			index = this.entityFreeIndices.pop()!;
-			generation = this.entityGenerations[index];
-		} else {
-			// SAB entity-index capacity (#245 PR 4B) caps high-water. The
-			// future capacity-grow path will lift this; for now, exceeding
-			// it surfaces as a clear `EID_MAX_INDEX_OVERFLOW` rather than a
-			// silent typed-array out-of-bounds write.
-			if (this.entityHighWater >= this._entityIndexCapacity) {
-				throw new ECSError(
-					ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-					`entity_index_capacity (${this._entityIndexCapacity}) exhausted; raise StoreOptions.entity_index_capacity or destroy unused entities`
-				);
-			}
-			index = this.entityHighWater++;
-			this.entityGenerations[index] = INITIAL_GENERATION;
-			generation = INITIAL_GENERATION;
-			// Mirror the high-water index into the SAB region's `length`
-			// field so the Zig reader knows the in-use range. Single
-			// typed-array write through a pre-built one-slot view —
-			// see `_entityIndexLengthView` field doc (#368).
-			this._entityIndexLengthView[0] = this.entityHighWater;
-		}
-
-		this.entityAliveCount++;
-		const id = createEntityId(index, generation);
+		const id = this.entityAllocator.alloc();
+		const index = this.entityAllocator.lastIndex;
 
 		// New entities start in the empty archetype with no row assignment
 		this.entityArchetype[index] = this.emptyArchetypeId;
@@ -1650,40 +1608,17 @@ export class Store implements ObserverHost, QueryHost {
 	// the `addComponent` path. See ADR-0010 and the strategy-selection bench
 	// at docs/reports/bench/template/.
 
-	/** Slot index of the entity allocated by the most recent `_allocEntity`
-	 * call. Read immediately after the call (alloc-free out-param). */
-	private _spawnIndex = 0;
-
 	/** Allocate an entity slot WITHOUT placing it in the empty archetype, for
-	 * the template spawn paths. Returns the packed `EntityID`; the slot index is
-	 * left in `_spawnIndex`. Mirrors `createEntity`'s allocator but skips the
-	 * empty-archetype membership write (the caller installs the real archetype
-	 * + row). Kept separate from `createEntity` so that hot path stays inline
-	 * (#368). This *commits* the slot (bumps counts, stamps the generation so
-	 * `isAlive` is already true), so the caller MUST have reserved the column
-	 * capacity for the row first (`Archetype.ensureRowCapacity`) — otherwise a
-	 * cap throw from the subsequent append leaves the slot phantom-alive (#775). */
+	 * the template spawn paths. Returns the packed `EntityID`; the slot index
+	 * is left in `entityAllocator.lastIndex`. Skips the empty-archetype
+	 * membership write `createEntity` performs (the caller installs the real
+	 * archetype + row). This *commits* the slot (bumps counts, stamps the
+	 * generation so `isAlive` is already true), so the caller MUST have
+	 * reserved the column capacity for the row first
+	 * (`Archetype.ensureRowCapacity`) — otherwise a cap throw from the
+	 * subsequent append leaves the slot phantom-alive (#775). */
 	private _allocEntity(): EntityID {
-		let index: number;
-		let generation: number;
-		if (this.entityFreeIndices.length > 0) {
-			index = this.entityFreeIndices.pop()!;
-			generation = this.entityGenerations[index];
-		} else {
-			if (this.entityHighWater >= this._entityIndexCapacity) {
-				throw new ECSError(
-					ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-					`entity_index_capacity (${this._entityIndexCapacity}) exhausted; raise StoreOptions.entity_index_capacity or destroy unused entities`
-				);
-			}
-			index = this.entityHighWater++;
-			this.entityGenerations[index] = INITIAL_GENERATION;
-			generation = INITIAL_GENERATION;
-			this._entityIndexLengthView[0] = this.entityHighWater;
-		}
-		this.entityAliveCount++;
-		this._spawnIndex = index;
-		return createEntityId(index, generation);
+		return this.entityAllocator.alloc();
 	}
 
 	/** Pre-check that `count` fresh entity slots can be allocated without
@@ -1694,18 +1629,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `entityFreeIndices.length` slots; only the remainder draws down the
 	 * high-water headroom. */
 	private _ensureEntityIndexCapacity(count: number): void {
-		const fromHighWater = count - this.entityFreeIndices.length;
-		if (
-			fromHighWater > 0 &&
-			this.entityHighWater + fromHighWater > this._entityIndexCapacity
-		) {
-			throw new ECSError(
-				ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-				`entity_index_capacity (${this._entityIndexCapacity}) cannot fit ${count} new entities ` +
-					`(${this.entityFreeIndices.length} free, high-water ${this.entityHighWater}); ` +
-					`raise StoreOptions.entity_index_capacity or destroy unused entities`
-			);
-		}
+		this.entityAllocator.ensureCapacity(count);
 	}
 
 	/** Resolve a template: compute the target archetype (creating it if absent —
@@ -1799,7 +1723,7 @@ export class Store implements ObserverHost, QueryHost {
 		// grows before the row write. No-op for the empty/tag archetype.
 		if (arch.materializesRows) arch.ensureRowCapacity(1);
 		const id = this._allocEntity();
-		const idx = this._spawnIndex;
+		const idx = this.entityAllocator.lastIndex;
 		// Empty template (no components): the spawned entity is component-less, so
 		// it stays unplaced (row UNASSIGNED) in the rowless empty archetype — the
 		// same canonical form as `createEntity`. No fields ⇒ no overrides apply.
@@ -1960,23 +1884,9 @@ export class Store implements ObserverHost, QueryHost {
 		// slot can be marked afresh (#531). Gated so the no-onSet path is untouched.
 		if (this._anyDirtyTracked) this._clearDirtyForIndex(index);
 
-		// Bump generation so stale IDs referencing this slot are detected as dead.
-		// Once the counter would reach the reserved tombstone the slot is RETIRED,
-		// not recycled (#376): we stamp RETIRED_GENERATION (which is never issued to
-		// a live handle) and skip the free-list push, so the index is never handed
-		// out again. This closes the ABA stale-handle window — wrapping the counter
-		// back into the live range would otherwise let a handle from the slot's
-		// generation-0 era alias a future occupant. Burning one of 2^20 indices
-		// after 2047 reuses is cheap, and the branch is predicted not-taken on
-		// essentially every destroy.
-		const nextGen = getEntityGeneration(id) + 1;
-		if (nextGen < RETIRED_GENERATION) {
-			this.entityGenerations[index] = nextGen;
-			this.entityFreeIndices.push(index);
-		} else {
-			this.entityGenerations[index] = RETIRED_GENERATION;
-		}
-		this.entityAliveCount--;
+		// Generation bump / RETIRED_GENERATION tombstone / free-list push —
+		// see `EntityAllocator.recycle` (#376).
+		this.entityAllocator.recycle(index, getEntityGeneration(id));
 	}
 
 	/**
@@ -2000,11 +1910,11 @@ export class Store implements ObserverHost, QueryHost {
 		const generation = getEntityGeneration(id);
 		if (generation === RETIRED_GENERATION) return false;
 		const index = getEntityIndex(id);
-		return index < this.entityHighWater && this.entityGenerations[index] === generation;
+		return this.entityAllocator.isAliveIndex(index, generation);
 	}
 
 	public get entityCount(): number {
-		return this.entityAliveCount;
+		return this.entityAllocator.aliveCount;
 	}
 
 	/** An archetype's row count moved from `preLen` to its current
@@ -2306,12 +2216,12 @@ export class Store implements ObserverHost, QueryHost {
 		if (buf.length === 0) return;
 
 		// Hot loop — hoist fields to locals for faster access
+		const alloc = this.entityAllocator;
 		const entArch = this.entityArchetype;
 		const entRow = this.entityRow;
-		const entGens = this.entityGenerations;
+		const entGens = alloc.generations;
 		const archs = this.archetypes;
-		const hw = this.entityHighWater;
-		const free = this.entityFreeIndices;
+		const hw = alloc.highWater;
 
 		// 0-crossing detection without per-entity Map traffic (#457). The
 		// generic settle path (the `_flushEpoch` stamps + `_settleFlushDirty`,
@@ -2382,17 +2292,10 @@ export class Store implements ObserverHost, QueryHost {
 
 			entArch[idx] = UNASSIGNED;
 			entRow[idx] = UNASSIGNED;
-			// Retire the slot once its counter reaches the reserved tombstone
-			// instead of recycling it: stamp RETIRED_GENERATION and skip the
-			// free-list push. See `destroyEntity` for the full rationale (#376).
-			const nextGen = gen + 1;
-			if (nextGen < RETIRED_GENERATION) {
-				entGens[idx] = nextGen;
-				free.push(idx);
-			} else {
-				entGens[idx] = RETIRED_GENERATION;
-			}
-			this.entityAliveCount--;
+			// Generation bump / tombstone retire / free-list push (#376) —
+			// the inline block this loop carried pre-H1-step-3 lives in
+			// `EntityAllocator.recycle` now (monomorphic call, bench-gated).
+			alloc.recycle(idx, gen);
 		}
 
 		buf.length = 0;
@@ -2536,10 +2439,10 @@ export class Store implements ObserverHost, QueryHost {
 
 		const entArch = this.entityArchetype;
 		const entRow = this.entityRow;
-		const entGens = this.entityGenerations;
+		const entGens = this.entityAllocator.generations;
 		const archs = this.archetypes;
 		const metas = this.componentMetas;
-		const hw = this.entityHighWater;
+		const hw = this.entityAllocator.highWater;
 		const tick = this._tick;
 		const epoch = this._flushEpoch;
 		const touched = this._flushTouched;
@@ -2638,9 +2541,9 @@ export class Store implements ObserverHost, QueryHost {
 
 		const entArch = this.entityArchetype;
 		const entRow = this.entityRow;
-		const entGens = this.entityGenerations;
+		const entGens = this.entityAllocator.generations;
 		const archs = this.archetypes;
-		const hw = this.entityHighWater;
+		const hw = this.entityAllocator.highWater;
 		const tick = this._tick;
 		const epoch = this._flushEpoch;
 		const touched = this._flushTouched;
@@ -2756,7 +2659,7 @@ export class Store implements ObserverHost, QueryHost {
 			meta.trackDirty = true;
 			if (this._dirtyLists[cid] === undefined) {
 				this._dirtyLists[cid] = [];
-				this._dirtyMarks[cid] = new Uint8Array(Math.max(1, this.entityGenerations.length));
+				this._dirtyMarks[cid] = new Uint8Array(Math.max(1, this.entityAllocator.generations.length));
 			}
 			this._dirtyTrackedCids.push(cid);
 			this._anyDirtyTracked = true;
@@ -3145,7 +3048,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * so it's rebuilt here from the backing sparse store: every member row holds
 	 * `(source index → target EntityID)`, which is exactly one reverse edge. */
 	private _rebuildRelationIndices(relBytes: Uint8Array): void {
-		const gens = this.entityGenerations;
+		const gens = this.entityAllocator.generations;
 		const makeId = (idx: number): EntityID => createEntityId(idx, gens[idx]);
 		restoreRelations(this.relationService.stores, relBytes, makeId);
 		// Exclusive relations rebuild their reverse index from the just-restored
@@ -3209,9 +3112,9 @@ export class Store implements ObserverHost, QueryHost {
 		}
 		return {
 			tick: this._tick,
-			entityHighWater: this.entityHighWater,
-			entityAliveCount: this.entityAliveCount,
-			freeIndices: this.entityFreeIndices.slice(),
+			entityHighWater: this.entityAllocator.highWater,
+			entityAliveCount: this.entityAllocator.aliveCount,
+			freeIndices: this.entityAllocator.snapshotFreeIndices(),
 			archetypeRows
 		};
 	}
@@ -3261,19 +3164,17 @@ export class Store implements ObserverHost, QueryHost {
 		// entityHighWater is host state; set it from the restored region's length
 		// header BEFORE _handleBufferResized (which mirrors highWater back into the
 		// header — the stale host value would clobber the restored one).
-		this.entityHighWater = restored.view.getUint32(
-			restored.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
-			true
+		this.entityAllocator.setHighWater(
+			restored.view.getUint32(
+				restored.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
+				true
+			)
 		);
 		this._handleBufferResized();
 
 		// --- Reconstruct host-side row bookkeeping + allocator state + tick ---
 		this._reconstructHostRows(host);
-		this.entityFreeIndices.length = 0;
-		for (let i = 0; i < host.freeIndices.length; i++) {
-			this.entityFreeIndices.push(host.freeIndices[i]);
-		}
-		this.entityAliveCount = host.entityAliveCount;
+		this.entityAllocator.restoreHostState(host.freeIndices, host.entityAliveCount);
 		this._tick = host.tick;
 
 		// Every archetype's membership/length just changed — invalidate query
@@ -3319,10 +3220,10 @@ export class Store implements ObserverHost, QueryHost {
 	 * from the captured host-state (the #577 partition boundary is positional only
 	 * — it has no per-entity byte source). */
 	private _reconstructHostRows(host: HostState): void {
-		const highWater = this.entityHighWater;
+		const highWater = this.entityAllocator.highWater;
 		const archIndex = this.entityArchetype;
 		const rowIndex = this.entityRow;
-		const gens = this.entityGenerations;
+		const gens = this.entityAllocator.generations;
 		// Per-archetype row → packed EntityID, dense over [0, length).
 		const rowsByArch = new Map<number, number[]>();
 		for (let i = 0; i < highWater; i++) {
@@ -3509,7 +3410,7 @@ export class Store implements ObserverHost, QueryHost {
 				if (s.size < driver.size) driver = s;
 			}
 			const indices = driver.indices;
-			const gens = this.entityGenerations;
+			const gens = this.entityAllocator.generations;
 			const entArch = this.entityArchetype;
 			const entRow = this.entityRow;
 			const archetypes = this.archetypes;

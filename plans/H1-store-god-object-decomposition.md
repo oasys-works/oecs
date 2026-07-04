@@ -18,7 +18,7 @@ Extract in this order (lowest risk / highest payoff first):
 
 1. ~~**`RelationService`** — relations + hierarchy traversal (~750 lines). Covered by H2.~~ **DONE** (commit 355df97).
 2. ~~**`EventRegistry`** — event channels and **`ResourceRegistry`** — resource storage.~~ **DONE** (commit 189e666).
-3. **`EntityAllocator`** — id/generation/free-list from entity lifecycle plus the allocation state fields.
+3. ~~**`EntityAllocator`** — id/generation/free-list from entity lifecycle plus the allocation state fields.~~ **DONE** (2026-07-04, bench-gated — see "Step 3 outcome" below).
 4. **`DeferredCommandBuffer`** — the `pending*` buffers plus deferred destruction and deferred structural changes, with their flush/drain logic.
 5. **`SnapshotService`** — snapshot/resume. Needs read access to the other collaborators' state; define an explicit snapshot interface per collaborator rather than letting it reach into their fields.
 6. **`ArchetypeGraph`** — archetype graph management. Most entangled with hot paths; do last, benchmark before/after.
@@ -64,6 +64,34 @@ Extract in this order (lowest risk / highest payoff first):
   frame_loop / mutation / query / registration benches but nothing for
   relations, entity alloc, or grow/extend specifically. The A/B procedure
   is `oecs_compare` + `oecs_bench` per `oecs_compare/EXPERIMENTS.md`.
+
+## Step 3 outcome (2026-07-04 session)
+
+- **Bench infra revived first.** `oecs_compare` was 36 commits stale (pre-0.4
+  flat layout); refreshed via the documented rsync procedure to oecs @ a38e9c2
+  (full copied suite 1558/1558). `oecs_bench` ported to the 0.4 camelCase API
+  (`initial_capacity` → `ECSOptions.memory.columnCapacity`); new
+  `entity_alloc.bench.ts` (alloc_fresh / destroy_realloc / churn_1comp at
+  10k/100k/1M) plus an EntityID-sequence + liveness parity assertion in
+  `parity.test.ts` (exact ids across alloc/destroy/flush/realloc — query
+  parity alone can't catch a free-list-order or generation-bump bug).
+- **Controls are mandatory.** Identical-code A/B runs show a systematic,
+  group-specific B-runs-second bias: alloc_fresh 0.92–0.98, destroy_realloc
+  10k 0.90–0.94, query-compose changed-only 0.86–0.96 — with **byte-identical
+  code**. Judge experiments against the same-day control band, never against
+  a naive 1.00.
+- **The inline→call worry (#368) did not materialize.** With the extraction
+  (`EntityAllocator.alloc()/recycle()/isAliveIndex()`, monomorphic receiver),
+  every entity_alloc / query-compose / frame_loop / mutation ratio fell within
+  or above the identical-code control band across two experiment runs. One
+  destroy_realloc-1M 0.94 did not reproduce (0.99–1.00 on re-run). Logged in
+  `oecs_compare/EXPERIMENTS.md`; raw tables in `oecs_bench/results/2026-07-04T*.md`.
+- **Shape:** allocator owns generations view / high-water / free-list / alive
+  count / length-header mirror; `Store` keeps `entityArchetype`/`entityRow`
+  (membership, not allocation). SAB replant flows through
+  `EntityAllocator.replantViews` (called from `_refreshEntityIndexViews`);
+  hot flush loops hoist `alloc.generations`/`alloc.highWater` once per flush;
+  `lastIndex` out-param replaces `_spawnIndex`.
 
 Remaining in `Store`: component registration, immediate component ops, template/spawn, enable/disable, sparse storage, query support — reassess after steps 1–6; some may warrant a second pass.
 
