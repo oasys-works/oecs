@@ -38,6 +38,7 @@ import {
 	type ArchetypeViews,
 	type CreateColumnStoreOptions,
 	type ColumnStore,
+	isColumnStoreInternal,
 	type ColumnStoreInternal
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
@@ -112,9 +113,8 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 		const descriptorOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 		options.bindingsRegionBytes = descriptorOff - bindingsOff;
 	}
-	const reserved = (old as Partial<ColumnStoreInternal>)._reservedDescriptorBytes;
-	if (reserved !== undefined && reserved > 0) {
-		options.reservedDescriptorBytes = reserved;
+	if (isColumnStoreInternal(old) && old._reservedDescriptorBytes > 0) {
+		options.reservedDescriptorBytes = old._reservedDescriptorBytes;
 	}
 	return options;
 }
@@ -359,13 +359,7 @@ export function extendColumnStore(
 	// Cost per extend drops from O(total-columns-across-all-archetypes)
 	// to O(new-columns-this-extend). That's the gap an earlier extend-cost
 	// audit identified as the remaining 10× lazy-registration tax.
-	const oldInternal = old as Partial<ColumnStoreInternal>;
-	const allocatorInPlace = (allocator as { isInPlace?: boolean } | undefined)?.isInPlace;
-	if (
-		allocatorInPlace === true &&
-		oldInternal._allocator === allocator &&
-		typeof oldInternal._regionBytes === "number"
-	) {
+	if (allocator?.isInPlace === true && isColumnStoreInternal(old) && old._allocator === allocator) {
 		const regionOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 		// Used descriptor bytes = sum over existing archetypes.
 		let usedRegion = 0;
@@ -377,13 +371,8 @@ export function extendColumnStore(
 		for (let i = 0; i < plan.newArchetypes.length; i++) {
 			newRegion += archetypeDescriptorBytes(plan.newArchetypes[i].columns.length);
 		}
-		if (usedRegion + newRegion <= oldInternal._regionBytes) {
-			return extendColumnStoreInPlace(
-				old as ColumnStoreInternal,
-				plan.newArchetypes,
-				regionOff,
-				usedRegion
-			);
+		if (usedRegion + newRegion <= old._regionBytes) {
+			return extendColumnStoreInPlace(old, plan.newArchetypes, regionOff, usedRegion);
 		}
 		// Headroom exhausted — fall through to the realloc-and-republish
 		// path. The store carries forward the SAME growable allocator so

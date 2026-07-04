@@ -50,6 +50,7 @@ import {
 	type ArchetypeSpec,
 	type ArchetypeViews,
 	type ColumnStore,
+	isColumnStoreInternal,
 	type ColumnStoreInternal
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
@@ -348,15 +349,14 @@ export function growColumnStore(
 	// archetypes to the SAB tail instead of reallocating + snapshotting the
 	// whole store. This is the fix for the frame_loop 0.29x regression — see
 	// `growColumnStoreInPlace`.
-	const oldInternal = old as Partial<ColumnStoreInternal>;
-	const allocatorInPlace = (allocator as { isInPlace?: boolean } | undefined)?.isInPlace;
 	if (
-		allocatorInPlace === true &&
-		oldInternal._allocator === allocator &&
+		allocator?.isInPlace === true &&
+		isColumnStoreInternal(old) &&
+		old._allocator === allocator &&
 		growTargets.length > 0
 	) {
 		const regionOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
-		return growColumnStoreInPlace(old as ColumnStoreInternal, growTargets, regionOff);
+		return growColumnStoreInPlace(old, growTargets, regionOff);
 	}
 
 	// Snapshot live rows AND prefix regions (command ring, entity-index)

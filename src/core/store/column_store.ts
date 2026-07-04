@@ -412,6 +412,22 @@ export interface ColumnStoreInternal extends ColumnStore {
 	readonly _reservedDescriptorBytes: number;
 }
 
+/** Typed recovery of `ColumnStoreInternal` from a public `ColumnStore` (M8).
+ * Not every store is internal: `restoreColumnStore` deliberately returns a
+ * plain `{ buffer, view, header, archetypes }` (a snapshot carries no JS-side
+ * allocator or headroom policy), and grow/extend must send such a store down
+ * the realloc slow path. This guard is the ONE place that discrimination
+ * happens — grow/extend previously re-derived the internal type via
+ * structural `as`-casts at six sites. */
+export function isColumnStoreInternal(store: ColumnStore): store is ColumnStoreInternal {
+	const s = store as Partial<ColumnStoreInternal>;
+	return (
+		typeof s._regionBytes === "number" &&
+		typeof s._allocator === "function" &&
+		typeof s._reservedDescriptorBytes === "number"
+	);
+}
+
 /** Allocate a SAB sized for `specs`, write the header + layout descriptor,
  * and construct one TypedArray view per column.
  *
