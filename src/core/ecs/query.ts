@@ -1708,7 +1708,7 @@ export class SystemContext {
 	// =======================================================
 
 	public emit(key: SignalKey): void;
-	public emit<S extends EventSchema>(key: EventKey<S>, values: S): void;
+	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
 		if (__DEV__ && dispatchTrace.isActive()) {
 			dispatchTrace.recordEmit(key.description ?? "");
@@ -1746,7 +1746,7 @@ export class SystemContext {
 		return unsafeCast<T>(this.store.getResource(key));
 	}
 
-	public setResource<T>(key: ResourceKey<T>, value: T): void {
+	public setResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
 		if (__DEV__) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {

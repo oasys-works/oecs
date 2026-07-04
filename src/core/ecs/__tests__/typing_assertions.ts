@@ -123,8 +123,22 @@ function hostSeamAssertions(): void {
 	world.addComponent(e, Frozen, { x: 1 });
 }
 
+function noInferAssertions(): void {
+	// The key is the sole source of truth for the payload/resource generic —
+	// a wider value must error at the argument, not silently widen the
+	// inferred type parameter.
+	world.emit(ContactEvent, { a: e, b: e });
+
+	// @ts-expect-error — extra payload field must not widen S
+	world.emit(ContactEvent, { a: e, b: e, c: 1 });
+
+	// @ts-expect-error — missing payload field
+	world.emit(ContactEvent, { a: e });
+}
+
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
 void registerEventAssertions;
 void hostSeamAssertions;
+void noInferAssertions;
