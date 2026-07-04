@@ -58,11 +58,16 @@ export type EventSchema = Readonly<Record<string, number>>;
 /** Schema of a signal — a zero-field event. */
 export type EmptyEventSchema = Readonly<Record<never, number>>;
 
-// Phantom symbol for the field schema — never exists at runtime.
+// Phantom symbol for the field schema — never exists at runtime. The
+// function-typed slot makes `S` INVARIANT (mirroring `ResourceKey`,
+// resource.ts): a def is used for both emits (contravariant in the payload)
+// and reads (covariant), so covariant erasure — `EventDef<{a; b}>` widening
+// to `EventDef<{a}>` — would let `emit` under-fill the channel's columns.
+// Erased positions must spell `EventDef<any>`.
 declare const __eventSchema: unique symbol;
 
 export type EventDef<S extends EventSchema = EventSchema> = EventID & {
-	readonly [__eventSchema]: S;
+	readonly [__eventSchema]: (value: S) => S;
 };
 
 /**
@@ -77,7 +82,7 @@ export type EventDef<S extends EventSchema = EventSchema> = EventID & {
  * at the type layer only; a §10c-policed cast can still write through.
  */
 export type EventReader<S extends EventSchema> = {
-	length: number;
+	readonly length: number;
 } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 
 export class EventChannel {
@@ -85,6 +90,12 @@ export class EventChannel {
 	public readonly columns: number[][];
 	// any: type-erased storage — channel is stored in Map<number, EventChannel>, S is lost
 	public readonly reader: EventReader<any>;
+	// The ONE mutable view of the reader's `length`. The public `EventReader`
+	// type declares it readonly (a consumer writing `reader.length = 0` on the
+	// live shared object would permanently desync every other system's view —
+	// POLISH_AUDIT #5), so the channel keeps this private alias to the same
+	// object for emit/clear bookkeeping.
+	private readonly _readerLen: { length: number };
 
 	constructor(fieldNames: string[]) {
 		this.fieldNames = fieldNames;
@@ -103,7 +114,9 @@ export class EventChannel {
 			columnsByField[fieldNames[i]] = this.columns[i];
 		}
 		// boundary: assemble the dynamic per-field columns into EventReader's mapped shape.
-		this.reader = { length: 0, ...columnsByField } as EventReader<EventSchema>;
+		const reader = { length: 0, ...columnsByField };
+		this._readerLen = reader;
+		this.reader = reader as EventReader<EventSchema>;
 	}
 
 	public emit(values: Record<string, number>): void {
@@ -125,16 +138,16 @@ export class EventChannel {
 			}
 		}
 		for (let i = 0; i < names.length; i++) cols[i].push(values[names[i]]);
-		this.reader.length++;
+		this._readerLen.length++;
 	}
 
 	/** Emit a signal (zero-field event). */
 	public emitSignal(): void {
-		this.reader.length++;
+		this._readerLen.length++;
 	}
 
 	public clear(): void {
-		this.reader.length = 0;
+		this._readerLen.length = 0;
 		const cols = this.columns;
 		for (let i = 0; i < cols.length; i++) {
 			cols[i].length = 0;
@@ -146,10 +159,14 @@ export class EventChannel {
 // Event keys — module-scope symbol handles for events
 // =======================================================
 
+// Function-typed slot ⇒ `S` is INVARIANT — same rationale as `EventDef`
+// above: a key authorises both `emit` (contravariant) and `read` (covariant),
+// so one-sided variance is a payload-shape hole. Erased positions must spell
+// `EventKey<any>`.
 declare const __eventKeySchema: unique symbol;
 
 export type EventKey<S extends EventSchema = EventSchema> = symbol & {
-	readonly [__eventKeySchema]: S;
+	readonly [__eventKeySchema]: (value: S) => S;
 };
 
 // Distinguishes a signal key from a payload event key at the type layer, so

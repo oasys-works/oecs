@@ -34,6 +34,8 @@ import type {
 	ComponentID,
 	ComponentDef,
 	ComponentSchema,
+	SchemaOf,
+	DeclaredQueryTerm,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -131,7 +133,9 @@ export type ArchetypeGrowHandler = (arch: Archetype, additional: number) => void
  * public `ECS.batchAddComponent`/`batchRemoveComponent` API can target an
  * archetype without the caller holding a concrete `Archetype` reference.
  */
-export interface ArchetypeView {
+export interface ArchetypeView<
+	out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]
+> {
 	/** Opaque archetype identity. Pass to `ECS.batch_*_component`. */
 	readonly id: ArchetypeID;
 	/** Number of **enabled** entities — the default-iteration bound (#577). Rows
@@ -150,16 +154,21 @@ export interface ArchetypeView {
 	readonly entityIds: ReadonlyEntityIdArray;
 	/** True if this archetype's mask includes the given component. */
 	hasComponent(id: ComponentID): boolean;
-	/** Get a single field's column (read-only). Valid data: indices 0..entityCount-1. */
-	getColumnRead<S extends ComponentSchema, K extends string & keyof S>(
-		def: ComponentDef<S>,
+	/** Get a single field's column (read-only). Valid data: indices
+	 * 0..entityCount-1. `def` must be a term of the iterating query
+	 * (POLISH_AUDIT #6); the bare-`ArchetypeView` default stays permissive. */
+	getColumnRead<D extends ComponentDef<any>, K extends string & keyof SchemaOf<D>>(
+		def: D & DeclaredQueryTerm<Defs, D>,
 		field: K
 	): ReadonlyColumn;
 	/** Tuple fetch of several of one component's columns —
 	 * `const [q, r] = arch.getColumnsRead(HexPos, "q", "r")`. One small
 	 * array allocation per call; see the class doc on `Archetype`. */
-	getColumnsRead<S extends ComponentSchema, const K extends readonly (string & keyof S)[]>(
-		def: ComponentDef<S>,
+	getColumnsRead<
+		D extends ComponentDef<any>,
+		const K extends readonly (string & keyof SchemaOf<D>)[]
+	>(
+		def: D & DeclaredQueryTerm<Defs, D>,
 		...fields: K
 	): { [I in keyof K]: ReadonlyColumn };
 	/** Get a single field's column **if this archetype has the component**,

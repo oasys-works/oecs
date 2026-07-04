@@ -70,6 +70,34 @@ export type {
 	SystemAccessDeclaration,
 	SystemTransition
 } from "./core/ecs";
+// Compile-time access typing (§typestate): the config-form `registerSystem`
+// narrows `ctx` to the declared access surface. `SystemAccess` + the
+// `Declared*` guards are what helper signatures reference; `DeclaredAccess` /
+// `TypedSystemConfig` are the computed shapes behind the inference.
+export type {
+	SystemAccess,
+	DeclaredAccess,
+	TypedSystemConfig,
+	DeclaredRead,
+	DeclaredWrite,
+	DeclaredAdd,
+	DeclaredRemove,
+	DeclaredSparseRead,
+	DeclaredSparseWrite,
+	DeclaredRelationRead,
+	DeclaredRelationWrite,
+	DeclaredResourceRead,
+	DeclaredResourceWrite,
+	DestroyEntityArg,
+	DeclaredBundleOrDef,
+	DenseAccessDecl,
+	SpawnsAccessDecl,
+	DespawnsAccessDecl,
+	TransitionsAccessDecl,
+	SparseAccessDecl,
+	RelationsAccessDecl,
+	ResourcesAccessDecl
+} from "./core/ecs";
 
 // Component observers (#517 §1 / ADR-0013) — registered via `ECS.observe`.
 export type {
@@ -145,9 +173,12 @@ export type {
 	ComponentDef,
 	ComponentHandle,
 	ComponentSchema,
+	SchemaOf,
+	DeclaredQueryTerm,
 	FieldValues,
 	CompleteFieldValues,
 	ValuesArg,
+	AttachValuesArg,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -160,12 +191,12 @@ export { bundle } from "./core/ecs";
 export type { Bundle, BundleOrDef } from "./core/ecs";
 
 // Sparse storage class — out-of-identity components (#468 / ADR-0011).
-export type { SparseComponentDef, SparseComponentID } from "./core/ecs";
+export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./core/ecs";
 export { SparseRestoreError } from "./core/ecs";
 
 // Relations — (relation, target) pairs on the sparse storage class (#471 /
 // ADR-0011). `ANY_RELATION` is the `(*, T)` wildcard access sentinel (#579).
-export type { RelationDef, RelationID, RelationOptions, OnDeleteTarget } from "./core/ecs";
+export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./core/ecs";
 export { ANY_RELATION } from "./core/ecs";
 
 // Built-in relations (#477 / #463) — named presets over `ECS.registerRelation`.
@@ -183,7 +214,7 @@ export type {
 export { eventKey, signalKey } from "./core/ecs";
 
 // Resources
-export type { ResourceKey } from "./core/ecs";
+export type { ResourceKey, ResourceValueOf } from "./core/ecs";
 export { resourceKey } from "./core/ecs";
 
 // Error taxonomy — every ECS-thrown error is an `ECSError` tagged with an

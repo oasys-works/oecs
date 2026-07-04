@@ -28,6 +28,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
+import type { RelationDef } from "../../relation";
 import { registerChildOf } from "../../builtin_relations";
 import { HIERARCHY_UNBOUNDED } from "../../query";
 import { SCHEDULE } from "../../schedule";
@@ -282,10 +283,12 @@ describe(".hierarchy(R) — guards", () => {
 		const Likes = world.registerRelation({ multi: true });
 		const a = world.createEntity();
 		world.addComponent(a, Node);
+		// cast (§10c): deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
 		expect(() =>
 			world
 				.query(Node)
-				.hierarchy(Likes)
+				.hierarchy(Likes as unknown as RelationDef<"exclusive">)
 				.forEachEntity(() => {})
 		).toThrow(/multi-target/);
 	});

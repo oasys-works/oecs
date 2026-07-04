@@ -63,7 +63,7 @@ export function fromKernelMap<K, V>(map: ReactiveMap<K, V>): KernelMapView<K, V>
  * or `root` so each field's `onCleanup` has an owner. The kernel struct's per-field
  * `eq` and batching carry through `fromKernel` unchanged.
  */
-export function fromKernelStruct<T extends object>(struct: T): T {
+export function fromKernelStruct<T extends object>(struct: Readonly<T>): Readonly<T> {
 	const reads = {} as { [K in keyof T]: Accessor<T[K]> };
 	const keys = Object.keys(struct) as Array<keyof T>;
 	const fieldSet = new Set<string | symbol>(keys as Array<string | symbol>);
@@ -81,7 +81,19 @@ export function fromKernelStruct<T extends object>(struct: T): T {
 		getOwnPropertyDescriptor: (_, k) =>
 			fieldSet.has(k)
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
-				: undefined
+				: undefined,
+		// Read surface only (`Readonly<T>`, POLISH_AUDIT #8) — mirrors the kernel
+		// struct proxy's trap so a JS-side assignment fails loudly instead of
+		// sticking a non-reactive value on the hidden target.
+		set: (_, k) => {
+			if (__DEV__) {
+				throw new TypeError(
+					`fromKernelStruct view is read-only: write through the kernel struct's ` +
+						`setters (set.${String(k)}(value)), not the bridged view`
+				);
+			}
+			return false;
+		}
 	});
 }
 

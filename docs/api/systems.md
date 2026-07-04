@@ -64,13 +64,13 @@ interface SystemConfig {
   spawns?:    readonly (readonly ComponentDef[] | Template)[];
   despawns?:  readonly (ComponentDef | Template)[];
   transitions?: readonly SystemTransition[];      // mid-tick add/remove sets
-  resourceReads?:  readonly ResourceKey<unknown>[];
-  resourceWrites?: readonly ResourceKey<unknown>[];
+  resourceReads?:  readonly ResourceKey<any>[];
+  resourceWrites?: readonly ResourceKey<any>[];
   sparseReads?:   readonly SparseComponentDef[];
   sparseWrites?:  readonly SparseComponentDef[];
   relationReads?:  readonly RelationDef[];        // include ANY_RELATION for forEachRelatedTo
   relationWrites?: readonly RelationDef[];
-  queries?: readonly (readonly ComponentDef[])[]; // one entry per ctx.query(...) — lint only
+  queries?: readonly (readonly ComponentDef[])[]; // one entry per closed-over / builder query — lint only
 
   // --- Optional ---
   name?: string;                                  // diagnostics
@@ -88,7 +88,39 @@ Key rules the access checker enforces (dev only):
 - **A write implies a read**, and authorizes `addComponent` on that column.
 - **`destroyEntity` removes every component** on the entity — declare the superset in `despawns`.
 - **Sparse and relation ids live in separate id spaces.** Declare them in `sparse*`/`relation*`, never in `reads`/`writes`.
-- **`queries`** is a *lint*, not a runtime term: at registration it checks `queries ⊆ reads ∪ writes` and throws `QUERY_ACCESS_UNDECLARED` if you query a component you didn't declare. It can't catch a component missing from *both*, so keep it mirroring your actual `ctx.query(...)` terms.
+- **`queries`** is a *lint*, not a runtime term: at registration it checks `queries ⊆ reads ∪ writes` and throws `QUERY_ACCESS_UNDECLARED` if you query a component you didn't declare. It can't catch a component missing from *both*, so keep it mirroring your closed-over `ecs.query(...)` terms or the query-builder terms you pass to `registerSystem`.
+
+### Compile-time enforcement
+
+The config form doesn't just feed the dev-mode runtime checker. `registerSystem` infers your declaration lists as literal types and hands `fn` / `onAdded` a `SystemContext` **narrowed to exactly what you declared** — undeclared access fails to *compile*, with the missing declaration named in the error:
+
+```ts
+const sys = ecs.registerSystem({
+  reads: [Pos],
+  writes: [Vel],
+  fn(ctx) {
+    ctx.setField(e, Vel, "vx", 1);   // ✓ declared write
+    ctx.getField(e, Pos, "x");       // ✓ declared read
+    ctx.getField(e, Vel, "vy");      // ✓ a write implies a read
+
+    ctx.setField(e, Pos, "x", 1);
+    // ✗ compile error: […, "component is not declared in this system's writes", …]
+    ctx.destroyEntity(e);
+    // ✗ compile error: "this system declares no despawns — destroyEntity/despawn is not permitted"
+  },
+});
+```
+
+Every rule in the list above is mirrored: `add` is authorized by `writes ∪ spawns ∪ transitions.add` (Templates included), `remove` by `despawns ∪ transitions.remove`, destroy requires a non-empty `despawns`, write-implies-read holds for the sparse/relation/resource terms, and the `queries ⊆ reads ∪ writes` lint runs at compile time too.
+
+The compiler is the first line, not a replacement — keep dev-mode runtime checks on. They still catch what structural typing can't:
+
+- Two components with **identical schemas** are interchangeable to the compiler.
+- Two resource keys carrying the same value type are interchangeable.
+- Relations are one nominal type — the compiler only distinguishes "declared *some* relation access" from "declared none".
+- A dynamically-built config (a value typed `SystemConfig`) registers with a permissive context.
+
+**Escape hatch:** annotate the context parameter — `fn(ctx: SystemContext) { … }` — to opt one system out of narrowing (the runtime checker still applies). This is how tests that deliberately violate their declaration assert the dev throw. Helper functions can keep taking a bare `SystemContext`; every narrowed context is assignable to it.
 
 ### `exclusive` systems
 
@@ -96,7 +128,7 @@ Key rules the access checker enforces (dev only):
 ecs.registerSystem({ exclusive: true, reads: [], writes: [], fn: (ctx) => { /* anything */ } });
 ```
 
-`exclusive: true` grants **full `ECS` access** for the system's whole run — every access check passes, and `reads`/`writes` may be empty. Use it sparingly for systems that genuinely touch everything: the [host-command apply system](./host-write-seam.md), save/load, debug tooling. The schedule is sequential today, so this is purely the access-bypass grant.
+`exclusive: true` grants **full `ECS` access** for the system's whole run — every access check passes, `reads`/`writes` may be empty, and `ctx` stays the permissive `SystemContext` at the type level (no compile-time narrowing). Use it sparingly for systems that genuinely touch everything: the [host-command apply system](./host-write-seam.md), save/load, debug tooling. The schedule is sequential today, so this is purely the access-bypass grant.
 
 ### `SystemTransition`
 

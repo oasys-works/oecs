@@ -60,3 +60,21 @@ export function validateAndCast<T, Result extends T = T>(
 export function unsafeCast<T>(value: unknown): T {
 	return value as T;
 }
+
+/**
+ * Exhaustiveness backstop for tagged-union dispatches. Put it in the
+ * `default` arm (or after the final `case`) of a switch over a closed union:
+ * the `never` parameter makes "a union gained a variant but this dispatch
+ * didn't" a COMPILE error at the call site, and the throw catches runtime
+ * values that bypassed the type layer (deserialized/foreign data).
+ *
+ * Deliberately NOT `__DEV__`-gated, unlike the rest of this file: it marks a
+ * can't-happen branch, so it costs nothing until the day it fires — and that
+ * day it must fire in production too, not silently fall through.
+ */
+export function assertNever(value: never, label: string): never {
+	throw new AssertionError(
+		TYPE_ERROR.ASSERTION_FAIL_UNREACHABLE,
+		`Unhandled ${label}: ${String(value)}`
+	);
+}

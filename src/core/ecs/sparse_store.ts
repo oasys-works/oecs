@@ -47,6 +47,12 @@ export type SparseComponentDef<S extends ComponentSchema = ComponentSchema> = Sp
 	readonly [__sparseSchema]: S;
 };
 
+/** Recover a sparse def's schema type — the sparse sibling of `SchemaOf`
+ * (component.ts), used by the typed `SystemContext` sparse surface. */
+export type SparseSchemaOf<D> = D extends SparseComponentDef<infer S extends ComponentSchema>
+	? S
+	: never;
+
 /** One sparse component's membership + data. Pure data structure — the `Store`
  * owns liveness checks and dev-mode error throwing; this class only knows
  * entity indices and field rows. */

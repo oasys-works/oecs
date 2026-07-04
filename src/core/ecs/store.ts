@@ -225,7 +225,11 @@ export type TemplateOverrides<Defs extends readonly ComponentDef[]> = {
 };
 
 // Phantom slot carrying the template's def-list type so `spawn` can check
-// overrides against it. Optional + erased at runtime.
+// overrides against it. Optional + erased at runtime. Deliberately COVARIANT
+// (unlike the invariant `ResourceKey` / `EventKey` phantoms): a
+// `Template<[…]>` must erase to bare `Template` in a system's `spawns` /
+// `despawns` access declaration, and widening only loosens the *advisory*
+// override checking — there is no write-direction hole to close.
 declare const __templateDefs: unique symbol;
 
 /** A resolved template (#462) — an archetype template produced by
@@ -3697,7 +3701,7 @@ export class Store implements ObserverHost, QueryHost {
 		return this.events.registerEvent<S>(fields);
 	}
 
-	public emitEvent(def: EventDef, values: Record<string, number>): void {
+	public emitEvent(def: EventDef<any>, values: Record<string, number>): void {
 		this.events.emitEvent(def, values);
 	}
 

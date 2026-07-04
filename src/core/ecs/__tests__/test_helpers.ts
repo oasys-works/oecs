@@ -38,7 +38,7 @@ import type { SystemAccessDeclaration } from "../system";
  * matching the production default). */
 export function openAccess(
 	defs: readonly ComponentDef[],
-	resourceKeys: readonly ResourceKey<unknown>[] = [],
+	resourceKeys: readonly ResourceKey<any>[] = [],
 	sparseDefs: readonly SparseComponentDef[] = [],
 	relationDefs: readonly RelationDef[] = []
 ): SystemAccessDeclaration {

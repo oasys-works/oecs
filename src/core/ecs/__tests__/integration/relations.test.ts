@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
+import type { RelationDef } from "../../relation";
 import { Store } from "../../store";
 import { type EntityID, MAX_ENTITY_ID, MAX_INDEX } from "../../entity";
 import { SparseRestoreError } from "../../sparse_store";
@@ -188,7 +189,9 @@ describe("relations registration + validation (#471)", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.registerRelation({ multi: true });
 		const src = world.createEntity();
-		expect(() => world.targetOf(src, Likes)).toThrow();
+		// cast (§10c): deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
+		expect(() => world.targetOf(src, Likes as unknown as RelationDef<"exclusive">)).toThrow();
 	});
 });
 

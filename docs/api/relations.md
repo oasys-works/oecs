@@ -54,7 +54,7 @@ pairsOf(def): [EntityID, EntityID][];       // every (source, target) pair — t
 sourcesOfAny(tgt): [RelationDef, EntityID][];  // every (relation, source) at tgt — the (*, T) wildcard, cold
 ```
 
-- `targetOf` is for exclusive relations; on a multi relation it **throws `RELATION_MODE_MISMATCH` in dev** (and returns `undefined` in production) — use `targetsOf` for multi.
+- `targetOf` is for exclusive relations — and the compiler enforces it: `registerRelation` stamps the cardinality into the handle type (`RelationDef<"exclusive">` / `RelationDef<"multi">`), so `targetOf(src, aMultiRelation)` is a **compile error**. The dev-mode `RELATION_MODE_MISMATCH` throw remains as the backstop for dynamically-registered relations (whose handles carry the un-stamped `RelationDef` union). Use `targetsOf` for multi.
 - `sourcesOf` is the workhorse reverse query — "who points at me?".
 
 ## Relation query terms
@@ -96,13 +96,13 @@ cascadeOf(root, def): EntityID[];    // the subtree incl. root, breadth-first (p
 ```
 
 > [!WARNING]
-> Traversal is **exclusive-only** — a multi relation throws. A cycle throws `RELATION_CYCLE` in dev (never a hang).
+> Traversal is **exclusive-only** — the helpers accept only `RelationDef<"exclusive">`, so a statically-registered multi relation is a compile error; a dynamically-registered one throws in dev. A cycle throws `RELATION_CYCLE` in dev (never a hang).
 
 ## Built-in relations
 
 Two presets over `registerRelation`, each fixing a cardinality and a cleanup default. Both are always exclusive.
 
-```ts
+```text
 import { registerChildOf, registerIsA } from "@oasys/oecs";
 // Free functions — they take the ECS as their first argument (not methods on it):
 registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef;   // ChildOf(child → parent); default "delete"

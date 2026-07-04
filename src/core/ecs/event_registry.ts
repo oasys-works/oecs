@@ -41,7 +41,7 @@ export class EventRegistry {
 		return unsafeCast<EventDef<S>>(id);
 	}
 
-	public emitEvent(def: EventDef, values: Record<string, number>): void {
+	public emitEvent(def: EventDef<any>, values: Record<string, number>): void {
 		const id = def as unknown as number;
 		const channel = this.channels[id];
 		// Sample emptiness, emit, THEN mark dirty: if `emit` throws (a __DEV__

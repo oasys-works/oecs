@@ -441,7 +441,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			}
 		});
@@ -466,7 +468,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.setField(e, Pos, "x", 99);
 			}
 		});
@@ -492,7 +496,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.addComponent(e, Vel, { vx: 0, vy: 0 });
 			}
 		});
@@ -519,7 +525,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.removeComponent(e, Vel);
 			}
 		});
@@ -544,7 +552,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.destroyEntity(e);
 			}
 		});
@@ -568,7 +578,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.resource(Res);
 			}
 		});
@@ -592,7 +604,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [Res],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.setResource(Res, { v: 2 });
 			}
 		});
@@ -718,7 +732,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			onAdded(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			onAdded(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			},
 			fn() {}

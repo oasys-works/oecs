@@ -179,7 +179,7 @@ function setsFor(desc: SystemDescriptor): AccessSets {
 interface ConditionAccess {
 	readonly name: string;
 	readonly reads?: readonly ComponentDef[];
-	readonly resourceReads?: readonly ResourceKey<unknown>[];
+	readonly resourceReads?: readonly ResourceKey<any>[];
 }
 
 // Cached per condition object — built-ins and custom conditions are stable
@@ -311,14 +311,14 @@ class AccessCheck {
 		);
 	}
 
-	checkResourceRead(key: ResourceKey<unknown>): void {
+	checkResourceRead(key: ResourceKey<any>): void {
 		if (this.sets === null) return;
 		const sym = key as unknown as symbol;
 		if (this.sets.resourceReads.has(sym)) return;
 		this.failResource("read", key, "resource_reads");
 	}
 
-	checkResourceWrite(key: ResourceKey<unknown>): void {
+	checkResourceWrite(key: ResourceKey<any>): void {
 		if (this.sets === null) return;
 		const sym = key as unknown as symbol;
 		if (this.sets.resourceWrites.has(sym)) return;
@@ -446,7 +446,7 @@ class AccessCheck {
 		);
 	}
 
-	private failResource(op: string, key: ResourceKey<unknown>, missingField: string): never {
+	private failResource(op: string, key: ResourceKey<any>, missingField: string): never {
 		// ! safe: same as failComponent.
 		const name = this.activeName!;
 		const label = (key as unknown as symbol).description ?? "<unnamed>";

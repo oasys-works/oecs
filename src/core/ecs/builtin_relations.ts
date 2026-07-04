@@ -50,7 +50,7 @@ export interface BuiltinRelationOptions {
  * flecs's `IsA`-remove, since there is no inherited data to strip). Pass
  * `"delete"` for strong instance-of (exemplar death cascade-destroys instances).
  */
-export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): RelationDef {
+export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
 	return world.registerRelation({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "clear"
@@ -71,7 +71,7 @@ export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): Relation
  * its whole subtree (flecs's default). Pass `"clear"` to let children survive as
  * roots, or `"orphan"` to leave a dangling `targetOf`.
  */
-export function registerChildOf(world: ECS, opts?: BuiltinRelationOptions): RelationDef {
+export function registerChildOf(world: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
 	return world.registerRelation({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "delete"

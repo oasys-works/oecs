@@ -92,7 +92,7 @@ import type {
 } from "./component";
 import { bundleDef, bundleValues } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
-import type { RelationDef, RelationOptions } from "./relation";
+import type { RelationDef, RelationOptions, OnDeleteTarget } from "./relation";
 import type {
 	EmptyEventSchema,
 	EventDef,
@@ -110,7 +110,15 @@ import {
 	_assertQueriesDeclared,
 	type SystemFn,
 	type SystemConfig,
-	type SystemDescriptor
+	type SystemDescriptor,
+	type TypedSystemConfig,
+	type DenseAccessDecl,
+	type SpawnsAccessDecl,
+	type DespawnsAccessDecl,
+	type TransitionsAccessDecl,
+	type SparseAccessDecl,
+	type RelationsAccessDecl,
+	type ResourcesAccessDecl
 } from "./system";
 import { accessCheck } from "./access_check";
 import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
@@ -787,13 +795,40 @@ export class ECS implements QueryResolver {
 		fn: (q: Query<Defs>, ctx: SystemContext, dt: number) => void,
 		queryFn: (qb: QueryBuilder) => Query<Defs>
 	): SystemDescriptor;
-	public registerSystem(config: SystemConfig): SystemDescriptor;
-	// any: overload implementation must unify bare fn, (fn, queryFn), and SystemConfig
+	/** `exclusive: true` grants full world access at runtime (§system.ts), so
+	 * the context stays fully permissive at the type layer too. Declared BEFORE
+	 * the typed-config overload so exclusive configs never get narrowed. */
+	public registerSystem(config: SystemConfig & { readonly exclusive: true }): SystemDescriptor;
+	/** Config form (§typestate, system.ts): the declaration lists are inferred
+	 * as literal tuples and `fn` / `onAdded` receive
+	 * `SystemContext<DeclaredAccess<…>>` — undeclared access fails to compile
+	 * with the same taxonomy the runtime `accessCheck` throws with in
+	 * `__DEV__`. A config VALUE typed as plain `SystemConfig` (dynamically
+	 * built) still matches: its erased declaration lists compute a permissive
+	 * access record. Escape hatch: annotate `fn(ctx: SystemContext, dt)`
+	 * explicitly to keep a system permissive at compile time. */
+	public registerSystem<
+		R extends DenseAccessDecl,
+		W extends DenseAccessDecl,
+		Sp extends SpawnsAccessDecl = readonly never[],
+		De extends DespawnsAccessDecl = readonly never[],
+		Tr extends TransitionsAccessDecl = readonly never[],
+		SR extends SparseAccessDecl = readonly never[],
+		SW extends SparseAccessDecl = readonly never[],
+		RR extends RelationsAccessDecl = readonly never[],
+		RW extends RelationsAccessDecl = readonly never[],
+		QR extends ResourcesAccessDecl = readonly never[],
+		QW extends ResourcesAccessDecl = readonly never[]
+	>(config: TypedSystemConfig<R, W, Sp, De, Tr, SR, SW, RR, RW, QR, QW>): SystemDescriptor;
+	// any: overload implementation must unify bare fn, (fn, queryFn), SystemConfig,
+	// and the typed config (whose all-`any` instantiation stands in for every
+	// literal inference).
 	public registerSystem(
 		fnOrConfig:
 			| ((q: Query<any>, ctx: SystemContext, dt: number) => void)
 			| SystemFn
-			| SystemConfig,
+			| SystemConfig
+			| TypedSystemConfig<any, any, any, any, any, any, any, any, any, any, any, any>,
 		queryFn?: (qb: QueryBuilder) => Query<any>
 	): SystemDescriptor {
 		let config: SystemConfig;
@@ -1282,7 +1317,26 @@ export class ECS implements QueryResolver {
 	 * source in a backing sparse component; `{ multi: true }` stores a target
 	 * set per source. `{ onDeleteTarget: "delete" | "clear" | "orphan" }`
 	 * selects what happens to a relation's sources when a target is destroyed
-	 * (default `orphan`, #473). See `registerRelation` on `Store` / ADR-0011. */
+	 * (default `orphan`, #473). See `registerRelation` on `Store` / ADR-0011.
+	 *
+	 * The overloads stamp the CARDINALITY into the handle type
+	 * (POLISH_AUDIT #7): the exclusive-only surfaces (`targetOf`,
+	 * `ancestorsOf` / `rootOf` / `cascadeOf`, `Query.hierarchy`) accept only
+	 * `RelationDef<"exclusive">`, so passing a `{ multi: true }` relation is a
+	 * compile error instead of a dev-mode RELATION_MODE_MISMATCH throw. A
+	 * dynamically-built options value falls to the erased overload and keeps
+	 * the runtime check as its only guard. */
+	public registerRelation(opts?: {
+		readonly exclusive?: true;
+		readonly multi?: false;
+		readonly onDeleteTarget?: OnDeleteTarget;
+	}): RelationDef<"exclusive">;
+	public registerRelation(opts: {
+		readonly multi: true;
+		readonly exclusive?: false;
+		readonly onDeleteTarget?: OnDeleteTarget;
+	}): RelationDef<"multi">;
+	public registerRelation(opts?: RelationOptions): RelationDef;
 	public registerRelation(opts?: RelationOptions): RelationDef {
 		return this.store.registerRelation(opts);
 	}
@@ -1302,7 +1356,7 @@ export class ECS implements QueryResolver {
 	}
 
 	/** The single target of `src` under an exclusive relation, or `undefined`. */
-	public targetOf(src: EntityID, def: RelationDef): EntityID | undefined {
+	public targetOf(src: EntityID, def: RelationDef<"exclusive">): EntityID | undefined {
 		return this.store.targetOf(src, def);
 	}
 
@@ -1353,20 +1407,20 @@ export class ECS implements QueryResolver {
 
 	/** Walk relation `R` up from `src` to its chain root, returning
 	 * `[src, parent, …, root]` (nearest-ancestor-first). Exclusive only. */
-	public ancestorsOf(src: EntityID, def: RelationDef): EntityID[] {
+	public ancestorsOf(src: EntityID, def: RelationDef<"exclusive">): EntityID[] {
 		return this.store.ancestorsOf(src, def);
 	}
 
 	/** The root of `src`'s `R`-chain (`src` itself when it has no target).
 	 * Exclusive only. */
-	public rootOf(src: EntityID, def: RelationDef): EntityID {
+	public rootOf(src: EntityID, def: RelationDef<"exclusive">): EntityID {
 		return this.store.rootOf(src, def);
 	}
 
 	/** Walk relation `R` down from `root` over the reverse index, returning the
 	 * subtree (including `root`) breadth-first — parents before children (the
 	 * `cascade` order). Exclusive only. */
-	public cascadeOf(root: EntityID, def: RelationDef): EntityID[] {
+	public cascadeOf(root: EntityID, def: RelationDef<"exclusive">): EntityID[] {
 		return this.store.cascadeOf(root, def);
 	}
 

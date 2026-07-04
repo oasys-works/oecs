@@ -137,7 +137,7 @@ Because sparse ops apply immediately, mutating the *driving* sparse membership d
 
 ```ts
 // keys.ts
-import { eventKey, signalKey, resourceKey } from "@oasys/oecs";
+import { eventKey, signalKey, resourceKey, type EntityID } from "@oasys/oecs";
 
 export const DamageEvent = eventKey<{ target: EntityID; amount: number }>("Damage");
 export const GameOver = signalKey("GameOver");
@@ -187,7 +187,8 @@ Rules worth internalizing:
 - **A write implies a read** and authorizes `addComponent` on that column.
 - **`destroyEntity` removes every component** — declare the superset in `despawns`.
 - **Sparse and relation ids are separate id spaces** — declare them in `sparseReads`/`sparseWrites` and `relationReads`/`relationWrites`, never in `reads`/`writes`.
-- **`queries` is a registration-time lint**, not a runtime term: it checks `queries ⊆ reads ∪ writes`. Keep it mirroring your actual `ctx.query(...)`/closed-over query terms.
+- **`queries` is a registration-time lint**, not a runtime term: it checks `queries ⊆ reads ∪ writes`. Keep it mirroring your closed-over `ecs.query(...)` terms or the query-builder terms you pass to `registerSystem`.
+- **Declarations are compile-time-checked too.** The config form types `ctx` to the declared access surface, so an undeclared read/write/add/destroy is a compile error before it's a dev-mode throw (see [systems — compile-time enforcement](./api/systems.md#compile-time-enforcement)). Annotate `fn(ctx: SystemContext)` to opt a system out of the narrowing.
 
 > [!WARNING]
 > The **bare-function** and **function + query-builder** overloads register with *empty* access — any component/resource/relation access they attempt throws in dev. They're only for trivial no-access systems, such as bumping an external counter. Use `exclusive: true` sparingly, for systems that genuinely touch everything (the host-command apply system, save/load, debug tooling) — it grants full access and bypasses every check.
@@ -487,6 +488,8 @@ ecs.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "w
 Events and signals share one lifecycle — emit during one `update()`, visible to every later system in that call, cleared before the next. The difference is payload:
 
 ```ts
+import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
+
 // Structured event — you need per-emit data:
 export const Damage = eventKey<{ target: EntityID; amount: number }>("Damage");
 ecs.registerEvent(Damage, ["target", "amount"]);
@@ -542,10 +545,10 @@ Because every host/UI mutation crosses one apply chokepoint, `replayCommandLog(.
 Writes that originate **outside** the schedule — a UI, editor, network handler, or worker — must not touch the ECS mid-frame. The seam turns every outside write into a typed command applied at one blessed point.
 
 ```ts
-import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
+import { SCHEDULE, installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup()
-ecs.addSystems(/* your systems */);
+ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after installing the seam
 ecs.startup();
 
 queue.addComponent(entity, Health, { hp: 100 });

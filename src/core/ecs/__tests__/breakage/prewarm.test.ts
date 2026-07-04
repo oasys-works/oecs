@@ -263,7 +263,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 
 		world.registerSystem({ ...openAccess([A]), spawns: [[A]], fn: () => {} });
 		world.observe(A, {
-			onAdd: (e, ctx) => ctx.addComponent(e, B),
+			onAdd: (e, ctx) => ctx.addComponent(e, B, { v: 0 }),
 			access: { writes: [B], transitions: [{ whenHas: [A], add: [B] }] }
 		});
 

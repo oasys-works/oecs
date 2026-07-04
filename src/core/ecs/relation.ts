@@ -77,7 +77,26 @@ export type RelationID = Brand<number, "relation_id">;
 // surfaces (and vice-versa) — the relation API is its own thing.
 declare const __relationBrand: unique symbol;
 
-export type RelationDef = RelationID & { readonly [__relationBrand]: "relation" };
+/** A relation's registration-time cardinality: `exclusive` = one target per
+ * source (re-add replaces), `multi` = a target set per source. */
+export type RelationCardinality = "exclusive" | "multi";
+
+// Phantom cardinality slot (POLISH_AUDIT #7): `registerRelation`'s overloads
+// stamp the literal cardinality into the handle type, and the exclusive-only
+// surfaces (`targetOf`, `ancestorsOf` / `rootOf` / `cascadeOf`,
+// `Query.hierarchy`) accept only `RelationDef<"exclusive">` — turning the
+// dev-mode RELATION_MODE_MISMATCH throw into a compile error. Optional +
+// covariant (a tuple, like ComponentDef's schema slot) so a stamped handle
+// still erases to the bare `RelationDef` union that declaration lists and
+// cardinality-agnostic APIs use. A dynamically-registered relation (options
+// not statically known) is the bare union and must go through the runtime
+// check instead.
+declare const __relationCardinality: unique symbol;
+
+export type RelationDef<C extends RelationCardinality = RelationCardinality> = RelationID & {
+	readonly [__relationBrand]: "relation";
+	readonly [__relationCardinality]?: [C];
+};
 
 /** Access sentinel for the `(*, T)` wildcard query iteration
  * (`Query.forEachRelatedTo`, #579). A `(*, T)` term reads **every** registered

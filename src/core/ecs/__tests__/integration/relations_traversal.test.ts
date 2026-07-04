@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
+import type { RelationDef } from "../../relation";
 import { getEntityIndex, type EntityID } from "../../entity";
 
 const ids = (es: EntityID[]): number[] => es.map((e) => e as number);
@@ -181,8 +182,11 @@ describe("ECS relation traversal — exclusive only (#474)", () => {
 		const tgt = world.createEntity();
 		world.addRelation(src, Likes, tgt);
 
-		expect(() => world.ancestorsOf(src, Likes)).toThrow();
-		expect(() => world.rootOf(src, Likes)).toThrow();
-		expect(() => world.cascadeOf(tgt, Likes)).toThrow();
+		// cast (§10c): deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
+		const LikesAsExclusive = Likes as unknown as RelationDef<"exclusive">;
+		expect(() => world.ancestorsOf(src, LikesAsExclusive)).toThrow();
+		expect(() => world.rootOf(src, LikesAsExclusive)).toThrow();
+		expect(() => world.cascadeOf(tgt, LikesAsExclusive)).toThrow();
 	});
 });

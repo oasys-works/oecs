@@ -68,7 +68,7 @@ export interface RunCondition {
 	readonly reads?: readonly ComponentDef[];
 	/** Resources the predicate reads. Validated at runtime in `__DEV__` when the
 	 *  condition evaluates inside `accessCheck.enterCondition`. */
-	readonly resourceReads?: readonly ResourceKey<unknown>[];
+	readonly resourceReads?: readonly ResourceKey<any>[];
 }
 
 /**

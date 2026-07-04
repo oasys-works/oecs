@@ -36,6 +36,8 @@ movers.eachChunk((cols, count) => {
 });
 ```
 
+The cursor and the `forEach` view are typed by the query's terms: `cols.mut(Health)` on the `query(Pos, Vel)` above is a **compile error** (`"component is not a term of this query — add it with .and(...)"`), as is `arch.getColumnRead(Health, "hp")`. Extend the term set with `.and(...)` to fetch more; `.optional(T)` fetches stay compile-permissive (the dev-mode optional-scope check owns those).
+
 ## Building queries
 
 Two entry points, same result:

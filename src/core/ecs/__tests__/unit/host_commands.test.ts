@@ -26,6 +26,7 @@ import {
 	type HostCommandQueue
 } from "../../host_commands";
 import type { ComponentDef } from "../../component";
+import type { SystemContext } from "../../query";
 import { createEntityId, type EntityID } from "../../entity";
 import { pushCommand } from "../../../store";
 
@@ -170,9 +171,11 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 			world.registerSystem({
 				name: "rogue",
 				// Declares no writes — so writing Cell.x must throw the access check.
+				// ctx annotated permissive (§typestate escape hatch): the violation
+				// is deliberate, to assert the runtime throw.
 				reads: [],
 				writes: [],
-				fn: (ctx) => ctx.setField(e, Cell, "x", 1)
+				fn: (ctx: SystemContext) => ctx.setField(e, Cell, "x", 1)
 			})
 		);
 		world.startup();

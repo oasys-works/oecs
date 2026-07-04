@@ -34,6 +34,7 @@ import type { EntityID } from "./entity";
 import type { SystemContext } from "./query";
 import { SCHEDULE } from "./schedule";
 import { ECSError, ECS_ERROR } from "./utils/error";
+import { assertNever } from "../../type_primitives";
 import {
 	COMMAND_OP_EMPTY,
 	COMMAND_RING_SLOT_BYTES,
@@ -174,6 +175,11 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 		case "enable":
 			ctx.enable(cmd.eid);
 			return undefined;
+		default:
+			// Exhaustiveness: a new HostCommand kind that misses a case here is a
+			// compile error (and a hard throw for foreign/deserialized values) —
+			// without this, an unhandled kind silently returned `undefined`.
+			return assertNever(cmd, "HostCommand kind");
 	}
 }
 

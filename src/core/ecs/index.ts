@@ -66,6 +66,33 @@ export type {
 	SystemAccessDeclaration,
 	SystemTransition
 } from "./system";
+// Compile-time access typing (§typestate) — the config-form `registerSystem`
+// narrows `ctx` to the declared access surface; these are the public names a
+// consumer needs to write helper signatures against a typed context.
+export type {
+	SystemAccess,
+	DeclaredAccess,
+	TypedSystemConfig,
+	DeclaredRead,
+	DeclaredWrite,
+	DeclaredAdd,
+	DeclaredRemove,
+	DeclaredSparseRead,
+	DeclaredSparseWrite,
+	DeclaredRelationRead,
+	DeclaredRelationWrite,
+	DeclaredResourceRead,
+	DeclaredResourceWrite,
+	DestroyEntityArg,
+	DenseAccessDecl,
+	SpawnsAccessDecl,
+	DespawnsAccessDecl,
+	TransitionsAccessDecl,
+	SparseAccessDecl,
+	RelationsAccessDecl,
+	ResourcesAccessDecl
+} from "./system";
+export type { DeclaredBundleOrDef } from "./query";
 
 // Access check (Phase B of issue #213) — dev-mode validation singleton.
 export { accessCheck } from "./access_check";
@@ -200,9 +227,12 @@ export type {
 	ComponentDef,
 	ComponentHandle,
 	ComponentSchema,
+	SchemaOf,
+	DeclaredQueryTerm,
 	FieldValues,
 	CompleteFieldValues,
 	ValuesArg,
+	AttachValuesArg,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -219,13 +249,13 @@ export type { Bundle, BundleOrDef } from "./component";
 // `SparseRestoreError` is thrown by `ECS.restoreSparse` on a shape, field-
 // identity, index-bounds, or trailing-bytes mismatch (#470, #494), so it's part
 // of the public determinism surface.
-export type { SparseComponentDef, SparseComponentID } from "./sparse_store";
+export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./sparse_store";
 export { SparseRestoreError } from "./sparse_store";
 
 // Relations — (relation, target) pairs on the sparse storage class (#471 /
 // ADR-0011). The handle type + registration options are public; the
 // `RelationStore` substrate stays internal (mutate via `ECS.addRelation` etc.).
-export type { RelationDef, RelationID, RelationOptions, OnDeleteTarget } from "./relation";
+export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./relation";
 // `(*, T)` wildcard query access sentinel (#579) — list in `relationReads` to
 // authorise `Query.forEachRelatedTo`, which reads every relation's reverse index.
 export { ANY_RELATION } from "./relation";
@@ -249,7 +279,7 @@ export type {
 export { eventKey, signalKey } from "./event";
 
 // Resources
-export type { ResourceKey } from "./resource";
+export type { ResourceKey, ResourceValueOf } from "./resource";
 export { resourceKey } from "./resource";
 
 // Dispatch trace (dev-mode only — gated by __DEV__ + VISUAL_INTEL_TRACE)
