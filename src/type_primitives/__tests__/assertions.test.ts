@@ -7,7 +7,7 @@ import {
   unsafeCast,
   validateAndCast,
 } from "../assertions";
-import { TypeError, TYPE_ERROR } from "../error";
+import { AssertionError, TYPE_ERROR } from "../error";
 
 describe("assertions", () => {
   //=========================================================
@@ -68,20 +68,20 @@ describe("assertions", () => {
     expect(() => assertNonNull("")).not.toThrow();
   });
 
-  it("assert_non_null throws TypeError for null", () => {
-    expect(() => assertNonNull(null)).toThrow(TypeError);
+  it("assert_non_null throws AssertionError for null", () => {
+    expect(() => assertNonNull(null)).toThrow(AssertionError);
   });
 
-  it("assert_non_null throws TypeError for undefined", () => {
-    expect(() => assertNonNull(undefined)).toThrow(TypeError);
+  it("assert_non_null throws AssertionError for undefined", () => {
+    expect(() => assertNonNull(undefined)).toThrow(AssertionError);
   });
 
   it("assert_non_null error has ASSERTION_FAIL_NON_NULLABLE category", () => {
     try {
       assertNonNull(null);
     } catch (e) {
-      expect(e).toBeInstanceOf(TypeError);
-      expect((e as TypeError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE);
+      expect(e).toBeInstanceOf(AssertionError);
+      expect((e as AssertionError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE);
     }
   });
 
@@ -94,9 +94,9 @@ describe("assertions", () => {
     expect(() => assert(5, isPositive, "must be positive")).not.toThrow();
   });
 
-  it("assert throws TypeError when condition fails", () => {
+  it("assert throws AssertionError when condition fails", () => {
     const isPositive = (v: number): v is number => v > 0;
-    expect(() => assert(-1, isPositive, "must be positive")).toThrow(TypeError);
+    expect(() => assert(-1, isPositive, "must be positive")).toThrow(AssertionError);
   });
 
   it("assert error has ASSERTION_FAIL_CONDITION category", () => {
@@ -104,8 +104,8 @@ describe("assertions", () => {
     try {
       assert(-1, isPositive, "must be positive");
     } catch (e) {
-      expect(e).toBeInstanceOf(TypeError);
-      expect((e as TypeError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_CONDITION);
+      expect(e).toBeInstanceOf(AssertionError);
+      expect((e as AssertionError).category).toBe(TYPE_ERROR.ASSERTION_FAIL_CONDITION);
     }
   });
 
@@ -114,7 +114,7 @@ describe("assertions", () => {
     try {
       assert(-1, isPositive, "must be positive");
     } catch (e) {
-      expect((e as TypeError).message).toContain("must be positive");
+      expect((e as AssertionError).message).toContain("must be positive");
     }
   });
 
@@ -127,16 +127,16 @@ describe("assertions", () => {
     expect(result).toBe(42);
   });
 
-  it("validate_and_cast throws TypeError when validation fails", () => {
-    expect(() => validateAndCast(-1, (v) => v > 0, "positive number")).toThrow(TypeError);
+  it("validate_and_cast throws AssertionError when validation fails", () => {
+    expect(() => validateAndCast(-1, (v) => v > 0, "positive number")).toThrow(AssertionError);
   });
 
   it("validate_and_cast error has VALIDATION_FAIL_CONDITION category", () => {
     try {
       validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
-      expect(e).toBeInstanceOf(TypeError);
-      expect((e as TypeError).category).toBe(TYPE_ERROR.VALIDATION_FAIL_CONDITION);
+      expect(e).toBeInstanceOf(AssertionError);
+      expect((e as AssertionError).category).toBe(TYPE_ERROR.VALIDATION_FAIL_CONDITION);
     }
   });
 
@@ -144,7 +144,7 @@ describe("assertions", () => {
     try {
       validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
-      expect((e as TypeError).message).toContain("positive number");
+      expect((e as AssertionError).message).toContain("positive number");
     }
   });
 

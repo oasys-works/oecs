@@ -8,7 +8,7 @@
  *
  ***/
 
-import { TYPE_ERROR, TypeError } from "./error";
+import { TYPE_ERROR, AssertionError } from "./error";
 
 export const isNonNegativeInteger = (v: number): boolean => Number.isInteger(v) && v >= 0;
 
@@ -24,7 +24,7 @@ export function assertNonNull<T>(value: T): asserts value is NonNullable<T> {
 	// value == null is true for both value == null and value == undefined
 	//
 	if (__DEV__ && value == null)
-		throw new TypeError(
+		throw new AssertionError(
 			TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE,
 			"Expected type to be not NULL or UNDEFINED"
 		);
@@ -36,7 +36,7 @@ export function assert<T, Result extends T = T>(
 	errMessage: string
 ): asserts value is Result {
 	if (__DEV__ && !condition(value)) {
-		throw new TypeError(
+		throw new AssertionError(
 			TYPE_ERROR.ASSERTION_FAIL_CONDITION,
 			`Expected value to meet condition: ${errMessage}`
 		);
@@ -49,7 +49,7 @@ export function validateAndCast<T, Result extends T = T>(
 	errMessage: string
 ): Result {
 	if (__DEV__ && !validator(value)) {
-		throw new TypeError(
+		throw new AssertionError(
 			TYPE_ERROR.VALIDATION_FAIL_CONDITION,
 			`Expected value to meet validation: ${errMessage}`
 		);

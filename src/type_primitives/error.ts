@@ -18,7 +18,7 @@ export enum TYPE_ERROR {
  * Error class thrown by std's runtime assertions. Non-operational.
  *
  */
-export class TypeError extends AppError {
+export class AssertionError extends AppError {
 	constructor(
 		public readonly category: TYPE_ERROR,
 		message: string,
