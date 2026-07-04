@@ -95,7 +95,7 @@ A disabled entity keeps its components, relations, sparse data, and stable `Enti
 
 An `EntityID` is a branded 31-bit number packing a **20-bit slot index** and an **11-bit generation**: `[generation:11][index:20]`. The generation is what makes stale handles detectable — recycling a slot bumps its generation, so an old id no longer matches.
 
-You rarely touch the codec; it's exposed for snapshot/replication paths that decode handles from semi-trusted bytes.
+You rarely touch the codec; it's exposed for snapshot/replication paths that decode handles from semi-trusted bytes. `getEntityIndex` is exported from the package root; the rest of the codec (`createEntityId`, `getEntityGeneration`, and the bounds constants) lives at **`@oasys/oecs/internal`** (unstable — no semver guarantees).
 
 ```ts
 getEntityIndex(id: EntityID): number;                     // low 20 bits (dense slot)

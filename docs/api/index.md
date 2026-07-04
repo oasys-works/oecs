@@ -64,6 +64,7 @@ oecs ships several import paths. The core is `@oasys/oecs`; the rest are opt-in 
 | `@oasys/oecs/editor` | undo/redo + field-handle layer over the host-write seam |
 | `@oasys/oecs/solid` | SolidJS adapter (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the standalone data structures oecs is built on (`BitSet`, `SparseSet`, …) |
+| `@oasys/oecs/internal` | **unstable** tooling surface — codecs, ABI constants, memory inspectors, dev singletons; no semver guarantees |
 
 ## Pages
 

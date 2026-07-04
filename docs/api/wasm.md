@@ -133,12 +133,9 @@ const eid = world.entityIdAtRow(archetypeId, row);
 For host-visible mutations that originate outside the schedule, do not write the `ECS` directly mid-frame. Use the [host-write seam](./host-write-seam.md). For worker / wire writes, bind a ring dispatcher and let the seam drain it at the schedule head:
 
 ```ts
-import {
-  HostCommandDispatcher,
-  installHostCommandSeam,
-  ringDespawnCodec,
-  ringSetFieldCodec,
-} from "@oasys/oecs";
+import { installHostCommandSeam } from "@oasys/oecs";
+// Ring transport = wire/ABI surface — @oasys/oecs/internal (no semver guarantees):
+import { HostCommandDispatcher, ringDespawnCodec, ringSetFieldCodec } from "@oasys/oecs/internal";
 
 const ring = new HostCommandDispatcher()
   .onCommand(1, ringSetFieldCodec(Pos, "x"))

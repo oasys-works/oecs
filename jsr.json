@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
@@ -9,7 +9,8 @@
     "./reactive-sync": "./src/extensions/reactive/index.ts",
     "./editor": "./src/extensions/editor/index.ts",
     "./solid": "./src/extensions/solid/index.ts",
-    "./shared": "./src/shared.ts"
+    "./shared": "./src/shared.ts",
+    "./internal": "./src/internal.ts"
   },
   "imports": {
     "solid-js": "npm:solid-js@^1.9.3"

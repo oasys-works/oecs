@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-07-04
+
+### Changed (breaking)
+
+- **The package root is now a curated, explicit export list** — `export *` no longer flattens the
+  whole core barrel, so future barrel additions cannot silently widen the public API. A checked-in
+  public-API snapshot test makes any surface change an explicit diff in review.
+- **Internal/tooling symbols moved to `@oasys/oecs/internal`** (explicitly **unstable — no semver
+  guarantees**): the packed-EntityID codec (`createEntityId`, `getEntityGeneration`, `MAX_INDEX`,
+  `MAX_GENERATION`, `MAX_LIVE_GENERATION`, `RETIRED_GENERATION`, `MAX_ENTITY_ID`), the SAB
+  command-ring transport (`HostCommandDispatcher`, `ring*Codec`, `HOST_COMMAND_PAYLOAD_BYTES`),
+  memory-sizing internals (`resolveECSMemory`, `DEFAULT_ECS_CAP_BYTES`, `BUDGET_*`), and the
+  dev-mode singletons (`accessCheck`, `dispatchTrace`). `getEntityIndex` stays at the root.
+
+### Fixed
+
+- JSR publish no longer ships `__tests__` helper files (`casing_codemod.ts`, `test_helpers.ts` —
+  including a `node:fs` import subject to JSR type-checking).
+
+### Internal
+
+- Relation registry/traversal extracted from `Store` into `RelationService` (no API change).
+- Deleted orphaned duplicate `src/utils/{arrays,constants}.ts`; renamed the custom `TypeError`
+  (shadowed the ECMAScript global) to `AssertionError`.
+
 ## [0.4.0] — 2026-06-24
 
 Major release. oecs is **re-derived from the upstream oasys engine ECS** — its modern descendant — and

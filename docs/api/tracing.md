@@ -52,7 +52,7 @@ interface FrameTrace { readonly tick: number; readonly dt: number; readonly even
 A global singleton that aggregates event/resource/action dispatch **counts** by call site — a profiling view of *how often* channels fire, not the order.
 
 ```ts
-import { dispatchTrace } from "@oasys/oecs";
+import { dispatchTrace } from "@oasys/oecs/internal"; // unstable tooling surface
 
 dispatchTrace.isActive();    // gated by __DEV__ AND the VISUAL_INTEL_TRACE env var
 dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, JSON-serializable

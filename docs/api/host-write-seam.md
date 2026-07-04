@@ -7,10 +7,10 @@ The problem: those callers run off-schedule, but writing to the `ECS` mid-frame 
 **The model:** a host enqueues typed `HostCommand`s into a `HostCommandQueue` (pure buffering — nothing touches the `ECS`). A single blessed **`exclusive`** apply system drains the queue at the **schedule head** (`PRE_STARTUP` for seed-time, `PRE_UPDATE` each frame) through one dispatch, `applyHostCommand`, which issues the normal deferred `ctx` structural ops. The exception is `setField`, which applies immediately during the drain and bumps the change tick. Structural writes then land at the usual phase-tail flush, observers fire, and (if wired) the reactive bridge publishes one batched commit.
 
 ```ts
-import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
+import { SCHEDULE, installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup()
-ecs.addSystems(/* your systems */);
+ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after installing the seam
 ecs.startup();
 
 // From your UI / editor / network handler, any time:
@@ -122,8 +122,9 @@ To replay: build a **fresh, not-yet-started** `ECS` identically to the recorded 
 For writes coming from a **worker or the wire**, a second transport decodes fixed-size ring slots into the same `applyHostCommand`. You supply the opcodes; oecs ships the mechanism and codecs.
 
 ```ts
+// The ring transport is wire/ABI surface — @oasys/oecs/internal (no semver guarantees).
 import { HostCommandDispatcher, ringSetFieldCodec, ringDespawnCodec, ringDisableCodec,
-         ringEnableCodec, ringRemoveComponentCodec, HOST_COMMAND_PAYLOAD_BYTES } from "@oasys/oecs";
+         ringEnableCodec, ringRemoveComponentCodec, HOST_COMMAND_PAYLOAD_BYTES } from "@oasys/oecs/internal";
 
 const dispatcher = new HostCommandDispatcher()
   .onCommand(1, ringSetFieldCodec(Pos, "x"))      // decode → applyHostCommand

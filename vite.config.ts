@@ -54,6 +54,7 @@ export default defineConfig(({ command }) => ({
           "src/extensions/solid/index.ts",
         ),
         primitives: path.resolve(__dirname, "src/primitives.ts"),
+        internal: path.resolve(__dirname, "src/internal.ts"),
       },
       formats: ["es", "cjs"],
       fileName: (format, entryName) =>

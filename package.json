@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
@@ -31,6 +31,10 @@
     "./shared": {
       "import": { "types": "./dist/shared.d.ts", "default": "./dist/shared.js" },
       "require": { "types": "./dist/shared.d.ts", "default": "./dist/shared.cjs" }
+    },
+    "./internal": {
+      "import": { "types": "./dist/internal.d.ts", "default": "./dist/internal.js" },
+      "require": { "types": "./dist/internal.d.ts", "default": "./dist/internal.cjs" }
     }
   },
   "main": "./dist/index.cjs",
