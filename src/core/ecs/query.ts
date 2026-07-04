@@ -52,7 +52,7 @@ import type {
 	ComponentDef,
 	ComponentID,
 	ComponentSchema,
-	FieldValues,
+	CompleteFieldValues,
 	MutableColumnsForSchema,
 	ColumnsForSchema,
 	BundleOrDef
@@ -1534,7 +1534,7 @@ export class SystemContext {
 	public addComponent<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this;
 	public addComponent(
 		entityId: EntityID,
@@ -1597,7 +1597,7 @@ export class SystemContext {
 	public addSparse<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: SparseComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this;
 	public addSparse(
 		entityId: EntityID,

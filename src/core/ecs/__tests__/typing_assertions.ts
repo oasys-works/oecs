@@ -13,6 +13,8 @@ import type { ECS } from "../ecs";
 import type { ComponentDef } from "../component";
 import type { EntityID } from "../entity";
 import type { EventKey } from "../event";
+import type { HostCommandQueue } from "../host_commands";
+import { spawnEntry } from "../host_commands";
 import { bundle } from "../component";
 
 declare const world: ECS;
@@ -95,7 +97,34 @@ function registerEventAssertions(): void {
 	world.registerEvent(ErasedEvent, ["whatever"]);
 }
 
+declare const queue: HostCommandQueue;
+
+function hostSeamAssertions(): void {
+	// Entry values are complete and schema-checked per def; tags take exactly {}.
+	queue.spawn([
+		{ def: Pos, values: { x: 1, y: 2 } },
+		{ def: Frozen, values: {} }
+	]);
+	void spawnEntry(Pos, { x: 1, y: 2 });
+
+	// @ts-expect-error — misspelled field
+	queue.spawn([{ def: Pos, values: { x: 1, yy: 2 } }]);
+
+	// @ts-expect-error — cross-entry mixup: Pos values on Vel
+	queue.spawn([{ def: Vel, values: { x: 1, y: 2 } }]);
+
+	// @ts-expect-error — tag values must be empty
+	queue.spawn([{ def: Frozen, values: { x: 1 } }]);
+
+	// @ts-expect-error — junk values on a tag via the singular enqueue
+	queue.addComponent(e, Frozen, { x: 1 });
+
+	// @ts-expect-error — junk values on a tag via the immediate world API
+	world.addComponent(e, Frozen, { x: 1 });
+}
+
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
 void registerEventAssertions;
+void hostSeamAssertions;

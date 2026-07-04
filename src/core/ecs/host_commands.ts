@@ -28,7 +28,7 @@
  * typed queue is the default for in-process hosts; the ring is the cross-thread
  * / wire path (the sim worker, later the server).
  */
-import type { ComponentDef, ComponentSchema, FieldValues } from "./component";
+import type { ComponentDef, ComponentSchema, CompleteFieldValues, FieldValues } from "./component";
 import type { ECS } from "./ecs";
 import type { EntityID } from "./entity";
 import type { SystemContext } from "./query";
@@ -52,11 +52,29 @@ export interface SpawnEntry {
 	readonly values: FieldValues<ComponentSchema>;
 }
 
+/** Extracts the schema out of a `ComponentDef` handle. */
+type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : ComponentSchema;
+
+/** One schema-checked spawn entry: `values` is complete for its own def (see
+ * the `SpawnEntry` doc — the deferred add does NOT zero-fill), and a tag takes
+ * exactly `{}`. */
+export type SpawnEntryFor<D extends ComponentDef> = {
+	readonly def: D;
+	readonly values: CompleteFieldValues<SchemaOf<D>>;
+};
+
+/** The entries tuple for `HostCommandQueue.spawn` — each element's `values` is
+ * checked against its own `def`'s schema, mirroring `TemplateEntries` (which
+ * stays `Partial`: templates zero-fill, this path doesn't). */
+export type SpawnEntries<Defs extends readonly ComponentDef[]> = readonly [
+	...{ [K in keyof Defs]: SpawnEntryFor<Defs[K]> }
+];
+
 /** Type-checked `SpawnEntry` constructor — keeps `values` aligned to `def`'s
  * schema at the call site even though the stored entry is schema-erased. */
 export function spawnEntry<S extends ComponentSchema>(
 	def: ComponentDef<S>,
-	values: FieldValues<S>
+	values: CompleteFieldValues<S>
 ): SpawnEntry {
 	return { def: def as ComponentDef, values };
 }
@@ -170,7 +188,12 @@ export class HostCommandQueue {
 	private readonly queued: HostCommand[] = [];
 
 	/** Spawn an entity carrying `components`. `onSpawned` receives the new id
-	 * once the spawn applies. */
+	 * once the spawn applies. Each entry's `values` is checked against its own
+	 * `def`'s schema (`SpawnEntries`); the stored command stays schema-erased. */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): void;
 	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): void {
 		this.queued.push({ kind: "spawn", components, onSpawned });
 	}
@@ -182,7 +205,7 @@ export class HostCommandQueue {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): void {
 		this.queued.push({ kind: "add_component", eid, def: def as ComponentDef, values });
 	}

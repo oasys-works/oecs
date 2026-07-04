@@ -41,10 +41,11 @@ import type {
 	ComponentHandle,
 	ComponentSchema,
 	EntityID,
-	FieldValues,
+	CompleteFieldValues,
 	HostCommand,
 	HostCommandQueue,
-	SpawnEntry
+	SpawnEntry,
+	SpawnEntries
 } from "../../core/ecs";
 
 /**
@@ -101,6 +102,10 @@ export class TransactionBuilder {
 	 * also forwards the new id to the caller. The finalizer re-fires on redo, so the
 	 * inverse tracks the current id.
 	 */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): this;
 	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): this {
 		// One STABLE inverse object whose `eid` the finalizer MUTATES in place, rather
 		// than replacing the slot with a fresh object. `undo()` enqueues this object by
@@ -133,6 +138,7 @@ export class TransactionBuilder {
 	 * `onSpawned` rewrites this despawn's target so redo removes the respawned
 	 * entity rather than the dead original.
 	 */
+	despawn<Defs extends readonly ComponentDef[]>(eid: EntityID, restore: SpawnEntries<Defs>): this;
 	despawn(eid: EntityID, restore: readonly SpawnEntry[]): this {
 		// Symmetric with `spawn`: one STABLE forward despawn whose `eid` the respawn's
 		// `onSpawned` mutates in place, so a redo enqueued before the respawn applies
@@ -173,7 +179,7 @@ export class TransactionBuilder {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this {
 		this._txn.forward.push({ kind: "add_component", eid, def: def as ComponentDef, values });
 		this._txn.inverse.push({ kind: "remove_component", eid, def: def as ComponentDef });
@@ -187,7 +193,7 @@ export class TransactionBuilder {
 	removeComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		restore: FieldValues<S>
+		restore: CompleteFieldValues<S>
 	): this {
 		this._txn.forward.push({ kind: "remove_component", eid, def: def as ComponentDef });
 		this._txn.inverse.push({
@@ -247,6 +253,10 @@ export class Editor {
 	}
 
 	/** Spawn `components` as its own undo entry. `onSpawned` reports the new id. */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): EditorTransaction;
 	spawn(
 		components: readonly SpawnEntry[],
 		onSpawned?: (eid: EntityID) => void
@@ -255,6 +265,10 @@ export class Editor {
 	}
 
 	/** Despawn `eid` as its own undo entry; `restore` recreates it on undo. */
+	despawn<Defs extends readonly ComponentDef[]>(
+		eid: EntityID,
+		restore: SpawnEntries<Defs>
+	): EditorTransaction;
 	despawn(eid: EntityID, restore: readonly SpawnEntry[]): EditorTransaction {
 		return this.transaction((tx) => tx.despawn(eid, restore));
 	}
@@ -273,7 +287,7 @@ export class Editor {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): EditorTransaction {
 		return this.transaction((tx) => tx.addComponent(eid, def, values));
 	}
@@ -282,7 +296,7 @@ export class Editor {
 	removeComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		restore: FieldValues<S>
+		restore: CompleteFieldValues<S>
 	): EditorTransaction {
 		return this.transaction((tx) => tx.removeComponent(eid, def, restore));
 	}

@@ -72,6 +72,18 @@ export type ValuesArg<S extends ComponentSchema> = S extends Record<string, neve
 	? []
 	: [values?: Partial<FieldValues<S>>];
 
+/**
+ * `FieldValues` for APIs where the values object is required and complete
+ * (`addComponent`'s valued overload, the host-seam `SpawnEntry`). Guards the
+ * same tag degeneracy as `ValuesArg`: a tag accepts only the empty object
+ * (`Record<string, never>` — every property typed `never`), so
+ * `addComponent(e, Frozen, { x: 1 })` is a compile error while the
+ * tag-overload-less call sites can still pass `{}`.
+ */
+export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<string, never>
+	? Record<string, never>
+	: FieldValues<S>;
+
 /** Maps schema fields to their specific typed array columns. */
 export type ColumnsForSchema<S extends ComponentSchema> = {
 	readonly [K in keyof S]: TagToTypedArray[S[K]];

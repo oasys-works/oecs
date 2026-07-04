@@ -109,6 +109,8 @@ export {
 export type {
 	HostCommand,
 	SpawnEntry,
+	SpawnEntryFor,
+	SpawnEntries,
 	HostCommandSeamOptions,
 	HostCommandSink,
 	RingCommandApplier
@@ -199,6 +201,8 @@ export type {
 	ComponentHandle,
 	ComponentSchema,
 	FieldValues,
+	CompleteFieldValues,
+	ValuesArg,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,

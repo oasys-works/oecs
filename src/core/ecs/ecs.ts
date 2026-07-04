@@ -84,7 +84,7 @@ import {
 	type QueryCacheEntry
 } from "./query";
 import type { EntityID } from "./entity";
-import type { ComponentDef, ComponentSchema, FieldValues, BundleOrDef } from "./component";
+import type { ComponentDef, ComponentSchema, CompleteFieldValues, BundleOrDef } from "./component";
 import { bundleDef, bundleValues } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
 import type { RelationDef, RelationOptions } from "./relation";
@@ -783,7 +783,7 @@ export class ECS implements QueryResolver {
 	public addComponent<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this;
 	public addComponent(
 		entityId: EntityID,
@@ -862,7 +862,7 @@ export class ECS implements QueryResolver {
 	public addSparse<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: SparseComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this;
 	public addSparse(
 		entityId: EntityID,
@@ -1007,7 +1007,7 @@ export class ECS implements QueryResolver {
 	public batchAddComponent<S extends ComponentSchema>(
 		src: ArchetypeID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): void;
 	public batchAddComponent(
 		src: ArchetypeID,
