@@ -42,7 +42,7 @@ import {
 	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	COMPONENT_MASK_WORDS
-} from "./__generated__/abi";
+} from "./vendored_abi/abi";
 
 export {
 	COLUMN_DESCRIPTOR_BYTES,
