@@ -1,5 +1,8 @@
 # Resources
 
+> [!NOTE]
+> **0.5.0 — grouped surface.** Resource registration and access live on the **`ecs.resources`** facade — `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`, `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, `ecs.resources.has(Time)`. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+
 A **resource** is a typed global singleton — one value per `ECS`, keyed by a symbol. Use it for state that isn't per-entity: the input snapshot, the camera, the game clock, config flags, an RNG seed.
 
 ```ts

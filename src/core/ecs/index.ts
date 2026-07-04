@@ -1,5 +1,9 @@
 // ECS
 export { ECS, type ECSOptions } from "./ecs";
+// Grouped facades (H3 phase 2) — type-only: consumers reach the instances
+// via `ecs.relations` / `ecs.events` / `ecs.resources` / `ecs.snapshots`,
+// never construct them.
+export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./facades";
 
 // ECS memory sizing (#682) — the single surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). `resolveECSMemory` is exported so tests

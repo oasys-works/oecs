@@ -21,6 +21,7 @@
 
 // ECS
 export { ECS, type ECSOptions } from "./core/ecs";
+export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
 
 // ECS memory sizing (#682) — the intent surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). The resolver + derivation constants are

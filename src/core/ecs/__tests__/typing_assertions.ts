@@ -385,6 +385,25 @@ function eventReaderReadonlyAssertions(reader: EventReader<{ a: number }>): void
 	reader.length = 0;
 }
 
+function facadeCardinalityAssertions(): void {
+	// The grouped facades (H3 phase 2) mirror the typestate cardinality
+	// surface — ecs.relations.register stamps the brand, and the facade's
+	// exclusive-only traversal rejects a multi handle exactly like the flat
+	// forms above. A facade must never be a typestate escape hatch.
+	const fexcl = world.relations.register();
+	const fmulti = world.relations.register({ multi: true });
+	const _fe: RelationDef<"exclusive"> = fexcl;
+	const _fm: RelationDef<"multi"> = fmulti;
+	void _fe; void _fm;
+
+	void world.relations.targetOf(e, ExclusiveRel);
+	void world.relations.cascadeOf(e, ExclusiveRel);
+	// @ts-expect-error — facade targetOf on a multi relation (use targetsOf)
+	void world.relations.targetOf(e, MultiRel);
+	// @ts-expect-error — facade traversal is exclusive-only
+	void world.relations.ancestorsOf(e, MultiRel);
+}
+
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
@@ -399,3 +418,4 @@ void eventKeyVarianceAssertions;
 void eventReaderReadonlyAssertions;
 void relationCardinalityAssertions;
 void queryTermAssertions;
+void facadeCardinalityAssertions;

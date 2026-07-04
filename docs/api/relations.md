@@ -1,5 +1,8 @@
 # Relations
 
+> [!NOTE]
+> **0.5.0 — grouped surface.** Relation registration, mutation, reads, wildcards, traversal, and compaction live on the **`ecs.relations`** facade — `ecs.relations.register()`, `ecs.relations.add(child, ChildOf, parent)`, `ecs.relations.targetOf(child, ChildOf)`, `ecs.relations.ancestorsOf(...)`, `ecs.relations.compact()`; `relationCount` is `ecs.relations.count`, `hasRelation` is `ecs.relations.has`, `compactRelations` is `ecs.relations.compact`. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+
 A **relation** links two entities as a `(relation, target)` pair on a **source** entity — `addRelation(child, ChildOf, parent)`. Relations model hierarchies (scene graphs, bone trees), ownership, targeting ("this turret aims at that ship"), and instance-of links, with queries in both directions and configurable cleanup when a target dies.
 
 Relations are stored in [sparse storage](./sparse-storage.md), so adding/removing one causes **no archetype transition** and consumes **no** dense-identity bit. All relation operations are **immediate** (not deferred) — they're safe mid-tick precisely because no dense row moves.

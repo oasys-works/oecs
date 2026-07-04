@@ -73,6 +73,7 @@ import {
 	type StructuralObserverConfig
 } from "./observer";
 import type { ColumnStore } from "../store";
+import { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./facades";
 import { Schedule, type SCHEDULE } from "./schedule";
 import type { Archetype, ArchetypeID } from "./archetype";
 import {
@@ -225,6 +226,22 @@ export class ECS implements QueryResolver {
 	 * called — the structural-flush fast path is byte-for-byte unchanged. */
 	private readonly _observers: ObserverRegistry;
 
+	// --- Grouped facades (H3 phase 2) ---
+	// Cohesive secondary surfaces, each wrapping the same Store entry points
+	// the flat methods used. The flat forms below are @deprecated delegations
+	// for one release (removal targeted at 0.6.0); hot-path API stays flat.
+	/** Relations: register/add/remove/has, wildcard + traversal reads,
+	 * reverse-index compaction. See `ECSRelations`. */
+	public readonly relations: ECSRelations;
+	/** Host-side event channels + signals: register/registerSignal/emit/read
+	 * (system-side `ctx.emit` is unchanged). See `ECSEvents`. */
+	public readonly events: ECSEvents;
+	/** World resources: register/get/set/remove/has. See `ECSResources`. */
+	public readonly resources: ECSResources;
+	/** Determinism surface: capture/restore (full + sparse), stateHash,
+	 * the `deterministic` flag. See `ECSSnapshots`. */
+	public readonly snapshots: ECSSnapshots;
+
 	private readonly systems: Set<SystemDescriptor> = new Set();
 	private nextSystemId = 0;
 
@@ -319,6 +336,10 @@ export class ECS implements QueryResolver {
 			deterministic: options?.deterministic
 		});
 		this.schedule = new Schedule(options?.onWarn);
+		this.relations = new ECSRelations(this.store);
+		this.events = new ECSEvents(this.store);
+		this.resources = new ECSResources(this.store);
+		this.snapshots = new ECSSnapshots(this.store);
 		this.ctx = new SystemContext(this.store);
 		// Observers dispatch through the shared SystemContext + accessCheck. The
 		// store calls the structural hook between fixed-point flush rounds; onSet
@@ -486,6 +507,7 @@ export class ECS implements QueryResolver {
 		return this.store.registerSparseComponent(schemaOrFields as Record<string, TypedArrayTag>);
 	}
 
+	/** @deprecated Use `ecs.resources.register()` instead; the flat form is removed in 0.6.0. */
 	public registerResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
 		if (__DEV__ && dispatchTrace.isActive()) {
 			dispatchTrace.recordResourceRegister(key.description ?? "");
@@ -493,6 +515,7 @@ export class ECS implements QueryResolver {
 		this.store.registerResource(key, value);
 	}
 
+	/** @deprecated Use `ecs.resources.get()` instead; the flat form is removed in 0.6.0. */
 	public resource<T>(key: ResourceKey<T>): T {
 		if (__DEV__) {
 			accessCheck.checkResourceRead(key);
@@ -503,6 +526,7 @@ export class ECS implements QueryResolver {
 		return unsafeCast<T>(this.store.getResource(key));
 	}
 
+	/** @deprecated Use `ecs.resources.set()` instead; the flat form is removed in 0.6.0. */
 	public setResource<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
 		if (__DEV__) {
 			accessCheck.checkResourceWrite(key);
@@ -520,7 +544,8 @@ export class ECS implements QueryResolver {
 	 * same key). Fails closed on a missing key. Afterwards the key is free to
 	 * `registerResource` again — the present → absent → present lifecycle.
 	 * Resources are out of `stateHash` and snapshot/resume, so a remove never
-	 * perturbs the determinism hash. */
+	 * perturbs the determinism hash.
+	 * @deprecated Use `ecs.resources.remove()` instead; the flat form is removed in 0.6.0. */
 	public removeResource<T>(key: ResourceKey<T>): void {
 		if (__DEV__) {
 			accessCheck.checkResourceWrite(key);
@@ -695,7 +720,9 @@ export class ECS implements QueryResolver {
 		return next;
 	}
 
+	/** @deprecated Use `ecs.events.emit()` instead; the flat form is removed in 0.6.0. */
 	public emit(key: SignalKey): void;
+	/** @deprecated Use `ecs.events.emit()` instead; the flat form is removed in 0.6.0. */
 	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
 		if (__DEV__ && dispatchTrace.isActive()) {
@@ -709,6 +736,7 @@ export class ECS implements QueryResolver {
 		}
 	}
 
+	/** @deprecated Use `ecs.events.read()` instead; the flat form is removed in 0.6.0. */
 	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
 		if (__DEV__ && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
@@ -1089,14 +1117,16 @@ export class ECS implements QueryResolver {
 
 	/** Count of registered relations (#471). Surfaces the Store-side count so
 	 * tests can assert it alongside `archetype_count` when checking the
-	 * no-transition invariant. */
+	 * no-transition invariant.
+	 * @deprecated Use `ecs.relations.count` instead; the flat form is removed in 0.6.0. */
 	public get relationCount(): number {
 		return this.store.relationCount;
 	}
 
 	/** Whether the determinism surface is enabled (#626 / ADR-0020). `false`
 	 * (the default) ⇒ `stateHash` / `snapshotSparse` / `restoreSparse` throw
-	 * `DETERMINISM_DISABLED`. Opt in via `new ECS({ deterministic: true })`. */
+	 * `DETERMINISM_DISABLED`. Opt in via `new ECS({ deterministic: true })`.
+	 * @deprecated Use `ecs.snapshots.deterministic` instead; the flat form is removed in 0.6.0. */
 	public get deterministic(): boolean {
 		return this.store.deterministic;
 	}
@@ -1110,7 +1140,8 @@ export class ECS implements QueryResolver {
 	 * not SAB capacity. (#171 §6.1.9 Phase 5)
 	 *
 	 * Opt-in (#626 / ADR-0020): throws `DETERMINISM_DISABLED` unless the ECS was
-	 * constructed with `{ deterministic: true }`. */
+	 * constructed with `{ deterministic: true }`.
+	 * @deprecated Use `ecs.snapshots.stateHash()` instead; the flat form is removed in 0.6.0. */
 	public stateHash(): number {
 		return this.store.stateHash();
 	}
@@ -1122,7 +1153,8 @@ export class ECS implements QueryResolver {
 	 * Pairs with `restoreSparse`.
 	 *
 	 * Opt-in (#626 / ADR-0020): throws `DETERMINISM_DISABLED` unless the ECS was
-	 * constructed with `{ deterministic: true }`. */
+	 * constructed with `{ deterministic: true }`.
+	 * @deprecated Use `ecs.snapshots.captureSparse()` instead; the flat form is removed in 0.6.0. */
 	public snapshotSparse(): Uint8Array {
 		return this.store.snapshotSparse();
 	}
@@ -1134,7 +1166,8 @@ export class ECS implements QueryResolver {
 	 * index past `MAX_INDEX`, or a non-canonical frame with trailing bytes).
 	 *
 	 * Opt-in (#626 / ADR-0020): throws `DETERMINISM_DISABLED` unless the ECS was
-	 * constructed with `{ deterministic: true }`. */
+	 * constructed with `{ deterministic: true }`.
+	 * @deprecated Use `ecs.snapshots.restoreSparse()` instead; the flat form is removed in 0.6.0. */
 	public restoreSparse(bytes: Uint8Array): void {
 		this.store.restoreSparse(bytes);
 	}
@@ -1148,7 +1181,8 @@ export class ECS implements QueryResolver {
 	 *
 	 * Opt-in (ADR-0020): throws `DETERMINISM_DISABLED` unless `{ deterministic:
 	 * true }`. v1 does NOT capture resources, events, or change-detection /
-	 * scheduler baselines (`changed()` queries) — see ADR-0031. */
+	 * scheduler baselines (`changed()` queries) — see ADR-0031.
+	 * @deprecated Use `ecs.snapshots.capture()` instead; the flat form is removed in 0.6.0. */
 	public snapshot(): Uint8Array {
 		return this.store.snapshot();
 	}
@@ -1164,7 +1198,8 @@ export class ECS implements QueryResolver {
 	 * set is stable).
 	 *
 	 * Opt-in (ADR-0020): throws `DETERMINISM_DISABLED` unless `{ deterministic:
-	 * true }`. */
+	 * true }`.
+	 * @deprecated Use `ecs.snapshots.restore()` instead; the flat form is removed in 0.6.0. */
 	public restoreInto(bytes: Uint8Array): void {
 		this.store.restoreInto(bytes);
 	}
@@ -1180,7 +1215,8 @@ export class ECS implements QueryResolver {
 
 	/** Register an event channel. `fields` must name EVERY schema key — an
 	 * under-registered channel would silently drop the missing fields at emit
-	 * (see `EventFieldsCover`). */
+	 * (see `EventFieldsCover`).
+	 * @deprecated Use `ecs.events.register()` instead; the flat form is removed in 0.6.0. */
 	public registerEvent<S extends EventSchema, const F extends readonly (keyof S & string)[]>(
 		key: EventKey<S>,
 		fields: F & EventFieldsCover<S, F>
@@ -1188,10 +1224,12 @@ export class ECS implements QueryResolver {
 		this.store.registerEventByKey<S>(key, fields);
 	}
 
+	/** @deprecated Use `ecs.events.registerSignal()` instead; the flat form is removed in 0.6.0. */
 	public registerSignal(key: SignalKey): void {
 		this.store.registerEventByKey<EmptyEventSchema>(key, []);
 	}
 
+	/** @deprecated Use `ecs.resources.has()` instead; the flat form is removed in 0.6.0. */
 	public hasResource<T>(key: ResourceKey<T>): boolean {
 		return this.store.hasResource(key);
 	}
@@ -1325,66 +1363,77 @@ export class ECS implements QueryResolver {
 	 * `RelationDef<"exclusive">`, so passing a `{ multi: true }` relation is a
 	 * compile error instead of a dev-mode RELATION_MODE_MISMATCH throw. A
 	 * dynamically-built options value falls to the erased overload and keeps
-	 * the runtime check as its only guard. */
+	 * the runtime check as its only guard.
+	 * @deprecated Use `ecs.relations.register()` instead; the flat form is removed in 0.6.0. */
 	public registerRelation(opts?: {
 		readonly exclusive?: true;
 		readonly multi?: false;
 		readonly onDeleteTarget?: OnDeleteTarget;
 	}): RelationDef<"exclusive">;
+	/** @deprecated Use `ecs.relations.register()` instead; the flat form is removed in 0.6.0. */
 	public registerRelation(opts: {
 		readonly multi: true;
 		readonly exclusive?: false;
 		readonly onDeleteTarget?: OnDeleteTarget;
 	}): RelationDef<"multi">;
+	/** @deprecated Use `ecs.relations.register()` instead; the flat form is removed in 0.6.0. */
 	public registerRelation(opts?: RelationOptions): RelationDef;
 	public registerRelation(opts?: RelationOptions): RelationDef {
 		return this.store.registerRelation(opts);
 	}
 
 	/** Add a `(R, tgt)` pair to `src`. Exclusive replaces the existing target;
-	 * multi adds to the set. No archetype transition. */
+	 * multi adds to the set. No archetype transition.
+	 * @deprecated Use `ecs.relations.add()` instead; the flat form is removed in 0.6.0. */
 	public addRelation(src: EntityID, def: RelationDef, tgt: EntityID): this {
 		this.store.addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`. For multi, omitting `tgt` removes
-	 * all of `src`'s targets. No archetype transition. */
+	 * all of `src`'s targets. No archetype transition.
+	 * @deprecated Use `ecs.relations.remove()` instead; the flat form is removed in 0.6.0. */
 	public removeRelation(src: EntityID, def: RelationDef, tgt?: EntityID): this {
 		this.store.removeRelation(src, def, tgt);
 		return this;
 	}
 
-	/** The single target of `src` under an exclusive relation, or `undefined`. */
+	/** The single target of `src` under an exclusive relation, or `undefined`.
+	 * @deprecated Use `ecs.relations.targetOf()` instead; the flat form is removed in 0.6.0. */
 	public targetOf(src: EntityID, def: RelationDef<"exclusive">): EntityID | undefined {
 		return this.store.targetOf(src, def);
 	}
 
-	/** All targets of `src` under `R`, ascending by id. */
+	/** All targets of `src` under `R`, ascending by id.
+	 * @deprecated Use `ecs.relations.targetsOf()` instead; the flat form is removed in 0.6.0. */
 	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
 		return this.store.targetsOf(src, def);
 	}
 
-	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id. */
+	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
+	 * @deprecated Use `ecs.relations.sourcesOf()` instead; the flat form is removed in 0.6.0. */
 	public sourcesOf(def: RelationDef, tgt: EntityID): EntityID[] {
 		return this.store.sourcesOf(def, tgt);
 	}
 
-	/** Whether `src` holds any pair under `R`. */
+	/** Whether `src` holds any pair under `R`.
+	 * @deprecated Use `ecs.relations.has()` instead; the flat form is removed in 0.6.0. */
 	public hasRelation(src: EntityID, def: RelationDef): boolean {
 		return this.store.hasRelation(src, def);
 	}
 
 	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard
 	 * (#472). Sources in canonical entity-index order; a multi source's targets
-	 * ascending by id. Cold path. */
+	 * ascending by id. Cold path.
+	 * @deprecated Use `ecs.relations.pairsOf()` instead; the flat form is removed in 0.6.0. */
 	public pairsOf(def: RelationDef): [EntityID, EntityID][] {
 		return this.store.pairsOf(def);
 	}
 
 	/** Every `(relation, source)` pointing at `tgt`, across all relation kinds —
 	 * the `(*, T)` wildcard (#472). Ordered by relation id then source id. The
-	 * single-relation form is `sourcesOf(def, tgt)`. */
+	 * single-relation form is `sourcesOf(def, tgt)`.
+	 * @deprecated Use `ecs.relations.sourcesOfAny()` instead; the flat form is removed in 0.6.0. */
 	public sourcesOfAny(tgt: EntityID): [RelationDef, EntityID][] {
 		return this.store.sourcesOfAny(tgt);
 	}
@@ -1396,7 +1445,8 @@ export class ECS implements QueryResolver {
 	 * short-lived targets grows the index without bound. A purely cold-path
 	 * reclaim — no observable state change (forward links stay dangling per
 	 * `orphan`, `stateHash` is unaffected) — call it at scene/snapshot
-	 * boundaries. */
+	 * boundaries.
+	 * @deprecated Use `ecs.relations.compact()` instead; the flat form is removed in 0.6.0. */
 	public compactRelations(): number {
 		return this.store.compactRelations();
 	}
@@ -1406,20 +1456,23 @@ export class ECS implements QueryResolver {
 	// `__DEV__` error (`RELATION_CYCLE`), never a hang. Cold path.
 
 	/** Walk relation `R` up from `src` to its chain root, returning
-	 * `[src, parent, …, root]` (nearest-ancestor-first). Exclusive only. */
+	 * `[src, parent, …, root]` (nearest-ancestor-first). Exclusive only.
+	 * @deprecated Use `ecs.relations.ancestorsOf()` instead; the flat form is removed in 0.6.0. */
 	public ancestorsOf(src: EntityID, def: RelationDef<"exclusive">): EntityID[] {
 		return this.store.ancestorsOf(src, def);
 	}
 
 	/** The root of `src`'s `R`-chain (`src` itself when it has no target).
-	 * Exclusive only. */
+	 * Exclusive only.
+	 * @deprecated Use `ecs.relations.rootOf()` instead; the flat form is removed in 0.6.0. */
 	public rootOf(src: EntityID, def: RelationDef<"exclusive">): EntityID {
 		return this.store.rootOf(src, def);
 	}
 
 	/** Walk relation `R` down from `root` over the reverse index, returning the
 	 * subtree (including `root`) breadth-first — parents before children (the
-	 * `cascade` order). Exclusive only. */
+	 * `cascade` order). Exclusive only.
+	 * @deprecated Use `ecs.relations.cascadeOf()` instead; the flat form is removed in 0.6.0. */
 	public cascadeOf(root: EntityID, def: RelationDef<"exclusive">): EntityID[] {
 		return this.store.cascadeOf(root, def);
 	}

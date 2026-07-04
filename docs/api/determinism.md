@@ -1,5 +1,8 @@
 # Determinism
 
+> [!NOTE]
+> **0.5.0 — grouped surface.** The determinism surface (state digest + world snapshot/resume) live on the **`ecs.snapshots`** facade — `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()` / `ecs.snapshots.restore(bytes)` (the flat `snapshot()`/`restoreInto()`), `ecs.snapshots.captureSparse()` / `restoreSparse()`, and the `ecs.snapshots.deterministic` flag. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+
 A **deterministic** `ECS` guarantees that the same sequence of operations produces the same state, **bit-for-bit** — across backings (heap vs `SharedArrayBuffer`), across processes on the same architecture, and after a snapshot round-trip. That's the foundation for lockstep multiplayer, replay, deterministic debugging, and save/load.
 
 Determinism is **opt-in** because it costs a little (canonical ordering, an integer-only column rule). A plain `ECS` runs faster and doesn't expose the hash/snapshot surface.

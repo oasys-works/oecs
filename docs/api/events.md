@@ -1,5 +1,8 @@
 # Events
 
+> [!NOTE]
+> **0.5.0 — grouped surface.** Host-side event registration, emit, and read live on the **`ecs.events`** facade — `ecs.events.register(Damage, ["amount"])`, `ecs.events.registerSignal(Ping)`, `ecs.events.emit(Damage, {...})`, `ecs.events.read(Damage)` — system-side `ctx.emit`/`ctx.read` are unchanged. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+
 An **event** is a fire-and-forget message with a typed payload. Systems `emit` them and other systems `read` them within the same frame. Events are stored struct-of-arrays (one column per field) and **cleared at the end of every `update()`** — they exist for exactly one frame.
 
 ```ts

@@ -4,10 +4,14 @@ One plan per issue; IDs match the report. Completed plans are deleted after thei
 
 ## Open
 
-| ID | Plan | One-liner | Status |
-|----|------|-----------|--------|
-| H1 | [Store god-object decomposition](H1-store-god-object-decomposition.md) | Extract collaborators from `Store` | **All 6 steps done** (RelationService, Event/ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService, ArchetypeGraph — 3/4/6 bench-gated via the revived `oecs_compare`/`oecs_bench` A/B workflow, every ratio within identical-code control bands). Remaining Store sections (component registration, immediate ops, template/spawn, enable/disable, sparse storage, query support) — reassess per the plan's second-pass note |
-| H3 | [ECS facade slimming](H3-ecs-facade-slimming.md) | Stop mirroring every `Store` method on `ECS` | Phase 1 **done** (pass-through band + AST guard test, 2026-07-04); phase 2 rides on H1 and needs a user decision on flat-vs-grouped surface |
+*(none — all sixteen findings are closed; the only carried-forward note is H1's
+second-pass suggestion: the sections still in `Store` — component registration,
+immediate component ops, template/spawn, enable/disable, sparse storage, query
+support — may warrant another decomposition pass someday.)*
+
+## Completed (2026-07-05)
+
+H1 (Store god-object decomposition — all six extractions: RelationService, Event/ResourceRegistry, EntityAllocator dd8d1f8, DeferredCommandBuffer 3bf0b71, SnapshotService ad155c0, ArchetypeGraph 7918733; steps 3/4/6 bench-gated via the revived `oecs_compare`/`oecs_bench` A/B workflow, every ratio within identical-code control bands — methodology + lessons in `oecs_compare/EXPERIMENTS.md`), H3 (ECS facade slimming — phase 1: pass-through band + AST guard a38e9c2; phase 2: grouped `ecs.relations`/`ecs.events`/`ecs.resources`/`ecs.snapshots` facades mirroring the typestate cardinality surface, flat forms @deprecated until 0.6.0, shipped with the 0.5.0 bump).
 
 ## Completed (2026-07-04, branch `seam-fixes`)
 

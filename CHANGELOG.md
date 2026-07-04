@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-07-05
+
+### Added
+
+- **Compile-time typestate across the system, query, relation, and key seams.** The config-form
+  `registerSystem` now infers your access declarations as literal types and hands `fn`/`onAdded` a
+  `SystemContext<DeclaredAccess<…>>` narrowed to exactly the declared surface — undeclared access
+  is a compile error naming the missing declaration, with the dev-mode runtime check remaining as
+  the backstop for dynamic values. Query columns are typed by the query's terms
+  (`ChunkColumns<Defs>` / `ArchetypeView<Defs>`; `.and(...)` extends the term set), relation
+  handles carry their cardinality (`RelationDef<"exclusive">` vs `RelationDef<"multi">` — the
+  exclusive-only traversal surfaces reject a multi handle at compile time), and
+  `ResourceKey`/`EventKey`/`EventDef` are invariant so a key can no longer widen through
+  `unknown`. A checked-in type battery (`typing_assertions.ts`) pins every rule.
+- **Grouped facades: `ecs.relations`, `ecs.events`, `ecs.resources`, `ecs.snapshots`.** Cohesive
+  secondary surfaces move off the flat namespace onto narrow typed facades —
+  `ecs.relations.add(child, ChildOf, parent)`, `ecs.events.emit(Damage, {...})`,
+  `ecs.resources.get(Time)`, `ecs.snapshots.capture()`. The facades mirror the typestate
+  surface exactly (cardinality-stamped `relations.register`, exclusive-only traversal). Hot-path
+  API (component ops, queries, spawn/destroy, sparse ops) stays flat by design. Facade classes
+  are exported type-only; the runtime export list is unchanged.
+
+### Deprecated
+
+- The 29 flat forms behind the new facades (`registerRelation`/`addRelation`/`targetOf`/…,
+  `registerEvent`/`registerSignal`/`emit`/`read`, `registerResource`/`resource`/`setResource`/
+  `removeResource`/`hasResource`, `snapshot`/`restoreInto`/`snapshotSparse`/`restoreSparse`/
+  `stateHash`/`deterministic`, `relationCount`/`compactRelations`). They delegate unchanged
+  through 0.5.x and are **removed in 0.6.0** — each carries an `@deprecated` pointer to its
+  grouped replacement.
+
+### Changed (internal)
+
+- **`Store` decomposed into six focused collaborators** (RelationService, EventRegistry +
+  ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService, ArchetypeGraph) with
+  `Store` as the coordinator; the hot-path extractions were A/B-benchmarked against
+  identical-code controls with no regression. The `ECS` facade's pure delegations now live in a
+  marker-delimited pass-through band whose logic-free invariant is enforced by an AST guard test.
+
 ## [0.4.1] — 2026-07-04
 
 ### Changed (breaking)
