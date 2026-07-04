@@ -6,7 +6,7 @@ One plan per issue; IDs match the report. Completed plans are deleted after thei
 
 | ID | Plan | One-liner | Status |
 |----|------|-----------|--------|
-| H1 | [Store god-object decomposition](H1-store-god-object-decomposition.md) | Extract collaborators from `Store` | Steps 1–4 done (RelationService, Event/ResourceRegistry, EntityAllocator, DeferredCommandBuffer — 3 and 4 bench-gated via the revived `oecs_compare`/`oecs_bench` A/B workflow, no regression vs identical-code controls); steps 5–6 (SnapshotService, ArchetypeGraph) next |
+| H1 | [Store god-object decomposition](H1-store-god-object-decomposition.md) | Extract collaborators from `Store` | Steps 1–5 done (RelationService, Event/ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService — 3 and 4 bench-gated via the revived `oecs_compare`/`oecs_bench` A/B workflow, no regression vs identical-code controls); step 6 (ArchetypeGraph — most entangled, bench-gated) remains |
 | H3 | [ECS facade slimming](H3-ecs-facade-slimming.md) | Stop mirroring every `Store` method on `ECS` | Phase 1 **done** (pass-through band + AST guard test, 2026-07-04); phase 2 rides on H1 and needs a user decision on flat-vs-grouped surface |
 
 ## Completed (2026-07-04, branch `seam-fixes`)
