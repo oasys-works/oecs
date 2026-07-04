@@ -20,6 +20,7 @@
       "node_modules",
       "**/*.test.ts",
       "**/*.bench.ts",
+      "**/__tests__/**",
       "vite.config.ts",
       "vitest.config.ts",
       "tsconfig.node.json",
