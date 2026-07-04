@@ -50,9 +50,10 @@
  * base owns the cardinality-agnostic reverse index, and `ExclusiveRelationStore`
  * / `MultiRelationStore` (built by `makeRelationStore`) each own their forward
  * representation *and* the backing `SparseComponentStore` interaction for it.
- * `Store` keeps the things that are genuinely its own — entity liveness,
- * relation/sparse registration, and destroy *orchestration* (purge ordering,
- * `OnDeleteTarget` policy) — and drives a relation through `link` / `unlink` /
+ * The registry level keeps the things that are genuinely its own — entity
+ * liveness (`Store`), relation/sparse registration and destroy *orchestration*
+ * (purge ordering, `OnDeleteTarget` policy — `RelationService`,
+ * relation_service.ts) — and drives a relation through `link` / `unlink` /
  * `purgeSource` / `forEachCanonicalPair`, with no cardinality branch. Each
  * cardinality's lockstep bookkeeping lives in exactly one method on one class,
  * so there is no scattered site to miss. The cardinality-free reclaim primitive
@@ -68,7 +69,7 @@ import {
 } from "./sparse_store";
 
 /** Relation handle id. A separate id space from `ComponentID` and
- * `SparseComponentID` — it indexes `Store`'s relation registry. The numeric
+ * `SparseComponentID` — it indexes the `RelationService` registry. The numeric
  * value is the registration order, stable for the lifetime of the ECS. */
 export type RelationID = Brand<number, "relation_id">;
 
@@ -146,8 +147,9 @@ export type MakeSourceID = (index: number) => EntityID;
  * its sparse interaction are owned by the concrete `ExclusiveRelationStore` /
  * `MultiRelationStore` (built by `makeRelationStore`).
  *
- * `Store` owns what is genuinely its own — entity liveness, registration, and
- * destroy orchestration — and drives a relation through the virtual `link` /
+ * The registry level (`Store` + `RelationService`) owns what is genuinely its
+ * own — entity liveness, registration, and destroy orchestration — and drives
+ * a relation through the virtual `link` /
  * `unlink` / `purgeSource` / `forEachCanonicalPair` / … without ever
  * branching on cardinality. Each cardinality keeps forward link + reverse index
  * + sparse membership in lockstep inside one method on one class, so the
