@@ -82,8 +82,11 @@ import {
 	type ArchetypeEdge,
 	type ArchetypeID
 } from "./archetype";
-import type { Query } from "./query";
+import type { Query, QueryHost } from "./query";
 import { RelationService } from "./relation_service";
+// Type-only: the per-consumer host seams Store implements (M1). observer.ts /
+// query.ts import only types from store.ts, so neither edge is a runtime cycle.
+import type { ObserverHost } from "./observer";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { bucketPush } from "./utils/arrays";
 import {
@@ -337,7 +340,7 @@ export interface StoreOptions {
 	deterministic?: boolean;
 }
 
-export class Store {
+export class Store implements ObserverHost, QueryHost {
 	// --- Entity ID management ---
 	// Generational slot allocator: entityGenerations[index] holds the current
 	// generation for that slot. Free indices are recycled via a stack. A slot
@@ -479,9 +482,17 @@ export class Store {
 		enaEid: [],
 		enaLen: 0
 	};
-	/** Installed by `ECS` — dispatches a round's collected events to the observer
-	 * registry (ordering + callbacks), which may enqueue further structural ops. */
-	public _structuralObserverHook: ((ev: StructuralObserverEvents) => void) | null = null;
+	/** Installed via `setStructuralObserverHook` — dispatches a round's collected
+	 * events to the observer registry (ordering + callbacks), which may enqueue
+	 * further structural ops. */
+	private _structuralObserverHook: ((ev: StructuralObserverEvents) => void) | null = null;
+
+	/** Install the structural-observer dispatch hook (called once by `ECS`
+	 * during construction) — the named seam replacing direct writes to the
+	 * previously-public field (M1). */
+	public setStructuralObserverHook(fn: (ev: StructuralObserverEvents) => void): void {
+		this._structuralObserverHook = fn;
+	}
 	/** Re-entrancy guard for the observed fixed-point loop. An observer callback
 	 * must enqueue (add/remove) and let the loop settle it — calling `ctx.flush()`
 	 * from inside a callback would re-enter `flushStructural` and corrupt the

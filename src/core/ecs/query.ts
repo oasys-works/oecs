@@ -50,6 +50,7 @@ import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
 import type {
 	ComponentDef,
+	ComponentHandle,
 	ComponentID,
 	ComponentSchema,
 	CompleteFieldValues,
@@ -75,6 +76,66 @@ import { EMPTY_VALUES } from "./utils/constants";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { dispatchTrace } from "./dispatch_trace";
 import { accessCheck } from "./access_check";
+
+/** The query-driver seam on `Store` — the typed contract behind the
+ * underscore members `ecs.ts` and the query internals reach (M1). `Store`
+ * implements this; when the cache/driver layer is extracted (M2/H1) the
+ * interface retargets at the collaborator without touching consumers.
+ * `_tick` / `_trace` are deliberately mutable: `ECS.update()` advances the
+ * change tick and `ECS.setTrace` installs the sink through this seam. */
+export interface QueryHost {
+	/** Change tick — advanced by `ECS.update()` each frame. */
+	_tick: number;
+	/** Dev-only frame-trace sink (`ECS.setTrace`); always null in prod. */
+	_trace: FrameTraceSink | null;
+	/** True once any component observer opted into per-entity dirty tracking —
+	 * gates `_noteSet` at every write site. */
+	readonly _anyDirtyTracked: boolean;
+	/** Bumped when an archetype crosses empty↔non-empty — cached query
+	 * archetype lists rebuild when their observed epoch is stale (#327). */
+	readonly _queryDirtyEpoch: number;
+	/** Record a per-entity onSet dirty mark for `def` (gated by
+	 * `_anyDirtyTracked` at the call site). */
+	_noteSet(def: ComponentHandle, eid: EntityID): void;
+	/** Dev-only: buffered event count across dirty channels (mid-update emit
+	 * detection in `ECS.update()`). */
+	_devBufferedEventCount(): number;
+	/** Second query-match path: sparse-term intersection (#469 / ADR-0011). */
+	_forEachSparseMatch(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		denseArchetypes: readonly Archetype[],
+		cb: (entityId: EntityID) => void,
+		includeDisabled: boolean
+	): void;
+	/** Third query-match path: the `(*, T)` wildcard (#579). */
+	_forEachRelationTargetMatch(
+		target: EntityID,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		includeDisabled: boolean,
+		cb: (entityId: EntityID) => void
+	): void;
+	/** Fourth query-match path: hierarchy depth ordering (#581). */
+	_forEachHierarchyMatch(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		denseArchetypes: readonly Archetype[],
+		relation: RelationDef,
+		maxDepth: number,
+		includeDisabled: boolean,
+		cb: (entityId: EntityID) => void
+	): void;
+}
 
 export interface QueryCacheEntry {
 	includeMask: BitSet;

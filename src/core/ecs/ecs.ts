@@ -339,7 +339,7 @@ export class ECS implements QueryResolver {
 		// store calls the structural hook between fixed-point flush rounds; onSet
 		// is driven from `update()`'s tail (the post-update detection point).
 		this._observers = new ObserverRegistry(this.store, this.ctx);
-		this.store._structuralObserverHook = (ev) => this._observers.dispatchStructural(ev);
+		this.store.setStructuralObserverHook((ev) => this._observers.dispatchStructural(ev));
 		this._fixedTimestep = validateFixedTimestep(
 			options?.fixedTimestep ?? DEFAULT_FIXED_TIMESTEP
 		);

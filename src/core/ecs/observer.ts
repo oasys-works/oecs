@@ -54,9 +54,9 @@ import { unsafeCast } from "../../type_primitives";
 import type { ArchetypeView } from "./archetype";
 import type { ComponentDef, ComponentHandle } from "./component";
 import type { EntityID } from "./entity";
-import type { ObserverOp } from "./frame_trace";
+import type { FrameTraceSink, ObserverOp } from "./frame_trace";
 import type { SystemContext } from "./query";
-import type { Store, StructuralObserverEvents } from "./store";
+import type { StructuralObserverEvents } from "./store";
 import {
 	_INTERNAL_EMPTY_ACCESS,
 	asSystemId,
@@ -65,6 +65,37 @@ import {
 } from "./system";
 import { accessCheck } from "./access_check";
 import { ECS_ERROR, ECSError } from "./utils/error";
+
+/** What the observer registry needs from `Store` — the typed seam replacing
+ * bare underscore-convention reach-through (M1). `Store` implements this; the
+ * registry holds only this view, so the compiler bounds what observer dispatch
+ * can touch. Underscore names are kept so `Store`'s members stay one
+ * declaration (they read as "internal" at every other call site). */
+export interface ObserverHost {
+	/** Current change tick — read for onSet baselines. */
+	readonly _tick: number;
+	/** Dev-only frame-trace sink (`null` when unset; always null in prod). */
+	readonly _trace: FrameTraceSink | null;
+	/** Sync a component's observation flags (add/remove/disable/enable/dirty). */
+	_configureComponentObservation(
+		cid: number,
+		hasAdd: boolean,
+		hasRem: boolean,
+		hasDisable: boolean,
+		hasEnable: boolean,
+		trackDirty: boolean
+	): void;
+	/** Drain the per-entity onSet dirty list for `cid` (clears marks). */
+	_takeDirty(cid: number): EntityID[];
+	/** Visit archetypes whose `cid` column changed since `baseline`, in
+	 * canonical (creation-id) order. */
+	_forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
+	/** Every live entity currently holding `cid` (dispose-on-disable sweep). */
+	_collectEntitiesWithComponent(cid: number): EntityID[];
+	isAlive(id: EntityID): boolean;
+	isDisabled(id: EntityID): boolean;
+	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
+}
 
 /** Per-entity observer callback (onAdd / onRemove / onDisable / onEnable, and
  * per-entity onSet). */
@@ -273,7 +304,7 @@ export class ObserverRegistry {
 	private readonly _setDrainCache = new Map<number, EntityID[]>();
 
 	constructor(
-		private readonly store: Store,
+		private readonly store: ObserverHost,
 		private readonly ctx: SystemContext
 	) {}
 
