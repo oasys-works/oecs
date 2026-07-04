@@ -140,11 +140,14 @@ export interface RowReader<S extends ComponentSchema> {
  * Lifetime: like `RowReader`, a reused mutable singleton valid ONLY during the
  * synchronous `project` call — never capture it; the next dispatch mutates it.
  */
-export interface JoinReader {
+export interface JoinReader<Schemas extends readonly ComponentSchema[] = readonly ComponentSchema[]> {
 	/** The current entity (it has all joined components). */
 	readonly eid: EntityID;
-	/** Read a field of one joined component for the current entity. */
-	field<S extends ComponentSchema, K extends string & keyof S>(
+	/** Read a field of one joined component for the current entity. `def` is
+	 * constrained to the join's own component set — reading a def outside the
+	 * join is the stale-read footgun the module header warns about (its changes
+	 * aren't subscribed), so it's a compile error. */
+	field<S extends Schemas[number], K extends string & keyof S>(
 		def: ComponentDef<S>,
 		name: K
 	): number;
@@ -153,7 +156,10 @@ export interface JoinReader {
 /** Map one single-component row to the value a UI cell reads. */
 export type Projection<S extends ComponentSchema, V> = (row: RowReader<S>) => V;
 /** Map one joined entity to the value a UI cell reads. */
-export type JoinProjection<V> = (row: JoinReader) => V;
+export type JoinProjection<
+	V,
+	Schemas extends readonly ComponentSchema[] = readonly ComponentSchema[]
+> = (row: JoinReader<Schemas>) => V;
 
 /** Per-component dirty grain. See the module header for the measured crossover. */
 export type SyncGrain = "entity" | "column";
@@ -380,24 +386,31 @@ export function syncFieldsToMap<
  * Entity grain only: a join spans archetypes, so there is no single column to
  * sweep. Drive with `batchedUpdate(world, dt)`.
  */
-export function syncJoinToMap<V>(
+export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
 	world: ECS,
-	defs: readonly ComponentDef[],
-	project: JoinProjection<V>,
+	defs: readonly [...{ [I in keyof Schemas]: ComponentDef<Schemas[I]> }],
+	project: JoinProjection<V, Schemas>,
+	// No `NoInfer` on `V` here: with a context-sensitive `project` callback it
+	// fixes `V` to `unknown` before the second inference pass reads the
+	// projection's return type (TS 5.6), collapsing every typed call site.
 	opts: Omit<EcsMapSyncOptions<V>, "grain"> = {}
 ): EcsMapSync<V> {
+	// Erase the per-def schemas once — internal plumbing (observers, access
+	// declarations, membership checks) is schema-agnostic; the tuple typing
+	// above exists to pin the projection's `JoinReader` to the joined set.
+	const defList: readonly ComponentDef[] = defs;
 	const map = reactiveMap<EntityID, V>(opts.eq);
 	// MERGE all joined defs into the caller's reads (don't let an `access.reads`
 	// override drop them — the projection reads every joined component).
 	const access: Partial<SystemAccessDeclaration> = {
 		...opts.access,
-		reads: [...defs, ...(opts.access?.reads ?? [])]
+		reads: [...defList, ...(opts.access?.reads ?? [])]
 	};
 	const seed = opts.seedExisting ?? true;
 
 	const jr = new JoinRowReader();
 	const matches = (ctx: SystemContext, eid: EntityID): boolean => {
-		for (let i = 0; i < defs.length; i++) if (!ctx.hasComponent(eid, defs[i])) return false;
+		for (let i = 0; i < defList.length; i++) if (!ctx.hasComponent(eid, defList[i])) return false;
 		return true;
 	};
 	// A value change or a component-add re-evaluates membership and republishes.
@@ -424,7 +437,7 @@ export function syncJoinToMap<V>(
 	// same reason as syncComponentToMap (the map has no seed-time subscriber today).
 	let handles!: ObserverHandle[];
 	batch(() => {
-		handles = defs.map((d) =>
+		handles = defList.map((d) =>
 			world.observe(d, {
 				granularity: "entity",
 				onSet: publishIfMember,
