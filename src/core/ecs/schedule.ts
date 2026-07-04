@@ -36,7 +36,6 @@
  ***/
 
 import { topologicalSort } from "../../type_primitives";
-import { logger, LOG_CATEGORY } from "../../log";
 import type { SystemContext } from "./query";
 import type { SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";
@@ -160,7 +159,12 @@ export class Schedule {
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
 
-	constructor() {
+	/** Dev-diagnostic sink (`ECSOptions.onWarn`); defaults to `console.warn`.
+	 * The only schedule diagnostic today is `warnDroppedEdge`. */
+	private readonly onWarn: (message: string) => void;
+
+	constructor(onWarn?: (message: string) => void) {
+		this.onWarn = onWarn ?? ((message) => console.warn(message));
 		for (let i = 0; i < STARTUP_LABELS.length; i++) {
 			this.labelSystems.set(STARTUP_LABELS[i], []);
 		}
@@ -620,8 +624,7 @@ export class Schedule {
 		if (this.systemIndex.has(target)) return;
 
 		const name = (d: SystemDescriptor) => d.name ?? `system_${d.id}`;
-		logger.log(
-			LOG_CATEGORY.ECS,
+		this.onWarn(
 			`Schedule[${label}]: \`${name(source)}\` declares \`${relation}\` ordering against ` +
 				`\`${name(target)}\`, which is not registered in any phase — the constraint is ignored. ` +
 				`Check for a typo or a missing add_systems() call.`

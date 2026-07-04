@@ -136,6 +136,10 @@ import {
 export interface ECSOptions {
 	fixedTimestep?: number;
 	maxFixedSteps?: number;
+	/** Sink for dev-mode engine diagnostics (currently the schedule's
+	 * dropped-ordering-edge warning). Defaults to `console.warn`. Mirrors the
+	 * `FrameTraceSink` seam's injectable style — no global logger. */
+	onWarn?: (message: string) => void;
 	/** How the world's memory is sized and backed (#682) — the single
 	 * sizing surface, replacing the pre-release `initialCapacity` +
 	 * `bufferAllocator` pair. Express intent through exactly one arm:
@@ -306,7 +310,7 @@ export class ECS implements QueryResolver {
 			bindingsRegionBytes: options?.bindingsRegionBytes,
 			deterministic: options?.deterministic
 		});
-		this.schedule = new Schedule();
+		this.schedule = new Schedule(options?.onWarn);
 		this.ctx = new SystemContext(this.store);
 		// Observers dispatch through the shared SystemContext + accessCheck. The
 		// store calls the structural hook between fixed-point flush rounds; onSet
