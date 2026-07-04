@@ -84,6 +84,7 @@ import { RelationService } from "./relation_service";
 import type { ObserverHost } from "./observer";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { EntityAllocator } from "./entity_allocator";
+import { DeferredCommandBuffer } from "./deferred_commands";
 import { bucketPush } from "./utils/arrays";
 import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import {
@@ -182,11 +183,6 @@ export interface StructuralObserverEvents {
 	enaLen: number;
 }
 
-/** Runaway guard for the observer cascade fixed point (`flushStructural`). A
- * legitimate cascade settles in a handful of rounds; exceeding this many almost
- * certainly means two observers ping-pong forever (A adds B, B's observer adds
- * A). Throws `OBSERVER_NON_CONVERGENT`. */
-const OBSERVER_MAX_ROUNDS = 1 << 16;
 
 /** Shared empty list returned by `_takeDirty` when a component has no dirty
  * rows — avoids allocating on the common no-change path. */
@@ -409,22 +405,12 @@ export class Store implements ObserverHost, QueryHost {
 	private entityRow: Int32Array;
 
 	// --- Deferred operation buffers ---
-	// Flat parallel arrays: pendingAddIds[i], pendingAddDefs[i], pendingAddValues[i]
-	// describe one deferred add. No per-operation object allocation.
-	private readonly pendingDestroy: EntityID[] = [];
-	private readonly pendingAddIds: EntityID[] = [];
-	private readonly pendingAddDefs: ComponentDef[] = [];
-	private readonly pendingAddValues: Record<string, number>[] = [];
-	private readonly pendingRemoveIds: EntityID[] = [];
-	private readonly pendingRemoveDefs: ComponentDef[] = [];
-	// Deferred entity enable/disable (#577). System-side `disable`/`enable` buffer
-	// here and apply at `flushStructural`: a toggle is an in-archetype row swap,
-	// which would corrupt a `forEach` SoA loop iterating that archetype if applied
-	// mid-system (sharper than a sparse add — it reorders the dense columns being
-	// read). `true` = disable, `false` = enable; last write per entity wins at flush
-	// only in operation order (each entry applied in turn, idempotent if redundant).
-	private readonly pendingToggleIds: EntityID[] = [];
-	private readonly pendingToggleDisable: boolean[] = [];
+	// The pending buffers and the phase-flush drain policy (fast path,
+	// observed fixed point, re-entrancy guard) live in `DeferredCommandBuffer`
+	// (H1 step 4); the batch appliers (`_flushAdds` etc.) stay here with the
+	// transition/dirty/observer machinery they are entangled with, reached
+	// through the collaborator's closure host.
+	private readonly _deferred: DeferredCommandBuffer;
 
 	public _tick: number = 0;
 
@@ -474,12 +460,6 @@ export class Store implements ObserverHost, QueryHost {
 	public setStructuralObserverHook(fn: (ev: StructuralObserverEvents) => void): void {
 		this._structuralObserverHook = fn;
 	}
-	/** Re-entrancy guard for the observed fixed-point loop. An observer callback
-	 * must enqueue (add/remove) and let the loop settle it — calling `ctx.flush()`
-	 * from inside a callback would re-enter `flushStructural` and corrupt the
-	 * shared event scratch. The guard turns that nested call into a no-op; the
-	 * outer loop drains whatever the callback queued. */
-	private _flushingStructural = false;
 
 	// Destroy fires onRemove for every component the entity carried (a destroy is
 	// a remove of the whole mask). `flushDestroyed` walks the dying entity's
@@ -756,6 +736,21 @@ export class Store implements ObserverHost, QueryHost {
 		this._regions = opts.regions;
 		this._bindingsRegionBytes = opts.bindingsRegionBytes ?? 0;
 		this._deterministic = opts.deterministic ?? false;
+		// Deferred-command queue + drain policy (H1 step 4). Closure host (the
+		// `RelationServiceHost` style): appliers and observer gates re-read
+		// live Store state per flush call — never per entity.
+		this._deferred = new DeferredCommandBuffer(
+			{
+				applyAdds: () => this._flushAdds(),
+				applyRemoves: () => this._flushRemoves(),
+				applyDestroys: () => this._drainDestroyed(),
+				applyToggles: () => this._flushToggles(),
+				structuralObserverCount: () => this._structuralObserverCount,
+				toggleObserverCount: () => this._toggleObserverCount,
+				structuralObserverHook: () => this._structuralObserverHook
+			},
+			this._obsEvents
+		);
 		// The host seam hands the relation service closures, not field refs:
 		// `entityGenerations` / `entityArchetype` / `entityRow` are reallocated
 		// on capacity growth, so each accessor re-reads the live field per call.
@@ -2098,7 +2093,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	public destroyEntityDeferred(id: EntityID): void {
 		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		this.pendingDestroy.push(id);
+		this._deferred.queueDestroy(id);
 	}
 
 	/** Buffer an enable/disable toggle for the phase flush (#577). The row swap a
@@ -2106,14 +2101,12 @@ export class Store implements ObserverHost, QueryHost {
 	 * mid-system, so it is deferred like add/remove. */
 	public disableEntityDeferred(id: EntityID): void {
 		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		this.pendingToggleIds.push(id);
-		this.pendingToggleDisable.push(true);
+		this._deferred.queueToggle(id, true);
 	}
 
 	public enableEntityDeferred(id: EntityID): void {
 		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		this.pendingToggleIds.push(id);
-		this.pendingToggleDisable.push(false);
+		this._deferred.queueToggle(id, false);
 	}
 
 	/** Drain buffered enable/disable toggles, applying each in operation order via
@@ -2127,8 +2120,8 @@ export class Store implements ObserverHost, QueryHost {
 	 * drain (see `_toggleInitial`). The no-observer path is byte-for-byte the
 	 * pre-#677 drain. */
 	private _flushToggles(): void {
-		const ids = this.pendingToggleIds;
-		const dis = this.pendingToggleDisable;
+		const ids = this._deferred.toggleIds;
+		const dis = this._deferred.toggleDisable;
 		const n = ids.length;
 		const collecting = this._toggleObserverCount > 0;
 
@@ -2186,7 +2179,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	public get pendingToggleCount(): number {
-		return this.pendingToggleIds.length;
+		return this._deferred.toggleCount;
 	}
 
 	/** Flush all buffered entity destructions in batch.
@@ -2201,18 +2194,17 @@ export class Store implements ObserverHost, QueryHost {
 	 * the identity of what was destroyed, not a live handle to read. The
 	 * no-observer path is byte-for-byte unchanged (`collecting` gate). #531.
 	 *
-	 * Re-entrancy: while the observed fixed point owns the flush
-	 * (`_flushingStructural`), the loop drains destroys itself via
-	 * `_drainDestroyed`, so a re-entrant `ctx.flush()` from a callback no-ops
-	 * here — otherwise it would collect into the shared `_obsEvents` scratch
-	 * mid-dispatch and corrupt it (mirrors the `flushStructural` guard). */
+	 * Re-entrancy: while the observed fixed point owns the flush, the loop
+	 * drains destroys itself via `_drainDestroyed`, so a re-entrant
+	 * `ctx.flush()` from a callback no-ops (the guard lives in
+	 * `DeferredCommandBuffer.flushDestroyed`) — otherwise it would collect
+	 * into the shared `_obsEvents` scratch mid-dispatch and corrupt it. */
 	public flushDestroyed(): void {
-		if (this._flushingStructural) return;
-		this._drainDestroyed();
+		this._deferred.flushDestroyed();
 	}
 
 	private _drainDestroyed(): void {
-		const buf = this.pendingDestroy;
+		const buf = this._deferred.destroyIds;
 		if (buf.length === 0) return;
 
 		// Hot loop — hoist fields to locals for faster access
@@ -2308,7 +2300,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	public get pendingDestroyCount(): number {
-		return this.pendingDestroy.length;
+		return this._deferred.destroyCount;
 	}
 
 	// =======================================================
@@ -2330,111 +2322,28 @@ export class Store implements ObserverHost, QueryHost {
 		values?: Record<string, number>
 	): void {
 		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		this.pendingAddIds.push(entityId);
-		this.pendingAddDefs.push(def);
-		this.pendingAddValues.push(values ?? EMPTY_VALUES);
+		this._deferred.queueAdd(entityId, def, values ?? EMPTY_VALUES);
 	}
 
 	public removeComponentDeferred(entityId: EntityID, def: ComponentDef): void {
 		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
-		this.pendingRemoveIds.push(entityId);
-		this.pendingRemoveDefs.push(def);
+		this._deferred.queueRemove(entityId, def);
 	}
 
+	/** Phase-boundary structural flush. The drain policy — no-observer fast
+	 * path, observed fixed point (adds/removes → destroys → toggles),
+	 * convergence guard, re-entrancy — lives in `DeferredCommandBuffer`
+	 * (H1 step 4); the batch appliers it drives are the `_flush*` /
+	 * `_drainDestroyed` methods below. */
 	public flushStructural(): void {
-		// Each sub-flush owns its dirty bookkeeping (#328) — it captures
-		// per-archetype pre-lengths during its loop and settles the
-		// row-counts / query-epoch flags from those captures. This keeps the
-		// 0-crossing accounting local to the path that actually changed lengths.
-
-		// No-observer fast path — byte-for-byte the pre-#531 flush. While no
-		// onAdd/onRemove/onDisable/onEnable observer is registered,
-		// `_flushAdds`/`_flushRemoves` see `collecting === false` (one hoisted
-		// guard, measured free: `observer_dispatch_probe` `fastpath` 0.000×) and we
-		// never enter the fixed-point machinery below. The toggle counter (#677)
-		// joins the gate so a toggle-only consumer still reaches the observed path.
-		if (this._structuralObserverCount === 0 && this._toggleObserverCount === 0) {
-			if (this.pendingAddIds.length > 0) this._flushAdds();
-			if (this.pendingRemoveIds.length > 0) this._flushRemoves();
-			// Toggles last: a disable/enable sees the entity's final archetype for
-			// the tick (after any add/remove transition above) (#577).
-			if (this.pendingToggleIds.length > 0) this._flushToggles();
-			return;
-		}
-
-		// Re-entrant `ctx.flush()` from inside an observer callback — defer to the
-		// running fixed-point loop (it will drain whatever the callback queued).
-		if (this._flushingStructural) return;
-
-		// Observed path — commit the batch, then fire observers in canonical
-		// order, looping to a fixed point so cascades settle (ADR-0013). An
-		// observer that adds/removes/destroys enqueues onto the (now-drained)
-		// deferred buffers; the next round commits + observes them. Observers
-		// never see a torn state — they fire only AFTER the commit.
-		this._flushingStructural = true;
-		const ev = this._obsEvents;
-		const hook = this._structuralObserverHook;
-		try {
-			let rounds = 0;
-			// Joint fixed point over adds/removes, destroys, AND toggles (#677). Each
-			// round runs an add/remove pass; or, once those are quiescent, one destroy
-			// pass; or, once destroys are quiescent too, one toggle pass — never more
-			// than one kind — so an explicit remove's onRemove still fires with the
-			// entity live (pre-#531 behavior preserved), a destroy is only drained
-			// after no live structural work remains, and a toggle is applied LAST so
-			// it sees its entity's final archetype (#577). A destroy fans out to an
-			// onRemove per carried component with the entity already freed (#531); a
-			// net disable/enable fans out to an onDisable/onEnable per carried
-			// component (#677). Any structural op or toggle a callback queues is
-			// re-settled by a later round.
-			while (
-				this.pendingAddIds.length > 0 ||
-				this.pendingRemoveIds.length > 0 ||
-				this.pendingDestroy.length > 0 ||
-				this.pendingToggleIds.length > 0
-			) {
-				if (++rounds > OBSERVER_MAX_ROUNDS) {
-					throw new ECSError(
-						ECS_ERROR.OBSERVER_NON_CONVERGENT,
-						`observer cascade did not converge after ${OBSERVER_MAX_ROUNDS} rounds — two observers likely enqueue each other's structural ops forever`
-					);
-				}
-				ev.addLen = 0;
-				ev.remLen = 0;
-				ev.disLen = 0;
-				ev.enaLen = 0;
-				if (this.pendingAddIds.length > 0 || this.pendingRemoveIds.length > 0) {
-					if (this.pendingAddIds.length > 0) this._flushAdds();
-					if (this.pendingRemoveIds.length > 0) this._flushRemoves();
-				} else if (this.pendingDestroy.length > 0) {
-					// Adds/removes quiescent — drain destroys (collects onRemove).
-					// Call the worker directly: the public `flushDestroyed` no-ops
-					// while `_flushingStructural` is set (re-entrancy guard).
-					this._drainDestroyed();
-				} else {
-					// All structural work quiescent — drain toggles (collects onDisable/
-					// onEnable for net transitions). Toggles strictly last preserves the
-					// "toggle sees final archetype" invariant (#577).
-					this._flushToggles();
-				}
-				// Dispatch only effective transitions; a pass of pure no-ops
-				// (already-has / already-lacks / dead / component-less destroy / a
-				// disable+enable that nets to nothing) fires nothing. We cannot `break`
-				// here — another buffer may still hold work — so let the `while`
-				// re-check own termination; each pass fully drains at least one buffer.
-				if (hook !== null && (ev.addLen > 0 || ev.remLen > 0 || ev.disLen > 0 || ev.enaLen > 0))
-					hook(ev);
-			}
-		} finally {
-			this._flushingStructural = false;
-		}
+		this._deferred.flushStructural();
 	}
 
 	/** Batch-apply all deferred component additions. */
 	private _flushAdds(): void {
-		const ids = this.pendingAddIds;
-		const defs = this.pendingAddDefs;
-		const vals = this.pendingAddValues;
+		const ids = this._deferred.addIds;
+		const defs = this._deferred.addDefs;
+		const vals = this._deferred.addValues;
 		const n = ids.length;
 
 		const entArch = this.entityArchetype;
@@ -2535,8 +2444,8 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Batch-apply all deferred component removals. */
 	private _flushRemoves(): void {
-		const ids = this.pendingRemoveIds;
-		const defs = this.pendingRemoveDefs;
+		const ids = this._deferred.removeIds;
+		const defs = this._deferred.removeDefs;
 		const n = ids.length;
 
 		const entArch = this.entityArchetype;
@@ -2610,7 +2519,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	public get pendingStructuralCount(): number {
-		return this.pendingAddIds.length + this.pendingRemoveIds.length;
+		return this._deferred.structuralCount;
 	}
 
 	// =======================================================
