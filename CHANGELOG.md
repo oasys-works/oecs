@@ -24,11 +24,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSR publish no longer ships `__tests__` helper files (`casing_codemod.ts`, `test_helpers.ts` —
   including a `node:fs` import subject to JSR type-checking).
 
+### Added
+
+- `ECSOptions.onWarn` — injectable sink for dev-mode engine diagnostics (currently the
+  schedule's dropped-ordering-edge warning), defaulting to `console.warn`. Replaces the
+  internal `src/log` singleton, which is deleted.
+
 ### Internal
 
-- Relation registry/traversal extracted from `Store` into `RelationService` (no API change).
+- Store decomposition under way: relation registry/traversal extracted into `RelationService`;
+  event channels and resources extracted into `EventRegistry` / `ResourceRegistry` (no API change).
+- Typed per-consumer host seams (`ObserverHost`, `QueryHost`) replace underscore-convention
+  reach-through on `Store`; `QueryCache` now owns all 12 query-resolution cache maps.
+- Store layer consolidation: one strategy-parameterized factory behind
+  `growableSabAllocator` / `heapArraybufferAllocator`; a typed `isColumnStoreInternal` guard
+  replaces six structural casts; grow/extend's ~200 duplicated lines moved to a shared
+  `layout_ops.ts` (bit-identical layouts pinned by a golden differential test across the
+  full allocator matrix).
+- `core/reactive` moved to `src/reactive` (the published `./reactive` subpath is unchanged);
+  `__generated__/abi.ts` renamed to `vendored_abi/abi.ts` (it is a hand-maintained snapshot,
+  not generated output).
 - Deleted orphaned duplicate `src/utils/{arrays,constants}.ts`; renamed the custom `TypeError`
-  (shadowed the ECMAScript global) to `AssertionError`.
+  (shadowed the ECMAScript global) to `AssertionError`; retired the 246-line casing codemod +
+  guard test (the 0.4 rename has converged).
 
 ## [0.4.0] — 2026-06-24
 

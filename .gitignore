@@ -11,3 +11,5 @@ dist
 noctisjs
 CLAUDE.md
 .claude
+
+.pnpm-store
