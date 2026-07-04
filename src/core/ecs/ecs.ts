@@ -79,9 +79,8 @@ import {
 	SystemContext,
 	Query,
 	QueryBuilder,
-	ChangedQuery,
-	type QueryResolver,
-	type QueryCacheEntry
+	QueryCache,
+	type QueryResolver
 } from "./query";
 import type { EntityID } from "./entity";
 import type {
@@ -116,7 +115,6 @@ import {
 import { accessCheck } from "./access_check";
 import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
 import { BitSet, unsafeCast, type TypedArrayTag } from "../../type_primitives";
-import { bucketPush } from "./utils/arrays";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import {
 	EMPTY_VALUES,
@@ -226,38 +224,13 @@ export class ECS implements QueryResolver {
 	private _accumulator = 0;
 	private _maxFixedSteps: number;
 
-	// Query deduplication: hash(include, exclude, anyOf) → bucket of cache entries.
-	// Multiple queries can share the same hash (collision), so each bucket is an array.
-	private readonly queryCache: Map<number, QueryCacheEntry[]> = new Map();
 	// Reusable BitSet for building query masks — avoids allocation per query() call
 	private readonly scratchMask: BitSet = new BitSet();
 
-	// Shared single-component composition caches (#334). One Map per direction
-	// keyed by (parent_query_id << 16) | cid, replacing four nullable Maps per
-	// Query. Drops the per-Query Map footprint from O(#queries × 4) to O(4).
 	private _nextQueryIdCounter: number = 0;
-	public readonly _andSingleCache: Map<number, Query<any>> = new Map();
-	public readonly _notSingleCache: Map<number, Query<any>> = new Map();
-	public readonly _anyOfSingleCache: Map<number, Query<any>> = new Map();
-	public readonly _changedSingleCache: Map<number, ChangedQuery<any>> = new Map();
-	public readonly _withSparseSingleCache: Map<number, Query<any>> = new Map();
-	public readonly _withoutSparseSingleCache: Map<number, Query<any>> = new Map();
-	// Relation-wildcard `(R, *)` composition caches (#579), keyed by
-	// (parent_query_id << 16) | relation_id — same packing as the sparse caches,
-	// a separate Map because a `withRelation(R)` query also carries the
-	// relation id for its `relationReads` access check (so it can't share the
-	// sparse cache, which produces a query without that).
-	public readonly _withRelationSingleCache: Map<number, Query<any>> = new Map();
-	public readonly _withoutRelationSingleCache: Map<number, Query<any>> = new Map();
-	// Optional fetch-if-present composition cache (#575) — dense cid keying,
-	// same shape as the dense single caches above.
-	public readonly _optionalSingleCache: Map<number, Query<any>> = new Map();
-	// Include-disabled composition cache (#577), keyed by parent query id.
-	public readonly _includeDisabledSingleCache: Map<number, Query<any>> = new Map();
-	// Hierarchy depth-ordering composition cache (#581), keyed
-	// (parent_query_id << 16) | relation_id — same packing as the relation caches;
-	// only the unbounded form is cached (a `maxDepth` limit is the rarer shape).
-	public readonly _hierarchySingleCache: Map<number, Query<any>> = new Map();
+	// All query-resolution caches — dedup + the shared composition maps — in
+	// one owner (M2); see `QueryCache` in query.ts for keying/id-space notes.
+	public readonly _caches: QueryCache = new QueryCache();
 
 	// --- SAB layout subscribers (e.g. a compute backend) ---
 	// The engine publishes SAB-layout changes to whoever subscribed via
@@ -1230,7 +1203,7 @@ export class ECS implements QueryResolver {
 				Math.imul(anyHash, HASH_SECONDARY_PRIME)) |
 			0;
 
-		const cached = this._findCached(key, include, exclude, anyOf);
+		const cached = this._caches.findDedup(key, include, exclude, anyOf);
 		if (cached !== undefined) return cached.query;
 
 		// Store.registerQuery returns a live Archetype[] that the Store will
@@ -1246,40 +1219,13 @@ export class ECS implements QueryResolver {
 			this._nextQueryIdCounter++
 		);
 		this.store.updateQueryRef(result, q);
-		bucketPush(this.queryCache, key, {
+		this._caches.addDedup(key, {
 			includeMask: include.copy(),
 			excludeMask: exclude?.copy() ?? null,
 			anyOfMask: anyOf?.copy() ?? null,
 			query: q
 		});
 		return q;
-	}
-
-	private _findCached(
-		key: number,
-		include: BitSet,
-		exclude: BitSet | null,
-		anyOf: BitSet | null
-	): QueryCacheEntry | undefined {
-		const bucket = this.queryCache.get(key);
-		if (!bucket) return undefined;
-		// Linear scan within the bucket — buckets are typically 1-2 entries
-		for (let i = 0; i < bucket.length; i++) {
-			const e = bucket[i];
-			if (!e.includeMask.equals(include)) continue;
-			const excOk =
-				exclude === null
-					? e.excludeMask === null
-					: e.excludeMask !== null && e.excludeMask.equals(exclude);
-			if (!excOk) continue;
-			const anyOk =
-				anyOf === null
-					? e.anyOfMask === null
-					: e.anyOfMask !== null && e.anyOfMask.equals(anyOf);
-			if (!anyOk) continue;
-			return e;
-		}
-		return undefined;
 	}
 
 	/**

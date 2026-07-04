@@ -72,6 +72,7 @@ import type {
 } from "./event";
 import type { ResourceKey } from "./resource";
 import { BitSet, unsafeCast } from "../../type_primitives";
+import { bucketPush } from "./utils/arrays";
 import { EMPTY_VALUES } from "./utils/constants";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { dispatchTrace } from "./dispatch_trace";
@@ -144,6 +145,89 @@ export interface QueryCacheEntry {
 	query: Query<any>; // any: heterogeneous cache — different queries have different Defs tuples
 }
 
+/** One owner for every query-resolution cache (M2). Previously the dedup
+ * bucket map lived on `ECS` while `Query` populated eleven composition maps
+ * declared on the resolver interface — ownership split across two modules.
+ * All entries are structural (a query is minted once per unique term set and
+ * lives for the world's lifetime; components and queries are never
+ * unregistered), so there is no invalidation lifecycle — the maps are
+ * append-only. Key encodings are unchanged from the pre-extraction fields.
+ *
+ * The composition maps are exposed as readonly fields (not per-kind accessor
+ * pairs): the mutation protocol is uniform (`get` → miss → build → `set`) and
+ * hot enough that composition sites keep direct map access; the invariant
+ * this class carries is single ownership, not access mediation. */
+export class QueryCache {
+	// Query deduplication: hash(include, exclude, anyOf) → bucket of cache
+	// entries. Multiple term sets can share a hash (collision), so each bucket
+	// is an array; `findDedup` equality-checks masks within the bucket.
+	private readonly dedup = new Map<number, QueryCacheEntry[]>();
+
+	// Shared single-component composition caches (#334). One Map per direction
+	// keyed by (parent_query_id << 16) | cid, replacing four nullable Maps per
+	// Query. Drops the per-Query Map footprint from O(#queries × 4) to O(4).
+	public readonly andSingle = new Map<number, Query<any>>();
+	public readonly notSingle = new Map<number, Query<any>>();
+	public readonly anyOfSingle = new Map<number, Query<any>>();
+	public readonly changedSingle = new Map<number, ChangedQuery<any>>();
+	// Optional fetch-if-present composition cache (#575) — dense cid keying,
+	// same shape as the dense single caches above.
+	public readonly optionalSingle = new Map<number, Query<any>>();
+	// Sparse-membership composition caches (#469), same (parent_id << 16) | id
+	// keying — the id is a SparseComponentID (a separate id space), so these
+	// never collide with the dense maps.
+	public readonly withSparseSingle = new Map<number, Query<any>>();
+	public readonly withoutSparseSingle = new Map<number, Query<any>>();
+	// Relation-wildcard `(R, *)` composition caches (#579), keyed
+	// (parent_id << 16) | relation_id — a separate Map from the sparse caches
+	// because a `withRelation(R)` query also carries the relation id for its
+	// `relationReads` access check.
+	public readonly withRelationSingle = new Map<number, Query<any>>();
+	public readonly withoutRelationSingle = new Map<number, Query<any>>();
+	// Include-disabled composition cache (#577), keyed by parent query id so
+	// `q.includeDisabled()` returns a stable instance on repeated calls.
+	public readonly includeDisabledSingle = new Map<number, Query<any>>();
+	// Hierarchy depth-ordering composition cache (#581), keyed
+	// (parent_id << 16) | relation_id. Only the unbounded form is cached — a
+	// `maxDepth`-limited term adds a third key dimension and is the rarer
+	// shape, so it mints fresh (hierarchy queries are built at registration,
+	// not per tick).
+	public readonly hierarchySingle = new Map<number, Query<any>>();
+
+	/** Dedup lookup: bucket scan with full mask equality (buckets are
+	 * typically 1–2 entries). */
+	public findDedup(
+		key: number,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null
+	): QueryCacheEntry | undefined {
+		const bucket = this.dedup.get(key);
+		if (!bucket) return undefined;
+		for (let i = 0; i < bucket.length; i++) {
+			const e = bucket[i];
+			if (!e.includeMask.equals(include)) continue;
+			const excOk =
+				exclude === null
+					? e.excludeMask === null
+					: e.excludeMask !== null && e.excludeMask.equals(exclude);
+			if (!excOk) continue;
+			const anyOk =
+				anyOf === null
+					? e.anyOfMask === null
+					: e.anyOfMask !== null && e.anyOfMask.equals(anyOf);
+			if (!anyOk) continue;
+			return e;
+		}
+		return undefined;
+	}
+
+	/** Record a freshly minted query under its dedup key. */
+	public addDedup(key: number, entry: QueryCacheEntry): void {
+		bucketPush(this.dedup, key, entry);
+	}
+}
+
 export interface QueryResolver {
 	_resolveQuery(
 		include: BitSet,
@@ -156,42 +240,9 @@ export interface QueryResolver {
 	_getCurrentTick(): number;
 	_getQueryDirtyEpoch(): number;
 	_nextQueryId(): number;
-	// Shared single-component composition caches, keyed by
-	// (parent_id << 16) | cid. One Map per direction lives on the resolver
-	// instead of four nullable Maps per Query, dropping the per-Query footprint
-	// from O(#queries × 4) to O(4).
-	_andSingleCache: Map<number, Query<any>>;
-	_notSingleCache: Map<number, Query<any>>;
-	_anyOfSingleCache: Map<number, Query<any>>;
-	_changedSingleCache: Map<number, ChangedQuery<any>>;
-	// Optional fetch-if-present composition cache (#575), same dense
-	// (parent_id << 16) | cid keying as the dense single caches above — an
-	// optional term is a dense ComponentID (cid <= 128), distinct from the
-	// sparse id space below.
-	_optionalSingleCache: Map<number, Query<any>>;
-	// Sparse-membership composition caches (#469), same (parent_id << 16) | id
-	// keying as the dense single caches — except the id is a SparseComponentID
-	// (a separate id space), so these never collide with the dense maps.
-	_withSparseSingleCache: Map<number, Query<any>>;
-	_withoutSparseSingleCache: Map<number, Query<any>>;
-	// Relation-wildcard `(R, *)` composition caches (#579), keyed
-	// (parent_id << 16) | relation_id — a separate id space from the sparse caches
-	// (and a separate Map because a `withRelation(R)` query also carries the
-	// relation id for its access check, so it can't share the sparse cache).
-	_withRelationSingleCache: Map<number, Query<any>>;
-	_withoutRelationSingleCache: Map<number, Query<any>>;
-	// Include-disabled composition cache (#577), keyed by the parent query id so
-	// `q.includeDisabled()` returns a stable instance on repeated calls (no
-	// query-id climb) — same rationale as the sparse caches.
-	_includeDisabledSingleCache: Map<number, Query<any>>;
-	// Hierarchy depth-ordering composition cache (#581), keyed
-	// (parent_id << 16) | relation_id. Only the unbounded form
-	// (`maxDepth === HIERARCHY_UNBOUNDED`) is cached — a `maxDepth`-limited term
-	// adds a third key dimension and is the rarer shape, so it mints fresh (a
-	// hierarchy query is built once at system registration, not per tick, so the
-	// churn is negligible). Same id space as the relation caches above; a dedicated
-	// Map because a `.hierarchy(R)` query also records R for its access check.
-	_hierarchySingleCache: Map<number, Query<any>>;
+	/** All query-resolution caches — dedup + composition (M2). One owner; see
+	 * `QueryCache` for the per-map keying/id-space notes. */
+	readonly _caches: QueryCache;
 	/** Second query-match path (#469 / ADR-0011): drive iteration by sparse
 	 * membership rather than the archetype mask, yielding entities — sparse
 	 * members are scattered across archetypes, so there is no archetype-column
@@ -553,7 +604,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._andSingleCache.get(key);
+			const cached = this._resolver._caches.andSingle.get(key);
 			if (cached !== undefined) return cached as Query<[...Defs, ...D]>;
 			return this._andMiss(comps[0], cid, key) as Query<[...Defs, ...D]>;
 		}
@@ -584,7 +635,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(newInclude, this._exclude, this._anyOf, newDefs)
 		);
-		this._resolver._andSingleCache.set(key, result);
+		this._resolver._caches.andSingle.set(key, result);
 		return result;
 	}
 
@@ -593,7 +644,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._notSingleCache.get(key);
+			const cached = this._resolver._caches.notSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			return this._notMiss(cid, key);
 		}
@@ -611,7 +662,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(this._include, newExclude, this._anyOf, this._defs)
 		) as Query<Defs>;
-		this._resolver._notSingleCache.set(key, result);
+		this._resolver._caches.notSingle.set(key, result);
 		return result;
 	}
 
@@ -639,7 +690,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * forms fold over this, so all sparse-require composition is deduplicated. */
 	private _withSparseOne(sid: number): Query<Defs> {
 		const key = sparseCacheKey(this._id, sid);
-		const cache = this._resolver._withSparseSingleCache;
+		const cache = this._resolver._caches.withSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -666,7 +717,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * multi-arg form folds over this (#497) — mirrors `_withSparseOne`. */
 	private _withoutSparseOne(sid: number): Query<Defs> {
 		const key = sparseCacheKey(this._id, sid);
-		const cache = this._resolver._withoutSparseSingleCache;
+		const cache = this._resolver._caches.withoutSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -724,7 +775,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	private _withRelationOne(def: RelationDef): Query<Defs> {
 		const key = sparseCacheKey(this._id, def as unknown as number);
-		const cache = this._resolver._withRelationSingleCache;
+		const cache = this._resolver._caches.withRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver._relationBackingSparseId(def);
@@ -750,7 +801,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	private _withoutRelationOne(def: RelationDef): Query<Defs> {
 		const key = sparseCacheKey(this._id, def as unknown as number);
-		const cache = this._resolver._withoutRelationSingleCache;
+		const cache = this._resolver._caches.withoutRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver._relationBackingSparseId(def);
@@ -837,7 +888,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// registration (not per tick), so minting a bounded one fresh costs nothing.
 		if (maxDepth === HIERARCHY_UNBOUNDED) {
 			const key = sparseCacheKey(this._id, relation as unknown as number);
-			const cache = this._resolver._hierarchySingleCache;
+			const cache = this._resolver._caches.hierarchySingle;
 			const cached = cache.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			const result = this._deriveHierarchy({ relation, maxDepth });
@@ -940,7 +991,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `and` / `not` / `anyOf` caches). */
 	private _optionalOne(cid: number): Query<Defs> {
 		const key = ((this._id << 16) | cid) >>> 0;
-		const cache = this._resolver._optionalSingleCache;
+		const cache = this._resolver._caches.optionalSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveOptional(appendOptional(this._optional, cid));
@@ -979,7 +1030,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * carried through `and`/`not`/`anyOf` like the sparse/optional terms. */
 	public includeDisabled(): Query<Defs> {
 		if (this._includeDisabled) return this;
-		const cache = this._resolver._includeDisabledSingleCache;
+		const cache = this._resolver._caches.includeDisabledSingle;
 		const cached = cache.get(this._id);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = new Query<Defs>(
@@ -1301,7 +1352,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._anyOfSingleCache.get(key);
+			const cached = this._resolver._caches.anyOfSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			return this._anyOfMiss(cid, key);
 		}
@@ -1321,7 +1372,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(this._include, this._exclude, newAnyOf, this._defs)
 		) as Query<Defs>;
-		this._resolver._anyOfSingleCache.set(key, result);
+		this._resolver._caches.anyOfSingle.set(key, result);
 		return result;
 	}
 
@@ -1341,7 +1392,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (defs.length === 1) {
 			const cid = defs[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._changedSingleCache.get(key);
+			const cached = this._resolver._caches.changedSingle.get(key);
 			if (cached !== undefined) return cached as ChangedQuery<Defs>;
 			return this._changedMiss(cid, key);
 		}
@@ -1353,7 +1404,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** @internal — cold cache-miss path for single-arg `changed` (#649); see `_andMiss`. */
 	private _changedMiss(cid: number, key: number): ChangedQuery<Defs> {
 		const result = new ChangedQuery<Defs>(this, [cid]);
-		this._resolver._changedSingleCache.set(key, result);
+		this._resolver._caches.changedSingle.set(key, result);
 		return result;
 	}
 
