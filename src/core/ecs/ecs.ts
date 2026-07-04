@@ -791,12 +791,13 @@ export class ECS implements QueryResolver {
 		return this;
 	}
 
-	public addComponents(
+	/** Batch-attach several components in one archetype transition. Each
+	 * entry's `values` is checked against its own def's schema (a misspelled
+	 * field is a compile error; tags refuse `values`) — same typing as
+	 * `ECS.template` entries. Omitted fields zero-fill. */
+	public addComponents<Defs extends readonly ComponentDef[]>(
 		entityId: EntityID,
-		entries: {
-			def: ComponentDef;
-			values?: Record<string, number>;
-		}[]
+		entries: TemplateEntries<Defs>
 	): void {
 		if (__DEV__) {
 			for (let i = 0; i < entries.length; i++) accessCheck.checkAdd(entries[i].def);

@@ -238,11 +238,16 @@ type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : Co
 
 /** One typed template entry: `values` is checked against the def's schema —
  * a misspelled field is a compile error. Fields may be omitted (they default
- * to 0), so the map is `Partial`. */
-export type TemplateEntry<D extends ComponentDef = ComponentDef> = {
-	readonly def: D;
-	readonly values?: Partial<FieldValues<SchemaOf<D>>>;
-};
+ * to 0), so the map is `Partial`. Tag defs refuse `values` entirely — their
+ * `FieldValues` would otherwise degenerate to `Record<string, number>` (same
+ * pitfall as `ValuesArg`); a schema-erased `ComponentDef` falls into the
+ * valued branch, so untyped call sites keep the loose shape. */
+export type TemplateEntry<D extends ComponentDef = ComponentDef> = SchemaOf<D> extends Record<
+	string,
+	never
+>
+	? { readonly def: D; readonly values?: undefined }
+	: { readonly def: D; readonly values?: Partial<FieldValues<SchemaOf<D>>> };
 
 /** The entries tuple for `ECS.template` — each element's `values` is checked
  * against its own `def`'s schema. */
@@ -4207,11 +4212,15 @@ export class Store {
 	 * skip the union-mask build entirely. First call per key still resolves via
 	 * the final-mask path below (no intermediate planting) and plants the edge.
 	 * See docs/reports/bench/regressions/add-components-composite-edge.md. */
+	public addComponents<Defs extends readonly ComponentDef[]>(
+		entityId: EntityID,
+		entries: TemplateEntries<Defs>
+	): void;
 	public addComponents(
 		entityId: EntityID,
-		entries: {
+		entries: readonly {
 			def: ComponentDef;
-			values?: Record<string, number>;
+			values?: Readonly<Record<string, number>>;
 		}[]
 	): void {
 		if (!this.isAlive(entityId)) {
@@ -4320,7 +4329,7 @@ export class Store {
 		targetArch: Archetype,
 		targetArchetypeId: ArchetypeID,
 		map: Int16Array,
-		entries: { def: ComponentDef; values?: Record<string, number> }[]
+		entries: readonly { def: ComponentDef; values?: Readonly<Record<string, number>> }[]
 	): void {
 		const srcRow = this.entityRow[entityIndex];
 

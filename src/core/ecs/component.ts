@@ -59,6 +59,19 @@ export type FieldValues<S extends ComponentSchema> = {
 	readonly [K in keyof S]: number;
 };
 
+/**
+ * Values argument tuple for attaching a component of schema `S` — empty for a
+ * tag, a single optional partial-values map otherwise. A tag schema
+ * (`Record<string, never>`) would otherwise degenerate: `keyof` an
+ * index-signature record is `string`, so `Partial<FieldValues<…>>` collapses to
+ * `Record<string, number>` and `Frozen({ anything: 1 })` compiles. The
+ * conditional forbids values on tags outright; a schema-erased `ComponentDef`
+ * falls into the valued branch, so untyped call sites keep the loose shape.
+ */
+export type ValuesArg<S extends ComponentSchema> = S extends Record<string, never>
+	? []
+	: [values?: Partial<FieldValues<S>>];
+
 /** Maps schema fields to their specific typed array columns. */
 export type ColumnsForSchema<S extends ComponentSchema> = {
 	readonly [K in keyof S]: TagToTypedArray[S[K]];
@@ -89,7 +102,7 @@ export type MutableColumnsForSchema<S extends ComponentSchema> = {
  * Build one with `makeComponentDef`; never construct by hand.
  */
 export interface ComponentDef<S extends ComponentSchema = ComponentSchema> {
-	(values?: Partial<FieldValues<S>>): Bundle<S>;
+	(...values: ValuesArg<S>): Bundle<S>;
 	readonly id: ComponentID;
 }
 
@@ -124,7 +137,7 @@ export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): Co
 	const def = ((values?: Partial<FieldValues<S>>): Bundle<S> => ({
 		def,
 		values: values ?? NO_VALUES
-	})) as ComponentDef<S>;
+	})) as unknown as ComponentDef<S>;
 	Object.defineProperty(def, "id", { value: id, enumerable: false });
 	return def;
 }
@@ -139,12 +152,13 @@ export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 /** Either a populated bundle or a bare def (tag / all-fields-zero). */
 export type BundleOrDef<S extends ComponentSchema = ComponentSchema> = Bundle<S> | ComponentDef<S>;
 
-/** Pair a component def with field values to attach. Omitted fields zero-fill. */
+/** Pair a component def with field values to attach. Omitted fields zero-fill;
+ * a tag def takes no values (see `ValuesArg`). */
 export function bundle<S extends ComponentSchema>(
 	def: ComponentDef<S>,
-	values?: Partial<FieldValues<S>>
+	...values: ValuesArg<S>
 ): Bundle<S> {
-	return { def, values: values ?? NO_VALUES };
+	return { def, values: (values as [Partial<FieldValues<S>>?])[0] ?? NO_VALUES };
 }
 
 /** Extract the def from a `BundleOrDef`. A bare def is the callable; a bundle a plain object. */
