@@ -12,6 +12,7 @@
 import type { ECS } from "../ecs";
 import type { ComponentDef } from "../component";
 import type { EntityID } from "../entity";
+import type { EventKey } from "../event";
 import { bundle } from "../component";
 
 declare const world: ECS;
@@ -76,6 +77,25 @@ function componentDefVariance(): void {
 	void erasedTag;
 }
 
+declare const ContactEvent: EventKey<{ a: EntityID; b: EntityID }>;
+declare const ErasedEvent: EventKey<Record<string, number>>;
+
+function registerEventAssertions(): void {
+	// Complete cover, any order.
+	world.registerEvent(ContactEvent, ["a", "b"]);
+	world.registerEvent(ContactEvent, ["b", "a"]);
+
+	// @ts-expect-error — under-registered: 'b' missing (emit would silently drop it)
+	world.registerEvent(ContactEvent, ["a"]);
+
+	// @ts-expect-error — foreign field
+	world.registerEvent(ContactEvent, ["a", "b", "c"]);
+
+	// A schema-erased key has no finite key set — the cover check is skipped.
+	world.registerEvent(ErasedEvent, ["whatever"]);
+}
+
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
+void registerEventAssertions;

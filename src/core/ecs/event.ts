@@ -164,6 +164,27 @@ export type SignalKey = EventKey<EmptyEventSchema> & {
 	readonly [__signalKey]: true;
 };
 
+/**
+ * Compile-time exact-cover check for `registerEvent`'s `fields` list. The
+ * element type (`keyof S & string`) already rejects foreign fields; this
+ * catches the inverse mistake — an UNDER-registered channel. Registering
+ * `eventKey<{a; b}>` with `["a"]` used to compile, but `emit` requires the
+ * full payload while the channel only has an `a` column, so `b` was silently
+ * dropped and `reader.b` (typed as an array) was `undefined` at runtime.
+ * Resolves to `unknown` (intersection no-op) when `F` covers every key, and
+ * to an impossible tuple naming the missing fields otherwise. A schema with a
+ * string index signature (erased/untyped keys) skips the check — there is no
+ * finite key set to cover.
+ */
+export type EventFieldsCover<
+	S extends EventSchema,
+	F extends readonly (keyof S & string)[]
+> = string extends keyof S
+	? unknown
+	: Exclude<keyof S & string, F[number]> extends never
+		? unknown
+		: readonly [`ERROR — missing event field: ${Exclude<keyof S & string, F[number]>}`];
+
 export function eventKey<S extends EventSchema>(name: string): EventKey<S> {
 	return unsafeCast<EventKey<S>>(Symbol(name));
 }

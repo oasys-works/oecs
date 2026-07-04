@@ -234,7 +234,14 @@ export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./bui
 // Events — the schema is a field → value-type record (`EventSchema`), so a
 // field declared as a branded number (e.g. `EntityID`) round-trips the brand
 // through emit/read. `SignalKey` is the distinct zero-payload key type.
-export type { EventReader, EventKey, EventSchema, EmptyEventSchema, SignalKey } from "./event";
+export type {
+	EventReader,
+	EventKey,
+	EventSchema,
+	EventFieldsCover,
+	EmptyEventSchema,
+	SignalKey
+} from "./event";
 export { eventKey, signalKey } from "./event";
 
 // Resources

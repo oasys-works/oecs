@@ -91,6 +91,7 @@ import type { RelationDef, RelationOptions } from "./relation";
 import type {
 	EmptyEventSchema,
 	EventDef,
+	EventFieldsCover,
 	EventKey,
 	EventReader,
 	EventSchema,
@@ -640,9 +641,12 @@ export class ECS implements QueryResolver {
 		return this.store.registerSparseComponent({} as Record<string, never>);
 	}
 
-	public registerEvent<S extends EventSchema>(
+	/** Register an event channel. `fields` must name EVERY schema key — an
+	 * under-registered channel would silently drop the missing fields at emit
+	 * (see `EventFieldsCover`). */
+	public registerEvent<S extends EventSchema, const F extends readonly (keyof S & string)[]>(
 		key: EventKey<S>,
-		fields: readonly (keyof S & string)[]
+		fields: F & EventFieldsCover<S, F>
 	): void {
 		this.store.registerEventByKey<S>(key, fields);
 	}
