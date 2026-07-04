@@ -28,9 +28,16 @@ Verified: full suite green (1,558), `dist/core/ecs/ecs.d.ts` member-signature se
 2. Any regrouping is a **breaking API change** — batch these behind the next minor/major, and keep the old flat methods as deprecated delegations for one release. M6 has landed (curated root exports + `@oasys/oecs/internal`, version bumped to **0.4.1, not yet published**) — if phase 2 lands before 0.4.1 ships, both breaking changes ride one semver event; after, phase 2 needs its own.
 3. Update `docs/api/*.md` for any surface that moves.
 
-## Decision needed
+## Decision — SIGNED OFF (2026-07-05)
 
-Which method groups stay flat vs. get grouped facades — propose a concrete split in the phase-2 PR description and get sign-off before implementing (per project convention: don't presume the direction is settled).
+The user approved the proposed split and mechanics:
+
+- **Grouped facades (4):** `ecs.relations.*` (13 methods, wraps the relation surface; `register/add/remove/has/compact/count` + the traversal names unchanged), `ecs.snapshots.*` (`capture/restore/captureSparse/restoreSparse/stateHash/deterministic`), `ecs.resources.*` (`register/get/set/remove/has`), `ecs.events.*` (`register/registerSignal/emit/read`; system-side `ctx.emit` untouched).
+- **Stay flat:** entity/component CRUD, sparse ops, `query`/systems/observers, enable/disable, batch ops, WASM/memory/region/backend integration surface.
+- **Migration:** flat methods stay as `@deprecated` delegations for one release; removal targeted at 0.6.0.
+- **Version:** phase 2 rides a **0.5.0** bump (not the staged 0.4.1 — new API groups are more than a patch).
+- **Sequencing:** implementation prepared on `oecs_compare` (`exp/h3-phase2`); applied to oecs only after the concurrent typestate-access work lands on `ecs.ts`/`system.ts` (user queues the apply).
+- **Perf:** no bench gate — affected groups are cold/warm host-side paths, aliases keep their existing bodies during the grace release, and the H1 A/B evidence (steps 3/4/6) already establishes monomorphic delegation as free at current V8.
 
 ## Verification
 
