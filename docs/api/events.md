@@ -3,7 +3,7 @@
 An **event** is a fire-and-forget message with a typed payload. Systems `emit` them and other systems `read` them within the same frame. Events are stored struct-of-arrays (one column per field) and **cleared at the end of every `update()`** — they exist for exactly one frame.
 
 ```ts
-import { eventKey, signalKey } from "@oasys/oecs";
+import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
 
 // A typed event and a payload-less signal, minted at module scope.
 const Contact = eventKey<{ a: EntityID; b: EntityID }>("Contact");
