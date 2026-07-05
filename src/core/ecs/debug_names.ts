@@ -19,6 +19,11 @@ export function setComponentDebugName(def: ComponentHandle, name: string): void 
 	componentNames.set(def as object, name);
 }
 
+/** The raw registration name (`"Pos"`), or `undefined` when the def is unnamed. */
+export function componentDebugName(def: ComponentHandle): string | undefined {
+	return componentNames.get(def as object);
+}
+
 /** `'Pos' (component 5)` when named at registration, else `component 5`. */
 export function componentLabel(def: ComponentHandle): string {
 	const name = componentNames.get(def as object);

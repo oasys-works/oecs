@@ -117,6 +117,38 @@ describe("frame-trace seam", () => {
 		expect(fe).toBeGreaterThan(obs);
 	});
 
+	it("labels observer_fired with the observer's name, falling back to the component debug name", () => {
+		const world = new ECS({ deterministic: true });
+		const Pos = world.registerComponent({ x: "i32" }, { name: "Pos" });
+		const Vel = world.registerComponent({ vx: "i32" }); // unnamed
+		world.observe(Pos, { name: "pos-watcher", onAdd: () => {}, access: openAccess([Pos]) });
+		world.observe(Pos, { onAdd: () => {}, access: openAccess([Pos]) });
+		world.observe(Vel, { onAdd: () => {}, access: openAccess([Vel]) });
+		const sys = world.registerSystem({
+			name: "spawner",
+			exclusive: true,
+			reads: [],
+			writes: [],
+			fn: (ctx) => {
+				ctx.commands.spawn(Pos({ x: 1 }), Vel({ vx: 2 }));
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+
+		const rec = new FrameTraceRecorder();
+		world.setTrace(rec);
+		world.update(1 / 60);
+
+		const labels = rec
+			.frames()[0]!
+			.events.filter((e) => e.kind === "observer_fired" && e.op === "add")
+			.map((e) => (e as { observer: string }).observer);
+		expect(labels).toContain("pos-watcher"); // explicit ObserverConfig.name
+		expect(labels).toContain("observer(Pos)"); // component debug-name fallback
+		expect(labels).toContain(`observer(${Vel.id})`); // bare-cid fallback
+	});
+
 	it("records event emit/read", () => {
 		const world = new ECS({ deterministic: true });
 		const Ping = eventKey<{ n: number }>("Ping");

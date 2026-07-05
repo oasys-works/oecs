@@ -180,6 +180,14 @@ export type {
 	ObserverOp
 } from "./frame_trace";
 
+// Host-side frame driver — optional convenience over the authoritative
+// `ECS.update(dt)` primitive: play/pause on rAF (DI-able for tests and
+// non-browser hosts), explicit `step()`/`stepFrames()` for debuggers, editors,
+// and rollback playback, and a `maxDt` clamp so a resumed background tab
+// doesn't feed the whole suspension into the accumulator as one delta.
+export { FrameStepper } from "./frame_stepper";
+export type { FrameStepperOptions } from "./frame_stepper";
+
 // World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto` when a
 // snapshot's shape/field-identity/index-bounds fail closed BEFORE overwriting the
 // live backing; `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.

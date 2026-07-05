@@ -155,6 +155,12 @@ export type {
 	ObserverOp
 } from "./core/ecs";
 
+// Host-side frame driver — optional convenience over `ECS.update(dt)`:
+// play/pause on rAF, explicit `step()`/`stepFrames()`, `maxDt` clamp on raw
+// browser-frame deltas.
+export { FrameStepper } from "./core/ecs";
+export type { FrameStepperOptions } from "./core/ecs";
+
 // World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto`;
 // `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
 // `StoreRestoreError` is the dense-half failure `restoreInto` can surface —

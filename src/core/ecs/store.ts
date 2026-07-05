@@ -1693,7 +1693,7 @@ export class Store implements ObserverHost, QueryHost {
 			arch.removeRow(row, this.entityRow);
 			// Dirty bookkeeping (#328) — also closes #316: previously this path
 			// only flagged row counts, leaving query caches stale if the entity
-			// was the last in its archetype.
+			// was the last in its archetype. Pure shrink — no enabled-crossing test.
 			this._onArchLenChange(arch, preLen);
 		}
 
@@ -3551,7 +3551,9 @@ export class Store implements ObserverHost, QueryHost {
 		const edge = srcArch.getEdge(compId)!;
 		const count = srcArch.length;
 		// src always crosses to 0 (count > 0 guard at top); tgt crosses only
-		// if it was empty before the bulk move.
+		// if it was empty before the bulk move. Both archetypes are disabled-free
+		// here (the guard above throws otherwise), so `enabledCount === length`
+		// — the tgt grow's enabled-pre value equals its length-pre value.
 		const srcPre = count;
 		const tgtPre = tgt.length;
 		const tgtPreE = tgt.enabledCount;
@@ -3604,7 +3606,8 @@ export class Store implements ObserverHost, QueryHost {
 		const edge = srcArch.getEdge(compId)!;
 		const count = srcArch.length;
 		// src always crosses to 0 (count > 0 guard at top); tgt crosses only
-		// if it was empty before the bulk move.
+		// if it was empty before the bulk move. Both archetypes are disabled-free
+		// here (the guard above throws otherwise), so `enabledCount === length`.
 		const srcPre = count;
 		const entArch = this.entityArchetype;
 		const entRow = this.entityRow;

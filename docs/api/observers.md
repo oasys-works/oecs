@@ -34,6 +34,7 @@ interface StructuralObserverConfig {
   onEnable?: (eid: EntityID, ctx: SystemContext) => void;
   access?: Partial<SystemAccessDeclaration>;   // + the reads/writes/spawns the callbacks need
   yieldExisting?: boolean;
+  name?: string;                               // diagnostic label in frame traces (observe-only)
 }
 
 // onSet, archetype-granular (the default) — one call per changed archetype-column:
@@ -82,6 +83,9 @@ ecs.observe(HexPos, {
 
 > [!NOTE]
 > `yieldExisting: true` replays `onAdd` over the current **enabled** matches at registration — handy to seed a derived structure from entities that already exist (a disabled entity is skipped at seed). `dispose()` is idempotent and safe mid-flush.
+
+> [!TIP]
+> `name` labels the observer in the [frame trace](./tracing.md)'s `observer_fired` events — the same role a system's `name` plays. It is observe-only: it never touches `stateHash` or dispatch order. Unnamed observers fall back to `observer(<component debug name>)` when the component was registered with a `name`, else `observer(<cid>)`.
 
 ## Firing order (determinism)
 

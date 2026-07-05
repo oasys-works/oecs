@@ -400,6 +400,12 @@ export class Schedule {
 	 * set uniformly; a `configureSet` between phases is still honored because the
 	 * memo lives only for a single `runLabel` pass. Short-circuits on the first
 	 * `false`. The system's own conditions evaluate per system, in canonical order.
+	 *
+	 * #731 SEMANTIC NOTE: this evaluates a set's conditions once-per-set-per-phase
+	 * rather than once-per-member. Equivalent for pure RunConditions; observably
+	 * different only if a set condition reads state mutated earlier in the SAME
+	 * phase (resources write immediately). That is intentional — the set gates as a
+	 * unit, so all its members share one verdict for the phase.
 	 */
 	private shouldRun(
 		node: SystemNode,

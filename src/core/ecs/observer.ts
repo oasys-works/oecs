@@ -64,6 +64,7 @@ import {
 	type SystemDescriptor
 } from "./system";
 import { accessCheck } from "./access_check";
+import { componentDebugName } from "./debug_names";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { DEV } from "../../dev_flag";
 
@@ -126,6 +127,12 @@ interface ObserverConfigBase {
 	 * *enabled* members; a disabled entity is simply absent, matching default-query
 	 * semantics), for order-independence of register-vs-spawn. */
 	yieldExisting?: boolean;
+	/** Diagnostic label for this observer, surfaced by the frame-trace seam
+	 * (ADR-0030) as the `observer_fired.observer` field — the same role a system's
+	 * `name` plays. Optional and observe-only: it never touches `stateHash` or
+	 * dispatch. Defaults to `observer(<component debug name>)` when the component
+	 * was registered with a name, else `observer(<cid>)`. */
+	name?: string;
 }
 
 /** Per-entity onSet: `onSet(eid, ctx)` fires once per changed entity, drained
@@ -360,7 +367,10 @@ export class ObserverRegistry {
 		}
 
 		const access = config.access ?? {};
-		const descriptor = synthDescriptor(`observer(${cid})`, access);
+		const descriptor = synthDescriptor(
+			config.name ?? `observer(${componentDebugName(def) ?? cid})`,
+			access
+		);
 		const entry: ObserverEntry = {
 			// Share one identity space with the descriptor (used only for the
 			// topo tie-break + diagnostics).

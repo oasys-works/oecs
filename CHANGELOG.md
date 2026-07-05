@@ -75,6 +75,15 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   `StoreRestoreError`, `SabUnavailableError`, `TypedArrayTag`; `/reactive` now exports `Eq` and
   `shallow` (moved from `/reactive-sync`, which re-exports for compat); `signal()` gains the
   zero-arg Solid-parity overload; `SingletonSyncOptions.eq`.
+- **`FrameStepper`** — optional host-side driver over the authoritative `ecs.update(dt)`:
+  `play()`/`pause()`/`toggle()` on `requestAnimationFrame` (injectable `requestFrame`/`cancelFrame`
+  for tests and non-browser hosts), explicit `step()`/`stepFrames()` for debuggers, editors, and
+  rollback playback, and a `maxDt` clamp (default 0.25 s) so a resumed background tab doesn't feed
+  the whole suspension into the accumulator as one delta. Validation throws `INVALID_FRAME_STEP`.
+- **`ObserverConfig.name`** — diagnostic label surfaced as the frame trace's
+  `observer_fired.observer` field (the role a system's `name` plays); observe-only, never affects
+  `stateHash` or dispatch order. Unnamed observers fall back to `observer(<component debug name>)`
+  when the component was registered with a name, else `observer(<cid>)`.
 
 ### Fixed
 

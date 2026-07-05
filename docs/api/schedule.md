@@ -37,6 +37,24 @@ enum SCHEDULE {
 
 **`ecs.flush()`** — force-apply buffered deferred structural ops right now (rarely needed; phase boundaries and `update()` already flush).
 
+### Driving the loop: `FrameStepper`
+
+`update(dt)` is the authoritative "run one frame" primitive; **`FrameStepper`** is an optional host-side driver over it, so you don't hand-roll the `requestAnimationFrame` loop:
+
+```ts
+const stepper = new FrameStepper(ecs, {
+  fixedDt: 1 / 60,   // dt used by step() when none is given (default 1/60)
+  maxDt: 0.25,       // clamp on raw browser-frame deltas (default 0.25 s)
+});
+stepper.play();               // tick on requestAnimationFrame
+stepper.pause();              // stop; manual step() still works
+stepper.toggle();
+stepper.step();               // advance exactly one frame (debuggers, tests, editors)
+stepper.stepFrames(10);       // replay a paused sim
+```
+
+`maxDt` clamps each raw rAF delta **before** it reaches `update()` — a backgrounded tab suspends rAF, and without the clamp the first frame back would carry the whole suspension as one delta (still bounded by `maxFixedSteps`, but a burst). The first frame after `play()` uses `fixedDt`, since there is no previous timestamp. Explicit `step(dt)` deltas are trusted, not clamped. Non-browser hosts and tests inject `requestFrame`/`cancelFrame`; validation failures throw `INVALID_FRAME_STEP`.
+
 ## Adding & ordering systems
 
 ```ts

@@ -23,6 +23,7 @@ const ROOT_EXPORTS = [
 	"ECSRestoreError",
 	"ECS_ERROR",
 	"ECS_SNAPSHOT_VERSION",
+	"FrameStepper",
 	"FrameTraceRecorder",
 	"HIERARCHY_UNBOUNDED",
 	"HostCommandQueue",
