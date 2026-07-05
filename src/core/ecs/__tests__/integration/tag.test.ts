@@ -182,7 +182,7 @@ describe("Tag components", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn(ctx) {
-				ctx.addComponent(e, Tag);
+				ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

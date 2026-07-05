@@ -90,7 +90,7 @@ describe("Column buffer invalidation", () => {
 
 				// Now cause e1 to transition to [Pos, Vel] archetype
 				// This is deferred, so ref should still work within this system
-				ctx.addComponent(e1, Vel, { vx: 1, vy: 2 });
+				ctx.commands.add(e1, Vel, { vx: 1, vy: 2 });
 
 				// ref should still read correctly (deferred, no transition yet)
 				expect(ref.x).toBe(42);
@@ -295,7 +295,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 				// swap-and-pops that row out. The add is NOT skipped; the destroy
 				// reclaims its row afterwards.
 				ctx.commands.despawn(e);
-				ctx.addComponent(e, Vel, { vx: 10, vy: 20 });
+				ctx.commands.add(e, Vel, { vx: 10, vy: 20 });
 			}
 		});
 
@@ -333,8 +333,8 @@ describe("Deferred flush ordering edge cases", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.removeComponent(e, Vel);
-				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
+				ctx.commands.remove(e, Vel);
+				ctx.commands.add(e, Vel, { vx: 99, vy: 99 });
 			}
 		});
 
@@ -362,7 +362,7 @@ describe("Deferred flush ordering edge cases", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos, Tag]),
 			fn(ctx) {
-				ctx.addComponent(e, Tag);
+				ctx.commands.add(e, Tag);
 			}
 		});
 
@@ -370,7 +370,7 @@ describe("Deferred flush ordering edge cases", () => {
 		const sys2 = world.registerSystem({
 			...openAccess([Pos, Tag]),
 			fn(ctx) {
-				ctx.removeComponent(e, Tag);
+				ctx.commands.remove(e, Tag);
 			}
 		});
 
@@ -393,8 +393,8 @@ describe("Deferred flush ordering edge cases", () => {
 		const sys = world.registerSystem({
 			...openAccess([Vel]),
 			fn(ctx) {
-				ctx.addComponent(e, Vel, { vx: 1, vy: 2 });
-				ctx.addComponent(e, Vel, { vx: 100, vy: 200 });
+				ctx.commands.add(e, Vel, { vx: 1, vy: 2 });
+				ctx.commands.add(e, Vel, { vx: 100, vy: 200 });
 			}
 		});
 
@@ -719,7 +719,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 			...openAccess([Pos]),
 			fn(ctx) {
 				createdEntity = ctx.commands.spawn();
-				ctx.addComponent(createdEntity, Pos, { x: 42, y: 84 });
+				ctx.commands.add(createdEntity, Pos, { x: 42, y: 84 });
 
 				// Entity exists immediately (create is not deferred)
 				aliveInSystem = world.isAlive(createdEntity);
@@ -752,7 +752,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 			fn(ctx) {
 				for (let i = 0; i < 50; i++) {
 					const e = ctx.commands.spawn();
-					ctx.addComponent(e, Pos, { x: i, y: i * 2 });
+					ctx.commands.add(e, Pos, { x: i, y: i * 2 });
 					created.push(e);
 				}
 			}
@@ -906,7 +906,7 @@ describe("Deferred destroy + structural interaction", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
+				ctx.commands.add(e, Vel, { vx: 99, vy: 99 });
 				ctx.commands.despawn(e);
 			}
 		});

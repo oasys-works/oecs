@@ -43,6 +43,30 @@ describe("total has* + tryGetField (#9)", () => {
 		expect(world.tryGetField(e, Vel, "vx")).toBeUndefined();
 		expect(world.tryGetField(staleOf(e as number), Pos, "x")).toBeUndefined();
 	});
+
+	it("ctx.tryGetField mirrors the host total read inside a system", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent({ x: "f64" });
+		const Vel = world.registerComponent({ vx: "f64" });
+		const e = world.spawn();
+		world.addComponent(e, Pos, { x: 42 });
+
+		const seen: (number | undefined)[] = [];
+		const sys = world.registerSystem({
+			reads: [Pos, Vel],
+			writes: [],
+			fn(ctx) {
+				seen.push(ctx.tryGetField(e, Pos, "x"));
+				seen.push(ctx.tryGetField(e, Vel, "vx"));
+				seen.push(ctx.tryGetField(staleOf(e as number), Pos, "x"));
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+		world.update(0);
+
+		expect(seen).toEqual([42, undefined, undefined]);
+	});
 });
 
 describe("Query.firstEntity / singleEntity (M8)", () => {
@@ -127,8 +151,8 @@ describe("ObserverHandle Symbol.dispose", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e1, Tag)) ctx.addComponent(e1, Tag);
-				else if (!ctx.hasComponent(e2, Tag)) ctx.addComponent(e2, Tag);
+				if (!ctx.hasComponent(e1, Tag)) ctx.commands.add(e1, Tag);
+				else if (!ctx.hasComponent(e2, Tag)) ctx.commands.add(e2, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

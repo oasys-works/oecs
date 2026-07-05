@@ -19,6 +19,9 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
 | `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)` — **now immediate** |
 | `ctx.createEntity()` | `ctx.commands.spawn()` |
 | `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
+| `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)` or `ctx.commands.add(e, def({ … }))` |
+| `ctx.removeComponent(e, def)` | `ctx.commands.remove(e, def)` |
+| `ctx.disable(e)` / `ctx.enable(e)` | `ctx.commands.disable(e)` / `ctx.commands.enable(e)` |
 | `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)` — matches `targetOf` / `targetsOf` |
 | `query.count()` | `query.entityCount` (getter, beside `archetypeCount`) |
 | `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
@@ -26,15 +29,25 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
 
 - **Host `despawn` is immediate** — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
   line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).
-  Calling `ecs.despawn` from inside a system body throws in dev (immediate destroy
-  mid-iteration can invalidate rows a running query is walking) — use `ctx.commands.despawn`.
-  **Observer note:** like every immediate op, host `despawn` fires no observers — `onRemove`
-  no longer sees host-despawned entities (it did at 0.4, when host destroy was deferred).
-  Observer-driven consumers, including the `reactive-sync` map bridges, only see despawns that
-  go through `ctx.commands.despawn` or the host-command seam.
-- **`ctx.createEntity` / `ctx.destroyEntity` removed** — spawn/despawn inside a system live
-  only on `ctx.commands`, completing the declared migration; the bare deferred duplicates are
-  gone.
+  **Observer note:** like every immediate op, host `despawn` fires no *structural* observers —
+  `onRemove` no longer sees host-despawned entities (it did at 0.4, when host destroy was
+  deferred). Observer-driven consumers, including the `reactive-sync` map bridges, only see
+  despawns that go through `ctx.commands.despawn` or the host-command seam. (`onSet` is
+  receiver-blind — derived change detection sees host `setField` writes as always.)
+- **Every immediate host structural mutator throws in dev when called from inside a system
+  body** — `despawn`, `addComponent`/`addComponents`, `removeComponent`/`removeComponents`,
+  `batchAddComponent`/`batchRemoveComponent`, `disable`/`enable` — each error pointing at its
+  `ctx.commands` equivalent. Mid-system these ops can move rows a running query is walking and
+  are invisible to observers; previously only `despawn` was guarded wholesale (the others were
+  caught only when they touched the archetype being iterated). Cross-world host mutation from
+  another world's system (#785) is unaffected — the guard is scoped to the mutated world.
+- **The bare deferred duplicates on `ctx` are removed** — `ctx.addComponent`,
+  `ctx.removeComponent`, `ctx.disable`, `ctx.enable` join the already-removed
+  `ctx.createEntity` / `ctx.destroyEntity`. `ctx.commands` is now the *only* deferred surface,
+  completing the receiver-implies-timing rule with zero exceptions. `ctx.commands.add` gains
+  the explicit complete-values shape (`ctx.commands.add(e, Pos, { x: 0, y: 0 })`) the removed
+  `ctx.addComponent` carried, so compile-checked complete attaches survive the move.
+  `ctx.isDisabled` stays (immediate read), as do the immediate sparse/relation ops.
 - **`sourcesOf` canonicalized to `(entity, def)`** on `ecs.relations` and `SystemContext` —
   it was the one arg-order outlier on the relation surface (M3).
 
@@ -56,7 +69,9 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
 - **Total probes + `tryGetField`** — `hasComponent` / `hasSparse` / `relations.has` now return
   `false` for a dead entity instead of dev-throwing (a "has" probe is exactly the call made to
   avoid dead entities); `ecs.tryGetField(e, def, field)` returns `undefined` for a dead entity or
-  missing component.
+  missing component, and `ctx.tryGetField` mirrors it inside systems (declared-read checked).
+- **Plural host mutators chain** — `addComponents`, `removeComponents`, `batchAddComponent`,
+  `batchRemoveComponent` return `this` (previously `void`), matching their singular siblings.
 - **`Query.firstEntity()` / `Query.singleEntity()`** — singleton reads (player, camera) without a
   hand-rolled `forEach` + capture; `singleEntity` dev-throws `QUERY_NOT_SINGLETON` on 0 or >1.
 - **Host-side `ecs.refRead(def, e)`** — whole-component read-only view, parity with
@@ -99,6 +114,18 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   also requires *this* world to be mid-schedule). Driving a second world from a system (#785)
   mutates it host-style, which is safe — B is not iterating. Unnamed systems in the guard message
   now render as `system_<id>` instead of `'?'`.
+- **Frame trace records every deferred command (ADR-0030)** — the removed bare `ctx.*` deferred
+  forms bypassed the `commandQueued` trace hook, so host-command-seam adds/removes/toggles (and
+  any system using the bare forms) were invisible to an attached `FrameTraceSink` while their
+  spawns/despawns were visible. With `ctx.commands` as the only deferred surface every queued
+  command is traced, and `ctx.commands.spawn` now also traces each bundle attach it queues
+  (previously only the spawn itself).
+- **Stale deferred-attach docs** — `host_commands.ts` / the host-write-seam page claimed the
+  deferred add path does not zero-fill omitted fields (NaN readback); every attach path
+  zero-fills since #716 (`writeFields`'s `?? 0`). The complete-values requirement on
+  `SpawnEntry` is documented as what it is — explicit intent in a reified, replayable record —
+  and the observer docs now scope "immediate ops fire no observers" to *structural* observers
+  (`onSet` is derived change detection and sees host `setField` writes).
 - **`ecs.refRead` / `ctx.ref` / `ctx.refRead` on a missing component or tag def** — threw a raw
   `TypeError` from the ref internals; now a dev `ECSError` (`COMPONENT_NOT_REGISTERED`) naming the
   op and component, matching `getField`. Host `refRead`'s docstring now states the single-

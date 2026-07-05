@@ -85,8 +85,8 @@ export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<st
 	: FieldValues<S>;
 
 /**
- * Trailing-argument tuple for the attach surfaces (`ctx.addComponent`,
- * `ctx.addSparse`): a tag takes NO values argument, a valued schema REQUIRES a
+ * Trailing-argument tuple for the attach surfaces (`ctx.commands.add`'s
+ * explicit-values form, `ctx.addSparse`): a tag takes NO values argument, a valued schema REQUIRES a
  * complete one. Encodes the former tag/valued overload pair as one signature,
  * which the typed system seam needs — its `def` parameter is a single
  * declared-access-constrained type param, and per-schema overloads would

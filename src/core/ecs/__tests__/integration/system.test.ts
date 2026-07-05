@@ -499,7 +499,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			// ctx annotated permissive (§typestate escape hatch): this system
 			// DELIBERATELY violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
-				ctx.addComponent(e, Vel, { vx: 0, vy: 0 });
+				ctx.commands.add(e, Vel, { vx: 0, vy: 0 });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -528,7 +528,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			// ctx annotated permissive (§typestate escape hatch): this system
 			// DELIBERATELY violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
-				ctx.removeComponent(e, Vel);
+				ctx.commands.remove(e, Vel);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -682,8 +682,8 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			resourceWrites: [],
 			fn(ctx) {
 				const e = ctx.commands.spawn();
-				ctx.addComponent(e, A, { x: 1 });
-				ctx.addComponent(e, B, { y: 2 });
+				ctx.commands.add(e, A, { x: 1 });
+				ctx.commands.add(e, B, { y: 2 });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -708,8 +708,8 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			resourceReads: [],
 			resourceWrites: [],
 			fn(ctx) {
-				ctx.addComponent(e, Tag);
-				ctx.removeComponent(e, Tag);
+				ctx.commands.add(e, Tag);
+				ctx.commands.remove(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

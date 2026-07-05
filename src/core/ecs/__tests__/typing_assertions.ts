@@ -183,8 +183,8 @@ function typestateEnforcementAssertions(): void {
 			void ctx.ref(Vel, e);
 			void ctx.refRead(Pos, e);
 			// Granted: template-declared spawns authorise adds of its defs.
-			ctx.addComponent(e, Frozen);
-			ctx.addComponent(e, Vel, { vx: 0, vy: 0 });
+			ctx.commands.add(e, Frozen);
+			ctx.commands.add(e, Vel, { vx: 0, vy: 0 });
 			void ctx.commands.spawn(Vel({ vx: 1 }), Frozen);
 			// Granted: sparse write implies sparse read.
 			ctx.setSparseField(e, SPos, "x", 1);
@@ -203,7 +203,7 @@ function typestateEnforcementAssertions(): void {
 			ctx.getField(e, Frozen, "x");
 
 			// @ts-expect-error — removeComponent needs despawns/transitions.remove
-			ctx.removeComponent(e, Vel);
+			ctx.commands.remove(e, Vel);
 
 			// @ts-expect-error — no despawns declared: destroyEntity is blocked
 			ctx.destroyEntity(e);
@@ -224,10 +224,14 @@ function typestateEnforcementAssertions(): void {
 			ctx.getField(e, Pos, "vx");
 
 			// @ts-expect-error — a tag takes no values argument
-			ctx.addComponent(e, Frozen, { x: 1 });
+			ctx.commands.add(e, Frozen, { x: 1 });
 
-			// @ts-expect-error — a valued component requires complete values
-			ctx.addComponent(e, Vel);
+			// A bare def is the sanctioned all-zero attach (bundle semantics) —
+			// unlike the removed ctx.addComponent, this must compile.
+			ctx.commands.add(e, Vel);
+
+			// @ts-expect-error — the explicit-values form requires complete values
+			ctx.commands.add(e, Vel, { vx: 1 });
 		}
 	});
 
@@ -240,8 +244,8 @@ function typestateEnforcementAssertions(): void {
 		fn(ctx) {
 			ctx.commands.despawn(e);
 			ctx.commands.despawn(e);
-			ctx.removeComponent(e, Vel);
-			ctx.addComponent(e, Frozen);
+			ctx.commands.remove(e, Vel);
+			ctx.commands.add(e, Frozen);
 		}
 	});
 

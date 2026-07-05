@@ -25,7 +25,7 @@ The receiver implies the mode. Everything on the host facade (`ecs.*`) applies *
 | sparse & relation ops | immediate | immediate |
 
 > [!IMPORTANT]
-> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side mutations apply immediately (calling `ecs.despawn` from *inside* a system body throws in dev — use `ctx.commands.despawn` there), which cuts the other way on the host: a host-side `forEach`/`eachChunk` is live iteration, and structurally mutating an entity of an archetype you are walking throws `STRUCTURAL_DURING_ITERATION` in dev — collect ids during the walk, mutate after. The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
+> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side mutations apply immediately (calling *any* immediate host structural mutator — `despawn`, `addComponent(s)`, `removeComponent(s)`, `batchAdd/RemoveComponent`, `disable`/`enable` — from *inside* a system body throws in dev, pointing at the `ctx.commands` equivalent), which cuts the other way on the host: a host-side `forEach`/`eachChunk` is live iteration, and structurally mutating an entity of an archetype you are walking throws `STRUCTURAL_DURING_ITERATION` in dev — collect ids during the walk, mutate after. Inside systems, structural ops live on [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
 
 Deferred work lands at the next **phase boundary** flush, or when you call `ecs.flush()` explicitly. See [schedule](./schedule.md).
 
@@ -91,7 +91,7 @@ A disabled entity keeps its components, relations, sparse data, and stable `Enti
 > A disabled entity must hold **at least one component** — a component-less entity has no archetype row to partition.
 
 > [!WARNING]
-> An **immediate** `ecs.disable()` / `ecs.enable()` fires **no** `onDisable`/`onEnable` [observer](./observers.md) — only the **deferred** `ctx.disable()` / `ctx.enable()` (which drain at the flush) do.
+> An **immediate** `ecs.disable()` / `ecs.enable()` fires **no** `onDisable`/`onEnable` [observer](./observers.md) — only the **deferred** `ctx.commands.disable()` / `ctx.commands.enable()` (which drain at the flush) do.
 
 ## The `EntityID` codec
 

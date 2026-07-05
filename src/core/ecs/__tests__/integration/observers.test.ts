@@ -34,7 +34,7 @@ describe("Observers — onAdd / onRemove basics", () => {
 		const e = world.spawn();
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -56,8 +56,8 @@ describe("Observers — onAdd / onRemove basics", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, Tag); // effective
-				ctx.removeComponent(e, Tag); // no-op (already lacks) — must not fire
+				ctx.commands.remove(e, Tag); // effective
+				ctx.commands.remove(e, Tag); // no-op (already lacks) — must not fire
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -86,8 +86,8 @@ describe("Observers — onAdd / onRemove basics", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e1, Tag)) ctx.addComponent(e1, Tag);
-				else if (!ctx.hasComponent(e2, Tag)) ctx.addComponent(e2, Tag);
+				if (!ctx.hasComponent(e1, Tag)) ctx.commands.add(e1, Tag);
+				else if (!ctx.hasComponent(e2, Tag)) ctx.commands.add(e2, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -140,8 +140,8 @@ describe("Observers — dispose mid-round (#726)", () => {
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.addComponent(e, A);
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, A);
+				ctx.commands.add(e, B);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -177,8 +177,8 @@ describe("Observers — dispose mid-round (#726)", () => {
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, A);
-				ctx.removeComponent(e, B);
+				ctx.commands.remove(e, A);
+				ctx.commands.remove(e, B);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -293,7 +293,7 @@ describe("Observers — onRemove on destroy", () => {
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, A); // explicit remove — fires with e live
+				ctx.commands.remove(e, A); // explicit remove — fires with e live
 				ctx.commands.despawn(e); // destroy — fires onRemove(B) with e freed
 			}
 		});
@@ -310,7 +310,7 @@ describe("Observers — onRemove on destroy", () => {
 		const Marker = world.registerTag();
 		const survivor = world.spawn();
 		world.observe(Unit, {
-			onRemove: (_eid, ctx) => ctx.addComponent(survivor, Marker),
+			onRemove: (_eid, ctx) => ctx.commands.add(survivor, Marker),
 			access: openAccess([Unit, Marker])
 		});
 		const e = world.spawn();
@@ -406,7 +406,7 @@ describe("Observers — canonical ordering", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of scrambled) ctx.addComponent(e, Tag);
+				for (const e of scrambled) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -456,7 +456,7 @@ describe("Observers — canonical ordering", () => {
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of scrambled) ctx.addComponent(e, Tag);
+				for (const e of scrambled) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
@@ -517,7 +517,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 				const hasB = ctx.hasComponent(eid, B);
 				ctx.setField(eid, A, "v", ctx.getField(eid, A, "v") + (hasB ? 1000 : 0) + seq);
 				if (getEntityIndex(eid) % 2 === 0)
-					ctx.addComponent(eid, C, { v: getEntityIndex(eid) });
+					ctx.commands.add(eid, C, { v: getEntityIndex(eid) });
 			},
 			access
 		});
@@ -532,7 +532,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 		world.observe(C, {
 			onAdd: (eid, ctx) => {
 				ctx.setField(eid, C, "v", ctx.getField(eid, C, "v") + 7);
-				if (ctx.hasComponent(eid, B)) ctx.removeComponent(eid, B);
+				if (ctx.hasComponent(eid, B)) ctx.commands.remove(eid, B);
 			},
 			access
 		});
@@ -578,7 +578,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 			...openAccess([A, B]),
 			fn: (ctx) => {
 				for (const [id, which] of ordered)
-					ctx.addComponent(id, defs[which], { v: getEntityIndex(id) });
+					ctx.commands.add(id, defs[which], { v: getEntityIndex(id) });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -649,8 +649,8 @@ describe("Observers — glitch-free ordering (observer_ordering_sim, real engine
 			...openAccess([A, B, C, D]),
 			fn: (ctx) => {
 				for (const e of order) {
-					ctx.addComponent(e, B);
-					ctx.addComponent(e, C);
+					ctx.commands.add(e, B);
+					ctx.commands.add(e, C);
 				}
 			}
 		});
@@ -673,7 +673,7 @@ describe("Observers — no-observer fast path", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of ids) if (!ctx.hasComponent(e, Tag)) ctx.addComponent(e, Tag);
+				for (const e of ids) if (!ctx.hasComponent(e, Tag)) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -711,7 +711,7 @@ describe("Observers — access enforcement", () => {
 		});
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -730,7 +730,7 @@ describe("Observers — access enforcement", () => {
 		});
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -746,18 +746,18 @@ describe("Observers — cascades", () => {
 		const B = world.registerTag();
 		const C = world.registerTag();
 		world.observe(A, {
-			onAdd: (eid, ctx) => ctx.addComponent(eid, B),
+			onAdd: (eid, ctx) => ctx.commands.add(eid, B),
 			access: openAccess([A, B])
 		});
 		world.observe(B, {
-			onAdd: (eid, ctx) => ctx.addComponent(eid, C),
+			onAdd: (eid, ctx) => ctx.commands.add(eid, C),
 			access: openAccess([B, C])
 		});
 		const e = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([A, B, C]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e, A)) ctx.addComponent(e, A);
+				if (!ctx.hasComponent(e, A)) ctx.commands.add(e, A);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -772,15 +772,15 @@ describe("Observers — cascades", () => {
 		const world = new ECS({ deterministic: true });
 		const Toggle = world.registerTag();
 		world.observe(Toggle, {
-			onAdd: (eid, ctx) => ctx.removeComponent(eid, Toggle),
-			onRemove: (eid, ctx) => ctx.addComponent(eid, Toggle),
+			onAdd: (eid, ctx) => ctx.commands.remove(eid, Toggle),
+			onRemove: (eid, ctx) => ctx.commands.add(eid, Toggle),
 			access: openAccess([Toggle])
 		});
 		const e = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([Toggle]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e, Toggle)) ctx.addComponent(e, Toggle);
+				if (!ctx.hasComponent(e, Toggle)) ctx.commands.add(e, Toggle);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

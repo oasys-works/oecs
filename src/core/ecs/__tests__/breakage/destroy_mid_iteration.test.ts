@@ -117,7 +117,7 @@ describe("Destruction during system execution", () => {
 				// Create 4 new entities
 				for (let i = 0; i < 4; i++) {
 					const e = ctx.commands.spawn();
-					ctx.addComponent(e, Pos, { x: 100 + i, y: 0 });
+					ctx.commands.add(e, Pos, { x: 100 + i, y: 0 });
 					created.push(e);
 				}
 			}

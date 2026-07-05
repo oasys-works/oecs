@@ -57,6 +57,7 @@ import type {
 	MutableColumnsForSchema,
 	ColumnsForSchema,
 	AttachValuesArg,
+	BundleOrDef,
 	SchemaOf,
 	DeclaredQueryTerm
 } from "./component";
@@ -89,7 +90,6 @@ import type {
 import type { ResourceKey, ResourceValueOf } from "./resource";
 import { BitSet, unsafeCast } from "../../type_primitives";
 import { bucketPush } from "./utils/arrays";
-import { EMPTY_VALUES } from "./utils/constants";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { dispatchTrace } from "./dispatch_trace";
 import { accessCheck } from "./access_check";
@@ -1566,11 +1566,14 @@ export type DeclaredBundleOrDef<D> = [D] extends [unknown]
  * Deferred structural-command facade (§ctx.commands — Bevy `Commands`).
  * Namespaces the deferred structural ops so the call site is self-documenting:
  * `ctx.commands.add(e, …)` is *always* deferred (applied at the phase flush),
- * ending the collision where `ecs.addComponent` (immediate) and the bare
- * `ctx.addComponent` (deferred) share a name with opposite timing. Takes
+ * ending the collision where `ecs.addComponent` (immediate) and a bare
+ * `ctx.addComponent` (deferred) would share a name with opposite timing. Takes
  * varargs callable bundles, so one shape — `commands.spawn(bundle(Pos,{x,y}), bundle(Vel,{vx:1}))`
- * — serves spawn and add. The legacy `ctx.addComponent`/etc. stay for now;
- * the intent is for `ctx.commands.*` to become the only deferred surface.
+ * — serves spawn and add. This is the ONLY deferred surface: the bare
+ * `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable`
+ * duplicates were removed in 0.5.0, completing the receiver-implies-timing
+ * rule (`ecs.*` immediate, `ctx.commands.*` deferred) that 0.5.0 started for
+ * spawn/despawn.
  *
  * `A` narrows the def-taking methods to the enclosing system's declared access
  * (§typestate, system.ts); the default is fully permissive.
@@ -1599,16 +1602,48 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 			const def = bundleDef(items[i]);
 			if (DEV) accessCheck.checkAdd(def);
 			this.store.addComponentDeferred(e, def, bundleValues(items[i]));
+			// Trace each attach like `add` does — the queued adds are what the
+			// flush drains, so a sink reconstructing the frame sees all of them.
+			if (DEV) this.store._trace?.commandQueued("add", e, def.id);
 		}
 		return e;
 	}
 
-	/** Attach bundles to an existing entity (deferred). */
-	public add(entityId: EntityID, ...items: DeclaredBundleOrDef<A["add"]>[]): this {
-		for (let i = 0; i < items.length; i++) {
-			const def = bundleDef(items[i]);
+	/** Attach bundles to an existing entity (deferred). Bundles zero-fill
+	 * omitted fields. */
+	public add(entityId: EntityID, ...items: DeclaredBundleOrDef<A["add"]>[]): this;
+	/** Explicit complete-values attach (deferred) — the compile-checked shape
+	 * where a typo'd or missing field is a compile error, mirroring the
+	 * immediate `ecs.addComponent(e, def, values)`. Tags take no values
+	 * argument (`AttachValuesArg`). */
+	public add<D extends ComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredAdd<A, D>,
+		...values: AttachValuesArg<SchemaOf<D>>
+	): this;
+	public add(entityId: EntityID, ...items: (BundleOrDef | Record<string, number>)[]): this {
+		// (def, values) shape: a callable def followed by a values record. A
+		// bundle always carries a *callable* `def` property, so a plain record —
+		// even one whose schema has a field literally named "def" (a number
+		// there, not a function) — can never be mistaken for one.
+		if (
+			items.length === 2 &&
+			typeof items[0] === "function" &&
+			items[1] !== null &&
+			typeof items[1] === "object" &&
+			typeof (items[1] as { def?: unknown }).def !== "function"
+		) {
+			const def = items[0] as ComponentDef;
 			if (DEV) accessCheck.checkAdd(def);
-			this.store.addComponentDeferred(entityId, def, bundleValues(items[i]));
+			this.store.addComponentDeferred(entityId, def, items[1] as Record<string, number>);
+			if (DEV) this.store._trace?.commandQueued("add", entityId, def.id);
+			return this;
+		}
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i] as BundleOrDef;
+			const def = bundleDef(item);
+			if (DEV) accessCheck.checkAdd(def);
+			this.store.addComponentDeferred(entityId, def, bundleValues(item));
 			if (DEV) this.store._trace?.commandQueued("add", entityId, def.id);
 		}
 		return this;
@@ -1634,14 +1669,20 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 		return this;
 	}
 
-	/** Disable an entity (deferred). */
+	/** Buffer `entityId` to be disabled at the phase flush (idempotent, #577).
+	 * Deferred because a toggle is an in-archetype row swap, which would corrupt
+	 * a `forEach` SoA loop iterating that archetype if applied mid-system (it
+	 * reorders the dense columns being read). A disabled entity is excluded from
+	 * default queries; opt back in per query with `.includeDisabled()`. The
+	 * immediate read is `ctx.isDisabled`. */
 	public disable(entityId: EntityID): this {
 		this.store.disableEntityDeferred(entityId);
 		if (DEV) this.store._trace?.commandQueued("disable", entityId, null);
 		return this;
 	}
 
-	/** Re-enable an entity (deferred). */
+	/** Buffer `entityId` to be re-enabled at the phase flush (idempotent).
+	 * Deferred for the same row-swap reason as `disable`. */
 	public enable(entityId: EntityID): this {
 		this.store.enableEntityDeferred(entityId);
 		if (DEV) this.store._trace?.commandQueued("enable", entityId, null);
@@ -1704,6 +1745,22 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
 		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		return arch.readField(row, def.id, field);
+	}
+
+	/** Total sibling of {@link getField}, mirroring `ecs.tryGetField`
+	 * (POLISH_AUDIT #9): `undefined` when the entity is dead or doesn't hold
+	 * the component, instead of a dev throw / prod garbage read. The safe way
+	 * to probe-and-read in one call: `ctx.tryGetField(e, Health, "current") ?? 0`. */
+	public tryGetField<D extends ComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredRead<A, D>,
+		field: string & keyof SchemaOf<D>
+	): number | undefined {
+		if (DEV) accessCheck.checkRead(def);
+		if (!this.store.hasComponent(entityId, def)) return undefined;
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
 		return arch.readField(row, def.id, field);
@@ -1822,51 +1879,15 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
 	}
 
-	/** Tags take no values argument; valued schemas require a complete one
-	 * (`AttachValuesArg` — the former overload pair as one signature). */
-	public addComponent<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredAdd<A, D>,
-		...values: AttachValuesArg<SchemaOf<D>>
-	): this {
-		if (DEV) accessCheck.checkAdd(def);
-		this.store.addComponentDeferred(
-			entityId,
-			def,
-			(values[0] as Record<string, number> | undefined) ?? EMPTY_VALUES
-		);
-		return this;
-	}
+	// --- Deferred structural ops live on `ctx.commands` (§ctx.commands) ---
+	// The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` /
+	// `ctx.enable` duplicates were removed in 0.5.0 (same break that removed
+	// `ctx.createEntity` / `ctx.destroyEntity`): one deferred surface, one
+	// timing rule per receiver. `isDisabled` stays here — it is an immediate
+	// *read*, not a buffered structural op.
 
-	public removeComponent<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredRemove<A, D>
-	): this {
-		if (DEV) accessCheck.checkRemove(def);
-		this.store.removeComponentDeferred(entityId, def);
-		return this;
-	}
-
-	// --- Entity enable/disable (#577) ---
-	// Deferred to the phase flush: a toggle is an in-archetype row swap, which
-	// would corrupt a `forEach` SoA loop iterating that archetype if applied
-	// mid-system (it reorders the dense columns being read). `isDisabled` is an
-	// immediate read. A disabled entity is excluded from default queries; opt back
-	// in per query with `.includeDisabled()`.
-
-	/** Buffer `entityId` to be disabled at the phase flush (idempotent). */
-	public disable(entityId: EntityID): this {
-		this.store.disableEntityDeferred(entityId);
-		return this;
-	}
-
-	/** Buffer `entityId` to be re-enabled at the phase flush (idempotent). */
-	public enable(entityId: EntityID): this {
-		this.store.enableEntityDeferred(entityId);
-		return this;
-	}
-
-	/** Whether `entityId` is currently disabled (immediate read). */
+	/** Whether `entityId` is currently disabled (immediate read). Toggling is
+	 * deferred — `ctx.commands.disable` / `ctx.commands.enable` (#577). */
 	public isDisabled(entityId: EntityID): boolean {
 		return this.store.isDisabled(entityId);
 	}

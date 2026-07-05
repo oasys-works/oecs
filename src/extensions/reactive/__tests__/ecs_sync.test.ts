@@ -37,8 +37,8 @@ function makeWorld() {
 	const toWrite: { eid: EntityID; x: number }[] = [];
 	const toSpawn: number[] = []; // values for newly-spawned entities
 	const toDespawn: EntityID[] = [];
-	const toDisable: EntityID[] = []; // entities to ctx.disable this tick (#677)
-	const toEnable: EntityID[] = []; // entities to ctx.enable this tick (#677)
+	const toDisable: EntityID[] = []; // entities to ctx.commands.disable this tick (#677)
+	const toEnable: EntityID[] = []; // entities to ctx.commands.enable this tick (#677)
 	const spawned: EntityID[] = [];
 
 	world.addSystems(
@@ -60,15 +60,15 @@ function makeWorld() {
 				toWrite.length = 0;
 				for (const x of toSpawn) {
 					const e = ctx.commands.spawn();
-					ctx.addComponent(e, Pos, { x });
+					ctx.commands.add(e, Pos, { x });
 					spawned.push(e);
 				}
 				toSpawn.length = 0;
 				for (const eid of toDespawn) ctx.commands.despawn(eid);
 				toDespawn.length = 0;
-				for (const eid of toDisable) ctx.disable(eid);
+				for (const eid of toDisable) ctx.commands.disable(eid);
 				toDisable.length = 0;
-				for (const eid of toEnable) ctx.enable(eid);
+				for (const eid of toEnable) ctx.commands.enable(eid);
 				toEnable.length = 0;
 			}
 		})
@@ -299,13 +299,13 @@ function makeJoinWorld() {
 				writePos.length = 0;
 				for (const w of writeHp) ctx.setField(w.eid, Health, "hp", w.hp);
 				writeHp.length = 0;
-				for (const a of addHp) ctx.addComponent(a.eid, Health, { hp: a.hp });
+				for (const a of addHp) ctx.commands.add(a.eid, Health, { hp: a.hp });
 				addHp.length = 0;
-				for (const eid of removeHp) ctx.removeComponent(eid, Health);
+				for (const eid of removeHp) ctx.commands.remove(eid, Health);
 				removeHp.length = 0;
-				for (const eid of toDisable) ctx.disable(eid);
+				for (const eid of toDisable) ctx.commands.disable(eid);
 				toDisable.length = 0;
-				for (const eid of toEnable) ctx.enable(eid);
+				for (const eid of toEnable) ctx.commands.enable(eid);
 				toEnable.length = 0;
 			}
 		})
@@ -559,9 +559,9 @@ function makeSingletonWorld() {
 			fn: (ctx) => {
 				for (const w of writes) ctx.setField(singleton, Session, w.field, w.v);
 				writes.length = 0;
-				for (const e of toDisable) ctx.disable(e);
+				for (const e of toDisable) ctx.commands.disable(e);
 				toDisable.length = 0;
-				for (const e of toEnable) ctx.enable(e);
+				for (const e of toEnable) ctx.commands.enable(e);
 				toEnable.length = 0;
 			}
 		})
@@ -782,9 +782,9 @@ function makeSingletonArrayWorld() {
 			fn: (ctx) => {
 				for (const w of writes) ctx.setField(singleton, Army, w.slot, w.v);
 				writes.length = 0;
-				for (const e of toDisable) ctx.disable(e);
+				for (const e of toDisable) ctx.commands.disable(e);
 				toDisable.length = 0;
-				for (const e of toEnable) ctx.enable(e);
+				for (const e of toEnable) ctx.commands.enable(e);
 				toEnable.length = 0;
 			}
 		})

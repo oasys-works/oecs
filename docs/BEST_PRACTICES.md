@@ -281,23 +281,24 @@ pos.x += vel.vx * dt;
 
 ## 7. Immediate vs deferred structural ops
 
-The single most important timing rule: the receiver implies the mode. Everything on the host facade (`ecs.*`) is **immediate**; structural ops inside a system (`ctx.*` / `ctx.commands.*`) are **deferred** to the phase flush.
+The single most important timing rule: the receiver implies the mode. Everything on the host facade (`ecs.*`) is **immediate**; structural ops inside a system live on `ctx.commands.*` and are **deferred** to the phase flush.
 
-| Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
+| Operation | On `ecs` (host side) | On `ctx.commands` (inside a system) |
 | --- | --- | --- |
 | `spawn` | immediate | immediate (id now; bundle attaches at the flush) |
-| `addComponent` / `removeComponent` | **immediate** | **deferred** to the phase flush |
+| `addComponent` / `removeComponent` | **immediate** | `add` / `remove` — **deferred** to the phase flush |
 | `despawn` | **immediate** | **deferred** to the phase flush |
 | `disable` / `enable` | immediate | deferred |
-| sparse & relation ops | immediate | immediate |
+| sparse & relation ops (`ctx.addSparse`, `ctx.addRelation`, …) | immediate | immediate (no archetype transition — live on `ctx` directly) |
 
-Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side, every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling `ecs.despawn` from *inside* a system body throws in dev; use `ctx.commands.despawn` there. Host-side query walks are live iteration too: despawning (or otherwise structurally mutating) an entity of an archetype you are walking in a host `forEach`/`eachChunk` throws `STRUCTURAL_DURING_ITERATION` in dev — collect the ids during the walk and mutate after it.
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side, every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling **any** immediate host structural mutator from *inside* a system body throws in dev — `ecs.despawn`, `ecs.addComponent`/`addComponents`, `ecs.removeComponent`/`removeComponents`, `ecs.batchAddComponent`/`batchRemoveComponent`, `ecs.disable`/`ecs.enable` — pointing you at the `ctx.commands` equivalent. (Mid-system these ops can move rows a running query is walking, and they are invisible to observers.) Host-side query walks are live iteration too: despawning (or otherwise structurally mutating) an entity of an archetype you are walking in a host `forEach`/`eachChunk` throws `STRUCTURAL_DURING_ITERATION` in dev — collect the ids during the walk and mutate after it.
 
-**Inside a system, prefer `ctx.commands`.** It is *always* deferred and reads that way at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`:
+**Inside a system, `ctx.commands` is the only deferred surface.** The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable` duplicates were removed in 0.5.0 (with `ctx.createEntity` / `ctx.destroyEntity`), so a deferred op always reads as one at the call site:
 
 ```ts
 ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy);
 ctx.commands.add(entity, Frozen);
+ctx.commands.add(entity, Pos, { x: 0, y: 0 }); // explicit complete values (compile-checked)
 ctx.commands.despawn(entity);
 ```
 
@@ -416,7 +417,7 @@ Choose the grain deliberately:
 - **`onSet` entity-granular** (`granularity: "entity"`) gives `(eid, ctx)` per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Pick it only when changes are sparse enough that per-entity precision beats sweeping the archetype.
 
 > [!WARNING]
-> **Declare `access`** — callbacks run in an access span, and the declarations also drive firing order, so a wrong one can silently reorder the observer. **Register observers before `startup()`** so the archetypes they spawn into are prewarmed. **Only deferred, in-schedule ops fire observers** — an immediate host-side `ecs.addComponent` / `ecs.disable` fires nothing; only the deferred `ctx.commands.add` / `ctx.disable` do. And **do not emit events from `onSet`** — it runs at the tick tail where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev); bridge a detected change to a next-tick event from a normal system reading the dirty list.
+> **Declare `access`** — callbacks run in an access span, and the declarations also drive firing order, so a wrong one can silently reorder the observer. **Register observers before `startup()`** so the archetypes they spawn into are prewarmed. **Only deferred, in-schedule ops fire *structural* observers** (`onAdd`/`onRemove`/`onEnable`/`onDisable` drain at the flush) — an immediate host-side `ecs.addComponent` / `ecs.disable` fires none of them; only the deferred `ctx.commands.add` / `ctx.commands.disable` do. `onSet` is the exception: it is *derived* change detection (change ticks + the dirty list, scanned at the post-update detection point), so it is receiver-blind — a host-side `ecs.setField` between frames is seen by `onSet` observers on the next `update()` exactly like `ctx.setField`. And **do not emit events from `onSet`** — it runs at the tick tail where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev); bridge a detected change to a next-tick event from a normal system reading the dirty list.
 
 If you write a component through the **raw** mutable column (not `setField`/`ref`), an entity-granular `onSet` won't see it unless you call `ctx.markChanged(entity, def)` in the loop.
 
@@ -443,7 +444,7 @@ Ids obtained inside `forEach`/`eachChunk`/`forEachEntity` are implicitly alive f
 
 ### Disable to hide, destroy to remove
 
-`disable` hides an entity from queries **without** removing its data or changing its id — it sits in the disabled tail of its archetype (a single row swap, no transition), and `entityCount` excludes it. Prefer it over destroy-and-respawn for entities that toggle in and out of play (a pooled bullet, a paused unit); re-include them with `.includeDisabled()`. A disabled entity must hold at least one component. Note that an *immediate* `ecs.disable`/`ecs.enable` fires no observer — only the deferred `ctx.disable`/`ctx.enable` do.
+`disable` hides an entity from queries **without** removing its data or changing its id — it sits in the disabled tail of its archetype (a single row swap, no transition), and `entityCount` excludes it. Prefer it over destroy-and-respawn for entities that toggle in and out of play (a pooled bullet, a paused unit); re-include them with `.includeDisabled()`. A disabled entity must hold at least one component. Note that an *immediate* `ecs.disable`/`ecs.enable` fires no observer — only the deferred `ctx.commands.disable`/`ctx.commands.enable` do.
 
 ### Templates for bulk spawns
 

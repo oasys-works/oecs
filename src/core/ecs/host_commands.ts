@@ -45,11 +45,12 @@ import {
 } from "../store";
 import { DEV } from "../../dev_flag";
 
-/** One component to attach to a freshly spawned entity. `values` are required and
- * complete: the deferred add path writes exactly the fields given and does NOT
- * zero-default omitted ones (unlike Template/direct spawn), so an omitted f64
- * field would read back NaN. Provide every field (use `0` for "default"); a tag
- * component takes `{}`. Build type-safely with `spawnEntry`. */
+/** One component to attach to a freshly spawned entity. `values` are required
+ * and complete as a *strictness* choice, not a runtime need: since #716 every
+ * attach path (deferred included — `writeFields`'s `?? 0`) zero-fills omitted
+ * fields, same as templates. A host command is a reified, replayable record,
+ * so it carries explicit intent for every field rather than relying on the
+ * zero-fill; a tag component takes `{}`. Build type-safely with `spawnEntry`. */
 export interface SpawnEntry {
 	readonly def: ComponentDef;
 	readonly values: FieldValues<ComponentSchema>;
@@ -59,16 +60,18 @@ export interface SpawnEntry {
 type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : ComponentSchema;
 
 /** One schema-checked spawn entry: `values` is complete for its own def (see
- * the `SpawnEntry` doc — the deferred add does NOT zero-fill), and a tag takes
- * exactly `{}`. */
+ * the `SpawnEntry` doc — explicit intent per field, though the attach path
+ * zero-fills since #716), and a tag takes exactly `{}`. */
 export type SpawnEntryFor<D extends ComponentDef> = {
 	readonly def: D;
 	readonly values: CompleteFieldValues<SchemaOf<D>>;
 };
 
 /** The entries tuple for `HostCommandQueue.spawn` — each element's `values` is
- * checked against its own `def`'s schema, mirroring `TemplateEntries` (which
- * stays `Partial`: templates zero-fill, this path doesn't). */
+ * checked against its own `def`'s schema. Unlike `TemplateEntries` (which
+ * stays `Partial` — a template is a reusable default set), a host command
+ * demands complete values: it is a reified, replayable record, so every
+ * field is explicit even though the attach path would zero-fill (#716). */
 export type SpawnEntries<Defs extends readonly ComponentDef[]> = readonly [
 	...{ [K in keyof Defs]: SpawnEntryFor<Defs[K]> }
 ];
@@ -140,7 +143,7 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 		case "spawn": {
 			const eid = ctx.commands.spawn();
 			for (const entry of cmd.components) {
-				ctx.addComponent(eid, entry.def, entry.values);
+				ctx.commands.add(eid, entry.def, entry.values);
 			}
 			cmd.onSpawned?.(eid);
 			return eid;
@@ -149,10 +152,10 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 			ctx.commands.despawn(cmd.eid);
 			return undefined;
 		case "add_component":
-			ctx.addComponent(cmd.eid, cmd.def, cmd.values);
+			ctx.commands.add(cmd.eid, cmd.def, cmd.values);
 			return undefined;
 		case "remove_component":
-			ctx.removeComponent(cmd.eid, cmd.def);
+			ctx.commands.remove(cmd.eid, cmd.def);
 			return undefined;
 		case "set_field":
 			// `hasComponent` itself throws ENTITY_NOT_ALIVE in DEV for a dead
@@ -172,10 +175,10 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 			ctx.setField(cmd.eid, cmd.def, cmd.field, cmd.value);
 			return undefined;
 		case "disable":
-			ctx.disable(cmd.eid);
+			ctx.commands.disable(cmd.eid);
 			return undefined;
 		case "enable":
-			ctx.enable(cmd.eid);
+			ctx.commands.enable(cmd.eid);
 			return undefined;
 		default:
 			// Exhaustiveness: a new HostCommand kind that misses a case here is a

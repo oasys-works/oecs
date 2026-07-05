@@ -609,6 +609,31 @@ export class ECS implements QueryResolver {
 		return e;
 	}
 
+	/** DEV-only: throw when an *immediate* host structural mutator is called
+	 * from inside one of THIS world's system bodies (or an observer / onAdded
+	 * hook — they run in the same access spans). One rule for every host
+	 * mutator, not just despawn: an immediate structural op mid-schedule can
+	 * move or swap rows a running query is walking, and it is invisible to
+	 * observers. The archetype-level `_iterDepth` guard only catches mutations
+	 * touching the archetype currently being iterated — an op landing elsewhere
+	 * would silently skip observers, so the receiver rule ("inside a system,
+	 * use ctx.commands") is enforced wholesale here.
+	 *
+	 * `_updating` scopes the guard to THIS world: the accessCheck slot is
+	 * process-global, so without it a system of world A mutating world B (a
+	 * supported #785 pattern — B is not mid-iteration) would false-throw. */
+	private _assertHostMutationOutsideSystem(op: string, alternative: string): void {
+		if (this._updating && accessCheck.current() !== null) {
+			const desc = accessCheck.current()!;
+			const name = desc.name ?? `system_${desc.id}`;
+			throw new ECSError(
+				ECS_ERROR.ACCESS_UNDECLARED,
+				`ecs.${op} called from inside system '${name}' — host ${op} is immediate and unsafe mid-iteration (and invisible to observers); use ${alternative} instead`,
+				{ op }
+			);
+		}
+	}
+
 	/** Immediately destroy an entity — `ecs.despawn(e); ecs.isAlive(e)` is
 	 *  `false` on the next line, matching the immediacy of every other host
 	 *  facade mutation. Inside a system the buffered path is
@@ -616,19 +641,45 @@ export class ECS implements QueryResolver {
 	 *  a system body throws in DEV, since an immediate destroy mid-iteration
 	 *  can invalidate rows the running query is walking. */
 	public despawn(id: EntityID): void {
-		// `_updating` scopes the guard to THIS world: the accessCheck slot is
-		// process-global, so without it a system of world A despawning in world
-		// B (a supported #785 pattern — B is not mid-iteration) would false-throw.
-		if (DEV && this._updating && accessCheck.current() !== null) {
-			const desc = accessCheck.current()!;
-			const name = desc.name ?? `system_${desc.id}`;
-			throw new ECSError(
-				ECS_ERROR.ACCESS_UNDECLARED,
-				`ecs.despawn called from inside system '${name}' — host despawn is immediate and unsafe mid-iteration; use ctx.commands.despawn (deferred to the phase flush) instead`,
-				{ op: "despawn" }
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"despawn",
+				"ctx.commands.despawn (deferred to the phase flush)"
 			);
-		}
 		this.store.destroyEntity(id);
+	}
+
+	// --- Entity enable/disable (#577) ---
+	// A disabled entity keeps its components, relations, sparse data, and stable
+	// `EntityID`, but is excluded from queries by default (it sits in the disabled
+	// tail of its archetype, so `arch.entityCount` skips it). No archetype
+	// transition; toggling is a single row swap. Host-side calls are immediate
+	// (mirrors `addComponent`); the deferred in-system path is
+	// `ctx.commands.disable` / `ctx.commands.enable` (a row swap would corrupt an
+	// in-flight `forEach` over that archetype). A disabled entity must hold at
+	// least one component (a component-less entity has no archetype row to
+	// partition).
+
+	/** Disable `id` (idempotent). Excluded from default queries until re-enabled. */
+	public disable(id: EntityID): this {
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"disable",
+				"ctx.commands.disable (deferred to the phase flush)"
+			);
+		this.store.disableEntity(id);
+		return this;
+	}
+
+	/** Re-enable a disabled `id` (idempotent). */
+	public enable(id: EntityID): this {
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"enable",
+				"ctx.commands.enable (deferred to the phase flush)"
+			);
+		this.store.enableEntity(id);
+		return this;
 	}
 
 	/**
@@ -656,7 +707,13 @@ export class ECS implements QueryResolver {
 		values?: Record<string, number>
 	): this {
 		const def = bundleDef(item);
-		if (DEV) accessCheck.checkAdd(def);
+		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"addComponent",
+				"ctx.commands.add (deferred to the phase flush)"
+			);
+			accessCheck.checkAdd(def);
+		}
 		this.store.addComponent(entityId, def, values ?? bundleValues(item));
 		return this;
 	}
@@ -668,24 +725,40 @@ export class ECS implements QueryResolver {
 	public addComponents<Defs extends readonly ComponentDef[]>(
 		entityId: EntityID,
 		entries: TemplateEntries<Defs>
-	): void {
+	): this {
 		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"addComponents",
+				"ctx.commands.add (deferred to the phase flush)"
+			);
 			for (let i = 0; i < entries.length; i++) accessCheck.checkAdd(entries[i].def);
 		}
 		this.store.addComponents(entityId, entries);
+		return this;
 	}
 
 	public removeComponent(entityId: EntityID, def: ComponentDef): this {
-		if (DEV) accessCheck.checkRemove(def);
+		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"removeComponent",
+				"ctx.commands.remove (deferred to the phase flush)"
+			);
+			accessCheck.checkRemove(def);
+		}
 		this.store.removeComponent(entityId, def);
 		return this;
 	}
 
-	public removeComponents(entityId: EntityID, defs: ComponentDef[]): void {
+	public removeComponents(entityId: EntityID, defs: ComponentDef[]): this {
 		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"removeComponents",
+				"ctx.commands.remove (deferred to the phase flush)"
+			);
 			for (let i = 0; i < defs.length; i++) accessCheck.checkRemove(defs[i]);
 		}
 		this.store.removeComponents(entityId, defs);
+		return this;
 	}
 
 	/**
@@ -695,19 +768,26 @@ export class ECS implements QueryResolver {
 	 * Takes an `ArchetypeID` (from `ArchetypeView.id`) rather than a concrete
 	 * `Archetype` — the concrete type is internal (issue #378).
 	 */
-	public batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): void;
+	public batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): this;
 	public batchAddComponent<S extends ComponentSchema>(
 		src: ArchetypeID,
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
-	): void;
+	): this;
 	public batchAddComponent(
 		src: ArchetypeID,
 		def: ComponentDef,
 		values?: Record<string, number>
-	): void {
-		if (DEV) accessCheck.checkAdd(def);
+	): this {
+		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"batchAddComponent",
+				"ctx.commands.add per entity, or the batch after update() returns"
+			);
+			accessCheck.checkAdd(def);
+		}
 		this.store.batchAddComponent(src, def, values);
+		return this;
 	}
 
 	/**
@@ -716,9 +796,16 @@ export class ECS implements QueryResolver {
 	 *
 	 * Takes an `ArchetypeID` (from `ArchetypeView.id`); see `batchAddComponent`.
 	 */
-	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): void {
-		if (DEV) accessCheck.checkRemove(def);
+	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): this {
+		if (DEV) {
+			this._assertHostMutationOutsideSystem(
+				"batchRemoveComponent",
+				"ctx.commands.remove per entity, or the batch after update() returns"
+			);
+			accessCheck.checkRemove(def);
+		}
 		this.store.batchRemoveComponent(src, def);
+		return this;
 	}
 
 	public getField<S extends ComponentSchema>(
@@ -1311,29 +1398,8 @@ export class ECS implements QueryResolver {
 		return this.store.hasComponent(entityId, def);
 	}
 
-	// --- Entity enable/disable (#577) ---
-	// A disabled entity keeps its components, relations, sparse data, and stable
-	// `EntityID`, but is excluded from queries by default (it sits in the disabled
-	// tail of its archetype, so `arch.entityCount` skips it). No archetype
-	// transition; toggling is a single row swap. Host-side calls are immediate
-	// (mirrors `addComponent`); the `SystemContext` mirror is deferred (a row swap
-	// would corrupt an in-flight `forEach` over that archetype). A disabled entity
-	// must hold at least one component (a component-less entity has no archetype
-	// row to partition).
-
-	/** Disable `id` (idempotent). Excluded from default queries until re-enabled. */
-	public disable(id: EntityID): this {
-		this.store.disableEntity(id);
-		return this;
-	}
-
-	/** Re-enable a disabled `id` (idempotent). */
-	public enable(id: EntityID): this {
-		this.store.enableEntity(id);
-		return this;
-	}
-
-	/** Whether `id` is currently disabled. */
+	/** Whether `id` is currently disabled. Toggle via `disable` / `enable`
+	 * (immediate, above the band — they carry the in-system dev guard). */
 	public isDisabled(id: EntityID): boolean {
 		return this.store.isDisabled(id);
 	}
@@ -1506,7 +1572,7 @@ export class ECS implements QueryResolver {
 	 *   ADR-0023), once per net transition, for every component the entity carries
 	 *   (a disable is a soft remove of the whole mask from default queries). Like
 	 *   `onAdd`/`onRemove`, an *immediate* `ecs.disable()` does not fire — only
-	 *   the deferred `ctx.disable()` toggle does. `yieldExisting` seeds enabled
+	 *   the deferred `ctx.commands.disable()` toggle does. `yieldExisting` seeds enabled
 	 *   members only, so a disabled entity is correctly absent at seed.
 	 * - **`onSet`** fires at the post-update detection point. Default
 	 *   `granularity: "archetype"` fires `(arch, ctx)` once per changed

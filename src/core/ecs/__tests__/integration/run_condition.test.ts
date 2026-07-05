@@ -81,7 +81,7 @@ describe("Run conditions", () => {
 			spawns: [[Tag]],
 			fn(ctx) {
 				const e = ctx.commands.spawn();
-				ctx.addComponent(e, Tag);
+				ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, { system: spawner, runIf: runIfResourceEq(Flag, true) });

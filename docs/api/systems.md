@@ -153,6 +153,7 @@ Declares an archetype transition a system performs mid-tick, so the access check
 ref<S>(def, entityId): ComponentRef<S>;         // mutable cached accessor — bumps the change tick
 refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only — no tick bump
 getField<S>(entityId, def, field): number;
+tryGetField<S>(entityId, def, field): number | undefined; // total: dead/missing → undefined
 setField<S>(entityId, def, field, value): void; // writes + bumps the change tick
 updateField<S>(entityId, def, field, fn): number;     // read-modify-write; returns the new value
 markChanged(entityId, def): void;               // manually flag a per-entity onSet (hot raw loops)
@@ -166,7 +167,8 @@ See [refs](./refs.md) for `ref`/`refRead`, and [change detection](./change-detec
 
 ```ts
 ctx.commands.spawn(...items: BundleOrDef[]): EntityID;   // create immediate, attaches deferred
-ctx.commands.add(entityId, ...items): this;
+ctx.commands.add(entityId, ...items: BundleOrDef[]): this;   // bundles zero-fill omitted fields
+ctx.commands.add(entityId, def, values): this;               // explicit complete values (compile-checked)
 ctx.commands.remove(entityId, def): this;
 ctx.commands.despawn(entityId): this;
 ctx.commands.disable(entityId): this;
@@ -174,7 +176,7 @@ ctx.commands.enable(entityId): this;
 ```
 
 > [!TIP]
-> Prefer `ctx.commands.*` over the bare `ctx.addComponent` / `ctx.removeComponent`. They do the same deferred thing, but `ctx.commands` reads unambiguously as "deferred" at the call site — where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`. Spawn and despawn live **only** on `ctx.commands`. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
+> `ctx.commands` is the **only** deferred surface — the bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable` duplicates were removed in 0.5.0, so a deferred op always reads as one at the call site. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
 
 > [!NOTE]
 > `ctx.commands.spawn` returns the new id **immediately** (the create isn't deferred), but the components attach at the flush. A query later in the *same phase* can observe the entity half-built. To learn a spawned id after its data lands, spawn from the [host-write seam](./host-write-seam.md) with an `onSpawned` callback instead.
@@ -183,8 +185,6 @@ ctx.commands.enable(entityId): this;
 
 ```ts
 isAlive(id): boolean;            hasComponent(id, def): boolean;   isDisabled(id): boolean;
-disable(id): this;               enable(id): this;
-addComponent(id, def, values?): this;    removeComponent(id, def): this;   // bare deferred ops (prefer ctx.commands)
 
 // Sparse & relation ops — IMMEDIATE (see sparse-storage.md / relations.md)
 addSparse / removeSparse / hasSparse / getSparseField / setSparseField
@@ -199,7 +199,7 @@ flush(): void;           // force-apply buffered structural ops now
 ```
 
 > [!WARNING]
-> Every sparse/relation op on `ctx` is **immediate**. `ctx.addComponent`/`removeComponent`, `ctx.disable`/`ctx.enable`, and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
+> Every sparse/relation op on `ctx` is **immediate** (no archetype transition — safe mid-system). Everything on `ctx.commands` is **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)).
 
 ## Lifecycle hooks
 

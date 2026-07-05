@@ -24,7 +24,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
-						ctx.addComponent(eid, Vel, { vx: 10, vy: 20 });
+						ctx.commands.add(eid, Vel, { vx: 10, vy: 20 });
 					}
 				});
 				// Pos+Vel query should still be empty during this system
@@ -70,7 +70,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						// Remove Vel from first entity mid-iteration
 						if (i === 0) {
-							ctx.removeComponent(arch.entityIds[i] as EntityID, Vel);
+							ctx.commands.remove(arch.entityIds[i] as EntityID, Vel);
 						}
 						// All columns should remain valid for the entire loop
 						valuesRead.push(px[i], vx[i]);
@@ -108,7 +108,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 						const eid = arch.entityIds[i];
 						// When iterating eB, add Tag to eA
 						if (eid === eB) {
-							ctx.addComponent(eA, Tag);
+							ctx.commands.add(eA, Tag);
 						}
 					}
 				});
@@ -151,7 +151,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
-						ctx.addComponent(eid, Vel, { vx: 1, vy: 2 });
+						ctx.commands.add(eid, Vel, { vx: 1, vy: 2 });
 					}
 				});
 			}
@@ -191,7 +191,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos, Marker]),
 			fn(ctx) {
-				ctx.addComponent(e, Marker);
+				ctx.commands.add(e, Marker);
 			}
 		});
 
@@ -242,7 +242,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 			fn(ctx) {
 				for (let i = 0; i < 100; i++) {
 					const e = ctx.commands.spawn();
-					ctx.addComponent(e, Pos, { x: i, y: i * 2 });
+					ctx.commands.add(e, Pos, { x: i, y: i * 2 });
 					createdEntities.push(e);
 				}
 			}
@@ -277,8 +277,8 @@ describe("Structural changes mid-system are properly deferred", () => {
 			...openAccess([Pos, Marker]),
 			fn(ctx) {
 				// Both deferred: add then remove in same system
-				ctx.addComponent(e, Marker);
-				ctx.removeComponent(e, Marker);
+				ctx.commands.add(e, Marker);
+				ctx.commands.remove(e, Marker);
 			}
 		});
 

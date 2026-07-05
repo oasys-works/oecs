@@ -55,12 +55,12 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		world.startup();
 
 		expect(disabled).toEqual([]);
-		cmds.push((ctx) => ctx.disable(e));
+		cmds.push((ctx) => ctx.commands.disable(e));
 		world.update(1 / 60);
 		expect(disabled).toEqual([e as number]);
 		expect(enabled).toEqual([]);
 
-		cmds.push((ctx) => ctx.enable(e));
+		cmds.push((ctx) => ctx.commands.enable(e));
 		world.update(1 / 60);
 		expect(enabled).toEqual([e as number]);
 		expect(disabled).toEqual([e as number]); // unchanged
@@ -93,7 +93,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		const cmds = commandQueue(world, openAccess([P, V]));
 		world.startup();
 
-		cmds.push((ctx) => ctx.disable(e));
+		cmds.push((ctx) => ctx.commands.disable(e));
 		world.update(1 / 60);
 		// A disable is a soft remove of the WHOLE mask — both observers fire.
 		expect(onP).toEqual([e as number]);
@@ -120,11 +120,11 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		// a: disable then enable → no net transition (was enabled, ends enabled).
 		// b: disable, enable, disable → one net onDisable.
 		cmds.push((ctx) => {
-			ctx.disable(a);
-			ctx.enable(a);
-			ctx.disable(b);
-			ctx.enable(b);
-			ctx.disable(b);
+			ctx.commands.disable(a);
+			ctx.commands.enable(a);
+			ctx.commands.disable(b);
+			ctx.commands.enable(b);
+			ctx.commands.disable(b);
 		});
 		world.update(1 / 60);
 		expect(enabled).toEqual([]); // a's enable nets out; b ends disabled
@@ -152,7 +152,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 
 		// Disable in DESCENDING queue order; events must come out ascending by index.
 		cmds.push((ctx) => {
-			for (let i = ids.length - 1; i >= 0; i--) ctx.disable(ids[i]);
+			for (let i = ids.length - 1; i >= 0; i--) ctx.commands.disable(ids[i]);
 		});
 		world.update(1 / 60);
 		const sorted = order.slice().sort((x, y) => x - y);
@@ -169,7 +169,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		world.addComponent(victim, P, { x: 1, y: 1 });
 		world.observe(P, {
 			onDisable: (eid, ctx) => {
-				if ((eid as number) === (victim as number)) ctx.addComponent(survivor, Marker);
+				if ((eid as number) === (victim as number)) ctx.commands.add(survivor, Marker);
 			},
 			access: openAccess([P, Marker])
 		});
@@ -177,7 +177,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		world.startup();
 
 		expect(world.hasComponent(survivor, Marker)).toBe(false);
-		cmds.push((ctx) => ctx.disable(victim));
+		cmds.push((ctx) => ctx.commands.disable(victim));
 		world.update(1 / 60);
 		// The add the onDisable queued settled this tick (joint fixed point).
 		expect(world.hasComponent(survivor, Marker)).toBe(true);
@@ -203,8 +203,8 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			const cmds = commandQueue(world, openAccess([P]));
 			world.startup();
 			cmds.push((ctx) => {
-				ctx.disable(ids[1]);
-				ctx.disable(ids[2]);
+				ctx.commands.disable(ids[1]);
+				ctx.commands.disable(ids[2]);
 			});
 			world.update(1 / 60);
 			return world.snapshots.stateHash();
@@ -281,7 +281,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		// Destroy drains before the toggle (structural quiescent → toggle); the dead
 		// handle is skipped, so onDisable never fires for it.
 		cmds.push((ctx) => {
-			ctx.disable(e);
+			ctx.commands.disable(e);
 			ctx.commands.despawn(e);
 		});
 		world.update(1 / 60);

@@ -294,7 +294,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(pos.y).toBe(20);
 
 				// Defer adding Vel — entity should NOT move archetypes yet
-				ctx.addComponent(e, Vel, { vx: 1, vy: 2 });
+				ctx.commands.add(e, Vel, { vx: 1, vy: 2 });
 
 				// Ref should still be valid: entity is still in [Pos]
 				pos.x = 99;
@@ -334,7 +334,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(vel.vx).toBe(7);
 
 				// Defer removing Vel — entity stays in [Pos, Vel] until flush
-				ctx.removeComponent(e, Vel);
+				ctx.commands.remove(e, Vel);
 
 				// Ref still reads correct data from the old archetype
 				refVxAfterDeferredRemove = vel.vx;
@@ -403,7 +403,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				const vel = ctx.refRead(Vel, e);
 
 				// Defer adding a third component
-				ctx.addComponent(e, Health, { hp: 100 });
+				ctx.commands.add(e, Health, { hp: 100 });
 
 				// Both refs still valid — use vel to update pos
 				pos.x += vel.vx;

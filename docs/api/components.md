@@ -126,8 +126,8 @@ Three attach shapes: a bare def attaches a tag; a bundle (`Pos({ x: 1 })`) zero-
 ### Several components, one transition
 
 ```ts
-addComponents<Defs extends readonly ComponentDef[]>(entityId: EntityID, entries: TemplateEntries<Defs>): void;
-removeComponents(entityId: EntityID, defs: ComponentDef[]): void;
+addComponents<Defs extends readonly ComponentDef[]>(entityId: EntityID, entries: TemplateEntries<Defs>): this;
+removeComponents(entityId: EntityID, defs: ComponentDef[]): this;
 ```
 
 `addComponents` batch-attaches several components in **one archetype transition** (it resolves the final archetype once and moves once, instead of stepping through an intermediate archetype per component). Entries have the same `{ def, values }` typing as [`ECS.template`](./entities.md#templates): each entry's `values` is checked against its own def's schema (a misspelled field is a compile error; tags refuse `values`), and omitted fields zero-fill. Unlike `spawnBundle` — which only ever creates a **new** entity — `addComponents` extends an existing one. `removeComponents` is the detach mirror: one transition for the whole set.
@@ -135,9 +135,9 @@ removeComponents(entityId: EntityID, defs: ComponentDef[]): void;
 ### Whole-archetype batch ops
 
 ```ts
-batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): void;   // tag
-batchAddComponent<S>(src: ArchetypeID, def: ComponentDef<S>, values: CompleteFieldValues<S>): void;
-batchRemoveComponent(src: ArchetypeID, def: ComponentDef): void;
+batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): this;   // tag
+batchAddComponent<S>(src: ArchetypeID, def: ComponentDef<S>, values: CompleteFieldValues<S>): this;
+batchRemoveComponent(src: ArchetypeID, def: ComponentDef): this;
 ```
 
 Bulk add/remove one component on **all** entities of an archetype — `O(columns)` via `TypedArray.set()` instead of `O(entities × columns)`. They key on an `ArchetypeID` taken from `ArchetypeView.id` (the concrete archetype type is internal); get the view from [query iteration](./queries.md).

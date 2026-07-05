@@ -195,7 +195,7 @@ const spawner = ecs.registerSystem({
   fn(ctx, _dt) { /* every frame */ },
   onAdded(ctx) {           // once, during ecs.startup()
     const e = ctx.commands.spawn();
-    ctx.addComponent(e, Pos, { x: 0, y: 0 });
+    ctx.commands.add(e, Pos, { x: 0, y: 0 });
   },
   onRemoved() { /* ecs.removeSystem(...) */ },
   dispose()    { /* ecs.dispose() */ },
@@ -264,15 +264,16 @@ Every system receives a shared `SystemContext` (`ctx`) with deferred structural 
 Structural operations inside a system buffer until the phase flush, keeping iterators valid. A deferred destruction inside `forEach` is safe — the entity stays visible in the current iteration and is removed at the flush.
 
 ```ts
-ctx.commands.spawn();                   // immediate (new entity, no components)
-ctx.addComponent(e, Pos, { x, y });   // deferred
-ctx.removeComponent(e, Vel);          // deferred
-ctx.commands.despawn(e);                 // deferred
-ctx.disable(e);                       // deferred
-ctx.enable(e);                        // deferred
+ctx.commands.spawn();                     // id immediate; component attaches deferred
+ctx.commands.add(e, Pos, { x, y });       // deferred — complete values (compile-checked)
+ctx.commands.add(e, Pos({ x }));          // deferred — bundle form, omitted fields zero-fill
+ctx.commands.remove(e, Vel);              // deferred
+ctx.commands.despawn(e);                  // deferred
+ctx.commands.disable(e);                  // deferred
+ctx.commands.enable(e);                   // deferred
 ```
 
-Prefer the `ctx.commands` facade for deferred structural ops — `ctx.commands.spawn(...)` / `add` / `remove` / `despawn` do the same deferred thing but read unambiguously as "deferred" at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`.
+`ctx.commands` is the *only* deferred surface — every structural op inside a system goes through it, so "on `ctx.commands`" and "deferred to the phase flush" mean the same thing. (Data writes — `ctx.setField`, `ctx.ref` — stay immediate; they touch column values, never archetype membership.)
 
 ### `ref` vs `refRead`
 

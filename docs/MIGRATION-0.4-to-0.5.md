@@ -7,8 +7,9 @@ cluster into a handful of mechanical rules:
 
 1. **Lifecycle verbs** — `createEntity` → `spawn`, `createEntities` → `spawnMany`,
    `destroyEntity` → `despawn` — and host `despawn` is now **immediate**, not deferred (§1).
-2. **Inside systems** — `ctx.createEntity` / `ctx.destroyEntity` are removed; spawn/despawn in a
-   system body live only on `ctx.commands` (§2).
+2. **Inside systems** — every bare deferred duplicate is removed (`ctx.createEntity`,
+   `ctx.destroyEntity`, `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable`, `ctx.enable`);
+   deferred structural ops in a system body live only on `ctx.commands` (§2).
 3. **Grouped facades** — 29 flat methods move onto `ecs.relations` / `ecs.events` /
    `ecs.resources` / `ecs.snapshots`, a few renaming in the move (`snapshot` → `capture`,
    `restoreInto` → `restore`, `resource` → `get`, …) (§3).
@@ -18,11 +19,11 @@ cluster into a handful of mechanical rules:
    `ECSRestoreError`; `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`; `DestroyEntityArg` →
    `DespawnArg` (§5).
 
-Everything else — component ops (`addComponent`, `getField`, `hasComponent`, …), queries,
-iteration (`forEach` / `eachChunk`), sparse ops, observers, the schedule, and the whole
-system-side `ctx.*` surface (`ctx.emit`, `ctx.read`, `ctx.resource`, `ctx.ref`, …) — is
-unchanged. (Docs now spell the receiver `const ecs = new ECS()` instead of `world`; that is
-prose only, your variable name is your own.)
+Everything else — host component ops (`addComponent`, `getField`, `hasComponent`, …), queries,
+iteration (`forEach` / `eachChunk`), sparse ops, observers, the schedule, and the system-side
+data/event/resource surface (`ctx.emit`, `ctx.read`, `ctx.resource`, `ctx.ref`, `ctx.setField`,
+`ctx.addSparse`, `ctx.addRelation`, …) — is unchanged. (Docs now spell the receiver
+`const ecs = new ECS()` instead of `world`; that is prose only, your variable name is your own.)
 
 ---
 
@@ -63,19 +64,30 @@ system (§2).
 
 Because an immediate destroy mid-iteration can invalidate rows a running query is walking,
 **calling `ecs.despawn` from inside a system body throws in dev**, pointing you at
-`ctx.commands.despawn`. Host-side calls (setup, event handlers, between updates) are the
+`ctx.commands.despawn`. The same dev guard covers every immediate host structural mutator —
+`addComponent`/`addComponents`, `removeComponent`/`removeComponents`,
+`batchAddComponent`/`batchRemoveComponent`, `disable`/`enable` — each pointing at its
+`ctx.commands` equivalent. Host-side calls (setup, event handlers, between updates) are the
 intended use.
 
 ---
 
-## 2. Inside systems — `ctx.commands` is the only spawn/despawn surface
+## 2. Inside systems — `ctx.commands` is the only deferred surface
 
-The bare deferred duplicates on the context are gone:
+Every bare deferred duplicate on the context is gone — not just the lifecycle pair:
 
 | 0.4 | 0.5 |
 | --- | --- |
 | `ctx.createEntity()` | `ctx.commands.spawn()` |
 | `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
+| `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)` — same complete-values typing — or the bundle form `ctx.commands.add(e, def({ … }))` |
+| `ctx.removeComponent(e, def)` | `ctx.commands.remove(e, def)` |
+| `ctx.disable(e)` | `ctx.commands.disable(e)` |
+| `ctx.enable(e)` | `ctx.commands.enable(e)` |
+
+`ctx.isDisabled(e)` stays on the context — it is an immediate *read*, not a buffered op. The
+immediate sparse/relation ops (`ctx.addSparse`, `ctx.addRelation`, …) also stay: they cause no
+archetype transition, which is the whole reason they are safe to apply mid-system.
 
 ```ts
 // 0.4
@@ -101,10 +113,12 @@ const cleanup = ecs.registerSystem({
 });
 ```
 
-`ctx.commands` (the Bevy-`Commands`-style facade from 0.4) is unchanged otherwise — `spawn` /
-`add` / `remove` / `despawn` / `disable` / `enable`, all deferred to the phase flush. The end
-state declared in 0.4 is now real: **host verbs are immediate, `ctx.commands` verbs are
-deferred**, with no third option.
+`ctx.commands` (the Bevy-`Commands`-style facade from 0.4) keeps its verbs — `spawn` / `add` /
+`remove` / `despawn` / `disable` / `enable`, all deferred to the phase flush — and `add` gains
+the explicit complete-values shape (`ctx.commands.add(e, Pos, { x: 0, y: 0 })`) that the removed
+`ctx.addComponent` carried, so the compile-checked attach path survives the move. The end state
+declared in 0.4 is now real: **host verbs are immediate, `ctx.commands` verbs are deferred**,
+with no third option.
 
 ---
 

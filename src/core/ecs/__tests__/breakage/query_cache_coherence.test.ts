@@ -98,7 +98,7 @@ describe("Query cache coherence edge cases", () => {
 			...openAccess([Pos, Tag]),
 			fn(ctx) {
 				// During system, add Tag to entity
-				ctx.addComponent(e, Tag);
+				ctx.commands.add(e, Tag);
 				// Query should still show the entity (deferred)
 				countDuringSystem = qNoTag.entityCount;
 			}
@@ -137,7 +137,7 @@ describe("Query cache coherence edge cases", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.removeComponent(e, Vel);
+				ctx.commands.remove(e, Vel);
 			}
 		});
 

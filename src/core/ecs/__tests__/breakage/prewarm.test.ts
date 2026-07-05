@@ -182,13 +182,13 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 			...openAccess([Pos, Vel]),
 			// Declare every archetype the entity walks through: [Pos] is
 			// the intermediate after the first `addComponent`, [Pos, Vel]
-			// is the final shape. ctx.addComponent is per-component, so
+			// is the final shape. ctx.commands.add is per-component, so
 			// both materially exist mid-flush.
 			spawns: [[Pos], [Pos, Vel]],
 			fn(ctx) {
 				const e = ctx.commands.spawn();
-				ctx.addComponent(e, Pos, { x: 1, y: 2 });
-				ctx.addComponent(e, Vel, { vx: 3, vy: 4 });
+				ctx.commands.add(e, Pos, { x: 1, y: 2 });
+				ctx.commands.add(e, Vel, { vx: 3, vy: 4 });
 			}
 		});
 
@@ -263,7 +263,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 
 		world.registerSystem({ ...openAccess([A]), spawns: [[A]], fn: () => {} });
 		world.observe(A, {
-			onAdd: (e, ctx) => ctx.addComponent(e, B, { v: 0 }),
+			onAdd: (e, ctx) => ctx.commands.add(e, B, { v: 0 }),
 			access: { writes: [B], transitions: [{ whenHas: [A], add: [B] }] }
 		});
 

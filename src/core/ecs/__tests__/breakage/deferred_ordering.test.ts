@@ -17,8 +17,8 @@ describe("Deferred operation ordering", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, A, B]),
 			fn(ctx) {
-				ctx.addComponent(e, A);
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, A);
+				ctx.commands.add(e, B);
 			}
 		});
 
@@ -45,8 +45,8 @@ describe("Deferred operation ordering", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, A]),
 			fn(ctx) {
-				ctx.addComponent(e, A);
-				ctx.removeComponent(e, A);
+				ctx.commands.add(e, A);
+				ctx.commands.remove(e, A);
 			}
 		});
 
@@ -74,9 +74,9 @@ describe("Deferred operation ordering", () => {
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				// Queue three adds of the same component with different values
-				ctx.addComponent(e, Vel, { vx: 10, vy: 20 });
-				ctx.addComponent(e, Vel, { vx: 30, vy: 40 });
-				ctx.addComponent(e, Vel, { vx: 50, vy: 60 });
+				ctx.commands.add(e, Vel, { vx: 10, vy: 20 });
+				ctx.commands.add(e, Vel, { vx: 30, vy: 40 });
+				ctx.commands.add(e, Vel, { vx: 50, vy: 60 });
 			}
 		});
 
@@ -102,7 +102,7 @@ describe("Deferred operation ordering", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
+				ctx.commands.add(e, Vel, { vx: 99, vy: 99 });
 				ctx.commands.despawn(e);
 			}
 		});
@@ -134,7 +134,7 @@ describe("Deferred operation ordering", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, B);
 			}
 		});
 
@@ -142,7 +142,7 @@ describe("Deferred operation ordering", () => {
 		const sys2 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.addComponent(e, C);
+				ctx.commands.add(e, C);
 			}
 		});
 
@@ -150,7 +150,7 @@ describe("Deferred operation ordering", () => {
 		const sys3 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.removeComponent(e, A);
+				ctx.commands.remove(e, A);
 			}
 		});
 
@@ -210,9 +210,9 @@ describe("Deferred operation ordering", () => {
 			fn(ctx) {
 				for (const op of ops) {
 					if (op.action === "add") {
-						ctx.addComponent(op.entity, Tag);
+						ctx.commands.add(op.entity, Tag);
 					} else {
-						ctx.removeComponent(op.entity, Tag);
+						ctx.commands.remove(op.entity, Tag);
 					}
 				}
 			}

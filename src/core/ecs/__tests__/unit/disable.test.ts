@@ -308,7 +308,7 @@ describe("entity enable/disable (#577)", () => {
 						for (let i = 0; i < arch.entityCount; i++) {
 							visited++;
 							// Disable an entity mid-iteration — must be safe (deferred).
-							if (xs[i] === 0) ctx.disable(eids[i] as (typeof ids)[number]);
+							if (xs[i] === 0) ctx.commands.disable(eids[i] as (typeof ids)[number]);
 						}
 					});
 				}

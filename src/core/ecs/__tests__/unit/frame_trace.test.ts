@@ -83,6 +83,52 @@ describe("frame-trace seam", () => {
 		expect(end).toBeGreaterThan(spawn);
 	});
 
+	it("records every deferred op as command_queued — spawn's bundle attaches included", () => {
+		const world = new ECS({ deterministic: true });
+		const Pos = world.registerComponent({ x: "i32" });
+		const Vel = world.registerComponent({ vx: "i32" });
+		let victim = -1;
+		const sys = world.registerSystem({
+			name: "mutator",
+			exclusive: true,
+			reads: [],
+			writes: [],
+			fn: (ctx) => {
+				// One of each deferred op; every one must surface in the trace.
+				const e = ctx.commands.spawn(Pos({ x: 1 }), Vel({ vx: 2 }));
+				if (victim === -1) victim = e as number;
+				else {
+					ctx.commands.add(e, Pos, { x: 3 });
+					ctx.commands.remove(e, Pos);
+					ctx.commands.disable(e);
+					ctx.commands.enable(e);
+					ctx.commands.despawn(e);
+				}
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+
+		const rec = new FrameTraceRecorder();
+		world.setTrace(rec);
+		world.update(1 / 60); // frame 0: spawn only (sets victim)
+		world.update(1 / 60); // frame 1: the full op set
+
+		// Frame 0: the spawn AND its two bundle attaches are each traced.
+		const f0 = rec.frames()[0]!.events;
+		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "spawn").length).toBe(1);
+		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "add").length).toBe(2);
+
+		// Frame 1: every deferred op kind appears.
+		const f1 = rec.frames()[1]!.events;
+		for (const op of ["add", "remove", "disable", "enable", "despawn"] as const) {
+			expect(
+				find(f1, (e) => e.kind === "command_queued" && e.op === op),
+				`op '${op}' missing from trace`
+			).toBeGreaterThanOrEqual(0);
+		}
+	});
+
 	it("fires observer events inside a flush, after the triggering system", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });

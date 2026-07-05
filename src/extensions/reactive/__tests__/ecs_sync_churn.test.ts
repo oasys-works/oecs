@@ -204,8 +204,8 @@ function buildEngine(): ChurnEngine {
 				switch (op.kind) {
 					case "spawn": {
 						const e = ctx.commands.spawn();
-						ctx.addComponent(e, Pos, { x: op.x, y: op.y });
-						if (op.withHealth) ctx.addComponent(e, Health, { hp: op.hp });
+						ctx.commands.add(e, Pos, { x: op.x, y: op.y });
+						if (op.withHealth) ctx.commands.add(e, Health, { hp: op.hp });
 						eidOf.set(born, e);
 						live.add(born);
 						born++;
@@ -224,13 +224,13 @@ function buildEngine(): ChurnEngine {
 						// so settle the field via set when it's already there — the post-tick
 						// query is identical either way, which is all the oracle compares.
 						if (ctx.hasComponent(e, Health)) ctx.setField(e, Health, "hp", op.hp);
-						else ctx.addComponent(e, Health, { hp: op.hp });
+						else ctx.commands.add(e, Health, { hp: op.hp });
 						break;
 					}
 					case "removeHealth": {
 						if (!live.has(op.h)) break;
 						const e = eidOf.get(op.h)!;
-						if (ctx.hasComponent(e, Health)) ctx.removeComponent(e, Health);
+						if (ctx.hasComponent(e, Health)) ctx.commands.remove(e, Health);
 						break;
 					}
 					case "set": {
@@ -245,10 +245,10 @@ function buildEngine(): ChurnEngine {
 						break;
 					}
 					case "disable":
-						if (live.has(op.h)) ctx.disable(eidOf.get(op.h)!);
+						if (live.has(op.h)) ctx.commands.disable(eidOf.get(op.h)!);
 						break;
 					case "enable":
-						if (live.has(op.h)) ctx.enable(eidOf.get(op.h)!);
+						if (live.has(op.h)) ctx.commands.enable(eidOf.get(op.h)!);
 						break;
 					case "step":
 						break; // batches never carry the step marker
@@ -503,8 +503,8 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 						buffer = [];
 						for (const op of ops) {
 							if (op.kind === "set") ctx.setField(singleton, Session, op.field, op.value);
-							else if (op.kind === "disable") ctx.disable(singleton);
-							else if (op.kind === "enable") ctx.enable(singleton);
+							else if (op.kind === "disable") ctx.commands.disable(singleton);
+							else if (op.kind === "enable") ctx.commands.enable(singleton);
 						}
 					}
 				})
