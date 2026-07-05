@@ -141,7 +141,7 @@ const ring = new HostCommandDispatcher()
   .onCommand(1, ringSetFieldCodec(Pos, "x"))
   .onCommand(2, ringDespawnCodec());
 
-installHostCommandSeam(world, { ring });
+installHostCommandSeam(ecs, { ring });
 ```
 
 The ring codecs are fixed-slot. They are good for small commands such as `set_field`, `despawn`, `disable`, `enable`, and `remove_component`; variable-width `spawn` and `add_component` stay on the typed queue.

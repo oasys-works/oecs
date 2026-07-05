@@ -1,4 +1,4 @@
-# Best Practices (v0.4)
+# Best Practices (v0.5)
 
 Practical guidance for building with oecs: patterns that work with the engine's grain, the trade-offs they imply, and the pitfalls that bite if ignored.
 
@@ -7,7 +7,7 @@ This document does **not** repeat the API reference or describe internals. For t
 - API reference: [`docs/api/`](./api/) — one page per subsystem, indexed by [`api/index.md`](./api/index.md).
 - Internals: [`ARCHITECTURE.md`](./ARCHITECTURE.md) — data layout, the flush model, cache-invalidation rules, the column store.
 
-Examples name the instance `ecs` and use the 0.4 surface (camelCase methods, the config-form `registerSystem`, `eachChunk`, `ctx.ref`). The canonical compiling example is the README quick-start; `src/core/ecs/__tests__/` is the canonical "does this actually work" reference (see [§20](#20-testing)).
+Examples name the instance `ecs` and use the 0.5 surface (camelCase methods, the config-form `registerSystem`, `eachChunk`, `ctx.ref`). The canonical compiling example is the README quick-start; `src/core/ecs/__tests__/` is the canonical "does this actually work" reference (see [§20](#20-testing)).
 
 ## Contents
 
@@ -229,7 +229,7 @@ The `registerSystem(fn, qb => qb.with(...))` builder overload is equivalent, but
 | `eachChunk` | mutable `cols` + `count` | **yes** | the mutating hot loop |
 | `forEachEntity` | one `EntityID` | via `ctx` | any query with a sparse / relation / hierarchy term |
 
-`forEach`, `eachChunk`, and `count` are **dense-only** — a query carrying a sparse, relation, or hierarchy term throws `SPARSE_QUERY_DENSE_PATH` in dev, because there's no column span. Use `forEachEntity` (or `forEachRelatedTo`) for those.
+`forEach`, `eachChunk`, and `entityCount` are **dense-only** — a query carrying a sparse, relation, or hierarchy term throws `SPARSE_QUERY_DENSE_PATH` in dev, because there's no column span. Use `forEachEntity` (or `forEachRelatedTo`) for those.
 
 > [!WARNING]
 > **Always loop to `arch.entityCount`, never a column's `.length`.** The raw buffer includes capacity and disabled rows past the live count; iterating `.length` reads garbage. `entityCount` is the enabled-row count. The `eachChunk` `count` parameter exists precisely to remove this trap.
@@ -291,7 +291,7 @@ The single most important timing rule: the receiver implies the mode. Everything
 | `disable` / `enable` | immediate | deferred |
 | sparse & relation ops | immediate | immediate |
 
-Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling `ecs.despawn` from *inside* a system body throws in dev; use `ctx.commands.despawn` there.
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side, every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling `ecs.despawn` from *inside* a system body throws in dev; use `ctx.commands.despawn` there. Host-side query walks are live iteration too: despawning (or otherwise structurally mutating) an entity of an archetype you are walking in a host `forEach`/`eachChunk` throws `STRUCTURAL_DURING_ITERATION` in dev — collect the ids during the walk and mutate after it.
 
 **Inside a system, prefer `ctx.commands`.** It is *always* deferred and reads that way at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`:
 
@@ -393,7 +393,7 @@ Also: **archetype transitions stamp the destination for every component on it** 
 
 ### Resources aren't tick-tracked
 
-`setResource` writes to a plain map with no versioning; `changed()` can't observe it. If a system must react to a resource change, emit an event alongside the write, or keep a version counter inside the resource value.
+`ctx.setResource` writes to a plain map with no versioning; `changed()` can't observe it. If a system must react to a resource change, emit an event alongside the write, or keep a version counter inside the resource value.
 
 ---
 
@@ -455,7 +455,7 @@ const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // per-field overrides
 const swarm = ecs.spawnMany(Bullet, 500);          // O(columns) writes, not O(500 × columns)
 ```
 
-Templates pay off for multi-component and bulk spawns (and prewarm their archetypes — required before `restoreInto` a snapshot). A single-component template is no faster than `spawn()` + `addComponent()`.
+Templates pay off for multi-component and bulk spawns (and prewarm their archetypes — required before restoring a snapshot with `ecs.snapshots.restore`). A single-component template is no faster than `spawn()` + `addComponent()`.
 
 ---
 
@@ -471,7 +471,7 @@ ecs.relations.targetOf(child, ChildOf);                 // parent
 ecs.relations.sourcesOf(parent, ChildOf);               // [child, …] — the reverse "who points at me"
 ```
 
-- **Exclusive by default** (one target per source; a new `addRelation` silently replaces the old target). Pass `{ multi: true }` for a target *set*; use `targetsOf` for multi, `targetOf` for exclusive (it throws on a multi relation in dev).
+- **Exclusive by default** (one target per source; a new `ecs.relations.add` silently replaces the old target). Pass `{ multi: true }` for a target *set*; use `targetsOf` for multi, `targetOf` for exclusive (it throws on a multi relation in dev).
 - **Compose into queries** with `withRelation`/`withoutRelation` (the `(R, *)` term) and iterate with `forEachEntity`; `forEachRelatedTo(target, cb)` is the `(*, T)` wildcard. Wildcard queries need authorization: `relationReads: [R]`, or `[ANY_RELATION]` for `forEachRelatedTo`.
 - **Traverse** exclusive chains with `ancestorsOf` / `rootOf` / `cascadeOf` (a cycle throws `RELATION_CYCLE` in dev, never a hang).
 
@@ -519,7 +519,7 @@ const advanceTime = ecs.registerSystem({
 });
 ```
 
-Inside a system, resource access is declared and checked (`resourceReads` / `resourceWrites`). Resources return the same reference on every read — mutate an object resource through `ctx.resource(key)` and use `setResource` only to swap the whole value. `removeResource` frees the key for re-registration and fails closed on a missing key.
+Inside a system, resource access is declared and checked (`resourceReads` / `resourceWrites`). Resources return the same reference on every read — mutate an object resource through `ctx.resource(key)` and use `ctx.setResource` only to swap the whole value. `ctx.removeResource` frees the key for re-registration and fails closed on a missing key.
 
 When they're the *wrong* tool: per-entity data (use components — resources aren't filterable, iterable, or tick-tracked), or a fake singleton entity carrying a `GlobalState` component. And resources are **excluded from `stateHash` and snapshot/restore** — sim-affecting state you need to reproduce must live in a component or be re-seeded after restore.
 
@@ -527,14 +527,14 @@ When they're the *wrong* tool: per-entity data (use components — resources are
 
 ## 15. Determinism
 
-Determinism is opt-in (`new ECS({ deterministic: true })`) because it costs a little — canonical ordering and an integer-only column rule — and buys lockstep multiplayer, replay, deterministic debugging, and save/load. The flag gates `stateHash`, `snapshot`/`restoreInto`, and the sparse variants (each throws `DETERMINISM_DISABLED` when off).
+Determinism is opt-in (`new ECS({ deterministic: true })`) because it costs a little — canonical ordering and an integer-only column rule — and buys lockstep multiplayer, replay, deterministic debugging, and save/load. The flag gates `stateHash`, `capture`/`restore`, and the sparse variants `captureSparse`/`restoreSparse` (each throws `DETERMINISM_DISABLED` when off).
 
 If you need it:
 
 - **Use integer columns.** Float columns are rejected at registration (`NON_DETERMINISTIC_COLUMN_TYPE`) because IEEE-754 rounds differently across engines. Since the array shorthand defaults to `"f64"`, pass an explicit integer type — `ecs.registerComponent(["x", "y"], "i32")` — and represent fractions as fixed-point.
 - **Seed RNG deterministically** and store its state in a component; keep all non-lockstep input (wall-clock, network jitter) out of column bytes.
 - **Compare `stateHash` only at a tick boundary** (between `update()` calls) or a `phaseBoundary` settle point. The digest is opaque — never compare it against a hard-coded literal.
-- **Size both instances identically** before `restoreInto` and register the same components/templates in the same order; restore validates completely and fails closed before touching live state, but only if the target's archetype set and entity-index capacity match. Re-seed resources after a restore (they aren't captured).
+- **Size both instances identically** before `ecs.snapshots.restore` and register the same components/templates in the same order; restore validates completely and fails closed before touching live state, but only if the target's archetype set and entity-index capacity match. Re-seed resources after a restore (they aren't captured).
 
 Because every host/UI mutation crosses one apply chokepoint, `replayCommandLog(..., { hash: true })` returns the per-tick `stateHash` sequence — replaying the same log must reproduce it, and that equality *is* the fidelity check.
 

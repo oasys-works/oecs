@@ -18,7 +18,7 @@ ecs.events.registerSignal(Jumped);
 
 ## Emitting & reading
 
-`emit` and `read` are identical on `ecs` and on `ctx`:
+On the host they live on the facade — `ecs.events.emit` / `ecs.events.read`; inside a system they are `ctx.emit` / `ctx.read`. Same shapes on both:
 
 ```ts
 emit(key: SignalKey): void;                     // signal — no payload
@@ -43,21 +43,22 @@ const jumps = ctx.read(Jumped).length;   // a signal carries only its count
 ```
 
 ```ts
-type EventReader<S> = { length: number } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
+type EventReader<S> = { readonly length: number } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 ```
 
 ## Keys & schemas
 
 ```ts
-eventKey<S extends EventSchema>(name: string): EventKey<S>;
+eventKey<S extends EventShape<S>>(name: string): EventKey<S>;
 signalKey(name: string): SignalKey;
-type EventSchema = Readonly<Record<string, number>>;   // field → value-type map
+type EventShape<S> = { readonly [K in keyof S]: number };  // the constraint: every field a number
+type EventSchema = Readonly<Record<string, number>>;       // the erased/default field → value-type map
 ```
 
 A `SignalKey` is a distinct zero-field event — the type system stops you passing a payload to a signal or reading a signal's absent columns.
 
 > [!TIP]
-> Declare the schema as a **type literal**, not an `interface`: `eventKey<{ a: EntityID }>("…")` works, but an `interface` fails the `EventSchema` constraint (interfaces lack the implicit index signature that literals get).
+> Declare the schema as a **type literal or an `interface`** — both work. The `EventShape<S>` constraint is homomorphic (it checks every property is a number without requiring an index signature), so `interface`-declared schemas are accepted even though they lack the implicit index signature literals get. Every field must be a `number` (branded numbers included — see below).
 
 > [!TIP]
 > **Branded number fields round-trip.** A field typed `EntityID` (or any branded number) reads back branded from the `EventReader` with no cast — the brand is compile-time only, so at runtime it's just a `number` in a typed column.

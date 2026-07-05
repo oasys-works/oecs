@@ -27,16 +27,19 @@ class Editor {
   spawn(components: readonly SpawnEntry[], onSpawned?): EditorTransaction;
   despawn(eid, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to rebuild on undo
   setField<S>(eid, def, field, value): EditorTransaction;
-  addComponent<S>(eid, def, values: FieldValues<S>): EditorTransaction;
-  removeComponent<S>(eid, def, restore: FieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
+  addComponent<S>(eid, def, values: CompleteFieldValues<S>): EditorTransaction;
+  removeComponent<S>(eid, def, restore: CompleteFieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
   disable(eid): EditorTransaction;   enable(eid): EditorTransaction;
 
   transaction(build: (tx: TransactionBuilder) => void): EditorTransaction;   // group many edits → one undo entry
 
   undo(): boolean;    // false if the undo stack is empty
   redo(): boolean;    // false if the redo stack is empty
+  get canUndo(): boolean;   get canRedo(): boolean;   // allocation-free "would undo()/redo() do something"
   clear(): void;      // drop both stacks (does not touch the ECS)
   depths(): { undo: number; redo: number };
+  onChange(cb: () => void): () => void;                // fires after every commit/undo/redo/clear; returns unsubscribe
+  committedField(eid, def, field): number | undefined; // read one committed slot through the constructor's FieldReader
   pendingField(eid, def, field): number | undefined;   // optimistic, not-yet-committed value
 }
 
@@ -57,6 +60,8 @@ editor.undo();   // reverts all three at once
 
 `TransactionBuilder` mirrors the single-action methods (`spawn`, `despawn`, `setField`, `addComponent`, `removeComponent`, `disable`, `enable`), each returning `this` to chain. You get it from `transaction`; you don't construct it.
 
+For an "Undo (3)" / "Redo" affordance, subscribe with `onChange` instead of polling `depths()` per frame — callbacks fire synchronously after every commit, undo, redo, and clear; read `canUndo` / `canRedo` / `depths()` inside. `committedField` reads one committed `(entity, component, field)` slot through the `FieldReader` the editor was constructed with — it's the default read for `fieldHandle` when you pass no channel thunk.
+
 > [!WARNING]
 > **Entity identity is not preserved across despawn → undo.** The data round-trips (rebuilt from the `restore` you supplied), but the re-spawned entity gets a **fresh** `EntityID`. Don't hold an old id across an undo of its despawn.
 
@@ -69,7 +74,7 @@ editor.undo();   // reverts all three at once
 
 ```ts
 fieldHandle<S>(editor: Editor, eid: EntityID, def: ComponentDef<S>, field: string & keyof S,
-               read: () => number | undefined): FieldHandle;
+               read?: () => number | undefined): FieldHandle;   // omitted → falls back to editor.committedField
 
 interface FieldHandle {
   readonly value: number | undefined;    // reactive read of the channel (tracked in a tracking scope)

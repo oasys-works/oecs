@@ -56,7 +56,8 @@ registerSystem<Defs>(
 
 ```ts
 interface SystemConfig {
-  fn: (ctx: SystemContext, dt: number) => void;   // required — the update body
+  fn?: (ctx: SystemContext, dt: number) => void;  // the update body — required unless backendHandle is set
+                                                  // (one of the two, DEV-enforced; see compute backends below)
 
   // --- Access declarations (dev-checked) ---
   reads:  readonly ComponentDef[];                // required (empty = "touches no columns")

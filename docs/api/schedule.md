@@ -115,10 +115,25 @@ runEveryNTicks(n: number, offset?: number): RunCondition;            // ticks of
 runIfAnyMatch(query: Query): RunCondition;                           // query.entityCount > 0
 ```
 
+Combinators — compose conditions without hand-rolled closures. Each merges the operands' declared `reads`/`resourceReads` (so `accessCheck` still sees every edge) and derives its `name` from the operands. Evaluation short-circuits in argument order, like `&&`/`||`:
+
+```ts
+not(cond: RunCondition): RunCondition;          // run exactly when `cond` would skip
+allOf(...conds: RunCondition[]): RunCondition;  // every condition passes (&&)
+anyOf(...conds: RunCondition[]): RunCondition;  // any condition passes (||)
+```
+
+Empty argument lists follow vacuous truth: `allOf()` always runs the system, `anyOf()` never does.
+
+(This `anyOf` gates *systems*; it's unrelated to the [`Query.anyOf`](./queries.md) filter verb.)
+
 ```ts
 const notPaused = runIfResourceEq(PausedRes, false);
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
 ecs.configureSet(physics, { runIf: notPaused });
+
+// composed: throttle AI, but only while unpaused
+ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: allOf(notPaused, runEveryNTicks(10)) });
 ```
 
 > [!WARNING]
@@ -128,7 +143,7 @@ ecs.configureSet(physics, { runIf: notPaused });
 > When a condition returns `false`, the system's last-run tick does **not** advance — a skipped tick is indistinguishable from the system being absent that tick, which matters for [`changed()`](./change-detection.md) queries inside it.
 
 > [!NOTE]
-> `runIfAnyMatch` needs a **dense-only** query (`count()` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
+> `runIfAnyMatch` needs a **dense-only** query (`entityCount` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
 
 A schedule that uses no sets and no conditions runs a byte-for-byte fast path — you pay nothing for the feature until you use it.
 

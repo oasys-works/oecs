@@ -25,9 +25,11 @@ The receiver implies the mode. Everything on the host facade (`ecs.*`) applies *
 | sparse & relation ops | immediate | immediate |
 
 > [!IMPORTANT]
-> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side calls happen outside live ECS iteration, so every mutation applies immediately (calling `ecs.despawn` from *inside* a system body throws in dev — use `ctx.commands.despawn` there). The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
+> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side mutations apply immediately (calling `ecs.despawn` from *inside* a system body throws in dev — use `ctx.commands.despawn` there), which cuts the other way on the host: a host-side `forEach`/`eachChunk` is live iteration, and structurally mutating an entity of an archetype you are walking throws `STRUCTURAL_DURING_ITERATION` in dev — collect ids during the walk, mutate after. The classic trap is the **name collision**: `ecs.addComponent` is immediate, `ctx.addComponent` is deferred. Inside systems, prefer [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
 
 Deferred work lands at the next **phase boundary** flush, or when you call `ecs.flush()` explicitly. See [schedule](./schedule.md).
+
+Signatures for the host-side attach/detach surface — `addComponent`, `removeComponent`, the single-transition `addComponents`/`removeComponents`, and the whole-archetype `batchAddComponent`/`batchRemoveComponent` — live in [components → attach & detach](./components.md#attach--detach), along with `getField`/`tryGetField`.
 
 ## Creating entities
 
@@ -60,7 +62,7 @@ const swarm = ecs.spawnMany(Bullet, 500);   // 500 bullets, O(columns) writes
 ```
 
 > [!TIP]
-> Templates pay off for **multi-component** entities and **bulk** spawns. A single-component template is no faster than `spawn()` + `addComponent()`, which already bump-allocates into the target archetype. Registering templates up front also *prewarms* their archetypes — required if you plan to `restoreInto` a [snapshot](./determinism.md).
+> Templates pay off for **multi-component** entities and **bulk** spawns. A single-component template is no faster than `spawn()` + `addComponent()`, which already bump-allocates into the target archetype. Registering templates up front also *prewarms* their archetypes — required if you plan to restore a [snapshot](./determinism.md) with `ecs.snapshots.restore`.
 
 ## Destroying entities
 

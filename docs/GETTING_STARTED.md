@@ -64,7 +64,7 @@ ecs.resources.set(Score, { value: 100 });
 ecs.resources.has(Time);                    // true
 ```
 
-`registerResource` returns `void` — the key is the handle. Each key must be registered exactly once.
+`ecs.resources.register` returns `void` — the key is the handle. Each key must be registered exactly once.
 
 ## 5. Define Events and Signals
 

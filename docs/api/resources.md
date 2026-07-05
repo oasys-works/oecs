@@ -23,25 +23,33 @@ ecs.resources.set(Time, { delta: 1 / 60, elapsed: t.elapsed + 1 / 60 });
 
 ```ts
 resourceKey<T>(name: string): ResourceKey<T>;
-type ResourceKey<T> = symbol & { readonly __phantom: T };
+type ResourceKey<T> = symbol & { readonly [__resourceValue]: (value: T) => T };
 ```
+
+The phantom slot is **function-typed on purpose** — it makes `T` invariant (a key authorizes both reads and writes, so keys with different `T` must be mutually unassignable).
 
 `resourceKey` mints a unique symbol carrying the value type `T`. The `name` is for diagnostics only — uniqueness comes from the symbol's identity, not the string, so two `resourceKey("Time")` calls are two different keys. Mint each key **once, at module scope**, and import it wherever you need the resource.
 
 ## Methods
 
-`registerResource` is an `ECS` method only (setup-time). The four accessors exist on **both** `ecs` and `ctx` (inside a system):
+On the host, everything lives on the **`ecs.resources`** facade. Inside a system, the four accessors exist as `ctx` methods — there is no `ctx` registration form (registration is a setup-time, host-only op):
 
 ```ts
-// ECS only:
-registerResource<T>(key: ResourceKey<T>, value: T): void;
+// Host — the ecs.resources facade:
+register<T>(key: ResourceKey<T>, value: T): void;
+get<T>(key: ResourceKey<T>): T;
+set<T>(key: ResourceKey<T>, value: T): void;
+remove<T>(key: ResourceKey<T>): void;
+has<T>(key: ResourceKey<T>): boolean;
 
-// On both `ecs` and `ctx`:
+// Inside a system — on ctx:
 resource<T>(key: ResourceKey<T>): T;              // the getter (there is no "getResource")
 setResource<T>(key: ResourceKey<T>, value: T): void;
 removeResource<T>(key: ResourceKey<T>): void;
 hasResource<T>(key: ResourceKey<T>): boolean;
 ```
+
+On `ctx` the key parameter is additionally narrowed to the system's declared access — `ctx.resource` accepts only keys listed in `resourceReads`, `ctx.setResource`/`ctx.removeResource` only keys in `resourceWrites` (undeclared keys are a compile error, backed by the dev-mode access check).
 
 Inside a system, resource access is **declared and checked**: list the key in `resourceReads` to read it, `resourceWrites` to write it.
 
@@ -59,13 +67,13 @@ ecs.registerSystem({
 ## Caveats
 
 > [!WARNING]
-> **Register-once.** Registering a key that's already live throws `RESOURCE_ALREADY_REGISTERED`. `removeResource` frees the key so it can be registered again — resources model a present/absent axis, not just a value.
+> **Register-once.** Registering a key that's already live throws `RESOURCE_ALREADY_REGISTERED`. `ecs.resources.remove` frees the key so it can be registered again — resources model a present/absent axis, not just a value.
 
 > [!NOTE]
-> `removeResource` is access-checked as a **write** (declare it in `resourceWrites`) and **fails closed on a missing key** — removing a key that isn't registered throws rather than silently no-op'ing.
+> Removal (`ecs.resources.remove` / `ctx.removeResource`) is access-checked as a **write** (declare it in `resourceWrites`) and **fails closed on a missing key** — removing a key that isn't registered throws rather than silently no-op'ing.
 
 > [!IMPORTANT]
-> **Resources are excluded from `stateHash` and from snapshot/restore.** Mutating a resource never perturbs the [determinism](./determinism.md) digest, and resources do **not** survive `snapshot()`/`restoreInto()` (v1 scope). If a resource holds sim-affecting state you need to reproduce, fold it into a component or re-seed it after restore.
+> **Resources are excluded from `stateHash` and from snapshot/restore.** Mutating a resource never perturbs the [determinism](./determinism.md) digest, and resources do **not** survive `ecs.snapshots.capture()`/`restore()` (v1 scope). If a resource holds sim-affecting state you need to reproduce, fold it into a component or re-seed it after restore.
 
 ## See also
 

@@ -1,4 +1,4 @@
-# oecs Architecture (v0.4)
+# oecs Architecture (v0.5)
 
 This document describes how oecs is built: the two-layer split between the archetype ECS and the backing-neutral column store, the data layout that entities, components, and archetypes settle into, how queries stay correct as archetypes appear, how the scheduler and update loop drive systems, and the determinism, observer, relation, and host-integration machinery layered on top.
 
@@ -321,9 +321,9 @@ Refine verbs (`and`, `without`, `anyOf`, `optional`, `changed`, `includeDisabled
 - `forEach(cb)` (`core/ecs/query.ts:944-977`) calls back once per non-empty archetype with a read-only `ArchetypeView`. In dev it asserts dense-only and publishes an optional-fetch scope for `.optional(T)`. Its default body is inlined (not delegated) because it is a megamorphic call site V8 won't inline.
 - `eachChunk(cb)` (`core/ecs/query.ts:1017-1063`) is the mutable hot path. It allocates one `ChunkColumns` cursor, captures the current tick **once**, and per archetype re-points the cursor and passes `arch.entityCount` as `count`. `ChunkColumns` (`core/ecs/query.ts:286-299`) resolves `mut(def)` → `columnGroupMut` (stamps the tick) and `read(def)` → `columnGroupRead`; the cursor is per-call, so nested `eachChunk` passes are re-entrancy-safe.
 - `forEachEntity(cb)` (`core/ecs/query.ts:1154-1188`) yields matching entities one id at a time — **required** for any query carrying a sparse, relation, or hierarchy term, since those scatter across archetypes with no column span. It routes through the resolver's sparse/relation/hierarchy match drivers.
-- `count()` / `archetypeCount` / `archetypes` (`core/ecs/query.ts:434, 426, 445`) — introspection.
+- `entityCount` / `archetypeCount` / `archetypes` (`core/ecs/query.ts:632, 623, 643`) — introspection getters.
 
-The dense terminals (`forEach`, `eachChunk`, `count`, `archetypeCount`) reject queries with sparse/relation/hierarchy terms via `_assertDenseOnly` → `SPARSE_QUERY_DENSE_PATH` (`core/ecs/query.ts:410-423`), because a dense walk would silently miss the non-dense members.
+The dense terminals (`forEach`, `eachChunk`, `entityCount`, `archetypeCount`) reject queries with sparse/relation/hierarchy terms via `_assertDenseOnly` → `SPARSE_QUERY_DENSE_PATH` (`core/ecs/query.ts:410-423`), because a dense walk would silently miss the non-dense members.
 
 ---
 

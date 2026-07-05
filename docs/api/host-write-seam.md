@@ -36,6 +36,14 @@ interface HostCommandSeamOptions {
 > [!WARNING]
 > Call it **before** adding your own systems and **before `startup()`**. The schedule has no dedicated "first" slot — insertion order is what places the apply system at the phase head, and the `PRE_STARTUP` drain only fires if the system exists before startup.
 
+The teardown counterpart:
+
+```ts
+uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boolean;
+```
+
+It removes the seam's apply systems from the schedule and `clear`s any still-buffered commands. The queue stays usable as a buffer, but nothing drains it until a new seam is installed. Returns `false` (no-op) if `queue` was not produced by `installHostCommandSeam` on this world.
+
 ## `HostCommandQueue`
 
 Every method **enqueues** — nothing reaches the `ECS` until the apply system drains.
@@ -43,13 +51,16 @@ Every method **enqueues** — nothing reaches the `ECS` until the apply system d
 ```ts
 spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): void;
 despawn(eid): void;
-addComponent<S>(eid, def, values: FieldValues<S>): void;
+addComponent<S>(eid, def, values: CompleteFieldValues<S>): void;
 removeComponent(eid, def): void;
 setField<S>(eid, def, field, value): void;
 disable(eid): void;   enable(eid): void;
 push(cmd: HostCommand): void;   // enqueue pre-built command data (codec / replay / editor path)
 pending(): number;              // buffered-but-unapplied count
+clear(): number;                // drop every buffered command WITHOUT applying; returns how many
 ```
+
+`clear` is for abandoning queued edits (e.g. on a scene unload) — it does not touch commands already drained into the world.
 
 > [!WARNING]
 > **Don't add-then-set in the same frame.** `setField` is applied **immediately** at the drain, but structural commands (`spawn`/`addComponent`/…) are **deferred** to the phase flush. So `addComponent(e, C)` then `setField(e, C, …)` in one frame fails — the add is still pending when the set runs (dev throws an actionable `COMPONENT_NOT_REGISTERED`). Carry the value in the `addComponent`/`spawnEntry` (which take complete field values), or `setField` next frame.
@@ -60,12 +71,12 @@ pending(): number;              // buffered-but-unapplied count
 ### `SpawnEntry`
 
 ```ts
-spawnEntry<S>(def: ComponentDef<S>, values: FieldValues<S>): SpawnEntry;
+spawnEntry<S>(def: ComponentDef<S>, values: CompleteFieldValues<S>): SpawnEntry;
 interface SpawnEntry { readonly def: ComponentDef; readonly values: FieldValues<ComponentSchema>; }
 ```
 
 > [!WARNING]
-> **`spawnEntry` is typed for complete values** — pass every field (`0` for "default"); a tag takes `{}`. The shared field-write path zero-fills omitted fields if untyped command data reaches it, but the public TypeScript surface treats host-command values as complete `FieldValues<S>`.
+> **`spawnEntry` is typed for complete values** — pass every field (`0` for "default"); a tag takes `{}`. The shared field-write path zero-fills omitted fields if untyped command data reaches it, but the public TypeScript surface treats host-command values as complete (`CompleteFieldValues<S>`).
 
 #### Why `spawnEntry` and not a `bundle`?
 
@@ -112,6 +123,8 @@ interface RecordedTick { readonly tick: number; readonly dt: number; readonly co
 replayCommandLog(ecs: ECS, queue: HostCommandQueue, log: CommandLog, opts?: { hash?: boolean }): ReplayResult;
 interface ReplayResult { readonly startupCommands: number; readonly ticks: number; readonly stateHashes: readonly number[]; }
 ```
+
+`deserializeCommandLog(json: string): CommandLog` parses `serializeCommandLog` output back into a `CommandLog`: entity ids ride as plain numbers, and each tagged component def is revived into a callable handle from its serialized id — which is one more reason the replay world must register components in the same order.
 
 To replay: build a **fresh, not-yet-started** `ECS` identically to the recorded run (same components in the same order, same systems, same `seed` from `log.seed`), install the seam, then hand its `queue` to `replayCommandLog`. It pushes the seed-time commands, calls `startup()`, then per tick pushes commands and calls `update(dt)` — even empty ticks, because `dt` drives the sim.
 

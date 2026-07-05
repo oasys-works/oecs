@@ -47,7 +47,7 @@ Workers, dev tools, UI code, or network handlers should not mutate the ECS direc
 ```ts
 import { installHostCommandSeam } from "@oasys/oecs";
 
-const queue = installHostCommandSeam(world);
+const queue = installHostCommandSeam(ecs);
 
 // Any time, outside the schedule:
 queue.setField(entity, Pos, "x", 10);

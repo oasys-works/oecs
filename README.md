@@ -140,10 +140,10 @@ ecs.getField(e, Pos, "x"); // ≈ 1.667
 **Determinism, persistence & integration**
 
 - **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `ecs.snapshots.stateHash()` (FNV-1a over
-  live dense bytes, sparse stores, and multi-relation target sets), `snapshot()` / `restoreInto(...)`,
-  plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
+  live dense bytes, sparse stores, and multi-relation target sets), `ecs.snapshots.capture()` /
+  `ecs.snapshots.restore(...)`, plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
   identical hashes.
-- **Host → ECS write seam** — `installHostCommandSeam(world)` applies typed `HostCommand`s off-schedule
+- **Host → ECS write seam** — `installHostCommandSeam(ecs)` applies typed `HostCommand`s off-schedule
   via a blessed `exclusive` system, with record/replay (`HostCommandRecorder`, `replayCommandLog`) and a
   cross-thread ring transport.
 - **Reactive UI seam** (optional) — a zero-dep signals kernel (`@oasys/oecs/reactive`), an ECS→reactive
@@ -188,8 +188,9 @@ production guarantee. The scheduler's cycle detection is the one check that is a
   [Best Practices](docs/BEST_PRACTICES.md) and the [Architecture](docs/ARCHITECTURE.md) overview.
 - **Using optional extensions?** See the [Extensions guide](docs/EXTENSIONS.md) for reactive UI,
   editor, Solid, shared-memory, and primitives usage.
-- **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md) and the
+- **Upgrading from 0.4?** See the [Migration guide (0.4 → 0.5)](docs/MIGRATION-0.4-to-0.5.md) and the
   [CHANGELOG](CHANGELOG.md).
+- **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md).
 - **Full API reference** — start at the [reference index](docs/api/index.md):
   [components](docs/api/components.md) ·
   [entities](docs/api/entities.md) ·

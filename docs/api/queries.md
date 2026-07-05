@@ -158,13 +158,20 @@ Yields matching entities one id at a time. This is **required** for any query ca
 
 `forEach`, `eachChunk`, `entityCount`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
 
-## Introspection
+## Introspection & singleton reads
 
 ```ts
 get entityCount(): number;                  // enabled rows (or all, under includeDisabled)
 get archetypeCount(): number;               // matching archetypes, including empty ones
 get archetypes(): readonly ArchetypeView[]; // the raw list (not filtered to non-empty)
+
+firstEntity(): EntityID | undefined;        // first match, or undefined when none
+singleEntity(): EntityID;                   // THE match — dev-throws QUERY_NOT_SINGLETON on 0 or >1
 ```
+
+`firstEntity` is the singleton read (`player`, `camera`) without hand-rolling a `forEach` + closure capture. "First" is **iteration order, not spawn order** — with more than one match the pick is arbitrary; use `singleEntity` to assert uniqueness. `singleEntity` dev-throws `QUERY_NOT_SINGLETON` when the match count is 0 or >1; in prod the count check is gone and it returns the first match (`undefined` if none).
+
+Unlike the dense-only members above, both work on **any** query: dense-only queries answer from the first non-empty archetype in `O(archetypes)`, while queries with sparse/relation/hierarchy terms fall back to a full `forEachEntity` walk.
 
 ## Non-dense query terms (summary)
 

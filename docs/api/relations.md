@@ -3,7 +3,7 @@
 > [!NOTE]
 > **0.5.0 — grouped surface.** Relation registration, mutation, reads, wildcards, traversal, and compaction live on the **`ecs.relations`** facade — `ecs.relations.register()`, `ecs.relations.add(child, ChildOf, parent)`, `ecs.relations.targetOf(child, ChildOf)`, `ecs.relations.ancestorsOf(...)`, `ecs.relations.compact()`; `relationCount` is `ecs.relations.count`, `hasRelation` is `ecs.relations.has`, `compactRelations` is `ecs.relations.compact`. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
 
-A **relation** links two entities as a `(relation, target)` pair on a **source** entity — `addRelation(child, ChildOf, parent)`. Relations model hierarchies (scene graphs, bone trees), ownership, targeting ("this turret aims at that ship"), and instance-of links, with queries in both directions and configurable cleanup when a target dies.
+A **relation** links two entities as a `(relation, target)` pair on a **source** entity — `ecs.relations.add(child, ChildOf, parent)`. Relations model hierarchies (scene graphs, bone trees), ownership, targeting ("this turret aims at that ship"), and instance-of links, with queries in both directions and configurable cleanup when a target dies.
 
 Relations are stored in [sparse storage](./sparse-storage.md), so adding/removing one causes **no archetype transition** and consumes **no** dense-identity bit. All relation operations are **immediate** (not deferred) — they're safe mid-tick precisely because no dense row moves.
 
@@ -22,30 +22,35 @@ ecs.relations.sourcesOf(parent, ChildOf);    // [child, …] — everyone whose 
 ## Registering a relation
 
 ```ts
-registerRelation(opts?: RelationOptions): RelationDef;
+ecs.relations.register(opts?: RelationOptions): RelationDef;
+// Overloads stamp the cardinality into the handle type when the options are
+// statically known: RelationDef<"exclusive"> (the default) / RelationDef<"multi">.
 
-interface RelationOptions {
-  readonly exclusive?: boolean;   // one target per source (the default)
-  readonly multi?: boolean;       // a target SET per source
-  readonly onDeleteTarget?: "delete" | "clear" | "orphan";   // cleanup policy; default "orphan"
-}
+type RelationOptions =
+  | { readonly exclusive?: true; readonly multi?: false;
+      readonly onDeleteTarget?: OnDeleteTarget }    // one target per source (the default)
+  | { readonly multi: true; readonly exclusive?: false;
+      readonly onDeleteTarget?: OnDeleteTarget };   // a target SET per source
+// onDeleteTarget: "delete" | "clear" | "orphan" — cleanup policy; default "orphan"
 ```
 
-A relation is **exclusive** by default — one target per source, and a new `addRelation` **replaces** the old target. Pass `{ multi: true }` for a target *set* per source.
+A relation is **exclusive** by default — one target per source, and a new `add` **replaces** the old target. Pass `{ multi: true }` for a target *set* per source.
 
 > [!WARNING]
-> `exclusive` and `multi` are mutually exclusive — passing both throws. Choose one.
+> `exclusive` and `multi` are mutually exclusive — the discriminated union makes `{ exclusive: true, multi: true }` a **compile error** (and it also throws at runtime, for JS callers). Choose one.
 
 ## Mutating relations
 
+All on the `ecs.relations` facade:
+
 ```ts
-addRelation(src, def, tgt): this;          // exclusive replaces; multi adds to the set
-removeRelation(src, def, tgt?): this;       // multi: omit tgt to remove ALL of src's targets
-hasRelation(src, def): boolean;
+add(src, def, tgt): this;          // exclusive replaces; multi adds to the set
+remove(src, def, tgt?): this;      // multi: omit tgt to remove ALL of src's targets
+has(src, def): boolean;
 ```
 
 > [!WARNING]
-> On an **exclusive** relation, `addRelation` silently overwrites the previous target — there's no "already has a target" error. Both `src` and `tgt` must be alive (throws `ENTITY_NOT_ALIVE` in dev otherwise).
+> On an **exclusive** relation, `add` silently overwrites the previous target — there's no "already has a target" error. Both `src` and `tgt` must be alive (throws `ENTITY_NOT_ALIVE` in dev otherwise).
 
 ## Reading relations
 
@@ -57,7 +62,7 @@ pairsOf(def): [EntityID, EntityID][];       // every (source, target) pair — t
 sourcesOfAny(tgt): [RelationDef, EntityID][];  // every (relation, source) at tgt — the (*, T) wildcard, cold
 ```
 
-- `targetOf` is for exclusive relations — and the compiler enforces it: `registerRelation` stamps the cardinality into the handle type (`RelationDef<"exclusive">` / `RelationDef<"multi">`), so `targetOf(src, aMultiRelation)` is a **compile error**. The dev-mode `RELATION_MODE_MISMATCH` throw remains as the backstop for dynamically-registered relations (whose handles carry the un-stamped `RelationDef` union). Use `targetsOf` for multi.
+- `targetOf` is for exclusive relations — and the compiler enforces it: `ecs.relations.register` stamps the cardinality into the handle type (`RelationDef<"exclusive">` / `RelationDef<"multi">`), so `targetOf(src, aMultiRelation)` is a **compile error**. The dev-mode `RELATION_MODE_MISMATCH` throw remains as the backstop for dynamically-registered relations (whose handles carry the un-stamped `RelationDef` union). Use `targetsOf` for multi.
 - `sourcesOf` is the workhorse reverse query — "who points at me?".
 
 ## Relation query terms
@@ -103,7 +108,7 @@ cascadeOf(root, def): EntityID[];    // the subtree incl. root, breadth-first (p
 
 ## Built-in relations
 
-Two presets over `registerRelation`, each fixing a cardinality and a cleanup default. Both are always exclusive.
+Two presets over `ecs.relations.register`, each fixing a cardinality and a cleanup default. Both are always exclusive.
 
 ```text
 import { registerChildOf, registerIsA } from "@oasys/oecs";
@@ -135,7 +140,9 @@ interface BuiltinRelationOptions { readonly onDeleteTarget?: OnDeleteTarget }
 ## Types & constants
 
 ```ts
-type RelationDef;                 // the handle registerRelation returns
+type RelationDef<C extends RelationCardinality = RelationCardinality>;  // the handle ecs.relations.register returns
+type RelationCardinality = "exclusive" | "multi";  // the typestate parameter behind RelationDef<"exclusive"> / RelationDef<"multi">
+type RelationID;                  // the branded numeric id space behind RelationDef (registration order; separate from ComponentID)
 type OnDeleteTarget = "delete" | "clear" | "orphan";
 const ANY_RELATION: RelationDef;  // authorization sentinel for (*, T) queries — list in relationReads
 const HIERARCHY_UNBOUNDED: number; // = +Infinity, the default hierarchy maxDepth

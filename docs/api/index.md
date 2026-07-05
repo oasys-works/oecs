@@ -2,7 +2,7 @@
 
 `@oasys/oecs` is a **determinism-capable, archetype-based Entity Component System for TypeScript** — pure TypeScript, zero-dependency, and runs over a plain resizable `ArrayBuffer` by default (no `SharedArrayBuffer`, no COOP/COEP).
 
-This reference documents the **0.4** public surface in full. Every signature here is checked against source. If you are new, read the pages in the order below; if you know ECS already, jump to what you need.
+This reference documents the **0.5** public surface in full. Every signature here is checked against source. If you are new, read the pages in the order below; if you know ECS already, jump to what you need.
 
 > Examples name the instance `ecs` (`const ecs = new ECS()`). Methods are camelCase; type and handle names are PascalCase (`ECS`, `Pos`, `EntityID`); constants are `SCREAMING_SNAKE` (`SCHEDULE.UPDATE`).
 
@@ -65,6 +65,8 @@ oecs ships several import paths. The core is `@oasys/oecs`; the rest are opt-in 
 | `@oasys/oecs/solid` | SolidJS adapter (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the standalone data structures oecs is built on (`BitSet`, `SparseSet`, …) |
 | `@oasys/oecs/internal` | **unstable** tooling surface — codecs, ABI constants, memory inspectors, dev singletons; no semver guarantees |
+
+The root also exports **`VERSION`** — the package version as a string constant, readable at runtime (`import { VERSION } from "@oasys/oecs"`). It's a source literal, not a build-time injection, so raw-source (JSR) consumers see the same value as the npm bundle.
 
 ## Pages
 
