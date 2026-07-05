@@ -188,5 +188,67 @@ describe("multi-world isolation (#785)", () => {
 			// The inner tick really ran: world B advanced.
 			expect(worldB.getField(eB, PosB, "x")).toBe(1);
 		});
+
+		it("a system may host-despawn in a SECOND world — the in-system despawn guard is per-world", () => {
+			// World B is not mid-iteration when A's system mutates it, so B's
+			// immediate host despawn is safe and must not trip the dev guard that
+			// protects against `ecs.despawn` from inside the SAME world's system
+			// (the accessCheck span is process-global; the guard scopes on the
+			// world actually executing its schedule).
+			const worldB = new ECS();
+			const TagB = worldB.registerTag();
+			const eB = worldB.spawn();
+			worldB.addComponent(eB, TagB);
+
+			const worldA = new ECS();
+			const Allowed = worldA.registerComponent(["v"] as const);
+			const eA = worldA.spawn();
+			worldA.addComponent(eA, Allowed, { v: 0 });
+			let inSystemErr: unknown = null;
+			worldA.addSystems(
+				SCHEDULE.UPDATE,
+				worldA.registerSystem({
+					...openAccess([Allowed]),
+					name: "world_a_despawner",
+					fn() {
+						try {
+							worldB.despawn(eB); // cross-world host despawn — legal
+						} catch (e) {
+							inSystemErr = e;
+						}
+					}
+				})
+			);
+			worldA.startup();
+			worldA.update(1 / 60);
+
+			expect(inSystemErr).toBeNull();
+			expect(worldB.isAlive(eB)).toBe(false);
+
+			// The same-world guard still fires: despawning in A from A's system throws.
+			const worldC = new ECS();
+			const TagC = worldC.registerTag();
+			const eC = worldC.spawn();
+			worldC.addComponent(eC, TagC);
+			let sameWorldErr: unknown = null;
+			worldC.addSystems(
+				SCHEDULE.UPDATE,
+				worldC.registerSystem({
+					...openAccess([]),
+					name: "same_world_despawner",
+					fn() {
+						try {
+							worldC.despawn(eC);
+						} catch (e) {
+							sameWorldErr = e;
+						}
+					}
+				})
+			);
+			worldC.startup();
+			worldC.update(1 / 60);
+			expect(sameWorldErr).toBeInstanceOf(ECSError);
+			expect((sameWorldErr as ECSError).message).toContain("same_world_despawner");
+		});
 	});
 });

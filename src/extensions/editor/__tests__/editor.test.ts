@@ -337,6 +337,63 @@ describe("Editor — pending_field self-resolves once the channel catches up", (
 	});
 });
 
+describe("Editor — an aborted transaction leaves no trace (the shadow-poisoning regression)", () => {
+	it("pendingField reflects the committed value, and the next setField's undo restores the TRUE old value", () => {
+		const { world, Cell, editor } = setup();
+		let id: EntityID | undefined;
+		editor.spawn([spawnEntry(Cell, { x: 10, heat: 0 })], (e) => (id = e));
+		world.update(1 / 60);
+
+		// The build throws mid-way: nothing is enqueued, nothing lands on the undo
+		// stack — and, pre-fix, the aborted setField had already poisoned the shared
+		// shadow with 999.
+		expect(() =>
+			editor.transaction((tx) => {
+				tx.setField(id!, Cell, "x", 999);
+				throw new Error("abort");
+			})
+		).toThrow("abort");
+		expect(editor.depths()).toEqual({ undo: 1, redo: 0 }); // just the spawn
+
+		// No phantom pending echo of a value the world never held.
+		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
+		world.update(1 / 60);
+		expect(world.getField(id!, Cell, "x")).toBe(10);
+
+		// The next edit's inverse must seed from the real old value (10), not the
+		// aborted 999 — pre-fix, this undo restored 999.
+		editor.setField(id!, Cell, "x", 20);
+		world.update(1 / 60);
+		expect(world.getField(id!, Cell, "x")).toBe(20);
+
+		expect(editor.undo()).toBe(true);
+		world.update(1 / 60);
+		expect(world.getField(id!, Cell, "x")).toBe(10);
+	});
+});
+
+describe("Editor — pending_field self-resolves when the slot dies", () => {
+	it("a shadowed slot on a despawned entity resolves to undefined instead of echoing forever", () => {
+		const { world, Cell, editor } = setup();
+		let id: EntityID | undefined;
+		editor.spawn([spawnEntry(Cell, { x: 10, heat: 0 })], (e) => (id = e));
+		world.update(1 / 60);
+
+		// Shadow the slot, then despawn before the channel ever reads the edit back.
+		editor.setField(id!, Cell, "x", 25);
+		expect(editor.pendingField(id!, Cell, "x")).toBe(25);
+		editor.despawn(id!, [spawnEntry(Cell, { x: 25, heat: 0 })]);
+		world.update(1 / 60);
+		expect(world.isAlive(id!)).toBe(false);
+
+		// The committed read is now `undefined` (dead entity) — it can never equal the
+		// shadowed 25, so pre-fix the entry echoed 25 forever and leaked. The entry
+		// self-resolves: pruned on this read, and stays undefined on the next.
+		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
+		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
+	});
+});
+
 describe("Editor — onChange / canUndo / canRedo (M10)", () => {
 	it("fires on commit, undo, redo, clear; unsubscribe stops it", () => {
 		const { world, Cell, editor } = setup();

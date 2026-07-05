@@ -1165,7 +1165,15 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
-				for (let i = 0; i < archs.length; i++) cb(archs[i]);
+				for (let i = 0; i < archs.length; i++) {
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						cb(arch);
+					} finally {
+						arch._iterDepth--;
+					}
+				}
 			} finally {
 				accessCheck.leaveOptionalScope();
 			}
@@ -1248,8 +1256,14 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			try {
 				const archs = this._nonEmpty();
 				for (let i = 0; i < archs.length; i++) {
-					view._arch = archs[i];
-					cb(view, archs[i].entityCount);
+					const arch = archs[i];
+					view._arch = arch;
+					arch._iterDepth++;
+					try {
+						cb(view, arch.entityCount);
+					} finally {
+						arch._iterDepth--;
+					}
 				}
 			} finally {
 				accessCheck.leaveOptionalScope();
@@ -1295,7 +1309,13 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			try {
 				const archs = this._nonEmpty();
 				for (let i = 0; i < archs.length; i++) {
-					if (cb(archs[i])) return true;
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						if (cb(arch)) return true;
+					} finally {
+						arch._iterDepth--;
+					}
 				}
 				return false;
 			} finally {
@@ -1323,7 +1343,15 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
-				for (let i = 0; i < archs.length; i++) cb(archs[i]);
+				for (let i = 0; i < archs.length; i++) {
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						cb(arch);
+					} finally {
+						arch._iterDepth--;
+					}
+				}
 			} finally {
 				accessCheck.leaveOptionalScope();
 			}
@@ -1755,8 +1783,14 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
+		if (DEV && arch.columnGroups[def.id] === undefined)
+			throw new ECSError(
+				ECS_ERROR.COMPONENT_NOT_REGISTERED,
+				`ctx.ref: ${componentLabel(def)} has no columns in this archetype — the entity doesn't hold it, or it is a tag (no fields to ref)`,
+				{ component: def.id, entity: entityId }
+			);
 		arch._changedTick[def.id] = this.store._tick;
-		// ! safe: columnGroups is populated for all components with fields in this archetype
+		// ! safe in prod (dev guard above): columnGroups is populated for all components with fields in this archetype
 		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
 	}
 
@@ -1778,7 +1812,13 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
-		// ! safe: columnGroups is populated for all components with fields in this archetype
+		if (DEV && arch.columnGroups[def.id] === undefined)
+			throw new ECSError(
+				ECS_ERROR.COMPONENT_NOT_REGISTERED,
+				`ctx.refRead: ${componentLabel(def)} has no columns in this archetype — the entity doesn't hold it, or it is a tag (no fields to ref)`,
+				{ component: def.id, entity: entityId }
+			);
+		// ! safe in prod (dev guard above): columnGroups is populated for all components with fields in this archetype
 		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
 	}
 
@@ -2136,7 +2176,12 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 					const arch = archs[i];
 					for (let j = 0; j < ids.length; j++) {
 						if (arch._changedTick[ids[j]] >= lastTick) {
-							cb(arch);
+							arch._iterDepth++;
+							try {
+								cb(arch);
+							} finally {
+								arch._iterDepth--;
+							}
 							break;
 						}
 					}
@@ -2188,7 +2233,12 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 					const arch = archs[i];
 					for (let j = 0; j < ids.length; j++) {
 						if (arch._changedTick[ids[j]] >= lastTick) {
-							cb(arch);
+							arch._iterDepth++;
+							try {
+								cb(arch);
+							} finally {
+								arch._iterDepth--;
+							}
 							break;
 						}
 					}

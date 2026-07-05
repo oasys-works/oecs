@@ -91,6 +91,13 @@ const txns = new WeakMap<TransactionBuilder, MutableTxn>();
  * Obtained from {@link Editor.transaction}; not constructed directly.
  */
 export class TransactionBuilder {
+	/** Values staged by THIS build, layered over the editor's shared shadow. Kept
+	 * transaction-local so an aborted build (the callback throws before commit)
+	 * leaves the shared shadow untouched — a phantom staged value would poison
+	 * `pendingField` and seed the NEXT edit's inverse with a value the world never
+	 * held. The one merge point into the shared shadow is commit's `applyShadow`. */
+	private readonly staged = new Map<string, number>();
+
 	/** @internal */
 	constructor(
 		private readonly readField: FieldReader,
@@ -165,8 +172,9 @@ export class TransactionBuilder {
 
 	/**
 	 * Set `field` of `def` on `eid` to `value`. Inverse: set it back to the value
-	 * this edit replaced — read from the shadow (so stacked edits before a commit
-	 * invert correctly) or, failing that, the read channel (`0` if unknown).
+	 * this edit replaced — read from the staged overlay / shadow (so stacked edits,
+	 * within one build or before a commit, invert correctly) or, failing that, the
+	 * read channel (`0` if unknown).
 	 */
 	setField<S extends ComponentSchema>(
 		eid: EntityID,
@@ -175,8 +183,12 @@ export class TransactionBuilder {
 		value: number
 	): this {
 		const key = fieldKey(eid, def, field);
-		const old = this.shadow.get(key) ?? this.readField(eid, def as ComponentDef, field) ?? 0;
-		this.shadow.set(key, value);
+		const old =
+			this.staged.get(key) ??
+			this.shadow.get(key) ??
+			this.readField(eid, def as ComponentDef, field) ??
+			0;
+		this.staged.set(key, value);
 		this._txn.forward.push({ kind: "set_field", eid, def: def as ComponentDef, field, value });
 		this._txn.inverse.push({ kind: "set_field", eid, def: def as ComponentDef, field, value: old });
 		return this;
@@ -406,8 +418,10 @@ export class Editor {
 	 * inspector echo an edit between the `set` and the tick that commits it.
 	 *
 	 * Self-resolving: once the read channel reports the shadowed value (the edit
-	 * landed), the entry is dropped and this returns `undefined` — so `pending` does
-	 * not outlive its set→commit window and shadow a later external write. The one
+	 * landed) — or reports `undefined` (the slot is gone: entity despawned or
+	 * component removed) — the entry is dropped and this returns `undefined`, so
+	 * `pending` does not outlive its set→commit window and shadow a later external
+	 * write, nor a dead slot's lifetime. The one
 	 * residual: if an external write changes the field to a *different* value within
 	 * the same window before this is next consulted, `pending` can read stale until
 	 * the next edit to the slot. `value` (the read channel) is always the source of
@@ -420,8 +434,11 @@ export class Editor {
 		// Reconcile-on-read: the committed channel reporting the shadowed value means
 		// the edit has landed, so the echo is done. Pruning is safe for inverse
 		// correctness — the next setField's `old` falls back to readField, which
-		// now returns the same number the shadow held.
-		if (this.readField(eid, def as ComponentDef, field) === shadowed) {
+		// now returns the same number the shadow held. An `undefined` committed read
+		// means the slot no longer exists (entity despawned / component removed):
+		// prune too, or the entry echoes a value for a dead slot forever and leaks.
+		const committed = this.readField(eid, def as ComponentDef, field);
+		if (committed === shadowed || committed === undefined) {
 			this.shadow.delete(key);
 			return undefined;
 		}

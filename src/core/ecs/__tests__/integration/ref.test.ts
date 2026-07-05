@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../query";
+import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 
 const Position = ["x", "y"] as const;
@@ -454,5 +455,110 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(keys).toContain("x");
 		expect(keys).toContain("y");
 		expect(keys).toHaveLength(2);
+	});
+
+	//=========================================================
+	// DEV guards: ref on a missing component / tag throws an
+	// ECSError instead of a raw TypeError from createRef.
+	//=========================================================
+
+	it("ecs.refRead on an alive entity missing the component throws COMPONENT_NOT_REGISTERED", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent(Position);
+		const Vel = world.registerComponent(Velocity);
+		const e = world.spawn();
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+
+		try {
+			world.refRead(Vel, e);
+			expect.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ecs.refRead with a tag def throws COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
+		const world = new ECS();
+		const Tag = world.registerTag();
+		const e = world.spawn();
+		world.addComponent(e, Tag);
+
+		try {
+			world.refRead(Tag, e);
+			expect.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ctx.ref / ctx.refRead on an alive entity missing the component throw COMPONENT_NOT_REGISTERED", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent(Position);
+		const Vel = world.registerComponent(Velocity);
+		const e = world.spawn();
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+
+		let ctx!: SystemContext;
+		const sys = world.registerSystem({
+			...openAccess([Pos, Vel]),
+			fn(_ctx) {
+				ctx = _ctx;
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+		world.update(0);
+
+		try {
+			ctx.ref(Vel, e);
+			expect.fail("ctx.ref should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+
+		try {
+			ctx.refRead(Vel, e);
+			expect.fail("ctx.refRead should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ctx.ref / ctx.refRead with a tag def throw COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
+		const world = new ECS();
+		const Tag = world.registerTag();
+		const e = world.spawn();
+		world.addComponent(e, Tag);
+
+		let ctx!: SystemContext;
+		const sys = world.registerSystem({
+			...openAccess([Tag]),
+			fn(_ctx) {
+				ctx = _ctx;
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+		world.update(0);
+
+		try {
+			ctx.ref(Tag, e);
+			expect.fail("ctx.ref should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+
+		try {
+			ctx.refRead(Tag, e);
+			expect.fail("ctx.refRead should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
 	});
 });

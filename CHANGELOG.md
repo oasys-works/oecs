@@ -28,6 +28,10 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).
   Calling `ecs.despawn` from inside a system body throws in dev (immediate destroy
   mid-iteration can invalidate rows a running query is walking) — use `ctx.commands.despawn`.
+  **Observer note:** like every immediate op, host `despawn` fires no observers — `onRemove`
+  no longer sees host-despawned entities (it did at 0.4, when host destroy was deferred).
+  Observer-driven consumers, including the `reactive-sync` map bridges, only see despawns that
+  go through `ctx.commands.despawn` or the host-command seam.
 - **`ctx.createEntity` / `ctx.destroyEntity` removed** — spawn/despawn inside a system live
   only on `ctx.commands`, completing the declared migration; the bare deferred duplicates are
   gone.
@@ -74,6 +78,29 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
 
 ### Fixed
 
+- **Host iteration guard (`STRUCTURAL_DURING_ITERATION`)** — with host `despawn` now immediate,
+  a host-side `forEach`/`eachChunk` callback that despawned (or transitioned/toggled) an entity of
+  the archetype it was visiting silently skipped entities via the row swap-remove. Row-removing
+  ops on an archetype a live dense walk is standing in now throw in dev, *before* any mutation
+  lands (the transition path checks ahead of the destination append, so no dual-residency
+  half-state). Collect ids during the walk and mutate after it. Mutating archetypes the walk is
+  *not* currently visiting stays legal — the #431 fresh-snapshot machinery still covers those.
+- **Cross-world despawn false positive** — `worldB.despawn(e)` from inside world A's system no
+  longer trips the in-system despawn guard (the accessCheck span is process-global; the guard now
+  also requires *this* world to be mid-schedule). Driving a second world from a system (#785)
+  mutates it host-style, which is safe — B is not iterating. Unnamed systems in the guard message
+  now render as `system_<id>` instead of `'?'`.
+- **`ecs.refRead` / `ctx.ref` / `ctx.refRead` on a missing component or tag def** — threw a raw
+  `TypeError` from the ref internals; now a dev `ECSError` (`COMPONENT_NOT_REGISTERED`) naming the
+  op and component, matching `getField`. Host `refRead`'s docstring now states the single-
+  expression lifetime rule (any immediate structural mutation can row-swap under a held ref).
+- **Editor: aborted transactions no longer poison undo** — `transaction(tx => …)` staged its
+  `setField` shadow writes into the editor's shared map at build time, so a build callback that
+  threw left phantom pending values behind and seeded the *next* edit's undo inverse with a value
+  the world never held. Staging is now transaction-local and merges only on commit.
+- **Editor: `pendingField` self-resolves for dead slots** — a shadow entry for a despawned entity
+  (or removed component) echoed its stale value forever and leaked; the reconcile-on-read now
+  prunes it and returns `undefined`.
 - **JSR/Deno consumers no longer break on the `__DEV__` global** — shipped source now reads a
   guarded `DEV` flag (`src/dev_flag.ts`) that constant-folds in the npm bundle and defaults to
   dev-on for raw-source consumers (`globalThis.__DEV__ = false` opts out).

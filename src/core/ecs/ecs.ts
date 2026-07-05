@@ -254,6 +254,13 @@ export class ECS implements QueryResolver {
 	// Tick counter for change detection
 	private _tick: number = 0;
 
+	// DEV-only: true while THIS world's schedule is executing (startup/update).
+	// Distinguishes "a system of this world is on the stack" from "some other
+	// world's system opened the process-global accessCheck span" — driving a
+	// second world from inside a system is a supported pattern (#785), and its
+	// host-facade mutations must not trip this world's in-system guards.
+	private _updating = false;
+
 	// Fixed timestep accumulator
 	private _fixedTimestep: number;
 	private _accumulator = 0;
@@ -609,10 +616,15 @@ export class ECS implements QueryResolver {
 	 *  a system body throws in DEV, since an immediate destroy mid-iteration
 	 *  can invalidate rows the running query is walking. */
 	public despawn(id: EntityID): void {
-		if (DEV && accessCheck.current() !== null) {
+		// `_updating` scopes the guard to THIS world: the accessCheck slot is
+		// process-global, so without it a system of world A despawning in world
+		// B (a supported #785 pattern — B is not mid-iteration) would false-throw.
+		if (DEV && this._updating && accessCheck.current() !== null) {
+			const desc = accessCheck.current()!;
+			const name = desc.name ?? `system_${desc.id}`;
 			throw new ECSError(
 				ECS_ERROR.ACCESS_UNDECLARED,
-				`ecs.despawn called from inside system '${accessCheck.current()?.name ?? "?"}' — host despawn is immediate and unsafe mid-iteration; use ctx.commands.despawn (deferred to the phase flush) instead`,
+				`ecs.despawn called from inside system '${name}' — host despawn is immediate and unsafe mid-iteration; use ctx.commands.despawn (deferred to the phase flush) instead`,
 				{ op: "despawn" }
 			);
 		}
@@ -726,7 +738,15 @@ export class ECS implements QueryResolver {
 	/** Host-side parity with `SystemContext.refRead` (POLISH_AUDIT M7): a
 	 * read-only whole-component view for tooling/tests, instead of reading
 	 * field-by-field. Same advisory-`readonly` semantics as the ctx variant;
-	 * no `_changedTick` bump. Dev-throws on a dead entity. */
+	 * no `_changedTick` bump. Dev-throws on a dead entity, or when the entity
+	 * doesn't hold the component (tags included — no fields, nothing to ref).
+	 *
+	 * **Staleness:** unlike ctx refs (protected by deferred structural changes
+	 * until the phase flush), host-side structural mutations apply immediately —
+	 * any `addComponent`/`removeComponent`/`despawn` after creating the ref can
+	 * row-swap so the old ref silently reads *another entity's* data. The ref is
+	 * only valid until the next structural mutation; treat it as an immediate
+	 * single-expression read and re-create it after any structural change. */
 	public refRead<S extends ComponentSchema>(
 		def: ComponentDef<S>,
 		entityId: EntityID
@@ -738,7 +758,13 @@ export class ECS implements QueryResolver {
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
-		// ! safe: columnGroups is populated for all components with fields in this archetype
+		if (DEV && arch.columnGroups[def.id] === undefined)
+			throw new ECSError(
+				ECS_ERROR.COMPONENT_NOT_REGISTERED,
+				`refRead: ${componentLabel(def)} has no columns in this archetype — the entity doesn't hold it, or it is a tag (no fields to ref)`,
+				{ component: def.id, entity: entityId }
+			);
+		// ! safe in prod (dev guard above): columnGroups is populated for all components with fields in this archetype
 		return createRef<S>(arch.columnGroups[def.id]!, row);
 	}
 
@@ -1023,16 +1049,21 @@ export class ECS implements QueryResolver {
 		// covered by the closure still hit the lazy single-mask fallback.
 		this.prewarmArchetypes();
 
-		for (const descriptor of this.systems.values()) {
-			if (descriptor.onAdded === undefined) continue;
-			if (DEV) accessCheck.enter(descriptor);
-			try {
-				descriptor.onAdded(this.ctx);
-			} finally {
-				if (DEV) accessCheck.leave();
+		if (DEV) this._updating = true;
+		try {
+			for (const descriptor of this.systems.values()) {
+				if (descriptor.onAdded === undefined) continue;
+				if (DEV) accessCheck.enter(descriptor);
+				try {
+					descriptor.onAdded(this.ctx);
+				} finally {
+					if (DEV) accessCheck.leave();
+				}
 			}
+			this.schedule.runStartup(this.ctx, this._tick);
+		} finally {
+			if (DEV) this._updating = false;
 		}
-		this.schedule.runStartup(this.ctx, this._tick);
 
 		// Events live exactly one *update* tick. Startup is setup, not an
 		// update tick, so any event a startup phase emits (readable across the
@@ -1088,6 +1119,7 @@ export class ECS implements QueryResolver {
 		// no-op there. See `docs/PATTERNS.md` §97 (multi-world isolation).
 		const prevAccessSpan = DEV ? accessCheck.current() : null;
 		try {
+			if (DEV) this._updating = true;
 			this.store._tick = this._tick;
 			if (DEV) this.store._trace?.tickBegin(this._tick, dt);
 
@@ -1138,6 +1170,7 @@ export class ECS implements QueryResolver {
 			if (DEV) this.store._trace?.tickEnd(this._tick);
 			this._tick++;
 		} finally {
+			if (DEV) this._updating = false;
 			// Restore the outer world's access span (no-op when not nested).
 			if (DEV && prevAccessSpan !== null) accessCheck.enter(prevAccessSpan);
 		}

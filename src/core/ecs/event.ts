@@ -51,9 +51,11 @@ export const asEventId = (value: number) =>
 /** Event schema: field name → value type. Every value is a number at
  * runtime; the declared type may be a branded number (e.g. `EntityID`)
  * so the brand survives the emit → read round trip at the type layer.
- * Declare schemas as type literals (`eventKey<{ a: EntityID }>`), not
- * interfaces — assignability to the `EventSchema` constraint relies on
- * the implicit index signature literals get and interfaces don't. */
+ * This is the erased/default schema type; the public surfaces constrain
+ * on `EventShape<S>` (below) instead, so schemas may be declared as type
+ * literals OR interfaces — an interface lacks the implicit index
+ * signature literals get (and so isn't assignable to this `Record`
+ * alias), but satisfies the homomorphic `EventShape` check. */
 export type EventSchema = Readonly<Record<string, number>>;
 
 /**

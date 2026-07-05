@@ -230,6 +230,16 @@ export class Archetype implements ArchetypeView {
 	public _flushSeenEpoch: number = -1;
 	public _flushPreLen: number = 0;
 	public _flushPreEnabled: number = 0;
+	/**
+	 * DEV-only iteration guard: >0 while a dense query iterator (`forEach` /
+	 * `eachChunk` / `forEachUntil` / `ChangedQuery.forEach`) is delivering this
+	 * archetype to a user callback. The row-removing/reordering primitives
+	 * (`removeRow` / `disableRow` / `enableRow`) check it so an immediate
+	 * structural mutation from inside the walk — which would swap-remove under
+	 * the iterator and silently skip or repeat entities — throws instead.
+	 * Production builds never read or write it.
+	 */
+	public _iterDepth: number = 0;
 	private readonly edges: ArchetypeEdge[] = [];
 	/**
 	 * Cache of pre-computed transition maps for multi-component transitions
@@ -540,6 +550,7 @@ export class Archetype implements ArchetypeView {
 	 * lands in the disabled tail with its data intact — no archetype transition,
 	 * O(1)+one row swap. Updates `entityRow` for both rows touched. (#577) */
 	public disableRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("disable");
 		const lastEnabled = this.enabledCount - 1;
 		if (row !== lastEnabled) {
 			this.swapRows(row, lastEnabled);
@@ -555,6 +566,7 @@ export class Archetype implements ArchetypeView {
 	 * Swaps it to the front of the disabled region and grows the enabled region.
 	 * Updates `entityRow` for both rows touched. (#577) */
 	public enableRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("enable");
 		const firstDisabled = this.enabledCount;
 		if (row !== firstDisabled) {
 			this.swapRows(row, firstDisabled);
@@ -578,6 +590,7 @@ export class Archetype implements ArchetypeView {
 	 * Updates `entityRow` for every relocated entity (never for the removed one —
 	 * the caller frees/repoints it). */
 	public removeRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("removeRow");
 		// Fast path — no disabled rows (`enabled_count === length`, the common
 		// case ADR-0016 promises pays nothing). The partition is trivial, so a
 		// one-directional swap-remove suffices: copy the last row into the hole
@@ -1179,6 +1192,9 @@ export class Archetype implements ArchetypeView {
 		tick: number,
 		entityRow: Int32Array
 	): void {
+		// Iteration guard BEFORE the dest append — throwing later (in
+		// `src.removeRow`) would leave the entity present in both archetypes.
+		if (DEV && src._iterDepth > 0) throw structuralDuringIterationError("moveEntityFrom");
 		// Preserve the entity's enabled/disabled state across the move (#577):
 		// read it from `src` BEFORE removing the row. A disabled entity that gains
 		// or loses an *unrelated* component stays disabled in the destination.
@@ -1245,6 +1261,8 @@ export class Archetype implements ArchetypeView {
 		entityId: EntityID,
 		entityRow: Int32Array
 	): void {
+		// Same pre-append iteration guard as `moveEntityFrom`.
+		if (DEV && src._iterDepth > 0) throw structuralDuringIterationError("moveEntityFrom");
 		const wasDisabled = srcRow >= src.enabledCount;
 		// Rowless empty-archetype destination — see `moveEntityFrom` above.
 		if (!this.materializesRows) {
@@ -1445,6 +1463,20 @@ function emptyArchetypeRowError(): ECSError {
  * disabled rows needs the `entityRow` map to repoint the displaced disabled
  * entity, but none was passed. Signals a Store append path that forgot to thread
  * `entityRow` through. Compiled out of production builds. */
+/** Dev-only guard error: an immediate structural mutation (despawn /
+ * removeComponent / addComponent transition / disable / enable) targeted an
+ * archetype that a live query walk is currently visiting. The swap-remove /
+ * partition swap would relocate rows under the iterator, silently skipping or
+ * repeating entities. Collect the entity ids during the walk and mutate after
+ * it (inside a system, use the deferred `ctx.commands`). Compiled out of
+ * production builds. */
+function structuralDuringIterationError(op: string): ECSError {
+	return new ECSError(
+		ECS_ERROR.STRUCTURAL_DURING_ITERATION,
+		`${op} hit an archetype a live query iteration is visiting — immediate structural mutation mid-walk relocates rows under the iterator (entities get skipped or visited twice). Collect ids during the walk and mutate after it; inside a system use the deferred ctx.commands.`
+	);
+}
+
 function partitionNoEntityRowError(): ECSError {
 	return new ECSError(
 		ECS_ERROR.PARTITION_APPEND_NEEDS_ENTITY_ROW,
