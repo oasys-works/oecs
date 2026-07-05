@@ -65,6 +65,7 @@ import {
 } from "./system";
 import { accessCheck } from "./access_check";
 import { ECS_ERROR, ECSError } from "./utils/error";
+import { DEV } from "../../dev_flag";
 
 /** What the observer registry needs from `Store` — the typed seam replacing
  * bare underscore-convention reach-through (M1). `Store` implements this; the
@@ -119,7 +120,7 @@ interface ObserverConfigBase {
 	 * with `onDisable` / `onAdd`. */
 	onEnable?: ObserverFn;
 	/** Access surface the callbacks touch (reads / writes / spawns / …). Partial:
-	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `__DEV__`. */
+	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `DEV`. */
 	access?: Partial<SystemAccessDeclaration>;
 	/** flecs-style replay of current matches on registration (onAdd only — seeds the
 	 * *enabled* members; a disabled entity is simply absent, matching default-query
@@ -330,14 +331,14 @@ export class ObserverRegistry {
 		const granularity = config.granularity ?? "archetype";
 		const isEntitySet = config.onSet !== undefined && granularity === "entity";
 		const isArchSet = config.onSet !== undefined && granularity !== "entity";
-		if (__DEV__ && config.onSet === undefined && config.granularity !== undefined) {
+		if (DEV && config.onSet === undefined && config.granularity !== undefined) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
 				"observe(): `granularity` is meaningless without `on_set`"
 			);
 		}
 		if (
-			__DEV__ &&
+			DEV &&
 			config.onAdd === undefined &&
 			config.onRemove === undefined &&
 			config.onDisable === undefined &&
@@ -467,7 +468,7 @@ export class ObserverRegistry {
 		this._bucket(ev.enaComp, ev.enaEid, ev.enaLen, this._enaBuckets);
 
 		const order = this.getTopo();
-		const prev = __DEV__ ? accessCheck.current() : null;
+		const prev = DEV ? accessCheck.current() : null;
 		for (let oi = 0; oi < order.length; oi++) {
 			const obs = order[oi];
 			// Skip an observer disposed mid-round: a `dispose()` handle is reachable
@@ -496,7 +497,7 @@ export class ObserverRegistry {
 					this._fireEach(obs, obs.onEnable, eids, "enable");
 			}
 		}
-		if (__DEV__ && prev !== null) accessCheck.enter(prev);
+		if (DEV && prev !== null) accessCheck.enter(prev);
 
 		this._clearBuckets(this._addBuckets);
 		this._clearBuckets(this._remBuckets);
@@ -508,15 +509,15 @@ export class ObserverRegistry {
 	 * fire `fn` per entity under the observer's access scope. */
 	private _fireEach(obs: ObserverEntry, fn: ObserverFn, eids: number[], op: ObserverOp): void {
 		radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
-			const trace = __DEV__ ? this.store._trace : null;
+			const trace = DEV ? this.store._trace : null;
 			for (let i = 0; i < eids.length; i++) {
 				fn(unsafeCast<EntityID>(eids[i]), this.ctx);
-				if (__DEV__) trace?.observerFired(op, obs.cid, eids[i], obs.descriptor);
+				if (DEV) trace?.observerFired(op, obs.cid, eids[i], obs.descriptor);
 			}
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 	}
 
@@ -548,7 +549,7 @@ export class ObserverRegistry {
 	 */
 	dispatchSet(tick: number): void {
 		if (this.entries.length === 0) return;
-		const prev = __DEV__ ? accessCheck.current() : null;
+		const prev = DEV ? accessCheck.current() : null;
 		// Canonical across observers: topo order (same as structural).
 		const order = this.getTopo();
 		const drained = this._setDrainCache;
@@ -560,7 +561,7 @@ export class ObserverRegistry {
 		// Return the drained scratch lists to the store empty and reset the cache.
 		for (const eids of drained.values()) eids.length = 0;
 		drained.clear();
-		if (__DEV__ && prev !== null) accessCheck.enter(prev);
+		if (DEV && prev !== null) accessCheck.enter(prev);
 	}
 
 	private _dispatchSetEntity(obs: ObserverEntry, drained: Map<number, EntityID[]>): void {
@@ -577,7 +578,7 @@ export class ObserverRegistry {
 		if (eids.length === 0) return;
 		const def = obs.def;
 		const fn = obs.onSetEntity!;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			for (let i = 0; i < eids.length; i++) {
 				const eid = unsafeCast<EntityID>(eids[i]);
@@ -593,27 +594,27 @@ export class ObserverRegistry {
 					!this.store.isDisabled(eid)
 				) {
 					fn(eid, this.ctx);
-					if (__DEV__) this.store._trace?.observerFired("set", obs.cid, eid, obs.descriptor);
+					if (DEV) this.store._trace?.observerFired("set", obs.cid, eid, obs.descriptor);
 				}
 			}
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 	}
 
 	private _dispatchSetArch(obs: ObserverEntry, tick: number): void {
 		const fn = obs.onSetArch!;
 		const baseline = obs.lastSetTick;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			this.store._forEachChangedArchetype(obs.cid, baseline, (arch) => {
 				fn(arch, this.ctx);
 				// Archetype-granular onSet has no per-entity id; report a single
 				// component-level firing (entity -1) per changed archetype.
-				if (__DEV__) this.store._trace?.observerFired("set", obs.cid, -1, obs.descriptor);
+				if (DEV) this.store._trace?.observerFired("set", obs.cid, -1, obs.descriptor);
 			});
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 		// Next tick, only fire for archetypes changed AFTER this tick.
 		obs.lastSetTick = tick + 1;
@@ -638,12 +639,12 @@ export class ObserverRegistry {
 		// the way `dispatchStructural` / `dispatchSet` do — `accessCheck.leave`
 		// nulls `active` rather than popping, and a bare leave here would silently
 		// disable dev-mode access enforcement for the rest of the caller's body.
-		const prev = __DEV__ ? accessCheck.current() : null;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		const prev = DEV ? accessCheck.current() : null;
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			for (let i = 0; i < eids.length; i++) fn(unsafeCast<EntityID>(eids[i]), this.ctx);
 		} finally {
-			if (__DEV__) {
+			if (DEV) {
 				accessCheck.leave();
 				if (prev !== null) accessCheck.enter(prev);
 			}

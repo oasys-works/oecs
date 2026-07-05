@@ -44,7 +44,7 @@ export class EventRegistry {
 	public emitEvent(def: EventDef<any>, values: Record<string, number>): void {
 		const id = def as unknown as number;
 		const channel = this.channels[id];
-		// Sample emptiness, emit, THEN mark dirty: if `emit` throws (a __DEV__
+		// Sample emptiness, emit, THEN mark dirty: if `emit` throws (a DEV
 		// missing-field check), `reader.length` stays 0 and a later successful emit
 		// would push the id a second time — breaking the at-most-once-per-tick
 		// dirty-list invariant. Push only on a clean emit. #728.
@@ -74,7 +74,7 @@ export class EventRegistry {
 		dirty.length = 0;
 	}
 
-	/** `__DEV__`-only: total events currently buffered across the dirty channels.
+	/** `DEV`-only: total events currently buffered across the dirty channels.
 	 * `ECS.update` samples this either side of `dispatchSet` to assert an onSet
 	 * observer emitted nothing — its emissions would be wiped by the tick-tail
 	 * `clearEvents` and break the empty-channel-at-boundary invariant snapshot /

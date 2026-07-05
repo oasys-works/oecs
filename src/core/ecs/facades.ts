@@ -5,7 +5,7 @@
  * narrow typed facades: `ecs.relations`, `ecs.events`, `ecs.resources`,
  * `ecs.snapshots`. Each wraps the same `Store` entry points the flat
  * methods used (monomorphic one-hop delegation — bench-established as free
- * by the H1 A/B runs), and the `__DEV__` adaptation the flat methods
+ * by the H1 A/B runs), and the `DEV` adaptation the flat methods
  * carried (dispatch-trace recording, access checks) moves here with them.
  *
  * The pre-0.5 flat forms were removed from `ECS` in 0.5.0 (never published
@@ -32,6 +32,7 @@ import type {
 import { accessCheck } from "./access_check";
 import { dispatchTrace } from "./dispatch_trace";
 import { unsafeCast } from "../../type_primitives";
+import { DEV } from "../../dev_flag";
 
 /** Relations — sparse `(relation, target)` pairs and hierarchy traversal
  * (#471 / #474, ADR-0011). Add/remove/re-target cause no archetype
@@ -181,7 +182,7 @@ export class ECSEvents {
 	// form — `EventKey` is invariant under the typestate seams (function-typed
 	// phantom), so only `<any>` erases (see project typestate constraints).
 	public emit(key: EventKey<any>, values?: Record<string, number>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEmit(key.description ?? "");
 		}
 		const def = this.store.getEventDefByKey(key);
@@ -193,7 +194,7 @@ export class ECSEvents {
 	}
 
 	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
 		}
 		const def = this.store.getEventDefByKey(key);
@@ -212,14 +213,14 @@ export class ECSResources {
 	}
 
 	public register<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordResourceRegister(key.description ?? "");
 		}
 		this.store.registerResource(key, value);
 	}
 
 	public get<T>(key: ResourceKey<T>): T {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceRead(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRead(key.description ?? "");
@@ -229,7 +230,7 @@ export class ECSResources {
 	}
 
 	public set<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceWrite(key.description ?? "");
@@ -242,7 +243,7 @@ export class ECSResources {
 	 * fails closed on a missing key. Afterwards the key is free to `register`
 	 * again — the present → absent → present lifecycle. */
 	public remove<T>(key: ResourceKey<T>): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRemove(key.description ?? "");

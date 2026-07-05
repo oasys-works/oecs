@@ -29,6 +29,7 @@ const ROOT_EXPORTS = [
 	"QueryBuilder",
 	"SCHEDULE",
 	"SparseRestoreError",
+	"StoreRestoreError",
 	"SystemContext",
 	"WORLD_SNAPSHOT_VERSION",
 	"WorldRestoreError",

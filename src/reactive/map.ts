@@ -23,6 +23,7 @@
  * nobody" guarantee for object-valued channels (the common ECS→UI snapshot shape).
  */
 import { batch, signal } from "./kernel";
+import { DEV } from "../dev_flag";
 
 export interface ReactiveMap<K, V> {
 	/** Read a key's value, subscribing the caller to that key (or to structure if absent). */
@@ -58,7 +59,7 @@ export function reactiveMap<K, V>(eq: (a: V, b: V) => boolean = Object.is): Reac
 			return undefined;
 		},
 		set(key, value) {
-			if (__DEV__ && value === undefined) {
+			if (DEV && value === undefined) {
 				// `undefined` is the absent sentinel (see `cellEq`), so a stored
 				// `undefined` reads back identically to a never-set key on `get`. #731.
 				console.warn(

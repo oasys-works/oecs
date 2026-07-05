@@ -30,6 +30,7 @@
 import { Brand, unsafeCast } from "../../type_primitives";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { TOTAL_PACKED_BITS } from "./utils/constants";
+import { DEV } from "../../dev_flag";
 
 export type EntityID = Brand<number, "entity_id">;
 
@@ -72,7 +73,7 @@ export const MAX_LIVE_GENERATION = MAX_GENERATION - 1; // 0x7FE (2046)
 export const MAX_ENTITY_ID = (MAX_GENERATION << INDEX_BITS) | MAX_INDEX; // 0x7FFFFFFF
 
 export const createEntityId = (index: number, generation: number): EntityID => {
-	if (__DEV__) {
+	if (DEV) {
 		if (index < 0 || index > MAX_INDEX) {
 			throw new ECSError(ECS_ERROR.EID_MAX_INDEX_OVERFLOW);
 		}

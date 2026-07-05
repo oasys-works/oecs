@@ -136,7 +136,7 @@ export {
 export type { CommandLog, RecordedTick, ReplayResult, ReplayOptions } from "./core/ecs";
 
 // Per-world frame-trace seam (ADR-0030) — attach a `FrameTraceSink` via
-// `ECS.setTrace(sink)`. `__DEV__`-gated end to end (zero prod cost).
+// `ECS.setTrace(sink)`. `DEV`-gated end to end (zero prod cost).
 export { FrameTraceRecorder } from "./core/ecs";
 export type {
 	FrameTraceSink,
@@ -148,7 +148,10 @@ export type {
 
 // World resume (#789) — `WorldRestoreError` is thrown by `ECS.restoreInto`;
 // `WORLD_SNAPSHOT_VERSION` tags the combined snapshot framing.
+// `StoreRestoreError` is the dense-half failure `restoreInto` can surface —
+// exported so the failure mode is nameable/catchable.
 export { WorldRestoreError, WORLD_SNAPSHOT_VERSION } from "./core/ecs";
+export { StoreRestoreError } from "./core/store";
 
 // Ref — advisory read-only views; see PATTERNS §10c.
 export type { ComponentRef, ReadonlyComponentRef } from "./core/ecs";

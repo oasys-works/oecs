@@ -26,7 +26,7 @@ export type { ResolvedECSMemory, ECSMemoryCapContext } from "./core/ecs";
 // Access check (Phase B of issue #213) — dev-mode validation singleton.
 export { accessCheck } from "./core/ecs";
 
-// Dispatch trace (dev-mode only — gated by __DEV__ + VISUAL_INTEL_TRACE).
+// Dispatch trace (dev-mode only — gated by DEV + VISUAL_INTEL_TRACE).
 // The per-world causal tracer (`FrameTraceRecorder`) is public, at the root.
 export { dispatchTrace, type DispatchTraceSnapshot, type DispatchTraceEntry } from "./core/ecs";
 

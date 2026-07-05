@@ -91,6 +91,7 @@ import { EMPTY_VALUES } from "./utils/constants";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { dispatchTrace } from "./dispatch_trace";
 import { accessCheck } from "./access_check";
+import { DEV } from "../../dev_flag";
 
 /** The query-driver seam on `Store` — the typed contract behind the
  * underscore members `ecs.ts` and the query internals reach (M1). `Store`
@@ -325,7 +326,7 @@ const NO_OPTIONAL_TERMS: readonly ComponentID[] = Object.freeze([]);
 
 // Frozen empty relation-wildcard-term list — shared by every Query without a
 // `(R, *)` term (#579), same zero-alloc rationale. These lists exist only for the
-// `__DEV__` `relationReads` access check (`_checkRelationAccess`); the driver
+// `DEV` `relationReads` access check (`_checkRelationAccess`); the driver
 // reads the relation's backing sparse id off `_sparseInclude`, never this.
 const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
 
@@ -349,7 +350,7 @@ export interface HierarchyTerm {
 // is injective only while both halves fit 16 bits. Dense component ids are
 // hard-capped at 128, but sparse ids are deliberately uncapped (they escape the
 // 128 identity cap) and the query-id counter is unbounded — so nothing
-// structurally guarantees the bound the packing assumes. Assert it in `__DEV__`
+// structurally guarantees the bound the packing assumes. Assert it in `DEV`
 // so an overflow surfaces as a loud error at the (astronomically unlikely) pack
 // site rather than a silent wrong-cache-hit. 2^16 = 65536 distinct sparse
 // components or live queries in one ECS is the trigger; realistic counts are
@@ -357,7 +358,7 @@ export interface HierarchyTerm {
 // since cid <= 128) latent risk on the query-id half.
 const CACHE_KEY_HALF_LIMIT = 0x10000;
 function sparseCacheKey(queryId: number, sparseId: number): number {
-	if (__DEV__ && (queryId >= CACHE_KEY_HALF_LIMIT || sparseId >= CACHE_KEY_HALF_LIMIT)) {
+	if (DEV && (queryId >= CACHE_KEY_HALF_LIMIT || sparseId >= CACHE_KEY_HALF_LIMIT)) {
 		throw new ECSError(
 			ECS_ERROR.SPARSE_CACHE_KEY_OVERFLOW,
 			`sparse query cache key would overflow: query_id=${queryId}, sparse_id=${sparseId} (each must be < ${CACHE_KEY_HALF_LIMIT})`
@@ -465,7 +466,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// reuses the parent's live `_archetypes` array (same as the sparse terms).
 	// The term is *consumed*, not decorative (#592): `forEach` publishes it as
 	// the active optional scope, and `getOptionalColumnRead` rejects (in
-	// `__DEV__`) a fetch of any component not listed here — so `.optional(T)` is
+	// `DEV`) a fetch of any component not listed here — so `.optional(T)` is
 	// the declaration that authorizes the fetch, the read-side analog of
 	// `reads:[T]`. It is carried symmetrically through `and`/`not`/`anyOf` (see
 	// `_carryNondense`), so term order never drops it.
@@ -484,7 +485,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// `withoutRelation(R)` push R's *backing sparse id* onto `_sparseInclude` /
 	// `_sparseExclude` (so iteration reuses the sparse-match driver unchanged) AND
 	// record R here purely so `forEachEntity` / `forEachRelatedTo` can assert
-	// `relationReads: [R]` under `__DEV__` (`_checkRelationAccess`). Carried
+	// `relationReads: [R]` under `DEV` (`_checkRelationAccess`). Carried
 	// through `and`/`not`/`anyOf` like the sparse terms (`_carryNondense`).
 	public readonly _relationIncludes: readonly RelationDef[];
 	public readonly _relationExcludes: readonly RelationDef[];
@@ -535,7 +536,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * against a query carrying sparse terms. These walk the dense archetype
 	 * list and never consult `_sparseInclude` / `_sparseExclude`, so on a
 	 * sparse-derived query they'd **fail open** — returning the unfiltered dense
-	 * result instead of the sparse-filtered one. Throw in `__DEV__` (compiled
+	 * result instead of the sparse-filtered one. Throw in `DEV` (compiled
 	 * out of prod) steering the caller to `forEachEntity`, the only path that
 	 * honors sparse membership (#469). Mirrors `ChangedQuery`'s dev-guard on its
 	 * include-mask invariant. */
@@ -556,7 +557,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Number of matching archetypes (including empty ones). */
 	public get archetypeCount(): number {
-		if (__DEV__) this._assertDenseOnly("archetypeCount");
+		if (DEV) this._assertDenseOnly("archetypeCount");
 		return this._archetypes.length;
 	}
 
@@ -564,7 +565,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * default, or all rows when `includeDisabled()` (#577). Reads the partition
 	 * fields directly (not the flag-dependent `entityCount` getter). */
 	public count(): number {
-		if (__DEV__) this._assertDenseOnly("count");
+		if (DEV) this._assertDenseOnly("count");
 		const archs = this._nonEmpty();
 		let total = 0;
 		if (this._includeDisabled) {
@@ -837,7 +838,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Build a derived query carrying new relation-wildcard terms. Threads the
 	 * backing-sparse ids (which the driver actually consumes) plus the relation
-	 * ids (which only the `__DEV__` access check consumes), reusing the dense /
+	 * ids (which only the `DEV` access check consumes), reusing the dense /
 	 * optional / disabled state by reference — same rationale as `_deriveSparse`. */
 	private _deriveRelation(
 		sparseInclude: readonly SparseComponentID[],
@@ -877,7 +878,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * no SoA column span — `forEach` / `count` reject a hierarchy query (like a
 	 * sparse term). **Exclusive relations only** (matches the traversal constraint
 	 * #474); a multi relation throws `RELATION_MODE_MISMATCH` at iteration, and a
-	 * cycle is a loud `RELATION_CYCLE` in `__DEV__` (a safe break in production).
+	 * cycle is a loud `RELATION_CYCLE` in `DEV` (a safe break in production).
 	 * Requires `relationReads: [R]` (checked at iteration). Carried through
 	 * `and`/`not`/`anyOf` like the sparse terms (`_carryNondense`).
 	 *
@@ -887,7 +888,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		relation: RelationDef<"exclusive">,
 		maxDepth: number = HIERARCHY_UNBOUNDED
 	): Query<Defs> {
-		if (__DEV__) {
+		if (DEV) {
 			if (this._hierarchy !== null) {
 				throw new ECSError(
 					ECS_ERROR.HIERARCHY_ALREADY_SET,
@@ -946,7 +947,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** Assert every `(R, *)` wildcard term on this query was declared in the
 	 * system's `relationReads` (#579 / #496). Iteration-time (`forEachEntity` /
 	 * `forEachRelatedTo`), not construction-time, so it is robust to queries
-	 * built outside a system — same rationale as the data-op checks. `__DEV__` only;
+	 * built outside a system — same rationale as the data-op checks. `DEV` only;
 	 * outside a system `checkRelationRead` is a no-op. */
 	private _checkRelationAccess(): void {
 		for (let i = 0; i < this._relationIncludes.length; i++) {
@@ -969,7 +970,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `relationReads: [ANY_RELATION]` (plus `[R]` for any composed `withRelation`).
 	 * Cold/structural — not a per-tick hot loop over many targets. */
 	public forEachRelatedTo(target: EntityID, cb: (entityId: EntityID) => void): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRelationReadAny();
 			this._checkRelationAccess();
 		}
@@ -990,7 +991,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * and without each `T`. Read each column per archetype span via
 	 * `arch.getOptionalColumnRead(T, field)` (column when present, `undefined`
 	 * when absent). `.optional(T)` is the *declaration* that authorizes that fetch:
-	 * inside `forEach`, `getOptionalColumnRead` throws in `__DEV__` if `T` was
+	 * inside `forEach`, `getOptionalColumnRead` throws in `DEV` if `T` was
 	 * not declared here (#592) — the read-side analog of `reads:[T]`, which is also
 	 * still required for access coverage (both checks fire, even on the absent
 	 * span). The term is carried through `and`/`not`/`anyOf` (see
@@ -1090,7 +1091,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// real per-call cost on `forEach`-call-bound loops. Keep this body
 		// byte-identical to `_forEachInner`; do NOT "DRY it up" back into a
 		// delegate hop (that hop is exactly the #577 regression this restores).
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("forEach");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
@@ -1147,7 +1148,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * allocated per pass and reused across that pass's archetypes. Honours
 	 * `includeDisabled()` exactly like `forEach` (the bound widens to the
 	 * disabled tail); dense-only like `forEach` (sparse/relation/hierarchy terms
-	 * throw in `__DEV__` — iterate those with `forEachEntity`).
+	 * throw in `DEV` — iterate those with `forEachEntity`).
 	 */
 	public eachChunk(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		// Include-disabled iteration (#577): publish the all-rows flag so each
@@ -1176,7 +1177,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	private _eachChunkInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		const view = new ChunkColumns<Defs>();
 		view._tick = this._resolver._getCurrentTick();
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("eachChunk");
 			accessCheck.enterOptionalScope(this._optional);
 			try {
@@ -1223,7 +1224,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `includeDisabled` paths. Same dev-mode optional-term scope as
 	 * `forEach` (#592). */
 	private _forEachUntilInner(cb: (arch: ArchetypeView<Defs>) => boolean): boolean {
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("forEachUntil");
 			accessCheck.enterOptionalScope(this._optional);
 			try {
@@ -1248,7 +1249,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * (#608) to dodge a megamorphic delegate hop; this copy survives only for the
 	 * rare all-rows path, which needs the `_setIterAllRows` try/finally wrap. */
 	private _forEachInner(cb: (arch: ArchetypeView<Defs>) => void): void {
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("forEach");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
@@ -1288,14 +1289,14 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * array at once. Buffer such edits and apply them after the walk. */
 	public forEachEntity(cb: (entityId: EntityID) => void): void {
 		// A `(R, *)` term reads relation structure — assert `relationReads: [R]`
-		// (#579). `__DEV__` only; prod runs the bare match below byte-for-byte.
-		if (__DEV__) this._checkRelationAccess();
+		// (#579). `DEV` only; prod runs the bare match below byte-for-byte.
+		if (DEV) this._checkRelationAccess();
 		// A `.hierarchy(R)` term (#581) reorders the matched set into depth order
 		// over R, so it routes to the dedicated depth-ordered driver rather than the
 		// insertion-order sparse-match path. The relation is read, so it needs the
 		// same `relationReads: [R]` assertion as a `(R, *)` term.
 		if (this._hierarchy !== null) {
-			if (__DEV__) accessCheck.checkRelationRead(this._hierarchy.relation);
+			if (DEV) accessCheck.checkRelationRead(this._hierarchy.relation);
 			this._resolver._forEachHierarchyMatch(
 				this._include,
 				this._exclude,
@@ -1500,10 +1501,10 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	 *  spawn, à la Bevy, is a separate follow-up.) */
 	public spawn(...items: DeclaredBundleOrDef<A["add"]>[]): EntityID {
 		const e = this.store.createEntity();
-		if (__DEV__) this.store._trace?.commandQueued("spawn", e, null);
+		if (DEV) this.store._trace?.commandQueued("spawn", e, null);
 		for (let i = 0; i < items.length; i++) {
 			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
+			if (DEV) accessCheck.checkAdd(def);
 			this.store.addComponentDeferred(e, def, bundleValues(items[i]));
 		}
 		return e;
@@ -1513,44 +1514,44 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	public add(entityId: EntityID, ...items: DeclaredBundleOrDef<A["add"]>[]): this {
 		for (let i = 0; i < items.length; i++) {
 			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
+			if (DEV) accessCheck.checkAdd(def);
 			this.store.addComponentDeferred(entityId, def, bundleValues(items[i]));
-			if (__DEV__) this.store._trace?.commandQueued("add", entityId, def.id);
+			if (DEV) this.store._trace?.commandQueued("add", entityId, def.id);
 		}
 		return this;
 	}
 
 	/** Remove a component (deferred). */
 	public remove<D extends ComponentDef<any>>(entityId: EntityID, def: D & DeclaredRemove<A, D>): this {
-		if (__DEV__) accessCheck.checkRemove(def);
+		if (DEV) accessCheck.checkRemove(def);
 		this.store.removeComponentDeferred(entityId, def);
-		if (__DEV__) this.store._trace?.commandQueued("remove", entityId, def.id);
+		if (DEV) this.store._trace?.commandQueued("remove", entityId, def.id);
 		return this;
 	}
 
 	/** Destroy an entity (deferred). */
 	public despawn(entityId: DestroyEntityArg<A>): this {
-		if (__DEV__) accessCheck.checkDestroy();
+		if (DEV) accessCheck.checkDestroy();
 		// The conditional argument type is `EntityID` whenever this compiles
 		// (the false branch is uninhabited); the cast recovers it for a body
 		// where `A` is still generic.
 		const id = entityId as EntityID;
 		this.store.destroyEntityDeferred(id);
-		if (__DEV__) this.store._trace?.commandQueued("despawn", id, null);
+		if (DEV) this.store._trace?.commandQueued("despawn", id, null);
 		return this;
 	}
 
 	/** Disable an entity (deferred). */
 	public disable(entityId: EntityID): this {
 		this.store.disableEntityDeferred(entityId);
-		if (__DEV__) this.store._trace?.commandQueued("disable", entityId, null);
+		if (DEV) this.store._trace?.commandQueued("disable", entityId, null);
 		return this;
 	}
 
 	/** Re-enable an entity (deferred). */
 	public enable(entityId: EntityID): this {
 		this.store.enableEntityDeferred(entityId);
-		if (__DEV__) this.store._trace?.commandQueued("enable", entityId, null);
+		if (DEV) this.store._trace?.commandQueued("enable", entityId, null);
 		return this;
 	}
 }
@@ -1560,7 +1561,7 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
  * (§typestate, system.ts): the config-form `registerSystem` computes it from
  * the literal `reads`/`writes`/… declarations and every guarded method below
  * checks its handle argument against the matching union at compile time —
- * the same rules `accessCheck` enforces at runtime in `__DEV__`. The default
+ * the same rules `accessCheck` enforces at runtime in `DEV`. The default
  * `A = SystemAccess` is fully permissive, so a bare `SystemContext` (helper
  * functions, host-side code, explicitly-annotated escape hatches) behaves
  * exactly as before, and every narrowed `SystemContext<…>` is assignable to
@@ -1584,7 +1585,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 
 	/** The world's frame-trace sink (ADR-0030), or `null`. Lets the schedule
 	 * fire `systemStart`/`flush*` without reaching into the private store.
-	 * Read only under `if (__DEV__)`; the seam is dead-code-eliminated in prod. */
+	 * Read only under `if (DEV)`; the seam is dead-code-eliminated in prod. */
 	public get _trace(): FrameTraceSink | null {
 		return this.store._trace;
 	}
@@ -1610,7 +1611,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredRead<A, D>,
 		field: string & keyof SchemaOf<D>
 	): number {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
@@ -1625,12 +1626,12 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		field: string & keyof SchemaOf<D>,
 		value: number
 	): void {
-		if (__DEV__) {
+		if (DEV) {
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
-		// `getColumn` (mutable) invokes `accessCheck.checkWrite` under __DEV__,
+		// `getColumn` (mutable) invokes `accessCheck.checkWrite` under DEV,
 		// so setField doesn't need a separate check.
 		const col = arch.getColumn(def, field, this.store._tick);
 		col[row] = value;
@@ -1651,7 +1652,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		field: string & keyof SchemaOf<D>,
 		fn: (current: number) => number
 	): number {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
@@ -1687,7 +1688,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredWrite<A, D>,
 		entityId: EntityID
 	): ComponentRef<SchemaOf<D>> {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkWrite(def);
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
@@ -1710,7 +1711,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredRead<A, D>,
 		entityId: EntityID
 	): ReadonlyComponentRef<SchemaOf<D>> {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
@@ -1722,7 +1723,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 
 	/** Buffer an entity for deferred destruction (applied at phase flush). */
 	public destroyEntity(id: DestroyEntityArg<A>): this {
-		if (__DEV__) accessCheck.checkDestroy();
+		if (DEV) accessCheck.checkDestroy();
 		// The conditional argument type is `EntityID` whenever this compiles
 		// (the false branch is uninhabited); the cast recovers it for a body
 		// where `A` is still generic.
@@ -1737,7 +1738,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredAdd<A, D>,
 		...values: AttachValuesArg<SchemaOf<D>>
 	): this {
-		if (__DEV__) accessCheck.checkAdd(def);
+		if (DEV) accessCheck.checkAdd(def);
 		this.store.addComponentDeferred(
 			entityId,
 			def,
@@ -1750,7 +1751,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		entityId: EntityID,
 		def: D & DeclaredRemove<A, D>
 	): this {
-		if (__DEV__) accessCheck.checkRemove(def);
+		if (DEV) accessCheck.checkRemove(def);
 		this.store.removeComponentDeferred(entityId, def);
 		return this;
 	}
@@ -1790,7 +1791,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// add/remove edits the live key array under the walk (see `forEachEntity`).
 	// Buffer such edits and apply after.
 	//
-	// Access-checked under `__DEV__` against the system's `sparseReads` /
+	// Access-checked under `DEV` against the system's `sparseReads` /
 	// `sparseWrites` declarations (#496): add/remove/set_field require a write
 	// term, getField a read term (a write implies a read). `hasSparse` is
 	// unchecked, mirroring `hasComponent`. Sparse ids live in their own id
@@ -1802,7 +1803,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredSparseWrite<A, D>,
 		...values: AttachValuesArg<SparseSchemaOf<D>>
 	): this {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
+		if (DEV) accessCheck.checkSparseWrite(def);
 		this.store.addSparse(entityId, def, values[0] as Record<string, number> | undefined);
 		return this;
 	}
@@ -1811,7 +1812,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		entityId: EntityID,
 		def: D & DeclaredSparseWrite<A, D>
 	): this {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
+		if (DEV) accessCheck.checkSparseWrite(def);
 		this.store.removeSparse(entityId, def);
 		return this;
 	}
@@ -1825,7 +1826,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredSparseRead<A, D>,
 		field: string & keyof SparseSchemaOf<D>
 	): number {
-		if (__DEV__) accessCheck.checkSparseRead(def);
+		if (DEV) accessCheck.checkSparseRead(def);
 		return this.store.getSparseField(entityId, def, field);
 	}
 
@@ -1835,7 +1836,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		field: string & keyof SparseSchemaOf<D>,
 		value: number
 	): void {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
+		if (DEV) accessCheck.checkSparseWrite(def);
 		this.store.setSparseField(entityId, def, field, value);
 	}
 
@@ -1844,7 +1845,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// Registration is host-side (`ECS.registerRelation`), so it is not mirrored
 	// here; systems add/remove/query pairs.
 	//
-	// Access-checked under `__DEV__` against `relationReads` / `relationWrites`
+	// Access-checked under `DEV` against `relationReads` / `relationWrites`
 	// (#496): add/remove require a write term, target_of/targets_of/sources_of a
 	// read term (write implies read). `hasRelation` is unchecked, mirroring
 	// `hasComponent`. Relation ids are their own id space — the check keys the
@@ -1852,14 +1853,14 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 
 	/** Add a `(R, tgt)` pair to `src` (exclusive replaces, multi adds). */
 	public addRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt: EntityID): this {
-		if (__DEV__) accessCheck.checkRelationWrite(def);
+		if (DEV) accessCheck.checkRelationWrite(def);
 		this.store.addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`; for multi, omitting `tgt` removes all. */
 	public removeRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt?: EntityID): this {
-		if (__DEV__) accessCheck.checkRelationWrite(def);
+		if (DEV) accessCheck.checkRelationWrite(def);
 		this.store.removeRelation(src, def, tgt);
 		return this;
 	}
@@ -1869,19 +1870,19 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		src: EntityID,
 		def: D & DeclaredRelationRead<A, D>
 	): EntityID | undefined {
-		if (__DEV__) accessCheck.checkRelationRead(def);
+		if (DEV) accessCheck.checkRelationRead(def);
 		return this.store.targetOf(src, def);
 	}
 
 	/** All targets of `src` under `R`, ascending by id. */
 	public targetsOf<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
-		if (__DEV__) accessCheck.checkRelationRead(def);
+		if (DEV) accessCheck.checkRelationRead(def);
 		return this.store.targetsOf(src, def);
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id. */
 	public sourcesOf<D extends RelationDef>(def: D & DeclaredRelationRead<A, D>, tgt: EntityID): EntityID[] {
-		if (__DEV__) accessCheck.checkRelationRead(def);
+		if (DEV) accessCheck.checkRelationRead(def);
 		return this.store.sourcesOf(def, tgt);
 	}
 
@@ -1914,10 +1915,10 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	public emit(key: SignalKey): void;
 	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEmit(key.description ?? "");
 		}
-		if (__DEV__) this.store._trace?.eventEmitted(key.description ?? "");
+		if (DEV) this.store._trace?.eventEmitted(key.description ?? "");
 		const def = this.store.getEventDefByKey(key);
 		if (values === undefined) {
 			this.store.emitSignal(def as EventDef<EmptyEventSchema>);
@@ -1927,12 +1928,12 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	}
 
 	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
 		}
 		const def = this.store.getEventDefByKey(key);
 		const reader = this.store.getEventReader(def) as EventReader<S>;
-		if (__DEV__) this.store._trace?.eventRead(key.description ?? "", reader.length);
+		if (DEV) this.store._trace?.eventRead(key.description ?? "", reader.length);
 		return reader;
 	}
 
@@ -1943,7 +1944,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	public resource<K extends ResourceKey<any>>(
 		key: K & DeclaredResourceRead<A, K>
 	): ResourceValueOf<K> {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceRead(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRead(key.description ?? "");
@@ -1956,7 +1957,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		key: K & DeclaredResourceWrite<A, K>,
 		value: ResourceValueOf<NoInfer<K>>
 	): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceWrite(key.description ?? "");
@@ -1970,7 +1971,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	 * which serialises it against readers/writers of the same resource. Fails
 	 * closed on a missing key. */
 	public removeResource<K extends ResourceKey<any>>(key: K & DeclaredResourceWrite<A, K>): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRemove(key.description ?? "");
@@ -1991,7 +1992,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 	constructor(query: Query<Defs>, changedIds: number[]) {
 		this._query = query;
 		this._changedIds = changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < changedIds.length; i++) {
 				if (!query._include.has(changedIds[i])) {
 					throw new ECSError(
@@ -2047,7 +2048,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const lastTick = this._query._ctxLastRunTick();
 		const archs = this._query._nonEmpty();
 		const ids = this._changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
 			// publish the same optional scope `Query.forEach` does — otherwise
 			// `getOptionalColumnRead` falls into `checkOptionalFetch`'s lenient
@@ -2099,7 +2100,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const lastTick = this._query._ctxLastRunTick();
 		const archs = this._query._nonEmpty();
 		const ids = this._changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
 			// publish the same optional scope `Query.forEach` does — otherwise
 			// `getOptionalColumnRead` falls into `checkOptionalFetch`'s lenient

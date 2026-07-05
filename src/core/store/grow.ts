@@ -56,6 +56,7 @@ import {
 	type ArchetypeGrowSpec,
 	type TailArchetypeLayout
 } from "./layout_ops";
+import { DEV } from "../../dev_flag";
 
 // The per-archetype plan-entry shape lives in layout_ops.ts (shared with
 // `ExtendPlan.existing`); re-exported here so `GrowPlan` consumers keep their
@@ -172,7 +173,7 @@ function growColumnStoreInPlace(
 	//    `createColumnStore`; non-grown entries are left untouched).
 	let descOff = regionOff;
 	for (const [archetypeId, arch] of old.archetypes) {
-		if (__DEV__) {
+		if (DEV) {
 			// This positional rewrite trusts that `old.archetypes` Map order equals
 			// the on-store descriptor write order (`createColumnStore` writes in that
 			// order). Lock the invariant: the descriptor physically at `descOff` must

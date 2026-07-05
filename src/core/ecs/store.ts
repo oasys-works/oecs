@@ -107,6 +107,7 @@ import {
 } from "../store";
 import type { ECSMemoryCapContext } from "./ecs_memory";
 import { WorldRestoreError, type HostState } from "./resume";
+import { DEV } from "../../dev_flag";
 
 export interface ComponentMeta {
 	fieldNames: string[];
@@ -165,7 +166,7 @@ const EMPTY_DIRTY: EntityID[] = [];
 
 /** Sentinel in a `Template.overrideIndex`: the field name is owned by more
  * than one component, so a flat per-instance override cannot disambiguate
- * which column it means. Overriding such a field throws in `__DEV__`. */
+ * which column it means. Overriding such a field throws in `DEV`. */
 const TEMPLATE_OVERRIDE_AMBIGUOUS = -1;
 
 /** Scratch buffer for folding an f64 sparse field into `stateHash` as two
@@ -219,7 +220,7 @@ type TemplateFieldNames<Defs extends readonly ComponentDef[]> =
 
 /** Flat per-instance override map for `ECS.spawn`: any field of any
  * component in the template, each optional. A misspelled field is a compile
- * error (and still a `__DEV__` throw at runtime for untyped call sites). */
+ * error (and still a `DEV` throw at runtime for untyped call sites). */
 export type TemplateOverrides<Defs extends readonly ComponentDef[]> = {
 	readonly [K in TemplateFieldNames<Defs>]?: number;
 };
@@ -393,7 +394,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Per-world frame-trace sink (ADR-0030), installed via `ECS.setTrace`.
 	 * `null` unless a consumer attaches a recorder. Every call site is
-	 * `if (__DEV__) store._trace?.…`, so production builds dead-code-eliminate
+	 * `if (DEV) store._trace?.…`, so production builds dead-code-eliminate
 	 * the seam and pay only this one nullable field. The sink observes; it never
 	 * folds into `stateHash` (a scheduling artifact, like `_changedTick` / the
 	 * observer state below). */
@@ -877,7 +878,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Guard the canonical-ordering determinism surface. Throws
 	 * `DETERMINISM_DISABLED` when determinism wasn't opted into, naming the
 	 * method so the caller knows to pass `{ deterministic: true }`. Always on
-	 * (not `__DEV__`-gated): the surface is cold (never per-tick) so one boolean
+	 * (not `DEV`-gated): the surface is cold (never per-tick) so one boolean
 	 * check is free, and a silent non-canonical digest is the failure mode we're
 	 * preventing. */
 	private _requireDeterministic(method: string): void {
@@ -1024,7 +1025,7 @@ export class Store implements ObserverHost, QueryHost {
 				archAddr + ARCHETYPE_DESCRIPTOR_OFFSETS.column_count,
 				true
 			);
-			if (__DEV__) {
+			if (DEV) {
 				const descArchId = view.getUint32(
 					archAddr + ARCHETYPE_DESCRIPTOR_OFFSETS.archetype_id,
 					true
@@ -1243,7 +1244,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * surface. */
 	public entityIdAtRow(archetypeId: number, row: number): EntityID {
 		const arch = this.archGet(archetypeId as ArchetypeID);
-		if (__DEV__) {
+		if (DEV) {
 			if (row < 0 || row >= arch.entityCount) {
 				throw new ECSError(
 					ECS_ERROR.ARCHETYPE_NOT_FOUND,
@@ -1482,7 +1483,7 @@ export class Store implements ObserverHost, QueryHost {
 			if (overrides[key] === undefined) continue;
 			const idx = p.overrideIndex.get(key);
 			if (idx === undefined) {
-				if (__DEV__) {
+				if (DEV) {
 					throw new ECSError(
 						ECS_ERROR.FIELD_NOT_REGISTERED,
 						`template override: no field "${key}" in this template`
@@ -1491,7 +1492,7 @@ export class Store implements ObserverHost, QueryHost {
 				continue;
 			}
 			if (idx === TEMPLATE_OVERRIDE_AMBIGUOUS) {
-				if (__DEV__) {
+				if (DEV) {
 					throw new ECSError(
 						ECS_ERROR.FIELD_NOT_REGISTERED,
 						`template override: field "${key}" is ambiguous (owned by more than one component in this template); set it via the template defaults instead of a flat override`
@@ -1612,7 +1613,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * in the deferred loop. */
 	public destroyEntity(id: EntityID): void {
 		if (!this.isAlive(id)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 
@@ -1794,16 +1795,16 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Immediately disable an entity (idempotent). The entity must hold at least
 	 * one component — a component-less entity occupies no archetype row, so it
-	 * cannot be partitioned (a `__DEV__` error; prod no-op). */
+	 * cannot be partitioned (a `DEV` error; prod no-op). */
 	public disableEntity(id: EntityID): void {
 		if (!this.isAlive(id)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 		const index = getEntityIndex(id);
 		const row = this.entityRow[index];
 		if (row === UNASSIGNED) {
-			if (__DEV__)
+			if (DEV)
 				throw new ECSError(
 					ECS_ERROR.ENTITY_NOT_ALIVE,
 					"cannot disable a component-less entity (#577): it occupies no archetype row; add a component first"
@@ -1820,7 +1821,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Immediately enable an entity (idempotent). */
 	public enableEntity(id: EntityID): void {
 		if (!this.isAlive(id)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 		const index = getEntityIndex(id);
@@ -1837,7 +1838,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * disabled (it has no row to partition). */
 	public isDisabled(id: EntityID): boolean {
 		if (!this.isAlive(id)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return false;
 		}
 		const index = getEntityIndex(id);
@@ -1890,7 +1891,7 @@ export class Store implements ObserverHost, QueryHost {
 	// =======================================================
 
 	public destroyEntityDeferred(id: EntityID): void {
-		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		this._deferred.queueDestroy(id);
 	}
 
@@ -1898,12 +1899,12 @@ export class Store implements ObserverHost, QueryHost {
 	 * toggle performs would corrupt a `forEach` over that archetype if applied
 	 * mid-system, so it is deferred like add/remove. */
 	public disableEntityDeferred(id: EntityID): void {
-		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		this._deferred.queueToggle(id, true);
 	}
 
 	public enableEntityDeferred(id: EntityID): void {
-		if (__DEV__ && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(id)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		this._deferred.queueToggle(id, false);
 	}
 
@@ -2119,12 +2120,12 @@ export class Store implements ObserverHost, QueryHost {
 		def: ComponentDef,
 		values?: Record<string, number>
 	): void {
-		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		this._deferred.queueAdd(entityId, def, values ?? EMPTY_VALUES);
 	}
 
 	public removeComponentDeferred(entityId: EntityID, def: ComponentDef): void {
-		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		this._deferred.queueRemove(entityId, def);
 	}
 
@@ -2447,7 +2448,7 @@ export class Store implements ObserverHost, QueryHost {
 		const bucket = this.archGraph.componentIndex[cid];
 		if (bucket === undefined) return;
 		// `bucket` is already ascending by archetype id (ArchetypeGraph.install pushes ids in
-		// monotonic creation order — guarded in __DEV__), which IS the canonical
+		// monotonic creation order — guarded in DEV), which IS the canonical
 		// order this visit promises. The previous Map<Set> form had to copy the set
 		// into a fresh array and `sort()` it here every call; the ordered list drops
 		// both the allocation and the sort.
@@ -2599,7 +2600,7 @@ export class Store implements ObserverHost, QueryHost {
 		values?: Record<string, number>
 	): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 		this.sparseStoreOf(def).setRow(getEntityIndex(entityId), values ?? EMPTY_VALUES);
@@ -2608,7 +2609,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Remove a sparse component from an entity. No-op if absent. */
 	public removeSparse(entityId: EntityID, def: SparseComponentDef): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 		this.sparseStoreOf(def).remove(getEntityIndex(entityId));
@@ -2616,18 +2617,18 @@ export class Store implements ObserverHost, QueryHost {
 
 	public hasSparse(entityId: EntityID, def: SparseComponentDef): boolean {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return false;
 		}
 		return this.sparseStoreOf(def).has(getEntityIndex(entityId));
 	}
 
 	public getSparseField(entityId: EntityID, def: SparseComponentDef, field: string): number {
-		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		const store = this.sparseStoreOf(def);
 		const fieldIdx = store.fieldIndex[field];
 		if (fieldIdx === undefined) {
-			if (__DEV__) {
+			if (DEV) {
 				throw new ECSError(
 					ECS_ERROR.FIELD_NOT_REGISTERED,
 					`sparse component has no field "${field}"`
@@ -2637,7 +2638,7 @@ export class Store implements ObserverHost, QueryHost {
 		}
 		const value = store.getField(getEntityIndex(entityId), fieldIdx);
 		if (value === undefined) {
-			if (__DEV__) {
+			if (DEV) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
 					`entity does not hold this sparse component`
@@ -2654,11 +2655,11 @@ export class Store implements ObserverHost, QueryHost {
 		field: string,
 		value: number
 	): void {
-		if (__DEV__ && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		const store = this.sparseStoreOf(def);
 		const fieldIdx = store.fieldIndex[field];
 		if (fieldIdx === undefined) {
-			if (__DEV__) {
+			if (DEV) {
 				throw new ECSError(
 					ECS_ERROR.FIELD_NOT_REGISTERED,
 					`sparse component has no field "${field}"`
@@ -2667,7 +2668,7 @@ export class Store implements ObserverHost, QueryHost {
 			return;
 		}
 		const ok = store.setField(getEntityIndex(entityId), fieldIdx, value);
-		if (__DEV__ && !ok) {
+		if (DEV && !ok) {
 			throw new ECSError(
 				ECS_ERROR.COMPONENT_NOT_REGISTERED,
 				`entity does not hold this sparse component`
@@ -2818,7 +2819,7 @@ export class Store implements ObserverHost, QueryHost {
 			const meta = host.archetypeRows[r];
 			const a = this.archGet(meta.archetypeId as ArchetypeID);
 			const rows = rowsByArch.get(meta.archetypeId) ?? [];
-			if (__DEV__) {
+			if (DEV) {
 				if (rows.length !== meta.length) {
 					throw new WorldRestoreError(
 						`archetype ${meta.archetypeId} row-count mismatch on restore: scan found ` +
@@ -2960,7 +2961,7 @@ export class Store implements ObserverHost, QueryHost {
 		includeDisabled: boolean
 	): void {
 		const stores = this.sparseStores;
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < sparseInclude.length; i++) {
 				if (stores[sparseInclude[i] as number] === undefined)
 					throw new ECSError(
@@ -3101,7 +3102,7 @@ export class Store implements ObserverHost, QueryHost {
 		values?: Record<string, number>
 	): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 
@@ -3202,7 +3203,7 @@ export class Store implements ObserverHost, QueryHost {
 		}[]
 	): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 
@@ -3349,7 +3350,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	public removeComponent(entityId: EntityID, def: ComponentDef): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 
@@ -3396,7 +3397,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * once avoids planting N-1 intermediates the entity never lives in. */
 	public removeComponents(entityId: EntityID, defs: ComponentDef[]): void {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return;
 		}
 
@@ -3448,7 +3449,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	public hasComponent(entityId: EntityID, def: ComponentHandle): boolean {
 		if (!this.isAlive(entityId)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 			return false;
 		}
 		const entityIndex = getEntityIndex(entityId);
@@ -3717,7 +3718,7 @@ export class Store implements ObserverHost, QueryHost {
 		this.events.clearEvents();
 	}
 
-	/** `__DEV__`-only mid-update emit detection — see
+	/** `DEV`-only mid-update emit detection — see
 	 * `EventRegistry.devBufferedEventCount`. */
 	public _devBufferedEventCount(): number {
 		return this.events.devBufferedEventCount();

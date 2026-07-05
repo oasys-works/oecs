@@ -23,7 +23,7 @@
  *     declared on `reads` so `accessCheck` and a future parallel scheduler see
  *     them as read edges. The only access a condition can perform *through* the
  *     context is a resource read, which `accessCheck.enterCondition` validates
- *     against the declared `resourceReads` in `__DEV__`.
+ *     against the declared `resourceReads` in `DEV`.
  *
  * Attach a condition to a single system via `SystemEntry.runIf`, or to a whole
  * group via `configureSet(set, { runIf })`; a set member's effective gate is
@@ -33,6 +33,7 @@
 import type { ComponentDef } from "./component";
 import type { ResourceKey } from "./resource";
 import type { Query } from "./query";
+import { DEV } from "../../dev_flag";
 
 /**
  * The read-only slice of `SystemContext` a run condition is handed. Deliberately
@@ -44,7 +45,7 @@ import type { Query } from "./query";
 export interface ConditionContext {
 	/** Current ECS tick — the deterministic clock built-ins key off. */
 	readonly ecsTick: number;
-	/** Read a resource value (checked against `resourceReads` in `__DEV__`). */
+	/** Read a resource value (checked against `resourceReads` in `DEV`). */
 	resource<T>(key: ResourceKey<T>): T;
 	/** Membership probe for a resource — unchecked, mirrors `hasComponent`. */
 	hasResource<T>(key: ResourceKey<T>): boolean;
@@ -66,7 +67,7 @@ export interface RunCondition {
 	 *  not runtime-checkable today, but it is the read-edge a parallel scheduler
 	 *  will consume. */
 	readonly reads?: readonly ComponentDef[];
-	/** Resources the predicate reads. Validated at runtime in `__DEV__` when the
+	/** Resources the predicate reads. Validated at runtime in `DEV` when the
 	 *  condition evaluates inside `accessCheck.enterCondition`. */
 	readonly resourceReads?: readonly ResourceKey<any>[];
 }
@@ -102,10 +103,10 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
  * — so `%` never produces `-0` and the check needs no signed-zero reliance.
  */
 export function runEveryNTicks(n: number, offset = 0): RunCondition {
-	if (__DEV__ && (!Number.isInteger(n) || n < 1)) {
+	if (DEV && (!Number.isInteger(n) || n < 1)) {
 		throw new Error(`run_every_n_ticks: n must be a positive integer, got ${n}`);
 	}
-	if (__DEV__ && !Number.isInteger(offset)) {
+	if (DEV && !Number.isInteger(offset)) {
 		throw new Error(`run_every_n_ticks: offset must be an integer, got ${offset}`);
 	}
 	// Fold the phase into [0, n) once at construction (handles offset ≥ n and
@@ -123,7 +124,7 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
  * its component defs are declared as `reads`. `count()` is a membership sum over
  * matching archetypes (no column reads), so it trips no `accessCheck` read.
  *
- * The query must be **dense-only**: `count()` asserts this in `__DEV__`
+ * The query must be **dense-only**: `count()` asserts this in `DEV`
  * (`_assertDenseOnly`), so pass a plain `world.query(...)` — a query carrying
  * `.optional(...)` or sparse terms throws. Gate on sparse membership with a
  * custom predicate over `forEachEntity` instead.

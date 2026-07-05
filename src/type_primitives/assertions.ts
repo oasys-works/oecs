@@ -1,7 +1,7 @@
 /***
  * Assertions — Dev-only runtime validation and branded casting.
  *
- * All checks are guarded by __DEV__ and tree-shaken in production builds.
+ * All checks are guarded by DEV and tree-shaken in production builds.
  * validateAndCast is the primary tool for creating branded IDs:
  * it validates the input in dev and returns the value as the branded type.
  * unsafeCast bypasses all checks (used when the caller guarantees validity).
@@ -9,6 +9,7 @@
  ***/
 
 import { TYPE_ERROR, AssertionError } from "./error";
+import { DEV } from "../dev_flag";
 
 export const isNonNegativeInteger = (v: number): boolean => Number.isInteger(v) && v >= 0;
 
@@ -23,7 +24,7 @@ export function assertNonNull<T>(value: T): asserts value is NonNullable<T> {
 	// Checks if value is not null or undefined
 	// value == null is true for both value == null and value == undefined
 	//
-	if (__DEV__ && value == null)
+	if (DEV && value == null)
 		throw new AssertionError(
 			TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE,
 			"Expected type to be not NULL or UNDEFINED"
@@ -35,7 +36,7 @@ export function assert<T, Result extends T = T>(
 	condition: (v: T) => v is Result,
 	errMessage: string
 ): asserts value is Result {
-	if (__DEV__ && !condition(value)) {
+	if (DEV && !condition(value)) {
 		throw new AssertionError(
 			TYPE_ERROR.ASSERTION_FAIL_CONDITION,
 			`Expected value to meet condition: ${errMessage}`
@@ -48,7 +49,7 @@ export function validateAndCast<T, Result extends T = T>(
 	validator: (v: T) => boolean,
 	errMessage: string
 ): Result {
-	if (__DEV__ && !validator(value)) {
+	if (DEV && !validator(value)) {
 		throw new AssertionError(
 			TYPE_ERROR.VALIDATION_FAIL_CONDITION,
 			`Expected value to meet validation: ${errMessage}`
@@ -68,7 +69,7 @@ export function unsafeCast<T>(value: unknown): T {
  * didn't" a COMPILE error at the call site, and the throw catches runtime
  * values that bypassed the type layer (deserialized/foreign data).
  *
- * Deliberately NOT `__DEV__`-gated, unlike the rest of this file: it marks a
+ * Deliberately NOT `DEV`-gated, unlike the rest of this file: it marks a
  * can't-happen branch, so it costs nothing until the day it fires — and that
  * day it must fire in production too, not silently fall through.
  */

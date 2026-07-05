@@ -26,7 +26,7 @@
  * `accessCheck.enter / leave`; SystemContext + Archetype consult
  * `accessCheck` on every read/write, structural change, sparse/relation
  * mutation, and resource read/write. Undeclared access throws an `ECSError`
- * in `__DEV__` (design doc §5.1). The same declarations pre-warm the
+ * in `DEV` (design doc §5.1). The same declarations pre-warm the
  * archetype graph (#211; sparse/relations cause no archetype transition, so
  * they do not feed prewarm).
  *
@@ -108,7 +108,7 @@ export interface SystemAccessConfig {
 	// (`RelationID`) are each a SEPARATE id space, so they get their own terms
 	// rather than mis-keying through the dense sets. Safety for every optional
 	// term is unchanged — a system that DOES mutate/read undeclared state still
-	// throws in `__DEV__` (the accessCheck set is empty, so the check fails).
+	// throws in `DEV` (the accessCheck set is empty, so the check fails).
 	// addSparse / removeSparse / setSparseField and addRelation /
 	// removeRelation are WRITES; a write implies a read (mirroring the dense
 	// rule), so a `*_writes` term also authorises reads of that handle.
@@ -154,14 +154,14 @@ export interface SystemConfig extends SystemAccessConfig {
 
 	/** Components the system queries via `ctx.query(...)`, one group per query.
 	 * OPTIONAL — when provided, `registerSystem` validates `queries ⊆ reads ∪
-	 * writes` in `__DEV__` (#213 Phase D, `_assertQueriesDeclared`): a query term
+	 * writes` in `DEV` (#213 Phase D, `_assertQueriesDeclared`): a query term
 	 * reads each listed component, so this fails fast at registration instead of
 	 * at the first iteration's `accessCheck`. */
 	queries?: readonly (readonly ComponentDef[])[];
 
 	/** Grant this system FULL world access — it may read/write/add/remove/destroy
 	 * ANY component, sparse, relation, or resource without declaring them. The
-	 * `__DEV__` access check is bypassed for its whole span (a no-op in
+	 * `DEV` access check is bypassed for its whole span (a no-op in
 	 * production, where the check is already compiled out). For trusted engine /
 	 * host machinery that mutates components not known at registration — the
 	 * host→ECS command-apply system (#681) is the canonical case; a save/load or
@@ -191,7 +191,7 @@ export interface SystemConfig extends SystemAccessConfig {
 // despawns ∪ transitions.remove, destroy ⇔ despawns non-empty, write-implies-
 // read for sparse/relation/resource), and types the system's `ctx` as
 // `SystemContext<DeclaredAccess<…>>`. Undeclared access then fails at COMPILE
-// time with the same taxonomy the runtime check throws with in `__DEV__`.
+// time with the same taxonomy the runtime check throws with in `DEV`.
 //
 // Encoding notes (each choice is load-bearing; validated empirically):
 //   - The guarded `SystemContext` methods keep a STABLE type-param constraint
@@ -461,7 +461,7 @@ export function _normalizeAccess(config: SystemAccessConfig): SystemAccessDeclar
 	};
 }
 
-/** @internal Phase D lint (issue #213): in `__DEV__`, validate that every
+/** @internal Phase D lint (issue #213): in `DEV`, validate that every
  * component a system lists in `queries` is covered by `reads ∪ writes`. A query
  * term reads each listed component's presence/columns, so querying one the
  * system never declared read access to would throw at the first iteration

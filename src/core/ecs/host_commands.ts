@@ -42,6 +42,7 @@ import {
 	drainCommandRing,
 	type PayloadCodec
 } from "../store";
+import { DEV } from "../../dev_flag";
 
 /** One component to attach to a freshly spawned entity. `values` are required and
  * complete: the deferred add path writes exactly the fields given and does NOT
@@ -128,7 +129,7 @@ export type HostCommand =
  * That immediate/deferred split is a sharp edge: a `setField` targeting a
  * component the entity does NOT yet have — because an `addComponent`/`spawn`
  * enqueued in the SAME drain is still pending its flush — would otherwise fail
- * deep in `getColumn` with an opaque "component not registered". The `__DEV__`
+ * deep in `getColumn` with an opaque "component not registered". The `DEV`
  * guard below turns that into an actionable message. The fix is structural, not a
  * retry: pass the value in `addComponent`/`spawnEntry` (which carries complete
  * field values), or issue the `setField` on a later frame.
@@ -153,11 +154,11 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 			ctx.removeComponent(cmd.eid, cmd.def);
 			return undefined;
 		case "set_field":
-			// `hasComponent` itself throws ENTITY_NOT_ALIVE in __DEV__ for a dead
+			// `hasComponent` itself throws ENTITY_NOT_ALIVE in DEV for a dead
 			// eid (a clear error already); a `false` return is the alive-but-missing
 			// case the immediate/deferred split makes easy to hit (see the dispatch
 			// doc above).
-			if (__DEV__ && !ctx.hasComponent(cmd.eid, cmd.def)) {
+			if (DEV && !ctx.hasComponent(cmd.eid, cmd.def)) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
 					`host set_field on entity ${cmd.eid} targets a component it does not have. ` +
@@ -225,7 +226,7 @@ export class HostCommandQueue {
 	 * `addComponent`/`spawn` `def` and `setField` it in the same frame: the add is
 	 * still pending its flush when the immediate set runs (carry the value in
 	 * `addComponent`/`spawnEntry` instead). `applyHostCommand` throws an
-	 * actionable error in `__DEV__` if you do. */
+	 * actionable error in `DEV` if you do. */
 	setField<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,

@@ -312,7 +312,7 @@ export abstract class RelationStore {
 
 	/** The single target of source `index`, or `undefined`. Exclusive reads the
 	 * sparse field; multi has no single target and returns `undefined` (matching
-	 * the production `targetOf`-on-multi read, which the `__DEV__` guard rejects). */
+	 * the production `targetOf`-on-multi read, which the `DEV` guard rejects). */
 	public abstract singleTarget(index: number): EntityID | undefined;
 
 	/** All targets of source `index`, ascending by id — one or zero for

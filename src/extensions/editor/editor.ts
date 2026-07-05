@@ -78,6 +78,10 @@ function fieldKey(eid: EntityID, def: ComponentHandle, field: string): string {
 	return `${eid}:${def.id}:${field}`;
 }
 
+/** Builder → in-flight transaction. Module-scoped so the mutable escape hatch
+ * never appears on the published `TransactionBuilder` type. */
+const txns = new WeakMap<TransactionBuilder, MutableTxn>();
+
 /**
  * Accumulates the `forward`/`inverse` commands for ONE transaction. Each method
  * appends a forward command and its inverse, computing the inverse from the
@@ -88,13 +92,16 @@ function fieldKey(eid: EntityID, def: ComponentHandle, field: string): string {
  */
 export class TransactionBuilder {
 	/** @internal */
-	readonly _txn: MutableTxn = { forward: [], inverse: [] };
-
-	/** @internal */
 	constructor(
 		private readonly readField: FieldReader,
 		private readonly shadow: Map<string, number>
-	) {}
+	) {
+		txns.set(this, { forward: [], inverse: [] });
+	}
+
+	private get _txn(): MutableTxn {
+		return txns.get(this)!;
+	}
 
 	/**
 	 * Spawn an entity carrying `components`. Inverse: despawn the created entity,
@@ -249,7 +256,7 @@ export class Editor {
 	transaction(build: (tx: TransactionBuilder) => void): EditorTransaction {
 		const builder = new TransactionBuilder(this.readField, this.shadow);
 		build(builder);
-		return this.commit(builder._txn);
+		return this.commit(txns.get(builder)!);
 	}
 
 	/** Spawn `components` as its own undo entry. `onSpawned` reports the new id. */

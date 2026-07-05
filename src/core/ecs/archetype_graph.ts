@@ -38,6 +38,7 @@ import {
 	type ArchetypeSpec,
 	type ColumnSpec
 } from "../store";
+import { DEV } from "../../dev_flag";
 
 /** What the graph needs from `Store` — closure-injected. `extendStore` and
  * `materialize` bind the storage lifecycle (SAB extend + column-store views
@@ -91,7 +92,7 @@ export class ArchetypeGraph {
 	}
 
 	public get(id: ArchetypeID): Archetype {
-		if (__DEV__) {
+		if (DEV) {
 			if (id < 0 || id >= this.archetypes.length) {
 				throw new ECSError(ECS_ERROR.ARCHETYPE_NOT_FOUND, `Archetype with ID ${id} not found`);
 			}
@@ -269,7 +270,7 @@ export class ArchetypeGraph {
 		// Ids are minted monotonically and installed in order, so each bucket stays
 		// sorted ascending BY CONSTRUCTION — i.e. canonical archetype order, which
 		// lets `_forEachChangedArchetype` iterate without re-sorting. The
-		// `__DEV__` guard collapses all three points into one loud check: a push
+		// `DEV` guard collapses all three points into one loud check: a push
 		// that isn't strictly ascending means the invariant broke (a second writer,
 		// or a re-installed id). See ADR-0015.
 		mask.forEach((bit) => {
@@ -279,7 +280,7 @@ export class ArchetypeGraph {
 				bucket = [];
 				this.componentIndex[componentId] = bucket;
 			}
-			if (__DEV__ && bucket.length > 0 && (id as number) <= (bucket[bucket.length - 1] as number)) {
+			if (DEV && bucket.length > 0 && (id as number) <= (bucket[bucket.length - 1] as number)) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_INDEX_INVARIANT,
 					`component_index bucket for component ${componentId} received archetype ${id as number} out of ascending order (last = ${bucket[bucket.length - 1] as number}). Buckets are duplicate-free and ascending by construction (see install / ADR-0015) — this means install ran twice for an id, or a second writer of component_index was introduced.`

@@ -130,6 +130,7 @@ import {
 	type ResolvedECSMemory,
 	type ECSMemoryOptions
 } from "./ecs_memory";
+import { DEV } from "../../dev_flag";
 
 export interface ECSOptions {
 	fixedTimestep?: number;
@@ -396,10 +397,10 @@ export class ECS implements QueryResolver {
 	 * the schedule to the pure-TS path.
 	 *
 	 * One backend per ECS: attaching while one is already attached throws in
-	 * `__DEV__` (detach first). The engine never inspects the backend beyond
+	 * `DEV` (detach first). The engine never inspects the backend beyond
 	 * `setLayout` / `run` — it carries no game vocabulary. */
 	public attachBackend(backend: ComputeBackend): () => void {
-		if (__DEV__ && this._backend !== null) {
+		if (DEV && this._backend !== null) {
 			throw new ECSError(
 				ECS_ERROR.BACKEND_ALREADY_ATTACHED,
 				"A ComputeBackend is already attached; detach it before attaching another (one backend per ECS)."
@@ -436,11 +437,11 @@ export class ECS implements QueryResolver {
 	 * also receives a `phaseBoundary(phase)` at each phase's post-flush settle
 	 * point — the safe seam to read `stateHash()` between phases of one frame and
 	 * bisect a divergence to the exact phase (#797 / ADR-0032). The seam is
-	 * `__DEV__`-gated end to end — in a production build this setter keeps an empty
+	 * `DEV`-gated end to end — in a production build this setter keeps an empty
 	 * body and the world never retains a sink. The sink only observes; it does not
 	 * perturb `stateHash`, ordering, or any behaviour. */
 	public setTrace(sink: FrameTraceSink | null): void {
-		if (__DEV__) this.store._trace = sink;
+		if (DEV) this.store._trace = sink;
 	}
 
 	// Overload 1: record syntax (per-field types)
@@ -521,7 +522,7 @@ export class ECS implements QueryResolver {
 		const e = this.store.createEntity();
 		for (let i = 0; i < items.length; i++) {
 			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
+			if (DEV) accessCheck.checkAdd(def);
 			this.store.addComponent(e, def, bundleValues(items[i]));
 		}
 		return e;
@@ -532,7 +533,7 @@ export class ECS implements QueryResolver {
 	 *  ECS surface is unsuffixed because the context (`ECS` vs Store) already
 	 *  implies the mode; `Store.destroyEntity` is the immediate path. */
 	public destroyEntity(id: EntityID): void {
-		if (__DEV__) accessCheck.checkDestroy();
+		if (DEV) accessCheck.checkDestroy();
 		this.store.destroyEntityDeferred(id);
 	}
 
@@ -547,7 +548,7 @@ export class ECS implements QueryResolver {
 		def: ComponentDef,
 		values?: Record<string, number>
 	): this {
-		if (__DEV__) accessCheck.checkAdd(def);
+		if (DEV) accessCheck.checkAdd(def);
 		this.store.addComponent(entityId, def, values ?? EMPTY_VALUES);
 		return this;
 	}
@@ -560,20 +561,20 @@ export class ECS implements QueryResolver {
 		entityId: EntityID,
 		entries: TemplateEntries<Defs>
 	): void {
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < entries.length; i++) accessCheck.checkAdd(entries[i].def);
 		}
 		this.store.addComponents(entityId, entries);
 	}
 
 	public removeComponent(entityId: EntityID, def: ComponentDef): this {
-		if (__DEV__) accessCheck.checkRemove(def);
+		if (DEV) accessCheck.checkRemove(def);
 		this.store.removeComponent(entityId, def);
 		return this;
 	}
 
 	public removeComponents(entityId: EntityID, defs: ComponentDef[]): void {
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < defs.length; i++) accessCheck.checkRemove(defs[i]);
 		}
 		this.store.removeComponents(entityId, defs);
@@ -597,7 +598,7 @@ export class ECS implements QueryResolver {
 		def: ComponentDef,
 		values?: Record<string, number>
 	): void {
-		if (__DEV__) accessCheck.checkAdd(def);
+		if (DEV) accessCheck.checkAdd(def);
 		this.store.batchAddComponent(src, def, values);
 	}
 
@@ -608,7 +609,7 @@ export class ECS implements QueryResolver {
 	 * Takes an `ArchetypeID` (from `ArchetypeView.id`); see `batchAddComponent`.
 	 */
 	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): void {
-		if (__DEV__) accessCheck.checkRemove(def);
+		if (DEV) accessCheck.checkRemove(def);
 		this.store.batchRemoveComponent(src, def);
 	}
 
@@ -617,7 +618,7 @@ export class ECS implements QueryResolver {
 		def: ComponentDef<S>,
 		field: string & keyof S
 	): number {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
@@ -632,7 +633,7 @@ export class ECS implements QueryResolver {
 		field: string & keyof S,
 		value: number
 	): void {
-		if (__DEV__) {
+		if (DEV) {
 			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		}
 		const arch = this.store.getEntityArchetype(entityId);
@@ -746,7 +747,7 @@ export class ECS implements QueryResolver {
 	 * as literal tuples and `fn` / `onAdded` receive
 	 * `SystemContext<DeclaredAccess<…>>` — undeclared access fails to compile
 	 * with the same taxonomy the runtime `accessCheck` throws with in
-	 * `__DEV__`. A config VALUE typed as plain `SystemConfig` (dynamically
+	 * `DEV`. A config VALUE typed as plain `SystemConfig` (dynamically
 	 * built) still matches: its erased declaration lists compute a permissive
 	 * access record. Escape hatch: annotate `fn(ctx: SystemContext, dt)`
 	 * explicitly to keep a system permissive at compile time. */
@@ -792,8 +793,8 @@ export class ECS implements QueryResolver {
 				// query form with its `queryFn` second arg forgotten, which would
 				// otherwise silently bind `q := SystemContext`, `ctx := dt`, and
 				// `dt := undefined` (a NaN trap on the first arithmetic). Fail fast
-				// in `__DEV__` instead. Compiled out of production builds.
-				if (__DEV__ && fnOrConfig.length >= 3) {
+				// in `DEV` instead. Compiled out of production builds.
+				if (DEV && fnOrConfig.length >= 3) {
 					throw new ECSError(
 						ECS_ERROR.SYSTEM_FN_ARITY,
 						`registerSystem was passed a ${fnOrConfig.length}-parameter function with no ` +
@@ -811,7 +812,7 @@ export class ECS implements QueryResolver {
 
 		// Phase D lint (#213): catch a `queries` declaration that outruns
 		// `reads ∪ writes` at registration, before the system's first iteration.
-		if (__DEV__) _assertQueriesDeclared(config);
+		if (DEV) _assertQueriesDeclared(config);
 
 		const id = asSystemId(this.nextSystemId++);
 		const descriptor: SystemDescriptor = Object.freeze({
@@ -845,11 +846,11 @@ export class ECS implements QueryResolver {
 
 		for (const descriptor of this.systems.values()) {
 			if (descriptor.onAdded === undefined) continue;
-			if (__DEV__) accessCheck.enter(descriptor);
+			if (DEV) accessCheck.enter(descriptor);
 			try {
 				descriptor.onAdded(this.ctx);
 			} finally {
-				if (__DEV__) accessCheck.leave();
+				if (DEV) accessCheck.leave();
 			}
 		}
 		this.schedule.runStartup(this.ctx, this._tick);
@@ -890,10 +891,10 @@ export class ECS implements QueryResolver {
 		// `dispatchStructural` / `dispatchSet`). Dev-only; `prevAccessSpan` is
 		// null on the normal host-driven (non-nested) path, so the restore is a
 		// no-op there. See `docs/PATTERNS.md` §97 (multi-world isolation).
-		const prevAccessSpan = __DEV__ ? accessCheck.current() : null;
+		const prevAccessSpan = DEV ? accessCheck.current() : null;
 		try {
 			this.store._tick = this._tick;
-			if (__DEV__) this.store._trace?.tickBegin(this._tick, dt);
+			if (DEV) this.store._trace?.tickBegin(this._tick, dt);
 
 			// Publish row counts before the first phase runs. Covers any
 			// immediate-mode `addComponents` / `removeComponents` /
@@ -927,9 +928,9 @@ export class ECS implements QueryResolver {
 			// the tick boundary (snapshot/restore excludes event state and relies on
 			// that). Any structural ops an onSet observer enqueues flush at the next
 			// tick's first phase boundary.
-			const evBefore = __DEV__ ? this.store._devBufferedEventCount() : 0;
+			const evBefore = DEV ? this.store._devBufferedEventCount() : 0;
 			this._observers.dispatchSet(this._tick);
-			if (__DEV__ && this.store._devBufferedEventCount() !== evBefore) {
+			if (DEV && this.store._devBufferedEventCount() !== evBefore) {
 				// An onSet observer emitted: `clearEvents` below would wipe it before
 				// any reader, so it is silently dropped — and would break snapshot/
 				// restore determinism if it survived (#586). Bridge a detected change to
@@ -940,11 +941,11 @@ export class ECS implements QueryResolver {
 				);
 			}
 			this.store.clearEvents();
-			if (__DEV__) this.store._trace?.tickEnd(this._tick);
+			if (DEV) this.store._trace?.tickEnd(this._tick);
 			this._tick++;
 		} finally {
 			// Restore the outer world's access span (no-op when not nested).
-			if (__DEV__ && prevAccessSpan !== null) accessCheck.enter(prevAccessSpan);
+			if (DEV && prevAccessSpan !== null) accessCheck.enter(prevAccessSpan);
 		}
 	}
 
@@ -1286,7 +1287,7 @@ export class ECS implements QueryResolver {
 	 *
 	 * Observer callbacks that touch ECS state must declare it via `access`
 	 * (merged over an all-empty declaration) — undeclared access throws in
-	 * `__DEV__`, and those decls drive the firing order. `yieldExisting` replays
+	 * `DEV`, and those decls drive the firing order. `yieldExisting` replays
 	 * `onAdd` over current matches on registration. Register at world-build time
 	 * (before `startup()`); the returned handle's `dispose()` unregisters.
 	 */

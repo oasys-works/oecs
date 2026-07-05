@@ -38,6 +38,7 @@ import {
 	unsafeCast
 } from "../../type_primitives";
 import { ECSError, ECS_ERROR } from "./utils/error";
+import { DEV } from "../../dev_flag";
 
 export type EventID = Brand<number, "event_id">;
 export const asEventId = (value: number) =>
@@ -122,12 +123,12 @@ export class EventChannel {
 	public emit(values: Record<string, number>): void {
 		const names = this.fieldNames;
 		const cols = this.columns;
-		if (__DEV__) {
+		if (DEV) {
 			// Validate ALL fields before mutating any column. Pushing per-field and
 			// throwing mid-loop would leave earlier columns one row ahead of
 			// `reader.length` and the un-pushed columns — a permanent desync if the
 			// throw is caught. Validate-then-push leaves the production path (no
-			// __DEV__) a single tight push loop. #727.
+			// DEV) a single tight push loop. #727.
 			for (let i = 0; i < names.length; i++) {
 				if (!(names[i] in values)) {
 					throw new ECSError(

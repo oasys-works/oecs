@@ -43,6 +43,7 @@ import type { RunCondition } from "./run_condition";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { STARTUP_DELTA_TIME } from "./utils/constants";
 import { accessCheck } from "./access_check";
+import { DEV } from "../../dev_flag";
 
 export enum SCHEDULE {
 	PRE_STARTUP = "PRE_STARTUP",
@@ -182,7 +183,7 @@ export class Schedule {
 			const conditions = isEntry ? toArray(entry.runIf) : EMPTY_ARRAY;
 			const sets = isEntry ? toArray(entry.set) : EMPTY_ARRAY;
 
-			if (__DEV__) {
+			if (DEV) {
 				if (this.systemIndex.has(descriptor)) {
 					throw new ECSError(
 						ECS_ERROR.DUPLICATE_SYSTEM,
@@ -368,28 +369,28 @@ export class Schedule {
 			// access span wraps either path identically, so the system's declared
 			// `writes` authorise whatever shared memory the backend touches.
 			const handle = backend !== null ? desc.backendHandle : undefined;
-			if (__DEV__) accessCheck.enter(desc);
-			if (__DEV__) ctx._trace?.systemStart(desc, label);
+			if (DEV) accessCheck.enter(desc);
+			if (DEV) ctx._trace?.systemStart(desc, label);
 			try {
 				if (handle !== undefined) backend!.run(handle);
 				else desc.fn(ctx, deltaTime);
 			} finally {
-				if (__DEV__) ctx._trace?.systemEnd(desc);
-				if (__DEV__) accessCheck.leave();
+				if (DEV) ctx._trace?.systemEnd(desc);
+				if (DEV) accessCheck.leave();
 			}
 			this.systemLastRun.set(desc, tick);
 		}
 		// Flush deferred changes after each phase so the next phase sees a consistent state
-		if (__DEV__) ctx._trace?.flushBegin(label);
+		if (DEV) ctx._trace?.flushBegin(label);
 		ctx.flush();
-		if (__DEV__) ctx._trace?.flushEnd(label);
+		if (DEV) ctx._trace?.flushEnd(label);
 		// The phase has fully settled — systems ran, deferred buffer + observer
 		// cascade flushed — so the live world is at a consistent, fingerprint-able
 		// point. Fire the per-phase boundary so a consumer can read `stateHash()`
 		// between the phases of one frame and bisect a divergence to this phase
-		// (#797 / ADR-0032). `__DEV__`-gated like the rest of the seam (zero prod
+		// (#797 / ADR-0032). `DEV`-gated like the rest of the seam (zero prod
 		// cost) and read-only, so it never perturbs the hash or ordering.
-		if (__DEV__) ctx._trace?.phaseBoundary(label);
+		if (DEV) ctx._trace?.phaseBoundary(label);
 	}
 
 	/**
@@ -430,12 +431,12 @@ export class Schedule {
 	private evalConditions(conditions: readonly RunCondition[], ctx: SystemContext): boolean {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i];
-			if (__DEV__) accessCheck.enterCondition(cond);
+			if (DEV) accessCheck.enterCondition(cond);
 			let ok: boolean;
 			try {
 				ok = cond.evaluate(ctx);
 			} finally {
-				if (__DEV__) accessCheck.leave();
+				if (DEV) accessCheck.leave();
 			}
 			if (!ok) return false;
 		}
@@ -579,7 +580,7 @@ export class Schedule {
 				continue;
 			}
 			if (!nodeSet.has(target)) {
-				if (__DEV__) this.warnDroppedEdge(source, target, direction, label);
+				if (DEV) this.warnDroppedEdge(source, target, direction, label);
 				continue;
 			}
 			this.addDirectedEdge(source, target, direction, edges);
@@ -612,7 +613,7 @@ export class Schedule {
 	 * certainly a typo or a system that was never scheduled; without this warning
 	 * the constraint vanishes and the system runs in insertion-order tiebreak as
 	 * if unconstrained, with nothing to distinguish mistake from intent. Compiled
-	 * out of production builds by the `__DEV__` guards at the call sites.
+	 * out of production builds by the `DEV` guards at the call sites.
 	 */
 	private warnDroppedEdge(
 		source: SystemDescriptor,

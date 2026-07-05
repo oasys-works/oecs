@@ -175,7 +175,7 @@ export interface EcsMapSyncOptions<V> {
 	eq?: (a: V, b: V) => boolean;
 	/**
 	 * Access surface the projection touches, merged over the synced components'
-	 * `reads`. `__DEV__` access-checks the observer callbacks exactly like a system.
+	 * `reads`. `DEV` access-checks the observer callbacks exactly like a system.
 	 */
 	access?: Partial<SystemAccessDeclaration>;
 	/**
@@ -474,7 +474,7 @@ export interface SingletonStructSync<V extends object> {
 export interface SingletonSyncOptions<V extends object = Record<string, number>> {
 	/**
 	 * Access surface the publish touches, merged over the synced def's read.
-	 * `__DEV__` access-checks the observer callbacks exactly like a system.
+	 * `DEV` access-checks the observer callbacks exactly like a system.
 	 */
 	access?: Partial<SystemAccessDeclaration>;
 	/** Replay current state on registration (default `true`). flecs `yieldExisting`. */

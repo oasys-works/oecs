@@ -25,6 +25,7 @@
  * a property *read* (the `get` trap) does.
  */
 import { signal } from "./kernel";
+import { DEV } from "../dev_flag";
 
 /** Per-field setters: `set.field(value)`. */
 export type StructSetters<T> = { readonly [K in keyof T]: (v: T[K]) => void };
@@ -81,7 +82,7 @@ export function reactiveStruct<T extends object>(
 		// setter) and a TYPO'D field silently stuck on the hidden target as a
 		// non-reactive value.
 		set: (_, k) => {
-			if (__DEV__) {
+			if (DEV) {
 				throw new TypeError(
 					`reactiveStruct proxy is read-only: use set.${String(k)}(value) — ` +
 						`the setters tuple returned alongside the proxy`

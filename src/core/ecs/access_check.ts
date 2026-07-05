@@ -4,7 +4,7 @@
  * Module-level singleton that enforces a system's declared access surface
  * (`reads` / `writes` / `spawns` / `despawns` / `transitions` /
  * `resourceReads` / `resourceWrites`, plus the optional sparse/relation
- * terms added in #496) at runtime in `__DEV__`. Schedule calls
+ * terms added in #496) at runtime in `DEV`. Schedule calls
  * `accessCheck.enter(desc)` before invoking the system's `fn` (or
  * `onAdded`) and `accessCheck.leave()` after; SystemContext + Archetype
  * call the per-op `check_*` methods which throw `ECSError` if the running
@@ -14,7 +14,7 @@
  * `Set<symbol>` (resource keys) are computed on first `enter()` and cached
  * on the descriptor via a non-enumerable property bag (see `_access_sets`).
  * The cost in dev is a single Set.has per access; in prod the entire module
- * is dead-code-eliminated by `__DEV__` guards at every call site.
+ * is dead-code-eliminated by `DEV` guards at every call site.
  *
  * Sparse components (`SparseComponentID`) and relations (`RelationID`) are
  * each a SEPARATE id space from the dense archetype-mask `ComponentID` (#496).
@@ -381,7 +381,7 @@ class AccessCheck {
 	// declared via `.optional(T)` — the term that authorizes the optional fetch.
 	// This is what makes the optional term *consumed* rather than decorative: like
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
-	// checked here in `__DEV__`. A stack (not a single slot) handles re-entrant /
+	// checked here in `DEV`. A stack (not a single slot) handles re-entrant /
 	// nested `forEach`. The optional scope is independent of the per-system
 	// `enter`/`leave` above — a host-side `world.query(...).forEach` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual

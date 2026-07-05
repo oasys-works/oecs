@@ -22,6 +22,7 @@
  */
 import { createSignal, onCleanup, type Accessor } from "solid-js";
 import { subscribe, type ReactiveArray, type ReactiveMap } from "../../reactive";
+import { DEV } from "../../dev_flag";
 
 /**
  * Mirror a kernel accessor into a Solid accessor. The returned accessor tracks in
@@ -86,7 +87,7 @@ export function fromKernelStruct<T extends object>(struct: Readonly<T>): Readonl
 		// struct proxy's trap so a JS-side assignment fails loudly instead of
 		// sticking a non-reactive value on the hidden target.
 		set: (_, k) => {
-			if (__DEV__) {
+			if (DEV) {
 				throw new TypeError(
 					`fromKernelStruct view is read-only: write through the kernel struct's ` +
 						`setters (set.${String(k)}(value)), not the bridged view`

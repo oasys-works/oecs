@@ -36,6 +36,7 @@ import {
 } from "./sparse_store";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { UNASSIGNED } from "./utils/constants";
+import { DEV } from "../../dev_flag";
 
 /** What the relation service needs from `Store` — nothing more. The accessor
  * members re-read the live field on every call, so capacity growth that
@@ -161,21 +162,21 @@ export class RelationService {
 	 * replaces any existing target (engine-enforced one-per-source), a no-op if
 	 * `tgt` is already the target. Multi: adds `tgt` to the set, a no-op if
 	 * already present. A dead `src` *or* `tgt` is caller error: it throws in
-	 * `__DEV__` and is a no-op in production — symmetric, so a production build
+	 * `DEV` and is a no-op in production — symmetric, so a production build
 	 * never links a reverse-index entry keyed by a destroyed handle (#495). */
 	public addRelation(src: EntityID, def: RelationDef, tgt: EntityID): void {
 		const rs = this.relationOf(def);
 		// Liveness must be checked for BOTH ends symmetrically before any
-		// linking: a dead `src` or `tgt` throws in `__DEV__` and is a silent
+		// linking: a dead `src` or `tgt` throws in `DEV` and is a silent
 		// no-op in production, so a prod build never seeds a reverse-index entry
 		// keyed by a destroyed handle (#495). The forward + reverse + membership
 		// lockstep is the relation's (cardinality).
 		if (!this.host.isAlive(src)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: source not alive`);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: source not alive`);
 			return;
 		}
 		if (!this.host.isAlive(tgt)) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: target not alive`);
+			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: target not alive`);
 			return;
 		}
 		rs.link(src, tgt);
@@ -189,7 +190,7 @@ export class RelationService {
 	public removeRelation(src: EntityID, def: RelationDef, tgt?: EntityID): void {
 		const rs = this.relationOf(def);
 		if (!this.host.isAlive(src)) {
-			if (__DEV__) {
+			if (DEV) {
 				throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `remove_relation: source not alive`);
 			}
 			return;
@@ -198,10 +199,10 @@ export class RelationService {
 	}
 
 	/** The single target of `src` under an exclusive relation, or `undefined`.
-	 * Throws in `__DEV__` on a multi-target relation (use `targetsOf`). */
+	 * Throws in `DEV` on a multi-target relation (use `targetsOf`). */
 	public targetOf(src: EntityID, def: RelationDef): EntityID | undefined {
 		const rs = this.relationOf(def);
-		if (__DEV__) {
+		if (DEV) {
 			// Traversal/single-target reads are exclusive-only by contract; the mode
 			// guard stays at the API boundary. The forward read is virtual.
 			if (!rs.exclusive) {
@@ -219,7 +220,7 @@ export class RelationService {
 	 * for multi — ascending by id. */
 	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
 		const rs = this.relationOf(def);
-		if (__DEV__ && !this.host.isAlive(src)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.host.isAlive(src)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
 		return rs.targetsOf(getEntityIndex(src));
 	}
 
@@ -390,9 +391,9 @@ export class RelationService {
 	// most one target ("parent"), so the forward direction is a chain and the
 	// reverse index (`sourcesOf`) gives children — together a proper tree. A
 	// multi relation is a DAG with no single parent chain, so these throw
-	// `RELATION_MODE_MISMATCH` in `__DEV__` (mirroring `targetOf`). Acyclicity
+	// `RELATION_MODE_MISMATCH` in `DEV` (mirroring `targetOf`). Acyclicity
 	// is assumed; every walk carries a visited set so a malformed (cyclic) chain
-	// is a loud `RELATION_CYCLE` in `__DEV__` and a safe early-out (never a hang)
+	// is a loud `RELATION_CYCLE` in `DEV` and a safe early-out (never a hang)
 	// in production. Cold path — allocates the result array; not for per-tick use.
 
 	/** Walk exclusive relation `R` from `src` toward the root, returning the
@@ -400,7 +401,7 @@ export class RelationService {
 	 * inclusive of both endpoints). A source with no target returns `[src]`. The
 	 * root is the first entity in the chain with no `R`-target, **or** a dangling
 	 * dead target handle (see below). Throws `RELATION_MODE_MISMATCH` on a multi
-	 * relation and `RELATION_CYCLE` on a cycle (both `__DEV__`-only; in production
+	 * relation and `RELATION_CYCLE` on a cycle (both `DEV`-only; in production
 	 * a cycle stops at the repeated node).
 	 *
 	 * **Dangling links terminate the chain.** Under the `orphan` policy a source
@@ -414,7 +415,7 @@ export class RelationService {
 	 * returns a dead handle. */
 	public ancestorsOf(src: EntityID, def: RelationDef): EntityID[] {
 		const rs = this.relationOf(def);
-		if (__DEV__) {
+		if (DEV) {
 			if (!rs.exclusive) {
 				throw new ECSError(
 					ECS_ERROR.RELATION_MODE_MISMATCH,
@@ -440,7 +441,7 @@ export class RelationService {
 			}
 			const nextIdx = getEntityIndex(nextId);
 			if (seen.has(nextIdx)) {
-				if (__DEV__) {
+				if (DEV) {
 					throw new ECSError(
 						ECS_ERROR.RELATION_CYCLE,
 						`ancestors_of: cycle in relation chain at entity index ${nextIdx}`
@@ -459,7 +460,7 @@ export class RelationService {
 	 * `ancestorsOf` (the one with no `R`-target). `src` itself when it has no
 	 * target. If the chain ends in a dangling dead target handle (orphan policy),
 	 * that handle is the root — `isAlive`-check the result if dangling links are
-	 * possible. Same `__DEV__` guards as `ancestorsOf`. */
+	 * possible. Same `DEV` guards as `ancestorsOf`. */
 	public rootOf(src: EntityID, def: RelationDef): EntityID {
 		const chain = this.ancestorsOf(src, def);
 		return chain[chain.length - 1];
@@ -470,11 +471,11 @@ export class RelationService {
 	 * children** (the `cascade` order). Children of each node come from
 	 * `sourcesOf` (ascending by id), so the traversal is deterministic. Throws
 	 * `RELATION_MODE_MISMATCH` on a multi relation and `RELATION_CYCLE` on a cycle
-	 * (both `__DEV__`-only; in production an already-visited node is skipped, so
+	 * (both `DEV`-only; in production an already-visited node is skipped, so
 	 * it never hangs). */
 	public cascadeOf(root: EntityID, def: RelationDef): EntityID[] {
 		const rs = this.relationOf(def);
-		if (__DEV__) {
+		if (DEV) {
 			if (!rs.exclusive) {
 				throw new ECSError(
 					ECS_ERROR.RELATION_MODE_MISMATCH,
@@ -493,7 +494,7 @@ export class RelationService {
 				const child = children[i];
 				const childIdx = getEntityIndex(child);
 				if (seen.has(childIdx)) {
-					if (__DEV__) {
+					if (DEV) {
 						throw new ECSError(
 							ECS_ERROR.RELATION_CYCLE,
 							`cascade_of: cycle in relation chain at entity index ${childIdx}`
@@ -581,9 +582,9 @@ export class RelationService {
 	 * `visiting`) is still allocated per call, as it must stay call-local for
 	 * re-entrancy.
 	 *
-	 * Exclusive-only — a multi relation throws `RELATION_MODE_MISMATCH` in `__DEV__`
+	 * Exclusive-only — a multi relation throws `RELATION_MODE_MISMATCH` in `DEV`
 	 * (mirrors `cascadeOf` / `ancestorsOf`); a cycle is a loud `RELATION_CYCLE` in
-	 * `__DEV__` and a safe break in production. */
+	 * `DEV` and a safe break in production. */
 	public forEachHierarchyMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -597,7 +598,7 @@ export class RelationService {
 		cb: (entityId: EntityID) => void
 	): void {
 		const rs = this.relationOf(relation);
-		if (__DEV__ && !rs.exclusive) {
+		if (DEV && !rs.exclusive) {
 			throw new ECSError(
 				ECS_ERROR.RELATION_MODE_MISMATCH,
 				`hierarchy(): relation is multi-target — depth ordering needs an exclusive (parent) chain`
@@ -669,7 +670,7 @@ export class RelationService {
 	 * already-memoised node, or a dangling/dead parent (the child is then treated as
 	 * a root — never advance through a recycled slot, the ABA `ancestorsOf` guards).
 	 * `visiting` flags the nodes on the current upward path to catch a cycle —
-	 * `RELATION_CYCLE` in `__DEV__`, treated as a root in production — and is emptied
+	 * `RELATION_CYCLE` in `DEV`, treated as a root in production — and is emptied
 	 * on the way back down so it can be reused for the next entity. */
 	private _hierarchyDepthOf(
 		idx: number,
@@ -699,7 +700,7 @@ export class RelationService {
 				break;
 			}
 			if (visiting.has(parent)) {
-				if (__DEV__) {
+				if (DEV) {
 					throw new ECSError(
 						ECS_ERROR.RELATION_CYCLE,
 						`hierarchy(): cycle in relation chain at entity index ${parent}`

@@ -165,7 +165,7 @@ export type { CommandLog, RecordedTick, ReplayResult, ReplayOptions } from "./co
 // `ECS.setTrace(sink)` and the engine fires structured per-frame events
 // (systems, flushes, `ctx.commands.*`, observer firings, events) during
 // `update()`, so a consumer can reconstruct what travelled through the ECS each
-// frame. `__DEV__`-gated end to end (zero prod cost). `FrameTraceRecorder` is the
+// frame. `DEV`-gated end to end (zero prod cost). `FrameTraceRecorder` is the
 // in-tree sink. NOT the same as the global, count-aggregating `dispatchTrace`.
 export { FrameTraceRecorder } from "./frame_trace";
 export type {
@@ -286,7 +286,7 @@ export { eventKey, signalKey } from "./event";
 export type { ResourceKey, ResourceValueOf } from "./resource";
 export { resourceKey } from "./resource";
 
-// Dispatch trace (dev-mode only — gated by __DEV__ + VISUAL_INTEL_TRACE)
+// Dispatch trace (dev-mode only — gated by DEV + VISUAL_INTEL_TRACE)
 export {
 	dispatchTrace,
 	type DispatchTraceSnapshot,
