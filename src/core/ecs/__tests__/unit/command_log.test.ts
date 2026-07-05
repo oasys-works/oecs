@@ -117,28 +117,28 @@ function recordSession(): { recorder: HostCommandRecorder; hashes: number[] } {
 	// tick 0 — set a field on the seed-time cell.
 	commands.setField(cellA!, Cell, "x", 100);
 	world.update(TICK_DTS[0]);
-	hashes.push(world.stateHash());
+	hashes.push(world.snapshots.stateHash());
 
 	// tick 1 — spawn a second cell.
 	commands.spawn([spawnEntry(Cell, { x: 5, heat: 5 })], (e) => (cellB = e));
 	world.update(TICK_DTS[1]);
-	hashes.push(world.stateHash());
+	hashes.push(world.snapshots.stateHash());
 
 	// tick 2 — mutate the new cell + disable the first.
 	commands.setField(cellB!, Cell, "heat", 7);
 	commands.disable(cellA!);
 	world.update(TICK_DTS[2]);
-	hashes.push(world.stateHash());
+	hashes.push(world.snapshots.stateHash());
 
 	// tick 3 — NO commands: only the clock advances (proves dt drives state).
 	world.update(TICK_DTS[3]);
-	hashes.push(world.stateHash());
+	hashes.push(world.snapshots.stateHash());
 
 	// tick 4 — re-enable the first, despawn the second.
 	commands.enable(cellA!);
 	commands.despawn(cellB!);
 	world.update(TICK_DTS[4]);
-	hashes.push(world.stateHash());
+	hashes.push(world.snapshots.stateHash());
 
 	return { recorder, hashes };
 }

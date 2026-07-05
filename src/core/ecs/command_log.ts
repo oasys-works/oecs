@@ -19,7 +19,7 @@
  *     reproducing the original run tick-for-tick.
  *
  * **Correctness is verifiable, not asserted.** Under the determinism opt-in
- * (ADR-0020, `new ECS({ deterministic: true })`), `world.stateHash()` is a
+ * (ADR-0020, `new ECS({ deterministic: true })`), `world.snapshots.stateHash()` is a
  * canonical digest of world state. Record a session, replay it from the same
  * seed, and the per-tick `stateHash` sequences must be identical — the
  * round-trip test that proves replay fidelity. With determinism off the replay
@@ -213,7 +213,7 @@ export interface ReplayResult {
 
 /** Options for {@link replayCommandLog}. */
 export interface ReplayOptions {
-	/** Capture `world.stateHash()` after each tick. Defaults to the world's
+	/** Capture `world.snapshots.stateHash()` after each tick. Defaults to the world's
 	 * `deterministic` flag — a deterministic world is hashed, a non-deterministic
 	 * one is not (its `stateHash` would throw, ADR-0020). Force `true` only on a
 	 * deterministic world. */
@@ -247,12 +247,12 @@ export function replayCommandLog(
 	for (const cmd of log.startup) queue.push(cmd);
 	world.startup();
 
-	const wantHash = opts?.hash ?? world.deterministic;
+	const wantHash = opts?.hash ?? world.snapshots.deterministic;
 	const stateHashes: number[] = [];
 	for (const t of log.ticks) {
 		for (const cmd of t.commands) queue.push(cmd);
 		world.update(t.dt);
-		if (wantHash) stateHashes.push(world.stateHash());
+		if (wantHash) stateHashes.push(world.snapshots.stateHash());
 	}
 	return { startupCommands: log.startup.length, ticks: log.ticks.length, stateHashes };
 }

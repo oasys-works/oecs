@@ -175,15 +175,16 @@ describe("ECS pass-through band (H3 phase 1)", () => {
 
 	it("the band is populated (the markers actually delimit the delegations)", () => {
 		expect(ecsClass).toBeDefined();
-		// 56 delegating members as of H3 phase 1 (61 declarations counting
-		// overload signatures). Shrinking is fine — methods may move out as
-		// H1 progresses — but an empty band means the markers drifted.
-		expect(bandMembers.length).toBeGreaterThan(40);
+		// 38 delegating members after the 0.5.0 flat-form removal (the
+		// relations/events/resources/snapshots delegations moved to the
+		// facades). Shrinking is fine — methods may move out as H1
+		// progresses — but an empty band means the markers drifted.
+		expect(bandMembers.length).toBeGreaterThan(30);
 		const names = new Set(
 			bandMembers.map((m) => (m.name && ts.isIdentifier(m.name) ? m.name.text : "?"))
 		);
 		// Spot-check members that must live in the band today.
-		for (const expected of ["targetOf", "stateHash", "flush", "observe", "addSystems"]) {
+		for (const expected of ["archetypeCount", "registerTag", "flush", "observe", "addSystems"]) {
 			expect(names.has(expected), `expected ${expected} in the band`).toBe(true);
 		}
 	});

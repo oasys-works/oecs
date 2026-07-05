@@ -584,7 +584,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 		world.update(1 / 60);
-		return { raw: world.stateHash(), canon: canonicalDigest(b) };
+		return { raw: world.snapshots.stateHash(), canon: canonicalDigest(b) };
 	}
 
 	const orderings: { name: string; perm: (o: [EntityID, 0 | 1][]) => [EntityID, 0 | 1][] }[] = [
@@ -686,14 +686,14 @@ describe("Observers — no-observer fast path", () => {
 		const T1 = w1.registerTag();
 		const id1: EntityID[] = [w1.createEntity(), w1.createEntity()];
 		scenario(w1, T1, id1);
-		const hashNoObserver = w1.stateHash();
+		const hashNoObserver = w1.snapshots.stateHash();
 
 		const w2 = new ECS({ deterministic: true });
 		const T2 = w2.registerTag();
 		w2.observe(T2, { onAdd: () => {}, onRemove: () => {}, access: openAccess([T2]) });
 		const id2: EntityID[] = [w2.createEntity(), w2.createEntity()];
 		scenario(w2, T2, id2);
-		expect(w2.stateHash()).toBe(hashNoObserver);
+		expect(w2.snapshots.stateHash()).toBe(hashNoObserver);
 	});
 });
 
@@ -1033,7 +1033,7 @@ describe("Observers — dirty state stays out of state_hash", () => {
 				...openAccess([Pos]),
 				fn: (ctx) => {
 					ctx.setField(e, Pos, "x", 5); // populates the dirty list when observed
-					captured = world.stateHash();
+					captured = world.snapshots.stateHash();
 				}
 			});
 			world.addSystems(SCHEDULE.UPDATE, sys);
@@ -1053,7 +1053,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		let seen = -1;
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
@@ -1084,7 +1084,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
 				void ctx.read(Ev).length; // read inside onSet — must not extend lifetime
@@ -1121,7 +1121,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => ctx.emit(Ev, { v: 1 }),
 			granularity: "entity",

@@ -19,11 +19,11 @@
  * Usage:
  *
  *   const TimeRes = resourceKey<{ delta: number; elapsed: number }>("Time");
- *   world.registerResource(TimeRes, { delta: 0, elapsed: 0 });
- *   const time = world.resource(TimeRes);
+ *   world.resources.register(TimeRes, { delta: 0, elapsed: 0 });
+ *   const time = world.resources.get(TimeRes);
  *   // time.delta → number, time.elapsed → number
- *   world.removeResource(TimeRes);                             // present → absent
- *   world.registerResource(TimeRes, { delta: 0, elapsed: 0 }); // → present again
+ *   world.resources.remove(TimeRes);                             // present → absent
+ *   world.resources.register(TimeRes, { delta: 0, elapsed: 0 }); // → present again
  *
  ***/
 

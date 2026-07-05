@@ -205,7 +205,7 @@ describe("Sparse access validation (issue #496)", () => {
 describe("Relation access validation (issue #496)", () => {
 	it("throws when a system adds an undeclared relation", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
 
@@ -224,7 +224,7 @@ describe("Relation access validation (issue #496)", () => {
 
 	it("permits relation add/remove when declared in relation_writes", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
 
@@ -245,10 +245,10 @@ describe("Relation access validation (issue #496)", () => {
 
 	it("throws when a system reads an undeclared relation via target_of", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
-		world.addRelation(a, Targets, b); // host-side: not checked
+		world.relations.add(a, Targets, b); // host-side: not checked
 
 		const tick = runOnce(
 			world,
@@ -265,10 +265,10 @@ describe("Relation access validation (issue #496)", () => {
 
 	it("a declared relation_write implicitly authorises reads of the same relation", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
-		world.addRelation(a, Targets, b);
+		world.relations.add(a, Targets, b);
 
 		let observed: number | undefined = -1;
 		const tick = runOnce(
@@ -288,7 +288,7 @@ describe("Relation access validation (issue #496)", () => {
 
 	it("has_relation is a membership probe and is not access-checked", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 
 		let seen = true;
@@ -335,7 +335,7 @@ describe("Access id spaces are disjoint (issue #496)", () => {
 	it("a sparse write declaration does not authorise a same-numbered relation", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
 
@@ -358,7 +358,7 @@ describe("Sparse/relation access outside any system (issue #496)", () => {
 	it("host-side sparse + relation mutations are never access-checked", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const a = world.createEntity();
 		const b = world.createEntity();
 
@@ -368,9 +368,9 @@ describe("Sparse/relation access outside any system (issue #496)", () => {
 			world.setSparseField(a, Cooldown, "ready_at", 4);
 			world.getSparseField(a, Cooldown, "ready_at");
 			world.removeSparse(a, Cooldown);
-			world.addRelation(a, Targets, b);
-			world.targetOf(a, Targets);
-			world.removeRelation(a, Targets, b);
+			world.relations.add(a, Targets, b);
+			world.relations.targetOf(a, Targets);
+			world.relations.remove(a, Targets, b);
 		}).not.toThrow();
 	});
 });

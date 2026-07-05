@@ -56,12 +56,12 @@ import { resourceKey } from "@oasys/oecs";
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 const Score = resourceKey<{ value: number }>("Score");
 
-world.registerResource(Time, { delta: 0, elapsed: 0 });
-world.registerResource(Score, { value: 0 });
+world.resources.register(Time, { delta: 0, elapsed: 0 });
+world.resources.register(Score, { value: 0 });
 
-const time = world.resource(Time);           // { delta: number; elapsed: number }
-world.setResource(Score, { value: 100 });
-world.hasResource(Time);                    // true
+const time = world.resources.get(Time);           // { delta: number; elapsed: number }
+world.resources.set(Score, { value: 100 });
+world.resources.has(Time);                    // true
 ```
 
 `registerResource` returns `void` — the key is the handle. Each key must be registered exactly once.
@@ -76,15 +76,15 @@ import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
 // Schema is a record of field → value type; carrying the value type means
 // branded fields (like EntityID) round-trip their brand through emit / read.
 const DamageEvent = eventKey<{ target: EntityID; amount: number }>("Damage");
-world.registerEvent(DamageEvent, ["target", "amount"]);   // field list defines column order
+world.events.register(DamageEvent, ["target", "amount"]);   // field list defines column order
 
 const GameOver = signalKey("GameOver");
-world.registerSignal(GameOver);
+world.events.registerSignal(GameOver);
 
-world.emit(DamageEvent, { target: 42 as EntityID, amount: 10 });
-world.emit(GameOver);
+world.events.emit(DamageEvent, { target: 42 as EntityID, amount: 10 });
+world.events.emit(GameOver);
 
-const dmg = world.read(DamageEvent);
+const dmg = world.events.read(DamageEvent);
 for (let i = 0; i < dmg.length; i++) {
   const t = dmg.target[i];   // typed EntityID — the brand survives emit → read
   const a = dmg.amount[i];
@@ -367,11 +367,11 @@ const Dead   = world.registerTag();
 
 // --- Resource ---
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
-world.registerResource(Time, { delta: 0, elapsed: 0 });
+world.resources.register(Time, { delta: 0, elapsed: 0 });
 
 // --- Event ---
 const Hit = eventKey<{ target: EntityID; damage: number }>("Hit");
-world.registerEvent(Hit, ["target", "damage"]);
+world.events.register(Hit, ["target", "damage"]);
 
 // --- Queries (captured once at module scope, live-updated) ---
 const movers     = world.query(Pos, Vel).without(Dead);
@@ -486,7 +486,7 @@ for (let i = 0; i < 100; i++) {
 }
 
 // Queue a damage event; readable on the first update() call.
-world.emit(Hit, { target: first, damage: 40 });
+world.events.emit(Hit, { target: first, damage: 40 });
 
 // --- Run ---
 world.startup();

@@ -91,17 +91,17 @@ declare const ErasedEvent: EventKey<Record<string, number>>;
 
 function registerEventAssertions(): void {
 	// Complete cover, any order.
-	world.registerEvent(ContactEvent, ["a", "b"]);
-	world.registerEvent(ContactEvent, ["b", "a"]);
+	world.events.register(ContactEvent, ["a", "b"]);
+	world.events.register(ContactEvent, ["b", "a"]);
 
 	// @ts-expect-error — under-registered: 'b' missing (emit would silently drop it)
-	world.registerEvent(ContactEvent, ["a"]);
+	world.events.register(ContactEvent, ["a"]);
 
 	// @ts-expect-error — foreign field
-	world.registerEvent(ContactEvent, ["a", "b", "c"]);
+	world.events.register(ContactEvent, ["a", "b", "c"]);
 
 	// A schema-erased key has no finite key set — the cover check is skipped.
-	world.registerEvent(ErasedEvent, ["whatever"]);
+	world.events.register(ErasedEvent, ["whatever"]);
 }
 
 declare const queue: HostCommandQueue;
@@ -134,13 +134,13 @@ function noInferAssertions(): void {
 	// The key is the sole source of truth for the payload/resource generic —
 	// a wider value must error at the argument, not silently widen the
 	// inferred type parameter.
-	world.emit(ContactEvent, { a: e, b: e });
+	world.events.emit(ContactEvent, { a: e, b: e });
 
 	// @ts-expect-error — extra payload field must not widen S
-	world.emit(ContactEvent, { a: e, b: e, c: 1 });
+	world.events.emit(ContactEvent, { a: e, b: e, c: 1 });
 
 	// @ts-expect-error — missing payload field
-	world.emit(ContactEvent, { a: e });
+	world.events.emit(ContactEvent, { a: e });
 }
 
 function observeHandleAssertions<S extends ComponentSchema>(genericDef: ComponentDef<S>): void {
@@ -348,30 +348,30 @@ declare const MultiRel: RelationDef<"multi">;
 
 function relationCardinalityAssertions(): void {
 	// The registerRelation overloads stamp the cardinality (POLISH_AUDIT #7).
-	const excl = world.registerRelation();
-	const excl2 = world.registerRelation({ onDeleteTarget: "delete" });
-	const multi = world.registerRelation({ multi: true });
+	const excl = world.relations.register();
+	const excl2 = world.relations.register({ onDeleteTarget: "delete" });
+	const multi = world.relations.register({ multi: true });
 	const _e1: RelationDef<"exclusive"> = excl;
 	const _e2: RelationDef<"exclusive"> = excl2;
 	const _m: RelationDef<"multi"> = multi;
 	void _e1; void _e2; void _m;
 
 	// Exclusive-only surfaces accept only the exclusive brand.
-	void world.targetOf(e, ExclusiveRel);
-	void world.ancestorsOf(e, ExclusiveRel);
-	void world.rootOf(e, ExclusiveRel);
-	void world.cascadeOf(e, ExclusiveRel);
+	void world.relations.targetOf(e, ExclusiveRel);
+	void world.relations.ancestorsOf(e, ExclusiveRel);
+	void world.relations.rootOf(e, ExclusiveRel);
+	void world.relations.cascadeOf(e, ExclusiveRel);
 
 	// @ts-expect-error — targetOf on a multi relation (use targetsOf)
-	void world.targetOf(e, MultiRel);
+	void world.relations.targetOf(e, MultiRel);
 	// @ts-expect-error — traversal is exclusive-only
-	void world.ancestorsOf(e, MultiRel);
+	void world.relations.ancestorsOf(e, MultiRel);
 
 	// Cardinality-agnostic surfaces take either; stamped handles erase to the
 	// bare union (declaration lists, ANY_RELATION).
-	world.addRelation(e, ExclusiveRel, e);
-	world.addRelation(e, MultiRel, e);
-	void world.targetsOf(e, MultiRel);
+	world.relations.add(e, ExclusiveRel, e);
+	world.relations.add(e, MultiRel, e);
+	void world.relations.targetsOf(e, MultiRel);
 	const erased: RelationDef = MultiRel;
 	const erased2: RelationDef<RelationCardinality> = ExclusiveRel;
 	void erased; void erased2;

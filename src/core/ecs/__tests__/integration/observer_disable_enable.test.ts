@@ -207,7 +207,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 				ctx.disable(ids[2]);
 			});
 			world.update(1 / 60);
-			return world.stateHash();
+			return world.snapshots.stateHash();
 		};
 		// Same disabled set ⇒ same hash, regardless of whether an observer drained it.
 		expect(build(true)).toBe(build(false));

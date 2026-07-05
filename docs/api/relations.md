@@ -1,7 +1,7 @@
 # Relations
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** Relation registration, mutation, reads, wildcards, traversal, and compaction live on the **`ecs.relations`** facade — `ecs.relations.register()`, `ecs.relations.add(child, ChildOf, parent)`, `ecs.relations.targetOf(child, ChildOf)`, `ecs.relations.ancestorsOf(...)`, `ecs.relations.compact()`; `relationCount` is `ecs.relations.count`, `hasRelation` is `ecs.relations.has`, `compactRelations` is `ecs.relations.compact`. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+> **0.5.0 — grouped surface.** Relation registration, mutation, reads, wildcards, traversal, and compaction live on the **`ecs.relations`** facade — `ecs.relations.register()`, `ecs.relations.add(child, ChildOf, parent)`, `ecs.relations.targetOf(child, ChildOf)`, `ecs.relations.ancestorsOf(...)`, `ecs.relations.compact()`; `relationCount` is `ecs.relations.count`, `hasRelation` is `ecs.relations.has`, `compactRelations` is `ecs.relations.compact`. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
 
 A **relation** links two entities as a `(relation, target)` pair on a **source** entity — `addRelation(child, ChildOf, parent)`. Relations model hierarchies (scene graphs, bone trees), ownership, targeting ("this turret aims at that ship"), and instance-of links, with queries in both directions and configurable cleanup when a target dies.
 
@@ -13,10 +13,10 @@ const ChildOf = registerChildOf(ecs);           // built-in preset — a free fu
 
 const parent = ecs.createEntity();
 const child  = ecs.createEntity();
-ecs.addRelation(child, ChildOf, parent);
+ecs.relations.add(child, ChildOf, parent);
 
-ecs.targetOf(child, ChildOf);      // parent
-ecs.sourcesOf(ChildOf, parent);    // [child, …] — everyone whose parent is `parent`
+ecs.relations.targetOf(child, ChildOf);      // parent
+ecs.relations.sourcesOf(ChildOf, parent);    // [child, …] — everyone whose parent is `parent`
 ```
 
 ## Registering a relation
@@ -130,7 +130,7 @@ interface BuiltinRelationOptions { readonly onDeleteTarget?: OnDeleteTarget }
 | `"orphan"` | leave the link dangling; reads stay safe but `targetOf` returns a dead handle (the overall default) |
 
 > [!WARNING]
-> **`orphan` leaks the reverse index.** Under `orphan`, a destroyed target's reverse entries linger until each source re-targets or dies — a long-lived source that orphan-points at a churn of short-lived targets grows the reverse index unbounded, and `targetOf` returns a **dead handle** rather than `undefined`. Call `ecs.compactRelations()` (returns the count reclaimed) at scene/snapshot boundaries to drop reverse entries for destroyed targets. It changes no observable state and doesn't affect `stateHash`.
+> **`orphan` leaks the reverse index.** Under `orphan`, a destroyed target's reverse entries linger until each source re-targets or dies — a long-lived source that orphan-points at a churn of short-lived targets grows the reverse index unbounded, and `targetOf` returns a **dead handle** rather than `undefined`. Call `ecs.relations.compact()` (returns the count reclaimed) at scene/snapshot boundaries to drop reverse entries for destroyed targets. It changes no observable state and doesn't affect `stateHash`.
 
 ## Types & constants
 

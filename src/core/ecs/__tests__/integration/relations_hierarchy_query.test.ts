@@ -60,10 +60,10 @@ describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
 		const q = world.createEntity();
 		for (const e of [r, x, y, p, q]) world.addComponent(e, Node);
 
-		world.addRelation(p, ChildOf, r); // depth 1
-		world.addRelation(q, ChildOf, r); // depth 1
-		world.addRelation(x, ChildOf, p); // depth 2
-		world.addRelation(y, ChildOf, q); // depth 2
+		world.relations.add(p, ChildOf, r); // depth 1
+		world.relations.add(q, ChildOf, r); // depth 1
+		world.relations.add(x, ChildOf, p); // depth 2
+		world.relations.add(y, ChildOf, q); // depth 2
 
 		// depth 0: [r] ; depth 1: [p, q] (3 < 4) ; depth 2: [x, y] (1 < 2)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r, p, q, x, y].map(Number));
@@ -93,8 +93,8 @@ describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
 		const cB = world.createEntity(); // 2, child of r2
 		const cA = world.createEntity(); // 3, child of r1
 		for (const e of [r1, r2, cB, cA]) world.addComponent(e, Node);
-		world.addRelation(cA, ChildOf, r1);
-		world.addRelation(cB, ChildOf, r2);
+		world.relations.add(cA, ChildOf, r1);
+		world.relations.add(cB, ChildOf, r2);
 
 		// depth 0: [r1, r2] ; depth 1: [cB, cA] (index 2 < 3)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r1, r2, cB, cA].map(Number));
@@ -108,12 +108,12 @@ describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
 		const b = world.createEntity();
 		const c = world.createEntity();
 		for (const e of [a, b, c]) world.addComponent(e, Node);
-		world.addRelation(b, ChildOf, a); // b depth 1
-		world.addRelation(c, ChildOf, b); // c depth 2 → [a, b, c]
+		world.relations.add(b, ChildOf, a); // b depth 1
+		world.relations.add(c, ChildOf, b); // c depth 2 → [a, b, c]
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([a, b, c].map(Number));
 
 		// Re-parent c onto a (exclusive replace): c becomes depth 1 alongside b.
-		world.addRelation(c, ChildOf, a);
+		world.relations.add(c, ChildOf, a);
 		// depth 0: [a] ; depth 1: [b, c] (index b < c)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([a, b, c].map(Number));
 	});
@@ -126,8 +126,8 @@ describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
 		const child = world.createEntity();
 		const grand = world.createEntity();
 		for (const e of [root, child, grand]) world.addComponent(e, Node);
-		world.addRelation(child, ChildOf, root);
-		world.addRelation(grand, ChildOf, child);
+		world.relations.add(child, ChildOf, root);
+		world.relations.add(grand, ChildOf, child);
 
 		world.destroyEntity(root);
 		world.flush(); // child now dangles at a dead handle (orphan policy)
@@ -147,8 +147,8 @@ describe(".hierarchy(R) — max_depth (#581)", () => {
 		const c = world.createEntity(); // depth 1
 		const g = world.createEntity(); // depth 2
 		for (const e of [r, c, g]) world.addComponent(e, Node);
-		world.addRelation(c, ChildOf, r);
-		world.addRelation(g, ChildOf, c);
+		world.relations.add(c, ChildOf, r);
+		world.relations.add(g, ChildOf, c);
 
 		expect(order(world.query(Node).hierarchy(ChildOf, 0))).toEqual([r as number]);
 		expect(order(world.query(Node).hierarchy(ChildOf, 1))).toEqual([r, c].map(Number));
@@ -170,8 +170,8 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const grand = world.createEntity();
 		world.addComponent(child, Pos, { x: 0, y: 0 });
 		world.addComponent(grand, Pos, { x: 1, y: 1 });
-		world.addRelation(child, ChildOf, root); // child structural depth 1
-		world.addRelation(grand, ChildOf, child); // grand structural depth 2
+		world.relations.add(child, ChildOf, root); // child structural depth 1
+		world.relations.add(grand, ChildOf, child); // grand structural depth 2
 
 		// root excluded (no Pos); child(depth 1) before grand(depth 2).
 		expect(order(world.query(Pos).hierarchy(ChildOf))).toEqual([child, grand].map(Number));
@@ -186,8 +186,8 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const a = world.createEntity();
 		const b = world.createEntity();
 		for (const e of [r, a, b]) world.addComponent(e, Node);
-		world.addRelation(a, ChildOf, r);
-		world.addRelation(b, ChildOf, a);
+		world.relations.add(a, ChildOf, r);
+		world.relations.add(b, ChildOf, a);
 		world.addSparse(r, Marked);
 		world.addSparse(b, Marked); // a is NOT marked
 
@@ -204,7 +204,7 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const r = world.createEntity();
 		const c = world.createEntity();
 		for (const e of [r, c]) world.addComponent(e, Node);
-		world.addRelation(c, ChildOf, r);
+		world.relations.add(c, ChildOf, r);
 		// hierarchy(R).and(Node) keeps the ordering term — equals query(Node).hierarchy(R).
 		expect(order(world.query().hierarchy(ChildOf).and(Node))).toEqual([r, c].map(Number));
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r, c].map(Number));
@@ -223,8 +223,8 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const a = world.createEntity(); // depth 1, NOT marked
 		const b = world.createEntity(); // depth 2, marked
 		for (const e of [r, a, b]) world.addComponent(e, Node);
-		world.addRelation(a, ChildOf, r);
-		world.addRelation(b, ChildOf, a);
+		world.relations.add(a, ChildOf, r);
+		world.relations.add(b, ChildOf, a);
 		world.addSparse(r, Marked);
 		world.addSparse(b, Marked);
 
@@ -241,16 +241,16 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
-		const Tagged = world.registerRelation();
+		const Tagged = world.relations.register();
 		const r = world.createEntity(); // depth 0, tagged
 		const a = world.createEntity(); // depth 1, NOT tagged
 		const b = world.createEntity(); // depth 2, tagged
 		const t = world.createEntity(); // relation target
 		for (const e of [r, a, b]) world.addComponent(e, Node);
-		world.addRelation(a, ChildOf, r);
-		world.addRelation(b, ChildOf, a);
-		world.addRelation(r, Tagged, t);
-		world.addRelation(b, Tagged, t);
+		world.relations.add(a, ChildOf, r);
+		world.relations.add(b, ChildOf, a);
+		world.relations.add(r, Tagged, t);
+		world.relations.add(b, Tagged, t);
 
 		// Spec: sources holding Tagged ∩ Node, depth-ordered → r(0) before b(2).
 		const expected = [r, b].map(Number);
@@ -266,7 +266,7 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const r = world.createEntity();
 		const a = world.createEntity();
 		for (const e of [r, a]) world.addComponent(e, Node);
-		world.addRelation(a, ChildOf, r);
+		world.relations.add(a, ChildOf, r);
 		world.disable(a);
 
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r as number]);
@@ -280,7 +280,7 @@ describe(".hierarchy(R) — guards", () => {
 	it("throws RELATION_MODE_MISMATCH on a multi relation (exclusive-only)", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
-		const Likes = world.registerRelation({ multi: true });
+		const Likes = world.relations.register({ multi: true });
 		const a = world.createEntity();
 		world.addComponent(a, Node);
 		// cast (§10c): deliberately defeat the cardinality brand to assert the
@@ -296,12 +296,12 @@ describe(".hierarchy(R) — guards", () => {
 	it("throws RELATION_CYCLE on a cyclic chain in __DEV__", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
-		const ChildOf = world.registerRelation(); // exclusive; bypass child_of for a raw cycle
+		const ChildOf = world.relations.register(); // exclusive; bypass child_of for a raw cycle
 		const a = world.createEntity();
 		const b = world.createEntity();
 		for (const e of [a, b]) world.addComponent(e, Node);
-		world.addRelation(a, ChildOf, b);
-		world.addRelation(b, ChildOf, a); // cycle
+		world.relations.add(a, ChildOf, b);
+		world.relations.add(b, ChildOf, a); // cycle
 		expect(() =>
 			world
 				.query(Node)
@@ -322,14 +322,14 @@ describe(".hierarchy(R) — guards", () => {
 
 	it("rejects a second hierarchy ordering on the same query", () => {
 		const world = new ECS();
-		const A = world.registerRelation();
-		const B = world.registerRelation();
+		const A = world.relations.register();
+		const B = world.relations.register();
 		expect(() => world.query().hierarchy(A).hierarchy(B)).toThrow(/already set/i);
 	});
 
 	it("rejects a negative or non-integer max_depth (caller typo), accepts valid limits", () => {
 		const world = new ECS();
-		const R = world.registerRelation();
+		const R = world.relations.register();
 		expect(() => world.query().hierarchy(R, -1)).toThrow(/max_depth/);
 		expect(() => world.query().hierarchy(R, 1.5)).toThrow(/max_depth/);
 		expect(() => world.query().hierarchy(R, NaN)).toThrow(/max_depth/);
@@ -343,14 +343,14 @@ describe(".hierarchy(R) — guards", () => {
 describe(".hierarchy(R) — cached, stable instances", () => {
 	it("repeated unbounded hierarchy from the same parent returns the identical Query", () => {
 		const world = new ECS();
-		const R = world.registerRelation();
+		const R = world.relations.register();
 		const base = world.query();
 		expect(base.hierarchy(R)).toBe(base.hierarchy(R));
 	});
 
 	it("a max_depth-limited hierarchy mints fresh (not cached)", () => {
 		const world = new ECS();
-		const R = world.registerRelation();
+		const R = world.relations.register();
 		const base = world.query();
 		expect(base.hierarchy(R, 2)).not.toBe(base.hierarchy(R, 2));
 	});
@@ -399,7 +399,7 @@ describe(".hierarchy(R) — access declaration (relation_reads, #496)", () => {
 		const r = world.createEntity();
 		const c = world.createEntity();
 		for (const e of [r, c]) world.addComponent(e, Node);
-		world.addRelation(c, ChildOf, r);
+		world.relations.add(c, ChildOf, r);
 		const q = world.query(Node).hierarchy(ChildOf);
 
 		const seen: number[] = [];

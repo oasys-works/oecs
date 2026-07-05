@@ -22,7 +22,7 @@
  *   export const ContactEvent = eventKey<{ a: EntityID; b: EntityID }>("Contact");
  *
  *   // registration (plugin/setup)
- *   ecs.registerEvent(ContactEvent, ["a", "b"]);
+ *   ecs.events.register(ContactEvent, ["a", "b"]);
  *
  *   // usage (system)
  *   ctx.emit(ContactEvent, { a: entityId, b: otherId });

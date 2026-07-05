@@ -27,14 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API (component ops, queries, spawn/destroy, sparse ops) stays flat by design. Facade classes
   are exported type-only; the runtime export list is unchanged.
 
-### Deprecated
+### Removed (breaking)
 
-- The 29 flat forms behind the new facades (`registerRelation`/`addRelation`/`targetOf`/…,
+- The 29 flat forms the new facades replace (`registerRelation`/`addRelation`/`targetOf`/…,
   `registerEvent`/`registerSignal`/`emit`/`read`, `registerResource`/`resource`/`setResource`/
   `removeResource`/`hasResource`, `snapshot`/`restoreInto`/`snapshotSparse`/`restoreSparse`/
-  `stateHash`/`deterministic`, `relationCount`/`compactRelations`). They delegate unchanged
-  through 0.5.x and are **removed in 0.6.0** — each carries an `@deprecated` pointer to its
-  grouped replacement.
+  `stateHash`/`deterministic`, `relationCount`/`compactRelations`). Each maps 1:1 onto its
+  grouped replacement — `ecs.relations.add(...)`, `ecs.events.emit(...)`, `ecs.resources.get(...)`,
+  `ecs.snapshots.capture()` (was `snapshot()`) / `ecs.snapshots.restore(...)` (was
+  `restoreInto(...)`), `ecs.relations.count` (was `relationCount`), `ecs.relations.compact()`
+  (was `compactRelations()`). System-side `ctx.*` and all `Store`-level methods are unchanged.
 
 ### Changed (internal)
 

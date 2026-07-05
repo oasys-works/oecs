@@ -321,10 +321,10 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies (#473)",
 describe("OnDeleteTarget — ECS surface (#473)", () => {
 	it("registers a delete-policy relation and cascades through the ECS wrapper", () => {
 		const world = new ECS();
-		const ChildOf = world.registerRelation({ onDeleteTarget: "delete" });
+		const ChildOf = world.relations.register({ onDeleteTarget: "delete" });
 		const parent = world.createEntity();
 		const child = world.createEntity();
-		world.addRelation(child, ChildOf, parent);
+		world.relations.add(child, ChildOf, parent);
 
 		// `ECS.destroyEntity` is the deferred surface — the cascade runs at flush.
 		world.destroyEntity(parent);
@@ -436,18 +436,18 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 
 	it("is reachable through the ECS surface", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
+		const Targets = world.relations.register();
 		const tgt = world.createEntity();
 		const src = world.createEntity();
-		world.addRelation(src, Targets, tgt);
+		world.relations.add(src, Targets, tgt);
 
 		// `ECS.destroyEntity` is deferred — flush so the orphan link goes dangling.
 		world.destroyEntity(tgt);
 		world.flush();
-		expect(sorted(world.sourcesOf(Targets, tgt))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(Targets, tgt))).toEqual([src as number]);
 
-		expect(world.compactRelations()).toBe(1);
-		expect(world.sourcesOf(Targets, tgt)).toEqual([]);
-		expect(world.targetOf(src, Targets)).toBe(tgt); // forward link preserved
+		expect(world.relations.compact()).toBe(1);
+		expect(world.relations.sourcesOf(Targets, tgt)).toEqual([]);
+		expect(world.relations.targetOf(src, Targets)).toBe(tgt); // forward link preserved
 	});
 });

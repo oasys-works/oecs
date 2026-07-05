@@ -71,7 +71,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let w = 0; w < N; w++) {
 				const { world, tick } = buildWorld(w);
 				for (let t = 0; t < TICKS; t++) tick();
-				solo.push(world.stateHash());
+				solo.push(world.snapshots.stateHash());
 			}
 			// Distinct seeds must produce distinct trajectories, else the
 			// isolation assertion below would be vacuously satisfiable.
@@ -85,7 +85,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let t = 0; t < TICKS; t++) {
 				for (let w = 0; w < N; w++) fwd[w].tick();
 			}
-			for (let w = 0; w < N; w++) expect(fwd[w].world.stateHash()).toBe(solo[w]);
+			for (let w = 0; w < N; w++) expect(fwd[w].world.snapshots.stateHash()).toBe(solo[w]);
 
 			// Reverse round-robin: same per-world tick count, opposite interleave
 			// order. Order-independence is the isolation property under test.
@@ -93,7 +93,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let t = 0; t < TICKS; t++) {
 				for (let w = N - 1; w >= 0; w--) rev[w].tick();
 			}
-			for (let w = 0; w < N; w++) expect(rev[w].world.stateHash()).toBe(solo[w]);
+			for (let w = 0; w < N; w++) expect(rev[w].world.snapshots.stateHash()).toBe(solo[w]);
 		});
 
 		it("a world ticked alongside others is unaffected by the others' churn", () => {
@@ -102,7 +102,7 @@ describe("multi-world isolation (#785)", () => {
 			// hash — the neighbours' activity does not leak in.
 			const probeSolo = buildWorld(0);
 			probeSolo.tick();
-			const expected = probeSolo.world.stateHash();
+			const expected = probeSolo.world.snapshots.stateHash();
 
 			const probe = buildWorld(0);
 			const neighbours = Array.from({ length: N - 1 }, (_, w) => buildWorld(w + 1));
@@ -110,7 +110,7 @@ describe("multi-world isolation (#785)", () => {
 			probe.tick();
 			for (const nb of neighbours) nb.tick();
 
-			expect(probe.world.stateHash()).toBe(expected);
+			expect(probe.world.snapshots.stateHash()).toBe(expected);
 		});
 	});
 

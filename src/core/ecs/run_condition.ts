@@ -74,7 +74,7 @@ export interface RunCondition {
 /**
  * Run the gated system(s) only while a resource equals `expected` (strict `===`,
  * so reference identity for objects). The canonical "feature flag / game phase"
- * gate — flip `world.setResource(key, …)` and the whole group toggles.
+ * gate — flip `world.resources.set(key, …)` and the whole group toggles.
  */
 export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition {
 	return {

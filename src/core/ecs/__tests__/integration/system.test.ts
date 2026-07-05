@@ -567,7 +567,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system reads an undeclared resource", () => {
 		const world = new ECS();
 		const Res = Symbol("R") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
 		const sys = world.registerSystem({
 			name: "res_reader",
@@ -593,7 +593,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system writes an undeclared resource", () => {
 		const world = new ECS();
 		const Res = Symbol("RW") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
 		const sys = world.registerSystem({
 			name: "res_writer",
@@ -620,7 +620,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Res = Symbol("Outside") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
 		const e = world.createEntity();
 		expect(() => {
@@ -628,8 +628,8 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			world.addComponent(e, Pos, { x: 1, y: 2 });
 			world.setField(e, Pos, "x", 99);
 			expect(world.getField(e, Pos, "x")).toBe(99);
-			world.resource(Res);
-			world.setResource(Res, { v: 2 });
+			world.resources.get(Res);
+			world.resources.set(Res, { v: 2 });
 			world.removeComponent(e, Pos);
 			world.destroyEntity(e);
 			world.flush();

@@ -147,9 +147,9 @@ export const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 Then import the key everywhere you emit, read, or access the resource:
 
 ```ts
-ecs.registerEvent(DamageEvent, ["target", "amount"]);
-ecs.registerSignal(GameOver);
-ecs.registerResource(Time, { delta: 0, elapsed: 0 });
+ecs.events.register(DamageEvent, ["target", "amount"]);
+ecs.events.registerSignal(GameOver);
+ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 ```
 
 `resourceKey("Time")` inside a function body would produce a new symbol per call, and two sites would not see the same resource. Module scope also documents ownership: this key lives here, register it once, import it elsewhere. Duplicate registration throws loudly (`RESOURCE_ALREADY_REGISTERED`, `EVENT_ALREADY_REGISTERED`).
@@ -466,9 +466,9 @@ Relations link two entities as a `(relation, target)` pair — hierarchies, owne
 ```ts
 import { registerChildOf } from "@oasys/oecs";
 const ChildOf = registerChildOf(ecs);        // built-in preset, a free function
-ecs.addRelation(child, ChildOf, parent);
-ecs.targetOf(child, ChildOf);                 // parent
-ecs.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "who points at me"
+ecs.relations.add(child, ChildOf, parent);
+ecs.relations.targetOf(child, ChildOf);                 // parent
+ecs.relations.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "who points at me"
 ```
 
 - **Exclusive by default** (one target per source; a new `addRelation` silently replaces the old target). Pass `{ multi: true }` for a target *set*; use `targetsOf` for multi, `targetOf` for exclusive (it throws on a multi relation in dev).
@@ -479,7 +479,7 @@ ecs.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "w
 > **`registerChildOf` defaults to a cascading destroy** (`onDeleteTarget: "delete"`) — destroy a parent and the whole subtree goes with it. Pass `{ onDeleteTarget: "clear" }` to let children survive as new roots, or `"orphan"` to leave a dangling `targetOf`. `registerIsA` defaults to `"clear"` and records the link only — **there is no component inheritance**.
 
 > [!WARNING]
-> **`orphan` leaks the reverse index** — a destroyed target's reverse entries linger until each source re-targets or dies, and `targetOf` returns a *dead handle* rather than `undefined`. Call `ecs.compactRelations()` at scene/snapshot boundaries to reclaim them; it changes no observable state and doesn't affect `stateHash`.
+> **`orphan` leaks the reverse index** — a destroyed target's reverse entries linger until each source re-targets or dies, and `targetOf` returns a *dead handle* rather than `undefined`. Call `ecs.relations.compact()` at scene/snapshot boundaries to reclaim them; it changes no observable state and doesn't affect `stateHash`.
 
 ---
 
@@ -492,14 +492,14 @@ import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
 
 // Structured event — you need per-emit data:
 export const Damage = eventKey<{ target: EntityID; amount: number }>("Damage");
-ecs.registerEvent(Damage, ["target", "amount"]);
+ecs.events.register(Damage, ["target", "amount"]);
 ctx.emit(Damage, { target: e, amount: 50 });
 const dmg = ctx.read(Damage);
 for (let i = 0; i < dmg.length; i++) applyDamage(dmg.target[i], dmg.amount[i]);
 
 // Signal — you only need "did this happen":
 export const OnPause = signalKey("OnPause");
-ecs.registerSignal(OnPause);
+ecs.events.registerSignal(OnPause);
 ctx.emit(OnPause);
 if (ctx.read(OnPause).length > 0) { /* paused */ }
 ```

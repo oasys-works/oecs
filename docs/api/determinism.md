@@ -1,7 +1,7 @@
 # Determinism
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** The determinism surface (state digest + world snapshot/resume) live on the **`ecs.snapshots`** facade — `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()` / `ecs.snapshots.restore(bytes)` (the flat `snapshot()`/`restoreInto()`), `ecs.snapshots.captureSparse()` / `restoreSparse()`, and the `ecs.snapshots.deterministic` flag. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+> **0.5.0 — grouped surface.** The determinism surface (state digest + world snapshot/resume) live on the **`ecs.snapshots`** facade — `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()` / `ecs.snapshots.restore(bytes)` (the flat `snapshot()`/`restoreInto()`), `ecs.snapshots.captureSparse()` / `restoreSparse()`, and the `ecs.snapshots.deterministic` flag. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
 
 A **deterministic** `ECS` guarantees that the same sequence of operations produces the same state, **bit-for-bit** — across backings (heap vs `SharedArrayBuffer`), across processes on the same architecture, and after a snapshot round-trip. That's the foundation for lockstep multiplayer, replay, deterministic debugging, and save/load.
 
@@ -12,7 +12,7 @@ const ecs = new ECS({ deterministic: true });
 const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns — see the float ban
 
 // …run identical history on two ECS instances…
-ecs.stateHash();   // same number on both, at the same tick boundary
+ecs.snapshots.stateHash();   // same number on both, at the same tick boundary
 ```
 
 ## Turning it on

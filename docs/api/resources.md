@@ -1,7 +1,7 @@
 # Resources
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** Resource registration and access live on the **`ecs.resources`** facade — `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`, `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, `ecs.resources.has(Time)`. The flat `ecs.*` forms shown below still work but are **deprecated**; they are removed in 0.6.0. New code should use the grouped forms.
+> **0.5.0 — grouped surface.** Resource registration and access live on the **`ecs.resources`** facade — `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`, `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, `ecs.resources.has(Time)`. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
 
 A **resource** is a typed global singleton — one value per `ECS`, keyed by a symbol. Use it for state that isn't per-entity: the input snapshot, the camera, the game clock, config flags, an RNG seed.
 
@@ -12,11 +12,11 @@ import { resourceKey } from "@oasys/oecs";
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 
 // 2. Register it with an initial value.
-ecs.registerResource(Time, { delta: 0, elapsed: 0 });
+ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 
 // 3. Read / write anywhere.
-const t = ecs.resource(Time);   // t.delta and t.elapsed are typed
-ecs.setResource(Time, { delta: 1 / 60, elapsed: t.elapsed + 1 / 60 });
+const t = ecs.resources.get(Time);   // t.delta and t.elapsed are typed
+ecs.resources.set(Time, { delta: 1 / 60, elapsed: t.elapsed + 1 / 60 });
 ```
 
 ## Keys

@@ -79,7 +79,7 @@ describe("#777 determinism float-column guard", () => {
 		expect(() => world.registerComponent({ x: "f64", y: "f64" })).not.toThrow();
 		expect(() => world.registerComponent(["vx", "vy"])).not.toThrow(); // f64 default
 		expect(() => world.registerSparseComponent({ cooldown: "f32" })).not.toThrow();
-		expect(world.deterministic).toBe(false);
+		expect(world.snapshots.deterministic).toBe(false);
 	});
 
 	it("rejecting a registration leaves no partial state — a retry with an integer type succeeds", () => {

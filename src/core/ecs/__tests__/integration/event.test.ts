@@ -12,7 +12,7 @@ describe("Event system", () => {
 	it("emit in one system, read in a later system within the same update", () => {
 		const world = new ECS();
 		const Damage = eventKey<{ target: number; amount: number }>("Damage");
-		world.registerEvent(Damage, ["target", "amount"] as const);
+		world.events.register(Damage, ["target", "amount"] as const);
 		const received: { target: number; amount: number }[] = [];
 
 		const emitter = world.registerSystem({
@@ -44,7 +44,7 @@ describe("Event system", () => {
 	it("events are cleared between frames", () => {
 		const world = new ECS();
 		const Hit = eventKey<{ damage: number }>("Hit");
-		world.registerEvent(Hit, ["damage"] as const);
+		world.events.register(Hit, ["damage"] as const);
 
 		let readLength = -1;
 		let frame = 0;
@@ -73,7 +73,7 @@ describe("Event system", () => {
 	it("signal (zero-field) events work", () => {
 		const world = new ECS();
 		const GameOver = signalKey("GameOver");
-		world.registerSignal(GameOver);
+		world.events.registerSignal(GameOver);
 		let fired = false;
 
 		const emitter = world.registerSystem({
@@ -104,7 +104,7 @@ describe("Event system", () => {
 	it("multiple emits accumulate within a frame", () => {
 		const world = new ECS();
 		const Score = eventKey<{ points: number }>("Score");
-		world.registerEvent(Score, ["points"] as const);
+		world.events.register(Score, ["points"] as const);
 		const totals: number[] = [];
 
 		const emitter = world.registerSystem({
@@ -138,7 +138,7 @@ describe("Event system", () => {
 	it("startup events are readable in POST_STARTUP", () => {
 		const world = new ECS();
 		const Ready = signalKey("Ready");
-		world.registerSignal(Ready);
+		world.events.registerSignal(Ready);
 		let readCount = 0;
 
 		const emitter = world.registerSystem({
@@ -170,7 +170,7 @@ describe("Event system", () => {
 	it("startup-emitted events do not leak into the first update", () => {
 		const world = new ECS();
 		const Boot = signalKey("Boot");
-		world.registerSignal(Boot);
+		world.events.registerSignal(Boot);
 
 		const startupEmitter = world.registerSystem({
 			...openAccess([]),
@@ -208,7 +208,7 @@ describe("Event system", () => {
 	it("reading an event with no emits returns length 0", () => {
 		const world = new ECS();
 		const Nothing = eventKey<{ value: number }>("Nothing");
-		world.registerEvent(Nothing, ["value"] as const);
+		world.events.register(Nothing, ["value"] as const);
 		let readLength = -1;
 
 		const reader = world.registerSystem({
@@ -228,7 +228,7 @@ describe("Event system", () => {
 	it("multiple signal emits accumulate", () => {
 		const world = new ECS();
 		const Tick = signalKey("Tick");
-		world.registerSignal(Tick);
+		world.events.registerSignal(Tick);
 		let count = 0;
 
 		const emitter = world.registerSystem({
@@ -259,7 +259,7 @@ describe("Event system", () => {
 	it("events emitted in PRE_UPDATE are readable in UPDATE and POST_UPDATE", () => {
 		const world = new ECS();
 		const Input = eventKey<{ key: number }>("Input");
-		world.registerEvent(Input, ["key"] as const);
+		world.events.register(Input, ["key"] as const);
 		let updateLen = 0;
 		let postUpdateLen = 0;
 
@@ -297,10 +297,10 @@ describe("Event system", () => {
 	it("duplicate register_event throws EVENT_ALREADY_REGISTERED", () => {
 		const world = new ECS();
 		const Ev = eventKey<{ x: number }>("Ev");
-		world.registerEvent(Ev, ["x"] as const);
+		world.events.register(Ev, ["x"] as const);
 
 		try {
-			world.registerEvent(Ev, ["x"] as const);
+			world.events.register(Ev, ["x"] as const);
 			expect.fail("should have thrown");
 		} catch (e) {
 			expect(e).toBeInstanceOf(ECSError);
@@ -313,7 +313,7 @@ describe("Event system", () => {
 		const Ev = eventKey<{ x: number }>("Unregistered");
 
 		try {
-			world.emit(Ev, { x: 1 });
+			world.events.emit(Ev, { x: 1 });
 			expect.fail("should have thrown");
 		} catch (e) {
 			expect(e).toBeInstanceOf(ECSError);
@@ -326,7 +326,7 @@ describe("Event system", () => {
 		const Ev = eventKey<{ x: number }>("Unregistered");
 
 		try {
-			world.read(Ev);
+			world.events.read(Ev);
 			expect.fail("should have thrown");
 		} catch (e) {
 			expect(e).toBeInstanceOf(ECSError);
@@ -344,11 +344,11 @@ describe("Event system", () => {
 	it("a thrown emit (missing field) does not desync the channel columns (#727)", () => {
 		const world = new ECS();
 		const Pair = eventKey<{ a: number; b: number }>("Pair");
-		world.registerEvent(Pair, ["a", "b"] as const);
+		world.events.register(Pair, ["a", "b"] as const);
 
 		// `b` is missing — must throw under __DEV__ before touching any column.
 		try {
-			world.emit(Pair, { a: 1 } as { a: number; b: number });
+			world.events.emit(Pair, { a: 1 } as { a: number; b: number });
 			expect.fail("should have thrown");
 		} catch (e) {
 			expect(e).toBeInstanceOf(ECSError);
@@ -356,11 +356,11 @@ describe("Event system", () => {
 		}
 
 		// The throw must have rolled back cleanly: nothing buffered yet.
-		expect(world.read(Pair).length).toBe(0);
+		expect(world.events.read(Pair).length).toBe(0);
 
 		// A subsequent VALID emit lands at row 0 with consistent columns.
-		world.emit(Pair, { a: 2, b: 3 });
-		const reader = world.read(Pair);
+		world.events.emit(Pair, { a: 2, b: 3 });
+		const reader = world.events.read(Pair);
 
 		// reader.length agrees with EVERY column length — no column is one
 		// element ahead from the half-applied emit.
@@ -379,10 +379,10 @@ describe("Event system", () => {
 	it("ECS.read works for reading events outside systems", () => {
 		const world = new ECS();
 		const Score = eventKey<{ points: number }>("Score");
-		world.registerEvent(Score, ["points"] as const);
+		world.events.register(Score, ["points"] as const);
 
-		world.emit(Score, { points: 42 });
-		const reader = world.read(Score);
+		world.events.emit(Score, { points: 42 });
+		const reader = world.events.read(Score);
 		expect(reader.length).toBe(1);
 		expect(reader.points[0]).toBe(42);
 	});
@@ -390,10 +390,10 @@ describe("Event system", () => {
 	it("ECS.emit signal works at facade level", () => {
 		const world = new ECS();
 		const Ping = signalKey("Ping");
-		world.registerSignal(Ping);
+		world.events.registerSignal(Ping);
 
-		world.emit(Ping);
-		expect(world.read(Ping).length).toBe(1);
+		world.events.emit(Ping);
+		expect(world.events.read(Ping).length).toBe(1);
 	});
 
 	// ==== Reader type-soundness (issue #377) ====
@@ -407,11 +407,11 @@ describe("Event system", () => {
 	it("reader columns are growable numeric arrays, not typed arrays", () => {
 		const world = new ECS();
 		const Score = eventKey<{ points: number }>("Score");
-		world.registerEvent(Score, ["points"] as const);
+		world.events.register(Score, ["points"] as const);
 
-		world.emit(Score, { points: 1 });
-		world.emit(Score, { points: 2 });
-		const reader = world.read(Score);
+		world.events.emit(Score, { points: 1 });
+		world.events.emit(Score, { points: 2 });
+		const reader = world.events.read(Score);
 
 		// Indexed reads + length are the supported access pattern.
 		expect(reader.length).toBe(2);

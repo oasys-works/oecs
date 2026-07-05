@@ -38,7 +38,7 @@ function worldWithMovers(
 	// A `{ deterministic: true }` world rejects f32/f64 columns (#777), so size the
 	// mover columns as integers there; non-deterministic worlds keep f64 for the
 	// fractional-dt precision assertions (`toBeCloseTo`) the grow tests rely on.
-	const colType = world.deterministic ? "i32" : "f64";
+	const colType = world.snapshots.deterministic ? "i32" : "f64";
 	const Pos = world.registerComponent(["x", "y"] as const, colType);
 	const Vel = world.registerComponent(["vx", "vy"] as const, colType);
 	const movers = world.query(Pos, Vel);
@@ -136,7 +136,7 @@ describe("heap backing: construct + grow + tick", () => {
 describe("heap backing: determinism is backing-agnostic", () => {
 	const build = (memory: ConstructorParameters<typeof ECS>[0]): number => {
 		const { world } = worldWithMovers(memory, 200, 4);
-		return world.stateHash();
+		return world.snapshots.stateHash();
 	};
 
 	it("two heap worlds with identical history agree on state_hash", () => {

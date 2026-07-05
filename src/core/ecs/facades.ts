@@ -8,8 +8,8 @@
  * by the H1 A/B runs), and the `__DEV__` adaptation the flat methods
  * carried (dispatch-trace recording, access checks) moves here with them.
  *
- * The flat forms remain on `ECS` as `@deprecated` delegations for one
- * release (removal targeted at 0.6.0). Hot-path API (component ops,
+ * The pre-0.5 flat forms were removed from `ECS` in 0.5.0 (never published
+ * as deprecated aliases — 0.5.0 is the break). Hot-path API (component ops,
  * queries, spawn/destroy, sparse ops) stays flat by design — see
  * plans/H3-ecs-facade-slimming.md.
  *

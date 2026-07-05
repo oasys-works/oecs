@@ -120,7 +120,7 @@ describe("frame-trace seam", () => {
 	it("records event emit/read", () => {
 		const world = new ECS({ deterministic: true });
 		const Ping = eventKey<{ n: number }>("Ping");
-		world.registerEvent(Ping, ["n"]);
+		world.events.register(Ping, ["n"]);
 		const emitter = world.registerSystem({
 			name: "emitter",
 			exclusive: true,
@@ -217,7 +217,7 @@ describe("frame-trace seam", () => {
 				super();
 			}
 			override phaseBoundary(phase: SCHEDULE): void {
-				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.stateHash();
+				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.snapshots.stateHash();
 			}
 		}
 
@@ -239,7 +239,7 @@ describe("frame-trace seam", () => {
 		world.setTrace(probe);
 		for (let i = 0; i < 4; i++) {
 			world.update(1 / 60);
-			expect(probe.postHash).toBe(world.stateHash());
+			expect(probe.postHash).toBe(world.snapshots.stateHash());
 		}
 	});
 
@@ -258,7 +258,7 @@ describe("frame-trace seam", () => {
 				super();
 			}
 			override phaseBoundary(phase: SCHEDULE): void {
-				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.stateHash();
+				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.snapshots.stateHash();
 			}
 		}
 
@@ -291,7 +291,7 @@ describe("frame-trace seam", () => {
 		world.update(1 / 60);
 		// The boundary hash (Mark still 0) precedes the onSet tail write (Mark → 1).
 		expect(probe.postHash, "boundary fires before the onSet tail mutation").not.toBe(
-			world.stateHash()
+			world.snapshots.stateHash()
 		);
 	});
 
@@ -321,7 +321,7 @@ describe("frame-trace seam", () => {
 		for (let i = 0; i < 4; i++) {
 			untraced.update(1 / 60);
 			traced.update(1 / 60);
-			expect(traced.stateHash()).toBe(untraced.stateHash());
+			expect(traced.snapshots.stateHash()).toBe(untraced.snapshots.stateHash());
 		}
 	});
 });

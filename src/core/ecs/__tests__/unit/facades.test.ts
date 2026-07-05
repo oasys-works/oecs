@@ -1,17 +1,16 @@
 /**
- * Grouped ECS facades (H3 phase 2) — behavior parity with the flat forms.
+ * Grouped ECS facades (H3 phase 2) — behavior of the four secondary surfaces.
  *
- * Each facade wraps the same Store entry points its deprecated flat
- * counterpart uses, so every pair must observe the same world state. The
- * flat forms stay callable through the 0.5.x grace release — the aliasing
- * tests below pin that (they are deleted with the flat forms in 0.6.0).
+ * Each facade wraps the Store entry points the pre-0.5 flat forms used
+ * (flat forms removed in 0.5.0), so these pin the facade surfaces directly:
+ * relations, events, resources, snapshots.
  */
 
 import { describe, expect, it } from "vitest";
 import { ECS, eventKey, resourceKey, signalKey } from "../../index";
 
 describe("ECS grouped facades (H3 phase 2)", () => {
-	it("relations: register/add/has/targetOf/traversal/compact match the flat forms", () => {
+	it("relations: register/add/has/targetOf/traversal/compact", () => {
 		const ecs = new ECS();
 		const ChildOf = ecs.relations.register();
 		const parent = ecs.createEntity();
@@ -34,16 +33,12 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		]);
 		expect(ecs.relations.sourcesOfAny(parent)).toEqual([[ChildOf, mid]]);
 
-		// Flat aliases observe the identical state (grace-release contract).
-		expect(ecs.targetOf(mid, ChildOf)).toBe(parent);
-		expect(ecs.relationCount).toBe(1);
-
 		ecs.relations.remove(mid, ChildOf);
 		expect(ecs.relations.has(mid, ChildOf)).toBe(false);
 		expect(ecs.relations.compact()).toBeGreaterThanOrEqual(0);
 	});
 
-	it("events: register/emit/read and signals match the flat forms", () => {
+	it("events: register/emit/read and signals", () => {
 		const ecs = new ECS();
 		const Damage = eventKey<{ amount: number }>("Damage");
 		const Ping = signalKey("Ping");
@@ -56,11 +51,9 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		const reader = ecs.events.read(Damage);
 		expect(reader.length).toBe(1);
 		expect(reader.amount[0]).toBe(7);
-		// The flat alias reads the same channel.
-		expect(ecs.read(Damage).length).toBe(1);
 	});
 
-	it("resources: register/get/set/remove/has match the flat forms", () => {
+	it("resources: register/get/set/remove/has", () => {
 		const ecs = new ECS();
 		const Gold = resourceKey<number>("Gold");
 		ecs.resources.register(Gold, 10);
@@ -68,14 +61,10 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		expect(ecs.resources.get(Gold)).toBe(10);
 
 		ecs.resources.set(Gold, 25);
-		expect(ecs.resource(Gold)).toBe(25); // flat alias sees the write
-
-		ecs.setResource(Gold, 40); // flat write is seen by the facade
-		expect(ecs.resources.get(Gold)).toBe(40);
+		expect(ecs.resources.get(Gold)).toBe(25);
 
 		ecs.resources.remove(Gold);
 		expect(ecs.resources.has(Gold)).toBe(false);
-		expect(ecs.hasResource(Gold)).toBe(false);
 	});
 
 	it("snapshots: deterministic flag + capture/restore round-trip", () => {
@@ -87,7 +76,6 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		ecs.addComponent(e, Pos, { x: 3, y: 4 });
 
 		const hashBefore = ecs.snapshots.stateHash();
-		expect(hashBefore).toBe(ecs.stateHash()); // flat alias agrees
 
 		const bytes = ecs.snapshots.capture();
 		ecs.setField(e, Pos, "x", 99);

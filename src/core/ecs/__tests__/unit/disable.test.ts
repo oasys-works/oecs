@@ -103,14 +103,14 @@ describe("entity enable/disable (#577)", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
 		const Cooldown = world.registerSparseComponent({ ready_at: "i32" } as const);
-		const ChildOf = world.registerRelation({ exclusive: true });
+		const ChildOf = world.relations.register({ exclusive: true });
 
 		const parent = world.createEntity();
 		world.addComponent(parent, P, { x: 0, y: 0 });
 		const child = world.createEntity();
 		world.addComponent(child, P, { x: 1, y: 1 });
 		world.addSparse(child, Cooldown, { ready_at: 42 });
-		world.addRelation(child, ChildOf, parent);
+		world.relations.add(child, ChildOf, parent);
 
 		const genBefore = child;
 		world.disable(child);
@@ -118,12 +118,12 @@ describe("entity enable/disable (#577)", () => {
 		expect(world.isAlive(child)).toBe(true);
 		expect(world.hasSparse(child, Cooldown)).toBe(true);
 		expect(world.getSparseField(child, Cooldown, "ready_at")).toBe(42);
-		expect(world.targetOf(child, ChildOf)).toBe(parent);
+		expect(world.relations.targetOf(child, ChildOf)).toBe(parent);
 
 		world.enable(child);
 		expect(child).toBe(genBefore); // same packed id (no destroy/respawn)
 		expect(world.getSparseField(child, Cooldown, "ready_at")).toBe(42);
-		expect(world.targetOf(child, ChildOf)).toBe(parent);
+		expect(world.relations.targetOf(child, ChildOf)).toBe(parent);
 		expect(world.getField(child, P, "x")).toBe(1);
 	});
 
@@ -269,20 +269,20 @@ describe("entity enable/disable (#577)", () => {
 		const a = make();
 		const b = make();
 		// Identical worlds hash equal.
-		expect(a.w.stateHash()).toBe(b.w.stateHash());
+		expect(a.w.snapshots.stateHash()).toBe(b.w.snapshots.stateHash());
 
 		a.w.disable(a.ids[1]);
 		// Disabling changes the digest.
-		expect(a.w.stateHash()).not.toBe(b.w.stateHash());
+		expect(a.w.snapshots.stateHash()).not.toBe(b.w.snapshots.stateHash());
 
 		// Same disable on b converges the hash again (deterministic).
 		b.w.disable(b.ids[1]);
-		expect(a.w.stateHash()).toBe(b.w.stateHash());
+		expect(a.w.snapshots.stateHash()).toBe(b.w.snapshots.stateHash());
 
 		// Enabling restores the original digest.
 		a.w.enable(a.ids[1]);
 		b.w.enable(b.ids[1]);
-		expect(a.w.stateHash()).toBe(b.w.stateHash());
+		expect(a.w.snapshots.stateHash()).toBe(b.w.snapshots.stateHash());
 	});
 
 	it("system-side disable is deferred and safe mid-for_each", () => {

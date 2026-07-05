@@ -136,7 +136,7 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 **Determinism, persistence & integration**
 
-- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `world.stateHash()` (FNV-1a over
+- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `world.snapshots.stateHash()` (FNV-1a over
   live dense bytes, sparse stores, and multi-relation target sets), `snapshot()` / `restoreInto(...)`,
   plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
   identical hashes.

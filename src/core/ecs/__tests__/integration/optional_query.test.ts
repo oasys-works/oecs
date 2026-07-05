@@ -164,7 +164,7 @@ describe("ECS optional query terms (#575)", () => {
 
 		const q = world.query(Pos).optional(Vel);
 
-		const before = world.stateHash();
+		const before = world.snapshots.stateHash();
 		let sum = 0;
 		q.forEach((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
@@ -173,7 +173,7 @@ describe("ECS optional query terms (#575)", () => {
 				sum += px[i] + (vx ? vx[i] : 0);
 			}
 		});
-		const after = world.stateHash();
+		const after = world.snapshots.stateHash();
 
 		expect(after).toBe(before);
 		expect(sum).toBe(1 + 5 + 3); // px(e1)+px(e2)+vx(e1); e2 has no Vel

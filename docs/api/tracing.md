@@ -42,7 +42,7 @@ interface FrameTrace { readonly tick: number; readonly dt: number; readonly even
 ```
 
 > [!TIP]
-> **`phaseBoundary` is the seam for bisecting a [determinism](./determinism.md) divergence.** Implement your own `FrameTraceSink` and read `ecs.stateHash()` inside `phaseBoundary(phase)` — it fires once per phase, right after that phase's flush, the one safe point to hash. Diff the per-phase hashes between two peers to pin a divergence to a single phase. (The built-in `FrameTraceRecorder` no-ops `phaseBoundary`, since it holds no `ECS` reference to hash.)
+> **`phaseBoundary` is the seam for bisecting a [determinism](./determinism.md) divergence.** Implement your own `FrameTraceSink` and read `ecs.snapshots.stateHash()` inside `phaseBoundary(phase)` — it fires once per phase, right after that phase's flush, the one safe point to hash. Diff the per-phase hashes between two peers to pin a divergence to a single phase. (The built-in `FrameTraceRecorder` no-ops `phaseBoundary`, since it holds no `ECS` reference to hash.)
 
 > [!NOTE]
 > The `POST_UPDATE` boundary fires **before** the tick-tail `onSet` dispatch and event clear, so for an `ECS` with `onSet` observers the final per-tick hash may differ from the `POST_UPDATE` phase hash; one without them reconciles exactly. `observerFired` uses `entity === -1` for archetype-granular `onSet`. Sinks must be side-effect-free with respect to the `ECS` — the seam only observes.
