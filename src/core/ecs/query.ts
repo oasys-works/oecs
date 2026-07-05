@@ -183,33 +183,33 @@ export class QueryCache {
 	// Shared single-component composition caches (#334). One Map per direction
 	// keyed by (parent_query_id << 16) | cid, replacing four nullable Maps per
 	// Query. Drops the per-Query Map footprint from O(#queries × 4) to O(4).
-	public readonly andSingle = new Map<number, Query<any>>();
-	public readonly notSingle = new Map<number, Query<any>>();
-	public readonly anyOfSingle = new Map<number, Query<any>>();
-	public readonly changedSingle = new Map<number, ChangedQuery<any>>();
+	public readonly andSingle: Map<number, Query<any>> = new Map();
+	public readonly notSingle: Map<number, Query<any>> = new Map();
+	public readonly anyOfSingle: Map<number, Query<any>> = new Map();
+	public readonly changedSingle: Map<number, ChangedQuery<any>> = new Map();
 	// Optional fetch-if-present composition cache (#575) — dense cid keying,
 	// same shape as the dense single caches above.
-	public readonly optionalSingle = new Map<number, Query<any>>();
+	public readonly optionalSingle: Map<number, Query<any>> = new Map();
 	// Sparse-membership composition caches (#469), same (parent_id << 16) | id
 	// keying — the id is a SparseComponentID (a separate id space), so these
 	// never collide with the dense maps.
-	public readonly withSparseSingle = new Map<number, Query<any>>();
-	public readonly withoutSparseSingle = new Map<number, Query<any>>();
+	public readonly withSparseSingle: Map<number, Query<any>> = new Map();
+	public readonly withoutSparseSingle: Map<number, Query<any>> = new Map();
 	// Relation-wildcard `(R, *)` composition caches (#579), keyed
 	// (parent_id << 16) | relation_id — a separate Map from the sparse caches
 	// because a `withRelation(R)` query also carries the relation id for its
 	// `relationReads` access check.
-	public readonly withRelationSingle = new Map<number, Query<any>>();
-	public readonly withoutRelationSingle = new Map<number, Query<any>>();
+	public readonly withRelationSingle: Map<number, Query<any>> = new Map();
+	public readonly withoutRelationSingle: Map<number, Query<any>> = new Map();
 	// Include-disabled composition cache (#577), keyed by parent query id so
 	// `q.includeDisabled()` returns a stable instance on repeated calls.
-	public readonly includeDisabledSingle = new Map<number, Query<any>>();
+	public readonly includeDisabledSingle: Map<number, Query<any>> = new Map();
 	// Hierarchy depth-ordering composition cache (#581), keyed
 	// (parent_id << 16) | relation_id. Only the unbounded form is cached — a
 	// `maxDepth`-limited term adds a third key dimension and is the rarer
 	// shape, so it mints fresh (hierarchy queries are built at registration,
 	// not per tick).
-	public readonly hierarchySingle = new Map<number, Query<any>>();
+	public readonly hierarchySingle: Map<number, Query<any>> = new Map();
 
 	/** Dedup lookup: bucket scan with full mask equality (buckets are
 	 * typically 1–2 entries). */

@@ -6,4 +6,4 @@
  * `jsr.json` by `src/__tests__/version_sync.test.ts` — bump all three
  * together.
  */
-export const VERSION = "0.5.0";
+export const VERSION = "0.5.1";
