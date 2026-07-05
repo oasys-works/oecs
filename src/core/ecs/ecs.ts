@@ -86,6 +86,7 @@ import {
 import type { EntityID } from "./entity";
 import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";
+import { createRef, type ReadonlyComponentRef } from "./ref";
 import type {
 	ComponentDef,
 	ComponentHandle,
@@ -642,6 +643,41 @@ export class ECS implements QueryResolver {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw entityNotAliveError("getField", entityId, componentLabel(def));
 		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		return arch.readField(row, def.id, field);
+	}
+
+	/** Host-side parity with `SystemContext.refRead` (POLISH_AUDIT M7): a
+	 * read-only whole-component view for tooling/tests, instead of reading
+	 * field-by-field. Same advisory-`readonly` semantics as the ctx variant;
+	 * no `_changedTick` bump. Dev-throws on a dead entity. */
+	public refRead<S extends ComponentSchema>(
+		def: ComponentDef<S>,
+		entityId: EntityID
+	): ReadonlyComponentRef<S> {
+		if (DEV) {
+			accessCheck.checkRead(def);
+			if (!this.store.isAlive(entityId))
+				throw entityNotAliveError("refRead", entityId, componentLabel(def));
+		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		// ! safe: columnGroups is populated for all components with fields in this archetype
+		return createRef<S>(arch.columnGroups[def.id]!, row);
+	}
+
+	/** Total sibling of {@link getField} (POLISH_AUDIT #9): `undefined` when the
+	 * entity is dead or doesn't hold the component, instead of a dev throw /
+	 * prod garbage read. The safe way to probe-and-read in one call:
+	 * `ecs.tryGetField(e, Health, "current") ?? 0`. */
+	public tryGetField<S extends ComponentSchema>(
+		entityId: EntityID,
+		def: ComponentDef<S>,
+		field: string & keyof S
+	): number | undefined {
+		if (DEV) accessCheck.checkRead(def);
+		if (!this.store.hasComponent(entityId, def)) return undefined;
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
 		return arch.readField(row, def.id, field);

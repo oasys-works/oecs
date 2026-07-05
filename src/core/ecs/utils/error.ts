@@ -36,6 +36,10 @@ export enum ECS_ERROR {
 	 * in its access surface — distinct from *_NOT_REGISTERED (which means the
 	 * thing was never registered with the world at all). */
 	ACCESS_UNDECLARED = "ACCESS_UNDECLARED",
+	/** `Query.singleEntity` found 0 or >1 matches (dev-only assertion). */
+	QUERY_NOT_SINGLETON = "QUERY_NOT_SINGLETON",
+	/** A run-condition factory was given invalid arguments (dev-only). */
+	INVALID_RUN_CONDITION = "INVALID_RUN_CONDITION",
 	SYSTEM_FN_ARITY = "SYSTEM_FN_ARITY",
 	PARTITION_APPEND_NEEDS_ENTITY_ROW = "PARTITION_APPEND_NEEDS_ENTITY_ROW",
 	PARTITION_BULK_INTO_DISABLED = "PARTITION_BULK_INTO_DISABLED",

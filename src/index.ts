@@ -58,7 +58,10 @@ export {
 	type ConditionContext,
 	runIfResourceEq,
 	runEveryNTicks,
-	runIfAnyMatch
+	runIfAnyMatch,
+	not,
+	allOf,
+	anyOf
 } from "./core/ecs";
 
 // Systems

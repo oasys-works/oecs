@@ -34,6 +34,7 @@ import type { ComponentDef } from "./component";
 import type { ResourceKey } from "./resource";
 import type { Query } from "./query";
 import { DEV } from "../../dev_flag";
+import { ECSError, ECS_ERROR } from "./utils/error";
 
 /**
  * The read-only slice of `SystemContext` a run condition is handed. Deliberately
@@ -78,8 +79,16 @@ export interface RunCondition {
  * gate — flip `world.resources.set(key, …)` and the whole group toggles.
  */
 export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition {
+	if (DEV && typeof expected === "object" && expected !== null) {
+		// `===` is reference identity for objects: unless the caller later sets
+		// the resource to THIS exact object, the gate never fires. Usually the
+		// intent was a primitive (enum string/number) — warn, don't throw.
+		console.warn(
+			`runIfResourceEq('${(key as unknown as symbol).description ?? "?"}'): 'expected' is an object — comparison is by reference identity (===), so the gate only fires when the resource is set to this exact instance. Prefer a primitive phase value.`
+		);
+	}
 	return {
-		name: `run_if_resource_eq(${(key as unknown as symbol).description ?? "?"})`,
+		name: `runIfResourceEq(${(key as unknown as symbol).description ?? "?"})`,
 		resourceReads: [key],
 		evaluate: (ctx) => ctx.resource(key) === expected
 	};
@@ -104,10 +113,16 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
  */
 export function runEveryNTicks(n: number, offset = 0): RunCondition {
 	if (DEV && (!Number.isInteger(n) || n < 1)) {
-		throw new Error(`runEveryNTicks: n must be a positive integer, got ${n}`);
+		throw new ECSError(
+			ECS_ERROR.INVALID_RUN_CONDITION,
+			`runEveryNTicks: n must be a positive integer, got ${n}`
+		);
 	}
 	if (DEV && !Number.isInteger(offset)) {
-		throw new Error(`runEveryNTicks: offset must be an integer, got ${offset}`);
+		throw new ECSError(
+			ECS_ERROR.INVALID_RUN_CONDITION,
+			`runEveryNTicks: offset must be an integer, got ${offset}`
+		);
 	}
 	// Fold the phase into [0, n) once at construction (handles offset ≥ n and
 	// negative offset); the per-tick check then never relies on signed-zero.
@@ -131,8 +146,61 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
  */
 export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunCondition {
 	return {
-		name: "run_if_any_match",
+		name: "runIfAnyMatch",
 		reads: query._defs,
 		evaluate: () => query.count() > 0
+	};
+}
+
+// ── Combinators (POLISH_AUDIT batch 4) ─────────────────────────────────────
+// Compose conditions without hand-rolled closures. Each combinator merges the
+// operands' declared read surfaces (`reads` / `resourceReads`) so accessCheck
+// and the future parallel scheduler still see every edge, and derives its
+// `name` from the operands for legible diagnostics. Evaluation order is the
+// argument order, short-circuiting like `&&` / `||` — safe because conditions
+// are pure by contract (rule 1 in the file header), so a skipped evaluate has
+// no observable effect.
+
+/** Merge the declared read surfaces of composed conditions. */
+function mergeDeclares(conds: readonly RunCondition[]): {
+	reads?: readonly ComponentDef[];
+	resourceReads?: readonly ResourceKey<any>[];
+} {
+	const reads: ComponentDef[] = [];
+	const resourceReads: ResourceKey<any>[] = [];
+	for (const c of conds) {
+		if (c.reads) reads.push(...c.reads);
+		if (c.resourceReads) resourceReads.push(...c.resourceReads);
+	}
+	return {
+		...(reads.length > 0 ? { reads } : {}),
+		...(resourceReads.length > 0 ? { resourceReads } : {})
+	};
+}
+
+/** Invert a condition: run exactly when `cond` would skip. */
+export function not(cond: RunCondition): RunCondition {
+	return {
+		name: `not(${cond.name})`,
+		...mergeDeclares([cond]),
+		evaluate: (ctx) => !cond.evaluate(ctx)
+	};
+}
+
+/** Run only when EVERY condition passes (`&&`, short-circuit). */
+export function allOf(...conds: RunCondition[]): RunCondition {
+	return {
+		name: `allOf(${conds.map((c) => c.name).join(", ")})`,
+		...mergeDeclares(conds),
+		evaluate: (ctx) => conds.every((c) => c.evaluate(ctx))
+	};
+}
+
+/** Run when ANY condition passes (`||`, short-circuit). */
+export function anyOf(...conds: RunCondition[]): RunCondition {
+	return {
+		name: `anyOf(${conds.map((c) => c.name).join(", ")})`,
+		...mergeDeclares(conds),
+		evaluate: (ctx) => conds.some((c) => c.evaluate(ctx))
 	};
 }

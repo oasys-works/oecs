@@ -240,6 +240,8 @@ export class TransactionBuilder {
 export class Editor {
 	private readonly undoStack: MutableTxn[] = [];
 	private readonly redoStack: MutableTxn[] = [];
+	/** onChange subscribers — see {@link onChange}. */
+	private readonly listeners: (() => void)[] = [];
 	/** Per-`(entity, component, field)` shadow of edited values, for inverse correctness. */
 	private readonly shadow = new Map<string, number>();
 
@@ -330,6 +332,7 @@ export class Editor {
 		for (const cmd of inverse) this.queue.push(cmd);
 		this.applyShadow(inverse);
 		this.redoStack.push(txn);
+		this.notify();
 		return true;
 	}
 
@@ -344,6 +347,7 @@ export class Editor {
 		for (const cmd of txn.forward) this.queue.push(cmd);
 		this.applyShadow(txn.forward);
 		this.undoStack.push(txn);
+		this.notify();
 		return true;
 	}
 
@@ -352,11 +356,41 @@ export class Editor {
 		this.undoStack.length = 0;
 		this.redoStack.length = 0;
 		this.shadow.clear();
+		this.notify();
 	}
 
 	/** Current stack depths — for an "Undo (3)" / "Redo" affordance. */
 	depths(): { undo: number; redo: number } {
 		return { undo: this.undoStack.length, redo: this.redoStack.length };
+	}
+
+	/** `true` when `undo()` would do something — allocation-free (M10). */
+	get canUndo(): boolean {
+		return this.undoStack.length > 0;
+	}
+
+	/** `true` when `redo()` would do something — allocation-free (M10). */
+	get canRedo(): boolean {
+		return this.redoStack.length > 0;
+	}
+
+	/**
+	 * Subscribe to undo/redo-stack changes: fires after every commit, undo,
+	 * redo, and clear — the push signal an "Undo (3)" affordance needs instead
+	 * of polling `depths()` per frame (M10). Returns an unsubscribe function.
+	 * Callbacks run synchronously in subscription order; read `canUndo` /
+	 * `canRedo` / `depths()` inside.
+	 */
+	onChange(cb: () => void): () => void {
+		this.listeners.push(cb);
+		return () => {
+			const i = this.listeners.indexOf(cb);
+			if (i !== -1) this.listeners.splice(i, 1);
+		};
+	}
+
+	private notify(): void {
+		for (const cb of this.listeners.slice()) cb();
 	}
 
 	/**
@@ -397,6 +431,7 @@ export class Editor {
 		this.applyShadow(txn.forward);
 		this.undoStack.push(txn);
 		this.redoStack.length = 0;
+		this.notify();
 		return txn;
 	}
 

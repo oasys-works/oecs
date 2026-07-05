@@ -336,3 +336,39 @@ describe("Editor — pending_field self-resolves once the channel catches up", (
 		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
 	});
 });
+
+describe("Editor — onChange / canUndo / canRedo (M10)", () => {
+	it("fires on commit, undo, redo, clear; unsubscribe stops it", () => {
+		const { world, Cell, editor } = setup();
+		let fires = 0;
+		const off = editor.onChange(() => {
+			fires++;
+		});
+
+		expect(editor.canUndo).toBe(false);
+		expect(editor.canRedo).toBe(false);
+
+		editor.spawn([spawnEntry(Cell, { x: 1, heat: 0 })]);
+		world.update(0.016);
+		expect(fires).toBe(1);
+		expect(editor.canUndo).toBe(true);
+
+		editor.undo();
+		world.update(0.016);
+		expect(fires).toBe(2);
+		expect(editor.canRedo).toBe(true);
+
+		editor.redo();
+		world.update(0.016);
+		expect(fires).toBe(3);
+
+		editor.clear();
+		expect(fires).toBe(4);
+		expect(editor.canUndo).toBe(false);
+		expect(editor.canRedo).toBe(false);
+
+		off();
+		editor.spawn([spawnEntry(Cell, { x: 2, heat: 0 })]);
+		expect(fires).toBe(4);
+	});
+});

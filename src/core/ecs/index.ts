@@ -57,7 +57,10 @@ export {
 	type ConditionContext,
 	runIfResourceEq,
 	runEveryNTicks,
-	runIfAnyMatch
+	runIfAnyMatch,
+	not,
+	allOf,
+	anyOf
 } from "./run_condition";
 
 // Systems

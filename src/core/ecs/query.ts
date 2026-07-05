@@ -557,6 +557,68 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
+	/** Whether this query carries only dense terms — the precondition for the
+	 * archetype-walk fast paths (`count`, `firstEntity`, `singleEntity`). */
+	private _isDenseOnly(): boolean {
+		return (
+			this._sparseInclude.length === 0 &&
+			this._sparseExclude.length === 0 &&
+			this._relationIncludes.length === 0 &&
+			this._relationExcludes.length === 0 &&
+			this._hierarchy === null
+		);
+	}
+
+	/** First matching entity, or `undefined` when the query matches none — the
+	 * singleton read (`player`, `camera`) without hand-rolling a forEach +
+	 * closure capture (POLISH_AUDIT M8). Dense-only queries answer from the
+	 * first non-empty archetype in O(archetypes); queries with sparse /
+	 * relation / hierarchy terms fall back to a full `forEachEntity` walk.
+	 * "First" is iteration order, not spawn order — with more than one match
+	 * the pick is arbitrary (use `singleEntity` to assert uniqueness). */
+	public firstEntity(): EntityID | undefined {
+		if (this._isDenseOnly()) {
+			const archs = this._nonEmpty();
+			for (let i = 0; i < archs.length; i++) {
+				const bound = this._includeDisabled ? archs[i].totalCount : archs[i].enabledCount;
+				if (bound > 0) return archs[i].entityIds[0];
+			}
+			return undefined;
+		}
+		let found: EntityID | undefined;
+		this.forEachEntity((e) => {
+			if (found === undefined) found = e;
+		});
+		return found;
+	}
+
+	/** The query's one matching entity. Dev-throws `QUERY_NOT_SINGLETON` when
+	 * the match count is 0 or >1 — the singleton assertion for entities that
+	 * must be unique (player, camera). Prod skips the count and returns the
+	 * first match (`undefined` if none). */
+	public singleEntity(): EntityID {
+		if (DEV) {
+			const n = this._isDenseOnly() ? this.count() : this._countViaWalk();
+			if (n !== 1) {
+				throw new ECSError(
+					ECS_ERROR.QUERY_NOT_SINGLETON,
+					`Query.singleEntity: expected exactly 1 matching entity, found ${n}`,
+					{ count: n }
+				);
+			}
+		}
+		return this.firstEntity() as EntityID;
+	}
+
+	/** Count for non-dense queries — full `forEachEntity` walk. */
+	private _countViaWalk(): number {
+		let n = 0;
+		this.forEachEntity(() => {
+			n++;
+		});
+		return n;
+	}
+
 	/** Number of matching archetypes (including empty ones). */
 	public get archetypeCount(): number {
 		if (DEV) this._assertDenseOnly("archetypeCount");

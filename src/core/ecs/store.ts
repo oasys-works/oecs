@@ -2647,9 +2647,9 @@ export class Store implements ObserverHost, QueryHost {
 		this.sparseStoreOf(def).remove(getEntityIndex(entityId));
 	}
 
+	/** Total, like `hasComponent` — `false` for a dead entity, never a throw. */
 	public hasSparse(entityId: EntityID, def: SparseComponentDef): boolean {
 		if (!this.isAlive(entityId)) {
-			if (DEV) throw entityNotAliveError("hasSparse", entityId, this.sparseLabel(def as unknown as number));
 			return false;
 		}
 		return this.sparseStoreOf(def).has(getEntityIndex(entityId));
@@ -3479,9 +3479,11 @@ export class Store implements ObserverHost, QueryHost {
 		this._onArchGrow(targetArch, tgtPre, tgtPreE);
 	}
 
+	/** Total (POLISH_AUDIT #9): a dead/stale `entityId` returns `false` rather
+	 * than throwing — a "has" probe is exactly what callers reach for to avoid
+	 * touching dead entities, so it must be safe to ask. */
 	public hasComponent(entityId: EntityID, def: ComponentHandle): boolean {
 		if (!this.isAlive(entityId)) {
-			if (DEV) throw entityNotAliveError("hasComponent", entityId, this.componentLabel(def.id));
 			return false;
 		}
 		const entityIndex = getEntityIndex(entityId);

@@ -157,8 +157,16 @@ export type ObserverConfig =
 
 /** Handle returned by `world.observe(...)`. `dispose()` unregisters; safe to
  * call more than once. */
+// Runtime fallback matching the TS/Babel downlevel `using` helpers, which key
+// off Symbol.for("Symbol.dispose") when the well-known symbol is absent.
+const DISPOSE: typeof Symbol.dispose =
+	Symbol.dispose ?? (Symbol.for("Symbol.dispose") as typeof Symbol.dispose);
+
 export interface ObserverHandle {
 	dispose(): void;
+	/** `using h = world.observe(C, {...})` — explicit-resource-management sugar
+	 * over {@link dispose} (TC39 `Symbol.dispose`). */
+	[Symbol.dispose](): void;
 }
 
 /** A registered observer (one component). */
@@ -385,9 +393,8 @@ export class ObserverRegistry {
 
 		if (entry.yieldExisting && entry.onAdd !== undefined) this._yieldExisting(entry);
 
-		return {
-			dispose: () => this._dispose(entry)
-		};
+		const dispose = (): void => this._dispose(entry);
+		return { dispose, [DISPOSE]: dispose };
 	}
 
 	private _dispose(entry: ObserverEntry): void {

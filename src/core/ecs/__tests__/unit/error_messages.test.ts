@@ -65,8 +65,10 @@ describe("component debug names", () => {
 	it("array-shorthand registration accepts a name in the options slot", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const, "i32", { name: "Pos" });
-		const stale = ((world.createEntity() as number) + (1 << 20)) as never;
-		expect(() => world.hasComponent(stale, Pos)).toThrow(/'Pos' \(component 0\)/);
+		const e = world.createEntity();
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+		const stale = ((e as number) + (1 << 20)) as never;
+		expect(() => world.getField(stale, Pos, "x")).toThrow(/'Pos' \(component 0\)/);
 	});
 });
 
