@@ -486,11 +486,12 @@ for (let i = 0; i < 100; i++) {
   if (i === 0) first = e;
 }
 
-// Queue a damage event; readable on the first update() call.
-ecs.events.emit(Hit, { target: first, damage: 40 });
-
 // --- Run ---
 ecs.startup();
+
+// Queue a damage event AFTER startup() — startup drains all event channels at
+// its tail, so anything emitted before it would never reach the first update().
+ecs.events.emit(Hit, { target: first, damage: 40 });
 ecs.update(1 / 60);
 ecs.update(1 / 60);
 

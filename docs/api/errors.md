@@ -25,17 +25,17 @@ function isEcsError(error: unknown): error is ECSError;
 `ECSError`, `ECS_ERROR`, and `isEcsError` are exported from the **package root** (`@oasys/oecs`).
 
 > [!IMPORTANT]
-> **Most `ECSError`s are dev-only.** The validation and access-check throws are gated by `__DEV__` and gone in production, where the same mistake fails open instead. The exceptions that fire in **any** build are the structural/fatal ones: `CIRCULAR_SYSTEM_DEPENDENCY`, `STORE_CAP_EXCEEDED`, `INVALID_MEMORY_OPTIONS`, `DETERMINISM_DISABLED`, and the construction-time validators. Treat dev throws as a development safety net, not a production error-handling channel — see [dev vs prod](./index.md#dev-vs-prod--read-this-once).
+> **Most `ECSError`s are dev-only.** The validation and access-check throws are gated by `__DEV__` and gone in production, where the same mistake fails open instead. The exceptions that fire in **any** build are the structural/fatal ones: `CIRCULAR_SYSTEM_DEPENDENCY`, `STORE_CAP_EXCEEDED`, `INVALID_MEMORY_OPTIONS`, `DETERMINISM_DISABLED`, `INVALID_FRAME_STEP`, and the construction-time validators. Treat dev throws as a development safety net, not a production error-handling channel — see [dev vs prod](./index.md#dev-vs-prod--read-this-once).
 
 ## Categories
 
-All 46 `ECS_ERROR` values, grouped by area:
+All 47 `ECS_ERROR` values, grouped by area:
 
 **Entities & components**
 `EID_MAX_INDEX_OVERFLOW` · `EID_MAX_GEN_OVERFLOW` · `ENTITY_NOT_ALIVE` · `ENTITY_NOT_DISABLED` · `COMPONENT_NOT_REGISTERED` · `COMPONENT_LIMIT_EXCEEDED` · `FIELD_NOT_REGISTERED` · `COMPONENT_INDEX_INVARIANT`
 
 **Systems & schedule**
-`CIRCULAR_SYSTEM_DEPENDENCY` · `DUPLICATE_SYSTEM` · `SYSTEM_FN_ARITY` · `QUERY_ACCESS_UNDECLARED` · `ACCESS_UNDECLARED` · `OPTIONAL_TERM_NOT_DECLARED` · `INVALID_RUN_CONDITION` · `INVALID_FIXED_TIMESTEP` · `INVALID_MAX_FIXED_STEPS`
+`CIRCULAR_SYSTEM_DEPENDENCY` · `DUPLICATE_SYSTEM` · `SYSTEM_FN_ARITY` · `QUERY_ACCESS_UNDECLARED` · `ACCESS_UNDECLARED` · `OPTIONAL_TERM_NOT_DECLARED` · `INVALID_RUN_CONDITION` · `INVALID_FIXED_TIMESTEP` · `INVALID_MAX_FIXED_STEPS` · `INVALID_FRAME_STEP`
 
 **Queries, archetypes, sparse & relations**
 `ARCHETYPE_NOT_FOUND` · `EMPTY_ARCHETYPE_MATERIALIZE` · `QUERY_NOT_SINGLETON` · `SPARSE_QUERY_DENSE_PATH` · `SPARSE_CACHE_KEY_OVERFLOW` · `HIERARCHY_ALREADY_SET` · `HIERARCHY_INVALID_MAX_DEPTH` · `RELATION_NOT_REGISTERED` · `RELATION_MODE_INVALID` · `RELATION_MODE_MISMATCH` · `RELATION_CYCLE` · `PARTITION_APPEND_NEEDS_ENTITY_ROW` · `PARTITION_BULK_INTO_DISABLED` · `STRUCTURAL_DURING_ITERATION`
@@ -51,7 +51,7 @@ All 46 `ECS_ERROR` values, grouped by area:
 
 A few that are easy to confuse with their neighbors:
 
-- `ACCESS_UNDECLARED` — a system touched a component/sparse/relation/resource it didn't declare in its access surface (distinct from `*_NOT_REGISTERED`, which means the thing was never registered with the world at all). Also thrown when host `ecs.despawn` is called from inside a system body — use `ctx.commands.despawn` there.
+- `ACCESS_UNDECLARED` — a system touched a component/sparse/relation/resource it didn't declare in its access surface (distinct from `*_NOT_REGISTERED`, which means the thing was never registered with the world at all). Also thrown when any immediate host structural mutator (`ecs.despawn`, `ecs.addComponent`/`removeComponent` and their plural forms, `ecs.disable`/`enable`, `ecs.batchAddComponent`/`batchRemoveComponent`) is called from inside a system body — use the deferred `ctx.commands.*` there.
 - `QUERY_NOT_SINGLETON` — `Query.singleEntity()` found 0 or more than 1 matching entity (dev-only assertion).
 - `INVALID_RUN_CONDITION` — a run-condition factory (e.g. `runEveryNTicks`) was given invalid arguments, like a non-positive or non-integer `n` (dev-only).
 - `STRUCTURAL_DURING_ITERATION` — an immediate host-side structural mutation (`despawn`, `addComponent`/`removeComponent` transition, `disable`/`enable`) hit an archetype that a live query walk (`forEach`/`eachChunk`/`forEachUntil`/`changed(...).forEach`) is currently visiting; the row swap would skip or repeat entities under the iterator. Collect ids during the walk and mutate after it (dev-only).

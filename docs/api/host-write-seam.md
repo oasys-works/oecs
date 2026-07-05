@@ -116,6 +116,7 @@ class HostCommandRecorder implements HostCommandSink {
   constructor(seed?: number);
   readonly seed: number;
   log(): CommandLog;                         // LIVE view, not a copy
+  snapshotLog(): CommandLog;                 // stable deep copy — the safe default
 }
 interface CommandLog { readonly seed: number; readonly startup: readonly HostCommand[]; readonly ticks: readonly RecordedTick[]; }
 interface RecordedTick { readonly tick: number; readonly dt: number; readonly commands: readonly HostCommand[]; }

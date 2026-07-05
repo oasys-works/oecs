@@ -113,8 +113,8 @@ Two presets over `ecs.relations.register`, each fixing a cardinality and a clean
 ```text
 import { registerChildOf, registerIsA } from "@oasys/oecs";
 // Free functions — they take the ECS as their first argument (not methods on it):
-registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef;   // ChildOf(child → parent); default "delete"
-registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef;       // IsA(instance → exemplar); default "clear"
+registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;   // ChildOf(child → parent); default "delete"
+registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;       // IsA(instance → exemplar); default "clear"
 interface BuiltinRelationOptions { readonly onDeleteTarget?: OnDeleteTarget }
 ```
 

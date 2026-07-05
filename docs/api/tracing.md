@@ -54,7 +54,7 @@ A global singleton that aggregates event/resource/action dispatch **counts** by 
 ```ts
 import { dispatchTrace } from "@oasys/oecs/internal"; // unstable tooling surface
 
-dispatchTrace.isActive();    // gated by __DEV__ AND the VISUAL_INTEL_TRACE env var
+dispatchTrace.isActive();    // the runtime half of the gate: VISUAL_INTEL_TRACE env var (__DEV__ is checked at call sites)
 dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, JSON-serializable
 dispatchTrace.reset();
 ```

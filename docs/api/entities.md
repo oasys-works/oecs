@@ -14,7 +14,7 @@ ecs.despawn(e);   // immediate — isAlive(e) is false on the next line
 
 ## Immediate vs deferred — the one thing to internalize
 
-The receiver implies the mode. Everything on the host facade (`ecs.*`) applies **immediately**; structural ops inside a system (`ctx.*` / `ctx.commands.*`) are **deferred** to the phase flush:
+The receiver implies the mode. Everything on the host facade (`ecs.*`) applies **immediately**; structural ops inside a system (`ctx.commands.*`) are **deferred** to the phase flush:
 
 | Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
 | --- | --- | --- |

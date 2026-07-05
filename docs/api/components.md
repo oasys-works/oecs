@@ -85,7 +85,7 @@ ecs.query(Pos).without(Frozen);       // exclude frozen entities
 
 ```ts
 interface ComponentDef<S> {
-  (values?: Partial<FieldValues<S>>): Bundle<S>;  // call it to pair values with the def
+  (values?: Partial<FieldValues<S>>): Bundle<S>;  // call it to pair values with the def (tag defs take no argument)
   readonly id: ComponentID;                        // the raw numeric id
 }
 ```
@@ -155,7 +155,7 @@ tryGetField<S>(entityId: EntityID, def: ComponentDef<S>, field: string & keyof S
 const hp = ecs.tryGetField(e, Health, "current") ?? 0;
 ```
 
-For whole-component access, `ecs.refRead(def, e)` returns a read-only view (see [refs](./refs.md)); inside a system, use `ctx.getField` / `ctx.ref`.
+For whole-component access, `ecs.refRead(def, e)` returns a read-only view (see [refs](./refs.md)); inside a system, use `ctx.getField` / `ctx.tryGetField` / `ctx.ref`.
 
 ## Types you may reference
 

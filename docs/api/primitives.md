@@ -27,6 +27,7 @@ O(1) add/delete/has of dense integer keys, with the values iterable as a dense a
 new SparseSet();
 get size: number;   get values: readonly number[];
 has(key): boolean;   add(key): void;   delete(key): boolean;   clear(): void;
+[Symbol.iterator](); // iterates the dense values
 ```
 
 ## `SparseMap<V>`
@@ -38,6 +39,7 @@ new SparseMap<V>();
 get size: number;   get keys: readonly number[];
 has(key): boolean;   get(key): V | undefined;   set(key, value): void;   delete(key): boolean;
 clear(): void;   forEach(fn: (key: number, value: V) => void): void;
+[Symbol.iterator](); // iterates [key, value] pairs
 ```
 
 ## `GrowableTypedArray` family

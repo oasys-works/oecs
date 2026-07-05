@@ -43,14 +43,14 @@ All immediate, all safe mid-tick (no dense row ever moves):
 
 ```ts
 addSparse(e, def): this;                        // tag form (no values)
-addSparse<S>(e, def, values: FieldValues<S>): this;
+addSparse<S>(e, def, values: CompleteFieldValues<S>): this;
 removeSparse(e, def): this;
 hasSparse(e, def): boolean;
 getSparseField<S>(e, def, field): number;
 setSparseField<S>(e, def, field, value): void;
 ```
 
-The same six exist on `ctx` inside systems (and *are* access-checked there via `sparseReads`/`sparseWrites`).
+The same set exists on `ctx` inside systems, access-checked there via `sparseReads`/`sparseWrites` — except `hasSparse`, which is unchecked, mirroring `hasComponent`.
 
 > [!WARNING]
 > `getSparseField` on a non-member **throws `COMPONENT_NOT_REGISTERED` in dev** (and returns `0` in production) — guard with `hasSparse` first if a component may be absent.

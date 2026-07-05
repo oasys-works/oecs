@@ -99,7 +99,7 @@ type BackendSystemHandle = /* opaque branded number the backend mints */;
 `ecs.attachBackend(backend)` opts into running a system's body via the backend instead of its TS closure. A system carrying a `backendHandle` (on its [`SystemConfig`](./systems.md#systemconfig)) is executed as `backend.run(handle)`; systems without one are untouched. `run` executes inside the system's access span, so its declared `writes` authorize whatever shared columns the backend mutates. Default is none — a bare `ECS` is pure-TS and pays nothing.
 
 > [!NOTE]
-> One backend per `ECS` — attaching a second throws `BACKEND_ALREADY_ATTACHED`. The returned function detaches it and reverts to the pure-TS path. The handle is engine-opaque; the backend owns its id space.
+> One backend per `ECS` — attaching a second throws `BACKEND_ALREADY_ATTACHED` in dev builds. The returned function detaches it and reverts to the pure-TS path. The handle is engine-opaque; the backend owns its id space.
 
 ## See also
 

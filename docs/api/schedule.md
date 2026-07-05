@@ -45,6 +45,7 @@ enum SCHEDULE {
 const stepper = new FrameStepper(ecs, {
   fixedDt: 1 / 60,   // dt used by step() when none is given (default 1/60)
   maxDt: 0.25,       // clamp on raw browser-frame deltas (default 0.25 s)
+  autoStart: true,   // start the rAF loop immediately (default false)
 });
 stepper.play();               // tick on requestAnimationFrame
 stepper.pause();              // stop; manual step() still works
@@ -53,7 +54,7 @@ stepper.step();               // advance exactly one frame (debuggers, tests, ed
 stepper.stepFrames(10);       // replay a paused sim
 ```
 
-`maxDt` clamps each raw rAF delta **before** it reaches `update()` — a backgrounded tab suspends rAF, and without the clamp the first frame back would carry the whole suspension as one delta (still bounded by `maxFixedSteps`, but a burst). The first frame after `play()` uses `fixedDt`, since there is no previous timestamp. Explicit `step(dt)` deltas are trusted, not clamped. Non-browser hosts and tests inject `requestFrame`/`cancelFrame`; validation failures throw `INVALID_FRAME_STEP`.
+`maxDt` clamps each raw rAF delta **before** it reaches `update()` — a backgrounded tab suspends rAF, and without the clamp the first frame back would carry the whole suspension as one delta (still bounded by `maxFixedSteps`, but a burst). The first frame after `play()` uses `fixedDt`, since there is no previous timestamp. Explicit `step(dt)` deltas are trusted, not clamped. Non-browser hosts and tests inject `requestFrame`/`cancelFrame`; validation failures throw `INVALID_FRAME_STEP`. At runtime the stepper exposes `isRunning`, settable `fixedDt`/`maxDt`, and `dispose()`.
 
 ## Adding & ordering systems
 
@@ -62,11 +63,11 @@ addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): thi
 
 interface SystemEntry {
   system: SystemDescriptor;
-  ordering?: { before?: OrderingTarget[]; after?: OrderingTarget[] };
+  ordering?: { before?: SystemOrderingTarget[]; after?: SystemOrderingTarget[] };
   runIf?: RunCondition | RunCondition[];   // ANDed with any set conditions
   set?: SystemSet | SystemSet[];
 }
-// OrderingTarget = SystemDescriptor | SystemSet
+// SystemOrderingTarget = SystemDescriptor | SystemSet
 ```
 
 ```ts
