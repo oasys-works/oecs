@@ -225,3 +225,6 @@ export { resourceKey } from "./core/ecs";
 // Error taxonomy — every ECS-thrown error is an `ECSError` tagged with an
 // `ECS_ERROR` category, so a consumer can catch and branch on the category.
 export { ECSError, ECS_ERROR, isEcsError } from "./core/ecs";
+
+// The installed package version, readable at runtime.
+export { VERSION } from "./version";

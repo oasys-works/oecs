@@ -28,6 +28,9 @@ deno add jsr:@oasys/oecs    # JSR (Deno)
 npx jsr add @oasys/oecs     # JSR (npm-compatible)
 ```
 
+Requires a runtime with resizable `ArrayBuffer` (the default heap profile grows in place):
+Node ≥ 20, Deno ≥ 1.38, Chrome 111+, Firefox 128+, Safari 16.4+.
+
 ## Quick start
 
 ```ts

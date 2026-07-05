@@ -31,6 +31,7 @@ const ROOT_EXPORTS = [
 	"SparseRestoreError",
 	"StoreRestoreError",
 	"SystemContext",
+	"VERSION",
 	"WORLD_SNAPSHOT_VERSION",
 	"WorldRestoreError",
 	"applyHostCommand",
