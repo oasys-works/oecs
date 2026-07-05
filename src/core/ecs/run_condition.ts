@@ -104,16 +104,16 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
  */
 export function runEveryNTicks(n: number, offset = 0): RunCondition {
 	if (DEV && (!Number.isInteger(n) || n < 1)) {
-		throw new Error(`run_every_n_ticks: n must be a positive integer, got ${n}`);
+		throw new Error(`runEveryNTicks: n must be a positive integer, got ${n}`);
 	}
 	if (DEV && !Number.isInteger(offset)) {
-		throw new Error(`run_every_n_ticks: offset must be an integer, got ${offset}`);
+		throw new Error(`runEveryNTicks: offset must be an integer, got ${offset}`);
 	}
 	// Fold the phase into [0, n) once at construction (handles offset ≥ n and
 	// negative offset); the per-tick check then never relies on signed-zero.
 	const phase = ((offset % n) + n) % n;
 	return {
-		name: `run_every_n_ticks(${n}${phase !== 0 ? `, +${phase}` : ""})`,
+		name: `runEveryNTicks(${n}${phase !== 0 ? `, +${phase}` : ""})`,
 		evaluate: (ctx) => (ctx.ecsTick - phase) % n === 0
 	};
 }

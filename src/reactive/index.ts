@@ -1,6 +1,6 @@
 /**
  * Reactive kernel — the engine UI seam's fine-grained, glitch-free reactive core
- * (ADR-0021). Zero dependencies; consumer owns rendering. See ./CONTEXT.md.
+ * (ADR-0021). Zero dependencies; consumer owns rendering. See docs/api/reactive.md.
  */
 export {
 	signal,

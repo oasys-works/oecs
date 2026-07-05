@@ -334,7 +334,7 @@ export class ObserverRegistry {
 		if (DEV && config.onSet === undefined && config.granularity !== undefined) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
-				"observe(): `granularity` is meaningless without `on_set`"
+				"observe(): `granularity` is meaningless without `onSet`"
 			);
 		}
 		if (
@@ -347,7 +347,7 @@ export class ObserverRegistry {
 		) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
-				"observe(): at least one of on_add / on_remove / on_disable / on_enable / on_set is required"
+				"observe(): at least one of onAdd / onRemove / onDisable / onEnable / onSet is required"
 			);
 		}
 

@@ -84,9 +84,12 @@ import {
 	type QueryResolver
 } from "./query";
 import type { EntityID } from "./entity";
+import { entityNotAliveError } from "./entity";
+import { componentLabel } from "./debug_names";
 import type {
 	ComponentDef,
 	ComponentHandle,
+	ComponentRegisterOptions,
 	ComponentSchema,
 	CompleteFieldValues,
 	BundleOrDef
@@ -186,7 +189,7 @@ function validateFixedTimestep(value: number): number {
 	if (!(value > 0) || !Number.isFinite(value)) {
 		throw new ECSError(
 			ECS_ERROR.INVALID_FIXED_TIMESTEP,
-			`fixed_timestep must be a finite number > 0, got ${value}`
+			`fixedTimestep must be a finite number > 0, got ${value}`
 		);
 	}
 	return value;
@@ -202,7 +205,7 @@ function validateMaxFixedSteps(value: number): number {
 	if (!Number.isInteger(value) || value < 1) {
 		throw new ECSError(
 			ECS_ERROR.INVALID_MAX_FIXED_STEPS,
-			`max_fixed_steps must be an integer >= 1, got ${value}`
+			`maxFixedSteps must be an integer >= 1, got ${value}`
 		);
 	}
 	return value;
@@ -294,7 +297,7 @@ export class ECS implements QueryResolver {
 		) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				"ECSOptions.initial_capacity / buffer_allocator were replaced by ECSOptions.memory (#682): " +
+				"ECSOptions.initial_capacity / buffer_allocator were replaced by ECSOptions.memory: " +
 					"initial_capacity → memory.columnCapacity (or memory.budget); " +
 					"buffer_allocator → memory.wasm (WASM-backed) or memory.allocator (custom in-place)."
 			);
@@ -444,39 +447,51 @@ export class ECS implements QueryResolver {
 		if (DEV) this.store._trace = sink;
 	}
 
-	// Overload 1: record syntax (per-field types)
-	public registerComponent<S extends Record<string, TypedArrayTag>>(schema: S): ComponentDef<S>;
+	// Overload 1: record syntax (per-field types). `opts.name` records a debug
+	// label interpolated into dev-mode diagnostics (`'Pos' (component 5)`
+	// instead of `component 5`) — diagnostic only, no behavioural effect.
+	public registerComponent<S extends Record<string, TypedArrayTag>>(
+		schema: S,
+		opts?: ComponentRegisterOptions
+	): ComponentDef<S>;
 	// Overload 2: array shorthand (uniform type, defaults to "f64"). On a
 	// `{ deterministic: true }` world the "f64" default is REJECTED (#777) — pass
 	// an explicit integer type, e.g. `registerComponent(["x","y"], "i32")`.
 	public registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
 		fields: F,
-		type?: T
+		type?: T,
+		opts?: ComponentRegisterOptions
 	): ComponentDef<{ readonly [K in F[number]]: T }>;
 	// Implementation
 	public registerComponent(
 		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
-		type?: TypedArrayTag
+		typeOrOpts?: TypedArrayTag | ComponentRegisterOptions,
+		opts?: ComponentRegisterOptions
 	): ComponentDef<any> {
 		if (Array.isArray(schemaOrFields)) {
-			const t = type ?? "f64";
+			const t = typeof typeOrOpts === "string" ? typeOrOpts : "f64";
 			const schema: Record<string, TypedArrayTag> = Object.create(null);
 			for (const f of schemaOrFields) schema[f] = t;
-			return this.store.registerComponent(schema);
+			return this.store.registerComponent(schema, opts?.name);
 		}
-		return this.store.registerComponent(schemaOrFields as Record<string, TypedArrayTag>);
+		const o = typeof typeOrOpts === "object" ? typeOrOpts : opts;
+		return this.store.registerComponent(
+			schemaOrFields as Record<string, TypedArrayTag>,
+			o?.name
+		);
 	}
 
 	// Overload 1: record syntax (per-field types)
 	public registerSparseComponent<S extends Record<string, TypedArrayTag>>(
-		schema: S
+		schema: S,
+		opts?: ComponentRegisterOptions
 	): SparseComponentDef<S>;
 	// Overload 2: array shorthand (uniform type, defaults to "f64"). Same #777
 	// float ban as `registerComponent` on a `{ deterministic: true }` world.
 	public registerSparseComponent<
 		const F extends readonly string[],
 		T extends TypedArrayTag = "f64"
-	>(fields: F, type?: T): SparseComponentDef<{ readonly [K in F[number]]: T }>;
+	>(fields: F, type?: T, opts?: ComponentRegisterOptions): SparseComponentDef<{ readonly [K in F[number]]: T }>;
 	// Implementation
 	/** Register an out-of-identity sparse component (#468 / ADR-0011). Mirrors
 	 * `registerComponent`, but the result lives in an engine-managed sparse set
@@ -486,15 +501,20 @@ export class ECS implements QueryResolver {
 	 * transient markers). */
 	public registerSparseComponent(
 		schemaOrFields: Record<string, TypedArrayTag> | readonly string[],
-		type?: TypedArrayTag
+		typeOrOpts?: TypedArrayTag | ComponentRegisterOptions,
+		opts?: ComponentRegisterOptions
 	): SparseComponentDef<any> {
 		if (Array.isArray(schemaOrFields)) {
-			const t = type ?? "f64";
+			const t = typeof typeOrOpts === "string" ? typeOrOpts : "f64";
 			const schema: Record<string, TypedArrayTag> = Object.create(null);
 			for (const f of schemaOrFields) schema[f] = t;
-			return this.store.registerSparseComponent(schema);
+			return this.store.registerSparseComponent(schema, opts?.name);
 		}
-		return this.store.registerSparseComponent(schemaOrFields as Record<string, TypedArrayTag>);
+		const o = typeof typeOrOpts === "object" ? typeOrOpts : opts;
+		return this.store.registerSparseComponent(
+			schemaOrFields as Record<string, TypedArrayTag>,
+			o?.name
+		);
 	}
 
 	public createEntity(): EntityID;
@@ -620,7 +640,7 @@ export class ECS implements QueryResolver {
 	): number {
 		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("getField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
@@ -634,7 +654,7 @@ export class ECS implements QueryResolver {
 		value: number
 	): void {
 		if (DEV) {
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("setField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);

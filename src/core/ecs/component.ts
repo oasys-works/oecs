@@ -170,6 +170,13 @@ export type DeclaredQueryTerm<Defs extends readonly ComponentDef<any>[], D> = [D
 	? unknown
 	: ["component is not a term of this query — add it with .and(...)", D];
 
+/** Options bag accepted by `registerComponent` / `registerSparseComponent`. */
+export interface ComponentRegisterOptions {
+	/** Debug label for diagnostics — errors then read `'Pos' (component 5)`
+	 * instead of `component 5`. Never affects behaviour, layout, or hashing. */
+	readonly name?: string;
+}
+
 /**
  * Schema-erased component handle — just the `.id`. Internal, schema-agnostic
  * code (access checks, dirty-set notes, field-id lookup) takes this instead of

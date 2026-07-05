@@ -95,7 +95,7 @@ export class EntityAllocator {
 			if (this._highWater >= this._capacity) {
 				throw new ECSError(
 					ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-					`entity_index_capacity (${this._capacity}) exhausted; raise StoreOptions.entity_index_capacity or destroy unused entities`
+					`entityIndexCapacity (${this._capacity}) exhausted; raise it in ECSOptions.memory or destroy unused entities`
 				);
 			}
 			index = this._highWater++;
@@ -120,9 +120,9 @@ export class EntityAllocator {
 		if (fromHighWater > 0 && this._highWater + fromHighWater > this._capacity) {
 			throw new ECSError(
 				ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-				`entity_index_capacity (${this._capacity}) cannot fit ${count} new entities ` +
+				`entityIndexCapacity (${this._capacity}) cannot fit ${count} new entities ` +
 					`(${this._freeIndices.length} free, high-water ${this._highWater}); ` +
-					`raise StoreOptions.entity_index_capacity or destroy unused entities`
+					`raise it in ECSOptions.memory or destroy unused entities`
 			);
 		}
 	}

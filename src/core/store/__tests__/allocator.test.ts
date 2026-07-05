@@ -38,14 +38,14 @@ describe("DEFAULT_SAB_ALLOCATOR", () => {
 	});
 });
 
-describe("growable_sab_allocator — max_bytes validation", () => {
-	it("rejects max_bytes <= 0", () => {
+describe("growable_sab_allocator — maxBytes validation", () => {
+	it("rejects maxBytes <= 0", () => {
 		expect(() => growableSabAllocator(0)).toThrow();
 		expect(() => growableSabAllocator(-1)).toThrow();
 		expect(() => growableSabAllocator(-256 * 1024 * 1024)).toThrow();
 	});
 
-	it("rejects non-integer max_bytes", () => {
+	it("rejects non-integer maxBytes", () => {
 		expect(() => growableSabAllocator(1.5)).toThrow();
 		expect(() => growableSabAllocator(64.0001)).toThrow();
 		expect(() => growableSabAllocator(Number.NaN)).toThrow();
@@ -59,14 +59,14 @@ describe("growable_sab_allocator — max_bytes validation", () => {
 });
 
 describe("growable_sab_allocator — hard cap throw (#380)", () => {
-	it("throws when the FIRST request exceeds max_bytes", () => {
+	it("throws when the FIRST request exceeds maxBytes", () => {
 		const alloc = growableSabAllocator(64);
 		// The entire #380 design hinges on the cap being fatal — there is no
 		// grow-beyond-cap fallback or compaction pass.
-		expect(() => alloc(128)).toThrow(/max_bytes/);
+		expect(() => alloc(128)).toThrow(/maxBytes/);
 	});
 
-	it("throws when a later grow would exceed max_bytes", () => {
+	it("throws when a later grow would exceed maxBytes", () => {
 		const alloc = growableSabAllocator(64);
 		// First allocation under the cap succeeds and reuses one buffer.
 		const buffer = alloc(64);
@@ -75,7 +75,7 @@ describe("growable_sab_allocator — hard cap throw (#380)", () => {
 		expect(() => alloc(128)).toThrow(/exceeds the by-design/);
 	});
 
-	it("allows requests up to and including max_bytes", () => {
+	it("allows requests up to and including maxBytes", () => {
 		const alloc = growableSabAllocator(256);
 		expect(() => alloc(64)).not.toThrow();
 		// Exactly at the cap is fine — the throw is strictly `bytes > maxBytes`.
@@ -164,7 +164,7 @@ describe.each([
 	["growable_sab_allocator", growableSabAllocator, SharedArrayBuffer as ArrayBufferLike["constructor"]],
 	["heap_arraybuffer_allocator", heapArraybufferAllocator, ArrayBuffer as ArrayBufferLike["constructor"]]
 ] as const)("%s — shared growable-allocator contract", (_label, factory, BufferCtor) => {
-	it("rejects invalid max_bytes", () => {
+	it("rejects invalid maxBytes", () => {
 		expect(() => factory(0)).toThrow(/positive integer/);
 		expect(() => factory(-1)).toThrow(/positive integer/);
 		expect(() => factory(1.5)).toThrow(/positive integer/);

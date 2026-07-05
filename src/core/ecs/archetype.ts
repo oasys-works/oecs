@@ -312,7 +312,7 @@ export class Archetype implements ArchetypeView {
 				if (layout.fieldNames.length > 0 && !columnFactory) {
 					throw new ECSError(
 						ECS_ERROR.COMPONENT_NOT_REGISTERED,
-						`Archetype ${id}: layouts with fields require a column_factory (the legacy heap path was removed in #171 §6.1.9 Phase 4 — use Archetype.from_column_store for SAB-backed columns, or pass a heap factory explicitly in tests)`
+						`Archetype ${id}: layouts with fields require a columnFactory — use Archetype.fromColumnStore for SAB-backed columns, or pass a heap factory explicitly in tests`
 					);
 				}
 
@@ -937,12 +937,22 @@ export class Archetype implements ArchetypeView {
 		const cid = componentId as number;
 		const offset = this._colOffset[cid];
 		if (offset === undefined) {
-			if (DEV) throw new ECSError(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+			if (DEV)
+				throw new ECSError(
+					ECS_ERROR.COMPONENT_NOT_REGISTERED,
+					`readField: component ${cid} has no column in this archetype — the entity doesn't hold it`,
+					{ component: cid, field }
+				);
 			return NaN;
 		}
 		const fi = this._fieldIndex[cid][field];
 		if (fi === undefined) {
-			if (DEV) throw new ECSError(ECS_ERROR.FIELD_NOT_REGISTERED);
+			if (DEV)
+				throw new ECSError(
+					ECS_ERROR.FIELD_NOT_REGISTERED,
+					`readField: component ${cid} has no field "${field}" — check the schema passed to registerComponent`,
+					{ component: cid, field }
+				);
 			return NaN;
 		}
 		return this._flatColumns[offset + fi].buf[row];

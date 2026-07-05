@@ -15,7 +15,7 @@
 import type { BitSet, TypedArrayTag } from "../../type_primitives";
 import { unsafeCast } from "../../type_primitives";
 import type { Archetype } from "./archetype";
-import { type EntityID, createEntityId, getEntityIndex } from "./entity";
+import { type EntityID, createEntityId, entityNotAliveError, getEntityIndex } from "./entity";
 // Value import (the hierarchy driver, #581, reuses the canonical eid radix);
 // observer.ts imports only *types* from the ECS core, so this is a one-way
 // edge with no runtime cycle.
@@ -172,11 +172,11 @@ export class RelationService {
 		// keyed by a destroyed handle (#495). The forward + reverse + membership
 		// lockstep is the relation's (cardinality).
 		if (!this.host.isAlive(src)) {
-			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: source not alive`);
+			if (DEV) throw entityNotAliveError("addRelation", src, "source");
 			return;
 		}
 		if (!this.host.isAlive(tgt)) {
-			if (DEV) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `add_relation: target not alive`);
+			if (DEV) throw entityNotAliveError("addRelation", tgt, "target");
 			return;
 		}
 		rs.link(src, tgt);
@@ -191,7 +191,7 @@ export class RelationService {
 		const rs = this.relationOf(def);
 		if (!this.host.isAlive(src)) {
 			if (DEV) {
-				throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE, `remove_relation: source not alive`);
+				throw entityNotAliveError("removeRelation", src, "source");
 			}
 			return;
 		}
@@ -208,10 +208,10 @@ export class RelationService {
 			if (!rs.exclusive) {
 				throw new ECSError(
 					ECS_ERROR.RELATION_MODE_MISMATCH,
-					`target_of: relation is multi-target — use targets_of`
+					`targetOf: relation is multi-target — use targetsOf`
 				);
 			}
-			if (!this.host.isAlive(src)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.host.isAlive(src)) throw entityNotAliveError("targetOf", src);
 		}
 		return rs.singleTarget(getEntityIndex(src));
 	}
@@ -220,7 +220,7 @@ export class RelationService {
 	 * for multi — ascending by id. */
 	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
 		const rs = this.relationOf(def);
-		if (DEV && !this.host.isAlive(src)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV && !this.host.isAlive(src)) throw entityNotAliveError("targetsOf", src);
 		return rs.targetsOf(getEntityIndex(src));
 	}
 
@@ -419,10 +419,10 @@ export class RelationService {
 			if (!rs.exclusive) {
 				throw new ECSError(
 					ECS_ERROR.RELATION_MODE_MISMATCH,
-					`ancestors_of: relation is multi-target — traversal needs an exclusive (parent) chain`
+					`ancestorsOf: relation is multi-target — traversal needs an exclusive (parent) chain`
 				);
 			}
-			if (!this.host.isAlive(src)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.host.isAlive(src)) throw entityNotAliveError("ancestorsOf", src);
 		}
 		const store = this.host.sparseStoreOf(rs.sparse);
 		const out: EntityID[] = [src];
@@ -479,10 +479,10 @@ export class RelationService {
 			if (!rs.exclusive) {
 				throw new ECSError(
 					ECS_ERROR.RELATION_MODE_MISMATCH,
-					`cascade_of: relation is multi-target — traversal needs an exclusive (parent) chain`
+					`cascadeOf: relation is multi-target — traversal needs an exclusive (parent) chain`
 				);
 			}
-			if (!this.host.isAlive(root)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.host.isAlive(root)) throw entityNotAliveError("cascadeOf", root);
 		}
 		const out: EntityID[] = [root];
 		const seen = new Set<number>([getEntityIndex(root)]);

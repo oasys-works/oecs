@@ -105,12 +105,12 @@ describe("ECS relations — exclusive (#471)", () => {
 
 		const deadTgt = store.createEntity();
 		store.destroyEntity(deadTgt);
-		expect(() => store.addRelation(src, R, deadTgt)).toThrow("target not alive");
+		expect(() => store.addRelation(src, R, deadTgt)).toThrow(/addRelation.*not alive.*target/);
 		expect(store.sourcesOf(R, deadTgt)).toEqual([]);
 
 		const deadSrc = store.createEntity();
 		store.destroyEntity(deadSrc);
-		expect(() => store.addRelation(deadSrc, R, tgt)).toThrow("source not alive");
+		expect(() => store.addRelation(deadSrc, R, tgt)).toThrow(/addRelation.*not alive.*source/);
 		expect(store.sourcesOf(R, tgt)).toEqual([]);
 	});
 });

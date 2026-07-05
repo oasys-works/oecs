@@ -165,7 +165,7 @@ function makeGrowableAllocator(
 	maxBytes: number
 ): InPlaceBufferAllocator {
 	if (maxBytes <= 0 || !Number.isInteger(maxBytes)) {
-		throw new Error(`${label}: max_bytes must be a positive integer (got ${maxBytes})`);
+		throw new Error(`${label}: maxBytes must be a positive integer (got ${maxBytes})`);
 	}
 	let buffer: ArrayBufferLike | null = null;
 	const alloc = (bytes: number): ArrayBufferLike => {
@@ -180,7 +180,7 @@ function makeGrowableAllocator(
 			// route around.
 			throw new StoreCapExceededError(
 				`${label}: requested ${bytes} bytes exceeds the by-design ` +
-					`max_bytes cap of ${maxBytes}. This is a hard ceiling with no ` +
+					`maxBytes cap of ${maxBytes}. This is a hard ceiling with no ` +
 					`grow-beyond-cap fallback (#380); a real workload stays ~16 MiB. ` +
 					`Reaching it signals runaway entity/column growth upstream — ` +
 					`diagnose that rather than raising the cap blindly.`,

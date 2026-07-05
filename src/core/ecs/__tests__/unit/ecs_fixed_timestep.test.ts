@@ -16,7 +16,7 @@ const BAD = [0, -1, -1 / 60, NaN, Infinity, -Infinity];
 describe("ECS — fixed_timestep validation (finding #4)", () => {
 	for (const bad of BAD) {
 		it(`constructor rejects fixed_timestep = ${bad}`, () => {
-			expect(() => new ECS({ fixedTimestep: bad })).toThrow(/fixed_timestep must be/);
+			expect(() => new ECS({ fixedTimestep: bad })).toThrow(/fixedTimestep must be/);
 		});
 
 		it(`setter rejects fixed_timestep = ${bad}`, () => {
@@ -24,7 +24,7 @@ describe("ECS — fixed_timestep validation (finding #4)", () => {
 			const before = w.fixedTimestep;
 			expect(() => {
 				w.fixedTimestep = bad;
-			}).toThrow(/fixed_timestep must be/);
+			}).toThrow(/fixedTimestep must be/);
 			expect(w.fixedTimestep).toBe(before); // unchanged after a rejected set
 		});
 	}
@@ -65,7 +65,7 @@ const BAD_MAX_STEPS = [0, -1, 1.5, NaN, Infinity, -Infinity];
 describe("ECS — max_fixed_steps validation (#720)", () => {
 	for (const bad of BAD_MAX_STEPS) {
 		it(`constructor rejects max_fixed_steps = ${bad}`, () => {
-			expect(() => new ECS({ maxFixedSteps: bad })).toThrow(/max_fixed_steps must be/);
+			expect(() => new ECS({ maxFixedSteps: bad })).toThrow(/maxFixedSteps must be/);
 		});
 	}
 

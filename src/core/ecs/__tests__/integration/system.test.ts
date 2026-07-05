@@ -505,7 +505,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'adder'.*add_component/);
+		expect(() => world.update(0)).toThrow(/system 'adder'.*addComponent/);
 	});
 
 	it("throws when system removes an undeclared component", () => {
@@ -534,7 +534,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'remover'.*remove_component/);
+		expect(() => world.update(0)).toThrow(/system 'remover'.*removeComponent/);
 	});
 
 	it("throws when system destroys an entity without declaring any despawns", () => {

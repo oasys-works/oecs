@@ -92,7 +92,11 @@ export class EventRegistry {
 		fields: readonly (keyof S & string)[]
 	): EventDef<S> {
 		if (this.keyMap.has(key)) {
-			throw new ECSError(ECS_ERROR.EVENT_ALREADY_REGISTERED, "Event key already registered");
+			throw new ECSError(
+				ECS_ERROR.EVENT_ALREADY_REGISTERED,
+				`event '${key.description ?? "<unnamed>"}' is already registered`,
+				{ event: key.description }
+			);
 		}
 		const def = this.registerEvent<S>(fields);
 		this.keyMap.set(key, def);
@@ -103,7 +107,11 @@ export class EventRegistry {
 	public getEventDefByKey(key: symbol): EventDef<any> {
 		const def = this.keyMap.get(key);
 		if (def === undefined) {
-			throw new ECSError(ECS_ERROR.EVENT_NOT_REGISTERED, "Event key not registered");
+			throw new ECSError(
+				ECS_ERROR.EVENT_NOT_REGISTERED,
+				`event '${key.description ?? "<unnamed>"}' is not registered — call ecs.events.register(key, fields) at world setup`,
+				{ event: key.description }
+			);
 		}
 		return def;
 	}

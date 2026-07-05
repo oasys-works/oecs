@@ -273,7 +273,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	if (armKeys.length > 1) {
 		throw new ECSError(
 			ECS_ERROR.INVALID_MEMORY_OPTIONS,
-			`memory takes at most one of budget | max_bytes | wasm | allocator | heap | shared (got: ${armKeys.join(", ")})`
+			`memory takes at most one of budget | maxBytes | wasm | allocator | heap | shared (got: ${armKeys.join(", ")})`
 		);
 	}
 	const pinnedColumns = opts?.columnCapacity;
@@ -327,7 +327,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 
 	// --- maxBytes: explicit ceiling, growable backing ----------------------
 	if (opts?.maxBytes !== undefined) {
-		requirePositiveInt("max_bytes", opts.maxBytes);
+		requirePositiveInt("maxBytes", opts.maxBytes);
 		const columnCapacity = pinnedColumns ?? DEFAULT_COLUMN_CAPACITY;
 		// Reserve at most a quarter of the declared cap for the entity index;
 		// never above the full-ID-space default.
@@ -469,7 +469,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	// --- heap: pure-TS resizable ArrayBuffer, no SharedArrayBuffer ----------
 	if (opts?.heap !== undefined) {
 		if (opts.heap.maxBytes !== undefined)
-			requirePositiveInt("heap.max_bytes", opts.heap.maxBytes);
+			requirePositiveInt("heap.maxBytes", opts.heap.maxBytes);
 		const capBytes = opts.heap.maxBytes ?? DEFAULT_ECS_CAP_BYTES;
 		const columnCapacity = pinnedColumns ?? DEFAULT_COLUMN_CAPACITY;
 		// Size the entity-index reservation to fit under the cap (same
@@ -505,7 +505,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	// --- shared: opt-in SharedArrayBuffer (worker offload / WASM backend) ----
 	if (opts?.shared !== undefined) {
 		if (opts.shared.maxBytes !== undefined)
-			requirePositiveInt("shared.max_bytes", opts.shared.maxBytes);
+			requirePositiveInt("shared.maxBytes", opts.shared.maxBytes);
 		const capBytes = opts.shared.maxBytes ?? DEFAULT_ECS_CAP_BYTES;
 		const columnCapacity = pinnedColumns ?? DEFAULT_COLUMN_CAPACITY;
 		const entityIndexCapacity = clamp(

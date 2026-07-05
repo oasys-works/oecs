@@ -489,7 +489,7 @@ export function _assertQueriesDeclared(config: SystemConfig): void {
 	throw new ECSError(
 		ECS_ERROR.QUERY_ACCESS_UNDECLARED,
 		`system ${who}declares queries over component id(s) [${[...undeclared].join(", ")}] not in ` +
-			`reads ∪ writes (#213 Phase D). A query term reads each listed component, so add the id(s) ` +
+			`reads ∪ writes. A query term reads each listed component, so add the id(s) ` +
 			`to 'reads' (or to 'writes' if the system also mutates them).`
 	);
 }

@@ -88,3 +88,16 @@ export const createEntityId = (index: number, generation: number): EntityID => {
 export const getEntityIndex = (id: EntityID): number => id & INDEX_MASK;
 
 export const getEntityGeneration = (id: EntityID): number => (id as number) >> INDEX_BITS;
+
+/** Build the `ENTITY_NOT_ALIVE` error every dev-mode liveness guard throws:
+ * names the failing operation, the packed id, and its decoded index/generation
+ * so the user can see WHICH handle went stale without decoding by hand.
+ * `detail` appends op-specific context (e.g. the component being read). */
+export const entityNotAliveError = (op: string, id: EntityID, detail?: string): ECSError =>
+	new ECSError(
+		ECS_ERROR.ENTITY_NOT_ALIVE,
+		`${op}: entity ${id} (index ${getEntityIndex(id)}, generation ${getEntityGeneration(
+			id
+		)}) is not alive${detail ? ` — ${detail}` : ""} (destroyed, never created, or a stale handle; guard with isAlive() first)`,
+		{ entity: id, index: getEntityIndex(id), generation: getEntityGeneration(id), op }
+	);

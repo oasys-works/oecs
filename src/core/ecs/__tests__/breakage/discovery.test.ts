@@ -245,7 +245,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 		// DISCOVERY: hasComponent THROWS on dead entity in dev mode
 		// In production (no __DEV__), it would return false.
 		// This means users MUST check isAlive() before calling hasComponent().
-		expect(() => world.hasComponent(stale, Pos)).toThrow("ENTITY_NOT_ALIVE");
+		expect(() => world.hasComponent(stale, Pos)).toThrow(/is not alive/);
 
 		// e2 should have its own data, not e1's
 		expect(world.isAlive(e2)).toBe(true);

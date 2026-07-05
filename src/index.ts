@@ -176,6 +176,7 @@ export { getEntityIndex } from "./core/ecs";
 export type {
 	ComponentDef,
 	ComponentHandle,
+	ComponentRegisterOptions,
 	ComponentSchema,
 	SchemaOf,
 	DeclaredQueryTerm,

@@ -230,6 +230,7 @@ export {
 export type {
 	ComponentDef,
 	ComponentHandle,
+	ComponentRegisterOptions,
 	ComponentSchema,
 	SchemaOf,
 	DeclaredQueryTerm,

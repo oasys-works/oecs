@@ -48,6 +48,8 @@ import type { FrameTraceSink } from "./frame_trace";
 import type { Archetype, ArchetypeView } from "./archetype";
 import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
+import { entityNotAliveError } from "./entity";
+import { componentLabel } from "./debug_names";
 import type {
 	ComponentDef,
 	ComponentHandle,
@@ -1613,7 +1615,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): number {
 		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
@@ -1627,7 +1629,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		value: number
 	): void {
 		if (DEV) {
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.setField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
@@ -1654,7 +1656,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): number {
 		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.updateField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
@@ -1690,7 +1692,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): ComponentRef<SchemaOf<D>> {
 		if (DEV) {
 			accessCheck.checkWrite(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.ref", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
@@ -1713,7 +1715,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): ReadonlyComponentRef<SchemaOf<D>> {
 		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.refRead", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
