@@ -5,12 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] — 2026-07-05
+## [0.5.0] — 2026-07-06
 
 ### Changed (breaking) — lifecycle & naming unification
 
 One vocabulary across host, commands, and access declarations; the receiver now implies the
-timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecation aliases:
+timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecation aliases —
+see [docs/MIGRATION-0.4-to-0.5.md](docs/MIGRATION-0.4-to-0.5.md) for the complete
+rename/removal map:
 
 | 0.4 | 0.5 |
 | --- | --- |
@@ -50,6 +52,15 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   `ctx.isDisabled` stays (immediate read), as do the immediate sparse/relation ops.
 - **`sourcesOf` canonicalized to `(entity, def)`** on `ecs.relations` and `SystemContext` —
   it was the one arg-order outlier on the relation surface (M3).
+- **The package root is now a curated, explicit export list** — `export *` no longer flattens the
+  whole core barrel, so future barrel additions cannot silently widen the public API. A checked-in
+  public-API snapshot test makes any surface change an explicit diff in review.
+- **Internal/tooling symbols moved to `@oasys/oecs/internal`** (explicitly **unstable — no semver
+  guarantees**): the packed-EntityID codec (`createEntityId`, `getEntityGeneration`, `MAX_INDEX`,
+  `MAX_GENERATION`, `MAX_LIVE_GENERATION`, `RETIRED_GENERATION`, `MAX_ENTITY_ID`), the SAB
+  command-ring transport (`HostCommandDispatcher`, `ring*Codec`, `HOST_COMMAND_PAYLOAD_BYTES`),
+  memory-sizing internals (`resolveECSMemory`, `DEFAULT_ECS_CAP_BYTES`, `BUDGET_*`), and the
+  dev-mode singletons (`accessCheck`, `dispatchTrace`). `getEntityIndex` stays at the root.
 
 ### Added
 
@@ -99,6 +110,10 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   `observer_fired.observer` field (the role a system's `name` plays); observe-only, never affects
   `stateHash` or dispatch order. Unnamed observers fall back to `observer(<component debug name>)`
   when the component was registered with a name, else `observer(<cid>)`.
+- **`ECSOptions.onWarn`** — injectable sink for dev-mode engine diagnostics (currently the
+  schedule's dropped-ordering-edge warning and the `ECSOptions` unknown-key warning),
+  defaulting to `console.warn`. Replaces the internal `src/log` singleton, which is deleted.
+- **Editor `fieldHandle` `read` thunk is optional** — defaults to `Editor.committedField`.
 
 ### Fixed
 
@@ -161,9 +176,13 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   api reference, and every in-source JSDoc example now spell `const ecs = new ECS()`
   (M22; with the `World*` names renamed to `ECS*`, "world" survives only as prose). The
   host-write-seam docs now explain *why* `queue.spawn` takes complete-value `spawnEntry`s
-  rather than zero-filling bundles (M4: commands are serializable plain data applied by the
-  deferred add path, which writes exactly the fields given — a partial surviving the trip
-  would read back `NaN` frames away from the enqueue site).
+  rather than zero-filling bundles (M4: commands are a reified, replayable record — complete
+  values are explicit intent legible to replay, not a correctness need; the deferred add path
+  zero-fills omitted fields since #716).
+- **JSR publish no longer ships `__tests__` helper files** (`casing_codemod.ts`,
+  `test_helpers.ts` — including a `node:fs` import subject to JSR type-checking).
+
+### Changed (breaking) — type-level & facade surface
 
 - **Compile-time typestate across the system, query, relation, and key seams.** The config-form
   `registerSystem` now infers your access declarations as literal types and hands `fn`/`onAdded` a
@@ -182,6 +201,17 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
   surface exactly (cardinality-stamped `relations.register`, exclusive-only traversal). Hot-path
   API (component ops, queries, spawn/destroy, sparse ops) stays flat by design. Facade classes
   are exported type-only; the runtime export list is unchanged.
+- **Value arguments are schema-checked at compile time across every attach seam.** Tag defs
+  reject value objects (`Frozen({ x: 1 })` no longer compiles — tags carry no data);
+  `addComponents` takes schema-checked entries (`TemplateEntries<Defs>`), so a misspelled or
+  cross-component field key is a compile error instead of a silent zero-fill; host-seam
+  `queue.spawn` entries (`SpawnEntries<Defs>`) are checked complete against each def's own
+  schema (`ValuesArg` / `CompleteFieldValues` exported); and `events.register` requires the
+  field list to cover the event schema (`EventFieldsCover`) — a partial list silently dropped
+  columns and read back `undefined` at runtime. Smaller closures in the same vein: `observe`
+  accepts any `ComponentHandle`, `NoInfer` pins key-typed value params (`events.emit`,
+  resources), and reactive-sync's `JoinReader.field` is constrained to the join's component
+  set.
 
 ### Removed (breaking)
 
@@ -196,41 +226,11 @@ timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecati
 
 ### Changed (internal)
 
-- **`Store` decomposed into six focused collaborators** (RelationService, EventRegistry +
+- **`Store` decomposed into seven focused collaborators** (RelationService, EventRegistry +
   ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService, ArchetypeGraph) with
   `Store` as the coordinator; the hot-path extractions were A/B-benchmarked against
   identical-code controls with no regression. The `ECS` facade's pure delegations now live in a
   marker-delimited pass-through band whose logic-free invariant is enforced by an AST guard test.
-
-## [0.4.1] — 2026-07-04
-
-### Changed (breaking)
-
-- **The package root is now a curated, explicit export list** — `export *` no longer flattens the
-  whole core barrel, so future barrel additions cannot silently widen the public API. A checked-in
-  public-API snapshot test makes any surface change an explicit diff in review.
-- **Internal/tooling symbols moved to `@oasys/oecs/internal`** (explicitly **unstable — no semver
-  guarantees**): the packed-EntityID codec (`createEntityId`, `getEntityGeneration`, `MAX_INDEX`,
-  `MAX_GENERATION`, `MAX_LIVE_GENERATION`, `RETIRED_GENERATION`, `MAX_ENTITY_ID`), the SAB
-  command-ring transport (`HostCommandDispatcher`, `ring*Codec`, `HOST_COMMAND_PAYLOAD_BYTES`),
-  memory-sizing internals (`resolveECSMemory`, `DEFAULT_ECS_CAP_BYTES`, `BUDGET_*`), and the
-  dev-mode singletons (`accessCheck`, `dispatchTrace`). `getEntityIndex` stays at the root.
-
-### Fixed
-
-- JSR publish no longer ships `__tests__` helper files (`casing_codemod.ts`, `test_helpers.ts` —
-  including a `node:fs` import subject to JSR type-checking).
-
-### Added
-
-- `ECSOptions.onWarn` — injectable sink for dev-mode engine diagnostics (currently the
-  schedule's dropped-ordering-edge warning), defaulting to `console.warn`. Replaces the
-  internal `src/log` singleton, which is deleted.
-
-### Internal
-
-- Store decomposition under way: relation registry/traversal extracted into `RelationService`;
-  event channels and resources extracted into `EventRegistry` / `ResourceRegistry` (no API change).
 - Typed per-consumer host seams (`ObserverHost`, `QueryHost`) replace underscore-convention
   reach-through on `Store`; `QueryCache` now owns all 12 query-resolution cache maps.
 - Store layer consolidation: one strategy-parameterized factory behind
