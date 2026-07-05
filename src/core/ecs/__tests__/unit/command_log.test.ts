@@ -306,7 +306,7 @@ describe("command log — replay reaches the same state (#702)", () => {
 		expect(fresh.world.getField(clockId!, fresh.Clock, "ms")).toBe(EXPECTED_CLOCK_MS);
 
 		// cellB was despawned in the last tick; cellA was re-enabled → one live Cell.
-		expect(fresh.world.query(fresh.Cell).count()).toBe(1);
+		expect(fresh.world.query(fresh.Cell).entityCount).toBe(1);
 	});
 
 	it("dt is a replayed input — tampering one tick's dt diverges the replay", () => {

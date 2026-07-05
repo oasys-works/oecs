@@ -88,7 +88,7 @@ describe("#777 determinism float-column guard", () => {
 		// The failed registration must not have consumed a component id or pushed
 		// metas; the corrected one registers cleanly and is usable.
 		const Cell = world.registerComponent({ heat: "i32" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Cell, { heat: 7 });
 		expect(world.getField(e, Cell, "heat")).toBe(7);
 	});

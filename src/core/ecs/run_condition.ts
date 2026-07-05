@@ -76,7 +76,7 @@ export interface RunCondition {
 /**
  * Run the gated system(s) only while a resource equals `expected` (strict `===`,
  * so reference identity for objects). The canonical "feature flag / game phase"
- * gate — flip `world.resources.set(key, …)` and the whole group toggles.
+ * gate — flip `ecs.resources.set(key, …)` and the whole group toggles.
  */
 export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition {
 	if (DEV && typeof expected === "object" && expected !== null) {
@@ -139,8 +139,8 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
  * its component defs are declared as `reads`. `count()` is a membership sum over
  * matching archetypes (no column reads), so it trips no `accessCheck` read.
  *
- * The query must be **dense-only**: `count()` asserts this in `DEV`
- * (`_assertDenseOnly`), so pass a plain `world.query(...)` — a query carrying
+ * The query must be **dense-only**: `entityCount` asserts this in `DEV`
+ * (`_assertDenseOnly`), so pass a plain `ecs.query(...)` — a query carrying
  * `.optional(...)` or sparse terms throws. Gate on sparse membership with a
  * custom predicate over `forEachEntity` instead.
  */
@@ -148,7 +148,7 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 	return {
 		name: "runIfAnyMatch",
 		reads: query._defs,
-		evaluate: () => query.count() > 0
+		evaluate: () => query.entityCount > 0
 	};
 }
 

@@ -238,7 +238,7 @@ function typestateEnforcementAssertions(): void {
 		despawns: [Vel],
 		transitions: [{ whenHas: [Pos], add: [Frozen], remove: [Vel] }],
 		fn(ctx) {
-			ctx.destroyEntity(e);
+			ctx.commands.despawn(e);
 			ctx.commands.despawn(e);
 			ctx.removeComponent(e, Vel);
 			ctx.addComponent(e, Frozen);
@@ -272,7 +272,7 @@ function typestateConversionAssertions(): void {
 		exclusive: true,
 		fn(ctx) {
 			ctx.setField(e, Pos, "x", 1);
-			ctx.destroyEntity(e);
+			ctx.commands.despawn(e);
 		}
 	});
 }

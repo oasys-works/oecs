@@ -18,11 +18,11 @@ For a zero-copy WASM sim, make the store itself a shared `WebAssembly.Memory`:
 ```ts
 import { ECS } from "@oasys/oecs";
 
-const world = new ECS({
+const ecs = new ECS({
   memory: { wasm: { maximumPages: 4096 } }, // 4096 * 64 KiB = 256 MiB cap
 });
 
-const memory = world.wasmMemory!; // WebAssembly.Memory when memory.wasm is used
+const memory = ecs.wasmMemory!; // WebAssembly.Memory when memory.wasm is used
 ```
 
 You can also bring your own shared memory:
@@ -34,7 +34,7 @@ const memory = new WebAssembly.Memory({
   shared: true,
 });
 
-const world = new ECS({ memory: { wasm: { memory } } });
+const ecs = new ECS({ memory: { wasm: { memory } } });
 ```
 
 > [!WARNING]
@@ -43,7 +43,7 @@ const world = new ECS({ memory: { wasm: { memory } } });
 If your backend does not need the backing to be a `WebAssembly.Memory`, but does need worker-visible bytes, use the shared profile instead:
 
 ```ts
-const world = new ECS({ memory: { shared: { maxBytes: 256 * 1024 * 1024 } } });
+const ecs = new ECS({ memory: { shared: { maxBytes: 256 * 1024 * 1024 } } });
 ```
 
 In browsers, both shared paths require cross-origin isolation:
@@ -75,7 +75,7 @@ class WasmBackend implements ComputeBackend {
   }
 }
 
-const detach = world.attachBackend(new WasmBackend(simExports));
+const detach = ecs.attachBackend(new WasmBackend(simExports));
 ```
 
 `setLayout(0)` is called immediately on attach and again after every backing grow / layout republish. If your WASM side caches descriptor offsets, column pointers, or typed views, invalidate them in `setLayout`.
@@ -89,7 +89,7 @@ A system opts in by carrying a backend-minted `backendHandle`. With a backend at
 ```ts
 const moveHandle = 1 as BackendSystemHandle;
 
-const move = world.registerSystem({
+const move = ecs.registerSystem({
   name: "move",
   reads: [Vel],
   writes: [Pos],
@@ -116,8 +116,8 @@ Keep `reads`, `writes`, `resourceReads`, and other access declarations accurate.
 Component ids are stable for the lifetime of an `ECS`; field ids are assigned in registration order. Pass numeric `(componentId, fieldId)` pairs to your module instead of strings:
 
 ```ts
-const posX = world.fieldId(Pos, "x");
-const posY = world.fieldId(Pos, "y");
+const posX = ecs.fieldId(Pos, "x");
+const posY = ecs.fieldId(Pos, "y");
 
 simExports.register_pos_fields(Pos.id, posX, posY);
 ```
@@ -125,7 +125,7 @@ simExports.register_pos_fields(Pos.id, posX, posY);
 When a backend needs to turn an archetype row back into an entity handle, use:
 
 ```ts
-const eid = world.entityIdAtRow(archetypeId, row);
+const eid = ecs.entityIdAtRow(archetypeId, row);
 ```
 
 ## Writes from WASM or a worker
@@ -151,7 +151,7 @@ The ring codecs are fixed-slot. They are good for small commands such as `set_fi
 1. Construct the world with `memory.wasm` for zero-copy WASM, or `memory.shared` for worker-visible shared columns.
 2. Serve browser builds with COOP/COEP so `SharedArrayBuffer` exists.
 3. Register components in the same order the backend expects.
-4. Pass `world.wasmMemory!`, component ids, and `fieldId(...)` results to the module.
+4. Pass `ecs.wasmMemory!`, component ids, and `fieldId(...)` results to the module.
 5. Implement `ComputeBackend.setLayout` by re-reading the header / descriptor offsets.
 6. Put `backendHandle` on only the systems your backend can run, and keep `fn` as a fallback.
 7. Route off-schedule writes through the host-write seam, not direct ECS mutation.

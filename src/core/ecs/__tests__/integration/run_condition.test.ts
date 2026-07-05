@@ -33,7 +33,7 @@ describe("Run conditions", () => {
 		const a = new ECS({ deterministic: true });
 		const PosA = a.registerComponent(["x"] as const, "i32");
 		a.resources.register(Flag, false);
-		const ea = a.createEntity();
+		const ea = a.spawn();
 		a.addComponent(ea, PosA, { x: 0 });
 		const sysA = a.registerSystem({
 			...openAccess([PosA]),
@@ -49,7 +49,7 @@ describe("Run conditions", () => {
 		const b = new ECS({ deterministic: true });
 		const PosB = b.registerComponent(["x"] as const, "i32");
 		b.resources.register(Flag, false);
-		const eb = b.createEntity();
+		const eb = b.spawn();
 		b.addComponent(eb, PosB, { x: 0 });
 		b.registerSystem({
 			...openAccess([PosB]),
@@ -80,7 +80,7 @@ describe("Run conditions", () => {
 			...openAccess([Tag]),
 			spawns: [[Tag]],
 			fn(ctx) {
-				const e = ctx.createEntity();
+				const e = ctx.commands.spawn();
 				ctx.addComponent(e, Tag);
 			}
 		});
@@ -89,12 +89,12 @@ describe("Run conditions", () => {
 
 		const before = world.snapshots.stateHash();
 		world.update(1 / 60); // gated off → no spawn, no deferred flush contribution
-		expect(world.query(Tag).count()).toBe(0);
+		expect(world.query(Tag).entityCount).toBe(0);
 		expect(world.snapshots.stateHash()).toBe(before);
 
 		world.resources.set(Flag, true);
 		world.update(1 / 60); // gated on → one entity spawns
-		expect(world.query(Tag).count()).toBe(1);
+		expect(world.query(Tag).entityCount).toBe(1);
 	});
 
 	//=========================================================
@@ -191,7 +191,7 @@ describe("Run conditions", () => {
 		world.update(1 / 60); // no Marker entity → skip
 		expect(runs).toBe(0);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Marker, {}); // host-side immediate
 		world.update(1 / 60); // now matches → run
 		expect(runs).toBe(1);

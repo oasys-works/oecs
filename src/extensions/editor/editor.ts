@@ -52,7 +52,7 @@ import type {
  * Reads the committed value of one `(entity, component, field)` slot — the editor
  * uses it to seed a `setField` inverse with the value the edit replaced. Wire it
  * to the reactive read channel (e.g. a `reactiveMap`/`reactiveStruct` projection)
- * or to `world.getField`; `undefined` for an unknown slot falls back to `0`.
+ * or to `ecs.getField`; `undefined` for an unknown slot falls back to `0`.
  */
 export type FieldReader = (eid: EntityID, def: ComponentDef, field: string) => number | undefined;
 
@@ -117,7 +117,7 @@ export class TransactionBuilder {
 		// One STABLE inverse object whose `eid` the finalizer MUTATES in place, rather
 		// than replacing the slot with a fresh object. `undo()` enqueues this object by
 		// reference, and `applyHostCommand` reads `eid` at apply time — so a second
-		// undo/redo issued before `world.update()` (more than one per frame) still
+		// undo/redo issued before `ecs.update()` (more than one per frame) still
 		// resolves to the live id: the paired respawn's `onSpawned` runs earlier in
 		// the same drain and updates this `eid` before the despawn applies. Replacing
 		// the slot instead left an already-enqueued despawn pointing at the dead

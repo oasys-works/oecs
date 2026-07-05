@@ -19,7 +19,7 @@
  *     reproducing the original run tick-for-tick.
  *
  * **Correctness is verifiable, not asserted.** Under the determinism opt-in
- * (ADR-0020, `new ECS({ deterministic: true })`), `world.snapshots.stateHash()` is a
+ * (ADR-0020, `new ECS({ deterministic: true })`), `ecs.snapshots.stateHash()` is a
  * canonical digest of world state. Record a session, replay it from the same
  * seed, and the per-tick `stateHash` sequences must be identical — the
  * round-trip test that proves replay fidelity. With determinism off the replay
@@ -43,13 +43,13 @@ import type { ECS } from "./ecs";
 import type { HostCommand, HostCommandQueue, HostCommandSink } from "./host_commands";
 
 /** One recorded update tick: the commands the apply system drained at this
- * tick's update-phase head, plus the `dt` passed to `world.update(dt)`. Replay
+ * tick's update-phase head, plus the `dt` passed to `ecs.update(dt)`. Replay
  * MUST re-issue `update(dt)` for every recorded tick — even an empty one — since
  * `dt` itself drives the sim (movement, timers), not just the commands. */
 export interface RecordedTick {
 	/** The ECS tick (`ctx.ecsTick`) this bucket belongs to. */
 	readonly tick: number;
-	/** The `dt` `world.update(dt)` was called with for this tick. */
+	/** The `dt` `ecs.update(dt)` was called with for this tick. */
 	readonly dt: number;
 	/** Commands applied this tick, in apply order (typed queue first, then ring),
 	 * `onSpawned` stripped. */
@@ -68,7 +68,7 @@ export interface CommandLog {
 	 * rebuilds the world the same way the original was built. */
 	readonly seed: number;
 	/** Commands drained at the PRE_STARTUP head (seed-time edits), applied before
-	 * the first update tick. Enqueued BEFORE `world.startup()` on replay. */
+	 * the first update tick. Enqueued BEFORE `ecs.startup()` on replay. */
 	readonly startup: readonly HostCommand[];
 	/** One entry per update tick, in order. */
 	readonly ticks: readonly RecordedTick[];
@@ -223,7 +223,7 @@ export interface ReplayResult {
 
 /** Options for {@link replayCommandLog}. */
 export interface ReplayOptions {
-	/** Capture `world.snapshots.stateHash()` after each tick. Defaults to the world's
+	/** Capture `ecs.snapshots.stateHash()` after each tick. Defaults to the world's
 	 * `deterministic` flag — a deterministic world is hashed, a non-deterministic
 	 * one is not (its `stateHash` would throw, ADR-0020). Force `true` only on a
 	 * deterministic world. */
@@ -236,9 +236,9 @@ export interface ReplayOptions {
  * identically to the recorded run (same components registered in the same order,
  * same systems, same `seed` from `log.seed`) and seam-installed — pass the
  * `HostCommandQueue` `installHostCommandSeam` returned as `queue`. The driver
- * owns startup: it enqueues the seed-time commands, calls `world.startup()`
+ * owns startup: it enqueues the seed-time commands, calls `ecs.startup()`
  * (which drains them at PRE_STARTUP), then for each recorded tick enqueues that
- * tick's commands and calls `world.update(dt)` with the recorded `dt`.
+ * tick's commands and calls `ecs.update(dt)` with the recorded `dt`.
  *
  * Determinism (ADR-0020): with `{ deterministic: true }` the per-tick
  * `stateHashes` this returns must equal the original run's — that equality is
@@ -247,7 +247,7 @@ export interface ReplayOptions {
  * resolves to the same entity on replay.
  */
 export function replayCommandLog(
-	world: ECS,
+	ecs: ECS,
 	queue: HostCommandQueue,
 	log: CommandLog,
 	opts?: ReplayOptions
@@ -255,14 +255,14 @@ export function replayCommandLog(
 	// Seed-time edits drain at PRE_STARTUP — enqueue them BEFORE startup so the
 	// PRE_STARTUP apply-system head drains them, exactly as the original did.
 	for (const cmd of log.startup) queue.push(cmd);
-	world.startup();
+	ecs.startup();
 
-	const wantHash = opts?.hash ?? world.snapshots.deterministic;
+	const wantHash = opts?.hash ?? ecs.snapshots.deterministic;
 	const stateHashes: number[] = [];
 	for (const t of log.ticks) {
 		for (const cmd of t.commands) queue.push(cmd);
-		world.update(t.dt);
-		if (wantHash) stateHashes.push(world.snapshots.stateHash());
+		ecs.update(t.dt);
+		if (wantHash) stateHashes.push(ecs.snapshots.stateHash());
 	}
 	return { startupCommands: log.startup.length, ticks: log.ticks.length, stateHashes };
 }

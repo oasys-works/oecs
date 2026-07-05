@@ -6,7 +6,7 @@ import type { EntityID } from "../../entity";
 function makeWorld(n: number): { ecs: ECS; ents: EntityID[] } {
 	const ecs = new ECS();
 	const ents: EntityID[] = [];
-	for (let i = 0; i < n; i++) ents.push(ecs.createEntity());
+	for (let i = 0; i < n; i++) ents.push(ecs.spawn());
 	return { ecs, ents };
 }
 

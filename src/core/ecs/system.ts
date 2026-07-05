@@ -89,8 +89,8 @@ export interface SystemAccessConfig {
 	 * union of components a spawned entity carries at flush time — an
 	 * explicit def list, or a `Template` (expanded at registration). */
 	readonly spawns?: readonly (readonly ComponentDef[] | Template)[];
-	/** Components removed via `removeComponent` / `destroyEntity`.
-	 * `destroyEntity` counts as removing every component on the entity —
+	/** Components removed via `removeComponent` / `despawn`.
+	 * `despawn` counts as removing every component on the entity —
 	 * declare the superset. A `Template` entry expands to its component
 	 * list, so a "destroys what the spawner spawns" system references the
 	 * same declaration. */
@@ -154,7 +154,7 @@ export interface SystemConfig extends SystemAccessConfig {
 	onRemoved?: () => void;
 	dispose?: () => void;
 
-	/** Components the system queries (via a captured `world.query(...)`), one
+	/** Components the system queries (via a captured `ecs.query(...)`), one
 	 * group per query.
 	 * OPTIONAL — when provided, `registerSystem` validates `queries ⊆ reads ∪
 	 * writes` in `DEV` (#213 Phase D, `_assertQueriesDeclared`): a query term
@@ -293,10 +293,10 @@ export type DeclaredResourceWrite<A extends SystemAccess, K> = [K] extends [A["r
 	? unknown
 	: ["resource key is not declared in this system's resourceWrites", K];
 
-/** `destroyEntity` / `commands.despawn` argument: blocked (with a readable
- * error) only when the access record PROVES no despawns were declared. */
-export type DestroyEntityArg<A extends SystemAccess> = [A["destroy"]] extends [false]
-	? { "this system declares no despawns — destroyEntity/despawn is not permitted": never }
+/** `commands.despawn` argument: blocked (with a readable error) only when
+ * the access record PROVES no despawns were declared. */
+export type DespawnArg<A extends SystemAccess> = [A["destroy"]] extends [false]
+	? { "this system declares no despawns — despawn is not permitted": never }
 	: EntityID;
 
 // Declaration-list shapes the typed config infers against. `any`-parameterized

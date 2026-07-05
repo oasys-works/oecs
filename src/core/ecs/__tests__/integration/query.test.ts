@@ -19,7 +19,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const result = world.query(Pos);
@@ -28,7 +28,7 @@ describe("ECS query (integration)", () => {
 		expect(lengthBefore).toBe(1);
 
 		// Adding a new component combo creates a new archetype containing Pos
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
 
@@ -50,7 +50,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Stat = world.registerComponent(Static);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -58,7 +58,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// Create a new entity with the excluded component
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 		world.addComponent(e2, Stat, {});
@@ -77,7 +77,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Hp = world.registerComponent(Health);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -85,7 +85,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp should be picked up
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 50 });
 
@@ -103,7 +103,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Hp = world.registerComponent(Health);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -111,7 +111,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp — Hp is NOT in the or-mask
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 50 });
 
@@ -119,26 +119,39 @@ describe("ECS query (integration)", () => {
 	});
 
 	//=========================================================
-	// Deferred destruction via world
+	// Immediate destruction via the host facade
 	//=========================================================
 
-	it("destroy_entity defers — entity stays alive after call", () => {
+	it("despawn is immediate — entity is dead on the next line, no flush needed", () => {
 		const world = new ECS();
 
-		const id = world.createEntity();
-		world.destroyEntity(id);
-
-		expect(world.isAlive(id)).toBe(true);
-	});
-
-	it("flush processes the deferred destroy buffer", () => {
-		const world = new ECS();
-
-		const id = world.createEntity();
-		world.destroyEntity(id);
-		world.flush();
+		const id = world.spawn();
+		world.despawn(id);
 
 		expect(world.isAlive(id)).toBe(false);
+	});
+
+	it("host despawn from inside a system throws in DEV (use ctx.commands.despawn)", () => {
+		const world = new ECS();
+		const victim = world.spawn();
+
+		const rogue = world.registerSystem({
+			name: "rogue_host_despawn",
+			reads: [],
+			writes: [],
+			spawns: [],
+			despawns: [],
+			transitions: [],
+			resourceReads: [],
+			resourceWrites: [],
+			fn() {
+				world.despawn(victim);
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, rogue);
+		world.startup();
+
+		expect(() => world.update(0)).toThrow(/host despawn is immediate.*ctx\.commands\.despawn/);
 	});
 
 	//=========================================================
@@ -150,7 +163,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 2 });
 
@@ -173,7 +186,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		// Cache a query for [Pos, Vel] — currently empty
@@ -208,7 +221,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -243,7 +256,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const posQuery = world.query(Pos);
@@ -291,7 +304,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		// System defers both add and destroy
@@ -299,7 +312,7 @@ describe("ECS query (integration)", () => {
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				ctx.addComponent(e1, Vel, { vx: 0, vy: 0 });
-				ctx.destroyEntity(e1);
+				ctx.commands.despawn(e1);
 			}
 		});
 
@@ -320,11 +333,11 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 2 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 30, y: 40 });
 		world.addComponent(e2, Vel, { vx: 3, vy: 4 });
 
@@ -352,14 +365,14 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 0, vy: 0 });
 
 		const q = world.query(Pos, Vel);
 
 		// Deferred destroy + flush to empty the archetype
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
 
 		let archCount = 0;
@@ -374,7 +387,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 5, y: 7 });
 		world.addComponent(e1, Vel, { vx: 2, vy: 3 });
 
@@ -411,7 +424,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 

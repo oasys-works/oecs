@@ -27,7 +27,7 @@ describe("component debug names", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" }, { name: "Pos" });
 		const Vel = world.registerComponent({ vx: "f64", vy: "f64" }, { name: "Vel" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 0, vy: 0 });
 
@@ -65,7 +65,7 @@ describe("component debug names", () => {
 	it("array-shorthand registration accepts a name in the options slot", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const, "i32", { name: "Pos" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		const stale = ((e as number) + (1 << 20)) as never;
 		expect(() => world.getField(stale, Pos, "x")).toThrow(/'Pos' \(component 0\)/);
@@ -76,7 +76,7 @@ describe("ENTITY_NOT_ALIVE context", () => {
 	it("names the op and decodes index/generation, with the id in context", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" }, { name: "Pos" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		// immediate destroy via the store to get a genuinely dead handle
 		let caught: unknown;

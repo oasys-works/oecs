@@ -105,8 +105,8 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	}
 	for (let i = 0; i < desc.despawns.length; i++) {
 		// despawns is "components this system removes via removeComponent
-		// OR destroys via destroyEntity". Both paths consult removeAllowed
-		// for per-component checks; destroyEntity also checks `hasDespawns`
+		// OR destroys via despawn". Both paths consult removeAllowed
+		// for per-component checks; despawn also checks `hasDespawns`
 		// to permit the call at all.
 		removeAllowed.add(desc.despawns[i].id);
 	}
@@ -304,8 +304,8 @@ class AccessCheck {
 		const name = this.activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' called destroyEntity but didn't declare any despawns — declare the components this system removes via destroyEntity in its 'despawns'`,
-			{ system: name, op: "destroyEntity" }
+			`system '${name}' called despawn but didn't declare any despawns — declare the components this system removes via despawn in its 'despawns'`,
+			{ system: name, op: "despawn" }
 		);
 	}
 
@@ -381,7 +381,7 @@ class AccessCheck {
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
 	// checked here in `DEV`. A stack (not a single slot) handles re-entrant /
 	// nested `forEach`. The optional scope is independent of the per-system
-	// `enter`/`leave` above — a host-side `world.query(...).forEach` outside any
+	// `enter`/`leave` above — a host-side `ecs.query(...).forEach` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual
 	// `query.archetypes` walk can't be attributed to an optional declaration, so it
 	// isn't checked — mirroring the unchecked outside-of-system calls in the header.

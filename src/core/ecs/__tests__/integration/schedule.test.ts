@@ -362,7 +362,7 @@ describe("Schedule (integration)", () => {
 		let createdEntity = false;
 		const sys = makeSystem({
 			fn: (ctxArg) => {
-				const id = ctxArg.createEntity();
+				const id = ctxArg.commands.spawn();
 				createdEntity = store.isAlive(id);
 			}
 		});
@@ -394,7 +394,7 @@ describe("Schedule (integration)", () => {
 		const destroyer = makeSystem({
 			despawns: [Anything],
 			fn: (c) => {
-				c.destroyEntity(entity);
+				c.commands.despawn(entity);
 			}
 		});
 

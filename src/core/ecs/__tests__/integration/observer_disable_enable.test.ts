@@ -49,7 +49,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			onEnable: (eid) => enabled.push(eid as number),
 			access: openAccess([P])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, P, { x: 1, y: 2 });
 		const cmds = commandQueue(world, openAccess([P]));
 		world.startup();
@@ -71,7 +71,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		const P = world.registerComponent(Pos);
 		let fires = 0;
 		world.observe(P, { onDisable: () => fires++, access: openAccess([P]) });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, P, { x: 0, y: 0 });
 		world.startup();
 		world.disable(e); // immediate path — not an observed point (ADR-0013/0023)
@@ -87,7 +87,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		const onV: number[] = [];
 		world.observe(P, { onDisable: (eid) => onP.push(eid as number), access: openAccess([P]) });
 		world.observe(V, { onDisable: (eid) => onV.push(eid as number), access: openAccess([V]) });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, P, { x: 1, y: 1 });
 		world.addComponent(e, V, { vx: 2, vy: 2 });
 		const cmds = commandQueue(world, openAccess([P, V]));
@@ -110,8 +110,8 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			onEnable: (eid) => enabled.push(eid as number),
 			access: openAccess([P])
 		});
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 		world.addComponent(a, P, { x: 0, y: 0 });
 		world.addComponent(b, P, { x: 0, y: 0 });
 		const cmds = commandQueue(world, openAccess([P]));
@@ -143,7 +143,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		});
 		const ids: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, P, { x: i, y: i });
 			ids.push(e);
 		}
@@ -163,9 +163,9 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
 		const Marker = world.registerTag();
-		const survivor = world.createEntity();
+		const survivor = world.spawn();
 		world.addComponent(survivor, P, { x: 9, y: 9 });
-		const victim = world.createEntity();
+		const victim = world.spawn();
 		world.addComponent(victim, P, { x: 1, y: 1 });
 		world.observe(P, {
 			onDisable: (eid, ctx) => {
@@ -196,7 +196,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			}
 			const ids: EntityID[] = [];
 			for (let i = 0; i < 4; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, P, { x: i, y: i * 2 });
 				ids.push(e);
 			}
@@ -216,8 +216,8 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 	it("yield_existing seeds enabled members only — a disabled entity is absent", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
-		const enabledEntity = world.createEntity();
-		const disabledEntity = world.createEntity();
+		const enabledEntity = world.spawn();
+		const disabledEntity = world.spawn();
 		world.addComponent(enabledEntity, P, { x: 1, y: 1 });
 		world.addComponent(disabledEntity, P, { x: 2, y: 2 });
 		world.disable(disabledEntity); // immediate host-side disable before observe
@@ -241,7 +241,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			onSet: (eid) => sets.push(eid as number),
 			access: openAccess([P])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, P, { x: 0, y: 0 });
 		world.disable(e); // immediate disable before any tick
 
@@ -273,7 +273,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 			onDisable: (eid) => disabled.push(eid as number),
 			access: openAccess([P])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, P, { x: 1, y: 1 });
 		const cmds = commandQueue(world, openAccess([P]));
 		world.startup();
@@ -282,7 +282,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		// handle is skipped, so onDisable never fires for it.
 		cmds.push((ctx) => {
 			ctx.disable(e);
-			ctx.destroyEntity(e);
+			ctx.commands.despawn(e);
 		});
 		world.update(1 / 60);
 		expect(disabled).toEqual([]);

@@ -11,7 +11,7 @@ describe("Deferred operation ordering", () => {
 		const A = world.registerTag();
 		const B = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -39,7 +39,7 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const A = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
 		const sys = world.registerSystem({
@@ -67,7 +67,7 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -96,14 +96,14 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 			}
 		});
 
@@ -125,7 +125,7 @@ describe("Deferred operation ordering", () => {
 		const B = world.registerTag();
 		const C = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		// Give entity tag A initially
 		world.addComponent(e, A);
@@ -177,7 +177,7 @@ describe("Deferred operation ordering", () => {
 		const entities: EntityID[] = [];
 		const initialHasTag: boolean[] = [];
 		for (let i = 0; i < 500; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			const hasTag = i % 2 === 0;
 			if (hasTag) {

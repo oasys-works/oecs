@@ -8,7 +8,7 @@
  * the partition swap (`disableRow`/`enableRow`) fires no onAdd/onRemove, so a
  * consumer (the reactive bridge) was blind to it. onDisable / onEnable fire at
  * the *deferred* toggle drain in `flushStructural` — like onAdd/onRemove, an
- * *immediate* host-side `world.disable()` does not fire — for *every component
+ * *immediate* host-side `ecs.disable()` does not fire — for *every component
  * the entity carries* (a disable is a soft remove of the whole mask from default
  * queries, the symmetric idea to a destroy fanning onRemove over the mask), and
  * collapse to one event per *net* transition across a drain (disable→enable→
@@ -114,7 +114,7 @@ interface ObserverConfigBase {
 	/** Fires when an entity carrying this component is *disabled* (#577) — at the
 	 * deferred toggle drain, once per net transition (ADR-0023). Mirrors `onRemove`:
 	 * a disable is a soft remove of the whole mask from default queries. An immediate
-	 * host-side `world.disable()` does not fire (like immediate `addComponent`). */
+	 * host-side `ecs.disable()` does not fire (like immediate `addComponent`). */
 	onDisable?: ObserverFn;
 	/** Fires when an entity carrying this component is *enabled* (#577), symmetric
 	 * with `onDisable` / `onAdd`. */
@@ -155,7 +155,7 @@ export type ObserverConfig =
 	| EntitySetObserverConfig
 	| ArchetypeSetObserverConfig;
 
-/** Handle returned by `world.observe(...)`. `dispose()` unregisters; safe to
+/** Handle returned by `ecs.observe(...)`. `dispose()` unregisters; safe to
  * call more than once. */
 // Runtime fallback matching the TS/Babel downlevel `using` helpers, which key
 // off Symbol.for("Symbol.dispose") when the well-known symbol is absent.
@@ -164,7 +164,7 @@ const DISPOSE: typeof Symbol.dispose =
 
 export interface ObserverHandle {
 	dispose(): void;
-	/** `using h = world.observe(C, {...})` — explicit-resource-management sugar
+	/** `using h = ecs.observe(C, {...})` — explicit-resource-management sugar
 	 * over {@link dispose} (TC39 `Symbol.dispose`). */
 	[Symbol.dispose](): void;
 }

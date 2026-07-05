@@ -35,7 +35,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const IsEnemy = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		// Should compile and work without a values argument
 		world.addComponent(e, IsEnemy);
 
@@ -47,7 +47,7 @@ describe("Tag components", () => {
 		const Pos = world.registerComponent(Position);
 		const IsEnemy = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, IsEnemy);
 
@@ -63,7 +63,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		expect(world.hasComponent(e, Tag)).toBe(false);
 	});
 
@@ -71,7 +71,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Tag);
 		expect(world.hasComponent(e, Tag)).toBe(true);
 
@@ -84,7 +84,7 @@ describe("Tag components", () => {
 		const Pos = world.registerComponent(Position);
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 42, y: 99 });
 		world.addComponent(e, Tag);
 
@@ -113,11 +113,11 @@ describe("Tag components", () => {
 		const Pos = world.registerComponent(Position);
 		const IsEnemy = world.registerTag();
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, IsEnemy);
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 
 		// Query requiring tag should only match e1
@@ -135,10 +135,10 @@ describe("Tag components", () => {
 		const Pos = world.registerComponent(Position);
 		const IsDead = world.registerTag();
 
-		const alive = world.createEntity();
+		const alive = world.spawn();
 		world.addComponent(alive, Pos, { x: 1, y: 2 });
 
-		const dead = world.createEntity();
+		const dead = world.spawn();
 		world.addComponent(dead, Pos, { x: 3, y: 4 });
 		world.addComponent(dead, IsDead);
 
@@ -155,7 +155,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Tag);
 
 		// White-box: `hasColumns` is an internal detail, not on the public
@@ -177,7 +177,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
@@ -206,11 +206,11 @@ describe("Tag components", () => {
 		const TagB = world.registerTag();
 		const TagC = world.registerTag();
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, TagA);
 		world.addComponent(e1, TagB);
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, TagA);
 		world.addComponent(e2, TagB);
 		world.addComponent(e2, TagC);
@@ -241,12 +241,12 @@ describe("Tag components", () => {
 		const IsEnemy = world.registerTag();
 		const IsBoss = world.registerTag();
 
-		const minion = world.createEntity();
+		const minion = world.spawn();
 		world.addComponent(minion, Pos, { x: 0, y: 0 });
 		world.addComponent(minion, Vel, { vx: 1, vy: 0 });
 		world.addComponent(minion, IsEnemy);
 
-		const boss = world.createEntity();
+		const boss = world.spawn();
 		world.addComponent(boss, Pos, { x: 10, y: 10 });
 		world.addComponent(boss, Vel, { vx: 0, vy: 1 });
 		world.addComponent(boss, IsEnemy);
@@ -289,13 +289,13 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const q = world.query(Pos);
 
 		// Destroy entity to leave archetype empty
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
 
 		let iteratedCount = 0;
@@ -311,11 +311,11 @@ describe("Tag components", () => {
 		const Vel = world.registerComponent(Velocity);
 
 		// e1: Pos only
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		// e2: Pos + Vel (creates a second archetype matching Pos)
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 		world.addComponent(e2, Vel, { vx: 5, vy: 6 });
 
@@ -324,7 +324,7 @@ describe("Tag components", () => {
 		expect(q.archetypeCount).toBe(2);
 
 		// Destroy e1 to empty one archetype
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
 
 		// forEach should skip the empty one

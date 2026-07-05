@@ -138,7 +138,7 @@ export type HostCommand =
 export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID | undefined {
 	switch (cmd.kind) {
 		case "spawn": {
-			const eid = ctx.createEntity();
+			const eid = ctx.commands.spawn();
 			for (const entry of cmd.components) {
 				ctx.addComponent(eid, entry.def, entry.values);
 			}
@@ -146,7 +146,7 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 			return eid;
 		}
 		case "despawn":
-			ctx.destroyEntity(cmd.eid);
+			ctx.commands.despawn(cmd.eid);
 			return undefined;
 		case "add_component":
 			ctx.addComponent(cmd.eid, cmd.def, cmd.values);
@@ -591,7 +591,7 @@ export interface HostCommandSeamOptions {
  * {@link HostCommandQueue} to enqueue into. Opt-in and explicit, symmetric to
  * the read bridge's `syncComponentToMap`.
  *
- * Call this BEFORE adding your own systems and BEFORE `world.startup()`: the
+ * Call this BEFORE adding your own systems and BEFORE `ecs.startup()`: the
  * apply system must be registered first so insertion order runs it at the head
  * of its phase (the schedule has no dedicated "first" slot), and the PRE_STARTUP
  * drain only fires if it exists before startup.
@@ -610,17 +610,17 @@ const seamSystems = new WeakMap<HostCommandQueue, SystemDescriptor[]>();
  * until a new seam is installed. No-op (returns `false`) if `queue` was not
  * produced by `installHostCommandSeam` on this world.
  */
-export function uninstallHostCommandSeam(world: ECS, queue: HostCommandQueue): boolean {
+export function uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boolean {
 	const descs = seamSystems.get(queue);
 	if (descs === undefined) return false;
-	for (const desc of descs) world.removeSystem(desc);
+	for (const desc of descs) ecs.removeSystem(desc);
 	seamSystems.delete(queue);
 	queue.clear();
 	return true;
 }
 
 export function installHostCommandSeam(
-	world: ECS,
+	ecs: ECS,
 	opts?: HostCommandSeamOptions
 ): HostCommandQueue {
 	const queue = new HostCommandQueue();
@@ -633,7 +633,7 @@ export function installHostCommandSeam(
 	// drain). Stable across ticks — no per-tick allocation.
 	const tap = recorder?.record;
 	const schedules = opts?.schedules ?? [SCHEDULE.PRE_STARTUP, SCHEDULE.PRE_UPDATE];
-	// A recorder logs each tick's `world.update(dt)` so `replayCommandLog` can
+	// A recorder logs each tick's `ecs.update(dt)` so `replayCommandLog` can
 	// re-issue it. A FIXED_UPDATE drain receives the FIXED timestep, not the host's
 	// variable update dt, so recording there would replay `update(fixedTimestep)`
 	// and diverge — a different fixed sub-step count plus any dt-integrating system,
@@ -651,7 +651,7 @@ export function installHostCommandSeam(
 	// command enqueued between ticks drains at the next PRE_UPDATE.
 	for (const label of schedules) {
 		const isUpdateDrain = !STARTUP_SCHEDULES.has(label);
-		const apply = world.registerSystem({
+		const apply = ecs.registerSystem({
 			name: `${name}:${label}`,
 			// `reads`/`writes` are required by `SystemConfig` but empty here: the
 			// apply system declares nothing because it mutates components not known
@@ -671,13 +671,13 @@ export function installHostCommandSeam(
 				// `tap` (the recorder, if any) observes each in apply order.
 				queue.drain(ctx, tap);
 				if (ring !== undefined) {
-					const buffer = world.columnStore;
+					const buffer = ecs.columnStore;
 					const ringOff = buffer.header.commandRingOff;
 					if (ringOff !== 0) ring.drain(ctx, buffer.view, ringOff, tap);
 				}
 			}
 		});
-		world.addSystems(label, apply);
+		ecs.addSystems(label, apply);
 		installed.push(apply);
 	}
 	return queue;

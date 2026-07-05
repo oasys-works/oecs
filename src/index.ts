@@ -29,7 +29,7 @@ export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core
 export type { ECSMemoryOptions, EntityBudget, WasmMemoryArm } from "./core/ecs";
 
 // Template / direct-create (#462) — opaque archetype template from `ECS.template`,
-// consumed by `ECS.createEntity` / `ECS.createEntities`.
+// consumed by `ECS.spawn` / `ECS.spawnMany`.
 export type { Template, TemplateEntry, TemplateEntries, TemplateOverrides } from "./core/ecs";
 
 // SAB layout subscription — generic hook for any consumer (e.g. a compute
@@ -92,7 +92,7 @@ export type {
 	DeclaredRelationWrite,
 	DeclaredResourceRead,
 	DeclaredResourceWrite,
-	DestroyEntityArg,
+	DespawnArg,
 	DeclaredBundleOrDef,
 	DenseAccessDecl,
 	SpawnsAccessDecl,
@@ -155,11 +155,11 @@ export type {
 	ObserverOp
 } from "./core/ecs";
 
-// World resume (#789) — `WorldRestoreError` is thrown by `ECS.restoreInto`;
-// `WORLD_SNAPSHOT_VERSION` tags the combined snapshot framing.
+// World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto`;
+// `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
 // `StoreRestoreError` is the dense-half failure `restoreInto` can surface —
 // exported so the failure mode is nameable/catchable.
-export { WorldRestoreError, WORLD_SNAPSHOT_VERSION } from "./core/ecs";
+export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./core/ecs";
 export { StoreRestoreError } from "./core/store";
 
 // Ref — advisory read-only views; see PATTERNS §10c.

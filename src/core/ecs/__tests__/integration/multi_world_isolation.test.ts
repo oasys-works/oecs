@@ -38,7 +38,7 @@ function buildWorld(seed: number): { world: ECS; tick: () => void } {
 	const world = new ECS({ deterministic: true });
 	const C = world.registerComponent(Counter);
 	for (let i = 0; i <= seed; i++) {
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, C, { n: seed * 100 + i });
 	}
 	const sys = world.registerSystem({
@@ -131,7 +131,7 @@ describe("multi-world isolation (#785)", () => {
 			// World B: a trivial world ticked from inside A's system.
 			const worldB = new ECS();
 			const PosB = worldB.registerComponent(["x", "y"] as const);
-			const eB = worldB.createEntity();
+			const eB = worldB.spawn();
 			worldB.addComponent(eB, PosB, { x: 0, y: 0 });
 			worldB.addSystems(
 				SCHEDULE.UPDATE,
@@ -152,7 +152,7 @@ describe("multi-world isolation (#785)", () => {
 			const worldA = new ECS();
 			const Allowed = worldA.registerComponent(["v"] as const);
 			const Forbidden = worldA.registerComponent(["w"] as const);
-			const eA = worldA.createEntity();
+			const eA = worldA.spawn();
 			worldA.addComponent(eA, Allowed, { v: 0 });
 			worldA.addComponent(eA, Forbidden, { w: 0 });
 			worldA.addSystems(

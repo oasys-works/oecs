@@ -51,7 +51,7 @@ describe("Editor — spawn → edit → edit → undo×N (the acceptance walk-ba
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 10, heat: 0 })], (e) => (id = e));
 		// Enqueue defers: nothing exists until the tick drains the bus.
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		world.update(1 / 60);
 		expect(id).toBeDefined();
 		expect(world.getField(id!, Cell, "x")).toBe(10);
@@ -70,10 +70,10 @@ describe("Editor — spawn → edit → edit → undo×N (the acceptance walk-ba
 		world.update(1 / 60);
 		expect(world.getField(id!, Cell, "x")).toBe(10);
 
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 		expect(editor.undo()).toBe(true); // undo the spawn → despawn the created id
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 
 		expect(editor.undo()).toBe(false); // nothing left
@@ -135,13 +135,13 @@ describe("Editor — despawn undo/redo (data round-trips, identity does not)", (
 		];
 		editor.despawn(id!, restore);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 
 		// Undo: respawns the data (under a NEW id — identity is not preserved).
 		expect(editor.undo()).toBe(true);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 		const respawned = onlyCell(world, Cell);
 		expect(respawned).not.toBe(id!);
 		expect(world.getField(respawned, Cell, "x")).toBe(5);
@@ -151,7 +151,7 @@ describe("Editor — despawn undo/redo (data round-trips, identity does not)", (
 		// the new id by the respawn's onSpawned), not the dead original.
 		expect(editor.redo()).toBe(true);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(respawned)).toBe(false);
 	});
 });
@@ -196,19 +196,19 @@ describe("Editor — disable/enable round-trips", () => {
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (e) => (id = e));
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 
 		editor.disable(id!);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 
 		expect(editor.undo()).toBe(true);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 
 		expect(editor.redo()).toBe(true);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 	});
 });
 
@@ -251,7 +251,7 @@ describe("Editor — more than one undo/redo per frame (the stale-id regression,
 
 		editor.undo(); // enqueue the spawn's inverse despawn (targets `id`)
 		world.update(1 / 60); // apply it → `id` is dead, the cell is gone
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 
 		// Two more editor actions BEFORE the next world.update — the multi-undo/redo-
@@ -271,7 +271,7 @@ describe("Editor — more than one undo/redo per frame (the stale-id regression,
 
 		// Net state is consistent: the respawned entity got despawned, nothing leaked,
 		// and the dead original was never resurrected.
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 	});
 });

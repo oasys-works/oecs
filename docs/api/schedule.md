@@ -112,7 +112,7 @@ Shipped built-ins:
 ```ts
 runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition;   // strict === (identity for objects)
 runEveryNTicks(n: number, offset?: number): RunCondition;            // ticks offset, offset+n, offset+2n…
-runIfAnyMatch(query: Query): RunCondition;                           // query.count() > 0
+runIfAnyMatch(query: Query): RunCondition;                           // query.entityCount > 0
 ```
 
 ```ts

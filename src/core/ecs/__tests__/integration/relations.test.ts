@@ -24,56 +24,56 @@ describe("ECS relations — exclusive (#471)", () => {
 	it("registers, adds, queries forward + reverse, and removes", () => {
 		const world = new ECS({ deterministic: true });
 		const Targets = world.relations.register(); // exclusive by default
-		const src = world.createEntity();
-		const tgt = world.createEntity();
+		const src = world.spawn();
+		const tgt = world.spawn();
 
 		expect(world.relations.has(src, Targets)).toBe(false);
 		expect(world.relations.targetOf(src, Targets)).toBeUndefined();
-		expect(sorted(world.relations.sourcesOf(Targets, tgt))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(tgt, Targets))).toEqual([]);
 
 		world.relations.add(src, Targets, tgt);
 		expect(world.relations.has(src, Targets)).toBe(true);
 		expect(world.relations.targetOf(src, Targets)).toBe(tgt);
 		expect(sorted(world.relations.targetsOf(src, Targets))).toEqual([tgt as number]);
-		expect(sorted(world.relations.sourcesOf(Targets, tgt))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(tgt, Targets))).toEqual([src as number]);
 
 		world.relations.remove(src, Targets, tgt);
 		expect(world.relations.has(src, Targets)).toBe(false);
 		expect(world.relations.targetOf(src, Targets)).toBeUndefined();
-		expect(sorted(world.relations.sourcesOf(Targets, tgt))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(tgt, Targets))).toEqual([]);
 	});
 
 	it("adding a second target replaces the first, fixing the reverse index", () => {
 		const world = new ECS({ deterministic: true });
 		const Targets = world.relations.register({ exclusive: true });
-		const src = world.createEntity();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const src = world.spawn();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		world.relations.add(src, Targets, a);
 		expect(world.relations.targetOf(src, Targets)).toBe(a);
-		expect(sorted(world.relations.sourcesOf(Targets, a))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(a, Targets))).toEqual([src as number]);
 
 		// Re-target: a is replaced by b (engine-enforced one-per-source).
 		world.relations.add(src, Targets, b);
 		expect(world.relations.targetOf(src, Targets)).toBe(b);
 		// Reverse index moved off a and onto b.
-		expect(sorted(world.relations.sourcesOf(Targets, a))).toEqual([]);
-		expect(sorted(world.relations.sourcesOf(Targets, b))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(a, Targets))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(b, Targets))).toEqual([src as number]);
 	});
 
 	it("re-adding the same target is idempotent (no duplicate reverse entry)", () => {
 		const world = new ECS({ deterministic: true });
 		const R = world.relations.register();
-		const src = world.createEntity();
-		const tgt = world.createEntity();
+		const src = world.spawn();
+		const tgt = world.spawn();
 
 		world.relations.add(src, R, tgt);
 		world.relations.add(src, R, tgt);
-		expect(sorted(world.relations.sourcesOf(R, tgt))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(tgt, R))).toEqual([src as number]);
 
 		// removeRelation with a non-matching target is a no-op.
-		const other = world.createEntity();
+		const other = world.spawn();
 		world.relations.remove(src, R, other);
 		expect(world.relations.targetOf(src, R)).toBe(tgt);
 	});
@@ -81,15 +81,15 @@ describe("ECS relations — exclusive (#471)", () => {
 	it("many sources can point at one target (reverse fan-in)", () => {
 		const world = new ECS({ deterministic: true });
 		const R = world.relations.register();
-		const tgt = world.createEntity();
-		const srcs = [world.createEntity(), world.createEntity(), world.createEntity()];
+		const tgt = world.spawn();
+		const srcs = [world.spawn(), world.spawn(), world.spawn()];
 		for (const s of srcs) world.relations.add(s, R, tgt);
 
-		expect(sorted(world.relations.sourcesOf(R, tgt))).toEqual(sorted(srcs));
+		expect(sorted(world.relations.sourcesOf(tgt, R))).toEqual(sorted(srcs));
 
 		// Remove the middle one — reverse index drops only it.
 		world.relations.remove(srcs[1], R);
-		expect(sorted(world.relations.sourcesOf(R, tgt))).toEqual(sorted([srcs[0], srcs[2]]));
+		expect(sorted(world.relations.sourcesOf(tgt, R))).toEqual(sorted([srcs[0], srcs[2]]));
 	});
 
 	// Dev-build contract: a dead src/tgt is caller error and throws here. The
@@ -106,12 +106,12 @@ describe("ECS relations — exclusive (#471)", () => {
 		const deadTgt = store.createEntity();
 		store.destroyEntity(deadTgt);
 		expect(() => store.addRelation(src, R, deadTgt)).toThrow(/addRelation.*not alive.*target/);
-		expect(store.sourcesOf(R, deadTgt)).toEqual([]);
+		expect(store.sourcesOf(deadTgt, R)).toEqual([]);
 
 		const deadSrc = store.createEntity();
 		store.destroyEntity(deadSrc);
 		expect(() => store.addRelation(deadSrc, R, tgt)).toThrow(/addRelation.*not alive.*source/);
-		expect(store.sourcesOf(R, tgt)).toEqual([]);
+		expect(store.sourcesOf(tgt, R)).toEqual([]);
 	});
 });
 
@@ -119,17 +119,17 @@ describe("ECS relations — multi-target (#471)", () => {
 	it("adds, removes individual pairs, and queries the set both ways", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
-		const src = world.createEntity();
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const c = world.createEntity();
+		const src = world.spawn();
+		const a = world.spawn();
+		const b = world.spawn();
+		const c = world.spawn();
 
 		world.relations.add(src, Likes, a);
 		world.relations.add(src, Likes, b);
 		world.relations.add(src, Likes, c);
 		expect(world.relations.has(src, Likes)).toBe(true);
 		expect(sorted(world.relations.targetsOf(src, Likes))).toEqual(sorted([a, b, c]));
-		expect(sorted(world.relations.sourcesOf(Likes, b))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(b, Likes))).toEqual([src as number]);
 
 		// Adding a duplicate is a no-op.
 		world.relations.add(src, Likes, b);
@@ -138,16 +138,16 @@ describe("ECS relations — multi-target (#471)", () => {
 		// Remove one pair → set + reverse both shrink, membership stays.
 		world.relations.remove(src, Likes, b);
 		expect(sorted(world.relations.targetsOf(src, Likes))).toEqual(sorted([a, c]));
-		expect(sorted(world.relations.sourcesOf(Likes, b))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(b, Likes))).toEqual([]);
 		expect(world.relations.has(src, Likes)).toBe(true);
 	});
 
 	it("removing the last target drops membership; remove-all clears everything", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
-		const src = world.createEntity();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const src = world.spawn();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		world.relations.add(src, Likes, a);
 		world.relations.remove(src, Likes, a);
@@ -159,23 +159,23 @@ describe("ECS relations — multi-target (#471)", () => {
 		world.relations.add(src, Likes, b);
 		world.relations.remove(src, Likes);
 		expect(world.relations.has(src, Likes)).toBe(false);
-		expect(sorted(world.relations.sourcesOf(Likes, a))).toEqual([]);
-		expect(sorted(world.relations.sourcesOf(Likes, b))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(a, Likes))).toEqual([]);
+		expect(sorted(world.relations.sourcesOf(b, Likes))).toEqual([]);
 	});
 
 	it("shares a target across sources and keeps the reverse fan-in consistent", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
-		const t = world.createEntity();
-		const s1 = world.createEntity();
-		const s2 = world.createEntity();
+		const t = world.spawn();
+		const s1 = world.spawn();
+		const s2 = world.spawn();
 
 		world.relations.add(s1, Likes, t);
 		world.relations.add(s2, Likes, t);
-		expect(sorted(world.relations.sourcesOf(Likes, t))).toEqual(sorted([s1, s2]));
+		expect(sorted(world.relations.sourcesOf(t, Likes))).toEqual(sorted([s1, s2]));
 
 		world.relations.remove(s1, Likes, t);
-		expect(sorted(world.relations.sourcesOf(Likes, t))).toEqual([s2 as number]);
+		expect(sorted(world.relations.sourcesOf(t, Likes))).toEqual([s2 as number]);
 	});
 });
 
@@ -192,7 +192,7 @@ describe("relations registration + validation (#471)", () => {
 	it("target_of throws on a multi-target relation (use targets_of)", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
-		const src = world.createEntity();
+		const src = world.spawn();
 		// cast (§10c): deliberately defeat the cardinality brand to assert the
 		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
 		expect(() => world.relations.targetOf(src, Likes as unknown as RelationDef<"exclusive">)).toThrow();
@@ -238,14 +238,14 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 		store.addRelation(src, R, a);
 		store.addRelation(src, Likes, a);
 		store.addRelation(src, Likes, b);
-		expect(sorted(store.sourcesOf(R, a))).toEqual([src as number]);
-		expect(sorted(store.sourcesOf(Likes, a))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(a, R))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(a, Likes))).toEqual([src as number]);
 
 		store.destroyEntity(src);
 
-		expect(sorted(store.sourcesOf(R, a))).toEqual([]);
-		expect(sorted(store.sourcesOf(Likes, a))).toEqual([]);
-		expect(sorted(store.sourcesOf(Likes, b))).toEqual([]);
+		expect(sorted(store.sourcesOf(a, R))).toEqual([]);
+		expect(sorted(store.sourcesOf(a, Likes))).toEqual([]);
+		expect(sorted(store.sourcesOf(b, Likes))).toEqual([]);
 		// Recycled slot starts clean — no inherited membership.
 		const reused = store.createEntity();
 		expect(store.hasRelation(reused, R)).toBe(false);
@@ -262,26 +262,26 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 		store.destroyEntityDeferred(src);
 		store.flushDestroyed();
 
-		expect(sorted(store.sourcesOf(R, tgt))).toEqual([]);
+		expect(sorted(store.sourcesOf(tgt, R))).toEqual([]);
 	});
 
 	it("a re-target chain leaves exactly one reverse edge at every step", () => {
 		const world = new ECS({ deterministic: true });
 		const R = world.relations.register();
-		const src = world.createEntity();
+		const src = world.spawn();
 		const targets = [
-			world.createEntity(),
-			world.createEntity(),
-			world.createEntity(),
-			world.createEntity()
+			world.spawn(),
+			world.spawn(),
+			world.spawn(),
+			world.spawn()
 		];
 
 		let prev: EntityID | null = null;
 		for (const t of targets) {
 			world.relations.add(src, R, t);
 			expect(world.relations.targetOf(src, R)).toBe(t);
-			expect(sorted(world.relations.sourcesOf(R, t))).toEqual([src as number]);
-			if (prev !== null) expect(sorted(world.relations.sourcesOf(R, prev))).toEqual([]);
+			expect(sorted(world.relations.sourcesOf(t, R))).toEqual([src as number]);
+			if (prev !== null) expect(sorted(world.relations.sourcesOf(prev, R))).toEqual([]);
 			prev = t;
 		}
 	});
@@ -294,9 +294,9 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 		const make = () => {
 			const world = new ECS({ deterministic: true });
 			const R = world.relations.register(); // exclusive
-			const src = world.createEntity();
-			const a = world.createEntity();
-			const b = world.createEntity();
+			const src = world.spawn();
+			const a = world.spawn();
+			const b = world.spawn();
 			return { world, R, src, a, b };
 		};
 
@@ -316,16 +316,16 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 		const w3 = make();
 		w3.world.snapshots.restoreSparse(bytes);
 		expect(w3.world.relations.targetOf(w3.src, w3.R)).toBe(w1.b);
-		expect(sorted(w3.world.relations.sourcesOf(w3.R, w3.b))).toEqual([w3.src as number]);
-		expect(w3.world.relations.sourcesOf(w3.R, w3.a)).toEqual([]);
+		expect(sorted(w3.world.relations.sourcesOf(w3.b, w3.R))).toEqual([w3.src as number]);
+		expect(w3.world.relations.sourcesOf(w3.a, w3.R)).toEqual([]);
 		expect(w3.world.snapshots.stateHash()).toBe(w1.world.snapshots.stateHash());
 	});
 
 	it("survives mixed add/remove/re-target churn with a consistent reverse index", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
-		const srcs = Array.from({ length: 6 }, () => world.createEntity());
-		const tgts = Array.from({ length: 4 }, () => world.createEntity());
+		const srcs = Array.from({ length: 6 }, () => world.spawn());
+		const tgts = Array.from({ length: 4 }, () => world.spawn());
 
 		// Deterministic LCG so the churn pattern is reproducible.
 		let s = 12345 >>> 0;
@@ -362,7 +362,7 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 			for (const src of srcs) {
 				if (expected.get(src as number)!.has(tgt as number)) want.push(src as number);
 			}
-			expect(sorted(world.relations.sourcesOf(Likes, tgt))).toEqual(want.sort((a, b) => a - b));
+			expect(sorted(world.relations.sourcesOf(tgt, Likes))).toEqual(want.sort((a, b) => a - b));
 		}
 	});
 });
@@ -379,11 +379,11 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const Likes = w.relations.register({ multi: true });
-			const a = w.createEntity();
-			const b = w.createEntity();
-			const t1 = w.createEntity();
-			const t2 = w.createEntity();
-			const t3 = w.createEntity();
+			const a = w.spawn();
+			const b = w.spawn();
+			const t1 = w.spawn();
+			const t2 = w.spawn();
+			const t3 = w.spawn();
 			return { w, Likes, a, b, t1, t2, t3 };
 		};
 
@@ -401,8 +401,8 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		expect(sorted(dst.w.relations.targetsOf(dst.a, dst.Likes))).toEqual(sorted([dst.t1, dst.t2]));
 		expect(sorted(dst.w.relations.targetsOf(dst.b, dst.Likes))).toEqual(sorted([dst.t2, dst.t3]));
 		// Reverse index is rebuilt as the exact transpose.
-		expect(sorted(dst.w.relations.sourcesOf(dst.Likes, dst.t2))).toEqual(sorted([dst.a, dst.b]));
-		expect(sorted(dst.w.relations.sourcesOf(dst.Likes, dst.t1))).toEqual([dst.a as number]);
+		expect(sorted(dst.w.relations.sourcesOf(dst.t2, dst.Likes))).toEqual(sorted([dst.a, dst.b]));
+		expect(sorted(dst.w.relations.sourcesOf(dst.t1, dst.Likes))).toEqual([dst.a as number]);
 		expect(dst.w.snapshots.stateHash()).toBe(src.w.snapshots.stateHash());
 	});
 
@@ -410,9 +410,9 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const R = w.relations.register({ multi: true });
-			const a = w.createEntity();
-			const t1 = w.createEntity();
-			const t2 = w.createEntity();
+			const a = w.spawn();
+			const t1 = w.spawn();
+			const t2 = w.spawn();
 			return { w, R, a, t1, t2 };
 		};
 		const w1 = make();
@@ -435,9 +435,9 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const R = w.relations.register({ multi: true });
-			const a = w.createEntity();
-			const t1 = w.createEntity();
-			const t2 = w.createEntity();
+			const a = w.spawn();
+			const t1 = w.spawn();
+			const t2 = w.spawn();
 			return { w, R, a, t1, t2 };
 		};
 		const src = make();
@@ -449,8 +449,8 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		dst.w.relations.add(dst.a, dst.R, dst.t2);
 		dst.w.snapshots.restoreSparse(bytes);
 		expect(sorted(dst.w.relations.targetsOf(dst.a, dst.R))).toEqual([dst.t1 as number]);
-		expect(dst.w.relations.sourcesOf(dst.R, dst.t2)).toEqual([]);
-		expect(sorted(dst.w.relations.sourcesOf(dst.R, dst.t1))).toEqual([dst.a as number]);
+		expect(dst.w.relations.sourcesOf(dst.t2, dst.R)).toEqual([]);
+		expect(sorted(dst.w.relations.sourcesOf(dst.t1, dst.R))).toEqual([dst.a as number]);
 		expect(dst.w.snapshots.stateHash()).toBe(src.w.snapshots.stateHash());
 	});
 
@@ -461,10 +461,10 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const ChildOf = w.relations.register({ onDeleteTarget: "delete" });
-			const root = w.createEntity();
-			const c1 = w.createEntity();
-			const c2 = w.createEntity();
-			const gc = w.createEntity();
+			const root = w.spawn();
+			const c1 = w.spawn();
+			const c2 = w.spawn();
+			const gc = w.spawn();
 			return { w, ChildOf, root, c1, c2, gc };
 		};
 		const src = make();
@@ -480,7 +480,7 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 			sorted([dst.root, dst.c1, dst.c2, dst.gc])
 		);
 		// `delete` cascade off the restored reverse index destroys the subtree.
-		dst.w.destroyEntity(dst.root);
+		dst.w.despawn(dst.root);
 		dst.w.flush();
 		expect(dst.w.isAlive(dst.c1)).toBe(false);
 		expect(dst.w.isAlive(dst.c2)).toBe(false);
@@ -497,8 +497,8 @@ describe("relation restore validation — defensive hardening (#494)", () => {
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const Likes = w.relations.register({ multi: true });
-			const a = w.createEntity();
-			const t = w.createEntity();
+			const a = w.spawn();
+			const t = w.spawn();
 			return { w, Likes, a, t };
 		};
 		const src = make();
@@ -524,8 +524,8 @@ describe("relation restore validation — defensive hardening (#494)", () => {
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const Likes = w.relations.register({ multi: true });
-			const a = w.createEntity();
-			const t = w.createEntity();
+			const a = w.spawn();
+			const t = w.spawn();
 			return { w, Likes, a, t };
 		};
 		const src = make();

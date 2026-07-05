@@ -66,7 +66,7 @@ function worldWithMovers(
 
 	const ids: EntityID[] = [];
 	for (let i = 0; i < n; i++) {
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: i, y: 0 });
 		world.addComponent(e, Vel, { vx: 1, vy: 2 });
 		ids.push(e);
@@ -120,13 +120,13 @@ describe("heap backing: construct + grow + tick", () => {
 
 	it("supports structural changes (remove component, destroy entity)", () => {
 		const { world, Pos, Vel, ids } = worldWithMovers({ memory: { heap: {} } }, 100, 1);
-		expect(world.query(Pos, Vel).count()).toBe(100);
+		expect(world.query(Pos, Vel).entityCount).toBe(100);
 
 		world.removeComponent(ids[0], Vel);
-		world.destroyEntity(ids[1]);
+		world.despawn(ids[1]);
 		world.flush();
 
-		expect(world.query(Pos, Vel).count()).toBe(98); // -1 removed Vel, -1 destroyed
+		expect(world.query(Pos, Vel).entityCount).toBe(98); // -1 removed Vel, -1 destroyed
 		expect(world.hasComponent(ids[0], Vel)).toBe(false);
 		expect(world.hasComponent(ids[0], Pos)).toBe(true);
 		expect(world.isAlive(ids[1])).toBe(false);

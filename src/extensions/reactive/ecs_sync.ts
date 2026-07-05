@@ -53,7 +53,7 @@
  * applies it for you.
  *
  * One tick = one coalesced flush: drive the world with `batchedUpdate` (or wrap
- * your own `world.update` in the kernel's `batch`). onAdd/onRemove fire mid-tick
+ * your own `ecs.update` in the kernel's `batch`). onAdd/onRemove fire mid-tick
  * and onSet fires at the tick tail; batching collects every `map.set`/`delete`
  * across both points and flushes the UI effects exactly once. Each sync returns an
  * explicit disposer (the React/MobX/RxJS model) and seeds the map synchronously on
@@ -253,7 +253,7 @@ class JoinRowReader implements JoinReader {
  * component here goes stale (its changes aren't subscribed).
  */
 export function syncComponentToMap<S extends ComponentSchema, V>(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	project: Projection<S, V>,
 	opts: EcsMapSyncOptions<V> = {}
@@ -294,7 +294,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 	batch(() => {
 		if (grain === "column") {
 			const cr = new ColumnRowReader(def);
-			handle = world.observe(def, {
+			handle = ecs.observe(def, {
 				granularity: "archetype",
 				onSet: (arch) => {
 					cr.bind(arch);
@@ -316,7 +316,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 				yieldExisting: seed
 			});
 		} else {
-			handle = world.observe(def, {
+			handle = ecs.observe(def, {
 				granularity: "entity",
 				onSet: (eid, ctx) => publishEntity(eid, ctx),
 				onAdd: (eid, ctx) => publishEntity(eid, ctx),
@@ -349,7 +349,7 @@ export function syncFieldsToMap<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	fields: F,
 	opts: Omit<EcsMapSyncOptions<{ [K in F[number]]: number }>, "eq"> = {}
@@ -360,7 +360,7 @@ export function syncFieldsToMap<
 		for (let i = 0; i < fields.length; i++) out[fields[i]] = row.field(fields[i]);
 		return out as V;
 	};
-	return syncComponentToMap(world, def, project, { ...opts, eq: shallow });
+	return syncComponentToMap(ecs, def, project, { ...opts, eq: shallow });
 }
 
 /**
@@ -375,7 +375,7 @@ export function syncFieldsToMap<
  * sweep. Drive with `batchedUpdate(world, dt)`.
  */
 export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
-	world: ECS,
+	ecs: ECS,
 	defs: readonly [...{ [I in keyof Schemas]: ComponentDef<Schemas[I]> }],
 	project: JoinProjection<V, Schemas>,
 	// No `NoInfer` on `V` here: with a context-sensitive `project` callback it
@@ -426,7 +426,7 @@ export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
 	let handles!: ObserverHandle[];
 	batch(() => {
 		handles = defList.map((d) =>
-			world.observe(d, {
+			ecs.observe(d, {
 				granularity: "entity",
 				onSet: publishIfMember,
 				onAdd: publishIfMember,
@@ -516,7 +516,7 @@ export function syncSingletonToStruct<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: F,
@@ -556,7 +556,7 @@ export function syncSingletonToStruct<
 
 	let handle!: ObserverHandle;
 	batch(() => {
-		handle = world.observe(def, {
+		handle = ecs.observe(def, {
 			granularity: "entity",
 			onSet: (e, ctx) => {
 				if (e === eid) publish(ctx);
@@ -614,7 +614,7 @@ export interface SingletonArraySyncOptions<T> {
  * `@oasys/oecs/solid`'s `fromKernelArray` + a Solid `<Index>`.
  */
 export function syncSingletonToArray<S extends ComponentSchema>(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: readonly (string & keyof S)[],
@@ -652,7 +652,7 @@ export function syncSingletonToArray<S extends ComponentSchema>(
 
 	let handle!: ObserverHandle;
 	batch(() => {
-		handle = world.observe(def, {
+		handle = ecs.observe(def, {
 			granularity: "entity",
 			onSet: (e, ctx) => {
 				if (e === eid) publish(ctx);
@@ -686,8 +686,8 @@ export function syncSingletonToArray<S extends ComponentSchema>(
  * tick tail; wrapping the whole update in `batch` defers the effect flush until the
  * tick completes, so a frame that touched K entities (across any number of syncs on
  * this world) wakes its readers once, not once per observer dispatch point.
- * Equivalent to `batch(() => world.update(dt))`.
+ * Equivalent to `batch(() => ecs.update(dt))`.
  */
-export function batchedUpdate(world: ECS, dt: number): void {
-	batch(() => world.update(dt));
+export function batchedUpdate(ecs: ECS, dt: number): void {
+	batch(() => ecs.update(dt));
 }

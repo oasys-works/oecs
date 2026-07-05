@@ -2,9 +2,9 @@
  * Schedule — System execution lifecycle with topological ordering.
  *
  * Systems are organized into 7 phases:
- *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via world.startup())
- *   FIXED_UPDATE                            (run at fixed timestep via world.update(dt))
- *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via world.update(dt))
+ *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via ecs.startup())
+ *   FIXED_UPDATE                            (run at fixed timestep via ecs.update(dt))
+ *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via ecs.update(dt))
  *
  * Within each phase, systems are topologically sorted using Kahn's
  * algorithm, respecting before/after ordering constraints. Insertion
@@ -27,7 +27,7 @@
  *
  * Usage:
  *
- *   world.addSystems(SCHEDULE.UPDATE, moveSys, {
+ *   ecs.addSystems(SCHEDULE.UPDATE, moveSys, {
  *     system: renderSys,
  *     ordering: { after: [moveSys] },
  *     runIf: runIfResourceEq(PausedRes, false),

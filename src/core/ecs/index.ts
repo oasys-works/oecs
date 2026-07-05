@@ -23,7 +23,7 @@ export {
 } from "./ecs_memory";
 
 // Template / direct-create (#462) — opaque archetype template from `ECS.template`,
-// consumed by `ECS.createEntity` / `ECS.createEntities`.
+// consumed by `ECS.spawn` / `ECS.spawnMany`.
 export type { Template, TemplateEntry, TemplateEntries, TemplateOverrides } from "./store";
 
 // SAB layout subscription — generic hook for any consumer (e.g. a compute
@@ -90,7 +90,7 @@ export type {
 	DeclaredRelationWrite,
 	DeclaredResourceRead,
 	DeclaredResourceWrite,
-	DestroyEntityArg,
+	DespawnArg,
 	DenseAccessDecl,
 	SpawnsAccessDecl,
 	DespawnsAccessDecl,
@@ -180,10 +180,10 @@ export type {
 	ObserverOp
 } from "./frame_trace";
 
-// World resume (#789) — `WorldRestoreError` is thrown by `ECS.restoreInto` when a
+// World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto` when a
 // snapshot's shape/field-identity/index-bounds fail closed BEFORE overwriting the
-// live backing; `WORLD_SNAPSHOT_VERSION` tags the combined snapshot framing.
-export { WorldRestoreError, WORLD_SNAPSHOT_VERSION } from "./resume";
+// live backing; `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
+export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./resume";
 
 // Ref.
 // NOTE: the `Readonly*` types exported from this barrel (ReadonlyComponentRef,
@@ -213,8 +213,7 @@ export type { EntityID, ReadonlyEntityIdArray } from "./entity";
 export { getEntityIndex } from "./entity";
 
 // The rest of the packed-EntityID codec + its bounds. Exposed for consumers
-// that mint or bounds-check handles outside the normal `createEntity` /
-// `createEntities` paths: snapshot / replication decode (paired with
+// that mint or bounds-check handles outside the normal `spawn` /// `spawnMany` paths: snapshot / replication decode (paired with
 // `getEntityIndex`, #723), and adversarial harnesses that forge out-of-range /
 // `RETIRED_GENERATION` / stale handles to prove `isAlive` + the mutators read
 // them dead (#778 / #781). `createEntityId` is the inverse of

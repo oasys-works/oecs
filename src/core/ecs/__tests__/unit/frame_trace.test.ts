@@ -223,7 +223,7 @@ describe("frame-trace seam", () => {
 
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const mover = world.registerSystem({
 			name: "mover",
@@ -265,7 +265,7 @@ describe("frame-trace seam", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
 		const Mark = world.registerComponent({ m: "i32" }); // hash-relevant, NOT observed
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.addComponent(e, Mark, { m: 0 });
 		// Per-entity onSet records via ctx.setField (an immediate column write — CONTEXT.md),
@@ -299,7 +299,7 @@ describe("frame-trace seam", () => {
 		const build = (): ECS => {
 			const world = new ECS({ deterministic: true });
 			const Pos = world.registerComponent({ x: "i32" });
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 });
 			const sys = world.registerSystem({
 				name: "mover",

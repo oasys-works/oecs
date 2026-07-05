@@ -49,7 +49,7 @@ import { batchedUpdate, shallow, syncComponentToMap, syncFieldsToMap } from "@oa
 const ecs = new ECS();
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 const Health = ecs.registerComponent({ hp: "i32", max: "i32" });
-const player = ecs.createEntity();
+const player = ecs.spawn();
 ecs.addComponent(player, Pos, { x: 0, y: 0 });
 ecs.addComponent(player, Health, { hp: 100, max: 100 });
 
@@ -82,7 +82,7 @@ For singleton-style UI state, put the state on a reserved entity and use `syncSi
 import { syncSingletonToStruct } from "@oasys/oecs/reactive-sync";
 
 const NetStats = ecs.registerComponent({ connected: "u8", latencyMs: "f64" });
-const netEntity = ecs.createEntity();
+const netEntity = ecs.spawn();
 ecs.addComponent(netEntity, NetStats, { connected: 0, latencyMs: -1 });
 
 const net = syncSingletonToStruct(ecs, NetStats, netEntity, ["connected", "latencyMs"] as const);
@@ -134,7 +134,7 @@ The host-write seam is exported from the core entry point because it is the comm
 import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs); // install before startup()
-const player = ecs.createEntity();
+const player = ecs.spawn();
 ecs.addComponent(player, Health, { hp: 100, max: 100 });
 
 queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (eid) => {
@@ -165,7 +165,7 @@ import { installHostCommandSeam } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);
 const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
-const player = ecs.createEntity();
+const player = ecs.spawn();
 ecs.addComponent(player, Pos, { x: 0, y: 0 });
 
 editor.transaction((tx) => {
@@ -215,7 +215,7 @@ const queue = installHostCommandSeam(ecs);
 const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
 
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
-const player = ecs.createEntity();
+const player = ecs.spawn();
 ecs.addComponent(player, Pos, { x: 0, y: 0 });
 
 const positions = syncComponentToMap(

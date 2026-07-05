@@ -24,7 +24,7 @@ describe("total has* + tryGetField (#9)", () => {
 		const Pos = world.registerComponent({ x: "f64" });
 		const Tag = world.registerSparseComponent({ v: "f64" });
 		const R = world.relations.register();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		world.addSparse(e, Tag, { v: 2 });
 		const stale = staleOf(e as number);
@@ -37,7 +37,7 @@ describe("total has* + tryGetField (#9)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
 		const Vel = world.registerComponent({ vx: "f64" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 42 });
 		expect(world.tryGetField(e, Pos, "x")).toBe(42);
 		expect(world.tryGetField(e, Vel, "vx")).toBeUndefined();
@@ -51,7 +51,7 @@ describe("Query.firstEntity / singleEntity (M8)", () => {
 		const Pos = world.registerComponent({ x: "f64" });
 		const q = world.query(Pos);
 		expect(q.firstEntity()).toBeUndefined();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		expect(q.firstEntity()).toBe(e);
 	});
@@ -70,11 +70,11 @@ describe("Query.firstEntity / singleEntity (M8)", () => {
 		expect(isEcsError(caught)).toBe(true);
 		if (isEcsError(caught)) expect(caught.category).toBe(ECS_ERROR.QUERY_NOT_SINGLETON);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		expect(q.singleEntity()).toBe(e);
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2 });
 		expect(() => q.singleEntity()).toThrow(/found 2/);
 	});
@@ -83,9 +83,9 @@ describe("Query.firstEntity / singleEntity (M8)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
 		const Mark = world.registerSparseComponent({ v: "f64" });
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 1 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 2 });
 		world.addSparse(b, Mark, { v: 1 });
 		expect(world.query(Pos).withSparse(Mark).firstEntity()).toBe(b);
@@ -96,7 +96,7 @@ describe("host refRead (M7)", () => {
 	it("reads whole-component fields through a readonly ref", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3, y: 4 });
 		const ref = world.refRead(Pos, e);
 		expect(ref.x).toBe(3);
@@ -122,8 +122,8 @@ describe("ObserverHandle Symbol.dispose", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		let fires = 0;
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {

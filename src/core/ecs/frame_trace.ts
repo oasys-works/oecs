@@ -2,7 +2,7 @@
  * Per-world, per-frame structured trace seam (ADR-0030).
  *
  * A `FrameTraceSink` is a push interface the engine fires at well-defined points
- * inside one `world.update(dt)` so a consumer can reconstruct exactly what
+ * inside one `ecs.update(dt)` so a consumer can reconstruct exactly what
  * travelled through the ECS that single frame: which systems ran (per phase, in
  * topo order), the structural commands each queued (`ctx.commands.*`), the flush
  * boundaries, the per-phase settle points (`phaseBoundary`, the safe seam for an
@@ -45,7 +45,7 @@ export type ObserverOp = "add" | "remove" | "set" | "enable" | "disable";
  * to the ECS — they observe, never mutate.
  */
 export interface FrameTraceSink {
-	/** Opens a frame. Fired first in `world.update`, before any phase runs. */
+	/** Opens a frame. Fired first in `ecs.update`, before any phase runs. */
 	tickBegin(tick: number, dt: number): void;
 	/** Closes the frame opened by `tickBegin` (after onSet + `clearEvents`). */
 	tickEnd(tick: number): void;

@@ -42,12 +42,12 @@ describe("Query.for_each re-entrancy (#431)", () => {
 		// one entity → three non-empty matching archetypes. One entity per arch
 		// means any immediate destroy crosses the 1→0 boundary and bumps the
 		// query dirty epoch.
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 }); // arch [Pos]
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, A, { v: 0 }); // arch [Pos, A]
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, B, { v: 0 }); // arch [Pos, B]
 
@@ -69,7 +69,7 @@ describe("Query.for_each re-entrancy (#431)", () => {
 				// count() on the SAME query. Pre-fix this rebuilt the shared
 				// array in place under the outer loop.
 				store.destroyEntity(e1);
-				q.count();
+				q.entityCount;
 			}
 		});
 
@@ -92,14 +92,14 @@ describe("Query.for_each re-entrancy (#431)", () => {
 		// Two non-empty matching archetypes plus one matching archetype that
 		// exists but is empty (created, then emptied) so a later add crosses
 		// 0→non-zero.
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 }); // arch [Pos]
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, A, { v: 0 }); // arch [Pos, A]
 
 		// Materialise an empty matching archetype [Pos, B]: fill then empty it.
-		const filler = world.createEntity();
+		const filler = world.spawn();
 		world.addComponent(filler, Pos, { x: 9, y: 9 });
 		world.addComponent(filler, B, { v: 0 });
 		store.destroyEntity(filler); // [Pos, B] now exists but is empty
@@ -119,7 +119,7 @@ describe("Query.for_each re-entrancy (#431)", () => {
 				mutated = true;
 				// Fill the empty matching archetype (0→non-zero, bumps the
 				// epoch), then re-enter via a nested forEach on the SAME query.
-				const e2 = world.createEntity();
+				const e2 = world.spawn();
 				world.addComponent(e2, Pos, { x: 2, y: 2 });
 				world.addComponent(e2, B, { v: 0 });
 				q.forEach(() => {});
@@ -141,9 +141,9 @@ describe("Query.for_each re-entrancy (#431)", () => {
 
 		// Two entities in the same [Pos] archetype; a 2→1 destroy is a
 		// same-side move (no 0-crossing, no epoch bump, no rebuild).
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 });
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 
 		const q = world.query(Pos);
@@ -152,10 +152,10 @@ describe("Query.for_each re-entrancy (#431)", () => {
 			visits++;
 			void arch.entityCount;
 			store.destroyEntity(e1 as EntityID); // 2→1, same side
-			q.count();
+			q.entityCount;
 		});
 
 		expect(visits).toBe(1); // one archetype, visited once
-		expect(q.count()).toBe(1);
+		expect(q.entityCount).toBe(1);
 	});
 });

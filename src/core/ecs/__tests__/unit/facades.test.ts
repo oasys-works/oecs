@@ -13,9 +13,9 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 	it("relations: register/add/has/targetOf/traversal/compact", () => {
 		const ecs = new ECS();
 		const ChildOf = ecs.relations.register();
-		const parent = ecs.createEntity();
-		const mid = ecs.createEntity();
-		const leaf = ecs.createEntity();
+		const parent = ecs.spawn();
+		const mid = ecs.spawn();
+		const leaf = ecs.spawn();
 
 		ecs.relations.add(mid, ChildOf, parent).add(leaf, ChildOf, mid);
 
@@ -23,7 +23,7 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		expect(ecs.relations.has(mid, ChildOf)).toBe(true);
 		expect(ecs.relations.targetOf(mid, ChildOf)).toBe(parent);
 		expect(ecs.relations.targetsOf(leaf, ChildOf)).toEqual([mid]);
-		expect(ecs.relations.sourcesOf(ChildOf, parent)).toEqual([mid]);
+		expect(ecs.relations.sourcesOf(parent, ChildOf)).toEqual([mid]);
 		expect(ecs.relations.ancestorsOf(leaf, ChildOf)).toEqual([leaf, mid, parent]);
 		expect(ecs.relations.rootOf(leaf, ChildOf)).toBe(parent);
 		expect(ecs.relations.cascadeOf(parent, ChildOf)).toEqual([parent, mid, leaf]);
@@ -72,7 +72,7 @@ describe("ECS grouped facades (H3 phase 2)", () => {
 		expect(ecs.snapshots.deterministic).toBe(true);
 
 		const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
-		const e = ecs.createEntity();
+		const e = ecs.spawn();
 		ecs.addComponent(e, Pos, { x: 3, y: 4 });
 
 		const hashBefore = ecs.snapshots.stateHash();

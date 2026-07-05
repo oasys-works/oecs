@@ -75,7 +75,7 @@ import type {
 	DeclaredRelationWrite,
 	DeclaredResourceRead,
 	DeclaredResourceWrite,
-	DestroyEntityArg
+	DespawnArg
 } from "./system";
 import { createRef, type ComponentRef, type ReadonlyComponentRef } from "./ref";
 import type {
@@ -598,7 +598,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * first match (`undefined` if none). */
 	public singleEntity(): EntityID {
 		if (DEV) {
-			const n = this._isDenseOnly() ? this.count() : this._countViaWalk();
+			const n = this._isDenseOnly() ? this.entityCount : this._countViaWalk();
 			if (n !== 1) {
 				throw new ECSError(
 					ECS_ERROR.QUERY_NOT_SINGLETON,
@@ -627,9 +627,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Total entity count across all matching archetypes — enabled rows only by
 	 * default, or all rows when `includeDisabled()` (#577). Reads the partition
-	 * fields directly (not the flag-dependent `entityCount` getter). */
-	public count(): number {
-		if (DEV) this._assertDenseOnly("count");
+	 * fields directly (not the archetype's flag-dependent `entityCount`
+	 * getter). */
+	public get entityCount(): number {
+		if (DEV) this._assertDenseOnly("entityCount");
 		const archs = this._nonEmpty();
 		let total = 0;
 		if (this._includeDisabled) {
@@ -1561,7 +1562,7 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	 *  component attaches are deferred to the phase flush — so until that flush the
 	 *  entity exists in its empty/partial archetype and a query running later in
 	 *  the same phase can observe it half-built. (Same semantics as
-	 *  `ctx.createEntity` + `ctx.addComponent`; fully-deferred id-reservation
+	 *  `ctx.commands.spawn()` + `ctx.addComponent`; fully-deferred id-reservation
 	 *  spawn, à la Bevy, is a separate follow-up.) */
 	public spawn(...items: DeclaredBundleOrDef<A["add"]>[]): EntityID {
 		const e = this.store.createEntity();
@@ -1594,7 +1595,7 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	}
 
 	/** Destroy an entity (deferred). */
-	public despawn(entityId: DestroyEntityArg<A>): this {
+	public despawn(entityId: DespawnArg<A>): this {
 		if (DEV) accessCheck.checkDestroy();
 		// The conditional argument type is `EntityID` whenever this compiles
 		// (the false branch is uninhabited); the cast recovers it for a body
@@ -1656,10 +1657,6 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 
 	constructor(private readonly store: Store) {
 		this.commands = new Commands<A>(store);
-	}
-
-	public createEntity(): EntityID {
-		return this.store.createEntity();
 	}
 
 	public isAlive(entityId: EntityID): boolean {
@@ -1783,16 +1780,6 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		const row = this.store.getEntityRow(entityId);
 		// ! safe: columnGroups is populated for all components with fields in this archetype
 		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
-	}
-
-	/** Buffer an entity for deferred destruction (applied at phase flush). */
-	public destroyEntity(id: DestroyEntityArg<A>): this {
-		if (DEV) accessCheck.checkDestroy();
-		// The conditional argument type is `EntityID` whenever this compiles
-		// (the false branch is uninhabited); the cast recovers it for a body
-		// where `A` is still generic.
-		this.store.destroyEntityDeferred(id as EntityID);
-		return this;
 	}
 
 	/** Tags take no values argument; valued schemas require a complete one
@@ -1944,10 +1931,11 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		return this.store.targetsOf(src, def);
 	}
 
-	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id. */
-	public sourcesOf<D extends RelationDef>(def: D & DeclaredRelationRead<A, D>, tgt: EntityID): EntityID[] {
+	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
+	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
+	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
 		if (DEV) accessCheck.checkRelationRead(def);
-		return this.store.sourcesOf(def, tgt);
+		return this.store.sourcesOf(tgt, def);
 	}
 
 	/** Whether `src` holds any pair under `R`. */
@@ -1976,6 +1964,19 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// Events
 	// =======================================================
 
+	/**
+	 * Emit an event (or a payload-less signal) onto its channel. The event is
+	 * visible to every system that runs *later* in the same `update()` and is
+	 * cleared at the tick's tail — events live exactly one tick, there is no
+	 * ack/consume. The channel must have been registered at world setup via
+	 * `ecs.events.register(key, fields)` / `registerSignal(key)`.
+	 *
+	 * @example
+	 * const Damaged = eventKey<{ target: EntityID; amount: number }>("Damaged");
+	 * ecs.events.register(Damaged, ["target", "amount"]);
+	 * // inside a system:
+	 * ctx.emit(Damaged, { target: e, amount: 10 });
+	 */
 	public emit(key: SignalKey): void;
 	public emit<S extends EventShape<S>>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
@@ -1991,6 +1992,17 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		}
 	}
 
+	/**
+	 * Read this tick's events on a channel. Returns an SoA reader over
+	 * everything emitted *earlier in the same `update()`* — order systems so
+	 * readers run after emitters, or they see an empty reader.
+	 *
+	 * @example
+	 * const dmg = ctx.read(Damaged); // SoA columns, one per field
+	 * for (let i = 0; i < dmg.length; i++) {
+	 *   applyDamage(dmg.target[i], dmg.amount[i]);
+	 * }
+	 */
 	public read<S extends EventShape<S>>(key: EventKey<S>): EventReader<S> {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");

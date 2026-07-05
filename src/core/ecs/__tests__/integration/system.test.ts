@@ -137,8 +137,8 @@ describe("ECS system registration", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const AliveTag = world.registerTag();
-		const tagged = world.createEntity();
-		const untagged = world.createEntity();
+		const tagged = world.spawn();
+		const untagged = world.spawn();
 		world.addComponent(tagged, Pos, { x: 1, y: 2 });
 		world.addComponent(tagged, AliveTag);
 
@@ -429,7 +429,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system reads an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -456,7 +456,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system writes an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -484,7 +484,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -512,7 +512,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 0, vy: 0 });
 
@@ -540,7 +540,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system destroys an entity without declaring any despawns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -555,13 +555,13 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			// ctx annotated permissive (§typestate escape hatch): this system
 			// DELIBERATELY violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'killer'.*destroyEntity/);
+		expect(() => world.update(0)).toThrow(/system 'killer'.*despawn/);
 	});
 
 	it("throws when system reads an undeclared resource", () => {
@@ -622,7 +622,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const Res = Symbol("Outside") as unknown as import("../../resource").ResourceKey<{ v: number }>;
 		world.resources.register(Res, { v: 1 });
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		expect(() => {
 			// All of these run with no active system → access_check is a no-op.
 			world.addComponent(e, Pos, { x: 1, y: 2 });
@@ -631,7 +631,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			world.resources.get(Res);
 			world.resources.set(Res, { v: 2 });
 			world.removeComponent(e, Pos);
-			world.destroyEntity(e);
+			world.despawn(e);
 			world.flush();
 		}).not.toThrow();
 	});
@@ -639,7 +639,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("declared writes implicitly cover reads of the same component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 6 });
 
 		let observed = -1;
@@ -681,7 +681,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			resourceReads: [],
 			resourceWrites: [],
 			fn(ctx) {
-				const e = ctx.createEntity();
+				const e = ctx.commands.spawn();
 				ctx.addComponent(e, A, { x: 1 });
 				ctx.addComponent(e, B, { y: 2 });
 			}
@@ -695,7 +695,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -720,7 +720,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("on_added callbacks are also wrapped in access_check", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({

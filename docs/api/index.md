@@ -43,7 +43,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const e = ecs.createEntity();
+const e = ecs.spawn();
 ecs.addComponent(e, Pos, { x: 0, y: 0 });
 ecs.addComponent(e, Vel, { vx: 100, vy: 50 });
 

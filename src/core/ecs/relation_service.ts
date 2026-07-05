@@ -226,7 +226,7 @@ export class RelationService {
 
 	/** Sources that point at `tgt` under `R` (the reverse index), ascending by
 	 * id; empty when none. */
-	public sourcesOf(def: RelationDef, tgt: EntityID): EntityID[] {
+	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
 		return this.relationOf(def).sourcesOf(tgt);
 	}
 
@@ -260,7 +260,7 @@ export class RelationService {
 	 * in id order (each relation's reverse index already returns sources
 	 * ascending by id), so the result is ordered by relation id then source id.
 	 * Empty when nothing targets `tgt`. The single-relation form is
-	 * `sourcesOf(def, tgt)`. */
+	 * `sourcesOf(tgt, def)`. */
 	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
 		const out: [RelationDef, EntityID][] = [];
 		const rels = this.relations;
@@ -297,7 +297,7 @@ export class RelationService {
 	/** Drive a `(*, T)` wildcard query (`Query.forEachRelatedTo`): every source
 	 * related to `target` under **any** relation, intersected with the query's
 	 * dense mask + sparse require/exclude terms + the default enabled-row filter,
-	 * each source yielded once. Unions `sourcesOf(R, target)` across every
+	 * each source yielded once. Unions `sourcesOf(target, R)` across every
 	 * relation into a `Set` (dedup by full `EntityID` — a source related to `T`
 	 * via two relations is yielded once), then sorts ascending: the cross-relation
 	 * union has no inherent order, so one cold sort gives a deterministic,
@@ -374,7 +374,7 @@ export class RelationService {
 	 * unchanged), `stateHash` is unaffected (the reverse index is derived, never
 	 * folded), and the dropped entries are faithfully rebuilt by snapshot/restore
 	 * from the surviving forward links (`Store._rebuildRelationIndices`). The only
-	 * difference a caller can see is `sourcesOf(R, deadHandle)` going from the
+	 * difference a caller can see is `sourcesOf(deadHandle, R)` going from the
 	 * dangling sources to `[]` — both meaningless once the target is gone.
 	 * No-op (returns 0) when no relations are registered. */
 	public compactRelations(): number {

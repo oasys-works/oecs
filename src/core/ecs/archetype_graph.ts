@@ -105,7 +105,7 @@ export class ArchetypeGraph {
 	 * Also updates the componentIndex and pushes into matching registered queries.
 	 *
 	 * Hot single-mask path. The bulk batched variant — used by Phase C
-	 * pre-warming at `world.startup()` — is `createManyFromMasks`;
+	 * pre-warming at `ecs.startup()` — is `createManyFromMasks`;
 	 * see #213 / `ECS.startup()` for how it gets called and why.
 	 */
 	public getOrCreateFromMask(mask: BitSet): ArchetypeID {

@@ -15,7 +15,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("reads current field values from the SoA columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let ctx!: SystemContext;
@@ -37,7 +37,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("reads updated values after set_field", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		let ctx!: SystemContext;
@@ -64,7 +64,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("writes directly to the SoA columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		let ctx!: SystemContext;
@@ -89,7 +89,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("supports compound assignment operators", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let ctx!: SystemContext;
@@ -119,7 +119,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 10, vy: 20 });
 
@@ -149,8 +149,8 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("refs to the same component on different entities are independent", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e2, Pos, { x: 100, y: 200 });
 
@@ -181,8 +181,8 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("refs to the same component share a prototype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 
@@ -211,7 +211,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("ref reads live data — reflects external writes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		let ctx!: SystemContext;
@@ -239,7 +239,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		// A tiny columnCapacity forces the grow within a handful of appends.
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7, y: 8 });
 
 		let ctx!: SystemContext;
@@ -257,7 +257,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		// Pos column to grow (reallocating + refreshing the backing view).
 		const pos = ctx.ref(Pos, e);
 		for (let i = 0; i < 64; i++) {
-			const f = world.createEntity();
+			const f = world.spawn();
 			world.addComponent(f, Pos, { x: i, y: i });
 		}
 
@@ -278,7 +278,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let refXAfterDeferredAdd = -1;
@@ -320,7 +320,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 6 });
 		world.addComponent(e, Vel, { vx: 7, vy: 8 });
 
@@ -355,7 +355,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 42, y: 84 });
 
 		let refXAfterDeferredDestroy = -1;
@@ -367,7 +367,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(pos.x).toBe(42);
 
 				// Defer destruction — entity is still alive and in its archetype
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 
 				// Ref still works: entity has not been removed yet
 				refXAfterDeferredDestroy = pos.x;
@@ -388,7 +388,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Health = world.registerComponent(["hp"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 3, vy: 4 });
 
@@ -433,7 +433,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("component fields are enumerable on the prototype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
 		let ctx!: SystemContext;

@@ -186,7 +186,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 			// both materially exist mid-flush.
 			spawns: [[Pos], [Pos, Vel]],
 			fn(ctx) {
-				const e = ctx.createEntity();
+				const e = ctx.commands.spawn();
 				ctx.addComponent(e, Pos, { x: 1, y: 2 });
 				ctx.addComponent(e, Vel, { vx: 3, vy: 4 });
 			}

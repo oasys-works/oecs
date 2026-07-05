@@ -20,13 +20,13 @@ describe("register_is_a", () => {
 	it("instance-of query: sources_of lists all instances of an exemplar", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
-		const exemplar = world.createEntity();
-		const i1 = world.createEntity();
-		const i2 = world.createEntity();
+		const exemplar = world.spawn();
+		const i1 = world.spawn();
+		const i2 = world.spawn();
 		world.relations.add(i1, IsA, exemplar);
 		world.relations.add(i2, IsA, exemplar);
 
-		expect(idx(world.relations.sourcesOf(IsA, exemplar))).toEqual(idx([i1, i2]));
+		expect(idx(world.relations.sourcesOf(exemplar, IsA))).toEqual(idx([i1, i2]));
 		expect(world.relations.targetOf(i1, IsA)).toBe(exemplar);
 		expect(world.relations.has(i1, IsA)).toBe(true);
 	});
@@ -34,22 +34,22 @@ describe("register_is_a", () => {
 	it("is exclusive — re-adding replaces the exemplar", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
-		const inst = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
+		const inst = world.spawn();
 		world.relations.add(inst, IsA, e1);
 		world.relations.add(inst, IsA, e2); // exclusive: replaces e1
 		expect(world.relations.targetOf(inst, IsA)).toBe(e2);
-		expect(idx(world.relations.sourcesOf(IsA, e1))).toEqual([]);
-		expect(idx(world.relations.sourcesOf(IsA, e2))).toEqual(idx([inst]));
+		expect(idx(world.relations.sourcesOf(e1, IsA))).toEqual([]);
+		expect(idx(world.relations.sourcesOf(e2, IsA))).toEqual(idx([inst]));
 	});
 
 	it("walks the IsA chain: instance → exemplar → grand-exemplar", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
-		const grand = world.createEntity();
-		const exemplar = world.createEntity();
-		const inst = world.createEntity();
+		const grand = world.spawn();
+		const exemplar = world.spawn();
+		const inst = world.spawn();
 		world.relations.add(exemplar, IsA, grand);
 		world.relations.add(inst, IsA, exemplar);
 
@@ -66,11 +66,11 @@ describe("register_is_a", () => {
 	it("default policy ('clear'): destroying an exemplar drops the link but keeps instances", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world); // default onDeleteTarget: "clear"
-		const exemplar = world.createEntity();
-		const inst = world.createEntity();
+		const exemplar = world.spawn();
+		const inst = world.spawn();
 		world.relations.add(inst, IsA, exemplar);
 
-		world.destroyEntity(exemplar);
+		world.despawn(exemplar);
 		world.flush();
 		expect(world.isAlive(inst)).toBe(true);
 		expect(world.relations.has(inst, IsA)).toBe(false);
@@ -80,13 +80,13 @@ describe("register_is_a", () => {
 	it("'delete' override: destroying an exemplar cascade-destroys its instances", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world, { onDeleteTarget: "delete" });
-		const exemplar = world.createEntity();
-		const i1 = world.createEntity();
-		const i2 = world.createEntity();
+		const exemplar = world.spawn();
+		const i1 = world.spawn();
+		const i2 = world.spawn();
 		world.relations.add(i1, IsA, exemplar);
 		world.relations.add(i2, IsA, exemplar);
 
-		world.destroyEntity(exemplar);
+		world.despawn(exemplar);
 		world.flush();
 		expect(world.isAlive(exemplar)).toBe(false);
 		expect(world.isAlive(i1)).toBe(false);
@@ -97,8 +97,8 @@ describe("register_is_a", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
 		const Pos = world.registerComponent(["x"] as const);
-		const exemplar = world.createEntity();
-		const inst = world.createEntity();
+		const exemplar = world.spawn();
+		const inst = world.spawn();
 		world.addComponent(exemplar, Pos, { x: 5 });
 		world.addComponent(inst, Pos, { x: 1 });
 		world.relations.add(inst, IsA, exemplar);
@@ -114,13 +114,13 @@ describe("register_child_of", () => {
 	it("parent → children query and up-chain traversal", () => {
 		const world = new ECS();
 		const ChildOf = registerChildOf(world);
-		const parent = world.createEntity();
-		const c1 = world.createEntity();
-		const c2 = world.createEntity();
+		const parent = world.spawn();
+		const c1 = world.spawn();
+		const c2 = world.spawn();
 		world.relations.add(c1, ChildOf, parent);
 		world.relations.add(c2, ChildOf, parent);
 
-		expect(idx(world.relations.sourcesOf(ChildOf, parent))).toEqual(idx([c1, c2]));
+		expect(idx(world.relations.sourcesOf(parent, ChildOf))).toEqual(idx([c1, c2]));
 		expect(world.relations.ancestorsOf(c1, ChildOf).map(getEntityIndex)).toEqual(
 			[c1, parent].map(getEntityIndex)
 		);
@@ -130,13 +130,13 @@ describe("register_child_of", () => {
 	it("default policy ('delete'): destroying a parent cascade-destroys the subtree", () => {
 		const world = new ECS();
 		const ChildOf = registerChildOf(world); // default onDeleteTarget: "delete"
-		const gp = world.createEntity();
-		const p = world.createEntity();
-		const c = world.createEntity();
+		const gp = world.spawn();
+		const p = world.spawn();
+		const c = world.spawn();
 		world.relations.add(p, ChildOf, gp);
 		world.relations.add(c, ChildOf, p);
 
-		world.destroyEntity(gp);
+		world.despawn(gp);
 		world.flush();
 		expect(world.isAlive(gp)).toBe(false);
 		expect(world.isAlive(p)).toBe(false);
@@ -146,11 +146,11 @@ describe("register_child_of", () => {
 	it("'clear' override: children survive a parent's destruction as roots", () => {
 		const world = new ECS();
 		const ChildOf = registerChildOf(world, { onDeleteTarget: "clear" });
-		const parent = world.createEntity();
-		const child = world.createEntity();
+		const parent = world.spawn();
+		const child = world.spawn();
 		world.relations.add(child, ChildOf, parent);
 
-		world.destroyEntity(parent);
+		world.despawn(parent);
 		world.flush();
 		expect(world.isAlive(child)).toBe(true);
 		expect(world.relations.has(child, ChildOf)).toBe(false);

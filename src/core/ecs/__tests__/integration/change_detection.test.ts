@@ -11,7 +11,7 @@ describe("Change Detection", () => {
 	it("get_column (mutable) sets _changed_tick on archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
@@ -27,7 +27,7 @@ describe("Change Detection", () => {
 	it("get_column_read does NOT set _changed_tick", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
@@ -44,7 +44,7 @@ describe("Change Detection", () => {
 	it("ref ticks component as changed at creation time", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		let ticked = false;
@@ -76,7 +76,7 @@ describe("Change Detection", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 		world.addComponent(e, Vel, { vx: 1, vy: 1 });
 
@@ -116,7 +116,7 @@ describe("Change Detection", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 		world.addComponent(e, Vel, { vx: 1, vy: 1 });
 
@@ -162,7 +162,7 @@ describe("Change Detection", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		// Capture the ECS tick in effect, rather than hard-coding a value
@@ -220,7 +220,7 @@ describe("Change Detection", () => {
 		world.update(1 / 60);
 		world.update(1 / 60);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);

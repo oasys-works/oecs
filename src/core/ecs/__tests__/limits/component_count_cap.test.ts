@@ -46,7 +46,7 @@ describe("Component-count cap (SAB descriptor mask width)", () => {
 		}
 		const Boundary = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Boundary, { v: 42 });
 		world.flush();
 

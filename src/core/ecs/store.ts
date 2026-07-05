@@ -109,7 +109,7 @@ import {
 	type ColumnStore
 } from "../store";
 import type { ECSMemoryCapContext } from "./ecs_memory";
-import { WorldRestoreError, type HostState } from "./resume";
+import { ECSRestoreError, type HostState } from "./resume";
 import { DEV } from "../../dev_flag";
 
 export interface ComponentMeta {
@@ -121,7 +121,7 @@ export interface ComponentMeta {
 	fieldTypes: TypedArrayTag[];
 	// --- Component observers (#517 §1 / ADR-0013) ---
 	// Hot-path flags consulted by the structural flush + the field-write path.
-	// All false unless `world.observe(...)` registered a matching observer; the
+	// All false unless `ecs.observe(...)` registered a matching observer; the
 	// no-observer flush path is byte-for-byte unchanged (`_structuralObserverCount`
 	// gate in `flushStructural`). See `observer.ts`.
 	/** Has an onAdd observer — collect effective adds for this component. */
@@ -1476,6 +1476,32 @@ export class Store implements ObserverHost, QueryHost {
 		return { archetypeId, flatValues, overrideIndex, defs };
 	}
 
+	/** Resolve an override key to its flat column index, with the DEV guards
+	 * for unknown and ambiguous field names; `-1` means skip (the production
+	 * fallback where DEV would have thrown). */
+	private _resolveOverrideColumn(p: Template, key: string): number {
+		const idx = p.overrideIndex.get(key);
+		if (idx === undefined) {
+			if (DEV) {
+				throw new ECSError(
+					ECS_ERROR.FIELD_NOT_REGISTERED,
+					`template override: no field "${key}" in this template`
+				);
+			}
+			return -1;
+		}
+		if (idx === TEMPLATE_OVERRIDE_AMBIGUOUS) {
+			if (DEV) {
+				throw new ECSError(
+					ECS_ERROR.FIELD_NOT_REGISTERED,
+					`template override: field "${key}" is ambiguous (owned by more than one component in this template); set it via the template defaults instead of a flat override`
+				);
+			}
+			return -1;
+		}
+		return idx;
+	}
+
 	/** Apply per-instance overrides to the freshly-spawned row. Each key is a
 	 * field name resolved through the template's override index. */
 	private _applyOverrides(
@@ -1489,26 +1515,25 @@ export class Store implements ObserverHost, QueryHost {
 			// An explicitly-undefined optional override means "keep the template
 			// default" — skip it rather than writing NaN into the column.
 			if (overrides[key] === undefined) continue;
-			const idx = p.overrideIndex.get(key);
-			if (idx === undefined) {
-				if (DEV) {
-					throw new ECSError(
-						ECS_ERROR.FIELD_NOT_REGISTERED,
-						`template override: no field "${key}" in this template`
-					);
-				}
-				continue;
-			}
-			if (idx === TEMPLATE_OVERRIDE_AMBIGUOUS) {
-				if (DEV) {
-					throw new ECSError(
-						ECS_ERROR.FIELD_NOT_REGISTERED,
-						`template override: field "${key}" is ambiguous (owned by more than one component in this template); set it via the template defaults instead of a flat override`
-					);
-				}
-				continue;
-			}
-			cols[idx].buf[row] = overrides[key];
+			const idx = this._resolveOverrideColumn(p, key);
+			if (idx >= 0) cols[idx].buf[row] = overrides[key];
+		}
+	}
+
+	/** Bulk variant of `_applyOverrides`: one `fill` per overridden column
+	 * across the contiguous rows `[start, start + count)`. */
+	private _applyOverridesRange(
+		arch: Archetype,
+		start: number,
+		count: number,
+		p: Template,
+		overrides: Record<string, number | undefined>
+	): void {
+		const cols = arch._flatColumns;
+		for (const key in overrides) {
+			if (overrides[key] === undefined) continue;
+			const idx = this._resolveOverrideColumn(p, key);
+			if (idx >= 0) cols[idx].buf.fill(overrides[key], start, start + count);
 		}
 	}
 
@@ -1548,7 +1573,11 @@ export class Store implements ObserverHost, QueryHost {
 	 * field writes are O(columns) — one `TypedArray.fill` per column via
 	 * `addEntitiesWithValues` — not O(count×columns). Returns the new ids in
 	 * spawn order. */
-	public spawnMany(p: Template, count: number): EntityID[] {
+	public spawnMany(
+		p: Template,
+		count: number,
+		overrides?: Record<string, number | undefined>
+	): EntityID[] {
 		// Guard BEFORE `new Array(count)`: a negative count makes the allocation
 		// throw `RangeError('Invalid array length')`, so the `count <= 0` guard was
 		// dead for negatives. #730.
@@ -1592,6 +1621,7 @@ export class Store implements ObserverHost, QueryHost {
 				const eIdx = getEntityIndex(out[i]);
 				entArch[eIdx] = p.archetypeId as number;
 				entRow[eIdx] = row;
+				if (overrides !== undefined) this._applyOverrides(arch, row, p, overrides);
 			}
 			this._onArchGrow(arch, pre, preE);
 			return out;
@@ -1602,6 +1632,7 @@ export class Store implements ObserverHost, QueryHost {
 			entArch[eIdx] = p.archetypeId as number;
 			entRow[eIdx] = start + i;
 		}
+		if (overrides !== undefined) this._applyOverridesRange(arch, start, count, p, overrides);
 		this._onArchGrow(arch, pre, preE);
 		return out;
 	}
@@ -2853,14 +2884,14 @@ export class Store implements ObserverHost, QueryHost {
 			const rows = rowsByArch.get(meta.archetypeId) ?? [];
 			if (DEV) {
 				if (rows.length !== meta.length) {
-					throw new WorldRestoreError(
+					throw new ECSRestoreError(
 						`archetype ${meta.archetypeId} row-count mismatch on restore: scan found ` +
 							`${rows.length} rows, host-state recorded ${meta.length}`
 					);
 				}
 				for (let k = 0; k < rows.length; k++) {
 					if (rows[k] === undefined) {
-						throw new WorldRestoreError(
+						throw new ECSRestoreError(
 							`archetype ${meta.archetypeId} has a hole at row ${k} after restore ` +
 								`(entity-index region inconsistent)`
 						);
@@ -2905,8 +2936,8 @@ export class Store implements ObserverHost, QueryHost {
 		return this.relationService.targetsOf(src, def);
 	}
 
-	public sourcesOf(def: RelationDef, tgt: EntityID): EntityID[] {
-		return this.relationService.sourcesOf(def, tgt);
+	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
+		return this.relationService.sourcesOf(tgt, def);
 	}
 
 	public hasRelation(src: EntityID, def: RelationDef): boolean {

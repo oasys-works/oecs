@@ -12,7 +12,7 @@
  *     advanced K ticks yields the SAME per-tick `stateHash` vector as the
  *     original advanced from N. On both heap and SAB. (AC#3)
  *   - **fail closed** — a malformed frame or a registration mismatch throws
- *     `WorldRestoreError` before mutating live state. (AC#4)
+ *     `ECSRestoreError` before mutating live state. (AC#4)
  */
 
 import { describe, expect, it } from "vitest";
@@ -27,7 +27,7 @@ import {
 	serializeHostState,
 	unframeWorldSnapshot,
 	WORLD_SNAPSHOT_MAGIC,
-	WorldRestoreError,
+	ECSRestoreError,
 	type HostState
 } from "../../resume";
 import { heapArraybufferAllocator } from "../../../store";
@@ -74,12 +74,12 @@ function build(memory: ECSOptions): World {
 	world.startup();
 
 	// Prewarm {Pos} then {Pos, Life} so discovery never fires mid-run.
-	const warm = world.createEntity();
+	const warm = world.spawn();
 	world.addComponent(warm, Pos, { x: 0 });
 	world.flush();
 	world.addComponent(warm, Life, { age: 0, ttl: 0 });
 	world.flush();
-	world.destroyEntity(warm);
+	world.despawn(warm);
 	world.flush();
 
 	return { world, Pos, Life, Mark };
@@ -103,7 +103,7 @@ function step(w: World, i: number): void {
 			if (world.getField(eid, Life, "age") >= world.getField(eid, Life, "ttl")) dead.push(eid);
 		});
 	dead.reverse();
-	for (const eid of dead) world.destroyEntity(eid);
+	for (const eid of dead) world.despawn(eid);
 	world.flush();
 
 	// Spawn two entities, deterministically keyed by the step index. Every spawn
@@ -112,7 +112,7 @@ function step(w: World, i: number): void {
 	// every third is disabled (so enabledCount partitions non-trivially).
 	for (let k = 0; k < 2; k++) {
 		const id = i * 2 + k;
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: id % 97 });
 		world.addComponent(e, Life, { age: 0, ttl: 1 + (id % 4) });
 		world.addSparse(e, Mark, { tag: id % 53 });
@@ -151,14 +151,14 @@ describe("resume framing + host-state serialization (#789)", () => {
 
 	it("rejects a bare dense buffer (wrong magic)", () => {
 		const bogus = new Uint8Array(40); // zeroed magic ≠ WORLD_SNAPSHOT_MAGIC
-		expect(() => unframeWorldSnapshot(bogus)).toThrow(WorldRestoreError);
+		expect(() => unframeWorldSnapshot(bogus)).toThrow(ECSRestoreError);
 	});
 
 	it("rejects a frame with trailing bytes", () => {
 		const framed = frameWorldSnapshot(new Uint8Array([1]), new Uint8Array(0), new Uint8Array(0));
 		const padded = new Uint8Array(framed.length + 1);
 		padded.set(framed, 0); // magic copies through; the lone extra byte fails the frame-length check
-		expect(() => unframeWorldSnapshot(padded)).toThrow(WorldRestoreError);
+		expect(() => unframeWorldSnapshot(padded)).toThrow(ECSRestoreError);
 	});
 
 	it("magic is the documented constant", () => {
@@ -178,11 +178,11 @@ describe("restoreInto — mount + reconstruction (#789)", () => {
 
 		// Identical state right after the mount.
 		expect(dst.world.snapshots.stateHash()).toBe(src.world.snapshots.stateHash());
-		expect(dst.world.query(dst.Pos, dst.Life).count()).toBe(
-			src.world.query(src.Pos, src.Life).count()
+		expect(dst.world.query(dst.Pos, dst.Life).entityCount).toBe(
+			src.world.query(src.Pos, src.Life).entityCount
 		);
-		expect(dst.world.query(dst.Pos, dst.Life).includeDisabled().count()).toBe(
-			src.world.query(src.Pos, src.Life).includeDisabled().count()
+		expect(dst.world.query(dst.Pos, dst.Life).includeDisabled().entityCount).toBe(
+			src.world.query(src.Pos, src.Life).includeDisabled().entityCount
 		);
 
 		// And it keeps ticking in lockstep with the original.
@@ -205,7 +205,7 @@ describe("restoreInto — mount + reconstruction (#789)", () => {
 		// (index + generation) on both worlds — proving the free-list set AND
 		// order (and the per-slot generation, which rides the SAB) round-tripped.
 		for (let n = 0; n < 6; n++) {
-			expect(dst.world.createEntity()).toBe(src.world.createEntity());
+			expect(dst.world.spawn()).toBe(src.world.spawn());
 		}
 	});
 
@@ -232,7 +232,7 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 	function expectRejectedLeavesIntact(
 		world: ECS,
 		bad: Uint8Array,
-		err?: typeof WorldRestoreError
+		err?: typeof ECSRestoreError
 	): void {
 		const before = world.snapshots.stateHash();
 		if (err === undefined) expect(() => world.snapshots.restore(bad)).toThrow();
@@ -246,7 +246,7 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 	it("rejects a malformed (non-world-snapshot) buffer, target intact", () => {
 		const dst = build(SAB);
 		for (let i = 0; i < 3; i++) step(dst, i);
-		expectRejectedLeavesIntact(dst.world, new Uint8Array(64), WorldRestoreError);
+		expectRejectedLeavesIntact(dst.world, new Uint8Array(64), ECSRestoreError);
 	});
 
 	it("rejects a snapshot whose dense column layout differs, target intact", () => {
@@ -263,13 +263,13 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 		const Life2 = other.registerComponent({ age: "i32", ttl: "i32" });
 		other.registerSparseComponent({ tag: "i32" });
 		other.startup();
-		const w = other.createEntity();
+		const w = other.spawn();
 		other.addComponent(w, Pos2, { x: 0, y: 0 });
 		other.flush();
 		other.addComponent(w, Life2, { age: 0, ttl: 0 });
 		other.flush();
 
-		expectRejectedLeavesIntact(other, snap, WorldRestoreError);
+		expectRejectedLeavesIntact(other, snap, ECSRestoreError);
 	});
 
 	it("rejects a snapshot whose entity-index capacity differs, target intact", () => {
@@ -284,7 +284,7 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 
 		const dst = build(small);
 		for (let i = 0; i < 4; i++) step(dst, i);
-		expectRejectedLeavesIntact(dst.world, snap, WorldRestoreError);
+		expectRejectedLeavesIntact(dst.world, snap, ECSRestoreError);
 	});
 
 	it("rejects a snapshot whose sparse registration differs, target intact", () => {
@@ -301,7 +301,7 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 		other.registerSparseComponent({ tag: "i32" });
 		other.registerSparseComponent({ extra: "i32" }); // extra store → mismatch
 		other.startup();
-		const w = other.createEntity();
+		const w = other.spawn();
 		other.addComponent(w, Pos2, { x: 0 });
 		other.flush();
 		other.addComponent(w, Life2, { age: 0, ttl: 0 });

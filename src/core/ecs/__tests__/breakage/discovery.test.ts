@@ -27,7 +27,7 @@ describe("Column buffer invalidation", () => {
 
 		// Seed 3 entities (under capacity=4)
 		for (let i = 0; i < 3; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 		}
 
@@ -43,7 +43,7 @@ describe("Column buffer invalidation", () => {
 
 		// Now add 10 more entities — forces the column to grow past 4 → 8 → 16
 		for (let i = 3; i < 13; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 		}
 
@@ -76,7 +76,7 @@ describe("Column buffer invalidation", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 42, y: 84 });
 
 		// Create a ref for e1 in the [Pos]-only archetype
@@ -116,15 +116,15 @@ describe("Swap-and-pop multi-column integrity", () => {
 		const world = new ECS();
 		const Data = world.registerComponent(["a", "b", "c", "d", "e"] as const);
 
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Data, { a: 10, b: 20, c: 30, d: 40, e: 50 });
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Data, { a: 11, b: 21, c: 31, d: 41, e: 51 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Data, { a: 12, b: 22, c: 32, d: 42, e: 52 });
 
 		// Destroy e0. e2 (last) should swap into e0's row.
-		world.destroyEntity(e0);
+		world.despawn(e0);
 		world.flush();
 
 		// e1 unchanged
@@ -148,13 +148,13 @@ describe("Swap-and-pop multi-column integrity", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i * 100, y: i * 1000 });
 			entities.push(e);
 		}
 
 		// Destroy e2 (middle). e4 (last) swaps into e2's old row.
-		world.destroyEntity(entities[2]);
+		world.despawn(entities[2]);
 		world.flush();
 
 		// Verify remaining entities via getField (uses entity→row mapping)
@@ -189,13 +189,13 @@ describe("Swap-and-pop multi-column integrity", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 			entities.push(e);
 		}
 
 		// Destroy e0, flush, verify
-		world.destroyEntity(entities[0]);
+		world.despawn(entities[0]);
 		world.flush();
 		for (let i = 1; i < 5; i++) {
 			expect(world.getField(entities[i], Pos, "x")).toBe(i);
@@ -203,7 +203,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 		}
 
 		// Destroy e1, flush, verify
-		world.destroyEntity(entities[1]);
+		world.despawn(entities[1]);
 		world.flush();
 		for (const i of [2, 3, 4]) {
 			expect(world.getField(entities[i], Pos, "x")).toBe(i);
@@ -211,7 +211,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 		}
 
 		// Destroy e2, flush, verify
-		world.destroyEntity(entities[2]);
+		world.despawn(entities[2]);
 		world.flush();
 		for (const i of [3, 4]) {
 			expect(world.getField(entities[i], Pos, "x")).toBe(i);
@@ -228,15 +228,15 @@ describe("Entity ID recycling — stale reference safety", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 42, y: 84 });
 		const stale = e1;
 
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
 
 		// Create new entity — should recycle e1's index slot with bumped generation
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 999, y: 888 });
 
 		// isAlive correctly rejects stale ID
@@ -258,11 +258,11 @@ describe("Entity ID recycling — stale reference safety", () => {
 		const staleIds: EntityID[] = [];
 
 		for (let gen = 0; gen < 100; gen++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: gen, y: gen });
 			staleIds.push(e);
 
-			world.destroyEntity(e);
+			world.despawn(e);
 			world.flush();
 		}
 
@@ -272,7 +272,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 		}
 
 		// Create one more — it lives
-		const final = world.createEntity();
+		const final = world.spawn();
 		expect(world.isAlive(final)).toBe(true);
 	});
 
@@ -281,7 +281,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -294,7 +294,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 				// transitioning `e` into [Pos, Vel]. flushDestroyed then runs and
 				// swap-and-pops that row out. The add is NOT skipped; the destroy
 				// reclaims its row afterwards.
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 				ctx.addComponent(e, Vel, { vx: 10, vy: 20 });
 			}
 		});
@@ -311,8 +311,8 @@ describe("Entity ID recycling — stale reference safety", () => {
 		// ...and no ghost row lingers in the transient target archetype. The add
 		// briefly placed `e` in [Pos, Vel], but the destroy reclaimed that row,
 		// so nothing matches [Pos, Vel] (nor any Vel-bearing archetype).
-		expect(world.query(Pos, Vel).count()).toBe(0);
-		expect(world.query(Vel).count()).toBe(0);
+		expect(world.query(Pos, Vel).entityCount).toBe(0);
+		expect(world.query(Vel).entityCount).toBe(0);
 	});
 });
 
@@ -325,7 +325,7 @@ describe("Deferred flush ordering edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 10, vy: 20 });
 
@@ -355,7 +355,7 @@ describe("Deferred flush ordering edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		// sys1 adds Tag
@@ -388,7 +388,7 @@ describe("Deferred flush ordering edge cases", () => {
 		const world = new ECS();
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		const sys = world.registerSystem({
 			...openAccess([Vel]),
@@ -421,7 +421,7 @@ describe("Multi-hop archetype transitions", () => {
 			comps.push(world.registerComponent(["v"] as const));
 		}
 
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		for (let i = 0; i < 20; i++) {
 			world.addComponent(e, comps[i], { v: (i + 1) * 111 });
@@ -440,7 +440,7 @@ describe("Multi-hop archetype transitions", () => {
 			comps.push(world.registerComponent(["v"] as const));
 		}
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		for (let i = 0; i < 10; i++) {
 			world.addComponent(e, comps[i], { v: (i + 1) * 100 });
 		}
@@ -480,8 +480,8 @@ describe("Multi-hop archetype transitions", () => {
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
 
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 
 		// Interleave: add A to both, then B to e1, C to e2
 		world.addComponent(e1, A, { v: 1 });
@@ -521,11 +521,11 @@ describe("Query iteration edge cases", () => {
 		expect(q.archetypeCount).toBe(0);
 
 		// Create entities in distinct archetypes
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Tag1);
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 		world.addComponent(e2, Tag2);
 
@@ -543,22 +543,22 @@ describe("Query iteration edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 3, vy: 4 });
 
 		const posVelQuery = world.query(Pos, Vel);
-		expect(posVelQuery.count()).toBe(1);
+		expect(posVelQuery.entityCount).toBe(1);
 
 		// Remove Vel — entity moves to [Pos] archetype
 		world.removeComponent(e, Vel);
 
 		// The [Pos,Vel] archetype is now empty — query skips empty archetypes
-		expect(posVelQuery.count()).toBe(0);
+		expect(posVelQuery.entityCount).toBe(0);
 
 		// Re-add Vel — entity moves back
 		world.addComponent(e, Vel, { vx: 99, vy: 88 });
-		expect(posVelQuery.count()).toBe(1);
+		expect(posVelQuery.entityCount).toBe(1);
 
 		// Data should be the new values
 		expect(world.getField(e, Vel, "vx")).toBe(99);
@@ -574,13 +574,13 @@ describe("Query iteration edge cases", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			entities.push(e);
 		}
 
 		// Destroy e1 (index 1). e4 swaps into e1's row.
-		world.destroyEntity(entities[1]);
+		world.despawn(entities[1]);
 		world.flush();
 
 		// entityList should contain exactly {e0, e2, e3, e4} (in some order)
@@ -612,7 +612,7 @@ describe("Batch operations — data integrity", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 10; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i * 7, y: i * 13 });
 			entities.push(e);
 		}
@@ -638,7 +638,7 @@ describe("Batch operations — data integrity", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 10; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 2 });
 			world.addComponent(e, Vel, { vx: i * 3, vy: i * 4 });
 			entities.push(e);
@@ -664,7 +664,7 @@ describe("Batch operations — data integrity", () => {
 		// Create 3 entities already in [Pos, Vel]
 		const existing: EntityID[] = [];
 		for (let i = 0; i < 3; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i });
 			world.addComponent(e, Vel, { vx: i * 10, vy: i * 10 });
 			existing.push(e);
@@ -673,7 +673,7 @@ describe("Batch operations — data integrity", () => {
 		// Create 5 entities in [Pos] only
 		const newcomers: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 100 + i, y: 200 + i });
 			newcomers.push(e);
 		}
@@ -698,7 +698,7 @@ describe("Batch operations — data integrity", () => {
 		}
 
 		// Total in [Pos, Vel] should be 8
-		expect(world.query(Pos, Vel).count()).toBe(8);
+		expect(world.query(Pos, Vel).entityCount).toBe(8);
 	});
 });
 
@@ -718,14 +718,14 @@ describe("create_entity/add_component asymmetry in systems", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				createdEntity = ctx.createEntity();
+				createdEntity = ctx.commands.spawn();
 				ctx.addComponent(createdEntity, Pos, { x: 42, y: 84 });
 
 				// Entity exists immediately (create is not deferred)
 				aliveInSystem = world.isAlive(createdEntity);
 
 				// But it should NOT appear in Pos query yet (add is deferred)
-				inQueryDuringSystem = posQuery.count() > 0;
+				inQueryDuringSystem = posQuery.entityCount > 0;
 			}
 		});
 
@@ -737,7 +737,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 		expect(inQueryDuringSystem).toBe(false);
 
 		// After flush, entity should be in query
-		expect(posQuery.count()).toBe(1);
+		expect(posQuery.entityCount).toBe(1);
 		expect(world.getField(createdEntity!, Pos, "x")).toBe(42);
 	});
 
@@ -751,7 +751,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 			...openAccess([Pos]),
 			fn(ctx) {
 				for (let i = 0; i < 50; i++) {
-					const e = ctx.createEntity();
+					const e = ctx.commands.spawn();
 					ctx.addComponent(e, Pos, { x: i, y: i * 2 });
 					created.push(e);
 				}
@@ -781,11 +781,11 @@ describe("Archetype transition affects co-resident entities", () => {
 		const B = world.registerComponent(["v"] as const);
 
 		// e0, e1, e2 all in archetype [A]
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, A, { v: 100 });
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, A, { v: 200 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, A, { v: 300 });
 
 		// Move e0 to [A, B] — this removes e0 from [A] via swap-and-pop
@@ -813,15 +813,15 @@ describe("Archetype transition affects co-resident entities", () => {
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, A, { v: 10 });
 		world.addComponent(e0, B, { v: 11 });
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, A, { v: 20 });
 		world.addComponent(e1, B, { v: 21 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, A, { v: 30 });
 		world.addComponent(e2, B, { v: 31 });
 
@@ -845,9 +845,9 @@ describe("Component value edge cases", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 
 		// Overwrite e1's Pos (same component, no transition)
@@ -866,13 +866,13 @@ describe("Component value edge cases", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			entities.push(e);
 		}
 
 		// Destroy e0 — e4 swaps into row 0
-		world.destroyEntity(entities[0]);
+		world.despawn(entities[0]);
 		world.flush();
 
 		// Now use setField on e4 (which swapped rows)
@@ -895,11 +895,11 @@ describe("Deferred destroy + structural interaction", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		// Another entity that should survive
-		const survivor = world.createEntity();
+		const survivor = world.spawn();
 		world.addComponent(survivor, Pos, { x: 10, y: 20 });
 		world.addComponent(survivor, Vel, { vx: 30, vy: 40 });
 
@@ -907,7 +907,7 @@ describe("Deferred destroy + structural interaction", () => {
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 			}
 		});
 
@@ -940,7 +940,7 @@ describe("Deferred destroy + structural interaction", () => {
 		const safe: EntityID[] = [];
 
 		for (let i = 0; i < 1000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 3 });
 			if (i % 2 === 0) {
 				doomed.push(e);
@@ -953,7 +953,7 @@ describe("Deferred destroy + structural interaction", () => {
 			...openAccess([Pos]),
 			fn(ctx) {
 				for (const e of doomed) {
-					ctx.destroyEntity(e);
+					ctx.commands.despawn(e);
 				}
 			}
 		});
@@ -982,7 +982,7 @@ describe("Entity with no components", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		// No addComponent call
 
 		expect(world.isAlive(e)).toBe(true);
@@ -990,14 +990,14 @@ describe("Entity with no components", () => {
 
 		// Query for Pos should not find this entity
 		const q = world.query(Pos);
-		expect(q.count()).toBe(0);
+		expect(q.entityCount).toBe(0);
 	});
 
 	it("entity can receive components after existing with none", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		// Later, add a component
 		world.addComponent(e, Pos, { x: 42, y: 84 });
 

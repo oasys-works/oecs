@@ -14,22 +14,22 @@
  *
  * Usage:
  *
- *   const world = new ECS({ fixedTimestep: 1 / 50 });
+ *   const ecs = new ECS({ fixedTimestep: 1 / 50 });
  *
  *   // Record syntax (per-field type control)
- *   const Pos = world.registerComponent({ x: "f64", y: "f64" });
- *   const Energy = world.registerComponent({ current: "i32", max: "i32" });
+ *   const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+ *   const Energy = ecs.registerComponent({ current: "i32", max: "i32" });
  *
  *   // Array shorthand (uniform type, defaults to "f64")
- *   const Vel = world.registerComponent(["vx", "vy"] as const);
+ *   const Vel = ecs.registerComponent(["vx", "vy"] as const);
  *
- *   const Frozen = world.registerTag();
+ *   const Frozen = ecs.registerTag();
  *
  *   // A query is a live, cached view over matching archetypes.
- *   const movers = world.query(Pos, Vel);
+ *   const movers = ecs.query(Pos, Vel);
  *
  *   // Systems declare the components they read / write (dev-mode access checking).
- *   const moveSys = world.registerSystem({
+ *   const moveSys = ecs.registerSystem({
  *     reads: [Pos, Vel],
  *     writes: [Pos],
  *     fn: (ctx, dt) => {
@@ -48,17 +48,17 @@
  *     },
  *   });
  *
- *   world.addSystems(SCHEDULE.UPDATE, moveSys);
- *   world.startup();
+ *   ecs.addSystems(SCHEDULE.UPDATE, moveSys);
+ *   ecs.startup();
  *
- *   const e = world.createEntity();
- *   world.addComponent(e, Pos, { x: 0, y: 0 });
- *   world.addComponent(e, Vel, { vx: 1, vy: 2 });
- *   world.addComponent(e, Frozen);
- *   world.flush();
+ *   const e = ecs.spawn();
+ *   ecs.addComponent(e, Pos, { x: 0, y: 0 });
+ *   ecs.addComponent(e, Vel, { vx: 1, vy: 2 });
+ *   ecs.addComponent(e, Frozen);
+ *   ecs.flush();
  *
  *   // game loop
- *   world.update(1 / 60);
+ *   ecs.update(1 / 60);
  *
  ***/
 
@@ -93,6 +93,7 @@ import type {
 	ComponentRegisterOptions,
 	ComponentSchema,
 	CompleteFieldValues,
+	Bundle,
 	BundleOrDef
 } from "./component";
 import { bundleDef, bundleValues } from "./component";
@@ -120,7 +121,6 @@ import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
 import { BitSet, type TypedArrayTag } from "../../type_primitives";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import {
-	EMPTY_VALUES,
 	DEFAULT_FIXED_TIMESTEP,
 	DEFAULT_MAX_FIXED_STEPS,
 	HASH_GOLDEN_RATIO,
@@ -473,9 +473,23 @@ export class ECS implements QueryResolver {
 		if (DEV) this.store._trace = sink;
 	}
 
-	// Overload 1: record syntax (per-field types). `opts.name` records a debug
-	// label interpolated into dev-mode diagnostics (`'Pos' (component 5)`
-	// instead of `component 5`) — diagnostic only, no behavioural effect.
+	/**
+	 * Register a dense component and get back its typed handle. Record syntax
+	 * gives per-field type control; the array shorthand types every field the
+	 * same (default `"f64"` — rejected on a `{ deterministic: true }` world
+	 * (#777), pass an explicit integer type there). An empty schema `{}` is a
+	 * tag. `opts.name` labels dev-mode diagnostics (`'Pos' (component 5)`
+	 * instead of `component 5`) — diagnostic only, no behavioural effect.
+	 *
+	 * The handle is *callable*: `Pos({ x: 1 })` mints a `Bundle` for the
+	 * attach surfaces (`spawnBundle`, `ctx.commands.spawn`, `addComponent`).
+	 *
+	 * @example
+	 * const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+	 * const Hp = ecs.registerComponent(["current", "max"], "i32");
+	 * const Frozen = ecs.registerComponent({}, { name: "Frozen" }); // tag
+	 * ecs.getField(e, Pos, "x"); // field names/types flow from the schema
+	 */
 	public registerComponent<S extends Record<string, TypedArrayTag>>(
 		schema: S,
 		opts?: ComponentRegisterOptions
@@ -543,18 +557,32 @@ export class ECS implements QueryResolver {
 		);
 	}
 
-	public createEntity(): EntityID;
-    	public createEntity<Defs extends readonly ComponentDef[]>(
-    		template: Template<Defs>,
-    		overrides?: TemplateOverrides<Defs>
-    	): EntityID;
-    	public createEntity<Defs extends readonly ComponentDef[]>(
-    		template?: Template<Defs>,
-    		overrides?: TemplateOverrides<Defs>
-    	): EntityID {
-    		if (template === undefined) return this.store.createEntity();
-    		return this.store.spawn(template, overrides);
-    	}
+	/**
+	 * Spawn an entity, immediately. Bare `spawn()` creates an empty entity —
+	 * attach components afterward. `spawn(template, overrides?)` lands
+	 * directly in the template's archetype with zero archetype transitions,
+	 * applying optional flat per-field overrides on top of the template
+	 * defaults. Inside a system use `ctx.commands.spawn(...)` instead.
+	 *
+	 * @example
+	 * const e = ecs.spawn();
+	 * ecs.addComponent(e, Pos, { x: 0, y: 0 });
+	 *
+	 * const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }]);
+	 * const b = ecs.spawn(Bullet, { x: 5 }); // override a template default
+	 */
+	public spawn(): EntityID;
+	public spawn<Defs extends readonly ComponentDef[]>(
+		template: Template<Defs>,
+		overrides?: TemplateOverrides<Defs>
+	): EntityID;
+	public spawn<Defs extends readonly ComponentDef[]>(
+		template?: Template<Defs>,
+		overrides?: TemplateOverrides<Defs>
+	): EntityID {
+		if (template === undefined) return this.store.createEntity();
+		return this.store.spawn(template, overrides);
+	}
 
 	/**
 	 * Spawn an entity from varargs bundles (§bundles) — the immediate
@@ -574,16 +602,37 @@ export class ECS implements QueryResolver {
 		return e;
 	}
 
-	/** Buffer an entity for deferred destruction (applied at the next phase
-	 *  flush — matches the semantics of `SystemContext.destroyEntity`). The
-	 *  ECS surface is unsuffixed because the context (`ECS` vs Store) already
-	 *  implies the mode; `Store.destroyEntity` is the immediate path. */
-	public destroyEntity(id: EntityID): void {
-		if (DEV) accessCheck.checkDestroy();
-		this.store.destroyEntityDeferred(id);
+	/** Immediately destroy an entity — `ecs.despawn(e); ecs.isAlive(e)` is
+	 *  `false` on the next line, matching the immediacy of every other host
+	 *  facade mutation. Inside a system the buffered path is
+	 *  `ctx.commands.despawn` (applied at the phase flush); calling this from
+	 *  a system body throws in DEV, since an immediate destroy mid-iteration
+	 *  can invalidate rows the running query is walking. */
+	public despawn(id: EntityID): void {
+		if (DEV && accessCheck.current() !== null) {
+			throw new ECSError(
+				ECS_ERROR.ACCESS_UNDECLARED,
+				`ecs.despawn called from inside system '${accessCheck.current()?.name ?? "?"}' — host despawn is immediate and unsafe mid-iteration; use ctx.commands.despawn (deferred to the phase flush) instead`,
+				{ op: "despawn" }
+			);
+		}
+		this.store.destroyEntity(id);
 	}
 
+	/**
+	 * Attach a component to an entity, immediately (inside a system, use the
+	 * deferred `ctx.commands.add`). Three shapes: a bare def attaches a tag; a
+	 * bundle (`Pos({ x: 1 })`) zero-fills omitted fields; the explicit
+	 * `(e, def, values)` form demands every field, so a typo'd or missing
+	 * field is a compile error.
+	 *
+	 * @example
+	 * ecs.addComponent(e, Frozen);                 // tag
+	 * ecs.addComponent(e, Pos({ x: 1 }));          // bundle — y zero-fills
+	 * ecs.addComponent(e, Pos, { x: 1, y: 2 });    // complete values
+	 */
 	public addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;
+	public addComponent<S extends ComponentSchema>(entityId: EntityID, bundle: Bundle<S>): this;
 	public addComponent<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: ComponentDef<S>,
@@ -591,11 +640,12 @@ export class ECS implements QueryResolver {
 	): this;
 	public addComponent(
 		entityId: EntityID,
-		def: ComponentDef,
+		item: BundleOrDef,
 		values?: Record<string, number>
 	): this {
+		const def = bundleDef(item);
 		if (DEV) accessCheck.checkAdd(def);
-		this.store.addComponent(entityId, def, values ?? EMPTY_VALUES);
+		this.store.addComponent(entityId, def, values ?? bundleValues(item));
 		return this;
 	}
 
@@ -742,6 +792,22 @@ export class ECS implements QueryResolver {
 		return next;
 	}
 
+	/**
+	 * Get the live, cached query matching entities that have **all** of
+	 * `defs`. Queries are deduplicated by mask — calling this twice with the
+	 * same terms returns the same instance — so build once at setup and reuse;
+	 * the view stays live as archetypes appear. Refine with `.and()` /
+	 * `.without()` / `.anyOf()`; iterate with `eachChunk` (mutating hot path),
+	 * `forEach` (per-archetype), or `forEachEntity` (per-entity).
+	 *
+	 * @example
+	 * const movers = ecs.query(Pos, Vel);
+	 * movers.eachChunk((cols, count) => {
+	 *   const { x, y } = cols.mut(Pos);
+	 *   const { vx, vy } = cols.read(Vel);
+	 *   for (let i = 0; i < count; i++) { x[i] += vx[i]; y[i] += vy[i]; }
+	 * });
+	 */
 	public query<T extends ComponentDef[]>(...defs: T): Query<T> {
 		// Reuse scratchMask to avoid allocating a new BitSet per query call.
 		// Zero it out, set bits, then copy for the cache key.
@@ -801,19 +867,30 @@ export class ECS implements QueryResolver {
 	}
 
 	/**
-	 * Register a system.
+	 * Register a system and get its scheduling handle. The config form is the
+	 * production shape: it declares the access surface (`reads` / `writes` are
+	 * mandatory; `spawns` / `despawns` / resource and sparse/relation terms
+	 * optional), which is enforced at runtime in dev *and* narrows `ctx` at
+	 * the type level so undeclared access fails to compile. Registration does
+	 * not schedule — pass the returned descriptor to
+	 * `ecs.addSystems(SCHEDULE.UPDATE, ...)`.
 	 *
-	 *   // Bare function (no query, no lifecycle hooks)
-	 *   world.registerSystem((ctx, dt) => { ... });
+	 * @example
+	 * // Full config — declared access, dev-checked and compile-checked
+	 * const move = ecs.registerSystem({
+	 *   reads: [Vel],
+	 *   writes: [Pos],
+	 *   fn(ctx, dt) {
+	 *     movers.eachChunk((cols, count) => { ... });
+	 *   },
+	 * });
+	 * ecs.addSystems(SCHEDULE.UPDATE, move);
 	 *
-	 *   // Function + query builder (query resolved at registration time)
-	 *   world.registerSystem(
-	 *     (q, ctx, dt) => { q.forEach((arch) => { ... }); },
-	 *     (qb) => qb.with(Pos, Vel),
-	 *   );
-	 *
-	 *   // Full config — declares reads/writes (dev-checked) + optional lifecycle hooks
-	 *   world.registerSystem({ reads: [Pos, Vel], writes: [Pos], fn(ctx, dt) { ... } });
+	 * @example
+	 * // Bare function (no declared access — any component touch throws in dev)
+	 * ecs.registerSystem((ctx, dt) => { ... });
+	 * // Function + query builder (query resolved at registration time)
+	 * ecs.registerSystem((q, ctx, dt) => { q.forEach((arch) => { ... }); }, (qb) => qb.with(Pos, Vel));
 	 */
 	public registerSystem(fn: SystemFn): SystemDescriptor;
 	public registerSystem<Defs extends readonly ComponentDef[]>(
@@ -924,6 +1001,18 @@ export class ECS implements QueryResolver {
 		return this.systems.size;
 	}
 
+	/**
+	 * Run the startup phases, once, before the first `update()`. Prewarms
+	 * every archetype the registered systems/observers can produce, runs each
+	 * system's `onAdded` hook, then the `PRE_STARTUP` → `STARTUP` →
+	 * `POST_STARTUP` schedule. Events emitted during startup are drained at
+	 * its tail — they do not leak into frame 1.
+	 *
+	 * @example
+	 * ecs.addSystems(SCHEDULE.UPDATE, move);
+	 * ecs.startup();
+	 * ecs.update(1 / 60); // now tick every frame
+	 */
 	public startup(): void {
 		// Phase C of issue #213 — walk every registered system's `spawns` +
 		// `transitions` to compute the archetype closure they can produce,
@@ -968,6 +1057,22 @@ export class ECS implements QueryResolver {
 		this.store.archCreateManyFromMasks(closure);
 	}
 
+	/**
+	 * Advance the world one frame. Runs the fixed-timestep accumulator loop
+	 * (`FIXED_UPDATE`, when any fixed system is registered), then
+	 * `PRE_UPDATE` → `UPDATE` → `POST_UPDATE`, flushing deferred structural
+	 * commands at each phase boundary. Events emitted this tick are readable
+	 * for the rest of the tick and cleared at the tail. `dt` is in seconds.
+	 *
+	 * @example
+	 * let last = performance.now();
+	 * function frame(now: number) {
+	 *   ecs.update((now - last) / 1000);
+	 *   last = now;
+	 *   requestAnimationFrame(frame);
+	 * }
+	 * requestAnimationFrame(frame);
+	 */
 	public update(dt: number): void {
 		// #785 multi-world re-entrancy: a system may drive a *second* world's
 		// tick from inside its own open access span — e.g. a host running N
@@ -988,11 +1093,10 @@ export class ECS implements QueryResolver {
 
 			// Publish row counts before the first phase runs. Covers any
 			// immediate-mode `addComponents` / `removeComponents` /
-			// `destroyEntity` (followed by `flush`) the host did
-			// between updates — those mutate archetype lengths without
-			// touching the SAB descriptor. Subsequent phase boundaries
-			// re-publish via `ctx.flush()`, so any WASM scan in any phase
-			// sees fresh `row_count` fields.
+			// `despawn` the host did between updates — those mutate
+			// archetype lengths without touching the SAB descriptor.
+			// Subsequent phase boundaries re-publish via `ctx.flush()`, so
+			// any WASM scan in any phase sees fresh `row_count` fields.
 			this.store.publishRowCountsToDescriptor();
 
 			if (this.schedule.hasFixedSystems()) {
@@ -1141,7 +1245,7 @@ export class ECS implements QueryResolver {
 	 *   ]);
 	 *
 	 * The big win is multi-component entities and bulk spawns; a single-
-	 * component spawn is no faster than `createEntity` + `addComponent`, which
+	 * component spawn is no faster than `spawn` + `addComponent`, which
 	 * already bump-allocates a fresh entity into the target archetype. See
 	 * ADR-0010. */
 	public template<Defs extends readonly ComponentDef[]>(
@@ -1150,11 +1254,16 @@ export class ECS implements QueryResolver {
 		return this.store.resolveTemplate(entries);
 	}
 
-	/** Bulk-spawn `count` identical entities from `template`. Field writes are
-	 * O(columns) (one `TypedArray.fill` per column), not O(count×columns).
-	 * Returns the new ids in spawn order. */
-	public createEntities(template: Template, count: number): EntityID[] {
-		return this.store.spawnMany(template, count);
+	/** Bulk-spawn `count` entities from `template`, optionally applying one
+	 * shared `overrides` object to every spawned row (same typed keys as
+	 * `spawn`). Field writes are O(columns) (one `TypedArray.fill` per
+	 * column), not O(count×columns). Returns the new ids in spawn order. */
+	public spawnMany<Defs extends readonly ComponentDef[]>(
+		template: Template<Defs>,
+		count: number,
+		overrides?: TemplateOverrides<Defs>
+	): EntityID[] {
+		return this.store.spawnMany(template, count, overrides);
 	}
 
 	public isAlive(id: EntityID): boolean {
@@ -1363,7 +1472,7 @@ export class ECS implements QueryResolver {
 	 *   when an entity carrying the component is *disabled* / *enabled* (#577,
 	 *   ADR-0023), once per net transition, for every component the entity carries
 	 *   (a disable is a soft remove of the whole mask from default queries). Like
-	 *   `onAdd`/`onRemove`, an *immediate* `world.disable()` does not fire — only
+	 *   `onAdd`/`onRemove`, an *immediate* `ecs.disable()` does not fire — only
 	 *   the deferred `ctx.disable()` toggle does. `yieldExisting` seeds enabled
 	 *   members only, so a disabled entity is correctly absent at seed.
 	 * - **`onSet`** fires at the post-update detection point. Default

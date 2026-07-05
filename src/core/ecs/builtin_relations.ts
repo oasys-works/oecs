@@ -37,9 +37,9 @@ export interface BuiltinRelationOptions {
 /**
  * Register an **`IsA(instance → exemplar)`** relation — a thin instance-of link.
  *
- * - "all instances of exemplar E" is `world.relations.sourcesOf(IsA, E)`.
+ * - "all instances of exemplar E" is `ecs.relations.sourcesOf(E, IsA)`.
  * - the IsA chain (`instance → exemplar → …`) is walked with
- *   `world.relations.ancestorsOf(instance, IsA)` / `rootOf` / `cascadeOf(exemplar, IsA)`.
+ *   `ecs.relations.ancestorsOf(instance, IsA)` / `rootOf` / `cascadeOf(exemplar, IsA)`.
  * - **No component inheritance** — IsA records the link only; materialization of
  *   an instance from its exemplar stays a spawn-time copy (the template path,
  *   #462), deliberately decoupled (#477 / #478). An exemplar is a real entity,
@@ -50,8 +50,8 @@ export interface BuiltinRelationOptions {
  * flecs's `IsA`-remove, since there is no inherited data to strip). Pass
  * `"delete"` for strong instance-of (exemplar death cascade-destroys instances).
  */
-export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
-	return world.relations.register({
+export function registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
+	return ecs.relations.register({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "clear"
 	});
@@ -60,8 +60,8 @@ export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): Relation
 /**
  * Register a **`ChildOf(child → parent)`** relation — a thin hierarchy link.
  *
- * - a parent's children are `world.relations.sourcesOf(ChildOf, parent)`.
- * - the hierarchy is walked with `world.relations.ancestorsOf(child, ChildOf)` (up to the
+ * - a parent's children are `ecs.relations.sourcesOf(parent, ChildOf)`.
+ * - the hierarchy is walked with `ecs.relations.ancestorsOf(child, ChildOf)` (up to the
  *   root), `rootOf`, and `cascadeOf(root, ChildOf)` (down, breadth-first,
  *   parents before children).
  * - unlike flecs's `ChildOf`, this does **not** scope names/lookup — the engine
@@ -71,8 +71,8 @@ export function registerIsA(world: ECS, opts?: BuiltinRelationOptions): Relation
  * its whole subtree (flecs's default). Pass `"clear"` to let children survive as
  * roots, or `"orphan"` to leave a dangling `targetOf`.
  */
-export function registerChildOf(world: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
-	return world.relations.register({
+export function registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
+	return ecs.relations.register({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "delete"
 	});

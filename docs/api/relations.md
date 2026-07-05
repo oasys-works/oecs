@@ -11,12 +11,12 @@ Relations are stored in [sparse storage](./sparse-storage.md), so adding/removin
 import { registerChildOf } from "@oasys/oecs";
 const ChildOf = registerChildOf(ecs);           // built-in preset — a free function (see below)
 
-const parent = ecs.createEntity();
-const child  = ecs.createEntity();
+const parent = ecs.spawn();
+const child  = ecs.spawn();
 ecs.relations.add(child, ChildOf, parent);
 
 ecs.relations.targetOf(child, ChildOf);      // parent
-ecs.relations.sourcesOf(ChildOf, parent);    // [child, …] — everyone whose parent is `parent`
+ecs.relations.sourcesOf(parent, ChildOf);    // [child, …] — everyone whose parent is `parent`
 ```
 
 ## Registering a relation
@@ -52,7 +52,7 @@ hasRelation(src, def): boolean;
 ```ts
 targetOf(src, def): EntityID | undefined;   // single target (exclusive relations)
 targetsOf(src, def): EntityID[];            // all targets, ascending by id
-sourcesOf(def, tgt): EntityID[];            // reverse index: sources pointing at tgt, ascending
+sourcesOf(tgt, def): EntityID[];            // reverse index: sources pointing at tgt, ascending
 pairsOf(def): [EntityID, EntityID][];       // every (source, target) pair — the (R, *) wildcard, cold
 sourcesOfAny(tgt): [RelationDef, EntityID][];  // every (relation, source) at tgt — the (*, T) wildcard, cold
 ```

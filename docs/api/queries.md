@@ -156,12 +156,12 @@ Yields matching entities one id at a time. This is **required** for any query ca
 
 ## Dense-only restriction
 
-`forEach`, `eachChunk`, `count`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
+`forEach`, `eachChunk`, `entityCount`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
 
 ## Introspection
 
 ```ts
-count(): number;                            // enabled rows (or all, under includeDisabled)
+get entityCount(): number;                  // enabled rows (or all, under includeDisabled)
 get archetypeCount(): number;               // matching archetypes, including empty ones
 get archetypes(): readonly ArchetypeView[]; // the raw list (not filtered to non-empty)
 ```

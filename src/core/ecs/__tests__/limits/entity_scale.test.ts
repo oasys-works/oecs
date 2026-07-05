@@ -21,7 +21,7 @@ describe("Entity scale", () => {
 		const world = new ECS();
 		const entities = [];
 		for (let i = 0; i < 10_000; i++) {
-			entities.push(world.createEntity());
+			entities.push(world.spawn());
 		}
 		expect(world.entityCount).toBe(10_000);
 		for (const e of entities) {
@@ -33,11 +33,11 @@ describe("Entity scale", () => {
 		const world = new ECS();
 		const entities = [];
 		for (let i = 0; i < 10_000; i++) {
-			entities.push(world.createEntity());
+			entities.push(world.spawn());
 		}
 
 		for (let i = 0; i < 5_000; i++) {
-			world.destroyEntity(entities[i]);
+			world.despawn(entities[i]);
 		}
 		world.flush();
 
@@ -55,14 +55,14 @@ describe("Entity scale", () => {
 		const Pos = world.registerComponent(Position);
 		const entities = [];
 		for (let i = 0; i < 10_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 2 });
 			entities.push(e);
 		}
 
 		// Destroy odd-indexed
 		for (let i = 1; i < 10_000; i += 2) {
-			world.destroyEntity(entities[i]);
+			world.despawn(entities[i]);
 		}
 		world.flush();
 
@@ -78,16 +78,16 @@ describe("Entity scale", () => {
 		const world = new ECS();
 		const oldEntities = [];
 		for (let i = 0; i < 1_000; i++) {
-			oldEntities.push(world.createEntity());
+			oldEntities.push(world.spawn());
 		}
 		for (const e of oldEntities) {
-			world.destroyEntity(e);
+			world.despawn(e);
 		}
 		world.flush();
 
 		const newEntities = [];
 		for (let i = 0; i < 1_000; i++) {
-			newEntities.push(world.createEntity());
+			newEntities.push(world.spawn());
 		}
 
 		for (const e of oldEntities) {
@@ -107,7 +107,7 @@ describe("Entity scale", () => {
 		for (let round = 0; round < 20; round++) {
 			const batch = [];
 			for (let i = 0; i < 100; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				batch.push(e);
 				alive.add(e);
 			}
@@ -116,7 +116,7 @@ describe("Entity scale", () => {
 			// Destroy 50 from the alive set
 			const aliveArr = [...alive];
 			for (let i = 0; i < 50 && i < aliveArr.length; i++) {
-				world.destroyEntity(aliveArr[i]);
+				world.despawn(aliveArr[i]);
 				alive.delete(aliveArr[i]);
 			}
 			world.flush();

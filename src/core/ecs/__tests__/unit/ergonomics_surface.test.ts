@@ -35,7 +35,7 @@ describe("optional access-declaration fields", () => {
 	it("a system with only reads/writes still passes the runtime access check", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		let seen = -1;
 		const sys = world.registerSystem({
@@ -93,14 +93,14 @@ describe("Template in spawns/despawns declarations", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const t = world.template([{ def: Pos, values: { x: 5 } }]);
-		const e = world.createEntity(t);
+		const e = world.spawn(t);
 		const sys = world.registerSystem({
 			name: "reaper",
 			reads: [Pos],
 			writes: [],
 			despawns: [t],
 			fn(ctx) {
-				if (ctx.isAlive(e)) ctx.destroyEntity(e);
+				if (ctx.isAlive(e)) ctx.commands.despawn(e);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -117,10 +117,10 @@ describe("Query.for_each_until", () => {
 		const TagA = world.registerTag();
 		const TagB = world.registerTag();
 		// Two distinct archetypes matching the Pos query.
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 1 });
 		world.addComponent(a, TagA);
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 2 });
 		world.addComponent(b, TagB);
 
@@ -136,7 +136,7 @@ describe("Query.for_each_until", () => {
 	it("returns false after visiting everything when nothing matches", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		let visited = 0;
 		const hit = world.query(Pos).forEachUntil((arch) => {
@@ -152,7 +152,7 @@ describe("Query.for_each_until", () => {
 	it("include_disabled() spans the disabled tail", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7 });
 		world.disable(e);
 
@@ -179,7 +179,7 @@ describe("Archetype.get_columns_read", () => {
 	it("returns the same column views as per-field get_column_read", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3, y: 4 });
 		let checked = false;
 		world.query(Pos).forEach((arch) => {
@@ -224,7 +224,7 @@ describe("update_field", () => {
 	it("host-side: composes get_field → set_field and returns the written value", () => {
 		const world = new ECS();
 		const Gold = world.registerComponent({ value: "i32" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Gold, { value: 100 });
 		const next = world.updateField(e, Gold, "value", (v) => v - 30);
 		expect(next).toBe(70);
@@ -234,7 +234,7 @@ describe("update_field", () => {
 	it("system-side: same semantics through SystemContext (write declared)", () => {
 		const world = new ECS();
 		const Gold = world.registerComponent({ value: "i32" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Gold, { value: 10 });
 		const sys = world.registerSystem({
 			name: "bank",
@@ -256,8 +256,30 @@ describe("spawn override explicit-undefined skip", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
 		const t = world.template([{ def: Pos, values: { x: 1, y: 2 } }]);
-		const e = world.createEntity(t, { x: 9, y: undefined });
+		const e = world.spawn(t, { x: 9, y: undefined });
 		expect(world.getField(e, Pos, "x")).toBe(9);
+		expect(world.getField(e, Pos, "y")).toBe(2);
+	});
+});
+
+describe("add_component bundle overload", () => {
+	it("accepts a callable-def bundle and zero-fills omitted fields", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
+		const e = world.spawn();
+		world.addComponent(e, Pos({ x: 5 }));
+		expect(world.getField(e, Pos, "x")).toBe(5);
+		expect(world.getField(e, Pos, "y")).toBe(0); // omitted → zero-fill
+	});
+
+	it("bare-def tag form and complete-values form still work", () => {
+		const world = new ECS();
+		const Frozen = world.registerComponent({} as const);
+		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
+		const e = world.spawn();
+		world.addComponent(e, Frozen);
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+		expect(world.hasComponent(e, Frozen)).toBe(true);
 		expect(world.getField(e, Pos, "y")).toBe(2);
 	});
 });

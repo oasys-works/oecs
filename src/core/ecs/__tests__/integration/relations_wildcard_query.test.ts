@@ -45,14 +45,14 @@ describe("(R, *) require_relation — membership", () => {
 		const Targets = world.relations.register();
 
 		// Sources in different archetypes; some related, some not.
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
-		const c = world.createEntity(); // empty archetype
-		const target = world.createEntity();
-		const unrelated = world.createEntity();
+		const c = world.spawn(); // empty archetype
+		const target = world.spawn();
+		const unrelated = world.spawn();
 		world.addComponent(unrelated, Pos, { x: 9, y: 9 });
 
 		world.relations.add(a, Targets, target);
@@ -65,11 +65,11 @@ describe("(R, *) require_relation — membership", () => {
 	it("matches a multi source once regardless of how many targets it holds", () => {
 		const world = new ECS();
 		const Likes = world.relations.register({ multi: true });
-		const a = world.createEntity();
-		const t1 = world.createEntity();
-		const t2 = world.createEntity();
-		const t3 = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const t1 = world.spawn();
+		const t2 = world.spawn();
+		const t3 = world.spawn();
+		const b = world.spawn();
 		world.relations.add(a, Likes, t1);
 		world.relations.add(a, Likes, t2);
 		world.relations.add(a, Likes, t3);
@@ -82,9 +82,9 @@ describe("(R, *) require_relation — membership", () => {
 	it("drops a source once its relation is removed", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const t = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
+		const t = world.spawn();
 		world.relations.add(a, Targets, t);
 		world.relations.add(b, Targets, t);
 		world.relations.remove(a, Targets);
@@ -94,7 +94,7 @@ describe("(R, *) require_relation — membership", () => {
 	it("equals the distinct sources of pairs_of(R)", () => {
 		const world = new ECS();
 		const Likes = world.relations.register({ multi: true });
-		const ents = Array.from({ length: 6 }, () => world.createEntity());
+		const ents = Array.from({ length: 6 }, () => world.spawn());
 		world.relations.add(ents[0], Likes, ents[4]);
 		world.relations.add(ents[0], Likes, ents[5]);
 		world.relations.add(ents[2], Likes, ents[4]);
@@ -108,10 +108,10 @@ describe("(R, *) require_relation — membership", () => {
 	it("still matches an orphan-dangling source (membership row persists, like pairs_of)", () => {
 		const world = new ECS();
 		const Targets = world.relations.register(); // default orphan
-		const a = world.createEntity();
-		const t = world.createEntity();
+		const a = world.spawn();
+		const t = world.spawn();
 		world.relations.add(a, Targets, t);
-		world.destroyEntity(t); // deferred...
+		world.despawn(t); // deferred...
 		world.flush(); // ...apply: a now dangles at a dead handle, but still "has a pair"
 		expect(collect(world.query().withRelation(Targets))).toEqual(sorted([a]));
 		// Consistent with the materializing helper.
@@ -125,11 +125,11 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const withPos = world.createEntity();
+		const t = world.spawn();
+		const withPos = world.spawn();
 		world.addComponent(withPos, Pos, { x: 0, y: 0 });
 		world.relations.add(withPos, Targets, t);
-		const noPos = world.createEntity(); // related but no Pos
+		const noPos = world.spawn(); // related but no Pos
 		world.relations.add(noPos, Targets, t);
 		expect(collect(world.query(Pos).withRelation(Targets))).toEqual(sorted([withPos]));
 	});
@@ -139,11 +139,11 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const a = world.createEntity();
+		const t = world.spawn();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.relations.add(a, Targets, t);
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 		world.relations.add(b, Targets, t);
@@ -154,11 +154,11 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const related = world.createEntity();
+		const t = world.spawn();
+		const related = world.spawn();
 		world.addComponent(related, Pos, { x: 0, y: 0 });
 		world.relations.add(related, Targets, t);
-		const free = world.createEntity();
+		const free = world.spawn();
 		world.addComponent(free, Pos, { x: 1, y: 1 });
 		expect(collect(world.query(Pos).withoutRelation(Targets))).toEqual(sorted([free]));
 	});
@@ -167,11 +167,11 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const a = world.createEntity(); // related + marked
+		const t = world.spawn();
+		const a = world.spawn(); // related + marked
 		world.relations.add(a, Targets, t);
 		world.addSparse(a, Marked);
-		const b = world.createEntity(); // related, not marked
+		const b = world.spawn(); // related, not marked
 		world.relations.add(b, Targets, t);
 		expect(collect(world.query().withRelation(Targets).withSparse(Marked))).toEqual(
 			sorted([a])
@@ -182,11 +182,11 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const a = world.createEntity();
+		const t = world.spawn();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.relations.add(a, Targets, t);
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.relations.add(b, Targets, t);
 		world.disable(b);
@@ -219,11 +219,11 @@ describe("(R, *) require_relation — cached, stable instances (#497)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
-		const t = world.createEntity();
-		const a = world.createEntity();
+		const t = world.spawn();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.relations.add(a, Targets, t);
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.relations.add(b, Targets, t); // related, no Pos
 		// withRelation(R).and(Pos) and query(Pos).withRelation(R) agree.
 		expect(collect(world.query().withRelation(Targets).and(Pos))).toEqual(sorted([a]));
@@ -246,11 +246,11 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
 		const Likes = world.relations.register({ multi: true });
-		const T = world.createEntity();
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const c = world.createEntity();
-		const other = world.createEntity();
+		const T = world.spawn();
+		const a = world.spawn();
+		const b = world.spawn();
+		const c = world.spawn();
+		const other = world.spawn();
 		world.relations.add(a, Targets, T);
 		world.relations.add(b, Likes, T);
 		world.relations.add(c, Targets, T);
@@ -265,7 +265,7 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 	it("yields nothing when no source targets T", () => {
 		const world = new ECS();
 		world.relations.register();
-		const lonely = world.createEntity();
+		const lonely = world.spawn();
 		expect(collectRelated(world.query(), lonely)).toEqual([]);
 	});
 
@@ -273,11 +273,11 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
-		const T = world.createEntity();
-		const withPos = world.createEntity();
+		const T = world.spawn();
+		const withPos = world.spawn();
 		world.addComponent(withPos, Pos, { x: 0, y: 0 });
 		world.relations.add(withPos, Targets, T);
-		const noPos = world.createEntity();
+		const noPos = world.spawn();
 		world.relations.add(noPos, Targets, T);
 		expect(collectRelated(world.query(Pos), T)).toEqual(sorted([withPos]));
 	});
@@ -286,12 +286,12 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
 		const Likes = world.relations.register({ multi: true });
-		const T = world.createEntity();
-		const a = world.createEntity(); // targets T and likes something
-		const liked = world.createEntity();
+		const T = world.spawn();
+		const a = world.spawn(); // targets T and likes something
+		const liked = world.spawn();
 		world.relations.add(a, Targets, T);
 		world.relations.add(a, Likes, liked);
-		const b = world.createEntity(); // targets T only
+		const b = world.spawn(); // targets T only
 		world.relations.add(b, Targets, T);
 		// sources related to T that ALSO have any Likes pair → just a.
 		expect(collectRelated(world.query().withRelation(Likes), T)).toEqual(sorted([a]));
@@ -300,13 +300,13 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 	it("is consistent with sources_of on an orphan-dangling dead target", () => {
 		const world = new ECS();
 		const Targets = world.relations.register(); // orphan
-		const T = world.createEntity();
-		const a = world.createEntity();
+		const T = world.spawn();
+		const a = world.spawn();
 		world.relations.add(a, Targets, T);
-		world.destroyEntity(T); // deferred...
+		world.despawn(T); // deferred...
 		world.flush(); // ...a dangles; reverse entry persists keyed by dead T
 		// sourcesOf returns the dangling source; forEachRelatedTo agrees.
-		expect(world.relations.sourcesOf(Targets, T).map((e) => e as number)).toEqual([a as number]);
+		expect(world.relations.sourcesOf(T, Targets).map((e) => e as number)).toEqual([a as number]);
 		expect(collectRelated(world.query(), T)).toEqual([a as number]);
 	});
 });
@@ -317,7 +317,7 @@ describe("(R, *) determinism — identical histories yield identical order", () 
 		const build = (): number[] => {
 			const world = new ECS();
 			const R = world.relations.register();
-			const ents = Array.from({ length: 8 }, () => world.createEntity());
+			const ents = Array.from({ length: 8 }, () => world.spawn());
 			// Scrambled-but-fixed insertion order.
 			for (const i of [5, 1, 7, 0, 3, 6]) world.relations.add(ents[i], R, ents[2]);
 			const out: number[] = [];
@@ -337,7 +337,7 @@ describe("(R, *) — dense-path methods refuse the wildcard query (#556 shape)",
 		const world = new ECS();
 		const R = world.relations.register();
 		const q = world.query().withRelation(R);
-		expect(() => q.count()).toThrow(/forEachEntity/);
+		expect(() => q.entityCount).toThrow(/forEachEntity/);
 		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
 	});
 });
@@ -368,8 +368,8 @@ describe("(R, *) / (*, T) access validation (#579)", () => {
 	it("throws when a system iterates require_relation without declaring relation_reads", () => {
 		const world = new ECS();
 		const R = world.relations.register();
-		const a = world.createEntity();
-		const t = world.createEntity();
+		const a = world.spawn();
+		const t = world.spawn();
 		world.relations.add(a, R, t);
 		const q = world.query().withRelation(R);
 
@@ -388,8 +388,8 @@ describe("(R, *) / (*, T) access validation (#579)", () => {
 	it("permits require_relation iteration when relation_reads is declared", () => {
 		const world = new ECS();
 		const R = world.relations.register();
-		const a = world.createEntity();
-		const t = world.createEntity();
+		const a = world.spawn();
+		const t = world.spawn();
 		world.relations.add(a, R, t);
 		const q = world.query().withRelation(R);
 
@@ -412,8 +412,8 @@ describe("(R, *) / (*, T) access validation (#579)", () => {
 	it("for_each_related_to throws without ANY_RELATION, passes with it", () => {
 		const world = new ECS();
 		const R = world.relations.register();
-		const a = world.createEntity();
-		const T = world.createEntity();
+		const a = world.spawn();
+		const T = world.spawn();
 		world.relations.add(a, R, T);
 		const q = world.query();
 
@@ -430,8 +430,8 @@ describe("(R, *) / (*, T) access validation (#579)", () => {
 
 		const world2 = new ECS();
 		const R2 = world2.relations.register();
-		const a2 = world2.createEntity();
-		const T2 = world2.createEntity();
+		const a2 = world2.spawn();
+		const T2 = world2.spawn();
 		world2.relations.add(a2, R2, T2);
 		const q2 = world2.query();
 		let n = -1;
@@ -454,9 +454,9 @@ describe("(R, *) / (*, T) access validation (#579)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);
 		const R = world.relations.register(); // relation id 0, same number as Pos
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 1 });
-		const t = world.createEntity();
+		const t = world.spawn();
 		world.relations.add(a, R, t);
 		const q = world.query(Pos).withRelation(R);
 

@@ -51,17 +51,17 @@ export const WORLD_SNAPSHOT_MAGIC = 0x30535257;
 
 /** Combined-frame format version. Bumped if the section framing or host-state
  * layout changes. Independent of `SIM_ABI_VERSION` (which gates the dense bytes). */
-export const WORLD_SNAPSHOT_VERSION = 1;
+export const ECS_SNAPSHOT_VERSION = 1;
 
 /** Thrown by `Store.restoreInto` (and the helpers here) when a combined snapshot
  * is malformed, carries the wrong magic/version, or targets a world whose
  * archetype/component registration doesn't match the snapshot. Mirrors
  * `StoreRestoreError` / `SparseRestoreError` so callers see one error class per
  * restore failure mode. */
-export class WorldRestoreError extends Error {
+export class ECSRestoreError extends Error {
 	constructor(message: string) {
 		super(message);
-		this.name = "WorldRestoreError";
+		this.name = "ECSRestoreError";
 	}
 }
 
@@ -125,14 +125,14 @@ export function serializeHostState(hs: HostState): Uint8Array {
 }
 
 /** Parse host-state bytes produced by `serializeHostState`. Throws
- * `WorldRestoreError` on truncation or a trailing-byte (non-canonical) buffer. */
+ * `ECSRestoreError` on truncation or a trailing-byte (non-canonical) buffer. */
 export function parseHostState(bytes: Uint8Array): HostState {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const end = bytes.byteLength;
 	let off = 0;
 	const need = (n: number): void => {
 		if (off + n > end) {
-			throw new WorldRestoreError(
+			throw new ECSRestoreError(
 				`host-state truncated: need ${n} more bytes at offset ${off}, have ${end - off}`
 			);
 		}
@@ -158,7 +158,7 @@ export function parseHostState(bytes: Uint8Array): HostState {
 		archetypeRows[i] = { archetypeId, length, enabledCount };
 	}
 	if (off !== end) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`host-state has ${end - off} trailing bytes after the last archetype (not a canonical encoding)`
 		);
 	}
@@ -179,7 +179,7 @@ export function frameWorldSnapshot(
 	const out = new Uint8Array(header + dense.length + sparse.length + host.length);
 	const view = new DataView(out.buffer);
 	view.setUint32(0, WORLD_SNAPSHOT_MAGIC, true);
-	view.setUint32(4, WORLD_SNAPSHOT_VERSION, true);
+	view.setUint32(4, ECS_SNAPSHOT_VERSION, true);
 	view.setUint32(8, dense.length, true);
 	view.setUint32(12, sparse.length, true);
 	view.setUint32(16, host.length, true);
@@ -197,18 +197,18 @@ export interface WorldSnapshotSections {
 }
 
 /** Split a combined frame back into its sections. Validates magic, version, and
- * an exact (no trailing bytes) frame; throws `WorldRestoreError` otherwise. */
+ * an exact (no trailing bytes) frame; throws `ECSRestoreError` otherwise. */
 export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 	const header = U32 * 5;
 	if (bytes.byteLength < header) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`world snapshot too small: ${bytes.byteLength} bytes (frame header needs ${header})`
 		);
 	}
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const magic = view.getUint32(0, true);
 	if (magic !== WORLD_SNAPSHOT_MAGIC) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`bad world-snapshot magic: 0x${magic.toString(16).padStart(8, "0")} ` +
 				`(expected 0x${WORLD_SNAPSHOT_MAGIC.toString(16).padStart(8, "0")}). ` +
 				`A bare dense (SAB) snapshot is not a combined world snapshot — pass the ` +
@@ -216,16 +216,16 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 		);
 	}
 	const version = view.getUint32(4, true);
-	if (version !== WORLD_SNAPSHOT_VERSION) {
-		throw new WorldRestoreError(
-			`incompatible world-snapshot version: snapshot=${version}, build=${WORLD_SNAPSHOT_VERSION}`
+	if (version !== ECS_SNAPSHOT_VERSION) {
+		throw new ECSRestoreError(
+			`incompatible world-snapshot version: snapshot=${version}, build=${ECS_SNAPSHOT_VERSION}`
 		);
 	}
 	const denseLen = view.getUint32(8, true);
 	const sparseLen = view.getUint32(12, true);
 	const hostLen = view.getUint32(16, true);
 	if (header + denseLen + sparseLen + hostLen !== bytes.byteLength) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`world-snapshot frame mismatch: header declares ${header}+${denseLen}+${sparseLen}+` +
 				`${hostLen}=${header + denseLen + sparseLen + hostLen} bytes, buffer is ${bytes.byteLength}`
 		);
@@ -256,7 +256,7 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
  * capacity matches (the region is sized once at construction). The archetype
  * graph is rebuilt from registration code, not the snapshot (mirroring
  * `restoreSparse`'s "registered in the same order" contract). Throws
- * `WorldRestoreError` on any mismatch / malformed section.
+ * `ECSRestoreError` on any mismatch / malformed section.
  */
 export function assertDenseLayoutMatchesLive(
 	dense: Uint8Array,
@@ -264,27 +264,27 @@ export function assertDenseLayoutMatchesLive(
 	liveEntityIndexCapacity: number
 ): void {
 	if (dense.byteLength < STORE_HEADER_BYTES) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`dense section too small: ${dense.byteLength} bytes (SAB header needs ${STORE_HEADER_BYTES})`
 		);
 	}
 	const view = new DataView(dense.buffer, dense.byteOffset, dense.byteLength);
 	const magic = view.getUint32(STORE_HEADER_OFFSETS.magic, true);
 	if (magic !== STORE_MAGIC) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`dense section bad magic: 0x${magic.toString(16).padStart(8, "0")} ` +
 				`(expected SAB magic 0x${STORE_MAGIC.toString(16).padStart(8, "0")})`
 		);
 	}
 	const abi = view.getUint32(STORE_HEADER_OFFSETS.sim_abi_version, true);
 	if (abi !== SIM_ABI_VERSION) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`dense section incompatible sim_abi_version: snapshot=${abi}, build=${SIM_ABI_VERSION}`
 		);
 	}
 	const header = readStoreHeader(view);
 	if (header.layoutDescriptorOff < 0 || header.layoutDescriptorOff > dense.byteLength) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`dense layoutDescriptorOff ${header.layoutDescriptorOff} is outside the section ` +
 				`(${dense.byteLength} bytes)`
 		);
@@ -294,13 +294,13 @@ export function assertDenseLayoutMatchesLive(
 	// the restored region wouldn't line up. Bounds-check the header read first.
 	const eiOff = header.entityIndexOff;
 	if (eiOff < 0 || eiOff + ENTITY_INDEX_HEADER_BYTES > dense.byteLength) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`dense entityIndexOff ${eiOff} is outside the section (${dense.byteLength} bytes)`
 		);
 	}
 	const capacity = view.getUint32(eiOff + ENTITY_INDEX_HEADER_OFFSETS.capacity, true);
 	if (capacity !== liveEntityIndexCapacity) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`entity-index capacity mismatch: live=${liveEntityIndexCapacity}, snapshot=${capacity}`
 		);
 	}
@@ -313,7 +313,7 @@ export function assertDenseLayoutMatchesLive(
 		);
 	} catch (e) {
 		if (e instanceof RangeError) {
-			throw new WorldRestoreError(
+			throw new ECSRestoreError(
 				`dense section layout is corrupt or truncated: a descriptor reads past the ` +
 					`${dense.byteLength}-byte section (${e.message})`
 			);
@@ -321,7 +321,7 @@ export function assertDenseLayoutMatchesLive(
 		throw e;
 	}
 	if (live.size !== descriptors.length) {
-		throw new WorldRestoreError(
+		throw new ECSRestoreError(
 			`archetype-set mismatch: the live world has ${live.size} SAB archetypes, the ` +
 				`snapshot has ${descriptors.length}. restoreInto requires an identical archetype set ` +
 				`(prewarm the world so its archetype set is stable, per ADR on no-lazy archetypes).`
@@ -331,12 +331,12 @@ export function assertDenseLayoutMatchesLive(
 		const desc = descriptors[d];
 		const here = live.get(desc.archetypeId);
 		if (here === undefined) {
-			throw new WorldRestoreError(
+			throw new ECSRestoreError(
 				`archetype-set mismatch: snapshot archetype ${desc.archetypeId} is absent from the live world`
 			);
 		}
 		if (!maskEqual(here.componentMask, desc.componentMask)) {
-			throw new WorldRestoreError(
+			throw new ECSRestoreError(
 				`archetype ${desc.archetypeId} component-mask mismatch between the live world and the ` +
 					`snapshot (different component registration)`
 			);
@@ -344,7 +344,7 @@ export function assertDenseLayoutMatchesLive(
 		const a = here.columnsInOrder;
 		const b = desc.columns;
 		if (a.length !== b.length) {
-			throw new WorldRestoreError(
+			throw new ECSRestoreError(
 				`archetype ${desc.archetypeId} column-count mismatch: live=${a.length}, snapshot=${b.length}`
 			);
 		}
@@ -354,7 +354,7 @@ export function assertDenseLayoutMatchesLive(
 				a[i].fieldId !== b[i].fieldId ||
 				a[i].typeTag !== b[i].typeTag
 			) {
-				throw new WorldRestoreError(
+				throw new ECSRestoreError(
 					`archetype ${desc.archetypeId} column ${i} layout mismatch: ` +
 						`live=(c${a[i].componentId},f${a[i].fieldId},t${a[i].typeTag}), ` +
 						`snapshot=(c${b[i].componentId},f${b[i].fieldId},t${b[i].typeTag})`

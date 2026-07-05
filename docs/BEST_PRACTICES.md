@@ -185,7 +185,7 @@ Rules worth internalizing:
 
 - **`reads`/`writes` are mandatory** — pass empty arrays to say "touches no columns" explicitly. Every other declaration field defaults to empty.
 - **A write implies a read** and authorizes `addComponent` on that column.
-- **`destroyEntity` removes every component** — declare the superset in `despawns`.
+- **`despawn` removes every component** — declare the superset in `despawns`.
 - **Sparse and relation ids are separate id spaces** — declare them in `sparseReads`/`sparseWrites` and `relationReads`/`relationWrites`, never in `reads`/`writes`.
 - **`queries` is a registration-time lint**, not a runtime term: it checks `queries ⊆ reads ∪ writes`. Keep it mirroring your closed-over `ecs.query(...)` terms or the query-builder terms you pass to `registerSystem`.
 - **Declarations are compile-time-checked too.** The config form types `ctx` to the declared access surface, so an undeclared read/write/add/destroy is a compile error before it's a dev-mode throw (see [systems — compile-time enforcement](./api/systems.md#compile-time-enforcement)). Annotate `fn(ctx: SystemContext)` to opt a system out of the narrowing.
@@ -281,17 +281,17 @@ pos.x += vel.vx * dt;
 
 ## 7. Immediate vs deferred structural ops
 
-The single most important timing rule: the same-named op behaves differently depending on **who** calls it.
+The single most important timing rule: the receiver implies the mode. Everything on the host facade (`ecs.*`) is **immediate**; structural ops inside a system (`ctx.*` / `ctx.commands.*`) are **deferred** to the phase flush.
 
 | Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
 | --- | --- | --- |
-| `createEntity` | immediate | immediate |
+| `spawn` | immediate | immediate (id now; bundle attaches at the flush) |
 | `addComponent` / `removeComponent` | **immediate** | **deferred** to the phase flush |
-| `destroyEntity` / `despawn` | **deferred** | **deferred** |
+| `despawn` | **immediate** | **deferred** to the phase flush |
 | `disable` / `enable` | immediate | deferred |
 | sparse & relation ops | immediate | immediate |
 
-Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so add/remove/toggle operations can apply immediately; `destroyEntity` is still buffered to match the system-side semantics.
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side (between `update()` calls) there's no live iteration to protect, so every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling `ecs.despawn` from *inside* a system body throws in dev; use `ctx.commands.despawn` there.
 
 **Inside a system, prefer `ctx.commands`.** It is *always* deferred and reads that way at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`:
 
@@ -314,7 +314,7 @@ const Enemy = ecs.template([
   { def: Health, values: { current: 100, max: 100 } },
 ]);
 
-const e = ecs.createEntity(Enemy);
+const e = ecs.spawn(Enemy);
 ```
 
 For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking an add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
@@ -451,11 +451,11 @@ A template resolves a component set + defaults to a target archetype **once**, s
 
 ```ts
 const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }, { def: Vel, values: { vx: 0, vy: 0 } }]);
-const b = ecs.createEntity(Bullet, { x: 5, y: 10 });   // per-field overrides
-const swarm = ecs.createEntities(Bullet, 500);          // O(columns) writes, not O(500 × columns)
+const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // per-field overrides
+const swarm = ecs.spawnMany(Bullet, 500);          // O(columns) writes, not O(500 × columns)
 ```
 
-Templates pay off for multi-component and bulk spawns (and prewarm their archetypes — required before `restoreInto` a snapshot). A single-component template is no faster than `createEntity()` + `addComponent()`.
+Templates pay off for multi-component and bulk spawns (and prewarm their archetypes — required before `restoreInto` a snapshot). A single-component template is no faster than `spawn()` + `addComponent()`.
 
 ---
 
@@ -468,7 +468,7 @@ import { registerChildOf } from "@oasys/oecs";
 const ChildOf = registerChildOf(ecs);        // built-in preset, a free function
 ecs.relations.add(child, ChildOf, parent);
 ecs.relations.targetOf(child, ChildOf);                 // parent
-ecs.relations.sourcesOf(ChildOf, parent);               // [child, …] — the reverse "who points at me"
+ecs.relations.sourcesOf(parent, ChildOf);               // [child, …] — the reverse "who points at me"
 ```
 
 - **Exclusive by default** (one target per source; a new `addRelation` silently replaces the old target). Pass `{ multi: true }` for a target *set*; use `targetsOf` for multi, `targetOf` for exclusive (it throws on a multi relation in dev).

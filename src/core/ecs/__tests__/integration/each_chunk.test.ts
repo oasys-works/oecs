@@ -11,7 +11,7 @@ function moveWorld(n: number) {
 	const Pos = world.registerComponent({ x: "f64", y: "f64" });
 	const Vel = world.registerComponent({ vx: "f64", vy: "f64" });
 	for (let i = 0; i < n; i++) {
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: i, y: 2 * i });
 		world.addComponent(e, Vel, { vx: 1, vy: -1 });
 	}
@@ -84,7 +84,7 @@ describe("Query.eachChunk", () => {
 		const Tag = world.registerTag();
 		// 12 entities: even ids carry Tag (→ 2 archetypes), all carry Pos+Vel.
 		for (let i = 0; i < 12; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			world.addComponent(e, Vel, { vx: 10, vy: 0 });
 			if (i % 2 === 0) world.addComponent(e, Tag);
@@ -116,7 +116,7 @@ describe("Query.eachChunk", () => {
 		const Pos = world.registerComponent({ x: "f64" });
 		const ids: EntityID[] = [];
 		for (let i = 0; i < 6; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 });
 			ids.push(e);
 		}
@@ -159,12 +159,12 @@ describe("Query.eachChunk", () => {
 		const Tag = world.registerTag();
 		// Two archetypes with disjoint x ranges so a corrupted cursor is observable.
 		for (const x of [100, 101, 102]) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x });
 			world.addComponent(e, Tag);
 		}
 		for (const x of [200, 201]) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x });
 		}
 		const q = world.query(Pos);

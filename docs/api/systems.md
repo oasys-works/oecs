@@ -86,7 +86,7 @@ Key rules the access checker enforces (dev only):
 
 - **`reads`/`writes` are mandatory** — pass empty arrays to say "this system touches no columns" explicitly. Every other declaration field defaults to empty.
 - **A write implies a read**, and authorizes `addComponent` on that column.
-- **`destroyEntity` removes every component** on the entity — declare the superset in `despawns`.
+- **`despawn` removes every component** on the entity — declare the superset in `despawns`.
 - **Sparse and relation ids live in separate id spaces.** Declare them in `sparse*`/`relation*`, never in `reads`/`writes`.
 - **`queries`** is a *lint*, not a runtime term: at registration it checks `queries ⊆ reads ∪ writes` and throws `QUERY_ACCESS_UNDECLARED` if you query a component you didn't declare. It can't catch a component missing from *both*, so keep it mirroring your closed-over `ecs.query(...)` terms or the query-builder terms you pass to `registerSystem`.
 
@@ -105,8 +105,8 @@ const sys = ecs.registerSystem({
 
     ctx.setField(e, Pos, "x", 1);
     // ✗ compile error: […, "component is not declared in this system's writes", …]
-    ctx.destroyEntity(e);
-    // ✗ compile error: "this system declares no despawns — destroyEntity/despawn is not permitted"
+    ctx.commands.despawn(e);
+    // ✗ compile error: "this system declares no despawns — despawn is not permitted"
   },
 });
 ```
@@ -173,7 +173,7 @@ ctx.commands.enable(entityId): this;
 ```
 
 > [!TIP]
-> Prefer `ctx.commands.*` over the bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.destroyEntity`. They do the same deferred thing, but `ctx.commands` reads unambiguously as "deferred" at the call site — where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
+> Prefer `ctx.commands.*` over the bare `ctx.addComponent` / `ctx.removeComponent`. They do the same deferred thing, but `ctx.commands` reads unambiguously as "deferred" at the call site — where the bare `ctx.addComponent` is one keystroke from the *immediate* `ecs.addComponent`. Spawn and despawn live **only** on `ctx.commands`. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
 
 > [!NOTE]
 > `ctx.commands.spawn` returns the new id **immediately** (the create isn't deferred), but the components attach at the flush. A query later in the *same phase* can observe the entity half-built. To learn a spawned id after its data lands, spawn from the [host-write seam](./host-write-seam.md) with an `onSpawned` callback instead.
@@ -181,8 +181,8 @@ ctx.commands.enable(entityId): this;
 ### The rest of `ctx`
 
 ```ts
-createEntity(): EntityID;        isAlive(id): boolean;       hasComponent(id, def): boolean;
-destroyEntity(id): this;         disable(id): this;          enable(id): this;   isDisabled(id): boolean;
+isAlive(id): boolean;            hasComponent(id, def): boolean;   isDisabled(id): boolean;
+disable(id): this;               enable(id): this;
 addComponent(id, def, values?): this;    removeComponent(id, def): this;   // bare deferred ops (prefer ctx.commands)
 
 // Sparse & relation ops — IMMEDIATE (see sparse-storage.md / relations.md)
@@ -198,7 +198,7 @@ flush(): void;           // force-apply buffered structural ops now
 ```
 
 > [!WARNING]
-> `ctx.createEntity` and every sparse/relation op are **immediate**. `ctx.addComponent`/`removeComponent`/`destroyEntity`, `ctx.disable`/`ctx.enable`, and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
+> Every sparse/relation op on `ctx` is **immediate**. `ctx.addComponent`/`removeComponent`, `ctx.disable`/`ctx.enable`, and all of `ctx.commands` are **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)); when in doubt, reach for `ctx.commands`.
 
 ## Lifecycle hooks
 

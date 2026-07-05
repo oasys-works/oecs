@@ -17,11 +17,11 @@ describe("ECS query", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 
 		// Query [Pos, Vel] should match only e1's archetype
@@ -35,11 +35,11 @@ describe("ECS query", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 		world.addComponent(e1, Vel, { vx: 0, vy: 0 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 
 		// Query [Pos] should match both archetypes
@@ -60,7 +60,7 @@ describe("ECS query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const first = world.query(Pos);
@@ -74,13 +74,13 @@ describe("ECS query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 
 		const first = world.query(Pos);
 
 		// Adding another entity to the same archetype does NOT create a new archetype
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 
 		const second = world.query(Pos);
@@ -95,14 +95,14 @@ describe("ECS query", () => {
 		const Pos = world.registerComponent(Position);
 		const Hp = world.registerComponent(Health);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const result = world.query(Pos);
 		const lengthBefore = result.archetypeCount;
 
 		// Create an entity with only Health — unrelated to Pos query
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Hp, { hp: 100 });
 
 		const after = world.query(Pos);
@@ -121,7 +121,7 @@ describe("ECS query", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 		world.addComponent(e1, Vel, { vx: 0, vy: 0 });
 
@@ -142,12 +142,12 @@ describe("ECS query", () => {
 		const Stat = world.registerComponent(Static);
 
 		// e1: Pos + Vel (not static)
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
 		// e2: Pos + Vel + Static (excluded)
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 		world.addComponent(e2, Stat, {});
@@ -187,7 +187,7 @@ describe("ECS query", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -240,17 +240,17 @@ describe("ECS query", () => {
 		const Hp = world.registerComponent(Health);
 
 		// e1: Pos + Vel
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
 		// e2: Pos + Hp
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 100 });
 
 		// e3: Pos only — no Vel or Hp
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 7, y: 8 });
 
 		const q = world.query(Pos).anyOf(Vel, Hp);
@@ -291,15 +291,15 @@ describe("ECS query", () => {
 		// 4 distinct archetypes, all containing Pos: {Pos}, {Pos,Vel},
 		// {Pos,Hp}, {Pos,Vel,Hp,Static}. Pos's componentIndex bucket gets one
 		// entry per archetype — a duplicate would double-visit here.
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 3, y: 3 });
 		world.addComponent(e3, Hp, { hp: 10 });
-		const e4 = world.createEntity();
+		const e4 = world.spawn();
 		world.addComponent(e4, Pos, { x: 4, y: 4 });
 		world.addComponent(e4, Vel, { vx: 0, vy: 0 });
 		world.addComponent(e4, Hp, { hp: 10 });
@@ -317,7 +317,7 @@ describe("ECS query", () => {
 		expect(seen.size).toBe(4);
 
 		// Every entity is counted exactly once (no double-visit inflation).
-		expect(q.count()).toBe(4);
+		expect(q.entityCount).toBe(4);
 		const ids: number[] = [];
 		q.forEach((a) => {
 			for (let i = 0; i < a.entityCount; i++) ids.push(a.entityIds[i]);

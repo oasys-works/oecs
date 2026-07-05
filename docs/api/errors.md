@@ -54,13 +54,13 @@ All 42 `ECS_ERROR` values, grouped by area:
 Two restore paths throw dedicated classes because a `snapshot`/`restore` mismatch is a distinct recovery case:
 
 ```ts
-class WorldRestoreError extends Error {}    // restoreInto — dense-side shape/identity mismatch
+class ECSRestoreError extends Error {}    // restoreInto — dense-side shape/identity mismatch
 class SparseRestoreError extends Error {}   // restoreSparse — sparse-side mismatch
 ```
 
-`WorldRestoreError` and `SparseRestoreError` are exported from the package root; catch them by class (or `err.name`). Store byte-cap failures that escape through `ECS` are reported as `ECSError` with `category === ECS_ERROR.STORE_CAP_EXCEEDED`. See [determinism](./determinism.md).
+`ECSRestoreError` and `SparseRestoreError` are exported from the package root; catch them by class (or `err.name`). Store byte-cap failures that escape through `ECS` are reported as `ECSError` with `category === ECS_ERROR.STORE_CAP_EXCEEDED`. See [determinism](./determinism.md).
 
 ## See also
 
 - [index](./index.md#dev-vs-prod--read-this-once) — the dev-vs-prod contract these throws live under
-- [determinism](./determinism.md) — `WorldRestoreError` / `SparseRestoreError` and the fail-closed restore
+- [determinism](./determinism.md) — `ECSRestoreError` / `SparseRestoreError` and the fail-closed restore

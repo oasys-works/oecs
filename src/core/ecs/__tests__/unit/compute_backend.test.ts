@@ -113,7 +113,7 @@ describe("ComputeBackend seam (#622)", () => {
 		// Insert well past the initial capacity to force grow(s).
 		const C = ecs.registerComponent({ x: "f64" });
 		for (let i = 0; i < 32; i++) {
-			const e = ecs.createEntity();
+			const e = ecs.spawn();
 			ecs.addComponent(e, C, { x: i });
 		}
 
@@ -139,7 +139,7 @@ describe("ComputeBackend seam (#622)", () => {
 		// A grow after detach no longer reaches the backend.
 		const C = ecs.registerComponent({ x: "f64" });
 		for (let i = 0; i < 32; i++) {
-			const e = ecs.createEntity();
+			const e = ecs.spawn();
 			ecs.addComponent(e, C, { x: i });
 		}
 		expect(backend.layoutCalls.length).toBe(layoutAfterDetach);

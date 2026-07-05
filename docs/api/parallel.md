@@ -27,7 +27,7 @@ Browser builds need cross-origin isolation for either profile. Heap worlds need 
 A system can run through a backend instead of its TypeScript closure:
 
 ```ts
-const step = world.registerSystem({
+const step = ecs.registerSystem({
   reads: [Input],
   writes: [Pos, Vel],
   queries: [[Pos, Vel]],
@@ -35,7 +35,7 @@ const step = world.registerSystem({
   fn: tsFallback,
 });
 
-world.attachBackend(myBackend);
+ecs.attachBackend(myBackend);
 ```
 
 The scheduler still reaches that system in normal phase order. The difference is only the body: `backend.run(stepHandle)` instead of `fn(ctx, dt)`.
@@ -53,7 +53,7 @@ const queue = installHostCommandSeam(world);
 queue.setField(entity, Pos, "x", 10);
 
 // Applied by the seam during update(), in a known place.
-world.update(1 / 60);
+ecs.update(1 / 60);
 ```
 
 For worker / wire data, `HostCommandDispatcher` decodes fixed-size ring slots into the same command apply path.
@@ -63,7 +63,7 @@ For worker / wire data, `HostCommandDispatcher` decodes fixed-size ring slots in
 Even though execution is sequential today, write systems as if their access declarations matter. They already do in dev builds, and they are the shape of safe parallelism later.
 
 ```ts
-const integrate = world.registerSystem({
+const integrate = ecs.registerSystem({
   reads: [Vel],
   writes: [Pos],
   queries: [[Pos, Vel]],
@@ -85,7 +85,7 @@ Rules of thumb:
 Today, `exclusive: true` is an access-check bypass for trusted engine or host machinery. Under a future parallel scheduler, the same flag would force that system to run alone.
 
 ```ts
-const applyHostCommands = world.registerSystem({
+const applyHostCommands = ecs.registerSystem({
   exclusive: true,
   reads: [],
   writes: [],
@@ -100,7 +100,7 @@ Use it for global apply / load / debug work that genuinely cannot declare a boun
 Sequential does not mean unordered. Within a phase, oecs topologically sorts `before` / `after` constraints, then uses insertion order as the deterministic tiebreaker.
 
 ```ts
-world.addSystems(SCHEDULE.UPDATE,
+ecs.addSystems(SCHEDULE.UPDATE,
   input,
   { system: simulate, ordering: { after: [input] } },
   { system: renderPrep, ordering: { after: [simulate] } },

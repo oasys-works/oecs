@@ -67,6 +67,10 @@ interface SpawnEntry { readonly def: ComponentDef; readonly values: FieldValues<
 > [!WARNING]
 > **`spawnEntry` is typed for complete values** — pass every field (`0` for "default"); a tag takes `{}`. The shared field-write path zero-fills omitted fields if untyped command data reaches it, but the public TypeScript surface treats host-command values as complete `FieldValues<S>`.
 
+#### Why `spawnEntry` and not a `bundle`?
+
+Elsewhere "def + values" is spelled as a [bundle](./components.md#the-handle-is-callable--bundles) — `Pos({ x: 1 })` — with **partial** values that zero-fill at attach. The host seam deliberately does not accept bundles: a `HostCommand` is plain, serializable data that may cross a thread or wire and be applied later against the deferred add path, which writes **exactly the fields given**. A partial entry surviving that trip would leave omitted `f64` fields reading back `NaN`, with the error surfacing frames away from the enqueue site. `spawnEntry` closes that hole at the type level by demanding every field at the point where you still know what the values should be. In-process code that wants bundle ergonomics doesn't need the seam — use `ecs.spawnBundle(...)` or `ctx.commands.spawn(...)` directly.
+
 ## `HostCommand`
 
 Plain, serializable data — the same vocabulary drives both the in-process queue and the cross-thread ring, and both resolve through `applyHostCommand(ctx, cmd)`.

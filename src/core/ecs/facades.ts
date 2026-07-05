@@ -106,9 +106,10 @@ export class ECSRelations {
 		return this.store.targetsOf(src, def);
 	}
 
-	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id. */
-	public sourcesOf(def: RelationDef, tgt: EntityID): EntityID[] {
-		return this.store.sourcesOf(def, tgt);
+	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
+	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
+	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
+		return this.store.sourcesOf(tgt, def);
 	}
 
 	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard
@@ -161,9 +162,15 @@ export class ECSEvents {
 		this.store = store;
 	}
 
-	/** Register an event channel. `fields` must name EVERY schema key — an
-	 * under-registered channel would silently drop the missing fields at emit
-	 * (see `EventFieldsCover`). */
+	/** Register an event channel at world setup, before anything emits on it.
+	 * `fields` must name EVERY schema key — an under-registered channel would
+	 * silently drop the missing fields at emit (see `EventFieldsCover`).
+	 *
+	 * @example
+	 * const Damaged = eventKey<{ target: EntityID; amount: number }>("Damaged");
+	 * ecs.events.register(Damaged, ["target", "amount"]);
+	 * ecs.events.emit(Damaged, { target: e, amount: 10 }); // or ctx.emit inside a system
+	 */
 	public register<S extends EventShape<S>, const F extends readonly (keyof S & string)[]>(
 		key: EventKey<S>,
 		fields: F & EventFieldsCover<S, F>
@@ -212,6 +219,15 @@ export class ECSResources {
 		this.store = store;
 	}
 
+	/** Register a resource at world setup. Reading/writing an unregistered
+	 * key throws (fail-closed) — registration is the explicit "this world has
+	 * this singleton" declaration, not a lazy default.
+	 *
+	 * @example
+	 * const GameTime = resourceKey<{ elapsed: number }>("GameTime");
+	 * ecs.resources.register(GameTime, { elapsed: 0 });
+	 * ecs.resources.get(GameTime).elapsed; // or ctx.resource(GameTime) inside a system
+	 */
 	public register<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordResourceRegister(key.description ?? "");

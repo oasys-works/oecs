@@ -23,9 +23,9 @@ describe("ECS relation traversal — up chain (#474)", () => {
 	it("walks a multi-level chain from a source to its root", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register(); // exclusive
-		const root = world.createEntity();
-		const mid = world.createEntity();
-		const leaf = world.createEntity();
+		const root = world.spawn();
+		const mid = world.spawn();
+		const leaf = world.spawn();
 
 		// leaf -> mid -> root
 		world.relations.add(leaf, ChildOf, mid);
@@ -40,7 +40,7 @@ describe("ECS relation traversal — up chain (#474)", () => {
 	it("returns a lone source as its own chain and root", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
-		const solo = world.createEntity();
+		const solo = world.spawn();
 
 		expect(ids(world.relations.ancestorsOf(solo, ChildOf))).toEqual(ids([solo]));
 		expect(world.relations.rootOf(solo, ChildOf)).toBe(solo);
@@ -49,9 +49,9 @@ describe("ECS relation traversal — up chain (#474)", () => {
 	it("re-targeting moves the chain root", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const c = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
+		const c = world.spawn();
 
 		world.relations.add(a, ChildOf, b);
 		expect(world.relations.rootOf(a, ChildOf)).toBe(b);
@@ -69,21 +69,21 @@ describe("ECS relation traversal — up chain (#474)", () => {
 		// unrelated new occupant. It must terminate at the dead handle instead.
 		const world = new ECS();
 		const ChildOf = world.relations.register(); // exclusive, orphan default
-		const root = world.createEntity(); // index 0
-		const mid = world.createEntity(); // index 1
-		const leaf = world.createEntity(); // index 2
+		const root = world.spawn(); // index 0
+		const mid = world.spawn(); // index 1
+		const leaf = world.spawn(); // index 2
 		world.relations.add(leaf, ChildOf, mid);
 		world.relations.add(mid, ChildOf, root);
 
 		// Destroy mid; orphan policy leaves leaf pointing at the dead handle.
-		world.destroyEntity(mid);
+		world.despawn(mid);
 		world.flush();
 		expect(world.isAlive(mid)).toBe(false);
 
 		// Recycle mid's slot (index 1, fresh generation) into an unrelated entity
 		// that has its OWN parent — the trigger for the old splice bug.
-		const recycled = world.createEntity();
-		const other = world.createEntity();
+		const recycled = world.spawn();
+		const other = world.spawn();
 		world.relations.add(recycled, ChildOf, other);
 		expect(getIndex(recycled)).toBe(getIndex(mid)); // same slot, recycled
 
@@ -112,11 +112,11 @@ describe("ECS relation traversal — cascade (#474)", () => {
 		//           c0      c1
 		//          /  \
 		//        g0    g1
-		const root = world.createEntity();
-		const c0 = world.createEntity();
-		const c1 = world.createEntity();
-		const g0 = world.createEntity();
-		const g1 = world.createEntity();
+		const root = world.spawn();
+		const c0 = world.spawn();
+		const c1 = world.spawn();
+		const g0 = world.spawn();
+		const g1 = world.spawn();
 
 		world.relations.add(c0, ChildOf, root);
 		world.relations.add(c1, ChildOf, root);
@@ -138,7 +138,7 @@ describe("ECS relation traversal — cascade (#474)", () => {
 	it("a leaf cascades to just itself", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
-		const leaf = world.createEntity();
+		const leaf = world.spawn();
 		expect(ids(world.relations.cascadeOf(leaf, ChildOf))).toEqual(ids([leaf]));
 	});
 });
@@ -147,9 +147,9 @@ describe("ECS relation traversal — cycle guard (#474)", () => {
 	it("throws RELATION_CYCLE on an up-walk through a cycle (no hang)", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const c = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
+		const c = world.spawn();
 
 		// a -> b -> c -> a  (a malformed, cyclic chain)
 		world.relations.add(a, ChildOf, b);
@@ -163,8 +163,8 @@ describe("ECS relation traversal — cycle guard (#474)", () => {
 	it("throws RELATION_CYCLE on a cascade through a cycle (no hang)", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		// a <-> b (each is the other's parent)
 		world.relations.add(a, ChildOf, b);
@@ -178,8 +178,8 @@ describe("ECS relation traversal — exclusive only (#474)", () => {
 	it("throws on a multi relation", () => {
 		const world = new ECS();
 		const Likes = world.relations.register({ multi: true });
-		const src = world.createEntity();
-		const tgt = world.createEntity();
+		const src = world.spawn();
+		const tgt = world.spawn();
 		world.relations.add(src, Likes, tgt);
 
 		// cast (§10c): deliberately defeat the cardinality brand to assert the

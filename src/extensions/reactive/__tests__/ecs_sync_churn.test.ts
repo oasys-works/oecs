@@ -203,7 +203,7 @@ function buildEngine(): ChurnEngine {
 			for (const op of ops) {
 				switch (op.kind) {
 					case "spawn": {
-						const e = ctx.createEntity();
+						const e = ctx.commands.spawn();
 						ctx.addComponent(e, Pos, { x: op.x, y: op.y });
 						if (op.withHealth) ctx.addComponent(e, Health, { hp: op.hp });
 						eidOf.set(born, e);
@@ -213,7 +213,7 @@ function buildEngine(): ChurnEngine {
 					}
 					case "despawn": {
 						if (!live.has(op.h)) break;
-						ctx.destroyEntity(eidOf.get(op.h)!);
+						ctx.commands.despawn(eidOf.get(op.h)!);
 						live.delete(op.h);
 						break;
 					}
@@ -480,7 +480,7 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 		for (let seed = 0; seed < SEEDS; seed++) {
 			const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
 			const Session = world.registerComponent({ a: "f64", b: "f64", c: "f64" });
-			const singleton = world.createEntity();
+			const singleton = world.spawn();
 			world.addComponent(singleton, Session, { a: 1, b: 2, c: 3 });
 			let buffer: readonly SOp[] = [];
 			world.addSystems(

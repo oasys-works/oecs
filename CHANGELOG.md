@@ -7,8 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] — 2026-07-05
 
+### Changed (breaking) — lifecycle & naming unification
+
+One vocabulary across host, commands, and access declarations; the receiver now implies the
+timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecation aliases:
+
+| 0.4 | 0.5 |
+| --- | --- |
+| `ecs.createEntity()` / `ecs.createEntity(template, overrides?)` | `ecs.spawn()` / `ecs.spawn(template, overrides?)` |
+| `ecs.createEntities(template, count)` | `ecs.spawnMany(template, count, overrides?)` |
+| `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)` — **now immediate** |
+| `ctx.createEntity()` | `ctx.commands.spawn()` |
+| `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
+| `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)` — matches `targetOf` / `targetsOf` |
+| `query.count()` | `query.entityCount` (getter, beside `archetypeCount`) |
+| `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
+| `DestroyEntityArg` (type) | `DespawnArg` |
+
+- **Host `despawn` is immediate** — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
+  line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).
+  Calling `ecs.despawn` from inside a system body throws in dev (immediate destroy
+  mid-iteration can invalidate rows a running query is walking) — use `ctx.commands.despawn`.
+- **`ctx.createEntity` / `ctx.destroyEntity` removed** — spawn/despawn inside a system live
+  only on `ctx.commands`, completing the declared migration; the bare deferred duplicates are
+  gone.
+- **`sourcesOf` canonicalized to `(entity, def)`** on `ecs.relations` and `SystemContext` —
+  it was the one arg-order outlier on the relation surface (M3).
+
 ### Added
 
+- **`addComponent` bundle overload** — `ecs.addComponent(e, Pos({ x: 1 }))` accepts a bundle
+  with the usual zero-fill semantics (M2); the explicit `(e, def, values)` form stays
+  complete-values, so a typo'd or missing field is still a compile error.
+- **`spawnMany` typed template + shared overrides** — bulk spawn takes the same typed
+  `Template<Defs>` as `spawn` plus one optional `TemplateOverrides<Defs>` object applied to
+  every row (contiguous batches use one `fill` per overridden column).
+- **JSDoc `@example` on the core surface** — `registerComponent`, `spawn`, `addComponent`,
+  `query`, `registerSystem`, `startup`, `update`, `ctx.emit` / `ctx.read`,
+  `events.register`, `resources.register` now carry hover-visible examples (M23).
 - **Component debug names** — `registerComponent(schema, { name: "Pos" })` (and the sparse
   sibling) records a diagnostic label, so access-violation and liveness errors read
   `'Pos' (component 5)` instead of leaving you to count registration order
@@ -58,6 +94,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev-mode diagnostics: ownerless `computed()` / `onCleanup()` warn (kernel); ECSOptions warns on
   unknown keys; `runIfResourceEq` warns on object-valued `expected` (reference-identity `===`);
   `runEveryNTicks` validation throws `ECSError` (`INVALID_RUN_CONDITION`).
+- **Docs standardized on the `ecs` receiver** — README, GETTING_STARTED, BEST_PRACTICES, the
+  api reference, and every in-source JSDoc example now spell `const ecs = new ECS()`
+  (M22; with the `World*` names renamed to `ECS*`, "world" survives only as prose). The
+  host-write-seam docs now explain *why* `queue.spawn` takes complete-value `spawnEntry`s
+  rather than zero-filling bundles (M4: commands are serializable plain data applied by the
+  deferred add path, which writes exactly the fields given — a partial surviving the trip
+  would read back `NaN` frames away from the enqueue site).
 
 - **Compile-time typestate across the system, query, relation, and key seams.** The config-form
   `registerSystem` now infers your access declarations as literal types and hands `fn`/`onAdded` a

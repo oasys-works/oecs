@@ -44,7 +44,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("throws when a system adds an undeclared sparse component", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		const tick = runOnce(
 			world,
@@ -62,7 +62,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("permits a sparse add/remove/set when declared in sparse_writes", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		const tick = runOnce(
 			world,
@@ -83,7 +83,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("throws when a system removes an undeclared sparse component", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 }); // host-side: not checked
 
 		const tick = runOnce(
@@ -102,7 +102,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("throws when a system writes an undeclared sparse field", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 });
 
 		const tick = runOnce(
@@ -121,7 +121,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("throws when a system reads an undeclared sparse field", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 });
 
 		const tick = runOnce(
@@ -140,7 +140,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("a declared sparse_write implicitly authorises reads of the same component", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 7 });
 
 		let observed = -1;
@@ -163,7 +163,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("a sparse_reads-only declaration permits reads but still blocks writes", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 7 });
 
 		const tick = runOnce(
@@ -184,7 +184,7 @@ describe("Sparse access validation (issue #496)", () => {
 	it("has_sparse is a membership probe and is not access-checked", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 
 		let seen = true;
 		const tick = runOnce(
@@ -206,8 +206,8 @@ describe("Relation access validation (issue #496)", () => {
 	it("throws when a system adds an undeclared relation", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		const tick = runOnce(
 			world,
@@ -225,8 +225,8 @@ describe("Relation access validation (issue #496)", () => {
 	it("permits relation add/remove when declared in relation_writes", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		const tick = runOnce(
 			world,
@@ -246,8 +246,8 @@ describe("Relation access validation (issue #496)", () => {
 	it("throws when a system reads an undeclared relation via target_of", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 		world.relations.add(a, Targets, b); // host-side: not checked
 
 		const tick = runOnce(
@@ -266,8 +266,8 @@ describe("Relation access validation (issue #496)", () => {
 	it("a declared relation_write implicitly authorises reads of the same relation", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 		world.relations.add(a, Targets, b);
 
 		let observed: number | undefined = -1;
@@ -289,7 +289,7 @@ describe("Relation access validation (issue #496)", () => {
 	it("has_relation is a membership probe and is not access-checked", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
-		const a = world.createEntity();
+		const a = world.spawn();
 
 		let seen = true;
 		const tick = runOnce(
@@ -315,7 +315,7 @@ describe("Access id spaces are disjoint (issue #496)", () => {
 		// the declared dense write authorise the sparse add.
 		const Pos = world.registerComponent(["x"] as const);
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 
 		const tick = runOnce(
@@ -336,8 +336,8 @@ describe("Access id spaces are disjoint (issue #496)", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		const tick = runOnce(
 			world,
@@ -359,8 +359,8 @@ describe("Sparse/relation access outside any system (issue #496)", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const Targets = world.relations.register();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		// No active system → access_check is a no-op for all of these.
 		expect(() => {

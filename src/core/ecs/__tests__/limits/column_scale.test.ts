@@ -20,7 +20,7 @@ describe("Column scale", () => {
 		const Pos = world.registerComponent(Position);
 
 		for (let i = 0; i < 10_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 3 });
 		}
 
@@ -39,14 +39,14 @@ describe("Column scale", () => {
 
 		const entities = [];
 		for (let i = 0; i < 5_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Data, { a: i, b: i + 1, c: i + 2 });
 			entities.push(e);
 		}
 
 		// Delete even-indexed entities
 		for (let i = 0; i < 5_000; i += 2) {
-			world.destroyEntity(entities[i]);
+			world.despawn(entities[i]);
 		}
 		world.flush();
 
@@ -65,7 +65,7 @@ describe("Column scale", () => {
 
 		const entities = [];
 		for (let i = 0; i < 10_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: -i });
 			entities.push(e);
 		}
@@ -83,14 +83,14 @@ describe("Column scale", () => {
 
 		const entities = [];
 		for (let i = 0; i < 1_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 			entities.push(e);
 		}
 
 		// Destroy first 500
 		for (let i = 0; i < 500; i++) {
-			world.destroyEntity(entities[i]);
+			world.despawn(entities[i]);
 		}
 		world.flush();
 
@@ -110,7 +110,7 @@ describe("Column scale", () => {
 		// Create 1,000 entities with just Position
 		const entities = [];
 		for (let i = 0; i < 1_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 2 });
 			entities.push(e);
 		}

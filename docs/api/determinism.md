@@ -40,8 +40,8 @@ An FNV-1a-32 digest folded over `(archetype id, live row count, enabled count, l
 ```ts
 snapshot(): Uint8Array;              // capture the full live ECS
 restoreInto(bytes: Uint8Array): void; // mount a snapshot onto this live ECS
-const WORLD_SNAPSHOT_VERSION: number;
-class WorldRestoreError extends Error {}
+const ECS_SNAPSHOT_VERSION: number;
+class ECSRestoreError extends Error {}
 ```
 
 A snapshot captures three sections into one self-contained `Uint8Array`: **dense** column bytes + the entity index, **sparse** components + relations (canonical order), and **host bookkeeping** (the tick, the entity recycle free-list *in live order*, alive count, per-archetype partition counts). Take it at a tick boundary.
@@ -51,7 +51,7 @@ A snapshot captures three sections into one self-contained `Uint8Array`: **dense
 
 ### Fail-closed restore
 
-`restoreInto` validates the incoming bytes **completely, before touching the live backing** — magic/version, exact frame length, entity-index capacity, the archetype set, each column's `(componentId, fieldId, typeTag)` field identity, and index bounds. Only then does it overwrite. Any mismatch throws (`WorldRestoreError` on the dense side, `SparseRestoreError` on the sparse side) and **leaves the live `ECS` untouched**.
+`restoreInto` validates the incoming bytes **completely, before touching the live backing** — magic/version, exact frame length, entity-index capacity, the archetype set, each column's `(componentId, fieldId, typeTag)` field identity, and index bounds. Only then does it overwrite. Any mismatch throws (`ECSRestoreError` on the dense side, `SparseRestoreError` on the sparse side) and **leaves the live `ECS` untouched**.
 
 > [!WARNING]
 > Restore preconditions — the target `ECS` must:
