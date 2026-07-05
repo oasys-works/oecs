@@ -136,6 +136,18 @@ import {
 } from "./ecs_memory";
 import { DEV } from "../../dev_flag";
 
+/** Every key `ECSOptions` accepts — the constructor's dev-mode typo tripwire
+ * checks unknown keys against this (kept adjacent so additions stay in sync). */
+const ECS_OPTION_KEYS: ReadonlySet<string> = new Set([
+	"fixedTimestep",
+	"maxFixedSteps",
+	"onWarn",
+	"memory",
+	"regions",
+	"bindingsRegionBytes",
+	"deterministic"
+]);
+
 export interface ECSOptions {
 	fixedTimestep?: number;
 	maxFixedSteps?: number;
@@ -253,6 +265,7 @@ export class ECS implements QueryResolver {
 	private _nextQueryIdCounter: number = 0;
 	// All query-resolution caches — dedup + the shared composition maps — in
 	// one owner (M2); see `QueryCache` in query.ts for keying/id-space notes.
+	/** @internal Query-composition caches (QueryResolver seam) — not public API. */
 	public readonly _caches: QueryCache = new QueryCache();
 
 	// --- SAB layout subscribers (e.g. a compute backend) ---
@@ -302,6 +315,18 @@ export class ECS implements QueryResolver {
 					"initial_capacity → memory.columnCapacity (or memory.budget); " +
 					"buffer_allocator → memory.wasm (WASM-backed) or memory.allocator (custom in-place)."
 			);
+		}
+		// Typo tripwire: an unknown key (e.g. `initialCapacity`) would otherwise
+		// be silently ignored — excess-property checking doesn't fire on a value
+		// built through a variable or spread. Dev-only, warn not throw.
+		if (DEV && options !== undefined) {
+			for (const key of Object.keys(options)) {
+				if (!ECS_OPTION_KEYS.has(key)) {
+					(options.onWarn ?? console.warn)(
+						`ECSOptions: unknown option '${key}' ignored — known options: ${[...ECS_OPTION_KEYS].join(", ")}`
+					);
+				}
+			}
 		}
 		const memory: ResolvedECSMemory = resolveECSMemory(options?.memory);
 		this._memory = memory;
@@ -869,6 +894,15 @@ export class ECS implements QueryResolver {
 		// Phase D lint (#213): catch a `queries` declaration that outruns
 		// `reads ∪ writes` at registration, before the system's first iteration.
 		if (DEV) _assertQueriesDeclared(config);
+
+		// `fn` is optional only for backend-executed systems (#622) — a config
+		// with neither is a system that can never run anything.
+		if (DEV && config.fn === undefined && config.backendHandle === undefined) {
+			throw new ECSError(
+				ECS_ERROR.SYSTEM_FN_ARITY,
+				`registerSystem: config${config.name ? ` '${config.name}'` : ""} has neither 'fn' nor 'backendHandle' — provide a system body, or a backend handle for backend execution`
+			);
+		}
 
 		const id = asSystemId(this.nextSystemId++);
 		const descriptor: SystemDescriptor = Object.freeze({

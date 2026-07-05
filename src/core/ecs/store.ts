@@ -52,7 +52,7 @@ import {
 	type SparseComponentID
 } from "./sparse_store";
 import type { RelationDef, RelationOptions } from "./relation";
-import type { EmptyEventSchema, EventDef, EventReader, EventSchema } from "./event";
+import type { EmptyEventSchema, EventDef, EventReader, EventShape } from "./event";
 import { EventRegistry } from "./event_registry";
 import { ResourceRegistry } from "./resource_registry";
 import {
@@ -2913,11 +2913,11 @@ export class Store implements ObserverHost, QueryHost {
 		return this.relationService.hasRelation(src, def);
 	}
 
-	public pairsOf(def: RelationDef): [EntityID, EntityID][] {
+	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
 		return this.relationService.pairsOf(def);
 	}
 
-	public sourcesOfAny(tgt: EntityID): [RelationDef, EntityID][] {
+	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
 		return this.relationService.sourcesOfAny(tgt);
 	}
 
@@ -3732,7 +3732,7 @@ export class Store implements ObserverHost, QueryHost {
 	// Event channels — delegations to `EventRegistry` (event_registry.ts)
 	// =======================================================
 
-	public registerEvent<S extends EventSchema>(fields: readonly (keyof S & string)[]): EventDef<S> {
+	public registerEvent<S extends EventShape<S>>(fields: readonly (keyof S & string)[]): EventDef<S> {
 		return this.events.registerEvent<S>(fields);
 	}
 
@@ -3744,7 +3744,7 @@ export class Store implements ObserverHost, QueryHost {
 		this.events.emitSignal(def);
 	}
 
-	public getEventReader<S extends EventSchema>(def: EventDef<S>): EventReader<S> {
+	public getEventReader<S extends EventShape<S>>(def: EventDef<S>): EventReader<S> {
 		return this.events.getEventReader(def);
 	}
 
@@ -3758,7 +3758,7 @@ export class Store implements ObserverHost, QueryHost {
 		return this.events.devBufferedEventCount();
 	}
 
-	public registerEventByKey<S extends EventSchema>(
+	public registerEventByKey<S extends EventShape<S>>(
 		key: symbol,
 		fields: readonly (keyof S & string)[]
 	): EventDef<S> {

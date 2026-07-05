@@ -11,9 +11,11 @@ export {
 	root,
 	onCleanup,
 	type Accessor,
-	type Setter
+	type Setter,
+	type Eq
 } from "./kernel";
 export { reactiveMap, type ReactiveMap } from "./map";
 export { reactiveStruct, type StructSetters, type StructEq } from "./struct";
 export { reactiveArray, type ReactiveArray } from "./array";
 export { subscribe, toExternalStore, type ExternalStore } from "./interop";
+export { shallow } from "./shallow";

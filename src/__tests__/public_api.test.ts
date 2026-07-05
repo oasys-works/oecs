@@ -28,6 +28,7 @@ const ROOT_EXPORTS = [
 	"Query",
 	"QueryBuilder",
 	"SCHEDULE",
+	"SabUnavailableError",
 	"SparseRestoreError",
 	"StoreRestoreError",
 	"SystemContext",
@@ -54,7 +55,8 @@ const ROOT_EXPORTS = [
 	"serializeCommandLog",
 	"signalKey",
 	"spawnEntry",
-	"systemSet"
+	"systemSet",
+	"uninstallHostCommandSeam"
 ];
 
 const INTERNAL_EXPORTS = [

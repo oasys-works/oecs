@@ -1,3 +1,4 @@
+import { DEV } from "../dev_flag";
 /**
  * In-house fine-grained reactive kernel — signal / computed / effect / batch,
  * plus ownership scopes (`root` / `onCleanup`). Zero dependencies (ADR-0021).
@@ -37,7 +38,7 @@
  * see ADR-0021. Cycle reads return the stale value rather than throwing.
  */
 
-type Eq<T> = (a: T, b: T) => boolean;
+export type Eq<T> = (a: T, b: T) => boolean;
 
 const RUNNING = 1 << 0; // currently recomputing (cycle guard)
 const NOTIFIED = 1 << 1; // already seen in this propagation pass (dedup)
@@ -404,14 +405,26 @@ export type Accessor<T> = () => T;
 /** A write setter; a same-value write (per `eq`) is a no-op and wakes nobody. */
 export type Setter<T> = (v: T) => void;
 
-/** Create a writable signal. Returns `[read, write]`; `eq` defaults to `Object.is`. */
-export function signal<T>(initial: T, eq: Eq<T> = Object.is): readonly [Accessor<T>, Setter<T>] {
-	const s = new Signal(initial, eq);
-	return [() => s.get(), (v: T) => s.set(v)];
+/** Create a writable signal. Returns `[read, write]`; `eq` defaults to `Object.is`.
+ * The zero-arg form (Solid parity) starts at `undefined` for late-initialized
+ * values: `const [user, setUser] = signal<User>();` reads `User | undefined`. */
+export function signal<T>(): readonly [Accessor<T | undefined>, Setter<T | undefined>];
+export function signal<T>(initial: T, eq?: Eq<T>): readonly [Accessor<T>, Setter<T>];
+export function signal<T>(
+	initial?: T,
+	eq: Eq<T | undefined> = Object.is
+): readonly [Accessor<T | undefined>, Setter<T | undefined>] {
+	const s = new Signal<T | undefined>(initial, eq);
+	return [() => s.get(), (v: T | undefined) => s.set(v)];
 }
 
 /** Create a lazy, glitch-free derived value. Recomputes on pull only when a dep changed. */
 export function computed<T>(fn: () => T, eq: Eq<T> = Object.is): Accessor<T> {
+	if (DEV && currentOwner === null) {
+		warnOnce(
+			"computed() created outside an ownership scope is permanently subscribed and can never be disposed — create it under root() or inside an effect."
+		);
+	}
 	const c = new Computed(fn, eq);
 	adopt(c); // owned by the enclosing scope, if any
 	return () => c.get();
@@ -472,5 +485,22 @@ export function root<T>(fn: (dispose: () => void) => T): T {
  * before each re-run and on dispose; inside a `root` it runs on root disposal.
  */
 export function onCleanup(fn: () => void): void {
-	if (currentOwner !== null) (currentOwner.cleanups ??= []).push(fn);
+	if (currentOwner === null) {
+		// Silently dropping the callback hides real teardown bugs (M13) — warn
+		// in dev, matching Solid's "cleanups created outside a createRoot" warn.
+		if (DEV)
+			warnOnce(
+				"onCleanup() called outside an ownership scope — the callback is dropped. Call it inside root(), an effect, or a computed."
+			);
+		return;
+	}
+	(currentOwner.cleanups ??= []).push(fn);
+}
+
+// One warn per message per session — dev diagnostics, not log spam.
+const warned = new Set<string>();
+function warnOnce(msg: string): void {
+	if (warned.has(msg)) return;
+	warned.add(msg);
+	console.warn(`[oecs/reactive] ${msg}`);
 }

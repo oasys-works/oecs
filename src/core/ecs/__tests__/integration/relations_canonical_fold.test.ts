@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../../store";
 import type { EntityID } from "../../entity";
 
-const pairNums = (pairs: [EntityID, EntityID][]): [number, number][] =>
+const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, number][] =>
 	pairs.map(([s, t]) => [s as number, t as number]);
 
 describe("relations canonical fold — single source of truth (#498)", () => {

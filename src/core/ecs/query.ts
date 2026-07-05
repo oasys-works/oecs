@@ -7,7 +7,7 @@
  * write the inner loop over arch.entityCount.
  *
  * QueryBuilder is the entry point for creating queries inside
- * registerSystem(fn, qb => qb.every(Pos, Vel)).
+ * registerSystem(fn, qb => qb.with(Pos, Vel)).
  *
  * SystemContext wraps Store for use inside system functions, exposing
  * only deferred operations (add/remove component, destroy entity) that
@@ -30,8 +30,8 @@
  * Queries compose via chaining:
  *
  *   q.and(Energy)          — extend required components
- *   q.not(Frozen)          — exclude archetypes with Frozen
- *   q.anyOf(Sprite, Mesh) — require at least one of these
+ *   q.without(Frozen)      — exclude archetypes with Frozen
+ *   q.anyOf(Sprite, Mesh)  — require at least one of these
  *   q.optional(Vel)        — fetch Vel if present; still iterate without it
  *
  * An optional term (Bevy `Option<&T>` / flecs `?`, #575) does NOT narrow the
@@ -83,7 +83,7 @@ import type {
 	EventDef,
 	EventKey,
 	EventReader,
-	EventSchema,
+	EventShape,
 	SignalKey
 } from "./event";
 import type { ResourceKey, ResourceValueOf } from "./resource";
@@ -1977,7 +1977,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// =======================================================
 
 	public emit(key: SignalKey): void;
-	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
+	public emit<S extends EventShape<S>>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEmit(key.description ?? "");
@@ -1991,7 +1991,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		}
 	}
 
-	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
+	public read<S extends EventShape<S>>(key: EventKey<S>): EventReader<S> {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
 		}

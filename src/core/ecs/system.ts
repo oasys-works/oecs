@@ -146,13 +146,16 @@ export interface SystemConfig extends SystemAccessConfig {
 	// `fn` was typed against a NARROWED `SystemContext<A>` (§typestate) — or a
 	// dynamically-built config typed against the permissive default — flow
 	// through every `SystemConfig`-shaped seam without casts.
-	fn(ctx: SystemContext, deltaTime: number): void;
+	// Optional when `backendHandle` is set (a backend-executed system needs no
+	// TS body — registerSystem validates one of the two is present in DEV).
+	fn?(ctx: SystemContext, deltaTime: number): void;
 	name?: string;
 	onAdded?(ctx: SystemContext): void;
 	onRemoved?: () => void;
 	dispose?: () => void;
 
-	/** Components the system queries via `ctx.query(...)`, one group per query.
+	/** Components the system queries (via a captured `world.query(...)`), one
+	 * group per query.
 	 * OPTIONAL — when provided, `registerSystem` validates `queries ⊆ reads ∪
 	 * writes` in `DEV` (#213 Phase D, `_assertQueriesDeclared`): a query term
 	 * reads each listed component, so this fails fast at registration instead of
@@ -395,7 +398,7 @@ export interface TypedSystemConfig<
 	/** Compile-time mirror of the Phase D lint: every query term ∈ reads ∪ writes. */
 	readonly queries?: readonly (readonly (R[number] | W[number])[])[];
 	name?: string;
-	fn(ctx: SystemContext<A>, deltaTime: number): void;
+	fn?(ctx: SystemContext<A>, deltaTime: number): void;
 	onAdded?(ctx: SystemContext<A>): void;
 	onRemoved?(): void;
 	dispose?(): void;

@@ -129,6 +129,7 @@ export type {
 // the SAME `applyHostCommand`. See `docs/ideas/host-ecs-write-seam.md`.
 export {
 	installHostCommandSeam,
+	uninstallHostCommandSeam,
 	applyHostCommand,
 	HostCommandQueue,
 	HostCommandDispatcher,
@@ -280,6 +281,7 @@ export type {
 	EventReader,
 	EventKey,
 	EventSchema,
+	EventShape,
 	EventFieldsCover,
 	EmptyEventSchema,
 	SignalKey

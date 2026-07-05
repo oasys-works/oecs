@@ -128,13 +128,21 @@ export const DEFAULT_ON_DELETE_TARGET: OnDeleteTarget = "orphan";
 
 /** Registration options. `exclusive` (one target per source) is the default;
  * pass `{ multi: true }` for a multi-target relation. The two are mutually
- * exclusive — passing both throws. `onDeleteTarget` selects the cleanup
- * policy applied to sources when a target is destroyed (default `orphan`). */
-export interface RelationOptions {
-	readonly exclusive?: boolean;
-	readonly multi?: boolean;
-	readonly onDeleteTarget?: OnDeleteTarget;
-}
+ * exclusive — the union makes `{ exclusive: true, multi: true }` a compile
+ * error (it also throws at runtime, for JS callers). `onDeleteTarget` selects
+ * the cleanup policy applied to sources when a target is destroyed (default
+ * `orphan`). */
+export type RelationOptions =
+	| {
+			readonly exclusive?: true;
+			readonly multi?: false;
+			readonly onDeleteTarget?: OnDeleteTarget;
+	  }
+	| {
+			readonly multi: true;
+			readonly exclusive?: false;
+			readonly onDeleteTarget?: OnDeleteTarget;
+	  };
 
 /** Field name carrying the target `EntityID` on an exclusive relation's backing
  * sparse component. Field 0 of a single-field schema. */

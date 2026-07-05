@@ -81,7 +81,8 @@ import {
 	untrack,
 	type ReactiveArray,
 	type ReactiveMap,
-	type StructSetters
+	type StructSetters,
+	type StructEq
 } from "../../reactive";
 import type {
 	ArchetypeView,
@@ -95,24 +96,11 @@ import type {
 	SystemContext
 } from "../../core/ecs";
 
-/**
- * Shallow (one-level) value equality — the recommended `eq` for object-valued
- * projections. Mirrors zustand `useShallow` / MobX `comparer.shallow`: two objects
- * are equal iff they have the same own keys with `Object.is`-equal values. Restores
- * "equal write wakes nobody" for projections that build a fresh object each tick.
- */
-export function shallow(a: object, b: object): boolean {
-	if (Object.is(a, b)) return true;
-	const ra = a as Record<string, unknown>;
-	const rb = b as Record<string, unknown>;
-	const ka = Object.keys(ra);
-	if (ka.length !== Object.keys(rb).length) return false;
-	for (let i = 0; i < ka.length; i++) {
-		const k = ka[i];
-		if (!Object.prototype.hasOwnProperty.call(rb, k) || !Object.is(ra[k], rb[k])) return false;
-	}
-	return true;
-}
+// `shallow` moved to the dependency-free kernel entry (M12); imported for the
+// field-list sugar's default eq and re-exported so existing `/reactive-sync`
+// imports keep working.
+import { shallow } from "../../reactive/shallow";
+export { shallow };
 
 /**
  * A read cursor over one entity's single-component state, handed to a single-
@@ -488,6 +476,10 @@ export interface SingletonSyncOptions<V extends object = Record<string, number>>
 	 * the eager initials with the entity's current values on registration.
 	 */
 	into?: readonly [V, StructSetters<V>];
+	/** Per-field equality overrides for the created struct (parity with
+	 * `SingletonArraySyncOptions.eq`). Ignored when `into` supplies a
+	 * pre-created struct — that struct already carries its own `eq`. */
+	eq?: StructEq<V>;
 }
 
 /**
@@ -537,7 +529,7 @@ export function syncSingletonToStruct<
 	// → onAdd) immediately overwrites either with the entity's current values.
 	const initial = {} as Record<string, number>;
 	for (let i = 0; i < fields.length; i++) initial[fields[i]] = 0;
-	const [struct, set] = opts.into ?? reactiveStruct<V>(initial as V);
+	const [struct, set] = opts.into ?? reactiveStruct<V>(initial as V, opts.eq);
 
 	// The reset target (onRemove / onDisable) = the channel's DECLARED initials,
 	// captured here before the observer attaches. Read untracked off the proxy (no

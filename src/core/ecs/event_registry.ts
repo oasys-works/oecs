@@ -14,7 +14,7 @@ import {
 	type EmptyEventSchema,
 	type EventDef,
 	type EventReader,
-	type EventSchema
+	type EventShape
 } from "./event";
 import { ECS_ERROR, ECSError } from "./utils/error";
 
@@ -32,11 +32,11 @@ export class EventRegistry {
 	// callers via EventKey<F>
 	private readonly keyMap: Map<symbol, EventDef<any>> = new Map();
 
-	public registerEvent<S extends EventSchema>(
+	public registerEvent<S extends EventShape<S>>(
 		fields: readonly (keyof S & string)[]
 	): EventDef<S> {
 		const id = asEventId(this.count++);
-		const channel = new EventChannel(fields as string[]);
+		const channel = new EventChannel(fields as readonly string[] as string[]);
 		this.channels.push(channel);
 		return unsafeCast<EventDef<S>>(id);
 	}
@@ -61,7 +61,7 @@ export class EventRegistry {
 		if (wasEmpty) this.dirtyChannels.push(id);
 	}
 
-	public getEventReader<S extends EventSchema>(def: EventDef<S>): EventReader<S> {
+	public getEventReader<S extends EventShape<S>>(def: EventDef<S>): EventReader<S> {
 		return this.channels[def as unknown as number].reader as EventReader<S>;
 	}
 
@@ -87,7 +87,7 @@ export class EventRegistry {
 		return n;
 	}
 
-	public registerEventByKey<S extends EventSchema>(
+	public registerEventByKey<S extends EventShape<S>>(
 		key: symbol,
 		fields: readonly (keyof S & string)[]
 	): EventDef<S> {

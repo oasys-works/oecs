@@ -136,9 +136,19 @@ export class HostCommandRecorder implements HostCommandSink {
 
 	/** A live {@link CommandLog} view over the accumulated stream — not a copy.
 	 * Serialize it (which deep-copies through JSON) before mutating the world
-	 * further if you need a stable snapshot. */
+	 * further if you need a stable snapshot, or use {@link snapshotLog}. */
 	log(): CommandLog {
 		return { seed: this.seed, startup: this._startup, ticks: this._ticks };
+	}
+
+	/** A STABLE deep copy of the accumulated stream — safe to hold across
+	 * further recording (the safe default; `log()` is the zero-copy live view). */
+	snapshotLog(): CommandLog {
+		return {
+			seed: this.seed,
+			startup: this._startup.map((c) => ({ ...c })),
+			ticks: this._ticks.map((t) => ({ ...t, commands: t.commands.map((c) => ({ ...c })) }))
+		};
 	}
 }
 

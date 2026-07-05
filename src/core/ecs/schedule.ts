@@ -373,7 +373,7 @@ export class Schedule {
 			if (DEV) ctx._trace?.systemStart(desc, label);
 			try {
 				if (handle !== undefined) backend!.run(handle);
-				else desc.fn(ctx, deltaTime);
+				else desc.fn?.(ctx, deltaTime);
 			} finally {
 				if (DEV) ctx._trace?.systemEnd(desc);
 				if (DEV) accessCheck.leave();

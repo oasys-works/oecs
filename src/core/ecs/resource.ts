@@ -42,7 +42,9 @@ import { unsafeCast } from "../../type_primitives";
  * declaration lists) must use `ResourceKey<any>` — `ResourceKey<unknown>` no
  * longer erases.
  */
-export type ResourceKey<T> = symbol & { readonly __phantom: (value: T) => T };
+declare const __resourceValue: unique symbol;
+
+export type ResourceKey<T> = symbol & { readonly [__resourceValue]: (value: T) => T };
 
 export function resourceKey<T>(name: string): ResourceKey<T> {
 	return unsafeCast<ResourceKey<T>>(Symbol(name));

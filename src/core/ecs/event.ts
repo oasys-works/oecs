@@ -56,6 +56,14 @@ export const asEventId = (value: number) =>
  * the implicit index signature literals get and interfaces don't. */
 export type EventSchema = Readonly<Record<string, number>>;
 
+/**
+ * Homomorphic constraint for event-schema type params (POLISH_AUDIT M9):
+ * `S extends EventShape<S>` checks every property of `S` is a number WITHOUT
+ * requiring an index signature, so `interface`-declared schemas (which lack
+ * the implicit index signature type literals get) are accepted too.
+ */
+export type EventShape<S> = { readonly [K in keyof S]: number };
+
 /** Schema of a signal — a zero-field event. */
 export type EmptyEventSchema = Readonly<Record<never, number>>;
 
@@ -67,7 +75,7 @@ export type EmptyEventSchema = Readonly<Record<never, number>>;
 // Erased positions must spell `EventDef<any>`.
 declare const __eventSchema: unique symbol;
 
-export type EventDef<S extends EventSchema = EventSchema> = EventID & {
+export type EventDef<S extends EventShape<S> = EventSchema> = EventID & {
 	readonly [__eventSchema]: (value: S) => S;
 };
 
@@ -82,7 +90,7 @@ export type EventDef<S extends EventSchema = EventSchema> = EventID & {
  * mutates (see `EventChannel` below), so the `readonly` typing blocks writes
  * at the type layer only; a §10c-policed cast can still write through.
  */
-export type EventReader<S extends EventSchema> = {
+export type EventReader<S extends EventShape<S>> = {
 	readonly length: number;
 } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 
@@ -166,7 +174,7 @@ export class EventChannel {
 // `EventKey<any>`.
 declare const __eventKeySchema: unique symbol;
 
-export type EventKey<S extends EventSchema = EventSchema> = symbol & {
+export type EventKey<S extends EventShape<S> = EventSchema> = symbol & {
 	readonly [__eventKeySchema]: (value: S) => S;
 };
 
@@ -195,7 +203,7 @@ export type SignalKey = EventKey<EmptyEventSchema> & {
  * finite key set to cover.
  */
 export type EventFieldsCover<
-	S extends EventSchema,
+	S extends EventShape<S>,
 	F extends readonly (keyof S & string)[]
 > = string extends keyof S
 	? unknown
@@ -203,7 +211,7 @@ export type EventFieldsCover<
 		? unknown
 		: readonly [`ERROR — missing event field: ${Exclude<keyof S & string, F[number]>}`];
 
-export function eventKey<S extends EventSchema>(name: string): EventKey<S> {
+export function eventKey<S extends EventShape<S>>(name: string): EventKey<S> {
 	return unsafeCast<EventKey<S>>(Symbol(name));
 }
 

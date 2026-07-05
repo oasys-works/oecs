@@ -182,7 +182,11 @@ describe("ECS relations — multi-target (#471)", () => {
 describe("relations registration + validation (#471)", () => {
 	it("rejects a relation declared both exclusive and multi-target", () => {
 		const world = new ECS({ deterministic: true });
-		expect(() => world.relations.register({ exclusive: true, multi: true })).toThrow();
+		// Now a compile error too (RelationOptions is a union) — the cast covers
+		// the JS-caller path the runtime throw still guards.
+		expect(() =>
+			world.relations.register({ exclusive: true, multi: true } as never)
+		).toThrow();
 	});
 
 	it("target_of throws on a multi-target relation (use targets_of)", () => {

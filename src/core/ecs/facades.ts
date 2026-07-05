@@ -26,7 +26,7 @@ import type {
 	EventFieldsCover,
 	EventKey,
 	EventReader,
-	EventSchema,
+	EventShape,
 	SignalKey
 } from "./event";
 import { accessCheck } from "./access_check";
@@ -113,13 +113,13 @@ export class ECSRelations {
 
 	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard
 	 * (#472). Sources in canonical entity-index order. Cold path. */
-	public pairsOf(def: RelationDef): [EntityID, EntityID][] {
+	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
 		return this.store.pairsOf(def);
 	}
 
 	/** Every `(relation, source)` pointing at `tgt`, across all relation kinds —
 	 * the `(*, T)` wildcard (#472). Ordered by relation id then source id. */
-	public sourcesOfAny(tgt: EntityID): [RelationDef, EntityID][] {
+	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
 		return this.store.sourcesOfAny(tgt);
 	}
 
@@ -164,7 +164,7 @@ export class ECSEvents {
 	/** Register an event channel. `fields` must name EVERY schema key — an
 	 * under-registered channel would silently drop the missing fields at emit
 	 * (see `EventFieldsCover`). */
-	public register<S extends EventSchema, const F extends readonly (keyof S & string)[]>(
+	public register<S extends EventShape<S>, const F extends readonly (keyof S & string)[]>(
 		key: EventKey<S>,
 		fields: F & EventFieldsCover<S, F>
 	): void {
@@ -177,7 +177,7 @@ export class ECSEvents {
 	}
 
 	public emit(key: SignalKey): void;
-	public emit<S extends EventSchema>(key: EventKey<S>, values: NoInfer<S>): void;
+	public emit<S extends EventShape<S>>(key: EventKey<S>, values: NoInfer<S>): void;
 	// Erased implementation position spells `<any>`, not the bare/`unknown`
 	// form — `EventKey` is invariant under the typestate seams (function-typed
 	// phantom), so only `<any>` erases (see project typestate constraints).
@@ -193,7 +193,7 @@ export class ECSEvents {
 		}
 	}
 
-	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
+	public read<S extends EventShape<S>>(key: EventKey<S>): EventReader<S> {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
 		}

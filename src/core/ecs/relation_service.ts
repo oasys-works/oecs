@@ -244,7 +244,7 @@ export class RelationService {
 	 * relation holds no pairs. Cold path — allocates the result array (and, for
 	 * multi, sorts each source's target set); not for per-tick use. The
 	 * point-query forms are `targetOf` / `targetsOf`. */
-	public pairsOf(def: RelationDef): [EntityID, EntityID][] {
+	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
 		const rs = this.relationOf(def);
 		const out: [EntityID, EntityID][] = [];
 		const gens = this.host.entityGenerations();
@@ -261,7 +261,7 @@ export class RelationService {
 	 * ascending by id), so the result is ordered by relation id then source id.
 	 * Empty when nothing targets `tgt`. The single-relation form is
 	 * `sourcesOf(def, tgt)`. */
-	public sourcesOfAny(tgt: EntityID): [RelationDef, EntityID][] {
+	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
 		const out: [RelationDef, EntityID][] = [];
 		const rels = this.relations;
 		for (let id = 0; id < rels.length; id++) {

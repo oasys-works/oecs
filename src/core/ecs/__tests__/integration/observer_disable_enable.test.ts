@@ -23,7 +23,7 @@ const Vel = { vx: "i32", vy: "i32" } as const;
 /** Register a system that runs the next queued command each tick — one toggle
  * script step per `world.update()`. Returns the command queue to push closures. */
 function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
-	const cmds: Array<(ctx: Parameters<Parameters<ECS["registerSystem"]>[0]["fn"]>[0]) => void> = [];
+	const cmds: Array<(ctx: Parameters<NonNullable<Parameters<ECS["registerSystem"]>[0]["fn"]>>[0]) => void> = [];
 	world.addSystems(
 		SCHEDULE.UPDATE,
 		world.registerSystem({

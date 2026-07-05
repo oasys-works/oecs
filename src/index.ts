@@ -119,7 +119,13 @@ export type {
 // system drains them at the schedule head through `applyHostCommand`.
 // The SAB command-ring transport (`HostCommandDispatcher`, `ring*Codec`,
 // `HOST_COMMAND_PAYLOAD_BYTES`) is wire/ABI surface — `@oasys/oecs/internal`.
-export { installHostCommandSeam, applyHostCommand, HostCommandQueue, spawnEntry } from "./core/ecs";
+export {
+	installHostCommandSeam,
+	uninstallHostCommandSeam,
+	applyHostCommand,
+	HostCommandQueue,
+	spawnEntry
+} from "./core/ecs";
 export type {
 	HostCommand,
 	SpawnEntry,
@@ -176,6 +182,9 @@ export type { EntityID, ReadonlyEntityIdArray } from "./core/ecs";
 export { getEntityIndex } from "./core/ecs";
 
 // Components
+// `TypedArrayTag` is the column-type vocabulary `registerComponent` constrains
+// on ("f64" | "i32" | ...) — exported so consumers can type schema literals.
+export type { TypedArrayTag } from "./type_primitives";
 export type {
 	ComponentDef,
 	ComponentHandle,
@@ -215,6 +224,7 @@ export type {
 	EventReader,
 	EventKey,
 	EventSchema,
+	EventShape,
 	EventFieldsCover,
 	EmptyEventSchema,
 	SignalKey
@@ -228,6 +238,10 @@ export { resourceKey } from "./core/ecs";
 // Error taxonomy — every ECS-thrown error is an `ECSError` tagged with an
 // `ECS_ERROR` category, so a consumer can catch and branch on the category.
 export { ECSError, ECS_ERROR, isEcsError } from "./core/ecs";
+// Thrown from main-entry construction when a `memory.shared` profile runs in
+// an environment without SharedArrayBuffer — re-exported here so root-entry
+// consumers can name it without importing `/shared`.
+export { SabUnavailableError } from "./core/store";
 
 // The installed package version, readable at runtime.
 export { VERSION } from "./version";

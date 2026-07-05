@@ -393,6 +393,13 @@ export class Editor {
 		for (const cb of this.listeners.slice()) cb();
 	}
 
+	/** Read one committed `(entity, component, field)` slot through the reader
+	 * this editor was constructed with — the default read for `fieldHandle`
+	 * when no channel thunk is supplied (M11). */
+	committedField(eid: EntityID, def: ComponentDef, field: string): number | undefined {
+		return this.readField(eid, def, field);
+	}
+
 	/**
 	 * The pending value the editor believes for a field that the committed read
 	 * channel has NOT caught up to yet (the shadow), or `undefined` if none. Lets an

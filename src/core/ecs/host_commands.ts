@@ -32,6 +32,7 @@ import type { ComponentDef, ComponentSchema, CompleteFieldValues, FieldValues } 
 import type { ECS } from "./ecs";
 import type { EntityID } from "./entity";
 import type { SystemContext } from "./query";
+import type { SystemDescriptor } from "./system";
 import { SCHEDULE } from "./schedule";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { assertNever } from "../../type_primitives";
@@ -254,6 +255,15 @@ export class HostCommandQueue {
 	/** Commands buffered but not yet applied. */
 	pending(): number {
 		return this.queued.length;
+	}
+
+	/** Drop every buffered command without applying it (M15) — e.g. abandoning
+	 * queued edits on a scene unload. Returns how many were dropped. Does not
+	 * touch commands already drained into the world. */
+	clear(): number {
+		const n = this.queued.length;
+		this.queued.length = 0;
+		return n;
 	}
 
 	/**
@@ -486,6 +496,12 @@ export class HostCommandDispatcher {
 		return this;
 	}
 
+	/** Unbind `opCode` (M15). Returns whether a binding was removed; subsequent
+	 * slots carrying it hit the unknown-opcode path. */
+	off(opCode: number): boolean {
+		return this.appliers.delete(opCode);
+	}
+
 	/** Bind a `HostCommand` codec to `opCode`: each matching slot is decoded and
 	 * run through `applyHostCommand` — the SAME dispatch the typed queue uses.
 	 * A drain-time `tap` (record/replay, #702) sees the decoded command before it
@@ -584,11 +600,32 @@ export interface HostCommandSeamOptions {
  * external reactive kernel to quarantine — this is pure ECS plumbing over the
  * deferred buffers and `SystemContext` the core already owns.
  */
+// queue → the apply-system descriptors its seam registered, for uninstall.
+const seamSystems = new WeakMap<HostCommandQueue, SystemDescriptor[]>();
+
+/**
+ * Tear down a seam installed by {@link installHostCommandSeam} (M15): removes
+ * its apply systems from the world's schedule and clears any still-buffered
+ * commands. The queue itself stays usable as a buffer, but nothing drains it
+ * until a new seam is installed. No-op (returns `false`) if `queue` was not
+ * produced by `installHostCommandSeam` on this world.
+ */
+export function uninstallHostCommandSeam(world: ECS, queue: HostCommandQueue): boolean {
+	const descs = seamSystems.get(queue);
+	if (descs === undefined) return false;
+	for (const desc of descs) world.removeSystem(desc);
+	seamSystems.delete(queue);
+	queue.clear();
+	return true;
+}
+
 export function installHostCommandSeam(
 	world: ECS,
 	opts?: HostCommandSeamOptions
 ): HostCommandQueue {
 	const queue = new HostCommandQueue();
+	const installed: SystemDescriptor[] = [];
+	seamSystems.set(queue, installed);
 	const name = opts?.name ?? "host_command_apply";
 	const ring = opts?.ring;
 	const recorder = opts?.recorder;
@@ -641,6 +678,7 @@ export function installHostCommandSeam(
 			}
 		});
 		world.addSystems(label, apply);
+		installed.push(apply);
 	}
 	return queue;
 }

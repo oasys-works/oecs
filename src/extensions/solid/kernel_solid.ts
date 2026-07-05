@@ -38,7 +38,10 @@ export function fromKernel<T>(accessor: () => T): Accessor<T> {
 export interface KernelMapView<K, V> {
 	/** The live key set — pass to a keyed Solid `<For each>`. Keyed on the id. */
 	readonly keys: Accessor<readonly K[]>;
-	/** A bridged value accessor for one key — read inside the `<For>` row. */
+	/** A bridged value accessor for one key — read inside the `<For>` row.
+	 * Each call mints a FRESH bridge (subscription): call it once per row (bind
+	 * the accessor in the row's scope), never inline it in a hot JSX expression
+	 * that re-evaluates per render. */
 	cell(key: K): Accessor<V | undefined>;
 }
 
