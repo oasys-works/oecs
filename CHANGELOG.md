@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Component debug names** — `registerComponent(schema, { name: "Pos" })` (and the sparse
+  sibling) records a diagnostic label, so access-violation and liveness errors read
+  `'Pos' (component 5)` instead of leaving you to count registration order
+  (`ComponentRegisterOptions`).
+- **Total probes + `tryGetField`** — `hasComponent` / `hasSparse` / `relations.has` now return
+  `false` for a dead entity instead of dev-throwing (a "has" probe is exactly the call made to
+  avoid dead entities); `ecs.tryGetField(e, def, field)` returns `undefined` for a dead entity or
+  missing component.
+- **`Query.firstEntity()` / `Query.singleEntity()`** — singleton reads (player, camera) without a
+  hand-rolled `forEach` + capture; `singleEntity` dev-throws `QUERY_NOT_SINGLETON` on 0 or >1.
+- **Host-side `ecs.refRead(def, e)`** — whole-component read-only view, parity with
+  `ctx.refRead`.
+- **Run-condition combinators** — `not()` / `allOf()` / `anyOf()`, merging the operands' declared
+  read surfaces.
+- **Editor change notification** — `editor.onChange(cb)` (fires on commit/undo/redo/clear) plus
+  `canUndo` / `canRedo` getters; no more per-frame `depths()` polling.
+- **`using` support** — `ObserverHandle` implements `Symbol.dispose`.
+- **Write-seam lifecycle** — `uninstallHostCommandSeam(world, queue)`,
+  `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)`,
+  `HostCommandRecorder.snapshotLog()` (stable deep copy).
+- **`VERSION`** export and a `"./package.json"` export; `engines: { node: ">=20" }` and a README
+  runtime note (resizable `ArrayBuffer`).
+- Root re-exports so failure modes are nameable without extra entry points:
+  `StoreRestoreError`, `SabUnavailableError`, `TypedArrayTag`; `/reactive` now exports `Eq` and
+  `shallow` (moved from `/reactive-sync`, which re-exports for compat); `signal()` gains the
+  zero-arg Solid-parity overload; `SingletonSyncOptions.eq`.
+
+### Fixed
+
+- **JSR/Deno consumers no longer break on the `__DEV__` global** — shipped source now reads a
+  guarded `DEV` flag (`src/dev_flag.ts`) that constant-folds in the npm bundle and defaults to
+  dev-on for raw-source consumers (`globalThis.__DEV__ = false` opts out).
+- **Error experience** — every `ENTITY_NOT_ALIVE` names the operation and decodes the packed id
+  (index + generation, with context); system access violations use the new `ACCESS_UNDECLARED`
+  category instead of overloading `*_NOT_REGISTERED`; resource/event "not registered" messages
+  name the key and hint the registration call; messages no longer reference pre-0.4 snake_case
+  option names or private tracker issue numbers.
+- **Packaging** — per-entry `.d.cts` and explicit-extension declaration specifiers
+  (`attw --pack` fully green: node10/node16/bundler across all eight entry points, was
+  masquerading + resolution errors); `typesVersions` for `moduleResolution: node10` subpaths; npm
+  tarball ships `CHANGELOG.md`; `@internal` editor internals no longer leak into published types.
+- **Type-level closures** — `EventShape<S>` homomorphic bound (interface-declared event schemas
+  now accepted); `RelationOptions` is a union so `{ exclusive: true, multi: true }` is a compile
+  error; `ResourceKey`'s phantom is a unique symbol (no `.__phantom` in autocomplete);
+  `pairsOf` / `sourcesOfAny` return readonly tuples; `SystemConfig.fn` optional when
+  `backendHandle` is present.
+- Dev-mode diagnostics: ownerless `computed()` / `onCleanup()` warn (kernel); ECSOptions warns on
+  unknown keys; `runIfResourceEq` warns on object-valued `expected` (reference-identity `===`);
+  `runEveryNTicks` validation throws `ECSError` (`INVALID_RUN_CONDITION`).
+
 - **Compile-time typestate across the system, query, relation, and key seams.** The config-form
   `registerSystem` now infers your access declarations as literal types and hands `fn`/`onAdded` a
   `SystemContext<DeclaredAccess<…>>` narrowed to exactly the declared surface — undeclared access

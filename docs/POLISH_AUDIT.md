@@ -4,6 +4,28 @@ Date: 2026-07-04 · Scope: everything published to npm/JSR (all seven entry poin
 
 Updated 2026-07-05: findings already fixed on `seam-fixes` removed (#2, #3, #5, #6, #7, #8, M5, the internal-`TypeError` nit, and the JSR `__tests__` exclusion). Original numbering kept for the survivors so existing references stay valid.
 
+**Second update, 2026-07-05 (fix session):** the following are now FIXED on `seam-fixes` —
+#1 (guarded `DEV` flag, JSR-safe), #4 (component debug names + `ENTITY_NOT_ALIVE` context +
+key-name interpolation), #9 (total `has*` + `tryGetField`), M6 (`ACCESS_UNDECLARED`),
+M7 (`ecs.refRead`), M8 (`firstEntity`/`singleEntity`), M9 (`EventShape` bound),
+M10 (`onChange`/`canUndo`/`canRedo`), M11 (optional `read`), M12 (`shallow` → `/reactive`),
+M13 (kernel dev warns), M14 (narrow fix: `_txn` behind a WeakMap — blanket `stripInternal`
+breaks the deliberate `/internal` re-exports), M15 (`uninstall`/`off`/`clear`),
+M16 (`StoreRestoreError` export), M17/M18 (message sweeps), M19 (`.d.cts` + specifier fixups +
+`typesVersions`; attw fully green), M20 (`engines` + README note), M21 (`./package.json` +
+`VERSION`), and from the low-priority list: `Symbol.dispose`, `SabUnavailableError`/
+`TypedArrayTag` root exports, `RelationOptions` union, combinators + `ECSError` validation,
+`runIfResourceEq` warn, `ResourceKey` symbol phantom, `_caches` `@internal`, optional
+`SystemConfig.fn`, readonly tuples, `Eq` export, zero-arg `signal()`, `SingletonSyncOptions.eq`,
+`snapshotLog()`, `ECSOptions` unknown-key warn, CHANGELOG in the tarball, stale docstrings,
+`fromKernelMap.cell` caveat documented.
+
+**Still open:** Batch 5 design items (M1 immediate-vs-deferred facade, M2 partial-values
+`addComponent`, M3 `sourcesOf` arg order, M4 seam `Bundle` acceptance, M22 `world`-vs-`ecs` docs
+sweep), M23 (JSDoc/@example coverage), and low-priority leftovers that are API-design calls:
+`count()` vs getters naming, `createEntities` overrides, `TemplateOverrides` flattening, the
+`WorldRestoreError`/`WORLD_SNAPSHOT_VERSION` naming, `fromKernelMap.cell` memoization.
+
 ---
 
 ## Executive summary
