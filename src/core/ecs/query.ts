@@ -7,7 +7,7 @@
  * write the inner loop over arch.entityCount.
  *
  * QueryBuilder is the entry point for creating queries inside
- * registerSystem(fn, qb => qb.every(Pos, Vel)).
+ * registerSystem(fn, qb => qb.with(Pos, Vel)).
  *
  * SystemContext wraps Store for use inside system functions, exposing
  * only deferred operations (add/remove component, destroy entity) that
@@ -30,8 +30,8 @@
  * Queries compose via chaining:
  *
  *   q.and(Energy)          — extend required components
- *   q.not(Frozen)          — exclude archetypes with Frozen
- *   q.anyOf(Sprite, Mesh) — require at least one of these
+ *   q.without(Frozen)      — exclude archetypes with Frozen
+ *   q.anyOf(Sprite, Mesh)  — require at least one of these
  *   q.optional(Vel)        — fetch Vel if present; still iterate without it
  *
  * An optional term (Bevy `Option<&T>` / flecs `?`, #575) does NOT narrow the
@@ -48,39 +48,201 @@ import type { FrameTraceSink } from "./frame_trace";
 import type { Archetype, ArchetypeView } from "./archetype";
 import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
+import { entityNotAliveError } from "./entity";
+import { componentLabel } from "./debug_names";
 import type {
 	ComponentDef,
+	ComponentHandle,
 	ComponentID,
-	ComponentSchema,
-	FieldValues,
 	MutableColumnsForSchema,
 	ColumnsForSchema,
-	BundleOrDef
+	AttachValuesArg,
+	BundleOrDef,
+	SchemaOf,
+	DeclaredQueryTerm
 } from "./component";
 import { bundleDef, bundleValues } from "./component";
-import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
+import type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./sparse_store";
 import type { RelationDef } from "./relation";
+import type {
+	SystemAccess,
+	DeclaredRead,
+	DeclaredWrite,
+	DeclaredAdd,
+	DeclaredRemove,
+	DeclaredSparseRead,
+	DeclaredSparseWrite,
+	DeclaredRelationRead,
+	DeclaredRelationWrite,
+	DeclaredResourceRead,
+	DeclaredResourceWrite,
+	DespawnArg
+} from "./system";
 import { createRef, type ComponentRef, type ReadonlyComponentRef } from "./ref";
 import type {
 	EmptyEventSchema,
 	EventDef,
 	EventKey,
 	EventReader,
-	EventSchema,
+	EventShape,
 	SignalKey
 } from "./event";
-import type { ResourceKey } from "./resource";
+import type { ResourceKey, ResourceValueOf } from "./resource";
 import { BitSet, unsafeCast } from "../../type_primitives";
-import { EMPTY_VALUES } from "./utils/constants";
+import { bucketPush } from "./utils/arrays";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { dispatchTrace } from "./dispatch_trace";
 import { accessCheck } from "./access_check";
+import { DEV } from "../../dev_flag";
+
+/** The query-driver seam on `Store` — the typed contract behind the
+ * underscore members `ecs.ts` and the query internals reach (M1). `Store`
+ * implements this; when the cache/driver layer is extracted (M2/H1) the
+ * interface retargets at the collaborator without touching consumers.
+ * `_tick` / `_trace` are deliberately mutable: `ECS.update()` advances the
+ * change tick and `ECS.setTrace` installs the sink through this seam. */
+export interface QueryHost {
+	/** Change tick — advanced by `ECS.update()` each frame. */
+	_tick: number;
+	/** Dev-only frame-trace sink (`ECS.setTrace`); always null in prod. */
+	_trace: FrameTraceSink | null;
+	/** True once any component observer opted into per-entity dirty tracking —
+	 * gates `_noteSet` at every write site. */
+	readonly _anyDirtyTracked: boolean;
+	/** Bumped when an archetype crosses empty↔non-empty — cached query
+	 * archetype lists rebuild when their observed epoch is stale (#327). */
+	readonly _queryDirtyEpoch: number;
+	/** Record a per-entity onSet dirty mark for `def` (gated by
+	 * `_anyDirtyTracked` at the call site). */
+	_noteSet(def: ComponentHandle, eid: EntityID): void;
+	/** Dev-only: buffered event count across dirty channels (mid-update emit
+	 * detection in `ECS.update()`). */
+	_devBufferedEventCount(): number;
+	/** Second query-match path: sparse-term intersection (#469 / ADR-0011). */
+	_forEachSparseMatch(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		denseArchetypes: readonly Archetype[],
+		cb: (entityId: EntityID) => void,
+		includeDisabled: boolean
+	): void;
+	/** Third query-match path: the `(*, T)` wildcard (#579). */
+	_forEachRelationTargetMatch(
+		target: EntityID,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		includeDisabled: boolean,
+		cb: (entityId: EntityID) => void
+	): void;
+	/** Fourth query-match path: hierarchy depth ordering (#581). */
+	_forEachHierarchyMatch(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		sparseInclude: readonly SparseComponentID[],
+		sparseExclude: readonly SparseComponentID[],
+		denseArchetypes: readonly Archetype[],
+		relation: RelationDef,
+		maxDepth: number,
+		includeDisabled: boolean,
+		cb: (entityId: EntityID) => void
+	): void;
+}
 
 export interface QueryCacheEntry {
 	includeMask: BitSet;
 	excludeMask: BitSet | null;
 	anyOfMask: BitSet | null;
 	query: Query<any>; // any: heterogeneous cache — different queries have different Defs tuples
+}
+
+/** One owner for every query-resolution cache (M2). Previously the dedup
+ * bucket map lived on `ECS` while `Query` populated eleven composition maps
+ * declared on the resolver interface — ownership split across two modules.
+ * All entries are structural (a query is minted once per unique term set and
+ * lives for the world's lifetime; components and queries are never
+ * unregistered), so there is no invalidation lifecycle — the maps are
+ * append-only. Key encodings are unchanged from the pre-extraction fields.
+ *
+ * The composition maps are exposed as readonly fields (not per-kind accessor
+ * pairs): the mutation protocol is uniform (`get` → miss → build → `set`) and
+ * hot enough that composition sites keep direct map access; the invariant
+ * this class carries is single ownership, not access mediation. */
+export class QueryCache {
+	// Query deduplication: hash(include, exclude, anyOf) → bucket of cache
+	// entries. Multiple term sets can share a hash (collision), so each bucket
+	// is an array; `findDedup` equality-checks masks within the bucket.
+	private readonly dedup = new Map<number, QueryCacheEntry[]>();
+
+	// Shared single-component composition caches (#334). One Map per direction
+	// keyed by (parent_query_id << 16) | cid, replacing four nullable Maps per
+	// Query. Drops the per-Query Map footprint from O(#queries × 4) to O(4).
+	public readonly andSingle = new Map<number, Query<any>>();
+	public readonly notSingle = new Map<number, Query<any>>();
+	public readonly anyOfSingle = new Map<number, Query<any>>();
+	public readonly changedSingle = new Map<number, ChangedQuery<any>>();
+	// Optional fetch-if-present composition cache (#575) — dense cid keying,
+	// same shape as the dense single caches above.
+	public readonly optionalSingle = new Map<number, Query<any>>();
+	// Sparse-membership composition caches (#469), same (parent_id << 16) | id
+	// keying — the id is a SparseComponentID (a separate id space), so these
+	// never collide with the dense maps.
+	public readonly withSparseSingle = new Map<number, Query<any>>();
+	public readonly withoutSparseSingle = new Map<number, Query<any>>();
+	// Relation-wildcard `(R, *)` composition caches (#579), keyed
+	// (parent_id << 16) | relation_id — a separate Map from the sparse caches
+	// because a `withRelation(R)` query also carries the relation id for its
+	// `relationReads` access check.
+	public readonly withRelationSingle = new Map<number, Query<any>>();
+	public readonly withoutRelationSingle = new Map<number, Query<any>>();
+	// Include-disabled composition cache (#577), keyed by parent query id so
+	// `q.includeDisabled()` returns a stable instance on repeated calls.
+	public readonly includeDisabledSingle = new Map<number, Query<any>>();
+	// Hierarchy depth-ordering composition cache (#581), keyed
+	// (parent_id << 16) | relation_id. Only the unbounded form is cached — a
+	// `maxDepth`-limited term adds a third key dimension and is the rarer
+	// shape, so it mints fresh (hierarchy queries are built at registration,
+	// not per tick).
+	public readonly hierarchySingle = new Map<number, Query<any>>();
+
+	/** Dedup lookup: bucket scan with full mask equality (buckets are
+	 * typically 1–2 entries). */
+	public findDedup(
+		key: number,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null
+	): QueryCacheEntry | undefined {
+		const bucket = this.dedup.get(key);
+		if (!bucket) return undefined;
+		for (let i = 0; i < bucket.length; i++) {
+			const e = bucket[i];
+			if (!e.includeMask.equals(include)) continue;
+			const excOk =
+				exclude === null
+					? e.excludeMask === null
+					: e.excludeMask !== null && e.excludeMask.equals(exclude);
+			if (!excOk) continue;
+			const anyOk =
+				anyOf === null
+					? e.anyOfMask === null
+					: e.anyOfMask !== null && e.anyOfMask.equals(anyOf);
+			if (!anyOk) continue;
+			return e;
+		}
+		return undefined;
+	}
+
+	/** Record a freshly minted query under its dedup key. */
+	public addDedup(key: number, entry: QueryCacheEntry): void {
+		bucketPush(this.dedup, key, entry);
+	}
 }
 
 export interface QueryResolver {
@@ -95,42 +257,9 @@ export interface QueryResolver {
 	_getCurrentTick(): number;
 	_getQueryDirtyEpoch(): number;
 	_nextQueryId(): number;
-	// Shared single-component composition caches, keyed by
-	// (parent_id << 16) | cid. One Map per direction lives on the resolver
-	// instead of four nullable Maps per Query, dropping the per-Query footprint
-	// from O(#queries × 4) to O(4).
-	_andSingleCache: Map<number, Query<any>>;
-	_notSingleCache: Map<number, Query<any>>;
-	_anyOfSingleCache: Map<number, Query<any>>;
-	_changedSingleCache: Map<number, ChangedQuery<any>>;
-	// Optional fetch-if-present composition cache (#575), same dense
-	// (parent_id << 16) | cid keying as the dense single caches above — an
-	// optional term is a dense ComponentID (cid <= 128), distinct from the
-	// sparse id space below.
-	_optionalSingleCache: Map<number, Query<any>>;
-	// Sparse-membership composition caches (#469), same (parent_id << 16) | id
-	// keying as the dense single caches — except the id is a SparseComponentID
-	// (a separate id space), so these never collide with the dense maps.
-	_withSparseSingleCache: Map<number, Query<any>>;
-	_withoutSparseSingleCache: Map<number, Query<any>>;
-	// Relation-wildcard `(R, *)` composition caches (#579), keyed
-	// (parent_id << 16) | relation_id — a separate id space from the sparse caches
-	// (and a separate Map because a `withRelation(R)` query also carries the
-	// relation id for its access check, so it can't share the sparse cache).
-	_withRelationSingleCache: Map<number, Query<any>>;
-	_withoutRelationSingleCache: Map<number, Query<any>>;
-	// Include-disabled composition cache (#577), keyed by the parent query id so
-	// `q.includeDisabled()` returns a stable instance on repeated calls (no
-	// query-id climb) — same rationale as the sparse caches.
-	_includeDisabledSingleCache: Map<number, Query<any>>;
-	// Hierarchy depth-ordering composition cache (#581), keyed
-	// (parent_id << 16) | relation_id. Only the unbounded form
-	// (`maxDepth === HIERARCHY_UNBOUNDED`) is cached — a `maxDepth`-limited term
-	// adds a third key dimension and is the rarer shape, so it mints fresh (a
-	// hierarchy query is built once at system registration, not per tick, so the
-	// churn is negligible). Same id space as the relation caches above; a dedicated
-	// Map because a `.hierarchy(R)` query also records R for its access check.
-	_hierarchySingleCache: Map<number, Query<any>>;
+	/** All query-resolution caches — dedup + composition (M2). One owner; see
+	 * `QueryCache` for the per-map keying/id-space notes. */
+	readonly _caches: QueryCache;
 	/** Second query-match path (#469 / ADR-0011): drive iteration by sparse
 	 * membership rather than the archetype mask, yielding entities — sparse
 	 * members are scattered across archetypes, so there is no archetype-column
@@ -199,7 +328,7 @@ const NO_OPTIONAL_TERMS: readonly ComponentID[] = Object.freeze([]);
 
 // Frozen empty relation-wildcard-term list — shared by every Query without a
 // `(R, *)` term (#579), same zero-alloc rationale. These lists exist only for the
-// `__DEV__` `relationReads` access check (`_checkRelationAccess`); the driver
+// `DEV` `relationReads` access check (`_checkRelationAccess`); the driver
 // reads the relation's backing sparse id off `_sparseInclude`, never this.
 const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
 
@@ -223,7 +352,7 @@ export interface HierarchyTerm {
 // is injective only while both halves fit 16 bits. Dense component ids are
 // hard-capped at 128, but sparse ids are deliberately uncapped (they escape the
 // 128 identity cap) and the query-id counter is unbounded — so nothing
-// structurally guarantees the bound the packing assumes. Assert it in `__DEV__`
+// structurally guarantees the bound the packing assumes. Assert it in `DEV`
 // so an overflow surfaces as a loud error at the (astronomically unlikely) pack
 // site rather than a silent wrong-cache-hit. 2^16 = 65536 distinct sparse
 // components or live queries in one ECS is the trigger; realistic counts are
@@ -231,7 +360,7 @@ export interface HierarchyTerm {
 // since cid <= 128) latent risk on the query-id half.
 const CACHE_KEY_HALF_LIMIT = 0x10000;
 function sparseCacheKey(queryId: number, sparseId: number): number {
-	if (__DEV__ && (queryId >= CACHE_KEY_HALF_LIMIT || sparseId >= CACHE_KEY_HALF_LIMIT)) {
+	if (DEV && (queryId >= CACHE_KEY_HALF_LIMIT || sparseId >= CACHE_KEY_HALF_LIMIT)) {
 		throw new ECSError(
 			ECS_ERROR.SPARSE_CACHE_KEY_OVERFLOW,
 			`sparse query cache key would overflow: query_id=${queryId}, sparse_id=${sparseId} (each must be < ${CACHE_KEY_HALF_LIMIT})`
@@ -283,17 +412,23 @@ function appendRelation(list: readonly RelationDef[], def: RelationDef): readonl
  * object (a per-archetype-per-component cache refreshed in place), hiding the
  * change tick. Destructure the group immediately; don't retain it across calls.
  */
-export class ChunkColumns {
+export class ChunkColumns<out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]> {
 	/** @internal */ _arch!: Archetype;
 	/** @internal */ _tick = 0;
 
-	/** Mutable column group — `const { x, y } = cols.mut(Pos)`. Stamps the tick. */
-	public mut<S extends ComponentSchema>(def: ComponentDef<S>): MutableColumnsForSchema<S> {
+	/** Mutable column group — `const { x, y } = cols.mut(Pos)`. Stamps the tick.
+	 * `def` must be a term of the iterating query (POLISH_AUDIT #6). */
+	public mut<D extends ComponentDef<any>>(
+		def: D & DeclaredQueryTerm<Defs, D>
+	): MutableColumnsForSchema<SchemaOf<D>> {
 		return this._arch.columnGroupMut(def, this._tick);
 	}
 
-	/** Read-only column group — `const { vx, vy } = cols.read(Vel)`. No tick bump. */
-	public read<S extends ComponentSchema>(def: ComponentDef<S>): ColumnsForSchema<S> {
+	/** Read-only column group — `const { vx, vy } = cols.read(Vel)`. No tick bump.
+	 * `def` must be a term of the iterating query (POLISH_AUDIT #6). */
+	public read<D extends ComponentDef<any>>(
+		def: D & DeclaredQueryTerm<Defs, D>
+	): ColumnsForSchema<SchemaOf<D>> {
 		return this._arch.columnGroupRead(def);
 	}
 }
@@ -333,7 +468,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// reuses the parent's live `_archetypes` array (same as the sparse terms).
 	// The term is *consumed*, not decorative (#592): `forEach` publishes it as
 	// the active optional scope, and `getOptionalColumnRead` rejects (in
-	// `__DEV__`) a fetch of any component not listed here — so `.optional(T)` is
+	// `DEV`) a fetch of any component not listed here — so `.optional(T)` is
 	// the declaration that authorizes the fetch, the read-side analog of
 	// `reads:[T]`. It is carried symmetrically through `and`/`not`/`anyOf` (see
 	// `_carryNondense`), so term order never drops it.
@@ -352,7 +487,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// `withoutRelation(R)` push R's *backing sparse id* onto `_sparseInclude` /
 	// `_sparseExclude` (so iteration reuses the sparse-match driver unchanged) AND
 	// record R here purely so `forEachEntity` / `forEachRelatedTo` can assert
-	// `relationReads: [R]` under `__DEV__` (`_checkRelationAccess`). Carried
+	// `relationReads: [R]` under `DEV` (`_checkRelationAccess`). Carried
 	// through `and`/`not`/`anyOf` like the sparse terms (`_carryNondense`).
 	public readonly _relationIncludes: readonly RelationDef[];
 	public readonly _relationExcludes: readonly RelationDef[];
@@ -403,7 +538,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * against a query carrying sparse terms. These walk the dense archetype
 	 * list and never consult `_sparseInclude` / `_sparseExclude`, so on a
 	 * sparse-derived query they'd **fail open** — returning the unfiltered dense
-	 * result instead of the sparse-filtered one. Throw in `__DEV__` (compiled
+	 * result instead of the sparse-filtered one. Throw in `DEV` (compiled
 	 * out of prod) steering the caller to `forEachEntity`, the only path that
 	 * honors sparse membership (#469). Mirrors `ChangedQuery`'s dev-guard on its
 	 * include-mask invariant. */
@@ -422,17 +557,80 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
+	/** Whether this query carries only dense terms — the precondition for the
+	 * archetype-walk fast paths (`count`, `firstEntity`, `singleEntity`). */
+	private _isDenseOnly(): boolean {
+		return (
+			this._sparseInclude.length === 0 &&
+			this._sparseExclude.length === 0 &&
+			this._relationIncludes.length === 0 &&
+			this._relationExcludes.length === 0 &&
+			this._hierarchy === null
+		);
+	}
+
+	/** First matching entity, or `undefined` when the query matches none — the
+	 * singleton read (`player`, `camera`) without hand-rolling a forEach +
+	 * closure capture (POLISH_AUDIT M8). Dense-only queries answer from the
+	 * first non-empty archetype in O(archetypes); queries with sparse /
+	 * relation / hierarchy terms fall back to a full `forEachEntity` walk.
+	 * "First" is iteration order, not spawn order — with more than one match
+	 * the pick is arbitrary (use `singleEntity` to assert uniqueness). */
+	public firstEntity(): EntityID | undefined {
+		if (this._isDenseOnly()) {
+			const archs = this._nonEmpty();
+			for (let i = 0; i < archs.length; i++) {
+				const bound = this._includeDisabled ? archs[i].totalCount : archs[i].enabledCount;
+				if (bound > 0) return archs[i].entityIds[0];
+			}
+			return undefined;
+		}
+		let found: EntityID | undefined;
+		this.forEachEntity((e) => {
+			if (found === undefined) found = e;
+		});
+		return found;
+	}
+
+	/** The query's one matching entity. Dev-throws `QUERY_NOT_SINGLETON` when
+	 * the match count is 0 or >1 — the singleton assertion for entities that
+	 * must be unique (player, camera). Prod skips the count and returns the
+	 * first match (`undefined` if none). */
+	public singleEntity(): EntityID {
+		if (DEV) {
+			const n = this._isDenseOnly() ? this.entityCount : this._countViaWalk();
+			if (n !== 1) {
+				throw new ECSError(
+					ECS_ERROR.QUERY_NOT_SINGLETON,
+					`Query.singleEntity: expected exactly 1 matching entity, found ${n}`,
+					{ count: n }
+				);
+			}
+		}
+		return this.firstEntity() as EntityID;
+	}
+
+	/** Count for non-dense queries — full `forEachEntity` walk. */
+	private _countViaWalk(): number {
+		let n = 0;
+		this.forEachEntity(() => {
+			n++;
+		});
+		return n;
+	}
+
 	/** Number of matching archetypes (including empty ones). */
 	public get archetypeCount(): number {
-		if (__DEV__) this._assertDenseOnly("archetypeCount");
+		if (DEV) this._assertDenseOnly("archetypeCount");
 		return this._archetypes.length;
 	}
 
 	/** Total entity count across all matching archetypes — enabled rows only by
 	 * default, or all rows when `includeDisabled()` (#577). Reads the partition
-	 * fields directly (not the flag-dependent `entityCount` getter). */
-	public count(): number {
-		if (__DEV__) this._assertDenseOnly("count");
+	 * fields directly (not the archetype's flag-dependent `entityCount`
+	 * getter). */
+	public get entityCount(): number {
+		if (DEV) this._assertDenseOnly("entityCount");
 		const archs = this._nonEmpty();
 		let total = 0;
 		if (this._includeDisabled) {
@@ -442,7 +640,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 		return total;
 	}
-	public get archetypes(): readonly ArchetypeView[] {
+	public get archetypes(): readonly ArchetypeView<Defs>[] {
 		return this._archetypes;
 	}
 
@@ -492,7 +690,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._andSingleCache.get(key);
+			const cached = this._resolver._caches.andSingle.get(key);
 			if (cached !== undefined) return cached as Query<[...Defs, ...D]>;
 			return this._andMiss(comps[0], cid, key) as Query<[...Defs, ...D]>;
 		}
@@ -523,7 +721,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(newInclude, this._exclude, this._anyOf, newDefs)
 		);
-		this._resolver._andSingleCache.set(key, result);
+		this._resolver._caches.andSingle.set(key, result);
 		return result;
 	}
 
@@ -532,7 +730,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._notSingleCache.get(key);
+			const cached = this._resolver._caches.notSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			return this._notMiss(cid, key);
 		}
@@ -550,7 +748,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(this._include, newExclude, this._anyOf, this._defs)
 		) as Query<Defs>;
-		this._resolver._notSingleCache.set(key, result);
+		this._resolver._caches.notSingle.set(key, result);
 		return result;
 	}
 
@@ -578,7 +776,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * forms fold over this, so all sparse-require composition is deduplicated. */
 	private _withSparseOne(sid: number): Query<Defs> {
 		const key = sparseCacheKey(this._id, sid);
-		const cache = this._resolver._withSparseSingleCache;
+		const cache = this._resolver._caches.withSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -605,7 +803,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * multi-arg form folds over this (#497) — mirrors `_withSparseOne`. */
 	private _withoutSparseOne(sid: number): Query<Defs> {
 		const key = sparseCacheKey(this._id, sid);
-		const cache = this._resolver._withoutSparseSingleCache;
+		const cache = this._resolver._caches.withoutSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -663,7 +861,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	private _withRelationOne(def: RelationDef): Query<Defs> {
 		const key = sparseCacheKey(this._id, def as unknown as number);
-		const cache = this._resolver._withRelationSingleCache;
+		const cache = this._resolver._caches.withRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver._relationBackingSparseId(def);
@@ -689,7 +887,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	private _withoutRelationOne(def: RelationDef): Query<Defs> {
 		const key = sparseCacheKey(this._id, def as unknown as number);
-		const cache = this._resolver._withoutRelationSingleCache;
+		const cache = this._resolver._caches.withoutRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver._relationBackingSparseId(def);
@@ -705,7 +903,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Build a derived query carrying new relation-wildcard terms. Threads the
 	 * backing-sparse ids (which the driver actually consumes) plus the relation
-	 * ids (which only the `__DEV__` access check consumes), reusing the dense /
+	 * ids (which only the `DEV` access check consumes), reusing the dense /
 	 * optional / disabled state by reference — same rationale as `_deriveSparse`. */
 	private _deriveRelation(
 		sparseInclude: readonly SparseComponentID[],
@@ -745,14 +943,17 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * no SoA column span — `forEach` / `count` reject a hierarchy query (like a
 	 * sparse term). **Exclusive relations only** (matches the traversal constraint
 	 * #474); a multi relation throws `RELATION_MODE_MISMATCH` at iteration, and a
-	 * cycle is a loud `RELATION_CYCLE` in `__DEV__` (a safe break in production).
+	 * cycle is a loud `RELATION_CYCLE` in `DEV` (a safe break in production).
 	 * Requires `relationReads: [R]` (checked at iteration). Carried through
 	 * `and`/`not`/`anyOf` like the sparse terms (`_carryNondense`).
 	 *
 	 * `Defs` is unchanged — `R` is an ordering, not a required component (like
 	 * `not` / `anyOf`). Returns a new query; the unbounded form is cached. */
-	public hierarchy(relation: RelationDef, maxDepth: number = HIERARCHY_UNBOUNDED): Query<Defs> {
-		if (__DEV__) {
+	public hierarchy(
+		relation: RelationDef<"exclusive">,
+		maxDepth: number = HIERARCHY_UNBOUNDED
+	): Query<Defs> {
+		if (DEV) {
 			if (this._hierarchy !== null) {
 				throw new ECSError(
 					ECS_ERROR.HIERARCHY_ALREADY_SET,
@@ -776,7 +977,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// registration (not per tick), so minting a bounded one fresh costs nothing.
 		if (maxDepth === HIERARCHY_UNBOUNDED) {
 			const key = sparseCacheKey(this._id, relation as unknown as number);
-			const cache = this._resolver._hierarchySingleCache;
+			const cache = this._resolver._caches.hierarchySingle;
 			const cached = cache.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			const result = this._deriveHierarchy({ relation, maxDepth });
@@ -811,7 +1012,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** Assert every `(R, *)` wildcard term on this query was declared in the
 	 * system's `relationReads` (#579 / #496). Iteration-time (`forEachEntity` /
 	 * `forEachRelatedTo`), not construction-time, so it is robust to queries
-	 * built outside a system — same rationale as the data-op checks. `__DEV__` only;
+	 * built outside a system — same rationale as the data-op checks. `DEV` only;
 	 * outside a system `checkRelationRead` is a no-op. */
 	private _checkRelationAccess(): void {
 		for (let i = 0; i < this._relationIncludes.length; i++) {
@@ -834,7 +1035,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `relationReads: [ANY_RELATION]` (plus `[R]` for any composed `withRelation`).
 	 * Cold/structural — not a per-tick hot loop over many targets. */
 	public forEachRelatedTo(target: EntityID, cb: (entityId: EntityID) => void): void {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRelationReadAny();
 			this._checkRelationAccess();
 		}
@@ -855,7 +1056,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * and without each `T`. Read each column per archetype span via
 	 * `arch.getOptionalColumnRead(T, field)` (column when present, `undefined`
 	 * when absent). `.optional(T)` is the *declaration* that authorizes that fetch:
-	 * inside `forEach`, `getOptionalColumnRead` throws in `__DEV__` if `T` was
+	 * inside `forEach`, `getOptionalColumnRead` throws in `DEV` if `T` was
 	 * not declared here (#592) — the read-side analog of `reads:[T]`, which is also
 	 * still required for access coverage (both checks fire, even on the absent
 	 * span). The term is carried through `and`/`not`/`anyOf` (see
@@ -879,7 +1080,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `and` / `not` / `anyOf` caches). */
 	private _optionalOne(cid: number): Query<Defs> {
 		const key = ((this._id << 16) | cid) >>> 0;
-		const cache = this._resolver._optionalSingleCache;
+		const cache = this._resolver._caches.optionalSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveOptional(appendOptional(this._optional, cid));
@@ -918,7 +1119,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * carried through `and`/`not`/`anyOf` like the sparse/optional terms. */
 	public includeDisabled(): Query<Defs> {
 		if (this._includeDisabled) return this;
-		const cache = this._resolver._includeDisabledSingleCache;
+		const cache = this._resolver._caches.includeDisabledSingle;
 		const cached = cache.get(this._id);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = new Query<Defs>(
@@ -941,7 +1142,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		return result;
 	}
 
-	public forEach(cb: (arch: ArchetypeView) => void): void {
+	public forEach(cb: (arch: ArchetypeView<Defs>) => void): void {
 		// Include-disabled iteration (#577): publish the all-rows flag so the SoA
 		// loop's `arch.entityCount` spans disabled rows, restoring the previous
 		// flag after (re-entrancy-safe). Kept off the default hot path entirely.
@@ -955,7 +1156,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// real per-call cost on `forEach`-call-bound loops. Keep this body
 		// byte-identical to `_forEachInner`; do NOT "DRY it up" back into a
 		// delegate hop (that hop is exactly the #577 regression this restores).
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("forEach");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
@@ -964,7 +1165,15 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
-				for (let i = 0; i < archs.length; i++) cb(archs[i]);
+				for (let i = 0; i < archs.length; i++) {
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						cb(arch);
+					} finally {
+						arch._iterDepth--;
+					}
+				}
 			} finally {
 				accessCheck.leaveOptionalScope();
 			}
@@ -980,7 +1189,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * (#649) so the all-rows flag dance (`_setIterAllRows` + try/finally) stays
 	 * out of `forEach`'s inlined hot body. The default (enabled-only) query never
 	 * reaches here, so V8 leaves this uninlined and `forEach` shrinks accordingly. */
-	private _forEachIncludeDisabled(cb: (arch: ArchetypeView) => void): void {
+	private _forEachIncludeDisabled(cb: (arch: ArchetypeView<Defs>) => void): void {
 		const prev = _setIterAllRows(true);
 		try {
 			this._forEachInner(cb);
@@ -1012,9 +1221,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * allocated per pass and reused across that pass's archetypes. Honours
 	 * `includeDisabled()` exactly like `forEach` (the bound widens to the
 	 * disabled tail); dense-only like `forEach` (sparse/relation/hierarchy terms
-	 * throw in `__DEV__` — iterate those with `forEachEntity`).
+	 * throw in `DEV` — iterate those with `forEachEntity`).
 	 */
-	public eachChunk(cb: (cols: ChunkColumns, count: number) => void): void {
+	public eachChunk(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		// Include-disabled iteration (#577): publish the all-rows flag so each
 		// archetype's `entityCount` spans its disabled tail, then restore it
 		// (re-entrancy-safe). Mirrors `forEach` / `forEachUntil` — every dense
@@ -1038,17 +1247,23 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * re-pointing the outer pass's `_arch`/`_tick`. The per-(archetype, component)
 	 * column-group caches that actually matter for allocation live on the
 	 * `Archetype`, untouched. */
-	private _eachChunkInner(cb: (cols: ChunkColumns, count: number) => void): void {
-		const view = new ChunkColumns();
+	private _eachChunkInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
+		const view = new ChunkColumns<Defs>();
 		view._tick = this._resolver._getCurrentTick();
-		if (__DEV__) {
+		if (DEV) {
 			this._assertDenseOnly("eachChunk");
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
 				for (let i = 0; i < archs.length; i++) {
-					view._arch = archs[i];
-					cb(view, archs[i].entityCount);
+					const arch = archs[i];
+					view._arch = arch;
+					arch._iterDepth++;
+					try {
+						cb(view, arch.entityCount);
+					} finally {
+						arch._iterDepth--;
+					}
 				}
 			} finally {
 				accessCheck.leaveOptionalScope();
@@ -1072,7 +1287,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * would silently change behaviour for arrow-expression bodies that happen
 	 * to return a truthy value.
 	 */
-	public forEachUntil(cb: (arch: ArchetypeView) => boolean): boolean {
+	public forEachUntil(cb: (arch: ArchetypeView<Defs>) => boolean): boolean {
 		if (this._includeDisabled) {
 			const prev = _setIterAllRows(true);
 			try {
@@ -1087,14 +1302,20 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** @internal — shared body for `forEachUntil`'s default and
 	 * `includeDisabled` paths. Same dev-mode optional-term scope as
 	 * `forEach` (#592). */
-	private _forEachUntilInner(cb: (arch: ArchetypeView) => boolean): boolean {
-		if (__DEV__) {
+	private _forEachUntilInner(cb: (arch: ArchetypeView<Defs>) => boolean): boolean {
+		if (DEV) {
 			this._assertDenseOnly("forEachUntil");
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
 				for (let i = 0; i < archs.length; i++) {
-					if (cb(archs[i])) return true;
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						if (cb(arch)) return true;
+					} finally {
+						arch._iterDepth--;
+					}
 				}
 				return false;
 			} finally {
@@ -1112,8 +1333,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * default (enabled-only) path inlines this body directly into `forEach`
 	 * (#608) to dodge a megamorphic delegate hop; this copy survives only for the
 	 * rare all-rows path, which needs the `_setIterAllRows` try/finally wrap. */
-	private _forEachInner(cb: (arch: ArchetypeView) => void): void {
-		if (__DEV__) {
+	private _forEachInner(cb: (arch: ArchetypeView<Defs>) => void): void {
+		if (DEV) {
 			this._assertDenseOnly("forEach");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
@@ -1122,7 +1343,15 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			accessCheck.enterOptionalScope(this._optional);
 			try {
 				const archs = this._nonEmpty();
-				for (let i = 0; i < archs.length; i++) cb(archs[i]);
+				for (let i = 0; i < archs.length; i++) {
+					const arch = archs[i];
+					arch._iterDepth++;
+					try {
+						cb(arch);
+					} finally {
+						arch._iterDepth--;
+					}
+				}
 			} finally {
 				accessCheck.leaveOptionalScope();
 			}
@@ -1153,14 +1382,14 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * array at once. Buffer such edits and apply them after the walk. */
 	public forEachEntity(cb: (entityId: EntityID) => void): void {
 		// A `(R, *)` term reads relation structure — assert `relationReads: [R]`
-		// (#579). `__DEV__` only; prod runs the bare match below byte-for-byte.
-		if (__DEV__) this._checkRelationAccess();
+		// (#579). `DEV` only; prod runs the bare match below byte-for-byte.
+		if (DEV) this._checkRelationAccess();
 		// A `.hierarchy(R)` term (#581) reorders the matched set into depth order
 		// over R, so it routes to the dedicated depth-ordered driver rather than the
 		// insertion-order sparse-match path. The relation is read, so it needs the
 		// same `relationReads: [R]` assertion as a `(R, *)` term.
 		if (this._hierarchy !== null) {
-			if (__DEV__) accessCheck.checkRelationRead(this._hierarchy.relation);
+			if (DEV) accessCheck.checkRelationRead(this._hierarchy.relation);
 			this._resolver._forEachHierarchyMatch(
 				this._include,
 				this._exclude,
@@ -1240,7 +1469,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._anyOfSingleCache.get(key);
+			const cached = this._resolver._caches.anyOfSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
 			return this._anyOfMiss(cid, key);
 		}
@@ -1260,7 +1489,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const result = this._carryNondense(
 			this._resolver._resolveQuery(this._include, this._exclude, newAnyOf, this._defs)
 		) as Query<Defs>;
-		this._resolver._anyOfSingleCache.set(key, result);
+		this._resolver._caches.anyOfSingle.set(key, result);
 		return result;
 	}
 
@@ -1280,7 +1509,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (defs.length === 1) {
 			const cid = defs[0].id;
 			const key = ((this._id << 16) | cid) >>> 0;
-			const cached = this._resolver._changedSingleCache.get(key);
+			const cached = this._resolver._caches.changedSingle.get(key);
 			if (cached !== undefined) return cached as ChangedQuery<Defs>;
 			return this._changedMiss(cid, key);
 		}
@@ -1292,7 +1521,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** @internal — cold cache-miss path for single-arg `changed` (#649); see `_andMiss`. */
 	private _changedMiss(cid: number, key: number): ChangedQuery<Defs> {
 		const result = new ChangedQuery<Defs>(this, [cid]);
-		this._resolver._changedSingleCache.set(key, result);
+		this._resolver._caches.changedSingle.set(key, result);
 		return result;
 	}
 
@@ -1313,82 +1542,175 @@ export class QueryBuilder {
 }
 
 /**
+ * A `BundleOrDef` whose def is constrained to the enclosing system's declared
+ * add surface (§typestate). The bundle branch restates `Bundle`'s shape with
+ * the def slot narrowed — intersecting `Bundle<any> & { def: … }` instead
+ * would put two `ComponentDef` instantiations in one intersection, which TS
+ * relates leniently (see system.ts §typestate notes).
+ *
+ * The outer conditional is a deliberate no-op (`[D] extends [unknown]` is
+ * always true): it makes the variance of `D` — and therefore of the access
+ * param `A` threaded through `Commands` / `SystemContext` — UNMEASURABLE to
+ * the compiler. A measurable (plain-union) definition here gets `A` marked
+ * reliably contravariant, variance-based comparison then rejects
+ * `SystemContext<Narrow> → SystemContext` without the structural fallback,
+ * and every helper taking a bare `SystemContext` stops accepting typed
+ * contexts. Unmeasurable variance forces the structural path, where class
+ * methods compare bivariantly and the conversion holds.
+ */
+export type DeclaredBundleOrDef<D> = [D] extends [unknown]
+	? D | { readonly def: D; readonly values: Readonly<Partial<Record<string, number>>> }
+	: never;
+
+/**
  * Deferred structural-command facade (§ctx.commands — Bevy `Commands`).
  * Namespaces the deferred structural ops so the call site is self-documenting:
  * `ctx.commands.add(e, …)` is *always* deferred (applied at the phase flush),
- * ending the collision where `ecs.addComponent` (immediate) and the bare
- * `ctx.addComponent` (deferred) share a name with opposite timing. Takes
+ * ending the collision where `ecs.addComponent` (immediate) and a bare
+ * `ctx.addComponent` (deferred) would share a name with opposite timing. Takes
  * varargs callable bundles, so one shape — `commands.spawn(bundle(Pos,{x,y}), bundle(Vel,{vx:1}))`
- * — serves spawn and add. The legacy `ctx.addComponent`/etc. stay for now;
- * the intent is for `ctx.commands.*` to become the only deferred surface.
+ * — serves spawn and add. This is the ONLY deferred surface: the bare
+ * `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable`
+ * duplicates were removed in 0.5.0, completing the receiver-implies-timing
+ * rule (`ecs.*` immediate, `ctx.commands.*` deferred) that 0.5.0 started for
+ * spawn/despawn.
+ *
+ * `A` narrows the def-taking methods to the enclosing system's declared access
+ * (§typestate, system.ts); the default is fully permissive.
+ *
+ * `out A` (declared covariance) is deliberate: every use of `A` sits inside a
+ * declared-access conditional, whose variance the compiler cannot measure —
+ * left unannotated, the measured verdict rejects `Commands<Narrow> →
+ * Commands` (the direction every permissive consumer needs). Covariance is
+ * the honest direction: a context with MORE declared access is usable where
+ * one with less is expected. The checks themselves are per-instantiation, so
+ * the annotation does not weaken them.
  */
-export class Commands {
+export class Commands<out A extends SystemAccess = SystemAccess> {
 	constructor(private readonly store: Store) {}
 
 	/** Spawn from bundles. Create is immediate (the id is returned now); the
 	 *  component attaches are deferred to the phase flush — so until that flush the
 	 *  entity exists in its empty/partial archetype and a query running later in
 	 *  the same phase can observe it half-built. (Same semantics as
-	 *  `ctx.createEntity` + `ctx.addComponent`; fully-deferred id-reservation
+	 *  `ctx.commands.spawn()` + `ctx.addComponent`; fully-deferred id-reservation
 	 *  spawn, à la Bevy, is a separate follow-up.) */
-	public spawn(...items: BundleOrDef[]): EntityID {
+	public spawn(...items: DeclaredBundleOrDef<A["add"]>[]): EntityID {
 		const e = this.store.createEntity();
-		if (__DEV__) this.store._trace?.commandQueued("spawn", e, null);
+		if (DEV) this.store._trace?.commandQueued("spawn", e, null);
 		for (let i = 0; i < items.length; i++) {
 			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
+			if (DEV) accessCheck.checkAdd(def);
 			this.store.addComponentDeferred(e, def, bundleValues(items[i]));
+			// Trace each attach like `add` does — the queued adds are what the
+			// flush drains, so a sink reconstructing the frame sees all of them.
+			if (DEV) this.store._trace?.commandQueued("add", e, def.id);
 		}
 		return e;
 	}
 
-	/** Attach bundles to an existing entity (deferred). */
-	public add(entityId: EntityID, ...items: BundleOrDef[]): this {
+	/** Attach bundles to an existing entity (deferred). Bundles zero-fill
+	 * omitted fields. */
+	public add(entityId: EntityID, ...items: DeclaredBundleOrDef<A["add"]>[]): this;
+	/** Explicit complete-values attach (deferred) — the compile-checked shape
+	 * where a typo'd or missing field is a compile error, mirroring the
+	 * immediate `ecs.addComponent(e, def, values)`. Tags take no values
+	 * argument (`AttachValuesArg`). */
+	public add<D extends ComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredAdd<A, D>,
+		...values: AttachValuesArg<SchemaOf<D>>
+	): this;
+	public add(entityId: EntityID, ...items: (BundleOrDef | Record<string, number>)[]): this {
+		// (def, values) shape: a callable def followed by a values record. A
+		// bundle always carries a *callable* `def` property, so a plain record —
+		// even one whose schema has a field literally named "def" (a number
+		// there, not a function) — can never be mistaken for one.
+		if (
+			items.length === 2 &&
+			typeof items[0] === "function" &&
+			items[1] !== null &&
+			typeof items[1] === "object" &&
+			typeof (items[1] as { def?: unknown }).def !== "function"
+		) {
+			const def = items[0] as ComponentDef;
+			if (DEV) accessCheck.checkAdd(def);
+			this.store.addComponentDeferred(entityId, def, items[1] as Record<string, number>);
+			if (DEV) this.store._trace?.commandQueued("add", entityId, def.id);
+			return this;
+		}
 		for (let i = 0; i < items.length; i++) {
-			const def = bundleDef(items[i]);
-			if (__DEV__) accessCheck.checkAdd(def);
-			this.store.addComponentDeferred(entityId, def, bundleValues(items[i]));
-			if (__DEV__) this.store._trace?.commandQueued("add", entityId, def.id);
+			const item = items[i] as BundleOrDef;
+			const def = bundleDef(item);
+			if (DEV) accessCheck.checkAdd(def);
+			this.store.addComponentDeferred(entityId, def, bundleValues(item));
+			if (DEV) this.store._trace?.commandQueued("add", entityId, def.id);
 		}
 		return this;
 	}
 
 	/** Remove a component (deferred). */
-	public remove(entityId: EntityID, def: ComponentDef): this {
-		if (__DEV__) accessCheck.checkRemove(def);
+	public remove<D extends ComponentDef<any>>(entityId: EntityID, def: D & DeclaredRemove<A, D>): this {
+		if (DEV) accessCheck.checkRemove(def);
 		this.store.removeComponentDeferred(entityId, def);
-		if (__DEV__) this.store._trace?.commandQueued("remove", entityId, def.id);
+		if (DEV) this.store._trace?.commandQueued("remove", entityId, def.id);
 		return this;
 	}
 
 	/** Destroy an entity (deferred). */
-	public despawn(entityId: EntityID): this {
-		if (__DEV__) accessCheck.checkDestroy();
-		this.store.destroyEntityDeferred(entityId);
-		if (__DEV__) this.store._trace?.commandQueued("despawn", entityId, null);
+	public despawn(entityId: DespawnArg<A>): this {
+		if (DEV) accessCheck.checkDestroy();
+		// The conditional argument type is `EntityID` whenever this compiles
+		// (the false branch is uninhabited); the cast recovers it for a body
+		// where `A` is still generic.
+		const id = entityId as EntityID;
+		this.store.destroyEntityDeferred(id);
+		if (DEV) this.store._trace?.commandQueued("despawn", id, null);
 		return this;
 	}
 
-	/** Disable an entity (deferred). */
+	/** Buffer `entityId` to be disabled at the phase flush (idempotent, #577).
+	 * Deferred because a toggle is an in-archetype row swap, which would corrupt
+	 * a `forEach` SoA loop iterating that archetype if applied mid-system (it
+	 * reorders the dense columns being read). A disabled entity is excluded from
+	 * default queries; opt back in per query with `.includeDisabled()`. The
+	 * immediate read is `ctx.isDisabled`. */
 	public disable(entityId: EntityID): this {
 		this.store.disableEntityDeferred(entityId);
-		if (__DEV__) this.store._trace?.commandQueued("disable", entityId, null);
+		if (DEV) this.store._trace?.commandQueued("disable", entityId, null);
 		return this;
 	}
 
-	/** Re-enable an entity (deferred). */
+	/** Buffer `entityId` to be re-enabled at the phase flush (idempotent).
+	 * Deferred for the same row-swap reason as `disable`. */
 	public enable(entityId: EntityID): this {
 		this.store.enableEntityDeferred(entityId);
-		if (__DEV__) this.store._trace?.commandQueued("enable", entityId, null);
+		if (DEV) this.store._trace?.commandQueued("enable", entityId, null);
 		return this;
 	}
 }
 
-export class SystemContext {
+/**
+ * The per-system world facade. `A` is the system's declared access surface
+ * (§typestate, system.ts): the config-form `registerSystem` computes it from
+ * the literal `reads`/`writes`/… declarations and every guarded method below
+ * checks its handle argument against the matching union at compile time —
+ * the same rules `accessCheck` enforces at runtime in `DEV`. The default
+ * `A = SystemAccess` is fully permissive, so a bare `SystemContext` (helper
+ * functions, host-side code, explicitly-annotated escape hatches) behaves
+ * exactly as before, and every narrowed `SystemContext<…>` is assignable to
+ * it.
+ *
+ * `out A` (declared covariance) is deliberate — see `Commands` above: the
+ * declared-access conditionals are unmeasurable to the compiler, and the
+ * unannotated verdict rejects exactly the `SystemContext<Narrow> →
+ * SystemContext` conversion the whole design depends on.
+ */
+export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	public lastRunTick: number = 0;
 
 	/** Deferred structural-command facade (§ctx.commands). */
-	public readonly commands: Commands;
+	public readonly commands: Commands<A>;
 
 	/** Current ECS tick. Use this for write ticks in getColumn. */
 	public get ecsTick(): number {
@@ -1397,17 +1719,13 @@ export class SystemContext {
 
 	/** The world's frame-trace sink (ADR-0030), or `null`. Lets the schedule
 	 * fire `systemStart`/`flush*` without reaching into the private store.
-	 * Read only under `if (__DEV__)`; the seam is dead-code-eliminated in prod. */
+	 * Read only under `if (DEV)`; the seam is dead-code-eliminated in prod. */
 	public get _trace(): FrameTraceSink | null {
 		return this.store._trace;
 	}
 
 	constructor(private readonly store: Store) {
-		this.commands = new Commands(store);
-	}
-
-	public createEntity(): EntityID {
-		return this.store.createEntity();
+		this.commands = new Commands<A>(store);
 	}
 
 	public isAlive(entityId: EntityID): boolean {
@@ -1418,32 +1736,48 @@ export class SystemContext {
 		return this.store.hasComponent(entityId, def);
 	}
 
-	public getField<S extends ComponentSchema>(
+	public getField<D extends ComponentDef<any>>(
 		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S
+		def: D & DeclaredRead<A, D>,
+		field: string & keyof SchemaOf<D>
 	): number {
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
 		return arch.readField(row, def.id, field);
 	}
 
-	public setField<S extends ComponentSchema>(
+	/** Total sibling of {@link getField}, mirroring `ecs.tryGetField`
+	 * (POLISH_AUDIT #9): `undefined` when the entity is dead or doesn't hold
+	 * the component, instead of a dev throw / prod garbage read. The safe way
+	 * to probe-and-read in one call: `ctx.tryGetField(e, Health, "current") ?? 0`. */
+	public tryGetField<D extends ComponentDef<any>>(
 		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S,
+		def: D & DeclaredRead<A, D>,
+		field: string & keyof SchemaOf<D>
+	): number | undefined {
+		if (DEV) accessCheck.checkRead(def);
+		if (!this.store.hasComponent(entityId, def)) return undefined;
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		return arch.readField(row, def.id, field);
+	}
+
+	public setField<D extends ComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredWrite<A, D>,
+		field: string & keyof SchemaOf<D>,
 		value: number
 	): void {
-		if (__DEV__) {
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+		if (DEV) {
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.setField", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
-		// `getColumn` (mutable) invokes `accessCheck.checkWrite` under __DEV__,
+		// `getColumn` (mutable) invokes `accessCheck.checkWrite` under DEV,
 		// so setField doesn't need a separate check.
 		const col = arch.getColumn(def, field, this.store._tick);
 		col[row] = value;
@@ -1455,15 +1789,25 @@ export class SystemContext {
 	/** Read-modify-write one field: `updateField(e, Gold, "value", v => v - cost)`
 	 * is the one-line form of the `getField` → compute → `setField` round trip.
 	 * Returns the written value. Same access-check and observer semantics as the
-	 * two calls it composes. */
-	public updateField<S extends ComponentSchema>(
+	 * two calls it composes (inlined here: the declared-access conditionals on
+	 * those methods only resolve per `A` instantiation, so a body where `A` is
+	 * still generic cannot call them without casts). */
+	public updateField<D extends ComponentDef<any>>(
 		entityId: EntityID,
-		def: ComponentDef<S>,
-		field: string & keyof S,
+		def: D & DeclaredWrite<A, D>,
+		field: string & keyof SchemaOf<D>,
 		fn: (current: number) => number
 	): number {
-		const next = fn(this.getField(entityId, def, field));
-		this.setField(entityId, def, field, next);
+		if (DEV) {
+			accessCheck.checkRead(def);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.updateField", entityId, componentLabel(def));
+		}
+		const arch = this.store.getEntityArchetype(entityId);
+		const row = this.store.getEntityRow(entityId);
+		const next = fn(arch.readField(row, def.id, field));
+		const col = arch.getColumn(def, field, this.store._tick);
+		col[row] = next;
+		if (this.store._anyDirtyTracked) this.store._noteSet(def, entityId);
 		return next;
 	}
 
@@ -1486,19 +1830,25 @@ export class SystemContext {
 	 * component as changed (the mutable default — see `refRead` for the
 	 * read-only variant to reach for when you are not mutating). See ref.ts.
 	 */
-	public ref<S extends ComponentSchema>(
-		def: ComponentDef<S>,
+	public ref<D extends ComponentDef<any>>(
+		def: D & DeclaredWrite<A, D>,
 		entityId: EntityID
-	): ComponentRef<S> {
-		if (__DEV__) {
+	): ComponentRef<SchemaOf<D>> {
+		if (DEV) {
 			accessCheck.checkWrite(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.ref", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
+		if (DEV && arch.columnGroups[def.id] === undefined)
+			throw new ECSError(
+				ECS_ERROR.COMPONENT_NOT_REGISTERED,
+				`ctx.ref: ${componentLabel(def)} has no columns in this archetype — the entity doesn't hold it, or it is a tag (no fields to ref)`,
+				{ component: def.id, entity: entityId }
+			);
 		arch._changedTick[def.id] = this.store._tick;
-		// ! safe: columnGroups is populated for all components with fields in this archetype
-		return createRef<S>(arch.columnGroups[def.id]!, row);
+		// ! safe in prod (dev guard above): columnGroups is populated for all components with fields in this archetype
+		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
 	}
 
 	/**
@@ -1509,69 +1859,35 @@ export class SystemContext {
 	 * underlying accessor shares its prototype with `ref()` and can still be
 	 * written through a §10c-policed cast. See ref.ts.
 	 */
-	public refRead<S extends ComponentSchema>(
-		def: ComponentDef<S>,
+	public refRead<D extends ComponentDef<any>>(
+		def: D & DeclaredRead<A, D>,
 		entityId: EntityID
-	): ReadonlyComponentRef<S> {
-		if (__DEV__) {
+	): ReadonlyComponentRef<SchemaOf<D>> {
+		if (DEV) {
 			accessCheck.checkRead(def);
-			if (!this.store.isAlive(entityId)) throw new ECSError(ECS_ERROR.ENTITY_NOT_ALIVE);
+			if (!this.store.isAlive(entityId)) throw entityNotAliveError("ctx.refRead", entityId, componentLabel(def));
 		}
 		const arch = this.store.getEntityArchetype(entityId);
 		const row = this.store.getEntityRow(entityId);
-		// ! safe: columnGroups is populated for all components with fields in this archetype
-		return createRef<S>(arch.columnGroups[def.id]!, row);
+		if (DEV && arch.columnGroups[def.id] === undefined)
+			throw new ECSError(
+				ECS_ERROR.COMPONENT_NOT_REGISTERED,
+				`ctx.refRead: ${componentLabel(def)} has no columns in this archetype — the entity doesn't hold it, or it is a tag (no fields to ref)`,
+				{ component: def.id, entity: entityId }
+			);
+		// ! safe in prod (dev guard above): columnGroups is populated for all components with fields in this archetype
+		return createRef<SchemaOf<D>>(arch.columnGroups[def.id]!, row);
 	}
 
-	/** Buffer an entity for deferred destruction (applied at phase flush). */
-	public destroyEntity(id: EntityID): this {
-		if (__DEV__) accessCheck.checkDestroy();
-		this.store.destroyEntityDeferred(id);
-		return this;
-	}
+	// --- Deferred structural ops live on `ctx.commands` (§ctx.commands) ---
+	// The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` /
+	// `ctx.enable` duplicates were removed in 0.5.0 (same break that removed
+	// `ctx.createEntity` / `ctx.destroyEntity`): one deferred surface, one
+	// timing rule per receiver. `isDisabled` stays here — it is an immediate
+	// *read*, not a buffered structural op.
 
-	public addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;
-	public addComponent<S extends ComponentSchema>(
-		entityId: EntityID,
-		def: ComponentDef<S>,
-		values: FieldValues<S>
-	): this;
-	public addComponent(
-		entityId: EntityID,
-		def: ComponentDef,
-		values?: Record<string, number>
-	): this {
-		if (__DEV__) accessCheck.checkAdd(def);
-		this.store.addComponentDeferred(entityId, def, values ?? EMPTY_VALUES);
-		return this;
-	}
-
-	public removeComponent(entityId: EntityID, def: ComponentDef): this {
-		if (__DEV__) accessCheck.checkRemove(def);
-		this.store.removeComponentDeferred(entityId, def);
-		return this;
-	}
-
-	// --- Entity enable/disable (#577) ---
-	// Deferred to the phase flush: a toggle is an in-archetype row swap, which
-	// would corrupt a `forEach` SoA loop iterating that archetype if applied
-	// mid-system (it reorders the dense columns being read). `isDisabled` is an
-	// immediate read. A disabled entity is excluded from default queries; opt back
-	// in per query with `.includeDisabled()`.
-
-	/** Buffer `entityId` to be disabled at the phase flush (idempotent). */
-	public disable(entityId: EntityID): this {
-		this.store.disableEntityDeferred(entityId);
-		return this;
-	}
-
-	/** Buffer `entityId` to be re-enabled at the phase flush (idempotent). */
-	public enable(entityId: EntityID): this {
-		this.store.enableEntityDeferred(entityId);
-		return this;
-	}
-
-	/** Whether `entityId` is currently disabled (immediate read). */
+	/** Whether `entityId` is currently disabled (immediate read). Toggling is
+	 * deferred — `ctx.commands.disable` / `ctx.commands.enable` (#577). */
 	public isDisabled(entityId: EntityID): boolean {
 		return this.store.isDisabled(entityId);
 	}
@@ -1587,30 +1903,28 @@ export class SystemContext {
 	// add/remove edits the live key array under the walk (see `forEachEntity`).
 	// Buffer such edits and apply after.
 	//
-	// Access-checked under `__DEV__` against the system's `sparseReads` /
+	// Access-checked under `DEV` against the system's `sparseReads` /
 	// `sparseWrites` declarations (#496): add/remove/set_field require a write
 	// term, getField a read term (a write implies a read). `hasSparse` is
 	// unchecked, mirroring `hasComponent`. Sparse ids live in their own id
 	// space, so the check keys the dedicated sparse sets, never the dense ones.
 
-	public addSparse(entityId: EntityID, def: SparseComponentDef<Record<string, never>>): this;
-	public addSparse<S extends ComponentSchema>(
+	/** Tags take no values argument; valued schemas require a complete one. */
+	public addSparse<D extends SparseComponentDef<any>>(
 		entityId: EntityID,
-		def: SparseComponentDef<S>,
-		values: FieldValues<S>
-	): this;
-	public addSparse(
-		entityId: EntityID,
-		def: SparseComponentDef,
-		values?: Record<string, number>
+		def: D & DeclaredSparseWrite<A, D>,
+		...values: AttachValuesArg<SparseSchemaOf<D>>
 	): this {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
-		this.store.addSparse(entityId, def, values);
+		if (DEV) accessCheck.checkSparseWrite(def);
+		this.store.addSparse(entityId, def, values[0] as Record<string, number> | undefined);
 		return this;
 	}
 
-	public removeSparse(entityId: EntityID, def: SparseComponentDef): this {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
+	public removeSparse<D extends SparseComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredSparseWrite<A, D>
+	): this {
+		if (DEV) accessCheck.checkSparseWrite(def);
 		this.store.removeSparse(entityId, def);
 		return this;
 	}
@@ -1619,22 +1933,22 @@ export class SystemContext {
 		return this.store.hasSparse(entityId, def);
 	}
 
-	public getSparseField<S extends ComponentSchema>(
+	public getSparseField<D extends SparseComponentDef<any>>(
 		entityId: EntityID,
-		def: SparseComponentDef<S>,
-		field: string & keyof S
+		def: D & DeclaredSparseRead<A, D>,
+		field: string & keyof SparseSchemaOf<D>
 	): number {
-		if (__DEV__) accessCheck.checkSparseRead(def);
+		if (DEV) accessCheck.checkSparseRead(def);
 		return this.store.getSparseField(entityId, def, field);
 	}
 
-	public setSparseField<S extends ComponentSchema>(
+	public setSparseField<D extends SparseComponentDef<any>>(
 		entityId: EntityID,
-		def: SparseComponentDef<S>,
-		field: string & keyof S,
+		def: D & DeclaredSparseWrite<A, D>,
+		field: string & keyof SparseSchemaOf<D>,
 		value: number
 	): void {
-		if (__DEV__) accessCheck.checkSparseWrite(def);
+		if (DEV) accessCheck.checkSparseWrite(def);
 		this.store.setSparseField(entityId, def, field, value);
 	}
 
@@ -1643,42 +1957,46 @@ export class SystemContext {
 	// Registration is host-side (`ECS.registerRelation`), so it is not mirrored
 	// here; systems add/remove/query pairs.
 	//
-	// Access-checked under `__DEV__` against `relationReads` / `relationWrites`
+	// Access-checked under `DEV` against `relationReads` / `relationWrites`
 	// (#496): add/remove require a write term, target_of/targets_of/sources_of a
 	// read term (write implies read). `hasRelation` is unchecked, mirroring
 	// `hasComponent`. Relation ids are their own id space — the check keys the
 	// dedicated relation sets.
 
 	/** Add a `(R, tgt)` pair to `src` (exclusive replaces, multi adds). */
-	public addRelation(src: EntityID, def: RelationDef, tgt: EntityID): this {
-		if (__DEV__) accessCheck.checkRelationWrite(def);
+	public addRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt: EntityID): this {
+		if (DEV) accessCheck.checkRelationWrite(def);
 		this.store.addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`; for multi, omitting `tgt` removes all. */
-	public removeRelation(src: EntityID, def: RelationDef, tgt?: EntityID): this {
-		if (__DEV__) accessCheck.checkRelationWrite(def);
+	public removeRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt?: EntityID): this {
+		if (DEV) accessCheck.checkRelationWrite(def);
 		this.store.removeRelation(src, def, tgt);
 		return this;
 	}
 
 	/** The single target of `src` under an exclusive relation, or `undefined`. */
-	public targetOf(src: EntityID, def: RelationDef): EntityID | undefined {
-		if (__DEV__) accessCheck.checkRelationRead(def);
+	public targetOf<D extends RelationDef<"exclusive">>(
+		src: EntityID,
+		def: D & DeclaredRelationRead<A, D>
+	): EntityID | undefined {
+		if (DEV) accessCheck.checkRelationRead(def);
 		return this.store.targetOf(src, def);
 	}
 
 	/** All targets of `src` under `R`, ascending by id. */
-	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
-		if (__DEV__) accessCheck.checkRelationRead(def);
+	public targetsOf<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
+		if (DEV) accessCheck.checkRelationRead(def);
 		return this.store.targetsOf(src, def);
 	}
 
-	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id. */
-	public sourcesOf(def: RelationDef, tgt: EntityID): EntityID[] {
-		if (__DEV__) accessCheck.checkRelationRead(def);
-		return this.store.sourcesOf(def, tgt);
+	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
+	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
+	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
+		if (DEV) accessCheck.checkRelationRead(def);
+		return this.store.sourcesOf(tgt, def);
 	}
 
 	/** Whether `src` holds any pair under `R`. */
@@ -1707,13 +2025,26 @@ export class SystemContext {
 	// Events
 	// =======================================================
 
+	/**
+	 * Emit an event (or a payload-less signal) onto its channel. The event is
+	 * visible to every system that runs *later* in the same `update()` and is
+	 * cleared at the tick's tail — events live exactly one tick, there is no
+	 * ack/consume. The channel must have been registered at world setup via
+	 * `ecs.events.register(key, fields)` / `registerSignal(key)`.
+	 *
+	 * @example
+	 * const Damaged = eventKey<{ target: EntityID; amount: number }>("Damaged");
+	 * ecs.events.register(Damaged, ["target", "amount"]);
+	 * // inside a system:
+	 * ctx.emit(Damaged, { target: e, amount: 10 });
+	 */
 	public emit(key: SignalKey): void;
-	public emit<S extends EventSchema>(key: EventKey<S>, values: S): void;
+	public emit<S extends EventShape<S>>(key: EventKey<S>, values: NoInfer<S>): void;
 	public emit(key: EventKey, values?: Record<string, number>): void {
-		if (__DEV__ && dispatchTrace.isActive()) {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEmit(key.description ?? "");
 		}
-		if (__DEV__) this.store._trace?.eventEmitted(key.description ?? "");
+		if (DEV) this.store._trace?.eventEmitted(key.description ?? "");
 		const def = this.store.getEventDefByKey(key);
 		if (values === undefined) {
 			this.store.emitSignal(def as EventDef<EmptyEventSchema>);
@@ -1722,13 +2053,24 @@ export class SystemContext {
 		}
 	}
 
-	public read<S extends EventSchema>(key: EventKey<S>): EventReader<S> {
-		if (__DEV__ && dispatchTrace.isActive()) {
+	/**
+	 * Read this tick's events on a channel. Returns an SoA reader over
+	 * everything emitted *earlier in the same `update()`* — order systems so
+	 * readers run after emitters, or they see an empty reader.
+	 *
+	 * @example
+	 * const dmg = ctx.read(Damaged); // SoA columns, one per field
+	 * for (let i = 0; i < dmg.length; i++) {
+	 *   applyDamage(dmg.target[i], dmg.amount[i]);
+	 * }
+	 */
+	public read<S extends EventShape<S>>(key: EventKey<S>): EventReader<S> {
+		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordRead(key.description ?? "");
 		}
 		const def = this.store.getEventDefByKey(key);
 		const reader = this.store.getEventReader(def) as EventReader<S>;
-		if (__DEV__) this.store._trace?.eventRead(key.description ?? "", reader.length);
+		if (DEV) this.store._trace?.eventRead(key.description ?? "", reader.length);
 		return reader;
 	}
 
@@ -1736,18 +2078,23 @@ export class SystemContext {
 	// Resources
 	// =======================================================
 
-	public resource<T>(key: ResourceKey<T>): T {
-		if (__DEV__) {
+	public resource<K extends ResourceKey<any>>(
+		key: K & DeclaredResourceRead<A, K>
+	): ResourceValueOf<K> {
+		if (DEV) {
 			accessCheck.checkResourceRead(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRead(key.description ?? "");
 			}
 		}
-		return unsafeCast<T>(this.store.getResource(key));
+		return unsafeCast<ResourceValueOf<K>>(this.store.getResource(key));
 	}
 
-	public setResource<T>(key: ResourceKey<T>, value: T): void {
-		if (__DEV__) {
+	public setResource<K extends ResourceKey<any>>(
+		key: K & DeclaredResourceWrite<A, K>,
+		value: ResourceValueOf<NoInfer<K>>
+	): void {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceWrite(key.description ?? "");
@@ -1760,8 +2107,8 @@ export class SystemContext {
 	 * checked as a *write* — the system must declare the key in `resourceWrites`,
 	 * which serialises it against readers/writers of the same resource. Fails
 	 * closed on a missing key. */
-	public removeResource<T>(key: ResourceKey<T>): void {
-		if (__DEV__) {
+	public removeResource<K extends ResourceKey<any>>(key: K & DeclaredResourceWrite<A, K>): void {
+		if (DEV) {
 			accessCheck.checkResourceWrite(key);
 			if (dispatchTrace.isActive()) {
 				dispatchTrace.recordResourceRemove(key.description ?? "");
@@ -1782,7 +2129,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 	constructor(query: Query<Defs>, changedIds: number[]) {
 		this._query = query;
 		this._changedIds = changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < changedIds.length; i++) {
 				if (!query._include.has(changedIds[i])) {
 					throw new ECSError(
@@ -1823,7 +2170,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		return new ChangedQuery(this._query.optional(...defs), this._changedIds);
 	}
 
-	public forEach(cb: (arch: ArchetypeView) => void): void {
+	public forEach(cb: (arch: ArchetypeView<Defs>) => void): void {
 		// Mirror Query.forEach's include-disabled handling (#577): publish the
 		// all-rows flag so the SoA loop's `arch.entityCount` spans disabled rows.
 		// Cold branch split out (#649) to keep the flag dance off the inlined hot body.
@@ -1838,7 +2185,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const lastTick = this._query._ctxLastRunTick();
 		const archs = this._query._nonEmpty();
 		const ids = this._changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
 			// publish the same optional scope `Query.forEach` does — otherwise
 			// `getOptionalColumnRead` falls into `checkOptionalFetch`'s lenient
@@ -1850,7 +2197,12 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 					const arch = archs[i];
 					for (let j = 0; j < ids.length; j++) {
 						if (arch._changedTick[ids[j]] >= lastTick) {
-							cb(arch);
+							arch._iterDepth++;
+							try {
+								cb(arch);
+							} finally {
+								arch._iterDepth--;
+							}
 							break;
 						}
 					}
@@ -1873,7 +2225,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 
 	/** @internal — cold `includeDisabled` wrapper (#577), split out of `forEach`
 	 * (#649) so the all-rows flag dance stays out of the inlined hot body. */
-	private _forEachIncludeDisabled(cb: (arch: ArchetypeView) => void): void {
+	private _forEachIncludeDisabled(cb: (arch: ArchetypeView<Defs>) => void): void {
 		const prev = _setIterAllRows(true);
 		try {
 			this._forEachInner(cb);
@@ -1886,11 +2238,11 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 	 * default path inlines this body directly into `forEach` (#608) to dodge a
 	 * megamorphic delegate hop; this copy survives only for the rare all-rows
 	 * path, which needs the `_setIterAllRows` try/finally wrap. */
-	private _forEachInner(cb: (arch: ArchetypeView) => void): void {
+	private _forEachInner(cb: (arch: ArchetypeView<Defs>) => void): void {
 		const lastTick = this._query._ctxLastRunTick();
 		const archs = this._query._nonEmpty();
 		const ids = this._changedIds;
-		if (__DEV__) {
+		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
 			// publish the same optional scope `Query.forEach` does — otherwise
 			// `getOptionalColumnRead` falls into `checkOptionalFetch`'s lenient
@@ -1902,7 +2254,12 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 					const arch = archs[i];
 					for (let j = 0; j < ids.length; j++) {
 						if (arch._changedTick[ids[j]] >= lastTick) {
-							cb(arch);
+							arch._iterDepth++;
+							try {
+								cb(arch);
+							} finally {
+								arch._iterDepth--;
+							}
 							break;
 						}
 					}

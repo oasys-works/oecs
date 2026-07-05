@@ -41,17 +41,17 @@ describe("ECS sparse query integration (#469)", () => {
 		const Marked = world.registerSparseTag();
 
 		// Three different archetypes: {Pos}, {Pos,Vel}, {} (no dense comps).
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
-		const c = world.createEntity(); // empty archetype
+		const c = world.spawn(); // empty archetype
 
 		// Non-members in the same archetypes.
-		const d = world.createEntity();
+		const d = world.spawn();
 		world.addComponent(d, Pos, { x: 2, y: 2 });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3, y: 3 });
 		world.addComponent(e, Vel, { vx: 0, vy: 0 });
 
@@ -67,8 +67,8 @@ describe("ECS sparse query integration (#469)", () => {
 	it("require_sparse reflects live add/remove of membership", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 
 		const q = world.query().withSparse(Marked);
 		expect(collect(q)).toEqual([]);
@@ -92,11 +92,11 @@ describe("ECS sparse query integration (#469)", () => {
 		const Pos = world.registerComponent(Position);
 		const Stunned = world.registerSparseTag();
 
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
-		const c = world.createEntity();
+		const c = world.spawn();
 		world.addComponent(c, Pos, { x: 2, y: 2 });
 
 		world.addSparse(b, Stunned);
@@ -116,18 +116,18 @@ describe("ECS sparse query integration (#469)", () => {
 		const Marked = world.registerSparseTag();
 
 		// Has Pos+Vel and Marked → match.
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addComponent(a, Vel, { vx: 0, vy: 0 });
 		world.addSparse(a, Marked);
 
 		// Has Pos+Vel but not Marked → dropped by sparse require.
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 
 		// Marked but missing Vel → dropped by dense require.
-		const c = world.createEntity();
+		const c = world.spawn();
 		world.addComponent(c, Pos, { x: 2, y: 2 });
 		world.addSparse(c, Marked);
 
@@ -141,12 +141,12 @@ describe("ECS sparse query integration (#469)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Marked = world.registerSparseTag();
 
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
 		// Marked but has the excluded dense Vel → dropped.
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 		world.addSparse(b, Marked);
@@ -164,7 +164,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
 
-		const ents = [0, 1, 2, 3, 4].map(() => world.createEntity());
+		const ents = [0, 1, 2, 3, 4].map(() => world.spawn());
 		// A is the larger set; B is the rarer one (drives iteration).
 		for (const e of ents) world.addSparse(e, A);
 		world.addSparse(ents[1], B);
@@ -179,9 +179,9 @@ describe("ECS sparse query integration (#469)", () => {
 		const Alive = world.registerSparseTag();
 		const Dead = world.registerSparseTag();
 
-		const a = world.createEntity();
-		const b = world.createEntity();
-		const c = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
+		const c = world.spawn();
 		world.addSparse(a, Alive);
 		world.addSparse(b, Alive);
 		world.addSparse(c, Alive);
@@ -198,8 +198,8 @@ describe("ECS sparse query integration (#469)", () => {
 	it("yielded entities expose their sparse field data", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent({ ready_at: "f64" });
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 		world.addSparse(a, Cooldown, { ready_at: 10 });
 		world.addSparse(b, Cooldown, { ready_at: 20 });
 
@@ -222,7 +222,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		// Nobody holds Marked.
 		expect(collect(world.query(Pos).withSparse(Marked))).toEqual([]);
@@ -232,7 +232,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Tagged = world.registerSparseTag();
-		const a = world.createEntity(); // no Pos
+		const a = world.spawn(); // no Pos
 		world.addSparse(a, Tagged);
 		expect(collect(world.query(Pos).withSparse(Tagged))).toEqual([]);
 	});
@@ -244,15 +244,15 @@ describe("ECS sparse query integration (#469)", () => {
 	it("destroying a member drops it from the sparse match", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
-		const b = world.createEntity();
+		const a = world.spawn();
+		const b = world.spawn();
 		world.addSparse(a, Marked);
 		world.addSparse(b, Marked);
 
 		const q = world.query().withSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a, b]));
 
-		world.destroyEntity(a);
+		world.despawn(a);
 		world.flush(); // deferred destroy applies + purges sparse data
 		expect(collect(q)).toEqual(sorted([b]));
 	});
@@ -303,7 +303,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
 
-		const ents = [0, 1, 2, 3, 4].map(() => world.createEntity());
+		const ents = [0, 1, 2, 3, 4].map(() => world.spawn());
 		for (const e of ents) world.addSparse(e, A);
 		world.addSparse(ents[1], B);
 		world.addSparse(ents[3], B);
@@ -321,7 +321,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 5, y: 6 });
 		world.addSparse(a, Marked);
 
@@ -340,11 +340,11 @@ describe("ECS sparse query integration (#469)", () => {
 	it("for_each_entity on a dense-only query yields all dense matches", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
-		world.createEntity(); // no Pos — excluded by the dense term
+		world.spawn(); // no Pos — excluded by the dense term
 
 		expect(collect(world.query(Pos))).toEqual(sorted([a, b]));
 	});
@@ -358,10 +358,10 @@ describe("ECS sparse query integration (#469)", () => {
 		const Pos = world.registerComponent(Position);
 		const Burning = world.registerSparseComponent({ dps: "f64" });
 
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Burning, { dps: 3 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 
 		expect(collect(world.query(Pos).withSparse(Burning))).toEqual(sorted([a]));
@@ -381,30 +381,30 @@ describe("ECS sparse query integration (#469)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
 		const q = world.query(Pos).withSparse(Marked);
-		expect(() => q.count()).toThrow(/forEachEntity/);
+		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
 	it("count() throws on a query carrying an exclude_sparse term (#556)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Stunned = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos).withoutSparse(Stunned);
-		expect(() => q.count()).toThrow(/forEachEntity/);
+		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
 	it("for_each() throws on a sparse-derived query (#556)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
@@ -416,7 +416,7 @@ describe("ECS sparse query integration (#469)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
@@ -427,13 +427,13 @@ describe("ECS sparse query integration (#469)", () => {
 	it("dense-only queries keep count() / for_each() / archetype_count working (#556)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const a = world.createEntity();
+		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		const b = world.createEntity();
+		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 
 		const q = world.query(Pos);
-		expect(q.count()).toBe(2);
+		expect(q.entityCount).toBe(2);
 		expect(q.archetypeCount).toBeGreaterThanOrEqual(1);
 		let rows = 0;
 		q.forEach((arch) => {

@@ -298,9 +298,9 @@ function planLayout(
 	return { descriptors, totalBytes: cursor, regionBytes: regionSize };
 }
 
-/** Exposed for use by `extendColumnStore`'s in-place fast path so it can
- * compute new column byte_offs without re-running `planLayout`. */
-export { planLayout as _planLayout };
+/** Exported for the layout tests' overflow-guard coverage; the in-place
+ * resize paths use `layoutColumnsAtTail` (layout_ops.ts), not this. */
+export { planLayout };
 
 // `SabUnavailableError` now lives in `./allocator` (the SAB-producing seam that
 // actually needs `SharedArrayBuffer`), re-exported via the barrel for callers.
@@ -410,6 +410,22 @@ export interface ColumnStoreInternal extends ColumnStore {
 	 * in-place fast path instead of going permanently slow (#541). The
 	 * `*_in_place` paths carry it forward verbatim. */
 	readonly _reservedDescriptorBytes: number;
+}
+
+/** Typed recovery of `ColumnStoreInternal` from a public `ColumnStore` (M8).
+ * Not every store is internal: `restoreColumnStore` deliberately returns a
+ * plain `{ buffer, view, header, archetypes }` (a snapshot carries no JS-side
+ * allocator or headroom policy), and grow/extend must send such a store down
+ * the realloc slow path. This guard is the ONE place that discrimination
+ * happens — grow/extend previously re-derived the internal type via
+ * structural `as`-casts at six sites. */
+export function isColumnStoreInternal(store: ColumnStore): store is ColumnStoreInternal {
+	const s = store as Partial<ColumnStoreInternal>;
+	return (
+		typeof s._regionBytes === "number" &&
+		typeof s._allocator === "function" &&
+		typeof s._reservedDescriptorBytes === "number"
+	);
 }
 
 /** Allocate a SAB sized for `specs`, write the header + layout descriptor,

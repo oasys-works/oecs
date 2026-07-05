@@ -1,6 +1,6 @@
 /**
  * kernel_solid — bridge the engine's in-house reactive kernel
- * (`../../core/reactive`) into SolidJS.
+ * (`../../reactive`) into SolidJS.
  *
  * The kernel and Solid are SEPARATE reactive graphs: a bare kernel read inside a
  * Solid scope subscribes Solid to nothing. Every kernel value a Solid component
@@ -21,7 +21,8 @@
  * `solid-js` dependency lives here in the extension, never in the core.
  */
 import { createSignal, onCleanup, type Accessor } from "solid-js";
-import { subscribe, type ReactiveArray, type ReactiveMap } from "../../core/reactive";
+import { subscribe, type ReactiveArray, type ReactiveMap } from "../../reactive";
+import { DEV } from "../../dev_flag";
 
 /**
  * Mirror a kernel accessor into a Solid accessor. The returned accessor tracks in
@@ -37,7 +38,10 @@ export function fromKernel<T>(accessor: () => T): Accessor<T> {
 export interface KernelMapView<K, V> {
 	/** The live key set — pass to a keyed Solid `<For each>`. Keyed on the id. */
 	readonly keys: Accessor<readonly K[]>;
-	/** A bridged value accessor for one key — read inside the `<For>` row. */
+	/** A bridged value accessor for one key — read inside the `<For>` row.
+	 * Each call mints a FRESH bridge (subscription): call it once per row (bind
+	 * the accessor in the row's scope), never inline it in a hot JSX expression
+	 * that re-evaluates per render. */
 	cell(key: K): Accessor<V | undefined>;
 }
 
@@ -63,14 +67,14 @@ export function fromKernelMap<K, V>(map: ReactiveMap<K, V>): KernelMapView<K, V>
  * or `root` so each field's `onCleanup` has an owner. The kernel struct's per-field
  * `eq` and batching carry through `fromKernel` unchanged.
  */
-export function fromKernelStruct<T extends object>(struct: T): T {
+export function fromKernelStruct<T extends object>(struct: Readonly<T>): Readonly<T> {
 	const reads = {} as { [K in keyof T]: Accessor<T[K]> };
 	const keys = Object.keys(struct) as Array<keyof T>;
 	const fieldSet = new Set<string | symbol>(keys as Array<string | symbol>);
 	for (const k of keys) {
 		reads[k] = fromKernel(() => struct[k]);
 	}
-	// Mirror the kernel struct proxy (`core/reactive/struct.ts`): enumerable, and safe
+	// Mirror the kernel struct proxy (`reactive/struct.ts`): enumerable, and safe
 	// on non-field keys. A get-only proxy threw on `then` / `Symbol.iterator` / `toJSON`
 	// (Solid reconcile + JSX, `await`, `JSON.stringify` all probe them), and an empty
 	// `ownKeys` made the bridged view non-enumerable to Solid / `Object.keys`.
@@ -81,7 +85,19 @@ export function fromKernelStruct<T extends object>(struct: T): T {
 		getOwnPropertyDescriptor: (_, k) =>
 			fieldSet.has(k)
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
-				: undefined
+				: undefined,
+		// Read surface only (`Readonly<T>`, POLISH_AUDIT #8) — mirrors the kernel
+		// struct proxy's trap so a JS-side assignment fails loudly instead of
+		// sticking a non-reactive value on the hidden target.
+		set: (_, k) => {
+			if (DEV) {
+				throw new TypeError(
+					`fromKernelStruct view is read-only: write through the kernel struct's ` +
+						`setters (set.${String(k)}(value)), not the bridged view`
+				);
+			}
+			return false;
+		}
 	});
 }
 

@@ -2,9 +2,9 @@
  * Schedule — System execution lifecycle with topological ordering.
  *
  * Systems are organized into 7 phases:
- *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via world.startup())
- *   FIXED_UPDATE                            (run at fixed timestep via world.update(dt))
- *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via world.update(dt))
+ *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via ecs.startup())
+ *   FIXED_UPDATE                            (run at fixed timestep via ecs.update(dt))
+ *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via ecs.update(dt))
  *
  * Within each phase, systems are topologically sorted using Kahn's
  * algorithm, respecting before/after ordering constraints. Insertion
@@ -27,7 +27,7 @@
  *
  * Usage:
  *
- *   world.addSystems(SCHEDULE.UPDATE, moveSys, {
+ *   ecs.addSystems(SCHEDULE.UPDATE, moveSys, {
  *     system: renderSys,
  *     ordering: { after: [moveSys] },
  *     runIf: runIfResourceEq(PausedRes, false),
@@ -36,7 +36,6 @@
  ***/
 
 import { topologicalSort } from "../../type_primitives";
-import { logger, LOG_CATEGORY } from "../../log";
 import type { SystemContext } from "./query";
 import type { SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";
@@ -44,6 +43,7 @@ import type { RunCondition } from "./run_condition";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { STARTUP_DELTA_TIME } from "./utils/constants";
 import { accessCheck } from "./access_check";
+import { DEV } from "../../dev_flag";
 
 export enum SCHEDULE {
 	PRE_STARTUP = "PRE_STARTUP",
@@ -160,7 +160,12 @@ export class Schedule {
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
 
-	constructor() {
+	/** Dev-diagnostic sink (`ECSOptions.onWarn`); defaults to `console.warn`.
+	 * The only schedule diagnostic today is `warnDroppedEdge`. */
+	private readonly onWarn: (message: string) => void;
+
+	constructor(onWarn?: (message: string) => void) {
+		this.onWarn = onWarn ?? ((message) => console.warn(message));
 		for (let i = 0; i < STARTUP_LABELS.length; i++) {
 			this.labelSystems.set(STARTUP_LABELS[i], []);
 		}
@@ -178,7 +183,7 @@ export class Schedule {
 			const conditions = isEntry ? toArray(entry.runIf) : EMPTY_ARRAY;
 			const sets = isEntry ? toArray(entry.set) : EMPTY_ARRAY;
 
-			if (__DEV__) {
+			if (DEV) {
 				if (this.systemIndex.has(descriptor)) {
 					throw new ECSError(
 						ECS_ERROR.DUPLICATE_SYSTEM,
@@ -364,28 +369,28 @@ export class Schedule {
 			// access span wraps either path identically, so the system's declared
 			// `writes` authorise whatever shared memory the backend touches.
 			const handle = backend !== null ? desc.backendHandle : undefined;
-			if (__DEV__) accessCheck.enter(desc);
-			if (__DEV__) ctx._trace?.systemStart(desc, label);
+			if (DEV) accessCheck.enter(desc);
+			if (DEV) ctx._trace?.systemStart(desc, label);
 			try {
 				if (handle !== undefined) backend!.run(handle);
-				else desc.fn(ctx, deltaTime);
+				else desc.fn?.(ctx, deltaTime);
 			} finally {
-				if (__DEV__) ctx._trace?.systemEnd(desc);
-				if (__DEV__) accessCheck.leave();
+				if (DEV) ctx._trace?.systemEnd(desc);
+				if (DEV) accessCheck.leave();
 			}
 			this.systemLastRun.set(desc, tick);
 		}
 		// Flush deferred changes after each phase so the next phase sees a consistent state
-		if (__DEV__) ctx._trace?.flushBegin(label);
+		if (DEV) ctx._trace?.flushBegin(label);
 		ctx.flush();
-		if (__DEV__) ctx._trace?.flushEnd(label);
+		if (DEV) ctx._trace?.flushEnd(label);
 		// The phase has fully settled — systems ran, deferred buffer + observer
 		// cascade flushed — so the live world is at a consistent, fingerprint-able
 		// point. Fire the per-phase boundary so a consumer can read `stateHash()`
 		// between the phases of one frame and bisect a divergence to this phase
-		// (#797 / ADR-0032). `__DEV__`-gated like the rest of the seam (zero prod
+		// (#797 / ADR-0032). `DEV`-gated like the rest of the seam (zero prod
 		// cost) and read-only, so it never perturbs the hash or ordering.
-		if (__DEV__) ctx._trace?.phaseBoundary(label);
+		if (DEV) ctx._trace?.phaseBoundary(label);
 	}
 
 	/**
@@ -395,6 +400,12 @@ export class Schedule {
 	 * set uniformly; a `configureSet` between phases is still honored because the
 	 * memo lives only for a single `runLabel` pass. Short-circuits on the first
 	 * `false`. The system's own conditions evaluate per system, in canonical order.
+	 *
+	 * #731 SEMANTIC NOTE: this evaluates a set's conditions once-per-set-per-phase
+	 * rather than once-per-member. Equivalent for pure RunConditions; observably
+	 * different only if a set condition reads state mutated earlier in the SAME
+	 * phase (resources write immediately). That is intentional — the set gates as a
+	 * unit, so all its members share one verdict for the phase.
 	 */
 	private shouldRun(
 		node: SystemNode,
@@ -426,12 +437,12 @@ export class Schedule {
 	private evalConditions(conditions: readonly RunCondition[], ctx: SystemContext): boolean {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i];
-			if (__DEV__) accessCheck.enterCondition(cond);
+			if (DEV) accessCheck.enterCondition(cond);
 			let ok: boolean;
 			try {
 				ok = cond.evaluate(ctx);
 			} finally {
-				if (__DEV__) accessCheck.leave();
+				if (DEV) accessCheck.leave();
 			}
 			if (!ok) return false;
 		}
@@ -575,7 +586,7 @@ export class Schedule {
 				continue;
 			}
 			if (!nodeSet.has(target)) {
-				if (__DEV__) this.warnDroppedEdge(source, target, direction, label);
+				if (DEV) this.warnDroppedEdge(source, target, direction, label);
 				continue;
 			}
 			this.addDirectedEdge(source, target, direction, edges);
@@ -608,7 +619,7 @@ export class Schedule {
 	 * certainly a typo or a system that was never scheduled; without this warning
 	 * the constraint vanishes and the system runs in insertion-order tiebreak as
 	 * if unconstrained, with nothing to distinguish mistake from intent. Compiled
-	 * out of production builds by the `__DEV__` guards at the call sites.
+	 * out of production builds by the `DEV` guards at the call sites.
 	 */
 	private warnDroppedEdge(
 		source: SystemDescriptor,
@@ -620,8 +631,7 @@ export class Schedule {
 		if (this.systemIndex.has(target)) return;
 
 		const name = (d: SystemDescriptor) => d.name ?? `system_${d.id}`;
-		logger.log(
-			LOG_CATEGORY.ECS,
+		this.onWarn(
 			`Schedule[${label}]: \`${name(source)}\` declares \`${relation}\` ordering against ` +
 				`\`${name(target)}\`, which is not registered in any phase — the constraint is ignored. ` +
 				`Check for a typo or a missing add_systems() call.`

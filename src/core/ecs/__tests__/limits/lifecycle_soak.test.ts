@@ -49,7 +49,7 @@ describe("Lifecycle / duration soak (#782)", () => {
 		// A permanent baseline whose data must survive all the churn around it.
 		const survivors: EntityID[] = [];
 		for (let i = 0; i < 500; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 2 });
 			survivors.push(e);
 		}
@@ -62,11 +62,11 @@ describe("Lifecycle / duration soak (#782)", () => {
 		for (let cycle = 0; cycle < 50; cycle++) {
 			const temps: EntityID[] = [];
 			for (let i = 0; i < 200; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, Pos, { x: -1, y: -1 });
 				temps.push(e);
 			}
-			for (const t of temps) world.destroyEntity(t);
+			for (const t of temps) world.despawn(t);
 			world.flush();
 			dead.push(...temps);
 		}
@@ -95,13 +95,13 @@ describe("Lifecycle / duration soak (#782)", () => {
 		const live: EntityID[] = [];
 		const spawn = (n: number): void => {
 			for (let i = 0; i < n; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, Pos, { x: i, y: i });
 				live.push(e);
 			}
 		};
 		const despawn = (n: number): void => {
-			for (let i = 0; i < n; i++) world.destroyEntity(live[i]);
+			for (let i = 0; i < n; i++) world.despawn(live[i]);
 			live.splice(0, n);
 			world.flush();
 		};

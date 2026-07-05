@@ -38,7 +38,7 @@ describe("OnDeleteTarget = delete — cascade (#473)", () => {
 		expect(store.isAlive(parent)).toBe(false);
 		expect(store.isAlive(c1)).toBe(false);
 		expect(store.isAlive(c2)).toBe(false);
-		expect(sorted(store.sourcesOf(ChildOf, parent))).toEqual([]);
+		expect(sorted(store.sourcesOf(parent, ChildOf))).toEqual([]);
 	});
 
 	it("destroying a target destroys its sources (exclusive, deferred flush)", () => {
@@ -111,7 +111,7 @@ describe("OnDeleteTarget = delete — cascade (#473)", () => {
 		expect(store.entityCount).toBe(0);
 		expect(store.isAlive(chain[0])).toBe(false);
 		expect(store.isAlive(chain[DEPTH - 1])).toBe(false);
-		expect(sorted(store.sourcesOf(ChildOf, chain[0]))).toEqual([]);
+		expect(sorted(store.sourcesOf(chain[0], ChildOf))).toEqual([]);
 	});
 
 	it("cascades a fan-out tree, leaving unrelated entities alive", () => {
@@ -172,7 +172,7 @@ describe("OnDeleteTarget = delete — cascade (#473)", () => {
 		// `other` had no relation TO the dead target, so it survives — and its
 		// reverse set no longer lists the (now destroyed) s1.
 		expect(store.isAlive(other)).toBe(true);
-		expect(sorted(store.sourcesOf(Likes, other))).toEqual([]);
+		expect(sorted(store.sourcesOf(other, Likes))).toEqual([]);
 	});
 });
 
@@ -194,7 +194,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped (#473)", () =
 		expect(store.targetOf(s1, Targets)).toBeUndefined();
 		expect(store.targetOf(s2, Targets)).toBeUndefined();
 		expect(store.hasRelation(s1, Targets)).toBe(false);
-		expect(sorted(store.sourcesOf(Targets, tgt))).toEqual([]);
+		expect(sorted(store.sourcesOf(tgt, Targets))).toEqual([]);
 	});
 
 	it("removes only the dead target from a multi-target set; others remain", () => {
@@ -212,7 +212,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped (#473)", () =
 		expect(store.isAlive(src)).toBe(true);
 		expect(sorted(store.targetsOf(src, Likes))).toEqual([keep as number]);
 		expect(store.hasRelation(src, Likes)).toBe(true);
-		expect(sorted(store.sourcesOf(Likes, dead))).toEqual([]);
+		expect(sorted(store.sourcesOf(dead, Likes))).toEqual([]);
 	});
 
 	it("drops membership when the dead target was the source's only multi target", () => {
@@ -321,13 +321,13 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies (#473)",
 describe("OnDeleteTarget — ECS surface (#473)", () => {
 	it("registers a delete-policy relation and cascades through the ECS wrapper", () => {
 		const world = new ECS();
-		const ChildOf = world.registerRelation({ onDeleteTarget: "delete" });
-		const parent = world.createEntity();
-		const child = world.createEntity();
-		world.addRelation(child, ChildOf, parent);
+		const ChildOf = world.relations.register({ onDeleteTarget: "delete" });
+		const parent = world.spawn();
+		const child = world.spawn();
+		world.relations.add(child, ChildOf, parent);
 
 		// `ECS.destroyEntity` is the deferred surface — the cascade runs at flush.
-		world.destroyEntity(parent);
+		world.despawn(parent);
 		world.flush();
 
 		expect(world.isAlive(parent)).toBe(false);
@@ -346,12 +346,12 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 		store.destroyEntity(tgt);
 
 		// Orphan leaves the reverse entry intact (the dangling-source leak #491).
-		expect(sorted(store.sourcesOf(Targets, tgt))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(tgt, Targets))).toEqual([src as number]);
 
 		expect(store.compactRelations()).toBe(1);
 
 		// Reverse entry reclaimed…
-		expect(store.sourcesOf(Targets, tgt)).toEqual([]);
+		expect(store.sourcesOf(tgt, Targets)).toEqual([]);
 		// …but the forward link is untouched: orphan still resolves the dead handle.
 		expect(store.isAlive(src)).toBe(true);
 		expect(store.targetOf(src, Targets)).toBe(tgt);
@@ -368,13 +368,13 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 		store.addRelation(src, Likes, live);
 
 		store.destroyEntity(tgt);
-		expect(sorted(store.sourcesOf(Likes, tgt))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(tgt, Likes))).toEqual([src as number]);
 
 		expect(store.compactRelations()).toBe(1);
 
-		expect(store.sourcesOf(Likes, tgt)).toEqual([]);
+		expect(store.sourcesOf(tgt, Likes)).toEqual([]);
 		// Live target's reverse entry is untouched.
-		expect(sorted(store.sourcesOf(Likes, live))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(live, Likes))).toEqual([src as number]);
 		// Forward set still carries both handles (the dead one dangles, per orphan).
 		expect(sorted(store.targetsOf(src, Likes))).toEqual(sorted([tgt, live]));
 	});
@@ -387,7 +387,7 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 		store.addRelation(src, Targets, live);
 
 		expect(store.compactRelations()).toBe(0);
-		expect(sorted(store.sourcesOf(Targets, live))).toEqual([src as number]);
+		expect(sorted(store.sourcesOf(live, Targets))).toEqual([src as number]);
 	});
 
 	it("is generation-precise — reclaims the dead key, keeps a recycled slot's live key", () => {
@@ -407,8 +407,8 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 
 		expect(store.compactRelations()).toBe(1); // only the dead-target key
 
-		expect(store.sourcesOf(Targets, tgt)).toEqual([]); // dead key gone
-		expect(sorted(store.sourcesOf(Targets, reused))).toEqual([src2 as number]); // live key kept
+		expect(store.sourcesOf(tgt, Targets)).toEqual([]); // dead key gone
+		expect(sorted(store.sourcesOf(reused, Targets))).toEqual([src2 as number]); // live key kept
 	});
 
 	it("aggregates across relations and is idempotent", () => {
@@ -436,18 +436,18 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 
 	it("is reachable through the ECS surface", () => {
 		const world = new ECS();
-		const Targets = world.registerRelation();
-		const tgt = world.createEntity();
-		const src = world.createEntity();
-		world.addRelation(src, Targets, tgt);
+		const Targets = world.relations.register();
+		const tgt = world.spawn();
+		const src = world.spawn();
+		world.relations.add(src, Targets, tgt);
 
 		// `ECS.destroyEntity` is deferred — flush so the orphan link goes dangling.
-		world.destroyEntity(tgt);
+		world.despawn(tgt);
 		world.flush();
-		expect(sorted(world.sourcesOf(Targets, tgt))).toEqual([src as number]);
+		expect(sorted(world.relations.sourcesOf(tgt, Targets))).toEqual([src as number]);
 
-		expect(world.compactRelations()).toBe(1);
-		expect(world.sourcesOf(Targets, tgt)).toEqual([]);
-		expect(world.targetOf(src, Targets)).toBe(tgt); // forward link preserved
+		expect(world.relations.compact()).toBe(1);
+		expect(world.relations.sourcesOf(tgt, Targets)).toEqual([]);
+		expect(world.relations.targetOf(src, Targets)).toBe(tgt); // forward link preserved
 	});
 });

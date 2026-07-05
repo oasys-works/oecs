@@ -31,10 +31,10 @@ describe("Observers — onAdd / onRemove basics", () => {
 			onAdd: (eid) => fired.push(eid as number),
 			access: openAccess([Tag])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -51,13 +51,13 @@ describe("Observers — onAdd / onRemove basics", () => {
 			onRemove: (eid) => removed.push(eid as number),
 			access: openAccess([Tag])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Tag); // immediate setup add — does NOT fire onAdd
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, Tag); // effective
-				ctx.removeComponent(e, Tag); // no-op (already lacks) — must not fire
+				ctx.commands.remove(e, Tag); // effective
+				ctx.commands.remove(e, Tag); // no-op (already lacks) — must not fire
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -71,7 +71,7 @@ describe("Observers — onAdd / onRemove basics", () => {
 		const Tag = world.registerTag();
 		let fires = 0;
 		world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Tag); // immediate path — ADR-0013: not an observed point
 		expect(fires).toBe(0);
 	});
@@ -81,13 +81,13 @@ describe("Observers — onAdd / onRemove basics", () => {
 		const Tag = world.registerTag();
 		let fires = 0;
 		const handle = world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e1, Tag)) ctx.addComponent(e1, Tag);
-				else if (!ctx.hasComponent(e2, Tag)) ctx.addComponent(e2, Tag);
+				if (!ctx.hasComponent(e1, Tag)) ctx.commands.add(e1, Tag);
+				else if (!ctx.hasComponent(e2, Tag)) ctx.commands.add(e2, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -134,14 +134,14 @@ describe("Observers — dispose mid-round (#726)", () => {
 			onAdd: () => bFires++,
 			access: openAccess([B])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		// One deferred batch adds BOTH A and B → a single flush dispatches both in
 		// topo order (A before B).
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.addComponent(e, A);
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, A);
+				ctx.commands.add(e, B);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -169,7 +169,7 @@ describe("Observers — dispose mid-round (#726)", () => {
 			onRemove: () => bRemoves++,
 			access: openAccess([B])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, A); // immediate setup — does not fire onRemove
 		world.addComponent(e, B);
 		// One deferred batch removes BOTH A and B → one flush dispatches both
@@ -177,8 +177,8 @@ describe("Observers — dispose mid-round (#726)", () => {
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, A);
-				ctx.removeComponent(e, B);
+				ctx.commands.remove(e, A);
+				ctx.commands.remove(e, B);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -213,12 +213,12 @@ describe("Observers — onRemove on destroy", () => {
 			onRemove: (eid) => removedTag.push(eid as number),
 			access: openAccess([Tag])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		world.addComponent(e, Tag);
 		const sys = world.registerSystem({
 			...openAccess([Pos, Tag]),
-			fn: (ctx) => ctx.destroyEntity(e)
+			fn: (ctx) => ctx.commands.despawn(e)
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -235,10 +235,10 @@ describe("Observers — onRemove on destroy", () => {
 			onRemove: (eid) => removed.push(eid as number),
 			access: openAccess([Tag])
 		});
-		const e = world.createEntity(); // alive but unplaced — carries nothing
+		const e = world.spawn(); // alive but unplaced — carries nothing
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.destroyEntity(e)
+			fn: (ctx) => ctx.commands.despawn(e)
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -257,11 +257,11 @@ describe("Observers — onRemove on destroy", () => {
 			},
 			access: openAccess([Tag])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Tag);
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.destroyEntity(e)
+			fn: (ctx) => ctx.commands.despawn(e)
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -287,14 +287,14 @@ describe("Observers — onRemove on destroy", () => {
 			},
 			access: openAccess([B])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, A);
 		world.addComponent(e, B);
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.removeComponent(e, A); // explicit remove — fires with e live
-				ctx.destroyEntity(e); // destroy — fires onRemove(B) with e freed
+				ctx.commands.remove(e, A); // explicit remove — fires with e live
+				ctx.commands.despawn(e); // destroy — fires onRemove(B) with e freed
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -308,16 +308,16 @@ describe("Observers — onRemove on destroy", () => {
 		const world = new ECS({ deterministic: true });
 		const Unit = world.registerTag();
 		const Marker = world.registerTag();
-		const survivor = world.createEntity();
+		const survivor = world.spawn();
 		world.observe(Unit, {
-			onRemove: (_eid, ctx) => ctx.addComponent(survivor, Marker),
+			onRemove: (_eid, ctx) => ctx.commands.add(survivor, Marker),
 			access: openAccess([Unit, Marker])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Unit);
 		const sys = world.registerSystem({
 			...openAccess([Unit, Marker]),
-			fn: (ctx) => ctx.destroyEntity(e)
+			fn: (ctx) => ctx.commands.despawn(e)
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -331,21 +331,21 @@ describe("Observers — onRemove on destroy", () => {
 		const Parent = world.registerTag();
 		const Child = world.registerTag();
 		const removedChildren: number[] = [];
-		const child = world.createEntity();
+		const child = world.spawn();
 		world.addComponent(child, Child);
 		world.observe(Parent, {
-			onRemove: (_eid, ctx) => ctx.destroyEntity(child),
+			onRemove: (_eid, ctx) => ctx.commands.despawn(child),
 			access: openAccess([Parent, Child])
 		});
 		world.observe(Child, {
 			onRemove: (eid) => removedChildren.push(eid as number),
 			access: openAccess([Child])
 		});
-		const parent = world.createEntity();
+		const parent = world.spawn();
 		world.addComponent(parent, Parent);
 		const sys = world.registerSystem({
 			...openAccess([Parent, Child]),
-			fn: (ctx) => ctx.destroyEntity(parent)
+			fn: (ctx) => ctx.commands.despawn(parent)
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -366,7 +366,7 @@ describe("Observers — onRemove on destroy", () => {
 			});
 			const es: EntityID[] = [];
 			for (let i = 0; i < 5; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, Tag);
 				es.push(e);
 			}
@@ -374,7 +374,7 @@ describe("Observers — onRemove on destroy", () => {
 				...openAccess([Tag]),
 				fn: (ctx) => {
 					const order = reverse ? [...es].reverse() : es;
-					for (const e of order) ctx.destroyEntity(e);
+					for (const e of order) ctx.commands.despawn(e);
 				}
 			});
 			world.addSystems(SCHEDULE.UPDATE, sys);
@@ -400,13 +400,13 @@ describe("Observers — canonical ordering", () => {
 			access: openAccess([Tag])
 		});
 		const ids: EntityID[] = [];
-		for (let i = 0; i < 8; i++) ids.push(world.createEntity());
+		for (let i = 0; i < 8; i++) ids.push(world.spawn());
 		// Queue the adds in a scrambled (reverse) order.
 		const scrambled = ids.slice().reverse();
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of scrambled) ctx.addComponent(e, Tag);
+				for (const e of scrambled) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -444,19 +444,19 @@ describe("Observers — canonical ordering", () => {
 		// low-pass-only sort would interleave them out of ascending order.
 		const N = (1 << 10) + 64; // 1088
 		const ids: EntityID[] = [];
-		for (let i = 0; i < N; i++) ids.push(world.createEntity()); // all generation 0
+		for (let i = 0; i < N; i++) ids.push(world.spawn()); // all generation 0
 
 		// Recycle a handful of LOW-index slots: a deferred destroy + flush frees
 		// the slot, then a fresh createEntity pops it back off the LIFO free stack
 		// with generation + 1 — small index, but large packed handle.
 		const recycle = [0, 1, 2, 5, 9];
-		for (const i of recycle) world.destroyEntity(ids[i]);
+		for (const i of recycle) world.despawn(ids[i]);
 
 		let scrambled: EntityID[] = [];
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of scrambled) ctx.addComponent(e, Tag);
+				for (const e of scrambled) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
@@ -466,7 +466,7 @@ describe("Observers — canonical ordering", () => {
 
 		// Reclaim the freed slots — same low indices, now generation >= 1.
 		for (let k = 0; k < recycle.length; k++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			ids[getEntityIndex(e)] = e;
 		}
 		expect(recycle.every((i) => getEntityGeneration(ids[i]) > 0)).toBe(true);
@@ -517,7 +517,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 				const hasB = ctx.hasComponent(eid, B);
 				ctx.setField(eid, A, "v", ctx.getField(eid, A, "v") + (hasB ? 1000 : 0) + seq);
 				if (getEntityIndex(eid) % 2 === 0)
-					ctx.addComponent(eid, C, { v: getEntityIndex(eid) });
+					ctx.commands.add(eid, C, { v: getEntityIndex(eid) });
 			},
 			access
 		});
@@ -532,14 +532,14 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 		world.observe(C, {
 			onAdd: (eid, ctx) => {
 				ctx.setField(eid, C, "v", ctx.getField(eid, C, "v") + 7);
-				if (ctx.hasComponent(eid, B)) ctx.removeComponent(eid, B);
+				if (ctx.hasComponent(eid, B)) ctx.commands.remove(eid, B);
 			},
 			access
 		});
 
 		const N = 12;
 		const ids: EntityID[] = [];
-		for (let i = 0; i < N; i++) ids.push(world.createEntity());
+		for (let i = 0; i < N; i++) ids.push(world.spawn());
 		return { world, A, B, C, ids };
 	}
 
@@ -578,13 +578,13 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 			...openAccess([A, B]),
 			fn: (ctx) => {
 				for (const [id, which] of ordered)
-					ctx.addComponent(id, defs[which], { v: getEntityIndex(id) });
+					ctx.commands.add(id, defs[which], { v: getEntityIndex(id) });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 		world.update(1 / 60);
-		return { raw: world.stateHash(), canon: canonicalDigest(b) };
+		return { raw: world.snapshots.stateHash(), canon: canonicalDigest(b) };
 	}
 
 	const orderings: { name: string; perm: (o: [EntityID, 0 | 1][]) => [EntityID, 0 | 1][] }[] = [
@@ -639,7 +639,7 @@ describe("Observers — glitch-free ordering (observer_ordering_sim, real engine
 		const N = 6;
 		const ids: EntityID[] = [];
 		for (let i = 0; i < N; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, A, { v: 0 }); // entity must hold A + D to be written
 			world.addComponent(e, D, { v: 0 });
 			ids.push(e);
@@ -649,8 +649,8 @@ describe("Observers — glitch-free ordering (observer_ordering_sim, real engine
 			...openAccess([A, B, C, D]),
 			fn: (ctx) => {
 				for (const e of order) {
-					ctx.addComponent(e, B);
-					ctx.addComponent(e, C);
+					ctx.commands.add(e, B);
+					ctx.commands.add(e, C);
 				}
 			}
 		});
@@ -673,7 +673,7 @@ describe("Observers — no-observer fast path", () => {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
-				for (const e of ids) if (!ctx.hasComponent(e, Tag)) ctx.addComponent(e, Tag);
+				for (const e of ids) if (!ctx.hasComponent(e, Tag)) ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -684,16 +684,16 @@ describe("Observers — no-observer fast path", () => {
 	it("a side-effect-free observer does not perturb state_hash vs no observer", () => {
 		const w1 = new ECS({ deterministic: true });
 		const T1 = w1.registerTag();
-		const id1: EntityID[] = [w1.createEntity(), w1.createEntity()];
+		const id1: EntityID[] = [w1.spawn(), w1.spawn()];
 		scenario(w1, T1, id1);
-		const hashNoObserver = w1.stateHash();
+		const hashNoObserver = w1.snapshots.stateHash();
 
 		const w2 = new ECS({ deterministic: true });
 		const T2 = w2.registerTag();
 		w2.observe(T2, { onAdd: () => {}, onRemove: () => {}, access: openAccess([T2]) });
-		const id2: EntityID[] = [w2.createEntity(), w2.createEntity()];
+		const id2: EntityID[] = [w2.spawn(), w2.spawn()];
 		scenario(w2, T2, id2);
-		expect(w2.stateHash()).toBe(hashNoObserver);
+		expect(w2.snapshots.stateHash()).toBe(hashNoObserver);
 	});
 });
 
@@ -702,7 +702,7 @@ describe("Observers — access enforcement", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		// Observer declares nothing but writes Pos — accessCheck must catch it.
 		world.observe(Tag, {
@@ -711,7 +711,7 @@ describe("Observers — access enforcement", () => {
 		});
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -722,7 +722,7 @@ describe("Observers — access enforcement", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.observe(Tag, {
 			onAdd: (eid, ctx) => ctx.setField(eid, Pos, "x", 42),
@@ -730,7 +730,7 @@ describe("Observers — access enforcement", () => {
 		});
 		const adder = world.registerSystem({
 			...openAccess([Tag]),
-			fn: (ctx) => ctx.addComponent(e, Tag)
+			fn: (ctx) => ctx.commands.add(e, Tag)
 		});
 		world.addSystems(SCHEDULE.UPDATE, adder);
 		world.startup();
@@ -746,18 +746,18 @@ describe("Observers — cascades", () => {
 		const B = world.registerTag();
 		const C = world.registerTag();
 		world.observe(A, {
-			onAdd: (eid, ctx) => ctx.addComponent(eid, B),
+			onAdd: (eid, ctx) => ctx.commands.add(eid, B),
 			access: openAccess([A, B])
 		});
 		world.observe(B, {
-			onAdd: (eid, ctx) => ctx.addComponent(eid, C),
+			onAdd: (eid, ctx) => ctx.commands.add(eid, C),
 			access: openAccess([B, C])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([A, B, C]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e, A)) ctx.addComponent(e, A);
+				if (!ctx.hasComponent(e, A)) ctx.commands.add(e, A);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -772,15 +772,15 @@ describe("Observers — cascades", () => {
 		const world = new ECS({ deterministic: true });
 		const Toggle = world.registerTag();
 		world.observe(Toggle, {
-			onAdd: (eid, ctx) => ctx.removeComponent(eid, Toggle),
-			onRemove: (eid, ctx) => ctx.addComponent(eid, Toggle),
+			onAdd: (eid, ctx) => ctx.commands.remove(eid, Toggle),
+			onRemove: (eid, ctx) => ctx.commands.add(eid, Toggle),
 			access: openAccess([Toggle])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		const sys = world.registerSystem({
 			...openAccess([Toggle]),
 			fn: (ctx) => {
-				if (!ctx.hasComponent(e, Toggle)) ctx.addComponent(e, Toggle);
+				if (!ctx.hasComponent(e, Toggle)) ctx.commands.add(e, Toggle);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -797,7 +797,7 @@ describe("Observers — yield_existing", () => {
 		const Tag = world.registerTag();
 		const ids: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Tag); // immediate — no observer yet
 			ids.push(e);
 		}
@@ -819,9 +819,9 @@ describe("Observers — yield_existing", () => {
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		// A pre-existing match so yieldExisting actually enters/leaves a frame.
-		const existing = world.createEntity();
+		const existing = world.spawn();
 		world.addComponent(existing, Tag);
-		const target = world.createEntity();
+		const target = world.spawn();
 		world.addComponent(target, Pos, { x: 0 });
 		// System declares Tag only — NOT Pos. Mid-frame it lazily registers a
 		// yieldExisting observer, then performs an undeclared write to Pos.
@@ -856,8 +856,8 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0 });
 		world.addComponent(e2, Pos, { x: 0 });
 		const sys = world.registerSystem({
@@ -888,7 +888,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
@@ -914,7 +914,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const noop = world.registerSystem({ ...openAccess([Pos]), fn: () => {} });
 		world.addSystems(SCHEDULE.UPDATE, noop);
@@ -942,8 +942,8 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0 });
 		world.addComponent(e2, Pos, { x: 0 });
 		const sys = world.registerSystem({
@@ -973,7 +973,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.startup();
 		world.setField(e, Pos, "x", 7); // host-side write between updates
@@ -992,8 +992,8 @@ describe("Observers — onSet (archetype-granular, change tick)", () => {
 			onSet: (arch) => counts.push(arch.entityCount),
 			access: openAccess([Pos]) // default granularity: archetype
 		});
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0 });
 		world.addComponent(e2, Pos, { x: 0 });
 		const sys = world.registerSystem({
@@ -1026,14 +1026,14 @@ describe("Observers — dirty state stays out of state_hash", () => {
 					granularity: "entity",
 					access: openAccess([Pos])
 				});
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 });
 			let captured = 0;
 			const sys = world.registerSystem({
 				...openAccess([Pos]),
 				fn: (ctx) => {
 					ctx.setField(e, Pos, "x", 5); // populates the dirty list when observed
-					captured = world.stateHash();
+					captured = world.snapshots.stateHash();
 				}
 			});
 			world.addSystems(SCHEDULE.UPDATE, sys);
@@ -1053,7 +1053,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		let seen = -1;
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
@@ -1062,7 +1062,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
@@ -1084,7 +1084,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
 				void ctx.read(Ev).length; // read inside onSet — must not extend lifetime
@@ -1092,7 +1092,7 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		let tick = 0;
 		const nextTickLen: number[] = [];
@@ -1121,13 +1121,13 @@ describe("Observers — onSet and the one-tick event window (#586)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
-		world.registerEvent(Ev, ["v"] as const);
+		world.events.register(Ev, ["v"] as const);
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => ctx.emit(Ev, { v: 1 }),
 			granularity: "entity",
 			access: openAccess([Pos])
 		});
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const sys = world.registerSystem({
 			...openAccess([Pos]),

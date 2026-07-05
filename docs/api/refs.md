@@ -32,6 +32,9 @@ The accessor does its archetype + row + column lookup **once, at creation**; eac
 > **A ref does not survive an archetype transition.** It's safe to hold across immediate reads/writes within a system because structural changes are deferred (the entity can't move archetypes until the phase flush). But once the entity gains or loses a component, its row moves — re-create the ref afterward. Refs *are* grow-safe: they read the live column backing, and a column that grows refreshes in place, so a held ref stays valid across a grow.
 
 > [!WARNING]
+> **Host-side refs go stale immediately.** The deferred-structural-change protection above is ctx-only: host-side mutations apply *immediately*, so a ref from `ecs.refRead(Pos, e)` is only valid until the next structural mutation — any `ecs.addComponent` / `ecs.removeComponent` / `ecs.despawn` (on *any* entity in the archetype) can row-swap, after which the old ref silently reads **another entity's** data. Treat `ecs.refRead` as an immediate single-expression read and re-create the ref after any structural change.
+
+> [!WARNING]
 > `ReadonlyComponentRef` is an **advisory compile-time barrier, not a runtime one** — its accessor shares a prototype with the mutable ref, so a cast can write through it. Worse, such a write skips the change-tick bump `ref()` performs, silently desyncing change detection. Treat `refRead` as genuinely read-only.
 
 > [!NOTE]

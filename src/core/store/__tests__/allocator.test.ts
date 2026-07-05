@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SAB_ALLOCATOR, growableSabAllocator, wasmMemoryAllocator } from "../allocator";
+import {
+	DEFAULT_SAB_ALLOCATOR,
+	growableSabAllocator,
+	heapArraybufferAllocator,
+	wasmMemoryAllocator,
+	StoreCapExceededError
+} from "../allocator";
 
 /**
  * Allocator boundary behaviours. The grow/extend suites exercise these
@@ -32,14 +38,14 @@ describe("DEFAULT_SAB_ALLOCATOR", () => {
 	});
 });
 
-describe("growable_sab_allocator — max_bytes validation", () => {
-	it("rejects max_bytes <= 0", () => {
+describe("growable_sab_allocator — maxBytes validation", () => {
+	it("rejects maxBytes <= 0", () => {
 		expect(() => growableSabAllocator(0)).toThrow();
 		expect(() => growableSabAllocator(-1)).toThrow();
 		expect(() => growableSabAllocator(-256 * 1024 * 1024)).toThrow();
 	});
 
-	it("rejects non-integer max_bytes", () => {
+	it("rejects non-integer maxBytes", () => {
 		expect(() => growableSabAllocator(1.5)).toThrow();
 		expect(() => growableSabAllocator(64.0001)).toThrow();
 		expect(() => growableSabAllocator(Number.NaN)).toThrow();
@@ -53,14 +59,14 @@ describe("growable_sab_allocator — max_bytes validation", () => {
 });
 
 describe("growable_sab_allocator — hard cap throw (#380)", () => {
-	it("throws when the FIRST request exceeds max_bytes", () => {
+	it("throws when the FIRST request exceeds maxBytes", () => {
 		const alloc = growableSabAllocator(64);
 		// The entire #380 design hinges on the cap being fatal — there is no
 		// grow-beyond-cap fallback or compaction pass.
-		expect(() => alloc(128)).toThrow(/max_bytes/);
+		expect(() => alloc(128)).toThrow(/maxBytes/);
 	});
 
-	it("throws when a later grow would exceed max_bytes", () => {
+	it("throws when a later grow would exceed maxBytes", () => {
 		const alloc = growableSabAllocator(64);
 		// First allocation under the cap succeeds and reuses one buffer.
 		const buffer = alloc(64);
@@ -69,7 +75,7 @@ describe("growable_sab_allocator — hard cap throw (#380)", () => {
 		expect(() => alloc(128)).toThrow(/exceeds the by-design/);
 	});
 
-	it("allows requests up to and including max_bytes", () => {
+	it("allows requests up to and including maxBytes", () => {
 		const alloc = growableSabAllocator(256);
 		expect(() => alloc(64)).not.toThrow();
 		// Exactly at the cap is fine — the throw is strictly `bytes > maxBytes`.
@@ -147,5 +153,70 @@ describe("wasm_memory_allocator — in-place contract (ADR-0008)", () => {
 		const grown = alloc(3 * PAGE);
 		expect(grown).toBeInstanceOf(SharedArrayBuffer);
 		expect(grown.byteLength).toBeGreaterThanOrEqual(3 * PAGE);
+	});
+});
+
+// The two growable single-buffer allocators are one factory parameterized
+// over the buffer primitive (M9). This matrix runs the same scenarios over
+// both so any future divergence in cap arithmetic, in-place reporting, or
+// buffer-identity semantics fails loudly on the strategy that drifted.
+describe.each([
+	["growable_sab_allocator", growableSabAllocator, SharedArrayBuffer as ArrayBufferLike["constructor"]],
+	["heap_arraybuffer_allocator", heapArraybufferAllocator, ArrayBuffer as ArrayBufferLike["constructor"]]
+] as const)("%s — shared growable-allocator contract", (_label, factory, BufferCtor) => {
+	it("rejects invalid maxBytes", () => {
+		expect(() => factory(0)).toThrow(/positive integer/);
+		expect(() => factory(-1)).toThrow(/positive integer/);
+		expect(() => factory(1.5)).toThrow(/positive integer/);
+	});
+
+	it("returns the right buffer type at the requested size", () => {
+		const alloc = factory(256);
+		const buffer = alloc(64);
+		expect(buffer).toBeInstanceOf(BufferCtor);
+		expect(buffer.byteLength).toBeGreaterThanOrEqual(64);
+	});
+
+	it("returns the SAME buffer instance across grows (in-place contract)", () => {
+		const alloc = factory(256);
+		const first = alloc(64);
+		const second = alloc(128);
+		expect(second).toBe(first);
+		expect(second.byteLength).toBeGreaterThanOrEqual(128);
+	});
+
+	it("is marked is_in_place (ADR-0008)", () => {
+		expect(factory(64).isInPlace).toBe(true);
+	});
+
+	it("preserves views + data across a grow", () => {
+		const alloc = factory(256);
+		const view = new Int32Array(alloc(64), 0, 4);
+		view[0] = 42;
+		view[3] = 7;
+		alloc(128);
+		expect(view[0]).toBe(42);
+		expect(view[3]).toBe(7);
+	});
+
+	it("throws StoreCapExceededError past the cap, with the cap attached (#380)", () => {
+		const alloc = factory(64);
+		alloc(64); // exactly at cap is fine
+		try {
+			alloc(65);
+			expect.unreachable("should have thrown");
+		} catch (e) {
+			expect(e).toBeInstanceOf(StoreCapExceededError);
+			expect((e as StoreCapExceededError).requestedBytes).toBe(65);
+			expect((e as StoreCapExceededError).capBytes).toBe(64);
+		}
+	});
+
+	it("no-ops a request smaller than the current size (returns same buffer)", () => {
+		const alloc = factory(256);
+		const grown = alloc(128);
+		const shrunk = alloc(32);
+		expect(shrunk).toBe(grown);
+		expect(shrunk.byteLength).toBeGreaterThanOrEqual(128);
 	});
 });

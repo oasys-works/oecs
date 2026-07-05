@@ -32,8 +32,8 @@ describe("Run conditions", () => {
 		// World A: system gated OFF (resource is false → condition never fires).
 		const a = new ECS({ deterministic: true });
 		const PosA = a.registerComponent(["x"] as const, "i32");
-		a.registerResource(Flag, false);
-		const ea = a.createEntity();
+		a.resources.register(Flag, false);
+		const ea = a.spawn();
 		a.addComponent(ea, PosA, { x: 0 });
 		const sysA = a.registerSystem({
 			...openAccess([PosA]),
@@ -48,8 +48,8 @@ describe("Run conditions", () => {
 		// World B: the SAME system is simply never scheduled (genuinely absent).
 		const b = new ECS({ deterministic: true });
 		const PosB = b.registerComponent(["x"] as const, "i32");
-		b.registerResource(Flag, false);
-		const eb = b.createEntity();
+		b.resources.register(Flag, false);
+		const eb = b.spawn();
 		b.addComponent(eb, PosB, { x: 0 });
 		b.registerSystem({
 			...openAccess([PosB]),
@@ -61,40 +61,40 @@ describe("Run conditions", () => {
 		b.update(1 / 60);
 
 		// Skipped == absent.
-		expect(a.stateHash()).toBe(b.stateHash());
+		expect(a.snapshots.stateHash()).toBe(b.snapshots.stateHash());
 
 		// And flipping the gate ON makes the system run — state diverges from the
 		// skipped case, confirming the gate isn't a no-op in both directions.
-		a.setResource(Flag, true);
+		a.resources.set(Flag, true);
 		a.update(1 / 60);
-		expect(a.stateHash()).not.toBe(b.stateHash());
+		expect(a.snapshots.stateHash()).not.toBe(b.snapshots.stateHash());
 	});
 
 	it("a skipped system enqueues nothing — a gated-off spawn never materialises", () => {
 		const Flag = resourceKey<boolean>("Flag");
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerComponent([] as const);
-		world.registerResource(Flag, false);
+		world.resources.register(Flag, false);
 
 		const spawner = world.registerSystem({
 			...openAccess([Tag]),
 			spawns: [[Tag]],
 			fn(ctx) {
-				const e = ctx.createEntity();
-				ctx.addComponent(e, Tag, {});
+				const e = ctx.commands.spawn();
+				ctx.commands.add(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, { system: spawner, runIf: runIfResourceEq(Flag, true) });
 		world.startup();
 
-		const before = world.stateHash();
+		const before = world.snapshots.stateHash();
 		world.update(1 / 60); // gated off → no spawn, no deferred flush contribution
-		expect(world.query(Tag).count()).toBe(0);
-		expect(world.stateHash()).toBe(before);
+		expect(world.query(Tag).entityCount).toBe(0);
+		expect(world.snapshots.stateHash()).toBe(before);
 
-		world.setResource(Flag, true);
+		world.resources.set(Flag, true);
 		world.update(1 / 60); // gated on → one entity spawns
-		expect(world.query(Tag).count()).toBe(1);
+		expect(world.query(Tag).entityCount).toBe(1);
 	});
 
 	//=========================================================
@@ -104,7 +104,7 @@ describe("Run conditions", () => {
 	it("run_if_resource_eq gates on a resource value", () => {
 		const Paused = resourceKey<boolean>("Paused");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(Paused, true);
+		world.resources.register(Paused, true);
 
 		let runs = 0;
 		const sys = world.registerSystem((/* ctx */) => {
@@ -119,7 +119,7 @@ describe("Run conditions", () => {
 		world.update(1 / 60); // paused → skip
 		expect(runs).toBe(0);
 
-		world.setResource(Paused, false);
+		world.resources.set(Paused, false);
 		world.update(1 / 60); // unpaused → run
 		world.update(1 / 60);
 		expect(runs).toBe(2);
@@ -191,7 +191,7 @@ describe("Run conditions", () => {
 		world.update(1 / 60); // no Marker entity → skip
 		expect(runs).toBe(0);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Marker, {}); // host-side immediate
 		world.update(1 / 60); // now matches → run
 		expect(runs).toBe(1);
@@ -229,7 +229,7 @@ describe("Run conditions", () => {
 	it("a condition reading an undeclared resource throws in __DEV__", () => {
 		const Flag = resourceKey<boolean>("Flag");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(Flag, true);
+		world.resources.register(Flag, true);
 
 		// Hand-rolled condition that reads Flag but forgets to declare it.
 		const undeclared: RunCondition = {
@@ -246,7 +246,7 @@ describe("Run conditions", () => {
 	it("the built-in run_if_resource_eq declares its read, so it does not throw", () => {
 		const Flag = resourceKey<boolean>("Flag");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(Flag, true);
+		world.resources.register(Flag, true);
 		const sys = world.registerSystem((/* ctx */) => {});
 		world.addSystems(SCHEDULE.UPDATE, { system: sys, runIf: runIfResourceEq(Flag, true) });
 		world.startup();
@@ -262,7 +262,7 @@ describe("System sets", () => {
 	it("a set condition gates all members as a group", () => {
 		const Active = resourceKey<boolean>("Active");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(Active, false);
+		world.resources.register(Active, false);
 
 		const Combat = systemSet("Combat");
 		let aRuns = 0;
@@ -280,7 +280,7 @@ describe("System sets", () => {
 		world.update(1 / 60); // set inactive → both skip
 		expect([aRuns, bRuns]).toEqual([0, 0]);
 
-		world.setResource(Active, true);
+		world.resources.set(Active, true);
 		world.update(1 / 60); // set active → both run
 		expect([aRuns, bRuns]).toEqual([1, 1]);
 	});
@@ -289,8 +289,8 @@ describe("System sets", () => {
 		const SetOn = resourceKey<boolean>("SetOn");
 		const OwnOn = resourceKey<boolean>("OwnOn");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(SetOn, true);
-		world.registerResource(OwnOn, true);
+		world.resources.register(SetOn, true);
+		world.resources.register(OwnOn, true);
 
 		const Group = systemSet("Group");
 		let runs = 0;
@@ -306,8 +306,8 @@ describe("System sets", () => {
 		world.startup();
 
 		const runOnce = (setOn: boolean, ownOn: boolean): number => {
-			world.setResource(SetOn, setOn);
-			world.setResource(OwnOn, ownOn);
+			world.resources.set(SetOn, setOn);
+			world.resources.set(OwnOn, ownOn);
 			const before = runs;
 			world.update(1 / 60);
 			return runs - before;
@@ -322,7 +322,7 @@ describe("System sets", () => {
 	it("configure_set works regardless of order relative to add_systems", () => {
 		const On = resourceKey<boolean>("On");
 		const world = new ECS({ deterministic: true });
-		world.registerResource(On, false);
+		world.resources.register(On, false);
 		const Set = systemSet("LateConfigured");
 		let runs = 0;
 		const sys = world.registerSystem(() => {
@@ -335,7 +335,7 @@ describe("System sets", () => {
 
 		world.update(1 / 60);
 		expect(runs).toBe(0);
-		world.setResource(On, true);
+		world.resources.set(On, true);
 		world.update(1 / 60);
 		expect(runs).toBe(1);
 	});

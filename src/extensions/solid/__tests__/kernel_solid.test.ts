@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createRoot } from "solid-js";
-import { batch, reactiveArray, reactiveMap, reactiveStruct } from "../../../core/reactive";
+import { batch, reactiveArray, reactiveMap, reactiveStruct } from "../../../reactive";
 import { fromKernel, fromKernelArray, fromKernelMap, fromKernelStruct } from "../index";
 
 describe("fromKernel", () => {

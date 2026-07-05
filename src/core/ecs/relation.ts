@@ -50,9 +50,10 @@
  * base owns the cardinality-agnostic reverse index, and `ExclusiveRelationStore`
  * / `MultiRelationStore` (built by `makeRelationStore`) each own their forward
  * representation *and* the backing `SparseComponentStore` interaction for it.
- * `Store` keeps the things that are genuinely its own — entity liveness,
- * relation/sparse registration, and destroy *orchestration* (purge ordering,
- * `OnDeleteTarget` policy) — and drives a relation through `link` / `unlink` /
+ * The registry level keeps the things that are genuinely its own — entity
+ * liveness (`Store`), relation/sparse registration and destroy *orchestration*
+ * (purge ordering, `OnDeleteTarget` policy — `RelationService`,
+ * relation_service.ts) — and drives a relation through `link` / `unlink` /
  * `purgeSource` / `forEachCanonicalPair`, with no cardinality branch. Each
  * cardinality's lockstep bookkeeping lives in exactly one method on one class,
  * so there is no scattered site to miss. The cardinality-free reclaim primitive
@@ -68,7 +69,7 @@ import {
 } from "./sparse_store";
 
 /** Relation handle id. A separate id space from `ComponentID` and
- * `SparseComponentID` — it indexes `Store`'s relation registry. The numeric
+ * `SparseComponentID` — it indexes the `RelationService` registry. The numeric
  * value is the registration order, stable for the lifetime of the ECS. */
 export type RelationID = Brand<number, "relation_id">;
 
@@ -76,7 +77,26 @@ export type RelationID = Brand<number, "relation_id">;
 // surfaces (and vice-versa) — the relation API is its own thing.
 declare const __relationBrand: unique symbol;
 
-export type RelationDef = RelationID & { readonly [__relationBrand]: "relation" };
+/** A relation's registration-time cardinality: `exclusive` = one target per
+ * source (re-add replaces), `multi` = a target set per source. */
+export type RelationCardinality = "exclusive" | "multi";
+
+// Phantom cardinality slot (POLISH_AUDIT #7): `registerRelation`'s overloads
+// stamp the literal cardinality into the handle type, and the exclusive-only
+// surfaces (`targetOf`, `ancestorsOf` / `rootOf` / `cascadeOf`,
+// `Query.hierarchy`) accept only `RelationDef<"exclusive">` — turning the
+// dev-mode RELATION_MODE_MISMATCH throw into a compile error. Optional +
+// covariant (a tuple, like ComponentDef's schema slot) so a stamped handle
+// still erases to the bare `RelationDef` union that declaration lists and
+// cardinality-agnostic APIs use. A dynamically-registered relation (options
+// not statically known) is the bare union and must go through the runtime
+// check instead.
+declare const __relationCardinality: unique symbol;
+
+export type RelationDef<C extends RelationCardinality = RelationCardinality> = RelationID & {
+	readonly [__relationBrand]: "relation";
+	readonly [__relationCardinality]?: [C];
+};
 
 /** Access sentinel for the `(*, T)` wildcard query iteration
  * (`Query.forEachRelatedTo`, #579). A `(*, T)` term reads **every** registered
@@ -108,13 +128,21 @@ export const DEFAULT_ON_DELETE_TARGET: OnDeleteTarget = "orphan";
 
 /** Registration options. `exclusive` (one target per source) is the default;
  * pass `{ multi: true }` for a multi-target relation. The two are mutually
- * exclusive — passing both throws. `onDeleteTarget` selects the cleanup
- * policy applied to sources when a target is destroyed (default `orphan`). */
-export interface RelationOptions {
-	readonly exclusive?: boolean;
-	readonly multi?: boolean;
-	readonly onDeleteTarget?: OnDeleteTarget;
-}
+ * exclusive — the union makes `{ exclusive: true, multi: true }` a compile
+ * error (it also throws at runtime, for JS callers). `onDeleteTarget` selects
+ * the cleanup policy applied to sources when a target is destroyed (default
+ * `orphan`). */
+export type RelationOptions =
+	| {
+			readonly exclusive?: true;
+			readonly multi?: false;
+			readonly onDeleteTarget?: OnDeleteTarget;
+	  }
+	| {
+			readonly multi: true;
+			readonly exclusive?: false;
+			readonly onDeleteTarget?: OnDeleteTarget;
+	  };
 
 /** Field name carrying the target `EntityID` on an exclusive relation's backing
  * sparse component. Field 0 of a single-field schema. */
@@ -146,8 +174,9 @@ export type MakeSourceID = (index: number) => EntityID;
  * its sparse interaction are owned by the concrete `ExclusiveRelationStore` /
  * `MultiRelationStore` (built by `makeRelationStore`).
  *
- * `Store` owns what is genuinely its own — entity liveness, registration, and
- * destroy orchestration — and drives a relation through the virtual `link` /
+ * The registry level (`Store` + `RelationService`) owns what is genuinely its
+ * own — entity liveness, registration, and destroy orchestration — and drives
+ * a relation through the virtual `link` /
  * `unlink` / `purgeSource` / `forEachCanonicalPair` / … without ever
  * branching on cardinality. Each cardinality keeps forward link + reverse index
  * + sparse membership in lockstep inside one method on one class, so the
@@ -291,7 +320,7 @@ export abstract class RelationStore {
 
 	/** The single target of source `index`, or `undefined`. Exclusive reads the
 	 * sparse field; multi has no single target and returns `undefined` (matching
-	 * the production `targetOf`-on-multi read, which the `__DEV__` guard rejects). */
+	 * the production `targetOf`-on-multi read, which the `DEV` guard rejects). */
 	public abstract singleTarget(index: number): EntityID | undefined;
 
 	/** All targets of source `index`, ascending by id — one or zero for

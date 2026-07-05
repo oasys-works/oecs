@@ -37,6 +37,25 @@ enum SCHEDULE {
 
 **`ecs.flush()`** — force-apply buffered deferred structural ops right now (rarely needed; phase boundaries and `update()` already flush).
 
+### Driving the loop: `FrameStepper`
+
+`update(dt)` is the authoritative "run one frame" primitive; **`FrameStepper`** is an optional host-side driver over it, so you don't hand-roll the `requestAnimationFrame` loop:
+
+```ts
+const stepper = new FrameStepper(ecs, {
+  fixedDt: 1 / 60,   // dt used by step() when none is given (default 1/60)
+  maxDt: 0.25,       // clamp on raw browser-frame deltas (default 0.25 s)
+  autoStart: true,   // start the rAF loop immediately (default false)
+});
+stepper.play();               // tick on requestAnimationFrame
+stepper.pause();              // stop; manual step() still works
+stepper.toggle();
+stepper.step();               // advance exactly one frame (debuggers, tests, editors)
+stepper.stepFrames(10);       // replay a paused sim
+```
+
+`maxDt` clamps each raw rAF delta **before** it reaches `update()` — a backgrounded tab suspends rAF, and without the clamp the first frame back would carry the whole suspension as one delta (still bounded by `maxFixedSteps`, but a burst). The first frame after `play()` uses `fixedDt`, since there is no previous timestamp. Explicit `step(dt)` deltas are trusted, not clamped. Non-browser hosts and tests inject `requestFrame`/`cancelFrame`; validation failures throw `INVALID_FRAME_STEP`. At runtime the stepper exposes `isRunning`, settable `fixedDt`/`maxDt`, and `dispose()`.
+
 ## Adding & ordering systems
 
 ```ts
@@ -44,11 +63,11 @@ addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): thi
 
 interface SystemEntry {
   system: SystemDescriptor;
-  ordering?: { before?: OrderingTarget[]; after?: OrderingTarget[] };
+  ordering?: { before?: SystemOrderingTarget[]; after?: SystemOrderingTarget[] };
   runIf?: RunCondition | RunCondition[];   // ANDed with any set conditions
   set?: SystemSet | SystemSet[];
 }
-// OrderingTarget = SystemDescriptor | SystemSet
+// SystemOrderingTarget = SystemDescriptor | SystemSet
 ```
 
 ```ts
@@ -62,7 +81,7 @@ ecs.addSystems(SCHEDULE.UPDATE,
 `before: [X]` puts this system before `X`; `after: [X]` after it. A `SystemSet` target expands to all its members.
 
 > [!WARNING]
-> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning, and the constraint just vanishes; the system falls back to insertion-order tiebreak.
+> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning (routed through `ECSOptions.onWarn`, default `console.warn`), and the constraint just vanishes; the system falls back to insertion-order tiebreak.
 
 > [!WARNING]
 > Adding the same descriptor to two phases throws `DUPLICATE_SYSTEM` in dev. Register a second system if you need the same logic in two phases.
@@ -112,13 +131,28 @@ Shipped built-ins:
 ```ts
 runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition;   // strict === (identity for objects)
 runEveryNTicks(n: number, offset?: number): RunCondition;            // ticks offset, offset+n, offset+2n…
-runIfAnyMatch(query: Query): RunCondition;                           // query.count() > 0
+runIfAnyMatch(query: Query): RunCondition;                           // query.entityCount > 0
 ```
+
+Combinators — compose conditions without hand-rolled closures. Each merges the operands' declared `reads`/`resourceReads` (so `accessCheck` still sees every edge) and derives its `name` from the operands. Evaluation short-circuits in argument order, like `&&`/`||`:
+
+```ts
+not(cond: RunCondition): RunCondition;          // run exactly when `cond` would skip
+allOf(...conds: RunCondition[]): RunCondition;  // every condition passes (&&)
+anyOf(...conds: RunCondition[]): RunCondition;  // any condition passes (||)
+```
+
+Empty argument lists follow vacuous truth: `allOf()` always runs the system, `anyOf()` never does.
+
+(This `anyOf` gates *systems*; it's unrelated to the [`Query.anyOf`](./queries.md) filter verb.)
 
 ```ts
 const notPaused = runIfResourceEq(PausedRes, false);
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
 ecs.configureSet(physics, { runIf: notPaused });
+
+// composed: throttle AI, but only while unpaused
+ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: allOf(notPaused, runEveryNTicks(10)) });
 ```
 
 > [!WARNING]
@@ -128,7 +162,7 @@ ecs.configureSet(physics, { runIf: notPaused });
 > When a condition returns `false`, the system's last-run tick does **not** advance — a skipped tick is indistinguishable from the system being absent that tick, which matters for [`changed()`](./change-detection.md) queries inside it.
 
 > [!NOTE]
-> `runIfAnyMatch` needs a **dense-only** query (`count()` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
+> `runIfAnyMatch` needs a **dense-only** query (`entityCount` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
 
 A schedule that uses no sets and no conditions runs a byte-for-byte fast path — you pay nothing for the feature until you use it.
 
@@ -145,7 +179,7 @@ get fixedAlpha(): number;      // accumulator / fixedTimestep — the render int
 Each `update(dt)` adds `dt` to an accumulator and runs `FIXED_UPDATE` once per whole `fixedTimestep` it contains — 0 times for a small `dt`, several for a large one. Fixed systems always see delta `= fixedTimestep`, never the frame `dt`.
 
 > [!WARNING]
-> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`); `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`). Both are validated at construction and on the setter.
+> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`) and is revalidated by its setter. `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`) and is set at construction.
 
 > [!TIP]
 > Use `ecs.fixedAlpha` to interpolate rendering between fixed steps: `renderPos = lerp(prevPos, pos, ecs.fixedAlpha)`.

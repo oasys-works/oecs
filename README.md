@@ -12,7 +12,7 @@ or a WASM compute backend; both profiles share one core and agree, byte-for-byte
 
 - **Fast** — struct-of-arrays column storage grouped by archetype; iteration is a tight loop over typed
   arrays with no per-entity object allocation.
-- **Type-safe** — components are branded integers at runtime and fully-typed schemas at compile time;
+- **Type-safe** — component handles are callable defs with stable numeric ids at runtime and fully-typed schemas at compile time;
   misspelled fields are compile errors.
 - **Deterministic** — an opt-in mode gives a backing-agnostic `stateHash` plus snapshot/restore and
   command-log replay.
@@ -28,22 +28,25 @@ deno add jsr:@oasys/oecs    # JSR (Deno)
 npx jsr add @oasys/oecs     # JSR (npm-compatible)
 ```
 
+Requires a runtime with resizable `ArrayBuffer` (the default heap profile grows in place):
+Node ≥ 20, Deno ≥ 1.38, Chrome 111+, Firefox 128+, Safari 16.4+.
+
 ## Quick start
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
 
-const world = new ECS(); // pure-TS heap profile — no SharedArrayBuffer needed
+const ecs = new ECS(); // pure-TS heap profile — no SharedArrayBuffer needed
 
 // Components — record syntax (per-field type) or array shorthand (defaults to "f64")
-const Pos = world.registerComponent({ x: "f64", y: "f64" });
-const Vel = world.registerComponent(["vx", "vy"] as const);
+const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+const Vel = ecs.registerComponent(["vx", "vy"] as const);
 
 // A query is a live, cached view over matching archetypes — build it once, reuse it.
-const movers = world.query(Pos, Vel);
+const movers = ecs.query(Pos, Vel);
 
 // Systems declare the components they read/write (checked in dev builds).
-const move = world.registerSystem({
+const move = ecs.registerSystem({
   reads: [Vel],
   writes: [Pos], // a declared write implies read of the same component
   fn: (ctx, dt) => {
@@ -58,15 +61,15 @@ const move = world.registerSystem({
   },
 });
 
-world.addSystems(SCHEDULE.UPDATE, move);
-world.startup();
+ecs.addSystems(SCHEDULE.UPDATE, move);
+ecs.startup();
 
-const e = world.createEntity();
-world.addComponent(e, Pos, { x: 0, y: 0 });
-world.addComponent(e, Vel, { vx: 100, vy: 50 });
+const e = ecs.spawn();
+ecs.addComponent(e, Pos, { x: 0, y: 0 });
+ecs.addComponent(e, Vel, { vx: 100, vy: 50 });
 
-world.update(1 / 60);
-world.getField(e, Pos, "x"); // ≈ 1.667
+ecs.update(1 / 60);
+ecs.getField(e, Pos, "x"); // ≈ 1.667
 ```
 
 ## Features
@@ -75,16 +78,17 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 - **Archetype SoA storage** over a backing-neutral `ColumnStore` — entities with the same component set
   share contiguous typed-array columns; cache-friendly loops, no per-entity object allocation.
-- **Phantom-typed components** — `registerComponent({ x: "f64", y: "f64" })` is a branded integer at
-  runtime and a fully-typed schema at compile time. Record syntax for per-field types, array shorthand
-  for uniform `f64`, and `registerTag()` for data-free markers. Field types: `f32 f64 i8 i16 i32 u8 u16 u32`.
+- **Phantom-typed components** — `registerComponent({ x: "f64", y: "f64" })` returns a callable
+  `ComponentDef` with a stable numeric `.id` at runtime and a fully-typed schema at compile time.
+  Record syntax for per-field types, array shorthand for uniform `f64`, and `registerTag()` for
+  data-free markers. Field types: `f32 f64 i8 i16 i32 u8 u16 u32`.
 - **Two storage profiles, one core** — pure-TS heap (`ArrayBuffer`) by default; opt-in
   `SharedArrayBuffer` for workers / WASM. Same code path, same `stateHash`, sized through a single
   `memory` surface (entity budget, byte cap, or pinned capacity).
 
 **Queries**
 
-- **Live, cached queries** — `world.query(Pos, Vel)` refined with `.and()` / `.without()` / `.anyOf()`;
+- **Live, cached queries** — `ecs.query(Pos, Vel)` refined with `.and()` / `.without()` / `.anyOf()`;
   new matching archetypes are pushed in automatically.
 - **Two iteration verbs** — `forEach(arch => …)` for read-only archetype iteration, `eachChunk((cols, count) => …)`
   for the mutable hot path (`cols.mut` / `cols.read` resolve a whole component's columns at once).
@@ -98,7 +102,7 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 - **Declarative systems** — plain functions in a `SystemConfig` declaring `reads` / `writes`, enforced by
   a dev-mode access checker (tree-shaken in production). Bare `(ctx, dt)` and `(q, ctx, dt)` +
-  query-builder overloads exist for access-free glue; lifecycle hooks `onAdded` / `onRemoved` / `dispose`;
+  query-builder overloads exist for no-access glue; lifecycle hooks `onAdded` / `onRemoved` / `dispose`;
   `exclusive: true` for full-world setup/teardown.
 - **Topological scheduler** — seven phases (`PRE_STARTUP` → `STARTUP` → `POST_STARTUP`, `FIXED_UPDATE`,
   `PRE_UPDATE` → `UPDATE` → `POST_UPDATE`); per-phase Kahn sort by `before` / `after`, with insertion
@@ -109,17 +113,18 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 **Structural changes**
 
-- **Deferred by default** — `ctx.commands` (a Bevy-`Commands`-style facade) buffers
-  spawn / add / remove / despawn / enable / disable until the phase flush, so iterators stay valid.
-  `world.addComponent` etc. are the immediate counterparts.
+- **Deferred inside systems, immediate on the host** — `ctx.commands` (a Bevy-`Commands`-style
+  facade) buffers spawn / add / remove / despawn / enable / disable until the phase flush, so
+  iterators stay valid. Every host-side mutation (`ecs.addComponent` / `removeComponent` /
+  `despawn` / `disable` / `enable`) applies immediately.
 - **Entity enable/disable** — `disable` / `enable` / `isDisabled`; disabled rows sit in a partitioned
   tail and are skipped by default queries.
-- **Templates & bundles** — `world.template([...])` blueprints consumed by `createEntity` /
-  `createEntities` for zero-transition spawns; `bundle(...)` + `spawnBundle(...)`.
+- **Templates & bundles** — `ecs.template([...])` blueprints consumed by `spawn` /
+  `spawnMany` for zero-transition spawns; `bundle(...)` + `spawnBundle(...)`.
 
 **Reactivity & relationships**
 
-- **Observers** — `world.observe(...)` for `onAdd` / `onRemove` / `onSet` / `onEnable` / `onDisable`,
+- **Observers** — `ecs.observe(...)` for `onAdd` / `onRemove` / `onSet` / `onEnable` / `onDisable`,
   structural or per-entity.
 - **Relations** — `(relation, target)` pairs with `ChildOf` / `IsA` presets, exclusive / multi arities,
   bidirectional queries (`targetOf` / `sourcesOf` / `ancestorsOf` / `rootOf` / `cascadeOf`), and
@@ -134,19 +139,20 @@ world.getField(e, Pos, "x"); // ≈ 1.667
 
 **Determinism, persistence & integration**
 
-- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `world.stateHash()` (FNV-1a over
-  live column bytes), `snapshot()` / `restoreInto(...)`, plus sparse variants. Backing-agnostic: a heap
-  world and a shared world with identical history produce identical hashes.
-- **Host → ECS write seam** — `installHostCommandSeam(world)` applies typed `HostCommand`s off-schedule
+- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `ecs.snapshots.stateHash()` (FNV-1a over
+  live dense bytes, sparse stores, and multi-relation target sets), `ecs.snapshots.capture()` /
+  `ecs.snapshots.restore(...)`, plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
+  identical hashes.
+- **Host → ECS write seam** — `installHostCommandSeam(ecs)` applies typed `HostCommand`s off-schedule
   via a blessed `exclusive` system, with record/replay (`HostCommandRecorder`, `replayCommandLog`) and a
   cross-thread ring transport.
 - **Reactive UI seam** (optional) — a zero-dep signals kernel (`@oasys/oecs/reactive`), an ECS→reactive
   bridge that publishes only dirty entities/columns (`@oasys/oecs/reactive-sync`), and a SolidJS adapter
   (`@oasys/oecs/solid`).
 - **Editor layer** — undo/redo + field handles over the write seam (`@oasys/oecs/editor`).
-- **Frame tracing** — `world.setTrace(sink)` + `FrameTraceRecorder` for a structured per-frame event
+- **Frame tracing** — `ecs.setTrace(sink)` + `FrameTraceRecorder` for a structured per-frame event
   stream (dev-gated).
-- **Compute backend seam** — `world.attachBackend(...)` to run a system body on a compiled backend (WASM,
+- **Compute backend seam** — `ecs.attachBackend(...)` to run a system body on a compiled backend (WASM,
   …) instead of its TS closure.
 
 **Reference**
@@ -180,8 +186,11 @@ production guarantee. The scheduler's cycle detection is the one check that is a
 
 - **New to oecs?** Start with the [Getting Started](docs/GETTING_STARTED.md) tutorial, then
   [Best Practices](docs/BEST_PRACTICES.md) and the [Architecture](docs/ARCHITECTURE.md) overview.
-- **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md) and the
+- **Using optional extensions?** See the [Extensions guide](docs/EXTENSIONS.md) for reactive UI,
+  editor, Solid, shared-memory, and primitives usage.
+- **Upgrading from 0.4?** See the [Migration guide (0.4 → 0.5)](docs/MIGRATION-0.4-to-0.5.md) and the
   [CHANGELOG](CHANGELOG.md).
+- **Upgrading from 0.3?** See the [Migration guide (0.3 → 0.4)](docs/MIGRATION-0.3-to-0.4.md).
 - **Full API reference** — start at the [reference index](docs/api/index.md):
   [components](docs/api/components.md) ·
   [entities](docs/api/entities.md) ·
@@ -197,6 +206,8 @@ production guarantee. The scheduler's cycle detection is the one check that is a
   [sparse storage](docs/api/sparse-storage.md) ·
   [determinism](docs/api/determinism.md) ·
   [memory](docs/api/memory.md) ·
+  [WASM backends](docs/api/wasm.md) ·
+  [parallelism](docs/api/parallel.md) ·
   [host-write seam](docs/api/host-write-seam.md) ·
   [reactive](docs/api/reactive.md) ·
   [editor](docs/api/editor.md) ·

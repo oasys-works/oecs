@@ -3,7 +3,7 @@
  *
  * Singleton buffer that captures `(callsite, channel, op, key)` per ECS /
  * action dispatch when `VISUAL_INTEL_TRACE=1` is set in the environment.
- * Compile-time gated by `__DEV__`, so production builds dead-code-eliminate
+ * Compile-time gated by `DEV`, so production builds dead-code-eliminate
  * every record() call. Output is a deterministic JSON snapshot the
  * `visual-intel` service can ingest as a third channel of evidence
  * alongside the existing static + symbol-propagation scans.
@@ -30,9 +30,9 @@
  *
  * Activation. `record()` is *unconditional* — it records on every call. The
  * `isActive()` env-var gate is applied by the *callers* (`ecs.ts` /
- * `query.ts`, all `if (__DEV__ && dispatchTrace.isActive())`), not inside
+ * `query.ts`, all `if (DEV && dispatchTrace.isActive())`), not inside
  * `record()`. This keeps the gate in one place — the dispatch hot path —
- * where `__DEV__ === false` dead-code-eliminates the whole branch in prod.
+ * where `DEV === false` dead-code-eliminates the whole branch in prod.
  */
 
 // This module holds only the in-memory tracer — no filesystem access. It is

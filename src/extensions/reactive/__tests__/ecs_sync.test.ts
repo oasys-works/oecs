@@ -17,7 +17,7 @@ import {
 	reactiveStruct,
 	root,
 	type ReactiveArray
-} from "../../../core/reactive";
+} from "../../../reactive";
 import { ECS, SCHEDULE, type EntityID } from "../../../core/ecs";
 import {
 	syncComponentToMap,
@@ -37,8 +37,8 @@ function makeWorld() {
 	const toWrite: { eid: EntityID; x: number }[] = [];
 	const toSpawn: number[] = []; // values for newly-spawned entities
 	const toDespawn: EntityID[] = [];
-	const toDisable: EntityID[] = []; // entities to ctx.disable this tick (#677)
-	const toEnable: EntityID[] = []; // entities to ctx.enable this tick (#677)
+	const toDisable: EntityID[] = []; // entities to ctx.commands.disable this tick (#677)
+	const toEnable: EntityID[] = []; // entities to ctx.commands.enable this tick (#677)
 	const spawned: EntityID[] = [];
 
 	world.addSystems(
@@ -59,16 +59,16 @@ function makeWorld() {
 				for (const { eid, x } of toWrite) ctx.setField(eid, Pos, "x", x);
 				toWrite.length = 0;
 				for (const x of toSpawn) {
-					const e = ctx.createEntity();
-					ctx.addComponent(e, Pos, { x });
+					const e = ctx.commands.spawn();
+					ctx.commands.add(e, Pos, { x });
 					spawned.push(e);
 				}
 				toSpawn.length = 0;
-				for (const eid of toDespawn) ctx.destroyEntity(eid);
+				for (const eid of toDespawn) ctx.commands.despawn(eid);
 				toDespawn.length = 0;
-				for (const eid of toDisable) ctx.disable(eid);
+				for (const eid of toDisable) ctx.commands.disable(eid);
 				toDisable.length = 0;
-				for (const eid of toEnable) ctx.enable(eid);
+				for (const eid of toEnable) ctx.commands.enable(eid);
 				toEnable.length = 0;
 			}
 		})
@@ -89,7 +89,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 			// replays onAdd over current matches, so the map starts fully populated.
 			const ids: EntityID[] = [];
 			for (let i = 0; i < N; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, Pos, { x: 0 });
 				ids.push(e);
 			}
@@ -142,7 +142,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 
 	it("an equal-value re-publish wakes nobody (content eq on an object projection)", () => {
 		const { world, Pos, toWrite } = makeWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5 });
 		const sync = syncComponentToMap(world, Pos, (row) => ({ x: row.field("x") }), {
 			eq: (a, b) => a.x === b.x
@@ -173,7 +173,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 
 	it("dispose() stops publishing", () => {
 		const { world, Pos, toWrite } = makeWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const sync = syncComponentToMap(world, Pos, (row) => row.field("x"));
 		world.startup();
@@ -188,7 +188,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 	it("merges access.reads with the synced def (a caller's extra reads don't drop def)", () => {
 		const { world, Pos, toWrite } = makeWorld();
 		const Other = world.registerComponent({ z: "f64" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		// The caller declares an unrelated extra read. Pre-fix, `{ reads:[def],
 		// ...access }` let `access.reads` OVERRIDE and drop `def`, so the projection's
@@ -234,7 +234,7 @@ describe("syncFieldsToMap", () => {
 				}
 			})
 		);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2, hp: 100 });
 		// Project only {x, y}; hp is NOT in the field list.
 		const sync = syncFieldsToMap(world, Pos, ["x", "y"]);
@@ -299,13 +299,13 @@ function makeJoinWorld() {
 				writePos.length = 0;
 				for (const w of writeHp) ctx.setField(w.eid, Health, "hp", w.hp);
 				writeHp.length = 0;
-				for (const a of addHp) ctx.addComponent(a.eid, Health, { hp: a.hp });
+				for (const a of addHp) ctx.commands.add(a.eid, Health, { hp: a.hp });
 				addHp.length = 0;
-				for (const eid of removeHp) ctx.removeComponent(eid, Health);
+				for (const eid of removeHp) ctx.commands.remove(eid, Health);
 				removeHp.length = 0;
-				for (const eid of toDisable) ctx.disable(eid);
+				for (const eid of toDisable) ctx.commands.disable(eid);
 				toDisable.length = 0;
-				for (const eid of toEnable) ctx.enable(eid);
+				for (const eid of toEnable) ctx.commands.enable(eid);
 				toEnable.length = 0;
 			}
 		})
@@ -316,7 +316,7 @@ function makeJoinWorld() {
 describe("syncJoinToMap — multi-component join", () => {
 	it("a write to a SECONDARY joined component republishes the row (no staleness)", () => {
 		const { world, Pos, Health, writeHp } = makeJoinWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7 });
 		world.addComponent(e, Health, { hp: 100 });
 		const sync = syncJoinToMap(
@@ -348,7 +348,7 @@ describe("syncJoinToMap — multi-component join", () => {
 
 	it("membership tracks the full join: appears on gaining the last component, drops on losing one", () => {
 		const { world, Pos, Health, addHp, removeHp } = makeJoinWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 }); // has Pos only — NOT a join member
 		const sync = syncJoinToMap(world, [Pos, Health], (row) => ({
 			x: row.field(Pos, "x"),
@@ -378,7 +378,7 @@ describe("syncComponentToMap — enable/disable (#677)", () => {
 		"[grain=%s] disabling deletes the row; re-enabling republishes it",
 		(grain) => {
 			const { world, Pos, toWrite, toDisable, toEnable } = makeWorld();
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 5 });
 			const sync = syncComponentToMap(world, Pos, (row) => row.field("x"), { grain });
 			world.startup();
@@ -405,8 +405,8 @@ describe("syncComponentToMap — enable/disable (#677)", () => {
 
 	it("seedExisting seeds enabled members only — a disabled entity is absent at attach", () => {
 		const { world, Pos } = makeWorld();
-		const enabled = world.createEntity();
-		const disabled = world.createEntity();
+		const enabled = world.spawn();
+		const disabled = world.spawn();
 		world.addComponent(enabled, Pos, { x: 1 });
 		world.addComponent(disabled, Pos, { x: 2 });
 		world.disable(disabled); // immediate host-side disable before the bridge attaches
@@ -419,7 +419,7 @@ describe("syncComponentToMap — enable/disable (#677)", () => {
 
 	it("disabling wakes the row's reader exactly once (delete is a single change)", () => {
 		const { world, Pos, toDisable } = makeWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3 });
 		const sync = syncComponentToMap(world, Pos, (row) => row.field("x"));
 		world.startup();
@@ -443,7 +443,7 @@ describe("syncComponentToMap — enable/disable (#677)", () => {
 describe("syncJoinToMap — enable/disable (#677)", () => {
 	it("disabling a join member drops the row; re-enabling re-adds it", () => {
 		const { world, Pos, Health, toDisable, toEnable } = makeJoinWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7 });
 		world.addComponent(e, Health, { hp: 100 });
 		const sync = syncJoinToMap(world, [Pos, Health], (row) => ({
@@ -472,7 +472,7 @@ describe("syncJoinToMap — enable/disable (#677)", () => {
 		// then gains Health (completing the join) while disabled: it must stay absent
 		// until enabled, then appear on enable.
 		const { world, Pos, Health, addHp, toEnable } = makeJoinWorld();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3 });
 		world.disable(e); // disabled before it is ever a join member
 		const sync = syncJoinToMap(world, [Pos, Health], (row) => ({
@@ -505,7 +505,7 @@ describe("syncComponentToMap — enable/disable add path (#784)", () => {
 			// HEALTH (the addable component); `e` carries Pos, is disabled, then gains
 			// Health while disabled — it must stay absent until enabled.
 			const { world, Pos, Health, addHp, toEnable } = makeJoinWorld();
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 }); // a real entity (carries Pos), no Health yet
 			world.disable(e);
 			const sync = syncComponentToMap(world, Health, (row) => row.field("hp"), { grain });
@@ -535,7 +535,7 @@ describe("syncComponentToMap — enable/disable add path (#784)", () => {
 function makeSingletonWorld() {
 	const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
 	const Session = world.registerComponent({ netStatus: "i32", latency: "f64", fps: "f64" });
-	const singleton = world.createEntity();
+	const singleton = world.spawn();
 	world.addComponent(singleton, Session, { netStatus: 2, latency: 20, fps: 60 });
 
 	type Field = "netStatus" | "latency" | "fps";
@@ -559,9 +559,9 @@ function makeSingletonWorld() {
 			fn: (ctx) => {
 				for (const w of writes) ctx.setField(singleton, Session, w.field, w.v);
 				writes.length = 0;
-				for (const e of toDisable) ctx.disable(e);
+				for (const e of toDisable) ctx.commands.disable(e);
 				toDisable.length = 0;
-				for (const e of toEnable) ctx.enable(e);
+				for (const e of toEnable) ctx.commands.enable(e);
 				toEnable.length = 0;
 			}
 		})
@@ -758,7 +758,7 @@ const EMPTY = 255; // an "empty slot" sentinel (cf. the army's EMPTY_SLOT = 0xff
 function makeSingletonArrayWorld() {
 	const world = new ECS({ deterministic: false });
 	const Army = world.registerComponent({ s0: "u8", s1: "u8", s2: "u8" });
-	const singleton = world.createEntity();
+	const singleton = world.spawn();
 	world.addComponent(singleton, Army, { s0: EMPTY, s1: EMPTY, s2: EMPTY });
 
 	type Slot = "s0" | "s1" | "s2";
@@ -782,9 +782,9 @@ function makeSingletonArrayWorld() {
 			fn: (ctx) => {
 				for (const w of writes) ctx.setField(singleton, Army, w.slot, w.v);
 				writes.length = 0;
-				for (const e of toDisable) ctx.disable(e);
+				for (const e of toDisable) ctx.commands.disable(e);
 				toDisable.length = 0;
-				for (const e of toEnable) ctx.enable(e);
+				for (const e of toEnable) ctx.commands.enable(e);
 				toEnable.length = 0;
 			}
 		})
@@ -971,7 +971,7 @@ describe("cross-sync coalescing (the batched-tick contract)", () => {
 		const world = new ECS({ deterministic: false });
 		const Net = world.registerComponent({ latency: "f64" });
 		const Clock = world.registerComponent({ elapsed: "f64" });
-		const singleton = world.createEntity();
+		const singleton = world.spawn();
 		world.addComponent(singleton, Net, { latency: 20 });
 		world.addComponent(singleton, Clock, { elapsed: 0 });
 		const writes: { latency?: number; elapsed?: number }[] = [];

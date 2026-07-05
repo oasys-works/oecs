@@ -83,6 +83,52 @@ describe("frame-trace seam", () => {
 		expect(end).toBeGreaterThan(spawn);
 	});
 
+	it("records every deferred op as command_queued — spawn's bundle attaches included", () => {
+		const world = new ECS({ deterministic: true });
+		const Pos = world.registerComponent({ x: "i32" });
+		const Vel = world.registerComponent({ vx: "i32" });
+		let victim = -1;
+		const sys = world.registerSystem({
+			name: "mutator",
+			exclusive: true,
+			reads: [],
+			writes: [],
+			fn: (ctx) => {
+				// One of each deferred op; every one must surface in the trace.
+				const e = ctx.commands.spawn(Pos({ x: 1 }), Vel({ vx: 2 }));
+				if (victim === -1) victim = e as number;
+				else {
+					ctx.commands.add(e, Pos, { x: 3 });
+					ctx.commands.remove(e, Pos);
+					ctx.commands.disable(e);
+					ctx.commands.enable(e);
+					ctx.commands.despawn(e);
+				}
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+
+		const rec = new FrameTraceRecorder();
+		world.setTrace(rec);
+		world.update(1 / 60); // frame 0: spawn only (sets victim)
+		world.update(1 / 60); // frame 1: the full op set
+
+		// Frame 0: the spawn AND its two bundle attaches are each traced.
+		const f0 = rec.frames()[0]!.events;
+		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "spawn").length).toBe(1);
+		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "add").length).toBe(2);
+
+		// Frame 1: every deferred op kind appears.
+		const f1 = rec.frames()[1]!.events;
+		for (const op of ["add", "remove", "disable", "enable", "despawn"] as const) {
+			expect(
+				find(f1, (e) => e.kind === "command_queued" && e.op === op),
+				`op '${op}' missing from trace`
+			).toBeGreaterThanOrEqual(0);
+		}
+	});
+
 	it("fires observer events inside a flush, after the triggering system", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
@@ -117,10 +163,42 @@ describe("frame-trace seam", () => {
 		expect(fe).toBeGreaterThan(obs);
 	});
 
+	it("labels observer_fired with the observer's name, falling back to the component debug name", () => {
+		const world = new ECS({ deterministic: true });
+		const Pos = world.registerComponent({ x: "i32" }, { name: "Pos" });
+		const Vel = world.registerComponent({ vx: "i32" }); // unnamed
+		world.observe(Pos, { name: "pos-watcher", onAdd: () => {}, access: openAccess([Pos]) });
+		world.observe(Pos, { onAdd: () => {}, access: openAccess([Pos]) });
+		world.observe(Vel, { onAdd: () => {}, access: openAccess([Vel]) });
+		const sys = world.registerSystem({
+			name: "spawner",
+			exclusive: true,
+			reads: [],
+			writes: [],
+			fn: (ctx) => {
+				ctx.commands.spawn(Pos({ x: 1 }), Vel({ vx: 2 }));
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+
+		const rec = new FrameTraceRecorder();
+		world.setTrace(rec);
+		world.update(1 / 60);
+
+		const labels = rec
+			.frames()[0]!
+			.events.filter((e) => e.kind === "observer_fired" && e.op === "add")
+			.map((e) => (e as { observer: string }).observer);
+		expect(labels).toContain("pos-watcher"); // explicit ObserverConfig.name
+		expect(labels).toContain("observer(Pos)"); // component debug-name fallback
+		expect(labels).toContain(`observer(${Vel.id})`); // bare-cid fallback
+	});
+
 	it("records event emit/read", () => {
 		const world = new ECS({ deterministic: true });
 		const Ping = eventKey<{ n: number }>("Ping");
-		world.registerEvent(Ping, ["n"]);
+		world.events.register(Ping, ["n"]);
 		const emitter = world.registerSystem({
 			name: "emitter",
 			exclusive: true,
@@ -217,13 +295,13 @@ describe("frame-trace seam", () => {
 				super();
 			}
 			override phaseBoundary(phase: SCHEDULE): void {
-				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.stateHash();
+				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.snapshots.stateHash();
 			}
 		}
 
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		const mover = world.registerSystem({
 			name: "mover",
@@ -239,7 +317,7 @@ describe("frame-trace seam", () => {
 		world.setTrace(probe);
 		for (let i = 0; i < 4; i++) {
 			world.update(1 / 60);
-			expect(probe.postHash).toBe(world.stateHash());
+			expect(probe.postHash).toBe(world.snapshots.stateHash());
 		}
 	});
 
@@ -258,14 +336,14 @@ describe("frame-trace seam", () => {
 				super();
 			}
 			override phaseBoundary(phase: SCHEDULE): void {
-				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.stateHash();
+				if (phase === SCHEDULE.POST_UPDATE) this.postHash = this.world.snapshots.stateHash();
 			}
 		}
 
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
 		const Mark = world.registerComponent({ m: "i32" }); // hash-relevant, NOT observed
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.addComponent(e, Mark, { m: 0 });
 		// Per-entity onSet records via ctx.setField (an immediate column write — CONTEXT.md),
@@ -291,7 +369,7 @@ describe("frame-trace seam", () => {
 		world.update(1 / 60);
 		// The boundary hash (Mark still 0) precedes the onSet tail write (Mark → 1).
 		expect(probe.postHash, "boundary fires before the onSet tail mutation").not.toBe(
-			world.stateHash()
+			world.snapshots.stateHash()
 		);
 	});
 
@@ -299,7 +377,7 @@ describe("frame-trace seam", () => {
 		const build = (): ECS => {
 			const world = new ECS({ deterministic: true });
 			const Pos = world.registerComponent({ x: "i32" });
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 });
 			const sys = world.registerSystem({
 				name: "mover",
@@ -321,7 +399,7 @@ describe("frame-trace seam", () => {
 		for (let i = 0; i < 4; i++) {
 			untraced.update(1 / 60);
 			traced.update(1 / 60);
-			expect(traced.stateHash()).toBe(untraced.stateHash());
+			expect(traced.snapshots.stateHash()).toBe(untraced.snapshots.stateHash());
 		}
 	});
 });

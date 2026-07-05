@@ -26,6 +26,7 @@ import {
 	type HostCommandQueue
 } from "../../host_commands";
 import type { ComponentDef } from "../../component";
+import type { SystemContext } from "../../query";
 import { createEntityId, type EntityID } from "../../entity";
 import { pushCommand } from "../../../store";
 
@@ -48,12 +49,12 @@ describe("host command seam — enqueue defers", () => {
 		commands.spawn([spawnEntry(Cell, { x: 5, heat: 0 })]);
 		// Off-schedule enqueue: the world is untouched, the queue holds it.
 		expect(commands.pending()).toBe(1);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 
 		world.update(1 / 60);
 		// Drained at PRE_UPDATE head, applied at the flush.
 		expect(commands.pending()).toBe(0);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 	});
 });
 
@@ -93,7 +94,7 @@ describe("host command seam — the vocabulary applies", () => {
 		commands.despawn(e!);
 		world.update(1 / 60);
 		expect(world.isAlive(e!)).toBe(false);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 	});
 
 	it("add_component / remove_component on an existing entity", () => {
@@ -116,15 +117,15 @@ describe("host command seam — the vocabulary applies", () => {
 		let e: EntityID | undefined;
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 
 		commands.disable(e!);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 
 		commands.enable(e!);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 	});
 
 	it("a frame's worth of commands all apply in one tick", () => {
@@ -132,7 +133,7 @@ describe("host command seam — the vocabulary applies", () => {
 		commands.spawn([spawnEntry(Cell, { x: 2, heat: 0 })]);
 		commands.spawn([spawnEntry(Cell, { x: 3, heat: 0 })]);
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(3);
+		expect(world.query(Cell).entityCount).toBe(3);
 	});
 });
 
@@ -140,10 +141,10 @@ describe("host command seam — PRE_STARTUP drain", () => {
 	it("seed-time commands apply at startup, before any update", () => {
 		const { world, Cell, commands } = makeWorld();
 		commands.spawn([spawnEntry(Cell, { x: 11, heat: 0 })]);
-		expect(world.query(Cell).count()).toBe(0); // not yet
+		expect(world.query(Cell).entityCount).toBe(0); // not yet
 
 		world.startup();
-		expect(world.query(Cell).count()).toBe(1); // drained at PRE_STARTUP head
+		expect(world.query(Cell).entityCount).toBe(1); // drained at PRE_STARTUP head
 	});
 });
 
@@ -155,14 +156,14 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 		world.startup();
 		commands.spawn([spawnEntry(Cell, { x: 1, heat: 0 })]);
 		expect(() => world.update(1 / 60)).not.toThrow();
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 	});
 
 	it("negative control: a non-exclusive system mutating an undeclared component throws", () => {
 		const world = new ECS({ deterministic: true });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 		// An existing entity to write to (immediate facade ops, no schedule span).
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Cell, { x: 0, heat: 0 });
 		// A plain system (no exclusive, empty access) that writes Cell.x.
 		world.addSystems(
@@ -170,9 +171,11 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 			world.registerSystem({
 				name: "rogue",
 				// Declares no writes — so writing Cell.x must throw the access check.
+				// ctx annotated permissive (§typestate escape hatch): the violation
+				// is deliberate, to assert the runtime throw.
 				reads: [],
 				writes: [],
-				fn: (ctx) => ctx.setField(e, Cell, "x", 1)
+				fn: (ctx: SystemContext) => ctx.setField(e, Cell, "x", 1)
 			})
 		);
 		world.startup();
@@ -300,7 +303,7 @@ describe("host command seam — two transports, one apply dispatch (#700)", () =
 		let e: EntityID | undefined;
 		commands.spawn([spawnEntry(Cell, { x: 1, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
-		expect(world.query(Cell).count()).toBe(1);
+		expect(world.query(Cell).entityCount).toBe(1);
 
 		// Despawn via the ring — a structural change, which must route through the
 		// same deferred buffers + phase flush a typed-queue despawn uses.
@@ -308,7 +311,7 @@ describe("host command seam — two transports, one apply dispatch (#700)", () =
 		world.update(1 / 60);
 
 		expect(world.isAlive(e!)).toBe(false);
-		expect(world.query(Cell).count()).toBe(0);
+		expect(world.query(Cell).entityCount).toBe(0);
 	});
 
 	it("the dispatcher skips unbound opcodes (read head still advances)", () => {

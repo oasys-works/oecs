@@ -8,7 +8,7 @@
  * the partition swap (`disableRow`/`enableRow`) fires no onAdd/onRemove, so a
  * consumer (the reactive bridge) was blind to it. onDisable / onEnable fire at
  * the *deferred* toggle drain in `flushStructural` — like onAdd/onRemove, an
- * *immediate* host-side `world.disable()` does not fire — for *every component
+ * *immediate* host-side `ecs.disable()` does not fire — for *every component
  * the entity carries* (a disable is a soft remove of the whole mask from default
  * queries, the symmetric idea to a destroy fanning onRemove over the mask), and
  * collapse to one event per *net* transition across a drain (disable→enable→
@@ -52,11 +52,11 @@
 
 import { unsafeCast } from "../../type_primitives";
 import type { ArchetypeView } from "./archetype";
-import type { ComponentDef } from "./component";
+import type { ComponentDef, ComponentHandle } from "./component";
 import type { EntityID } from "./entity";
-import type { ObserverOp } from "./frame_trace";
+import type { FrameTraceSink, ObserverOp } from "./frame_trace";
 import type { SystemContext } from "./query";
-import type { Store, StructuralObserverEvents } from "./store";
+import type { StructuralObserverEvents } from "./store";
 import {
 	_INTERNAL_EMPTY_ACCESS,
 	asSystemId,
@@ -64,7 +64,40 @@ import {
 	type SystemDescriptor
 } from "./system";
 import { accessCheck } from "./access_check";
+import { componentDebugName } from "./debug_names";
 import { ECS_ERROR, ECSError } from "./utils/error";
+import { DEV } from "../../dev_flag";
+
+/** What the observer registry needs from `Store` — the typed seam replacing
+ * bare underscore-convention reach-through (M1). `Store` implements this; the
+ * registry holds only this view, so the compiler bounds what observer dispatch
+ * can touch. Underscore names are kept so `Store`'s members stay one
+ * declaration (they read as "internal" at every other call site). */
+export interface ObserverHost {
+	/** Current change tick — read for onSet baselines. */
+	readonly _tick: number;
+	/** Dev-only frame-trace sink (`null` when unset; always null in prod). */
+	readonly _trace: FrameTraceSink | null;
+	/** Sync a component's observation flags (add/remove/disable/enable/dirty). */
+	_configureComponentObservation(
+		cid: number,
+		hasAdd: boolean,
+		hasRem: boolean,
+		hasDisable: boolean,
+		hasEnable: boolean,
+		trackDirty: boolean
+	): void;
+	/** Drain the per-entity onSet dirty list for `cid` (clears marks). */
+	_takeDirty(cid: number): EntityID[];
+	/** Visit archetypes whose `cid` column changed since `baseline`, in
+	 * canonical (creation-id) order. */
+	_forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
+	/** Every live entity currently holding `cid` (dispose-on-disable sweep). */
+	_collectEntitiesWithComponent(cid: number): EntityID[];
+	isAlive(id: EntityID): boolean;
+	isDisabled(id: EntityID): boolean;
+	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
+}
 
 /** Per-entity observer callback (onAdd / onRemove / onDisable / onEnable, and
  * per-entity onSet). */
@@ -82,18 +115,24 @@ interface ObserverConfigBase {
 	/** Fires when an entity carrying this component is *disabled* (#577) — at the
 	 * deferred toggle drain, once per net transition (ADR-0023). Mirrors `onRemove`:
 	 * a disable is a soft remove of the whole mask from default queries. An immediate
-	 * host-side `world.disable()` does not fire (like immediate `addComponent`). */
+	 * host-side `ecs.disable()` does not fire (like immediate `addComponent`). */
 	onDisable?: ObserverFn;
 	/** Fires when an entity carrying this component is *enabled* (#577), symmetric
 	 * with `onDisable` / `onAdd`. */
 	onEnable?: ObserverFn;
 	/** Access surface the callbacks touch (reads / writes / spawns / …). Partial:
-	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `__DEV__`. */
+	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `DEV`. */
 	access?: Partial<SystemAccessDeclaration>;
 	/** flecs-style replay of current matches on registration (onAdd only — seeds the
 	 * *enabled* members; a disabled entity is simply absent, matching default-query
 	 * semantics), for order-independence of register-vs-spawn. */
 	yieldExisting?: boolean;
+	/** Diagnostic label for this observer, surfaced by the frame-trace seam
+	 * (ADR-0030) as the `observer_fired.observer` field — the same role a system's
+	 * `name` plays. Optional and observe-only: it never touches `stateHash` or
+	 * dispatch. Defaults to `observer(<component debug name>)` when the component
+	 * was registered with a name, else `observer(<cid>)`. */
+	name?: string;
 }
 
 /** Per-entity onSet: `onSet(eid, ctx)` fires once per changed entity, drained
@@ -123,19 +162,27 @@ export type ObserverConfig =
 	| EntitySetObserverConfig
 	| ArchetypeSetObserverConfig;
 
-/** Handle returned by `world.observe(...)`. `dispose()` unregisters; safe to
+/** Handle returned by `ecs.observe(...)`. `dispose()` unregisters; safe to
  * call more than once. */
+// Runtime fallback matching the TS/Babel downlevel `using` helpers, which key
+// off Symbol.for("Symbol.dispose") when the well-known symbol is absent.
+const DISPOSE: typeof Symbol.dispose =
+	Symbol.dispose ?? (Symbol.for("Symbol.dispose") as typeof Symbol.dispose);
+
 export interface ObserverHandle {
 	dispose(): void;
+	/** `using h = ecs.observe(C, {...})` — explicit-resource-management sugar
+	 * over {@link dispose} (TC39 `Symbol.dispose`). */
+	[Symbol.dispose](): void;
 }
 
 /** A registered observer (one component). */
 interface ObserverEntry {
 	readonly id: number;
 	readonly cid: number;
-	/** The observed component's callable def — carried so per-entity onSet can
+	/** The observed component's handle — carried so per-entity onSet can
 	 *  call `hasComponent(eid, def)` without re-minting a def from `cid`. */
-	readonly def: ComponentDef;
+	readonly def: ComponentHandle;
 	readonly onAdd: ObserverFn | undefined;
 	readonly onRemove: ObserverFn | undefined;
 	readonly onDisable: ObserverFn | undefined;
@@ -273,7 +320,7 @@ export class ObserverRegistry {
 	private readonly _setDrainCache = new Map<number, EntityID[]>();
 
 	constructor(
-		private readonly store: Store,
+		private readonly store: ObserverHost,
 		private readonly ctx: SystemContext
 	) {}
 
@@ -294,19 +341,19 @@ export class ObserverRegistry {
 		return out;
 	}
 
-	register(def: ComponentDef, config: ObserverConfig): ObserverHandle {
+	register(def: ComponentHandle, config: ObserverConfig): ObserverHandle {
 		const cid = def.id;
 		const granularity = config.granularity ?? "archetype";
 		const isEntitySet = config.onSet !== undefined && granularity === "entity";
 		const isArchSet = config.onSet !== undefined && granularity !== "entity";
-		if (__DEV__ && config.onSet === undefined && config.granularity !== undefined) {
+		if (DEV && config.onSet === undefined && config.granularity !== undefined) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
-				"observe(): `granularity` is meaningless without `on_set`"
+				"observe(): `granularity` is meaningless without `onSet`"
 			);
 		}
 		if (
-			__DEV__ &&
+			DEV &&
 			config.onAdd === undefined &&
 			config.onRemove === undefined &&
 			config.onDisable === undefined &&
@@ -315,12 +362,15 @@ export class ObserverRegistry {
 		) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
-				"observe(): at least one of on_add / on_remove / on_disable / on_enable / on_set is required"
+				"observe(): at least one of onAdd / onRemove / onDisable / onEnable / onSet is required"
 			);
 		}
 
 		const access = config.access ?? {};
-		const descriptor = synthDescriptor(`observer(${cid})`, access);
+		const descriptor = synthDescriptor(
+			config.name ?? `observer(${componentDebugName(def) ?? cid})`,
+			access
+		);
 		const entry: ObserverEntry = {
 			// Share one identity space with the descriptor (used only for the
 			// topo tie-break + diagnostics).
@@ -353,9 +403,8 @@ export class ObserverRegistry {
 
 		if (entry.yieldExisting && entry.onAdd !== undefined) this._yieldExisting(entry);
 
-		return {
-			dispose: () => this._dispose(entry)
-		};
+		const dispose = (): void => this._dispose(entry);
+		return { dispose, [DISPOSE]: dispose };
 	}
 
 	private _dispose(entry: ObserverEntry): void {
@@ -436,7 +485,7 @@ export class ObserverRegistry {
 		this._bucket(ev.enaComp, ev.enaEid, ev.enaLen, this._enaBuckets);
 
 		const order = this.getTopo();
-		const prev = __DEV__ ? accessCheck.current() : null;
+		const prev = DEV ? accessCheck.current() : null;
 		for (let oi = 0; oi < order.length; oi++) {
 			const obs = order[oi];
 			// Skip an observer disposed mid-round: a `dispose()` handle is reachable
@@ -465,7 +514,7 @@ export class ObserverRegistry {
 					this._fireEach(obs, obs.onEnable, eids, "enable");
 			}
 		}
-		if (__DEV__ && prev !== null) accessCheck.enter(prev);
+		if (DEV && prev !== null) accessCheck.enter(prev);
 
 		this._clearBuckets(this._addBuckets);
 		this._clearBuckets(this._remBuckets);
@@ -477,15 +526,15 @@ export class ObserverRegistry {
 	 * fire `fn` per entity under the observer's access scope. */
 	private _fireEach(obs: ObserverEntry, fn: ObserverFn, eids: number[], op: ObserverOp): void {
 		radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
-			const trace = __DEV__ ? this.store._trace : null;
+			const trace = DEV ? this.store._trace : null;
 			for (let i = 0; i < eids.length; i++) {
 				fn(unsafeCast<EntityID>(eids[i]), this.ctx);
-				if (__DEV__) trace?.observerFired(op, obs.cid, eids[i], obs.descriptor);
+				if (DEV) trace?.observerFired(op, obs.cid, eids[i], obs.descriptor);
 			}
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 	}
 
@@ -517,7 +566,7 @@ export class ObserverRegistry {
 	 */
 	dispatchSet(tick: number): void {
 		if (this.entries.length === 0) return;
-		const prev = __DEV__ ? accessCheck.current() : null;
+		const prev = DEV ? accessCheck.current() : null;
 		// Canonical across observers: topo order (same as structural).
 		const order = this.getTopo();
 		const drained = this._setDrainCache;
@@ -529,7 +578,7 @@ export class ObserverRegistry {
 		// Return the drained scratch lists to the store empty and reset the cache.
 		for (const eids of drained.values()) eids.length = 0;
 		drained.clear();
-		if (__DEV__ && prev !== null) accessCheck.enter(prev);
+		if (DEV && prev !== null) accessCheck.enter(prev);
 	}
 
 	private _dispatchSetEntity(obs: ObserverEntry, drained: Map<number, EntityID[]>): void {
@@ -546,7 +595,7 @@ export class ObserverRegistry {
 		if (eids.length === 0) return;
 		const def = obs.def;
 		const fn = obs.onSetEntity!;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			for (let i = 0; i < eids.length; i++) {
 				const eid = unsafeCast<EntityID>(eids[i]);
@@ -562,27 +611,27 @@ export class ObserverRegistry {
 					!this.store.isDisabled(eid)
 				) {
 					fn(eid, this.ctx);
-					if (__DEV__) this.store._trace?.observerFired("set", obs.cid, eid, obs.descriptor);
+					if (DEV) this.store._trace?.observerFired("set", obs.cid, eid, obs.descriptor);
 				}
 			}
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 	}
 
 	private _dispatchSetArch(obs: ObserverEntry, tick: number): void {
 		const fn = obs.onSetArch!;
 		const baseline = obs.lastSetTick;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			this.store._forEachChangedArchetype(obs.cid, baseline, (arch) => {
 				fn(arch, this.ctx);
 				// Archetype-granular onSet has no per-entity id; report a single
 				// component-level firing (entity -1) per changed archetype.
-				if (__DEV__) this.store._trace?.observerFired("set", obs.cid, -1, obs.descriptor);
+				if (DEV) this.store._trace?.observerFired("set", obs.cid, -1, obs.descriptor);
 			});
 		} finally {
-			if (__DEV__) accessCheck.leave();
+			if (DEV) accessCheck.leave();
 		}
 		// Next tick, only fire for archetypes changed AFTER this tick.
 		obs.lastSetTick = tick + 1;
@@ -607,12 +656,12 @@ export class ObserverRegistry {
 		// the way `dispatchStructural` / `dispatchSet` do — `accessCheck.leave`
 		// nulls `active` rather than popping, and a bare leave here would silently
 		// disable dev-mode access enforcement for the rest of the caller's body.
-		const prev = __DEV__ ? accessCheck.current() : null;
-		if (__DEV__) accessCheck.enter(obs.descriptor);
+		const prev = DEV ? accessCheck.current() : null;
+		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			for (let i = 0; i < eids.length; i++) fn(unsafeCast<EntityID>(eids[i]), this.ctx);
 		} finally {
-			if (__DEV__) {
+			if (DEV) {
 				accessCheck.leave();
 				if (prev !== null) accessCheck.enter(prev);
 			}

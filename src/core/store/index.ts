@@ -142,10 +142,13 @@ export {
 	type ExtendPlan,
 	type ExtendResult,
 	StoreExtendError,
-	extendColumnStore,
-	snapshotLiveColumns,
-	restoreColumnSnapshots
+	extendColumnStore
 } from "./extend";
+
+// Shared grow/extend layout/realloc building blocks (H5) — one home for the
+// tail-cursor layout rule, the realloc-and-republish choreography, and the
+// snapshot helpers both resize paths use.
+export { snapshotLiveColumns, restoreColumnSnapshots } from "./layout_ops";
 
 export {
 	type BufferAllocator,

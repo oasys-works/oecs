@@ -38,7 +38,7 @@ function buildWorld(seed: number): { world: ECS; tick: () => void } {
 	const world = new ECS({ deterministic: true });
 	const C = world.registerComponent(Counter);
 	for (let i = 0; i <= seed; i++) {
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, C, { n: seed * 100 + i });
 	}
 	const sys = world.registerSystem({
@@ -71,7 +71,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let w = 0; w < N; w++) {
 				const { world, tick } = buildWorld(w);
 				for (let t = 0; t < TICKS; t++) tick();
-				solo.push(world.stateHash());
+				solo.push(world.snapshots.stateHash());
 			}
 			// Distinct seeds must produce distinct trajectories, else the
 			// isolation assertion below would be vacuously satisfiable.
@@ -85,7 +85,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let t = 0; t < TICKS; t++) {
 				for (let w = 0; w < N; w++) fwd[w].tick();
 			}
-			for (let w = 0; w < N; w++) expect(fwd[w].world.stateHash()).toBe(solo[w]);
+			for (let w = 0; w < N; w++) expect(fwd[w].world.snapshots.stateHash()).toBe(solo[w]);
 
 			// Reverse round-robin: same per-world tick count, opposite interleave
 			// order. Order-independence is the isolation property under test.
@@ -93,7 +93,7 @@ describe("multi-world isolation (#785)", () => {
 			for (let t = 0; t < TICKS; t++) {
 				for (let w = N - 1; w >= 0; w--) rev[w].tick();
 			}
-			for (let w = 0; w < N; w++) expect(rev[w].world.stateHash()).toBe(solo[w]);
+			for (let w = 0; w < N; w++) expect(rev[w].world.snapshots.stateHash()).toBe(solo[w]);
 		});
 
 		it("a world ticked alongside others is unaffected by the others' churn", () => {
@@ -102,7 +102,7 @@ describe("multi-world isolation (#785)", () => {
 			// hash — the neighbours' activity does not leak in.
 			const probeSolo = buildWorld(0);
 			probeSolo.tick();
-			const expected = probeSolo.world.stateHash();
+			const expected = probeSolo.world.snapshots.stateHash();
 
 			const probe = buildWorld(0);
 			const neighbours = Array.from({ length: N - 1 }, (_, w) => buildWorld(w + 1));
@@ -110,7 +110,7 @@ describe("multi-world isolation (#785)", () => {
 			probe.tick();
 			for (const nb of neighbours) nb.tick();
 
-			expect(probe.world.stateHash()).toBe(expected);
+			expect(probe.world.snapshots.stateHash()).toBe(expected);
 		});
 	});
 
@@ -131,7 +131,7 @@ describe("multi-world isolation (#785)", () => {
 			// World B: a trivial world ticked from inside A's system.
 			const worldB = new ECS();
 			const PosB = worldB.registerComponent(["x", "y"] as const);
-			const eB = worldB.createEntity();
+			const eB = worldB.spawn();
 			worldB.addComponent(eB, PosB, { x: 0, y: 0 });
 			worldB.addSystems(
 				SCHEDULE.UPDATE,
@@ -152,7 +152,7 @@ describe("multi-world isolation (#785)", () => {
 			const worldA = new ECS();
 			const Allowed = worldA.registerComponent(["v"] as const);
 			const Forbidden = worldA.registerComponent(["w"] as const);
-			const eA = worldA.createEntity();
+			const eA = worldA.spawn();
 			worldA.addComponent(eA, Allowed, { v: 0 });
 			worldA.addComponent(eA, Forbidden, { w: 0 });
 			worldA.addSystems(
@@ -187,6 +187,68 @@ describe("multi-world isolation (#785)", () => {
 
 			// The inner tick really ran: world B advanced.
 			expect(worldB.getField(eB, PosB, "x")).toBe(1);
+		});
+
+		it("a system may host-despawn in a SECOND world — the in-system despawn guard is per-world", () => {
+			// World B is not mid-iteration when A's system mutates it, so B's
+			// immediate host despawn is safe and must not trip the dev guard that
+			// protects against `ecs.despawn` from inside the SAME world's system
+			// (the accessCheck span is process-global; the guard scopes on the
+			// world actually executing its schedule).
+			const worldB = new ECS();
+			const TagB = worldB.registerTag();
+			const eB = worldB.spawn();
+			worldB.addComponent(eB, TagB);
+
+			const worldA = new ECS();
+			const Allowed = worldA.registerComponent(["v"] as const);
+			const eA = worldA.spawn();
+			worldA.addComponent(eA, Allowed, { v: 0 });
+			let inSystemErr: unknown = null;
+			worldA.addSystems(
+				SCHEDULE.UPDATE,
+				worldA.registerSystem({
+					...openAccess([Allowed]),
+					name: "world_a_despawner",
+					fn() {
+						try {
+							worldB.despawn(eB); // cross-world host despawn — legal
+						} catch (e) {
+							inSystemErr = e;
+						}
+					}
+				})
+			);
+			worldA.startup();
+			worldA.update(1 / 60);
+
+			expect(inSystemErr).toBeNull();
+			expect(worldB.isAlive(eB)).toBe(false);
+
+			// The same-world guard still fires: despawning in A from A's system throws.
+			const worldC = new ECS();
+			const TagC = worldC.registerTag();
+			const eC = worldC.spawn();
+			worldC.addComponent(eC, TagC);
+			let sameWorldErr: unknown = null;
+			worldC.addSystems(
+				SCHEDULE.UPDATE,
+				worldC.registerSystem({
+					...openAccess([]),
+					name: "same_world_despawner",
+					fn() {
+						try {
+							worldC.despawn(eC);
+						} catch (e) {
+							sameWorldErr = e;
+						}
+					}
+				})
+			);
+			worldC.startup();
+			worldC.update(1 / 60);
+			expect(sameWorldErr).toBeInstanceOf(ECSError);
+			expect((sameWorldErr as ECSError).message).toContain("same_world_despawner");
 		});
 	});
 });

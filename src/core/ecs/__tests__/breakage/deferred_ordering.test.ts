@@ -11,14 +11,14 @@ describe("Deferred operation ordering", () => {
 		const A = world.registerTag();
 		const B = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, A, B]),
 			fn(ctx) {
-				ctx.addComponent(e, A);
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, A);
+				ctx.commands.add(e, B);
 			}
 		});
 
@@ -39,14 +39,14 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const A = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, A]),
 			fn(ctx) {
-				ctx.addComponent(e, A);
-				ctx.removeComponent(e, A);
+				ctx.commands.add(e, A);
+				ctx.commands.remove(e, A);
 			}
 		});
 
@@ -67,16 +67,16 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				// Queue three adds of the same component with different values
-				ctx.addComponent(e, Vel, { vx: 10, vy: 20 });
-				ctx.addComponent(e, Vel, { vx: 30, vy: 40 });
-				ctx.addComponent(e, Vel, { vx: 50, vy: 60 });
+				ctx.commands.add(e, Vel, { vx: 10, vy: 20 });
+				ctx.commands.add(e, Vel, { vx: 30, vy: 40 });
+				ctx.commands.add(e, Vel, { vx: 50, vy: 60 });
 			}
 		});
 
@@ -96,14 +96,14 @@ describe("Deferred operation ordering", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.addComponent(e, Vel, { vx: 99, vy: 99 });
-				ctx.destroyEntity(e);
+				ctx.commands.add(e, Vel, { vx: 99, vy: 99 });
+				ctx.commands.despawn(e);
 			}
 		});
 
@@ -125,7 +125,7 @@ describe("Deferred operation ordering", () => {
 		const B = world.registerTag();
 		const C = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		// Give entity tag A initially
 		world.addComponent(e, A);
@@ -134,7 +134,7 @@ describe("Deferred operation ordering", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.addComponent(e, B);
+				ctx.commands.add(e, B);
 			}
 		});
 
@@ -142,7 +142,7 @@ describe("Deferred operation ordering", () => {
 		const sys2 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.addComponent(e, C);
+				ctx.commands.add(e, C);
 			}
 		});
 
@@ -150,7 +150,7 @@ describe("Deferred operation ordering", () => {
 		const sys3 = world.registerSystem({
 			...openAccess([Pos, A, B, C]),
 			fn(ctx) {
-				ctx.removeComponent(e, A);
+				ctx.commands.remove(e, A);
 			}
 		});
 
@@ -177,7 +177,7 @@ describe("Deferred operation ordering", () => {
 		const entities: EntityID[] = [];
 		const initialHasTag: boolean[] = [];
 		for (let i = 0; i < 500; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			const hasTag = i % 2 === 0;
 			if (hasTag) {
@@ -210,9 +210,9 @@ describe("Deferred operation ordering", () => {
 			fn(ctx) {
 				for (const op of ops) {
 					if (op.action === "add") {
-						ctx.addComponent(op.entity, Tag);
+						ctx.commands.add(op.entity, Tag);
 					} else {
-						ctx.removeComponent(op.entity, Tag);
+						ctx.commands.remove(op.entity, Tag);
 					}
 				}
 			}

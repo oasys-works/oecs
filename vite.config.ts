@@ -37,9 +37,9 @@ export default defineConfig(({ command }) => ({
       entry: {
         index: path.resolve(__dirname, "src/index.ts"),
         shared: path.resolve(__dirname, "src/shared.ts"),
-        "core/reactive/index": path.resolve(
+        "reactive/index": path.resolve(
           __dirname,
-          "src/core/reactive/index.ts",
+          "src/reactive/index.ts",
         ),
         "extensions/reactive/index": path.resolve(
           __dirname,
@@ -54,6 +54,7 @@ export default defineConfig(({ command }) => ({
           "src/extensions/solid/index.ts",
         ),
         primitives: path.resolve(__dirname, "src/primitives.ts"),
+        internal: path.resolve(__dirname, "src/internal.ts"),
       },
       formats: ["es", "cjs"],
       fileName: (format, entryName) =>

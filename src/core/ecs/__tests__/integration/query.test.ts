@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
+import type { ComponentDef } from "../../component";
+import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 // Field arrays
@@ -19,7 +21,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const result = world.query(Pos);
@@ -28,7 +30,7 @@ describe("ECS query (integration)", () => {
 		expect(lengthBefore).toBe(1);
 
 		// Adding a new component combo creates a new archetype containing Pos
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
 
@@ -50,7 +52,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Stat = world.registerComponent(Static);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -58,7 +60,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// Create a new entity with the excluded component
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 		world.addComponent(e2, Stat, {});
@@ -77,7 +79,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Hp = world.registerComponent(Health);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -85,7 +87,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp should be picked up
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 50 });
 
@@ -103,7 +105,7 @@ describe("ECS query (integration)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Hp = world.registerComponent(Health);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -111,7 +113,7 @@ describe("ECS query (integration)", () => {
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp — Hp is NOT in the or-mask
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 50 });
 
@@ -119,26 +121,110 @@ describe("ECS query (integration)", () => {
 	});
 
 	//=========================================================
-	// Deferred destruction via world
+	// Immediate destruction via the host facade
 	//=========================================================
 
-	it("destroy_entity defers — entity stays alive after call", () => {
+	it("despawn is immediate — entity is dead on the next line, no flush needed", () => {
 		const world = new ECS();
 
-		const id = world.createEntity();
-		world.destroyEntity(id);
-
-		expect(world.isAlive(id)).toBe(true);
-	});
-
-	it("flush processes the deferred destroy buffer", () => {
-		const world = new ECS();
-
-		const id = world.createEntity();
-		world.destroyEntity(id);
-		world.flush();
+		const id = world.spawn();
+		world.despawn(id);
 
 		expect(world.isAlive(id)).toBe(false);
+	});
+
+	it("host despawn from inside a system throws in DEV (use ctx.commands.despawn)", () => {
+		const world = new ECS();
+		const victim = world.spawn();
+
+		const rogue = world.registerSystem({
+			name: "rogue_host_despawn",
+			reads: [],
+			writes: [],
+			spawns: [],
+			despawns: [],
+			transitions: [],
+			resourceReads: [],
+			resourceWrites: [],
+			fn() {
+				world.despawn(victim);
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, rogue);
+		world.startup();
+
+		expect(() => world.update(0)).toThrow(/host despawn is immediate.*ctx\.commands\.despawn/);
+	});
+
+	it("every immediate host structural mutator throws from inside a system in DEV", () => {
+		// The despawn guard, extended to the whole immediate host mutation
+		// surface: mid-system these ops can move/swap rows a running query is
+		// walking AND are invisible to observers, so the receiver rule ("inside
+		// a system, use ctx.commands") is enforced wholesale, not just where the
+		// archetype-level iteration guard happens to catch it.
+		const ops: [string, (world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void, RegExp][] = [
+			["addComponent", (w, e, d) => void w.addComponent(e, d, { x: 1 }), /host addComponent is immediate.*ctx\.commands\.add/],
+			["addComponents", (w, e, d) => void w.addComponents(e, [{ def: d, values: { x: 1 } }]), /host addComponents is immediate.*ctx\.commands\.add/],
+			["removeComponent", (w, e, d) => void w.removeComponent(e, d), /host removeComponent is immediate.*ctx\.commands\.remove/],
+			["removeComponents", (w, e, d) => void w.removeComponents(e, [d]), /host removeComponents is immediate.*ctx\.commands\.remove/],
+			["disable", (w, e) => void w.disable(e), /host disable is immediate.*ctx\.commands\.disable/],
+			["enable", (w, e) => void w.enable(e), /host enable is immediate.*ctx\.commands\.enable/]
+		];
+
+		for (const [name, op, pattern] of ops) {
+			const world = new ECS();
+			const Marker = world.registerComponent({ x: "i32" });
+			const victim = world.spawn();
+			world.addComponent(victim, Marker, { x: 0 });
+
+			const rogue = world.registerSystem({
+				name: `rogue_host_${name}`,
+				exclusive: true, // full declared access — the guard fires anyway
+				reads: [],
+				writes: [],
+				fn() {
+					op(world, victim, Marker);
+				}
+			});
+			world.addSystems(SCHEDULE.UPDATE, rogue);
+			world.startup();
+
+			expect(() => world.update(0), `ecs.${name} should throw in-system`).toThrow(pattern);
+		}
+	});
+
+	it("host mutators stay usable from a DIFFERENT world's system (#785 multi-world)", () => {
+		// The guard is scoped by `_updating` to the world being mutated: a system
+		// of world A driving world B's host facade is a supported pattern — B is
+		// not mid-iteration, so B's guard must not fire.
+		const a = new ECS();
+		const b = new ECS();
+		const BMarker = b.registerComponent({ x: "i32" });
+		const target = b.spawn();
+
+		const driver = a.registerSystem({
+			name: "cross_world_driver",
+			// Exclusive: the accessCheck slot is process-global, so B's component
+			// ids would otherwise be checked against A's declarations. The
+			// mutation guard itself is what this test pins: it must key on B's
+			// `_updating` (false here), not on the open span alone.
+			exclusive: true,
+			reads: [],
+			writes: [],
+			fn() {
+				b.addComponent(target, BMarker, { x: 7 });
+				b.disable(target);
+				b.enable(target);
+				b.removeComponent(target, BMarker);
+				b.addComponent(target, BMarker, { x: 9 });
+				b.despawn(target);
+			}
+		});
+		a.addSystems(SCHEDULE.UPDATE, driver);
+		a.startup();
+
+		expect(() => a.update(0)).not.toThrow();
+		expect(b.isAlive(target)).toBe(false);
 	});
 
 	//=========================================================
@@ -150,7 +236,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 2 });
 
@@ -173,7 +259,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		// Cache a query for [Pos, Vel] — currently empty
@@ -186,7 +272,7 @@ describe("ECS query (integration)", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.addComponent(e1, Vel, { vx: 3, vy: 4 });
+				ctx.commands.add(e1, Vel, { vx: 3, vy: 4 });
 				lenDuringSystem = q.archetypeCount;
 			}
 		});
@@ -208,7 +294,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
@@ -223,7 +309,7 @@ describe("ECS query (integration)", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.removeComponent(e1, Vel);
+				ctx.commands.remove(e1, Vel);
 				countDuringSystem = q.archetypes[0].entityCount;
 			}
 		});
@@ -243,7 +329,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const posQuery = world.query(Pos);
@@ -261,7 +347,7 @@ describe("ECS query (integration)", () => {
 					for (let i = 0; i < a.entityCount; i++) entities.push(a.entityIds[i]);
 				});
 				if (entities.includes(e1 as number)) sys1SawPos = true;
-				ctx.addComponent(e1, Vel, { vx: 0, vy: 0 });
+				ctx.commands.add(e1, Vel, { vx: 0, vy: 0 });
 			}
 		});
 
@@ -291,15 +377,15 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		// System defers both add and destroy
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.addComponent(e1, Vel, { vx: 0, vy: 0 });
-				ctx.destroyEntity(e1);
+				ctx.commands.add(e1, Vel, { vx: 0, vy: 0 });
+				ctx.commands.despawn(e1);
 			}
 		});
 
@@ -320,11 +406,11 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 2 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 30, y: 40 });
 		world.addComponent(e2, Vel, { vx: 3, vy: 4 });
 
@@ -352,14 +438,14 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 0, vy: 0 });
 
 		const q = world.query(Pos, Vel);
 
 		// Deferred destroy + flush to empty the archetype
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
 
 		let archCount = 0;
@@ -374,7 +460,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 5, y: 7 });
 		world.addComponent(e1, Vel, { vx: 2, vy: 3 });
 
@@ -411,7 +497,7 @@ describe("ECS query (integration)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 

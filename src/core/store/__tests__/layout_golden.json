@@ -1,0 +1,1482 @@
+{
+	"growable_sab": [
+		{
+			"label": "growable_sab/A/create",
+			"layout": {
+				"byteLength": 544,
+				"headerCapacity": 544,
+				"headerViewStamp": 0,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"label": "growable_sab/A/extend",
+			"layout": {
+				"byteLength": 800,
+				"headerCapacity": 800,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 544,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 608,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 736,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"bufferIdentityKept": true,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "growable_sab/A/grow",
+			"layout": {
+				"byteLength": 1184,
+				"headerCapacity": 1184,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 32,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 800,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 928,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 544,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 608,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 736,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 1,
+			"newViewStamp": 2,
+			"bufferIdentityKept": true,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "growable_sab/B/extend-realloc",
+			"layout": {
+				"byteLength": 384,
+				"headerCapacity": 384,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 188,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 224,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 288,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 320,
+								"stride": 8
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "growable_sab/B/extend-existing-rows",
+			"layout": {
+				"byteLength": 448,
+				"headerCapacity": 448,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 240,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 272,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 336,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 368,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 432,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 2,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "growable_sab/C/grow-no-targets",
+			"layout": {
+				"byteLength": 136,
+				"headerCapacity": 136,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 1,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 104,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				1
+			]
+		}
+	],
+	"heap_arraybuffer": [
+		{
+			"label": "heap_arraybuffer/A/create",
+			"layout": {
+				"byteLength": 544,
+				"headerCapacity": 544,
+				"headerViewStamp": 0,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"label": "heap_arraybuffer/A/extend",
+			"layout": {
+				"byteLength": 800,
+				"headerCapacity": 800,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 544,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 608,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 736,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"bufferIdentityKept": true,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "heap_arraybuffer/A/grow",
+			"layout": {
+				"byteLength": 1184,
+				"headerCapacity": 1184,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 32,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 800,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 928,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 544,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 608,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 736,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 1,
+			"newViewStamp": 2,
+			"bufferIdentityKept": true,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "heap_arraybuffer/B/extend-realloc",
+			"layout": {
+				"byteLength": 384,
+				"headerCapacity": 384,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 188,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 224,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 288,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 320,
+								"stride": 8
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "heap_arraybuffer/B/extend-existing-rows",
+			"layout": {
+				"byteLength": 448,
+				"headerCapacity": 448,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 240,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 272,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 336,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 368,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 432,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 2,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "heap_arraybuffer/C/grow-no-targets",
+			"layout": {
+				"byteLength": 136,
+				"headerCapacity": 136,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 1,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 104,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				1
+			]
+		}
+	],
+	"default_fresh_sab": [
+		{
+			"label": "default_fresh_sab/A/create",
+			"layout": {
+				"byteLength": 544,
+				"headerCapacity": 544,
+				"headerViewStamp": 0,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"label": "default_fresh_sab/A/extend",
+			"layout": {
+				"byteLength": 880,
+				"headerCapacity": 880,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 512,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 544,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 608,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 624,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 688,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 816,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"bufferIdentityKept": false,
+			"dataProbe": [
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "default_fresh_sab/A/grow",
+			"layout": {
+				"byteLength": 1168,
+				"headerCapacity": 1168,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 32,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 512,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 640,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 896,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 912,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 976,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 1104,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 1,
+			"newViewStamp": 2,
+			"bufferIdentityKept": false,
+			"dataProbe": [
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "default_fresh_sab/B/extend-realloc",
+			"layout": {
+				"byteLength": 384,
+				"headerCapacity": 384,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 188,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 224,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 288,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 320,
+								"stride": 8
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "default_fresh_sab/B/extend-existing-rows",
+			"layout": {
+				"byteLength": 448,
+				"headerCapacity": 448,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 240,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 272,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 336,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 368,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 432,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 2,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "default_fresh_sab/C/grow-no-targets",
+			"layout": {
+				"byteLength": 136,
+				"headerCapacity": 136,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 1,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 104,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				1
+			]
+		}
+	],
+	"wasm_memory": [
+		{
+			"label": "wasm_memory/A/create",
+			"layout": {
+				"byteLength": 131072,
+				"headerCapacity": 544,
+				"headerViewStamp": 0,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"label": "wasm_memory/A/extend",
+			"layout": {
+				"byteLength": 196608,
+				"headerCapacity": 131328,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 428,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 464,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 131072,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 131136,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 131264,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"bufferIdentityKept": false,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "wasm_memory/A/grow",
+			"layout": {
+				"byteLength": 262144,
+				"headerCapacity": 196992,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 32,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 196608,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 196736,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 528,
+								"stride": 4
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 16,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 131072,
+								"stride": 4
+							},
+							{
+								"componentId": 21,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 131136,
+								"stride": 8
+							},
+							{
+								"componentId": 22,
+								"fieldId": 2,
+								"typeTag": 6,
+								"byteOff": 131264,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": true,
+			"oldViewStamp": 1,
+			"newViewStamp": 2,
+			"bufferIdentityKept": false,
+			"dataProbe": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"label": "wasm_memory/B/extend-realloc",
+			"layout": {
+				"byteLength": 131072,
+				"headerCapacity": 384,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 2,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 188,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 224,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 288,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 320,
+								"stride": 8
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"oldViewStamp": 0,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "wasm_memory/B/extend-existing-rows",
+			"layout": {
+				"byteLength": 131072,
+				"headerCapacity": 448,
+				"headerViewStamp": 2,
+				"headerArchetypeCount": 3,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 240,
+								"stride": 4
+							},
+							{
+								"componentId": 1,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 272,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 1,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 10,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 336,
+								"stride": 4
+							},
+							{
+								"componentId": 11,
+								"fieldId": 1,
+								"typeTag": 7,
+								"byteOff": 368,
+								"stride": 8
+							}
+						]
+					},
+					{
+						"archetypeId": 2,
+						"rowCapacity": 4,
+						"columns": [
+							{
+								"componentId": 20,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 432,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 2,
+			"dataProbe": [
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"label": "wasm_memory/C/grow-no-targets",
+			"layout": {
+				"byteLength": 131072,
+				"headerCapacity": 136,
+				"headerViewStamp": 1,
+				"headerArchetypeCount": 1,
+				"archetypes": [
+					{
+						"archetypeId": 0,
+						"rowCapacity": 8,
+						"columns": [
+							{
+								"componentId": 0,
+								"fieldId": 0,
+								"typeTag": 6,
+								"byteOff": 104,
+								"stride": 4
+							}
+						]
+					}
+				]
+			},
+			"viewsPreserved": false,
+			"newViewStamp": 1,
+			"dataProbe": [
+				0,
+				1
+			]
+		}
+	]
+}

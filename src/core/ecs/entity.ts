@@ -30,6 +30,7 @@
 import { Brand, unsafeCast } from "../../type_primitives";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { TOTAL_PACKED_BITS } from "./utils/constants";
+import { DEV } from "../../dev_flag";
 
 export type EntityID = Brand<number, "entity_id">;
 
@@ -72,7 +73,7 @@ export const MAX_LIVE_GENERATION = MAX_GENERATION - 1; // 0x7FE (2046)
 export const MAX_ENTITY_ID = (MAX_GENERATION << INDEX_BITS) | MAX_INDEX; // 0x7FFFFFFF
 
 export const createEntityId = (index: number, generation: number): EntityID => {
-	if (__DEV__) {
+	if (DEV) {
 		if (index < 0 || index > MAX_INDEX) {
 			throw new ECSError(ECS_ERROR.EID_MAX_INDEX_OVERFLOW);
 		}
@@ -87,3 +88,16 @@ export const createEntityId = (index: number, generation: number): EntityID => {
 export const getEntityIndex = (id: EntityID): number => id & INDEX_MASK;
 
 export const getEntityGeneration = (id: EntityID): number => (id as number) >> INDEX_BITS;
+
+/** Build the `ENTITY_NOT_ALIVE` error every dev-mode liveness guard throws:
+ * names the failing operation, the packed id, and its decoded index/generation
+ * so the user can see WHICH handle went stale without decoding by hand.
+ * `detail` appends op-specific context (e.g. the component being read). */
+export const entityNotAliveError = (op: string, id: EntityID, detail?: string): ECSError =>
+	new ECSError(
+		ECS_ERROR.ENTITY_NOT_ALIVE,
+		`${op}: entity ${id} (index ${getEntityIndex(id)}, generation ${getEntityGeneration(
+			id
+		)}) is not alive${detail ? ` — ${detail}` : ""} (destroyed, never created, or a stale handle; guard with isAlive() first)`,
+		{ entity: id, index: getEntityIndex(id), generation: getEntityGeneration(id), op }
+	);

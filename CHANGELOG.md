@@ -5,6 +5,246 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-07-06
+
+### Changed (breaking) — lifecycle & naming unification
+
+One vocabulary across host, commands, and access declarations; the receiver now implies the
+timing (host = immediate, `ctx.commands` = deferred). Hard renames, no deprecation aliases —
+see [docs/MIGRATION-0.4-to-0.5.md](docs/MIGRATION-0.4-to-0.5.md) for the complete
+rename/removal map:
+
+| 0.4 | 0.5 |
+| --- | --- |
+| `ecs.createEntity()` / `ecs.createEntity(template, overrides?)` | `ecs.spawn()` / `ecs.spawn(template, overrides?)` |
+| `ecs.createEntities(template, count)` | `ecs.spawnMany(template, count, overrides?)` |
+| `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)` — **now immediate** |
+| `ctx.createEntity()` | `ctx.commands.spawn()` |
+| `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
+| `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)` or `ctx.commands.add(e, def({ … }))` |
+| `ctx.removeComponent(e, def)` | `ctx.commands.remove(e, def)` |
+| `ctx.disable(e)` / `ctx.enable(e)` | `ctx.commands.disable(e)` / `ctx.commands.enable(e)` |
+| `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)` — matches `targetOf` / `targetsOf` |
+| `query.count()` | `query.entityCount` (getter, beside `archetypeCount`) |
+| `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
+| `DestroyEntityArg` (type) | `DespawnArg` |
+
+- **Host `despawn` is immediate** — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
+  line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).
+  **Observer note:** like every immediate op, host `despawn` fires no *structural* observers —
+  `onRemove` no longer sees host-despawned entities (it did at 0.4, when host destroy was
+  deferred). Observer-driven consumers, including the `reactive-sync` map bridges, only see
+  despawns that go through `ctx.commands.despawn` or the host-command seam. (`onSet` is
+  receiver-blind — derived change detection sees host `setField` writes as always.)
+- **Every immediate host structural mutator throws in dev when called from inside a system
+  body** — `despawn`, `addComponent`/`addComponents`, `removeComponent`/`removeComponents`,
+  `batchAddComponent`/`batchRemoveComponent`, `disable`/`enable` — each error pointing at its
+  `ctx.commands` equivalent. Mid-system these ops can move rows a running query is walking and
+  are invisible to observers; previously only `despawn` was guarded wholesale (the others were
+  caught only when they touched the archetype being iterated). Cross-world host mutation from
+  another world's system (#785) is unaffected — the guard is scoped to the mutated world.
+- **The bare deferred duplicates on `ctx` are removed** — `ctx.addComponent`,
+  `ctx.removeComponent`, `ctx.disable`, `ctx.enable` join the already-removed
+  `ctx.createEntity` / `ctx.destroyEntity`. `ctx.commands` is now the *only* deferred surface,
+  completing the receiver-implies-timing rule with zero exceptions. `ctx.commands.add` gains
+  the explicit complete-values shape (`ctx.commands.add(e, Pos, { x: 0, y: 0 })`) the removed
+  `ctx.addComponent` carried, so compile-checked complete attaches survive the move.
+  `ctx.isDisabled` stays (immediate read), as do the immediate sparse/relation ops.
+- **`sourcesOf` canonicalized to `(entity, def)`** on `ecs.relations` and `SystemContext` —
+  it was the one arg-order outlier on the relation surface (M3).
+- **The package root is now a curated, explicit export list** — `export *` no longer flattens the
+  whole core barrel, so future barrel additions cannot silently widen the public API. A checked-in
+  public-API snapshot test makes any surface change an explicit diff in review.
+- **Internal/tooling symbols moved to `@oasys/oecs/internal`** (explicitly **unstable — no semver
+  guarantees**): the packed-EntityID codec (`createEntityId`, `getEntityGeneration`, `MAX_INDEX`,
+  `MAX_GENERATION`, `MAX_LIVE_GENERATION`, `RETIRED_GENERATION`, `MAX_ENTITY_ID`), the SAB
+  command-ring transport (`HostCommandDispatcher`, `ring*Codec`, `HOST_COMMAND_PAYLOAD_BYTES`),
+  memory-sizing internals (`resolveECSMemory`, `DEFAULT_ECS_CAP_BYTES`, `BUDGET_*`), and the
+  dev-mode singletons (`accessCheck`, `dispatchTrace`). `getEntityIndex` stays at the root.
+
+### Added
+
+- **`addComponent` bundle overload** — `ecs.addComponent(e, Pos({ x: 1 }))` accepts a bundle
+  with the usual zero-fill semantics (M2); the explicit `(e, def, values)` form stays
+  complete-values, so a typo'd or missing field is still a compile error.
+- **`spawnMany` typed template + shared overrides** — bulk spawn takes the same typed
+  `Template<Defs>` as `spawn` plus one optional `TemplateOverrides<Defs>` object applied to
+  every row (contiguous batches use one `fill` per overridden column).
+- **JSDoc `@example` on the core surface** — `registerComponent`, `spawn`, `addComponent`,
+  `query`, `registerSystem`, `startup`, `update`, `ctx.emit` / `ctx.read`,
+  `events.register`, `resources.register` now carry hover-visible examples (M23).
+- **Component debug names** — `registerComponent(schema, { name: "Pos" })` (and the sparse
+  sibling) records a diagnostic label, so access-violation and liveness errors read
+  `'Pos' (component 5)` instead of leaving you to count registration order
+  (`ComponentRegisterOptions`).
+- **Total probes + `tryGetField`** — `hasComponent` / `hasSparse` / `relations.has` now return
+  `false` for a dead entity instead of dev-throwing (a "has" probe is exactly the call made to
+  avoid dead entities); `ecs.tryGetField(e, def, field)` returns `undefined` for a dead entity or
+  missing component, and `ctx.tryGetField` mirrors it inside systems (declared-read checked).
+- **Plural host mutators chain** — `addComponents`, `removeComponents`, `batchAddComponent`,
+  `batchRemoveComponent` return `this` (previously `void`), matching their singular siblings.
+- **`Query.firstEntity()` / `Query.singleEntity()`** — singleton reads (player, camera) without a
+  hand-rolled `forEach` + capture; `singleEntity` dev-throws `QUERY_NOT_SINGLETON` on 0 or >1.
+- **Host-side `ecs.refRead(def, e)`** — whole-component read-only view, parity with
+  `ctx.refRead`.
+- **Run-condition combinators** — `not()` / `allOf()` / `anyOf()`, merging the operands' declared
+  read surfaces.
+- **Editor change notification** — `editor.onChange(cb)` (fires on commit/undo/redo/clear) plus
+  `canUndo` / `canRedo` getters; no more per-frame `depths()` polling.
+- **`using` support** — `ObserverHandle` implements `Symbol.dispose`.
+- **Write-seam lifecycle** — `uninstallHostCommandSeam(world, queue)`,
+  `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)`,
+  `HostCommandRecorder.snapshotLog()` (stable deep copy).
+- **`VERSION`** export and a `"./package.json"` export; `engines: { node: ">=20" }` and a README
+  runtime note (resizable `ArrayBuffer`).
+- Root re-exports so failure modes are nameable without extra entry points:
+  `StoreRestoreError`, `SabUnavailableError`, `TypedArrayTag`; `/reactive` now exports `Eq` and
+  `shallow` (moved from `/reactive-sync`, which re-exports for compat); `signal()` gains the
+  zero-arg Solid-parity overload; `SingletonSyncOptions.eq`.
+- **`FrameStepper`** — optional host-side driver over the authoritative `ecs.update(dt)`:
+  `play()`/`pause()`/`toggle()` on `requestAnimationFrame` (injectable `requestFrame`/`cancelFrame`
+  for tests and non-browser hosts), explicit `step()`/`stepFrames()` for debuggers, editors, and
+  rollback playback, and a `maxDt` clamp (default 0.25 s) so a resumed background tab doesn't feed
+  the whole suspension into the accumulator as one delta. Validation throws `INVALID_FRAME_STEP`.
+- **`ObserverConfig.name`** — diagnostic label surfaced as the frame trace's
+  `observer_fired.observer` field (the role a system's `name` plays); observe-only, never affects
+  `stateHash` or dispatch order. Unnamed observers fall back to `observer(<component debug name>)`
+  when the component was registered with a name, else `observer(<cid>)`.
+- **`ECSOptions.onWarn`** — injectable sink for dev-mode engine diagnostics (currently the
+  schedule's dropped-ordering-edge warning and the `ECSOptions` unknown-key warning),
+  defaulting to `console.warn`. Replaces the internal `src/log` singleton, which is deleted.
+- **Editor `fieldHandle` `read` thunk is optional** — defaults to `Editor.committedField`.
+
+### Fixed
+
+- **Host iteration guard (`STRUCTURAL_DURING_ITERATION`)** — with host `despawn` now immediate,
+  a host-side `forEach`/`eachChunk` callback that despawned (or transitioned/toggled) an entity of
+  the archetype it was visiting silently skipped entities via the row swap-remove. Row-removing
+  ops on an archetype a live dense walk is standing in now throw in dev, *before* any mutation
+  lands (the transition path checks ahead of the destination append, so no dual-residency
+  half-state). Collect ids during the walk and mutate after it. Mutating archetypes the walk is
+  *not* currently visiting stays legal — the #431 fresh-snapshot machinery still covers those.
+- **Cross-world despawn false positive** — `worldB.despawn(e)` from inside world A's system no
+  longer trips the in-system despawn guard (the accessCheck span is process-global; the guard now
+  also requires *this* world to be mid-schedule). Driving a second world from a system (#785)
+  mutates it host-style, which is safe — B is not iterating. Unnamed systems in the guard message
+  now render as `system_<id>` instead of `'?'`.
+- **Frame trace records every deferred command (ADR-0030)** — the removed bare `ctx.*` deferred
+  forms bypassed the `commandQueued` trace hook, so host-command-seam adds/removes/toggles (and
+  any system using the bare forms) were invisible to an attached `FrameTraceSink` while their
+  spawns/despawns were visible. With `ctx.commands` as the only deferred surface every queued
+  command is traced, and `ctx.commands.spawn` now also traces each bundle attach it queues
+  (previously only the spawn itself).
+- **Stale deferred-attach docs** — `host_commands.ts` / the host-write-seam page claimed the
+  deferred add path does not zero-fill omitted fields (NaN readback); every attach path
+  zero-fills since #716 (`writeFields`'s `?? 0`). The complete-values requirement on
+  `SpawnEntry` is documented as what it is — explicit intent in a reified, replayable record —
+  and the observer docs now scope "immediate ops fire no observers" to *structural* observers
+  (`onSet` is derived change detection and sees host `setField` writes).
+- **`ecs.refRead` / `ctx.ref` / `ctx.refRead` on a missing component or tag def** — threw a raw
+  `TypeError` from the ref internals; now a dev `ECSError` (`COMPONENT_NOT_REGISTERED`) naming the
+  op and component, matching `getField`. Host `refRead`'s docstring now states the single-
+  expression lifetime rule (any immediate structural mutation can row-swap under a held ref).
+- **Editor: aborted transactions no longer poison undo** — `transaction(tx => …)` staged its
+  `setField` shadow writes into the editor's shared map at build time, so a build callback that
+  threw left phantom pending values behind and seeded the *next* edit's undo inverse with a value
+  the world never held. Staging is now transaction-local and merges only on commit.
+- **Editor: `pendingField` self-resolves for dead slots** — a shadow entry for a despawned entity
+  (or removed component) echoed its stale value forever and leaked; the reconcile-on-read now
+  prunes it and returns `undefined`.
+- **JSR/Deno consumers no longer break on the `__DEV__` global** — shipped source now reads a
+  guarded `DEV` flag (`src/dev_flag.ts`) that constant-folds in the npm bundle and defaults to
+  dev-on for raw-source consumers (`globalThis.__DEV__ = false` opts out).
+- **Error experience** — every `ENTITY_NOT_ALIVE` names the operation and decodes the packed id
+  (index + generation, with context); system access violations use the new `ACCESS_UNDECLARED`
+  category instead of overloading `*_NOT_REGISTERED`; resource/event "not registered" messages
+  name the key and hint the registration call; messages no longer reference pre-0.4 snake_case
+  option names or private tracker issue numbers.
+- **Packaging** — per-entry `.d.cts` and explicit-extension declaration specifiers
+  (`attw --pack` fully green: node10/node16/bundler across all eight entry points, was
+  masquerading + resolution errors); `typesVersions` for `moduleResolution: node10` subpaths; npm
+  tarball ships `CHANGELOG.md`; `@internal` editor internals no longer leak into published types.
+- **Type-level closures** — `EventShape<S>` homomorphic bound (interface-declared event schemas
+  now accepted); `RelationOptions` is a union so `{ exclusive: true, multi: true }` is a compile
+  error; `ResourceKey`'s phantom is a unique symbol (no `.__phantom` in autocomplete);
+  `pairsOf` / `sourcesOfAny` return readonly tuples; `SystemConfig.fn` optional when
+  `backendHandle` is present.
+- Dev-mode diagnostics: ownerless `computed()` / `onCleanup()` warn (kernel); ECSOptions warns on
+  unknown keys; `runIfResourceEq` warns on object-valued `expected` (reference-identity `===`);
+  `runEveryNTicks` validation throws `ECSError` (`INVALID_RUN_CONDITION`).
+- **Docs standardized on the `ecs` receiver** — README, GETTING_STARTED, BEST_PRACTICES, the
+  api reference, and every in-source JSDoc example now spell `const ecs = new ECS()`
+  (M22; with the `World*` names renamed to `ECS*`, "world" survives only as prose). The
+  host-write-seam docs now explain *why* `queue.spawn` takes complete-value `spawnEntry`s
+  rather than zero-filling bundles (M4: commands are a reified, replayable record — complete
+  values are explicit intent legible to replay, not a correctness need; the deferred add path
+  zero-fills omitted fields since #716).
+- **JSR publish no longer ships `__tests__` helper files** (`casing_codemod.ts`,
+  `test_helpers.ts` — including a `node:fs` import subject to JSR type-checking).
+
+### Changed (breaking) — type-level & facade surface
+
+- **Compile-time typestate across the system, query, relation, and key seams.** The config-form
+  `registerSystem` now infers your access declarations as literal types and hands `fn`/`onAdded` a
+  `SystemContext<DeclaredAccess<…>>` narrowed to exactly the declared surface — undeclared access
+  is a compile error naming the missing declaration, with the dev-mode runtime check remaining as
+  the backstop for dynamic values. Query columns are typed by the query's terms
+  (`ChunkColumns<Defs>` / `ArchetypeView<Defs>`; `.and(...)` extends the term set), relation
+  handles carry their cardinality (`RelationDef<"exclusive">` vs `RelationDef<"multi">` — the
+  exclusive-only traversal surfaces reject a multi handle at compile time), and
+  `ResourceKey`/`EventKey`/`EventDef` are invariant so a key can no longer widen through
+  `unknown`. A checked-in type battery (`typing_assertions.ts`) pins every rule.
+- **Grouped facades: `ecs.relations`, `ecs.events`, `ecs.resources`, `ecs.snapshots`.** Cohesive
+  secondary surfaces move off the flat namespace onto narrow typed facades —
+  `ecs.relations.add(child, ChildOf, parent)`, `ecs.events.emit(Damage, {...})`,
+  `ecs.resources.get(Time)`, `ecs.snapshots.capture()`. The facades mirror the typestate
+  surface exactly (cardinality-stamped `relations.register`, exclusive-only traversal). Hot-path
+  API (component ops, queries, spawn/destroy, sparse ops) stays flat by design. Facade classes
+  are exported type-only; the runtime export list is unchanged.
+- **Value arguments are schema-checked at compile time across every attach seam.** Tag defs
+  reject value objects (`Frozen({ x: 1 })` no longer compiles — tags carry no data);
+  `addComponents` takes schema-checked entries (`TemplateEntries<Defs>`), so a misspelled or
+  cross-component field key is a compile error instead of a silent zero-fill; host-seam
+  `queue.spawn` entries (`SpawnEntries<Defs>`) are checked complete against each def's own
+  schema (`ValuesArg` / `CompleteFieldValues` exported); and `events.register` requires the
+  field list to cover the event schema (`EventFieldsCover`) — a partial list silently dropped
+  columns and read back `undefined` at runtime. Smaller closures in the same vein: `observe`
+  accepts any `ComponentHandle`, `NoInfer` pins key-typed value params (`events.emit`,
+  resources), and reactive-sync's `JoinReader.field` is constrained to the join's component
+  set.
+
+### Removed (breaking)
+
+- The 29 flat forms the new facades replace (`registerRelation`/`addRelation`/`targetOf`/…,
+  `registerEvent`/`registerSignal`/`emit`/`read`, `registerResource`/`resource`/`setResource`/
+  `removeResource`/`hasResource`, `snapshot`/`restoreInto`/`snapshotSparse`/`restoreSparse`/
+  `stateHash`/`deterministic`, `relationCount`/`compactRelations`). Each maps 1:1 onto its
+  grouped replacement — `ecs.relations.add(...)`, `ecs.events.emit(...)`, `ecs.resources.get(...)`,
+  `ecs.snapshots.capture()` (was `snapshot()`) / `ecs.snapshots.restore(...)` (was
+  `restoreInto(...)`), `ecs.relations.count` (was `relationCount`), `ecs.relations.compact()`
+  (was `compactRelations()`). System-side `ctx.*` and all `Store`-level methods are unchanged.
+
+### Changed (internal)
+
+- **`Store` decomposed into seven focused collaborators** (RelationService, EventRegistry +
+  ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService, ArchetypeGraph) with
+  `Store` as the coordinator; the hot-path extractions were A/B-benchmarked against
+  identical-code controls with no regression. The `ECS` facade's pure delegations now live in a
+  marker-delimited pass-through band whose logic-free invariant is enforced by an AST guard test.
+- Typed per-consumer host seams (`ObserverHost`, `QueryHost`) replace underscore-convention
+  reach-through on `Store`; `QueryCache` now owns all 12 query-resolution cache maps.
+- Store layer consolidation: one strategy-parameterized factory behind
+  `growableSabAllocator` / `heapArraybufferAllocator`; a typed `isColumnStoreInternal` guard
+  replaces six structural casts; grow/extend's ~200 duplicated lines moved to a shared
+  `layout_ops.ts` (bit-identical layouts pinned by a golden differential test across the
+  full allocator matrix).
+- `core/reactive` moved to `src/reactive` (the published `./reactive` subpath is unchanged);
+  `__generated__/abi.ts` renamed to `vendored_abi/abi.ts` (it is a hand-maintained snapshot,
+  not generated output).
+- Deleted orphaned duplicate `src/utils/{arrays,constants}.ts`; renamed the custom `TypeError`
+  (shadowed the ECMAScript global) to `AssertionError`; retired the 246-line casing codemod +
+  guard test (the 0.4 rename has converged).
+
 ## [0.4.0] — 2026-06-24
 
 Major release. oecs is **re-derived from the upstream oasys engine ECS** — its modern descendant — and

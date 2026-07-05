@@ -63,10 +63,10 @@ describe("ECS optional query terms (#575)", () => {
 		const Vel = world.registerComponent(Velocity, "i32");
 
 		// e1 has Vel, e2 does not — two archetypes ({Pos,Vel} and {Pos}).
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 10, vy: 20 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 
 		const q = world.query(Pos).optional(Vel);
@@ -102,7 +102,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 }); // {Pos} only
 
 		const q = world.query(Pos).optional(Vel);
@@ -120,7 +120,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 5 });
 
 		const q = world.query(Pos).optional(Vel);
@@ -156,15 +156,15 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 
 		const q = world.query(Pos).optional(Vel);
 
-		const before = world.stateHash();
+		const before = world.snapshots.stateHash();
 		let sum = 0;
 		q.forEach((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
@@ -173,7 +173,7 @@ describe("ECS optional query terms (#575)", () => {
 				sum += px[i] + (vx ? vx[i] : 0);
 			}
 		});
-		const after = world.stateHash();
+		const after = world.snapshots.stateHash();
 
 		expect(after).toBe(before);
 		expect(sum).toBe(1 + 5 + 3); // px(e1)+px(e2)+vx(e1); e2 has no Vel
@@ -188,10 +188,10 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 1 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 
 		const q = world.query(Pos).optional(Vel);
@@ -217,7 +217,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 1 });
 
@@ -245,7 +245,7 @@ describe("ECS optional query terms (#575)", () => {
 
 		// Only a {Pos} entity exists — the optional Vel column is ALWAYS absent,
 		// so the check must run before the absent short-circuit to fire here.
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos).optional(Vel);
@@ -303,14 +303,14 @@ describe("ECS optional query terms (#575)", () => {
 		const Hp = world.registerComponent(Health, "i32");
 
 		// Require Pos AND Hp, exclude nothing extra, fetch Vel if present.
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Hp, { hp: 100 });
 		world.addComponent(e1, Vel, { vx: 9, vy: 9 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Hp, { hp: 50 }); // no Vel
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 3, y: 3 }); // no Hp → excluded by `and(Hp)`
 
 		const q = world.query(Pos).and(Hp).optional(Vel);
@@ -340,11 +340,11 @@ describe("ECS optional query terms (#575)", () => {
 		const Vel = world.registerComponent(Velocity, "i32");
 		const Hp = world.registerComponent(Health, "i32");
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Hp, { hp: 100 });
 		world.addComponent(e1, Vel, { vx: 7, vy: 7 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Hp, { hp: 50 }); // no Vel
 
@@ -377,10 +377,10 @@ describe("ECS optional query terms (#575)", () => {
 		const Vel = world.registerComponent(Velocity, "i32");
 		const Hp = world.registerComponent(Health, "i32");
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 3 }); // {Pos,Vel}, no Hp
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Hp, { hp: 9 }); // {Pos,Hp} → excluded by not(Hp)
 
@@ -416,7 +416,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 		world.addComponent(e, Vel, { vx: 1, vy: 1 });
 
@@ -435,7 +435,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Vel = world.registerComponent(Velocity, "i32");
 		const Hp = world.registerComponent(Health, "i32");
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		// Declared .optional(Hp), but fetches Vel — Vel is not in the scope.
@@ -453,7 +453,7 @@ describe("ECS optional query terms (#575)", () => {
 		const Vel = world.registerComponent(Velocity, "i32");
 		const Hp = world.registerComponent(Health, "i32"); // the undeclared optional
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 1 });
 		world.addComponent(e, Vel, { vx: 2, vy: 2 });
 

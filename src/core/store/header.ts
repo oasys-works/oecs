@@ -107,7 +107,7 @@ import {
 	STORE_HEADER_OFFSETS,
 	REGION_TABLE_ENTRY_BYTES,
 	REGION_TABLE_ENTRY_OFFSETS
-} from "./__generated__/abi";
+} from "./vendored_abi/abi";
 
 export {
 	STORE_MAGIC,

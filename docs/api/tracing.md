@@ -42,19 +42,19 @@ interface FrameTrace { readonly tick: number; readonly dt: number; readonly even
 ```
 
 > [!TIP]
-> **`phaseBoundary` is the seam for bisecting a [determinism](./determinism.md) divergence.** Implement your own `FrameTraceSink` and read `ecs.stateHash()` inside `phaseBoundary(phase)` — it fires once per phase, right after that phase's flush, the one safe point to hash. Diff the per-phase hashes between two peers to pin a divergence to a single phase. (The built-in `FrameTraceRecorder` no-ops `phaseBoundary`, since it holds no `ECS` reference to hash.)
+> **`phaseBoundary` is the seam for bisecting a [determinism](./determinism.md) divergence.** Implement your own `FrameTraceSink` and read `ecs.snapshots.stateHash()` inside `phaseBoundary(phase)` — it fires once per phase, right after that phase's flush, the one safe point to hash. Diff the per-phase hashes between two peers to pin a divergence to a single phase. (The built-in `FrameTraceRecorder` no-ops `phaseBoundary`, since it holds no `ECS` reference to hash.)
 
 > [!NOTE]
-> The `POST_UPDATE` boundary fires **before** the tick-tail `onSet` dispatch and event clear, so for an `ECS` with `onSet` observers the final per-tick hash may differ from the `POST_UPDATE` phase hash; one without them reconciles exactly. `observerFired` uses `entity === -1` for archetype-granular `onSet`. Sinks must be side-effect-free with respect to the `ECS` — the seam only observes.
+> The `POST_UPDATE` boundary fires **before** the tick-tail `onSet` dispatch and event clear, so for an `ECS` with `onSet` observers the final per-tick hash may differ from the `POST_UPDATE` phase hash; one without them reconciles exactly. `observerFired` uses `entity === -1` for archetype-granular `onSet`. The `observer` field carries the observer's `name` from its config, falling back to `observer(<component debug name>)`, then `observer(<cid>)` — see [observers](./observers.md). Sinks must be side-effect-free with respect to the `ECS` — the seam only observes.
 
 ## Dispatch trace — counts across the process
 
 A global singleton that aggregates event/resource/action dispatch **counts** by call site — a profiling view of *how often* channels fire, not the order.
 
 ```ts
-import { dispatchTrace } from "@oasys/oecs";
+import { dispatchTrace } from "@oasys/oecs/internal"; // unstable tooling surface
 
-dispatchTrace.isActive();    // gated by __DEV__ AND the VISUAL_INTEL_TRACE env var
+dispatchTrace.isActive();    // the runtime half of the gate: VISUAL_INTEL_TRACE env var (__DEV__ is checked at call sites)
 dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, JSON-serializable
 dispatchTrace.reset();
 ```

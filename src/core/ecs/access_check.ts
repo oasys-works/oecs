@@ -4,7 +4,7 @@
  * Module-level singleton that enforces a system's declared access surface
  * (`reads` / `writes` / `spawns` / `despawns` / `transitions` /
  * `resourceReads` / `resourceWrites`, plus the optional sparse/relation
- * terms added in #496) at runtime in `__DEV__`. Schedule calls
+ * terms added in #496) at runtime in `DEV`. Schedule calls
  * `accessCheck.enter(desc)` before invoking the system's `fn` (or
  * `onAdded`) and `accessCheck.leave()` after; SystemContext + Archetype
  * call the per-op `check_*` methods which throw `ECSError` if the running
@@ -14,7 +14,7 @@
  * `Set<symbol>` (resource keys) are computed on first `enter()` and cached
  * on the descriptor via a non-enumerable property bag (see `_access_sets`).
  * The cost in dev is a single Set.has per access; in prod the entire module
- * is dead-code-eliminated by `__DEV__` guards at every call site.
+ * is dead-code-eliminated by `DEV` guards at every call site.
  *
  * Sparse components (`SparseComponentID`) and relations (`RelationID`) are
  * each a SEPARATE id space from the dense archetype-mask `ComponentID` (#496).
@@ -34,6 +34,7 @@ import { ANY_RELATION, type RelationDef } from "./relation";
 import type { ResourceKey } from "./resource";
 import type { SystemDescriptor } from "./system";
 import { ECSError, ECS_ERROR } from "./utils/error";
+import { componentLabel } from "./debug_names";
 
 interface AccessSets {
 	reads: Set<number>;
@@ -104,8 +105,8 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	}
 	for (let i = 0; i < desc.despawns.length; i++) {
 		// despawns is "components this system removes via removeComponent
-		// OR destroys via destroyEntity". Both paths consult removeAllowed
-		// for per-component checks; destroyEntity also checks `hasDespawns`
+		// OR destroys via despawn". Both paths consult removeAllowed
+		// for per-component checks; despawn also checks `hasDespawns`
 		// to permit the call at all.
 		removeAllowed.add(desc.despawns[i].id);
 	}
@@ -179,7 +180,7 @@ function setsFor(desc: SystemDescriptor): AccessSets {
 interface ConditionAccess {
 	readonly name: string;
 	readonly reads?: readonly ComponentDef[];
-	readonly resourceReads?: readonly ResourceKey<unknown>[];
+	readonly resourceReads?: readonly ResourceKey<any>[];
 }
 
 // Cached per condition object — built-ins and custom conditions are stable
@@ -274,30 +275,26 @@ class AccessCheck {
 
 	checkRead(def: ComponentHandle): void {
 		if (this.sets === null) return;
-		const cid = def.id;
-		if (this.sets.reads.has(cid)) return;
-		this.failComponent("read", cid, "reads");
+		if (this.sets.reads.has(def.id)) return;
+		this.failComponent("read", def, "reads");
 	}
 
 	checkWrite(def: ComponentHandle): void {
 		if (this.sets === null) return;
-		const cid = def.id;
-		if (this.sets.writes.has(cid)) return;
-		this.failComponent("write", cid, "writes");
+		if (this.sets.writes.has(def.id)) return;
+		this.failComponent("write", def, "writes");
 	}
 
 	checkAdd(def: ComponentHandle): void {
 		if (this.sets === null) return;
-		const cid = def.id;
-		if (this.sets.addAllowed.has(cid)) return;
-		this.failComponent("add_component", cid, "spawns / transitions.add / writes");
+		if (this.sets.addAllowed.has(def.id)) return;
+		this.failComponent("addComponent", def, "spawns / transitions.add / writes");
 	}
 
 	checkRemove(def: ComponentHandle): void {
 		if (this.sets === null) return;
-		const cid = def.id;
-		if (this.sets.removeAllowed.has(cid)) return;
-		this.failComponent("remove_component", cid, "despawns / transitions.remove");
+		if (this.sets.removeAllowed.has(def.id)) return;
+		this.failComponent("removeComponent", def, "despawns / transitions.remove");
 	}
 
 	checkDestroy(): void {
@@ -306,23 +303,24 @@ class AccessCheck {
 		// ! safe: this.sets !== null implies this.activeName !== null
 		const name = this.activeName!;
 		throw new ECSError(
-			ECS_ERROR.COMPONENT_NOT_REGISTERED,
-			`system '${name}' called destroyEntity but didn't declare any despawns (Phase B of issue #213 — declare the components this system removes via destroyEntity)`
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' called despawn but didn't declare any despawns — declare the components this system removes via despawn in its 'despawns'`,
+			{ system: name, op: "despawn" }
 		);
 	}
 
-	checkResourceRead(key: ResourceKey<unknown>): void {
+	checkResourceRead(key: ResourceKey<any>): void {
 		if (this.sets === null) return;
 		const sym = key as unknown as symbol;
 		if (this.sets.resourceReads.has(sym)) return;
-		this.failResource("read", key, "resource_reads");
+		this.failResource("read", key, "resourceReads");
 	}
 
-	checkResourceWrite(key: ResourceKey<unknown>): void {
+	checkResourceWrite(key: ResourceKey<any>): void {
 		if (this.sets === null) return;
 		const sym = key as unknown as symbol;
 		if (this.sets.resourceWrites.has(sym)) return;
-		this.failResource("write", key, "resource_writes");
+		this.failResource("write", key, "resourceWrites");
 	}
 
 	// --- Sparse component / relation checks (#496) ---
@@ -335,28 +333,28 @@ class AccessCheck {
 		if (this.sets === null) return;
 		const sid = def as unknown as number;
 		if (this.sets.sparseReads.has(sid)) return;
-		this.failSparse("read", sid, "sparse_reads");
+		this.failSparse("read", sid, "sparseReads");
 	}
 
 	checkSparseWrite(def: SparseComponentDef): void {
 		if (this.sets === null) return;
 		const sid = def as unknown as number;
 		if (this.sets.sparseWrites.has(sid)) return;
-		this.failSparse("write", sid, "sparse_writes");
+		this.failSparse("write", sid, "sparseWrites");
 	}
 
 	checkRelationRead(def: RelationDef): void {
 		if (this.sets === null) return;
 		const rid = def as unknown as number;
 		if (this.sets.relationReads.has(rid)) return;
-		this.failRelation("read", rid, "relation_reads");
+		this.failRelation("read", rid, "relationReads");
 	}
 
 	checkRelationWrite(def: RelationDef): void {
 		if (this.sets === null) return;
 		const rid = def as unknown as number;
 		if (this.sets.relationWrites.has(rid)) return;
-		this.failRelation("write", rid, "relation_writes");
+		this.failRelation("write", rid, "relationWrites");
 	}
 
 	/** A `(*, T)` wildcard (`Query.forEachRelatedTo`, #579) reads every
@@ -370,7 +368,7 @@ class AccessCheck {
 		this.failRelation(
 			"(*, T) wildcard read",
 			ANY_RELATION as unknown as number,
-			"relation_reads (as ANY_RELATION)"
+			"relationReads (as ANY_RELATION)"
 		);
 	}
 
@@ -381,9 +379,9 @@ class AccessCheck {
 	// declared via `.optional(T)` — the term that authorizes the optional fetch.
 	// This is what makes the optional term *consumed* rather than decorative: like
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
-	// checked here in `__DEV__`. A stack (not a single slot) handles re-entrant /
+	// checked here in `DEV`. A stack (not a single slot) handles re-entrant /
 	// nested `forEach`. The optional scope is independent of the per-system
-	// `enter`/`leave` above — a host-side `world.query(...).forEach` outside any
+	// `enter`/`leave` above — a host-side `ecs.query(...).forEach` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual
 	// `query.archetypes` walk can't be attributed to an optional declaration, so it
 	// isn't checked — mirroring the unchecked outside-of-system calls in the header.
@@ -414,17 +412,19 @@ class AccessCheck {
 		}
 		throw new ECSError(
 			ECS_ERROR.OPTIONAL_TERM_NOT_DECLARED,
-			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it — add .optional(component) to the query before fetching it (#592)`
+			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it — add .optional(component) to the query before fetching it`
 		);
 	}
 
-	private failComponent(op: string, cid: number, missingField: string): never {
+	private failComponent(op: string, def: ComponentHandle, missingField: string): never {
 		// ! safe: every caller bails when this.sets is null, and both `enter` and
 		// `enterCondition` set activeName alongside sets, so it is non-null here.
 		const name = this.activeName!;
+		const label = componentLabel(def);
 		throw new ECSError(
-			ECS_ERROR.COMPONENT_NOT_REGISTERED,
-			`system '${name}' performed ${op} on component ${cid} but didn't declare it (Phase B of issue #213 — add component ${cid} to '${missingField}')`
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' performed ${op} on ${label} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			{ system: name, op, component: def.id }
 		);
 	}
 
@@ -432,8 +432,9 @@ class AccessCheck {
 		// ! safe: same as failComponent.
 		const name = this.activeName!;
 		throw new ECSError(
-			ECS_ERROR.COMPONENT_NOT_REGISTERED,
-			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it (issue #496 — add it to '${missingField}')`
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			{ system: name, op, sparse: sid }
 		);
 	}
 
@@ -441,18 +442,20 @@ class AccessCheck {
 		// ! safe: same as failComponent.
 		const name = this.activeName!;
 		throw new ECSError(
-			ECS_ERROR.RELATION_NOT_REGISTERED,
-			`system '${name}' performed ${op} on relation ${rid} but didn't declare it (issue #496 — add it to '${missingField}')`
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' performed ${op} on relation ${rid} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			{ system: name, op, relation: rid }
 		);
 	}
 
-	private failResource(op: string, key: ResourceKey<unknown>, missingField: string): never {
+	private failResource(op: string, key: ResourceKey<any>, missingField: string): never {
 		// ! safe: same as failComponent.
 		const name = this.activeName!;
 		const label = (key as unknown as symbol).description ?? "<unnamed>";
 		throw new ECSError(
-			ECS_ERROR.RESOURCE_NOT_REGISTERED,
-			`system '${name}' performed resource ${op} on '${label}' but didn't declare it (Phase B of issue #213 — add the resource key to '${missingField}')`
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' performed resource ${op} on '${label}' but didn't declare it — add the resource key to '${missingField}' (see docs/api/systems.md)`,
+			{ system: name, op, resource: label }
 		);
 	}
 }

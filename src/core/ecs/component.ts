@@ -59,6 +59,43 @@ export type FieldValues<S extends ComponentSchema> = {
 	readonly [K in keyof S]: number;
 };
 
+/**
+ * Values argument tuple for attaching a component of schema `S` — empty for a
+ * tag, a single optional partial-values map otherwise. A tag schema
+ * (`Record<string, never>`) would otherwise degenerate: `keyof` an
+ * index-signature record is `string`, so `Partial<FieldValues<…>>` collapses to
+ * `Record<string, number>` and `Frozen({ anything: 1 })` compiles. The
+ * conditional forbids values on tags outright; a schema-erased `ComponentDef`
+ * falls into the valued branch, so untyped call sites keep the loose shape.
+ */
+export type ValuesArg<S extends ComponentSchema> = S extends Record<string, never>
+	? []
+	: [values?: Partial<FieldValues<S>>];
+
+/**
+ * `FieldValues` for APIs where the values object is required and complete
+ * (`addComponent`'s valued overload, the host-seam `SpawnEntry`). Guards the
+ * same tag degeneracy as `ValuesArg`: a tag accepts only the empty object
+ * (`Record<string, never>` — every property typed `never`), so
+ * `addComponent(e, Frozen, { x: 1 })` is a compile error while the
+ * tag-overload-less call sites can still pass `{}`.
+ */
+export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<string, never>
+	? Record<string, never>
+	: FieldValues<S>;
+
+/**
+ * Trailing-argument tuple for the attach surfaces (`ctx.commands.add`'s
+ * explicit-values form, `ctx.addSparse`): a tag takes NO values argument, a valued schema REQUIRES a
+ * complete one. Encodes the former tag/valued overload pair as one signature,
+ * which the typed system seam needs — its `def` parameter is a single
+ * declared-access-constrained type param, and per-schema overloads would
+ * re-introduce the tag-vs-valued split on top of it.
+ */
+export type AttachValuesArg<S extends ComponentSchema> = S extends Record<string, never>
+	? []
+	: [values: CompleteFieldValues<S>];
+
 /** Maps schema fields to their specific typed array columns. */
 export type ColumnsForSchema<S extends ComponentSchema> = {
 	readonly [K in keyof S]: TagToTypedArray[S[K]];
@@ -74,6 +111,9 @@ export type MutableColumnsForSchema<S extends ComponentSchema> = {
 	[K in keyof S]: TagToTypedArray[S[K]];
 };
 
+// Phantom slot carrying the schema OUTSIDE the call signature (see ComponentDef).
+declare const __schema: unique symbol;
+
 /**
  * A component handle. **Callable**: `Pos({ x, y })` produces a `Bundle` (omitted
  * fields zero-fill at attach), so one varargs shape — `spawn(Pos({x,y}),
@@ -84,13 +124,57 @@ export type MutableColumnsForSchema<S extends ComponentSchema> = {
  * The numeric component id lives on `.id` (registration order). Consumers treat
  * the def as an opaque handle; internal code reads `def.id` where it needs the
  * raw id. The call signature's `S` makes `ComponentDef<{x:"f64"}>` distinct from
- * `ComponentDef<{vx:"f64"}>`, so no phantom field is needed for nominal typing.
+ * `ComponentDef<{vx:"f64"}>`.
+ *
+ * The optional `[__schema]` slot never exists at runtime; it re-states `S` in a
+ * covariant tuple position so that a TAG def type is not a universal assignment
+ * sink. Through the call signature alone every def is assignable to
+ * `ComponentDef<Record<string, never>>` (the tag callable takes no required
+ * args and any `Bundle` satisfies its return), which would let ONE tag in a
+ * system's declared-access union admit every component at compile time
+ * (§typestate — `DeclaredRead` and friends in system.ts). With the slot, a
+ * valued schema is not assignable to the tag schema (`"f64" ⊀ never`), while
+ * schema erasure (`ComponentDef<S>` → bare `ComponentDef`) still works because
+ * every schema is assignable to `ComponentSchema`.
  *
  * Build one with `makeComponentDef`; never construct by hand.
  */
 export interface ComponentDef<S extends ComponentSchema = ComponentSchema> {
-	(values?: Partial<FieldValues<S>>): Bundle<S>;
+	(...values: ValuesArg<S>): Bundle<S>;
 	readonly id: ComponentID;
+	readonly [__schema]?: [S];
+}
+
+/**
+ * Recover a def's schema type: `SchemaOf<typeof Pos>` is `{x:"f64", y:"f64"}`.
+ * The typed `SystemContext` methods (§typestate) constrain their `def`
+ * parameter to the system's declared-access union and use this to type the
+ * field argument, in place of taking `ComponentDef<S>` directly.
+ */
+export type SchemaOf<D> = D extends ComponentDef<infer S extends ComponentSchema> ? S : never;
+
+/**
+ * `unknown` if `D` is one of the query's declared terms, else an error tuple —
+ * the query-seam sibling of system.ts's `DeclaredRead` (§typestate,
+ * POLISH_AUDIT #6). `Query.eachChunk`'s cursor and `ArchetypeView`'s column
+ * accessors intersect this into their `def` parameter so fetching a component
+ * that is NOT a term of the iterating query fails to compile (previously
+ * caught only by the dev-mode access check, and only when the system's
+ * declaration was itself wrong). Same encoding rules as the system asserts:
+ * stable `D extends ComponentDef<any>` constraints keep instantiations
+ * mutually assignable, and the conditional keys on the signature's own `D`.
+ */
+export type DeclaredQueryTerm<Defs extends readonly ComponentDef<any>[], D> = [D] extends [
+	Defs[number]
+]
+	? unknown
+	: ["component is not a term of this query — add it with .and(...)", D];
+
+/** Options bag accepted by `registerComponent` / `registerSparseComponent`. */
+export interface ComponentRegisterOptions {
+	/** Debug label for diagnostics — errors then read `'Pos' (component 5)`
+	 * instead of `component 5`. Never affects behaviour, layout, or hashing. */
+	readonly name?: string;
 }
 
 /**
@@ -124,7 +208,7 @@ export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): Co
 	const def = ((values?: Partial<FieldValues<S>>): Bundle<S> => ({
 		def,
 		values: values ?? NO_VALUES
-	})) as ComponentDef<S>;
+	})) as unknown as ComponentDef<S>;
 	Object.defineProperty(def, "id", { value: id, enumerable: false });
 	return def;
 }
@@ -139,12 +223,13 @@ export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 /** Either a populated bundle or a bare def (tag / all-fields-zero). */
 export type BundleOrDef<S extends ComponentSchema = ComponentSchema> = Bundle<S> | ComponentDef<S>;
 
-/** Pair a component def with field values to attach. Omitted fields zero-fill. */
+/** Pair a component def with field values to attach. Omitted fields zero-fill;
+ * a tag def takes no values (see `ValuesArg`). */
 export function bundle<S extends ComponentSchema>(
 	def: ComponentDef<S>,
-	values?: Partial<FieldValues<S>>
+	...values: ValuesArg<S>
 ): Bundle<S> {
-	return { def, values: values ?? NO_VALUES };
+	return { def, values: (values as [Partial<FieldValues<S>>?])[0] ?? NO_VALUES };
 }
 
 /** Extract the def from a `BundleOrDef`. A bare def is the callable; a bundle a plain object. */

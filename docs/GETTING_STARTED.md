@@ -15,7 +15,7 @@ The `ECS` class (the "world") is the single entry point. It owns every entity, c
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
 
-const world = new ECS({
+const ecs = new ECS({
   fixedTimestep: 1 / 60,   // FIXED_UPDATE rate (default 1/60)
   maxFixedSteps: 4,        // cap fixed steps per update() to avoid spiral of death
   memory: { columnCapacity: 1024 },   // per-archetype initial column capacity
@@ -30,25 +30,25 @@ Each field maps to a dedicated typed-array column for cache-friendly iteration.
 
 ```ts
 // Record syntax — per-field type control
-const Pos = world.registerComponent({ x: "f64", y: "f64" });
-const Health = world.registerComponent({ current: "i32", max: "i32" });
+const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+const Health = ecs.registerComponent({ current: "i32", max: "i32" });
 
 // Array shorthand — uniform type, defaults to "f64"
-const Vel = world.registerComponent(["vx", "vy"] as const);
+const Vel = ecs.registerComponent(["vx", "vy"] as const);
 
 // Override the uniform type
-const Flags = world.registerComponent(["a", "b"] as const, "u8");
+const Flags = ecs.registerComponent(["a", "b"] as const, "u8");
 
 // Tag — empty schema, participates in queries but stores no data
-const IsEnemy = world.registerTag();
-const Dead = world.registerTag();
+const IsEnemy = ecs.registerTag();
+const Dead = ecs.registerTag();
 ```
 
 Supported tags: `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`, `"u16"`, `"u32"`. `as const` on the array shorthand is required — without it TypeScript widens to `string[]` and per-field types are lost.
 
 ## 4. Define Resources
 
-Resources are world-scoped singletons — time, input, configs, asset tables. Values can be any type: plain objects, `Map`, typed arrays, class instances. Keys are defined at module scope with `resourceKey<T>(name)` and registered once on the world.
+Resources are world-scoped singletons — time, input, configs, asset tables. Values can be any type: plain objects, `Map`, typed arrays, class instances. Keys are defined at module scope with `resourceKey<T>(name)` and registered once on the ecs.
 
 ```ts
 import { resourceKey } from "@oasys/oecs";
@@ -56,19 +56,19 @@ import { resourceKey } from "@oasys/oecs";
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 const Score = resourceKey<{ value: number }>("Score");
 
-world.registerResource(Time, { delta: 0, elapsed: 0 });
-world.registerResource(Score, { value: 0 });
+ecs.resources.register(Time, { delta: 0, elapsed: 0 });
+ecs.resources.register(Score, { value: 0 });
 
-const time = world.resource(Time);           // { delta: number; elapsed: number }
-world.setResource(Score, { value: 100 });
-world.hasResource(Time);                    // true
+const time = ecs.resources.get(Time);           // { delta: number; elapsed: number }
+ecs.resources.set(Score, { value: 100 });
+ecs.resources.has(Time);                    // true
 ```
 
-`registerResource` returns `void` — the key is the handle. Each key must be registered exactly once.
+`ecs.resources.register` returns `void` — the key is the handle. Each key must be registered exactly once.
 
 ## 5. Define Events and Signals
 
-Events are fire-and-forget messages that systems emit within a frame and other systems read in the same frame; they clear automatically at the end of every `world.update(dt)`. Use `eventKey<S>(name)` for data events — `S` is a **field → value-type record**, not a tuple of names — and `signalKey(name)` for zero-field signals, then register each key once with its field list.
+Events are fire-and-forget messages that systems emit within a frame and other systems read in the same frame; they clear automatically at the end of every `ecs.update(dt)`. Use `eventKey<S>(name)` for data events — `S` is a **field → value-type record**, not a tuple of names — and `signalKey(name)` for zero-field signals, then register each key once with its field list.
 
 ```ts
 import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
@@ -76,15 +76,15 @@ import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
 // Schema is a record of field → value type; carrying the value type means
 // branded fields (like EntityID) round-trip their brand through emit / read.
 const DamageEvent = eventKey<{ target: EntityID; amount: number }>("Damage");
-world.registerEvent(DamageEvent, ["target", "amount"]);   // field list defines column order
+ecs.events.register(DamageEvent, ["target", "amount"]);   // field list defines column order
 
 const GameOver = signalKey("GameOver");
-world.registerSignal(GameOver);
+ecs.events.registerSignal(GameOver);
 
-world.emit(DamageEvent, { target: 42 as EntityID, amount: 10 });
-world.emit(GameOver);
+ecs.events.emit(DamageEvent, { target: 42 as EntityID, amount: 10 });
+ecs.events.emit(GameOver);
 
-const dmg = world.read(DamageEvent);
+const dmg = ecs.events.read(DamageEvent);
 for (let i = 0; i < dmg.length; i++) {
   const t = dmg.target[i];   // typed EntityID — the brand survives emit → read
   const a = dmg.amount[i];
@@ -96,13 +96,13 @@ Inside systems, use `ctx.emit` / `ctx.read` (section 10). Event field values are
 ## 6. Spawn Entities
 
 ```ts
-const player = world.createEntity();
-world.addComponent(player, Pos, { x: 400, y: 300 });
-world.addComponent(player, Health, { current: 100, max: 100 });
+const player = ecs.spawn();
+ecs.addComponent(player, Pos, { x: 400, y: 300 });
+ecs.addComponent(player, Health, { current: 100, max: 100 });
 
-// addComponents walks the archetype graph once — cheaper when spawning
-const enemy = world.createEntity();
-world.addComponents(enemy, [
+// addComponents resolves the final archetype once — cheaper when attaching several components
+const enemy = ecs.spawn();
+ecs.addComponents(enemy, [
   { def: Pos, values: { x: 100, y: 100 } },
   { def: Vel, values: { vx: 50, vy: 30 } },
   { def: Health, values: { current: 50, max: 50 } },
@@ -110,7 +110,7 @@ world.addComponents(enemy, [
 ]);
 ```
 
-Remove with `removeComponent` / `removeComponents`, check with `hasComponent`, destroy via `world.destroyEntity(e)` (deferred to the next flush; or `ctx.destroyEntity(e)` / `ctx.commands.despawn(e)` from a system).
+Remove with `removeComponent` / `removeComponents`, check with `hasComponent`, destroy via `ecs.despawn(e)` (immediate — the entity is dead on the next line; from inside a system use `ctx.commands.despawn(e)`, which defers to the phase flush).
 
 ## 7. Write Systems
 
@@ -118,12 +118,12 @@ Systems are plain functions. A system that reads or writes component data uses t
 
 ### Config form (the one you'll use for real work)
 
-Capture the query once at module scope with `world.query(...)` and reference it inside `fn` — the config `fn` is `(ctx, dt)` and does **not** receive the query. Cached queries stay live as new archetypes appear. The mutable hot-path iterator is `eachChunk` + `cols.mut`.
+Capture the query once at module scope with `ecs.query(...)` and reference it inside `fn` — the config `fn` is `(ctx, dt)` and does **not** receive the query. Cached queries stay live as new archetypes appear. The mutable hot-path iterator is `eachChunk` + `cols.mut`.
 
 ```ts
-const movers = world.query(Pos, Vel).without(Dead);
+const movers = ecs.query(Pos, Vel).without(Dead);
 
-const moveSys = world.registerSystem({
+const moveSys = ecs.registerSystem({
   name: "move",
   reads: [Vel],           // read-only components
   writes: [Pos],          // writable components — a declared write implies a read
@@ -150,9 +150,9 @@ const moveSys = world.registerSystem({
 For a pass that only reads, `q.forEach((arch) => …)` hands you a read-only `ArchetypeView` — read columns with `arch.getColumnRead(def, field)`; there is no mutable column accessor on the view. Still declare `reads`. `for (const arch of q)` does **not** work.
 
 ```ts
-const withHealth = world.query(Health);
+const withHealth = ecs.query(Health);
 
-const reportSys = world.registerSystem({
+const reportSys = ecs.registerSystem({
   reads: [Health],
   writes: [],
   fn: () => {
@@ -168,14 +168,14 @@ To write one entity at a time instead of per chunk, take a mutable ref with `ctx
 
 ### Bare / builder forms — no declared access
 
-Two overloads register with **empty** access declarations, so any component or resource touch inside them throws in dev. Use them only for glue that touches no ECS data (bump a counter, drive rendering off a query you closed over).
+Two overloads register with **empty** access declarations, so any component or resource touch inside them throws in dev. Use them only for glue that touches no ECS data (for example, bumping an external counter).
 
 ```ts
 // Bare (ctx, dt) — no query.
-world.registerSystem((ctx, dt) => { frameCount++; });
+ecs.registerSystem((ctx, dt) => { frameCount++; });
 
 // Function + query builder — query resolved once at registration.
-world.registerSystem(
+ecs.registerSystem(
   (q, ctx, dt) => { q.forEach((arch) => { /* read-only, no ctx component access */ }); },
   (qb) => qb.with(Pos, Vel).without(Dead),
 );
@@ -188,17 +188,17 @@ world.registerSystem(
 The config form also carries lifecycle hooks. `onAdded` runs inside the system's access span, so its access is checked too — declare what it spawns.
 
 ```ts
-const spawner = world.registerSystem({
+const spawner = ecs.registerSystem({
   name: "spawner",
   reads: [], writes: [],
   spawns: [[Pos]],          // onAdded creates entities carrying Pos
   fn(ctx, _dt) { /* every frame */ },
-  onAdded(ctx) {           // once, during world.startup()
-    const e = ctx.createEntity();
-    ctx.addComponent(e, Pos, { x: 0, y: 0 });
+  onAdded(ctx) {           // once, during ecs.startup()
+    const e = ctx.commands.spawn();
+    ctx.commands.add(e, Pos, { x: 0, y: 0 });
   },
-  onRemoved() { /* world.removeSystem(...) */ },
-  dispose()    { /* world.dispose() */ },
+  onRemoved() { /* ecs.removeSystem(...) */ },
+  dispose()    { /* ecs.dispose() */ },
 });
 ```
 
@@ -207,20 +207,20 @@ const spawner = world.registerSystem({
 Assign systems to phases. Phases run in a fixed order; within a phase you can declare ordering constraints.
 
 ```ts
-world.addSystems(SCHEDULE.STARTUP, spawner);
-world.addSystems(SCHEDULE.PRE_UPDATE, tickTime);
-world.addSystems(SCHEDULE.UPDATE, moveSys);
+ecs.addSystems(SCHEDULE.STARTUP, spawner);
+ecs.addSystems(SCHEDULE.PRE_UPDATE, tickTime);
+ecs.addSystems(SCHEDULE.UPDATE, moveSys);
 ```
 
 | Phase           | Runs in           | When                                         |
 | --------------- | ----------------- | -------------------------------------------- |
-| `PRE_STARTUP`   | `world.startup()` | Once, before `STARTUP`                       |
-| `STARTUP`       | `world.startup()` | Once                                         |
-| `POST_STARTUP`  | `world.startup()` | Once, after `STARTUP`                        |
-| `FIXED_UPDATE`  | `world.update()`  | Zero or more times at `fixedTimestep`       |
-| `PRE_UPDATE`    | `world.update()`  | Every frame, first                           |
-| `UPDATE`        | `world.update()`  | Every frame                                  |
-| `POST_UPDATE`   | `world.update()`  | Every frame, last                            |
+| `PRE_STARTUP`   | `ecs.startup()` | Once, before `STARTUP`                       |
+| `STARTUP`       | `ecs.startup()` | Once                                         |
+| `POST_STARTUP`  | `ecs.startup()` | Once, after `STARTUP`                        |
+| `FIXED_UPDATE`  | `ecs.update()`  | Zero or more times at `fixedTimestep`       |
+| `PRE_UPDATE`    | `ecs.update()`  | Every frame, first                           |
+| `UPDATE`        | `ecs.update()`  | Every frame                                  |
+| `POST_UPDATE`   | `ecs.update()`  | Every frame, last                            |
 
 After each phase, `ctx.flush()` runs automatically so the next phase sees a consistent store.
 
@@ -229,7 +229,7 @@ After each phase, `ctx.flush()` runs automatically so the next phase sees a cons
 Pass a `SystemEntry` with `before` / `after` arrays of `SystemDescriptor`.
 
 ```ts
-world.addSystems(
+ecs.addSystems(
   SCHEDULE.UPDATE,
   moveSys,
   { system: physicsSys, ordering: { after: [moveSys] } },
@@ -242,14 +242,14 @@ A cycle inside a phase throws `ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY` on the firs
 ## 9. Run the Loop
 
 ```ts
-world.startup();           // PRE_STARTUP → STARTUP → POST_STARTUP, once
+ecs.startup();           // PRE_STARTUP → STARTUP → POST_STARTUP, once
 
 let last = performance.now();
 function frame() {
   const now = performance.now();
   const dt = (now - last) / 1000;
   last = now;
-  world.update(dt);        // FIXED_UPDATE (0+) → PRE_UPDATE → UPDATE → POST_UPDATE
+  ecs.update(dt);        // FIXED_UPDATE (0+) → PRE_UPDATE → UPDATE → POST_UPDATE
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -264,13 +264,16 @@ Every system receives a shared `SystemContext` (`ctx`) with deferred structural 
 Structural operations inside a system buffer until the phase flush, keeping iterators valid. A deferred destruction inside `forEach` is safe — the entity stays visible in the current iteration and is removed at the flush.
 
 ```ts
-ctx.createEntity();                   // immediate (new entity, no components)
-ctx.addComponent(e, Pos, { x, y });   // deferred
-ctx.removeComponent(e, Vel);          // deferred
-ctx.destroyEntity(e);                 // deferred
+ctx.commands.spawn();                     // id immediate; component attaches deferred
+ctx.commands.add(e, Pos, { x, y });       // deferred — complete values (compile-checked)
+ctx.commands.add(e, Pos({ x }));          // deferred — bundle form, omitted fields zero-fill
+ctx.commands.remove(e, Vel);              // deferred
+ctx.commands.despawn(e);                  // deferred
+ctx.commands.disable(e);                  // deferred
+ctx.commands.enable(e);                   // deferred
 ```
 
-Prefer the `ctx.commands` facade for deferred structural ops — `ctx.commands.spawn(...)` / `add` / `remove` / `despawn` do the same deferred thing but read unambiguously as "deferred" at the call site, where the bare `ctx.addComponent` is one keystroke from the *immediate* `world.addComponent`.
+`ctx.commands` is the *only* deferred surface — every structural op inside a system goes through it, so "on `ctx.commands`" and "deferred to the phase flush" mean the same thing. (Data writes — `ctx.setField`, `ctx.ref` — stay immediate; they touch column values, never archetype membership.)
 
 ### `ref` vs `refRead`
 
@@ -314,9 +317,9 @@ Two `SystemContext` fields drive change detection:
 `query.changed(...defs)` returns a read-only `ChangedQuery` that iterates only archetypes where one of the listed components was written at or after `ctx.lastRunTick`. Iterate it with `forEach`:
 
 ```ts
-const moved = world.query(Pos).changed(Pos);
+const moved = ecs.query(Pos).changed(Pos);
 
-const detector = world.registerSystem({
+const detector = ecs.registerSystem({
   reads: [Pos],
   writes: [],
   fn: () => {
@@ -334,13 +337,13 @@ Every component passed to `.changed(...)` must be in the query's include mask. T
 Queries refine by chaining; each method returns a new (cached) query.
 
 ```ts
-const alive     = world.query(Pos).and(Health);                    // include Pos AND Health
-const active    = world.query(Pos).and(Health).without(Dead);          // exclude Dead
-const afflicted = world.query(Health).anyOf(Poison, Fire);        // at least one of
-const targets   = world.query(Pos).and(Health).without(Shield).anyOf(IsEnemy, IsBoss);
+const alive     = ecs.query(Pos).and(Health);                    // include Pos AND Health
+const active    = ecs.query(Pos).and(Health).without(Dead);          // exclude Dead
+const afflicted = ecs.query(Health).anyOf(Poison, Fire);        // at least one of
+const targets   = ecs.query(Pos).and(Health).without(Shield).anyOf(IsEnemy, IsBoss);
 ```
 
-Inside `registerSystem`, use `qb.with(...)` and chain the same way: `(qb) => qb.with(Pos, Vel).without(Dead)`. Identical filter sets resolve to the same cached `Query` instance, so `world.query(...)` is cheap ad-hoc.
+Inside `registerSystem`, use `qb.with(...)` and chain the same way: `(qb) => qb.with(Pos, Vel).without(Dead)`. Identical filter sets resolve to the same cached `Query` instance, so `ecs.query(...)` is cheap ad-hoc.
 
 ## 12. Complete Example
 
@@ -355,30 +358,30 @@ import {
   type EntityID,
 } from "@oasys/oecs";
 
-const world = new ECS();
+const ecs = new ECS();
 
 // --- Components ---
-const Pos    = world.registerComponent({ x: "f64", y: "f64" });
-const Vel    = world.registerComponent(["vx", "vy"] as const);
-const Health = world.registerComponent({ current: "i32", max: "i32" });
-const Dead   = world.registerTag();
+const Pos    = ecs.registerComponent({ x: "f64", y: "f64" });
+const Vel    = ecs.registerComponent(["vx", "vy"] as const);
+const Health = ecs.registerComponent({ current: "i32", max: "i32" });
+const Dead   = ecs.registerTag();
 
 // --- Resource ---
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
-world.registerResource(Time, { delta: 0, elapsed: 0 });
+ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 
 // --- Event ---
 const Hit = eventKey<{ target: EntityID; damage: number }>("Hit");
-world.registerEvent(Hit, ["target", "damage"]);
+ecs.events.register(Hit, ["target", "damage"]);
 
 // --- Queries (captured once at module scope, live-updated) ---
-const movers     = world.query(Pos, Vel).without(Dead);
-const movedPos    = world.query(Pos).changed(Pos);
-const withHealth  = world.query(Health).without(Dead);
-const corpses     = world.query(Dead);
+const movers     = ecs.query(Pos, Vel).without(Dead);
+const movedPos    = ecs.query(Pos).changed(Pos);
+const withHealth  = ecs.query(Health).without(Dead);
+const corpses     = ecs.query(Dead);
 
 // --- Systems ---
-const tickTime = world.registerSystem({
+const tickTime = ecs.registerSystem({
   name: "tickTime",
   reads: [], writes: [],
   resourceWrites: [Time],
@@ -389,7 +392,7 @@ const tickTime = world.registerSystem({
   },
 });
 
-const moveSys = world.registerSystem({
+const moveSys = ecs.registerSystem({
   name: "move",
   reads: [Vel], writes: [Pos],
   fn: (_ctx, dt) => {
@@ -406,7 +409,7 @@ const moveSys = world.registerSystem({
 
 // Change-detection observer: count archetypes whose Pos moved this frame.
 let movedArchetypesThisFrame = 0;
-const observeMoved = world.registerSystem({
+const observeMoved = ecs.registerSystem({
   name: "observeMoved",
   reads: [Pos], writes: [],
   fn: () => {
@@ -416,7 +419,7 @@ const observeMoved = world.registerSystem({
 });
 
 // Apply queued damage events via a mutable ref.
-const applyDamage = world.registerSystem({
+const applyDamage = ecs.registerSystem({
   name: "applyDamage",
   reads: [], writes: [Health],
   fn: (ctx) => {
@@ -431,7 +434,7 @@ const applyDamage = world.registerSystem({
 });
 
 // Tag anything with hp <= 0 as Dead (deferred).
-const markDead = world.registerSystem({
+const markDead = ecs.registerSystem({
   name: "markDead",
   reads: [Health], writes: [Dead],   // writing Dead authorizes ctx.commands.add(_, Dead)
   fn: (ctx) => {
@@ -446,10 +449,10 @@ const markDead = world.registerSystem({
 });
 
 // Deferred destruction of anything tagged Dead.
-const cleanupDead = world.registerSystem({
+const cleanupDead = ecs.registerSystem({
   name: "cleanupDead",
   reads: [], writes: [],
-  despawns: [Pos, Vel, Health, Dead],   // destroyEntity removes every component — declare the superset
+  despawns: [Pos, Vel, Health, Dead],   // despawn removes every component — declare the superset
   fn: (ctx) => {
     corpses.forEach((arch) => {
       const ids = arch.entityIds;
@@ -461,21 +464,21 @@ const cleanupDead = world.registerSystem({
 });
 
 // --- Schedule ---
-world.addSystems(SCHEDULE.PRE_UPDATE, tickTime);
-world.addSystems(
+ecs.addSystems(SCHEDULE.PRE_UPDATE, tickTime);
+ecs.addSystems(
   SCHEDULE.UPDATE,
   moveSys,
   { system: observeMoved, ordering: { after: [moveSys] } },
   { system: applyDamage,  ordering: { after: [moveSys] } },
   { system: markDead,     ordering: { after: [applyDamage] } },
 );
-world.addSystems(SCHEDULE.POST_UPDATE, cleanupDead);
+ecs.addSystems(SCHEDULE.POST_UPDATE, cleanupDead);
 
 // --- Spawn ---
 let first: EntityID = 0 as EntityID;
 for (let i = 0; i < 100; i++) {
-  const e = world.createEntity();
-  world.addComponents(e, [
+  const e = ecs.spawn();
+  ecs.addComponents(e, [
     { def: Pos,    values: { x: Math.random() * 800, y: Math.random() * 600 } },
     { def: Vel,    values: { vx: (Math.random() - 0.5) * 100, vy: (Math.random() - 0.5) * 100 } },
     { def: Health, values: { current: 100, max: 100 } },
@@ -483,16 +486,17 @@ for (let i = 0; i < 100; i++) {
   if (i === 0) first = e;
 }
 
-// Queue a damage event; readable on the first update() call.
-world.emit(Hit, { target: first, damage: 40 });
-
 // --- Run ---
-world.startup();
-world.update(1 / 60);
-world.update(1 / 60);
+ecs.startup();
+
+// Queue a damage event AFTER startup() — startup drains all event channels at
+// its tail, so anything emitted before it would never reach the first update().
+ecs.events.emit(Hit, { target: first, damage: 40 });
+ecs.update(1 / 60);
+ecs.update(1 / 60);
 
 console.log("moved archetypes:", movedArchetypesThisFrame);
-console.log("alive entities:", world.entityCount);
+console.log("alive entities:", ecs.entityCount);
 ```
 
 ## 13. Next Steps

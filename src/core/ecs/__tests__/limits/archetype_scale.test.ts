@@ -24,7 +24,7 @@ describe("Archetype scale", () => {
 		// Create entities with component combos: {0}, {0,1}, {0,1,2}, ...
 		world.query(comps[0]); // register query before entities exist
 		for (let i = 0; i < 32; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			for (let j = 0; j <= i; j++) {
 				world.addComponent(e, comps[j], { v: j });
 			}
@@ -41,7 +41,7 @@ describe("Archetype scale", () => {
 			comps.push(world.registerComponent(["v"] as const));
 		}
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		for (let i = 0; i < 20; i++) {
 			world.addComponent(e, comps[i], { v: i * 10 });
 
@@ -62,7 +62,7 @@ describe("Archetype scale", () => {
 
 		const allEntities = [];
 		for (let i = 0; i < 1_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Common, { v: i });
 			// Add a tag based on i % 50 to spread across archetypes
 			world.addComponent(e, extras[i % 50]);
@@ -83,14 +83,14 @@ describe("Archetype scale", () => {
 		const B = world.registerComponent(["v"] as const);
 
 		// First entity establishes the archetypes
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, A, { v: 0 });
 		world.addComponent(e0, B, { v: 0 });
 		const countAfterFirst = world.query(A).archetypeCount;
 
 		// 499 more entities with same sequence
 		for (let i = 1; i < 500; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, A, { v: i });
 			world.addComponent(e, B, { v: i });
 		}
@@ -107,7 +107,7 @@ describe("Archetype scale", () => {
 
 		const entities = [];
 		for (let i = 0; i < 1_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			// Add tags based on bit pattern of i % 1024
 			for (let t = 0; t < 10; t++) {
 				if ((i >> t) & 1) {

@@ -68,7 +68,7 @@ describe("ECS sparse component API (#468)", () => {
 	it("registers and does full CRUD through the public surface", () => {
 		const ecs = new ECS();
 		const Health = ecs.registerSparseComponent(Hp);
-		const e = ecs.createEntity();
+		const e = ecs.spawn();
 
 		expect(ecs.hasSparse(e, Health)).toBe(false);
 
@@ -87,7 +87,7 @@ describe("ECS sparse component API (#468)", () => {
 		const ecs = new ECS();
 		const Cd = ecs.registerSparseComponent(Cooldown);
 		const Pair = ecs.registerSparseComponent(["a", "b"]); // f64 shorthand
-		const e = ecs.createEntity();
+		const e = ecs.spawn();
 
 		ecs.addSparse(e, Cd, { ready_at: 3, charges: 2 });
 		ecs.addSparse(e, Pair, { a: 1, b: 4 });
@@ -99,7 +99,7 @@ describe("ECS sparse component API (#468)", () => {
 	it("registers a sparse tag (membership only)", () => {
 		const ecs = new ECS();
 		const Stunned = ecs.registerSparseTag();
-		const e = ecs.createEntity();
+		const e = ecs.spawn();
 
 		expect(ecs.hasSparse(e, Stunned)).toBe(false);
 		ecs.addSparse(e, Stunned);

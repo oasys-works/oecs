@@ -53,7 +53,7 @@
  * applies it for you.
  *
  * One tick = one coalesced flush: drive the world with `batchedUpdate` (or wrap
- * your own `world.update` in the kernel's `batch`). onAdd/onRemove fire mid-tick
+ * your own `ecs.update` in the kernel's `batch`). onAdd/onRemove fire mid-tick
  * and onSet fires at the tick tail; batching collects every `map.set`/`delete`
  * across both points and flushes the UI effects exactly once. Each sync returns an
  * explicit disposer (the React/MobX/RxJS model) and seeds the map synchronously on
@@ -81,8 +81,9 @@ import {
 	untrack,
 	type ReactiveArray,
 	type ReactiveMap,
-	type StructSetters
-} from "../../core/reactive";
+	type StructSetters,
+	type StructEq
+} from "../../reactive";
 import type {
 	ArchetypeView,
 	ComponentDef,
@@ -95,24 +96,11 @@ import type {
 	SystemContext
 } from "../../core/ecs";
 
-/**
- * Shallow (one-level) value equality — the recommended `eq` for object-valued
- * projections. Mirrors zustand `useShallow` / MobX `comparer.shallow`: two objects
- * are equal iff they have the same own keys with `Object.is`-equal values. Restores
- * "equal write wakes nobody" for projections that build a fresh object each tick.
- */
-export function shallow(a: object, b: object): boolean {
-	if (Object.is(a, b)) return true;
-	const ra = a as Record<string, unknown>;
-	const rb = b as Record<string, unknown>;
-	const ka = Object.keys(ra);
-	if (ka.length !== Object.keys(rb).length) return false;
-	for (let i = 0; i < ka.length; i++) {
-		const k = ka[i];
-		if (!Object.prototype.hasOwnProperty.call(rb, k) || !Object.is(ra[k], rb[k])) return false;
-	}
-	return true;
-}
+// `shallow` moved to the dependency-free kernel entry (M12); imported for the
+// field-list sugar's default eq and re-exported so existing `/reactive-sync`
+// imports keep working.
+import { shallow } from "../../reactive/shallow";
+export { shallow };
 
 /**
  * A read cursor over one entity's single-component state, handed to a single-
@@ -140,11 +128,14 @@ export interface RowReader<S extends ComponentSchema> {
  * Lifetime: like `RowReader`, a reused mutable singleton valid ONLY during the
  * synchronous `project` call — never capture it; the next dispatch mutates it.
  */
-export interface JoinReader {
+export interface JoinReader<Schemas extends readonly ComponentSchema[] = readonly ComponentSchema[]> {
 	/** The current entity (it has all joined components). */
 	readonly eid: EntityID;
-	/** Read a field of one joined component for the current entity. */
-	field<S extends ComponentSchema, K extends string & keyof S>(
+	/** Read a field of one joined component for the current entity. `def` is
+	 * constrained to the join's own component set — reading a def outside the
+	 * join is the stale-read footgun the module header warns about (its changes
+	 * aren't subscribed), so it's a compile error. */
+	field<S extends Schemas[number], K extends string & keyof S>(
 		def: ComponentDef<S>,
 		name: K
 	): number;
@@ -153,7 +144,10 @@ export interface JoinReader {
 /** Map one single-component row to the value a UI cell reads. */
 export type Projection<S extends ComponentSchema, V> = (row: RowReader<S>) => V;
 /** Map one joined entity to the value a UI cell reads. */
-export type JoinProjection<V> = (row: JoinReader) => V;
+export type JoinProjection<
+	V,
+	Schemas extends readonly ComponentSchema[] = readonly ComponentSchema[]
+> = (row: JoinReader<Schemas>) => V;
 
 /** Per-component dirty grain. See the module header for the measured crossover. */
 export type SyncGrain = "entity" | "column";
@@ -169,7 +163,7 @@ export interface EcsMapSyncOptions<V> {
 	eq?: (a: V, b: V) => boolean;
 	/**
 	 * Access surface the projection touches, merged over the synced components'
-	 * `reads`. `__DEV__` access-checks the observer callbacks exactly like a system.
+	 * `reads`. `DEV` access-checks the observer callbacks exactly like a system.
 	 */
 	access?: Partial<SystemAccessDeclaration>;
 	/**
@@ -259,7 +253,7 @@ class JoinRowReader implements JoinReader {
  * component here goes stale (its changes aren't subscribed).
  */
 export function syncComponentToMap<S extends ComponentSchema, V>(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	project: Projection<S, V>,
 	opts: EcsMapSyncOptions<V> = {}
@@ -300,7 +294,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 	batch(() => {
 		if (grain === "column") {
 			const cr = new ColumnRowReader(def);
-			handle = world.observe(def, {
+			handle = ecs.observe(def, {
 				granularity: "archetype",
 				onSet: (arch) => {
 					cr.bind(arch);
@@ -322,7 +316,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 				yieldExisting: seed
 			});
 		} else {
-			handle = world.observe(def, {
+			handle = ecs.observe(def, {
 				granularity: "entity",
 				onSet: (eid, ctx) => publishEntity(eid, ctx),
 				onAdd: (eid, ctx) => publishEntity(eid, ctx),
@@ -355,7 +349,7 @@ export function syncFieldsToMap<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	fields: F,
 	opts: Omit<EcsMapSyncOptions<{ [K in F[number]]: number }>, "eq"> = {}
@@ -366,7 +360,7 @@ export function syncFieldsToMap<
 		for (let i = 0; i < fields.length; i++) out[fields[i]] = row.field(fields[i]);
 		return out as V;
 	};
-	return syncComponentToMap(world, def, project, { ...opts, eq: shallow });
+	return syncComponentToMap(ecs, def, project, { ...opts, eq: shallow });
 }
 
 /**
@@ -380,24 +374,31 @@ export function syncFieldsToMap<
  * Entity grain only: a join spans archetypes, so there is no single column to
  * sweep. Drive with `batchedUpdate(world, dt)`.
  */
-export function syncJoinToMap<V>(
-	world: ECS,
-	defs: readonly ComponentDef[],
-	project: JoinProjection<V>,
+export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
+	ecs: ECS,
+	defs: readonly [...{ [I in keyof Schemas]: ComponentDef<Schemas[I]> }],
+	project: JoinProjection<V, Schemas>,
+	// No `NoInfer` on `V` here: with a context-sensitive `project` callback it
+	// fixes `V` to `unknown` before the second inference pass reads the
+	// projection's return type (TS 5.6), collapsing every typed call site.
 	opts: Omit<EcsMapSyncOptions<V>, "grain"> = {}
 ): EcsMapSync<V> {
+	// Erase the per-def schemas once — internal plumbing (observers, access
+	// declarations, membership checks) is schema-agnostic; the tuple typing
+	// above exists to pin the projection's `JoinReader` to the joined set.
+	const defList: readonly ComponentDef[] = defs;
 	const map = reactiveMap<EntityID, V>(opts.eq);
 	// MERGE all joined defs into the caller's reads (don't let an `access.reads`
 	// override drop them — the projection reads every joined component).
 	const access: Partial<SystemAccessDeclaration> = {
 		...opts.access,
-		reads: [...defs, ...(opts.access?.reads ?? [])]
+		reads: [...defList, ...(opts.access?.reads ?? [])]
 	};
 	const seed = opts.seedExisting ?? true;
 
 	const jr = new JoinRowReader();
 	const matches = (ctx: SystemContext, eid: EntityID): boolean => {
-		for (let i = 0; i < defs.length; i++) if (!ctx.hasComponent(eid, defs[i])) return false;
+		for (let i = 0; i < defList.length; i++) if (!ctx.hasComponent(eid, defList[i])) return false;
 		return true;
 	};
 	// A value change or a component-add re-evaluates membership and republishes.
@@ -424,8 +425,8 @@ export function syncJoinToMap<V>(
 	// same reason as syncComponentToMap (the map has no seed-time subscriber today).
 	let handles!: ObserverHandle[];
 	batch(() => {
-		handles = defs.map((d) =>
-			world.observe(d, {
+		handles = defList.map((d) =>
+			ecs.observe(d, {
 				granularity: "entity",
 				onSet: publishIfMember,
 				onAdd: publishIfMember,
@@ -461,7 +462,7 @@ export interface SingletonStructSync<V extends object> {
 export interface SingletonSyncOptions<V extends object = Record<string, number>> {
 	/**
 	 * Access surface the publish touches, merged over the synced def's read.
-	 * `__DEV__` access-checks the observer callbacks exactly like a system.
+	 * `DEV` access-checks the observer callbacks exactly like a system.
 	 */
 	access?: Partial<SystemAccessDeclaration>;
 	/** Replay current state on registration (default `true`). flecs `yieldExisting`. */
@@ -475,6 +476,10 @@ export interface SingletonSyncOptions<V extends object = Record<string, number>>
 	 * the eager initials with the entity's current values on registration.
 	 */
 	into?: readonly [V, StructSetters<V>];
+	/** Per-field equality overrides for the created struct (parity with
+	 * `SingletonArraySyncOptions.eq`). Ignored when `into` supplies a
+	 * pre-created struct — that struct already carries its own `eq`. */
+	eq?: StructEq<V>;
 }
 
 /**
@@ -511,7 +516,7 @@ export function syncSingletonToStruct<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: F,
@@ -524,7 +529,7 @@ export function syncSingletonToStruct<
 	// → onAdd) immediately overwrites either with the entity's current values.
 	const initial = {} as Record<string, number>;
 	for (let i = 0; i < fields.length; i++) initial[fields[i]] = 0;
-	const [struct, set] = opts.into ?? reactiveStruct<V>(initial as V);
+	const [struct, set] = opts.into ?? reactiveStruct<V>(initial as V, opts.eq);
 
 	// The reset target (onRemove / onDisable) = the channel's DECLARED initials,
 	// captured here before the observer attaches. Read untracked off the proxy (no
@@ -551,7 +556,7 @@ export function syncSingletonToStruct<
 
 	let handle!: ObserverHandle;
 	batch(() => {
-		handle = world.observe(def, {
+		handle = ecs.observe(def, {
 			granularity: "entity",
 			onSet: (e, ctx) => {
 				if (e === eid) publish(ctx);
@@ -609,7 +614,7 @@ export interface SingletonArraySyncOptions<T> {
  * `@oasys/oecs/solid`'s `fromKernelArray` + a Solid `<Index>`.
  */
 export function syncSingletonToArray<S extends ComponentSchema>(
-	world: ECS,
+	ecs: ECS,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: readonly (string & keyof S)[],
@@ -647,7 +652,7 @@ export function syncSingletonToArray<S extends ComponentSchema>(
 
 	let handle!: ObserverHandle;
 	batch(() => {
-		handle = world.observe(def, {
+		handle = ecs.observe(def, {
 			granularity: "entity",
 			onSet: (e, ctx) => {
 				if (e === eid) publish(ctx);
@@ -681,8 +686,8 @@ export function syncSingletonToArray<S extends ComponentSchema>(
  * tick tail; wrapping the whole update in `batch` defers the effect flush until the
  * tick completes, so a frame that touched K entities (across any number of syncs on
  * this world) wakes its readers once, not once per observer dispatch point.
- * Equivalent to `batch(() => world.update(dt))`.
+ * Equivalent to `batch(() => ecs.update(dt))`.
  */
-export function batchedUpdate(world: ECS, dt: number): void {
-	batch(() => world.update(dt));
+export function batchedUpdate(ecs: ECS, dt: number): void {
+	batch(() => ecs.update(dt));
 }

@@ -37,37 +37,31 @@ import {
 	archetypeDescriptorBytes,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	writeArchetypeDescriptor,
-	type ArchetypeDescriptor,
-	type ColumnDescriptor
+	type ArchetypeDescriptor
 } from "./descriptor";
 import { STORE_HEADER_OFFSETS } from "./header";
 import {
-	alignUp,
 	buildArchetypeViews,
-	createColumnStore,
-	STORE_MAX_BYTE_OFFSET,
-	StoreLayoutOverflowError,
 	type ArchetypeSpec,
 	type ArchetypeViews,
 	type ColumnStore,
+	isColumnStoreInternal,
 	type ColumnStoreInternal
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
 import {
-	optionsFromOld,
-	restoreColumnSnapshots,
-	restorePrefixRegions,
-	snapshotLiveColumns,
-	snapshotPrefixRegions
-} from "./extend";
+	growBufferInPlace,
+	layoutColumnsAtTail,
+	reallocAndRepublish,
+	type ArchetypeGrowSpec,
+	type TailArchetypeLayout
+} from "./layout_ops";
+import { DEV } from "../../dev_flag";
 
-/** Per-archetype growth input. The caller picks the new `row_capacity` and
- * declares the current live `row_count` so we know how many rows to copy. */
-export interface ArchetypeGrowSpec {
-	readonly archetypeId: number;
-	readonly newRowCapacity: number;
-	readonly rowCount: number;
-}
+// The per-archetype plan-entry shape lives in layout_ops.ts (shared with
+// `ExtendPlan.existing`); re-exported here so `GrowPlan` consumers keep their
+// import path.
+export type { ArchetypeGrowSpec } from "./layout_ops";
 
 export interface GrowPlan {
 	readonly archetypes: readonly ArchetypeGrowSpec[];
@@ -131,47 +125,28 @@ function growColumnStoreInPlace(
 	regionOff: number
 ): GrowResult {
 	// 1. Lay the grown archetypes' columns out at the current SAB tail. Only
-	//    these archetypes move.
-	let cursor = old.buffer.byteLength;
-	const newDescriptors = new Map<number, ArchetypeDescriptor>();
+	//    these archetypes move. A grow keeps each column's stride (the column
+	//    set is unchanged), so the tail layout reuses the old strides verbatim.
+	const tailLayouts: TailArchetypeLayout[] = new Array(growTargets.length);
 	for (let t = 0; t < growTargets.length; t++) {
 		const target = growTargets[t];
 		const oldArch = old.archetypes.get(target.archetypeId)!;
-		const cols: ColumnDescriptor[] = new Array(oldArch.columnsInOrder.length);
-		for (let j = 0; j < oldArch.columnsInOrder.length; j++) {
-			const c = oldArch.columnsInOrder[j];
-			cursor = alignUp(cursor, c.stride);
-			cols[j] = {
-				componentId: c.componentId,
-				fieldId: c.fieldId,
-				typeTag: c.typeTag,
-				byteOff: cursor,
-				stride: c.stride
-			};
-			cursor += c.stride * target.newRowCapacity;
-		}
-		newDescriptors.set(target.archetypeId, {
+		tailLayouts[t] = {
 			archetypeId: target.archetypeId,
 			componentMask: oldArch.componentMask,
-			rowCount: 0,
-			enabledCount: 0,
 			rowCapacity: target.newRowCapacity,
-			columns: cols
-		});
+			columns: oldArch.columnsInOrder
+		};
 	}
-	const newTotal = cursor;
-	// The final tail (last column's `cursor += …`, not re-aligned) becomes the
-	// grown SAB byteLength; guard it past 2³¹ like `planLayout` does (#382).
-	if (newTotal > STORE_MAX_BYTE_OFFSET) {
-		throw new StoreLayoutOverflowError(newTotal);
+	const { descriptors, newTotal } = layoutColumnsAtTail(old.buffer.byteLength, tailLayouts);
+	const newDescriptors = new Map<number, ArchetypeDescriptor>();
+	for (let i = 0; i < descriptors.length; i++) {
+		newDescriptors.set(descriptors[i].archetypeId, descriptors[i]);
 	}
 
-	// 2. Grow the backing store in place. `growableSabAllocator` grows the
-	//    same SAB and returns it; `wasmMemoryAllocator` returns a new ref
-	//    over the same linear memory. Old views stay valid either way.
-	const grownBuffer = old._allocator(newTotal);
-	const bufferRefChanged = grownBuffer !== old.buffer;
-	const newView = bufferRefChanged ? new DataView(grownBuffer) : old.view;
+	// 2. Grow the backing store in place. Old views stay valid either way —
+	//    see `growBufferInPlace`.
+	const { grownBuffer, newView } = growBufferInPlace(old, newTotal);
 
 	// 3. Copy each grown archetype's live rows from its old column ranges to
 	//    the new tail ranges. Byte-level copy handles any column type; src
@@ -198,7 +173,7 @@ function growColumnStoreInPlace(
 	//    `createColumnStore`; non-grown entries are left untouched).
 	let descOff = regionOff;
 	for (const [archetypeId, arch] of old.archetypes) {
-		if (__DEV__) {
+		if (DEV) {
 			// This positional rewrite trusts that `old.archetypes` Map order equals
 			// the on-store descriptor write order (`createColumnStore` writes in that
 			// order). Lock the invariant: the descriptor physically at `descOff` must
@@ -348,58 +323,29 @@ export function growColumnStore(
 	// archetypes to the SAB tail instead of reallocating + snapshotting the
 	// whole store. This is the fix for the frame_loop 0.29x regression — see
 	// `growColumnStoreInPlace`.
-	const oldInternal = old as Partial<ColumnStoreInternal>;
-	const allocatorInPlace = (allocator as { isInPlace?: boolean } | undefined)?.isInPlace;
 	if (
-		allocatorInPlace === true &&
-		oldInternal._allocator === allocator &&
+		allocator?.isInPlace === true &&
+		isColumnStoreInternal(old) &&
+		old._allocator === allocator &&
 		growTargets.length > 0
 	) {
 		const regionOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
-		return growColumnStoreInPlace(old as ColumnStoreInternal, growTargets, regionOff);
+		return growColumnStoreInPlace(old, growTargets, regionOff);
 	}
 
-	// Snapshot live rows AND prefix regions (command ring, entity-index)
-	// BEFORE the allocator call. See extendColumnStore's step (4) comment
-	// for the rationale — the wasmMemoryAllocator may detach old.view
-	// on grow, so we capture everything we need first. The prefix-region
-	// preservation is the contract `Store` relies on to keep its entity
-	// table across grows (#245).
-	const oldViewStamp = old.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
-	const snapshots = snapshotLiveColumns(old, rowCountsById);
-	const prefixSnap = snapshotPrefixRegions(old);
-	const derivedOptions = optionsFromOld(old);
-
-	const newStore = createColumnStore(newSpecs, allocator, derivedOptions);
-
-	// Restore. `row_count` defaults to 0 for any archetype not named in
-	// the plan; those archetypes contributed no snapshot and their new
-	// views remain zero-initialised. Prefix regions overwrite the empty
-	// state `createColumnStore` initialised.
-	restoreColumnSnapshots(newStore, snapshots);
-	restorePrefixRegions(newStore, prefixSnap);
-
-	// Bump view_stamp from the value captured before the allocator
-	// detached old.view.
-	const newViewStamp = (oldViewStamp + 1) >>> 0;
-	newStore.view.setUint32(STORE_HEADER_OFFSETS.view_stamp, newViewStamp, true);
-
-	// Patch the returned header so its cached `view_stamp` matches the SAB
-	// bytes just written — `createColumnStore` stamped it 0 (#386). The
-	// in-place paths (`growColumnStoreInPlace`, `extendColumnStoreInPlace`)
-	// already do this; without it a consumer trusting `store.header.view_stamp`
-	// instead of re-reading via `readStoreHeader` would see a stale 0.
-	// `capacity` is already correct here (createColumnStore sizes it to the new
-	// SAB), so the spread carries it forward unchanged — along with the
-	// internal `_allocator` / `_regionBytes` fields that downstream callers
-	// rely on.
-	const patchedStore: ColumnStore = {
-		...newStore,
-		header: { ...newStore.header, viewStamp: newViewStamp }
-	};
+	// Realloc-and-republish (see `reallocAndRepublish` for the snapshot →
+	// create → restore → stamp choreography). `row_count` defaults to 0 for
+	// any archetype not named in the plan; those archetypes contribute no
+	// snapshot and their new views remain zero-initialised.
+	const { store, oldViewStamp, newViewStamp } = reallocAndRepublish(
+		old,
+		newSpecs,
+		rowCountsById,
+		allocator
+	);
 
 	return {
-		store: patchedStore,
+		store,
 		oldViewStamp,
 		newViewStamp,
 		viewsPreserved: false,

@@ -80,7 +80,7 @@ export function run() {
 		let threw = false;
 		try { s.addRelation(src, R, tgt); } catch { threw = true; }
 		// A leaked reverse entry keyed by the dead target surfaces here.
-		out[name] = { threw, leaked: s.sourcesOf(R, tgt).map((e) => Number(e)) };
+		out[name] = { threw, leaked: s.sourcesOf(tgt, R).map((e) => Number(e)) };
 	}
 	return out;
 }

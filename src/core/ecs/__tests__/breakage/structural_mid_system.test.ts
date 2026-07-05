@@ -10,7 +10,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const posVelQuery = world.query(Pos, Vel);
@@ -24,7 +24,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
-						ctx.addComponent(eid, Vel, { vx: 10, vy: 20 });
+						ctx.commands.add(eid, Vel, { vx: 10, vy: 20 });
 					}
 				});
 				// Pos+Vel query should still be empty during this system
@@ -50,11 +50,11 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 
@@ -70,7 +70,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						// Remove Vel from first entity mid-iteration
 						if (i === 0) {
-							ctx.removeComponent(arch.entityIds[i] as EntityID, Vel);
+							ctx.commands.remove(arch.entityIds[i] as EntityID, Vel);
 						}
 						// All columns should remain valid for the entire loop
 						valuesRead.push(px[i], vx[i]);
@@ -93,10 +93,10 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
 
-		const eA = world.createEntity();
+		const eA = world.spawn();
 		world.addComponent(eA, Pos, { x: 100, y: 200 });
 
-		const eB = world.createEntity();
+		const eB = world.spawn();
 		world.addComponent(eB, Pos, { x: 300, y: 400 });
 
 		const posQuery = world.query(Pos);
@@ -108,7 +108,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 						const eid = arch.entityIds[i];
 						// When iterating eB, add Tag to eA
 						if (eid === eB) {
-							ctx.addComponent(eA, Tag);
+							ctx.commands.add(eA, Tag);
 						}
 					}
 				});
@@ -137,7 +137,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 100; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 			entities.push(e);
 		}
@@ -151,7 +151,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
-						ctx.addComponent(eid, Vel, { vx: 1, vy: 2 });
+						ctx.commands.add(eid, Vel, { vx: 1, vy: 2 });
 					}
 				});
 			}
@@ -181,7 +181,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Marker = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		let sys2CountDuring = -1;
@@ -191,7 +191,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos, Marker]),
 			fn(ctx) {
-				ctx.addComponent(e, Marker);
+				ctx.commands.add(e, Marker);
 			}
 		});
 
@@ -200,7 +200,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys2 = world.registerSystem({
 			...openAccess([Marker]),
 			fn() {
-				sys2CountDuring = markerQuery.count();
+				sys2CountDuring = markerQuery.entityCount;
 			}
 		});
 
@@ -208,7 +208,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys3 = world.registerSystem({
 			...openAccess([Marker]),
 			fn() {
-				sys3CountDuring = markerQuery.count();
+				sys3CountDuring = markerQuery.entityCount;
 			}
 		});
 
@@ -241,8 +241,8 @@ describe("Structural changes mid-system are properly deferred", () => {
 			...openAccess([Pos]),
 			fn(ctx) {
 				for (let i = 0; i < 100; i++) {
-					const e = ctx.createEntity();
-					ctx.addComponent(e, Pos, { x: i, y: i * 2 });
+					const e = ctx.commands.spawn();
+					ctx.commands.add(e, Pos, { x: i, y: i * 2 });
 					createdEntities.push(e);
 				}
 			}
@@ -270,15 +270,15 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Marker = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, Marker]),
 			fn(ctx) {
 				// Both deferred: add then remove in same system
-				ctx.addComponent(e, Marker);
-				ctx.removeComponent(e, Marker);
+				ctx.commands.add(e, Marker);
+				ctx.commands.remove(e, Marker);
 			}
 		});
 

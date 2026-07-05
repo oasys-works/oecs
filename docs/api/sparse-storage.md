@@ -27,12 +27,12 @@ The cost: sparse membership isn't in the archetype mask, so it's **invisible to 
 ## Registration
 
 ```ts
-registerSparseComponent<S>(schema: S): SparseComponentDef<S>;                       // record form
-registerSparseComponent<const F, T = "f64">(fields: F, type?: T): SparseComponentDef<…>;  // array shorthand
+registerSparseComponent<S>(schema: S, opts?: ComponentRegisterOptions): SparseComponentDef<S>;   // record form
+registerSparseComponent<const F, T = "f64">(fields: F, type?: T, opts?: ComponentRegisterOptions): SparseComponentDef<…>;  // array shorthand
 registerSparseTag(): SparseComponentDef<Record<string, never>>;                     // membership only
 ```
 
-Mirrors [`registerComponent`](./components.md) — record form for mixed types, array shorthand for uniform (defaults to `"f64"`), and a tag variant with no data.
+Mirrors [`registerComponent`](./components.md) — record form for mixed types, array shorthand for uniform (defaults to `"f64"`), a tag variant with no data, and the same trailing [`ComponentRegisterOptions`](./components.md) debug-label bag (`{ name?: string }`).
 
 > [!WARNING]
 > The same [deterministic float ban](./determinism.md) applies: on a `{ deterministic: true }` `ECS`, the array shorthand's `"f64"` default is rejected — pass an explicit integer type.
@@ -43,14 +43,14 @@ All immediate, all safe mid-tick (no dense row ever moves):
 
 ```ts
 addSparse(e, def): this;                        // tag form (no values)
-addSparse<S>(e, def, values: FieldValues<S>): this;
+addSparse<S>(e, def, values: CompleteFieldValues<S>): this;
 removeSparse(e, def): this;
 hasSparse(e, def): boolean;
 getSparseField<S>(e, def, field): number;
 setSparseField<S>(e, def, field, value): void;
 ```
 
-The same six exist on `ctx` inside systems (and *are* access-checked there via `sparseReads`/`sparseWrites`).
+The same set exists on `ctx` inside systems, access-checked there via `sparseReads`/`sparseWrites` — except `hasSparse`, which is unchecked, mirroring `hasComponent`.
 
 > [!WARNING]
 > `getSparseField` on a non-member **throws `COMPONENT_NOT_REGISTERED` in dev** (and returns `0` in production) — guard with `hasSparse` first if a component may be absent.
@@ -77,12 +77,12 @@ ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
 Sparse stores (and the [relations](./relations.md) built on them) participate in [determinism](./determinism.md):
 
 ```ts
-snapshotSparse(): Uint8Array;         // canonical-order serialization
-restoreSparse(bytes: Uint8Array): void;
+ecs.snapshots.captureSparse(): Uint8Array;         // canonical-order serialization
+ecs.snapshots.restoreSparse(bytes: Uint8Array): void;
 class SparseRestoreError extends Error {}
 ```
 
-Both require `{ deterministic: true }` (else `DETERMINISM_DISABLED`). `restoreSparse` requires the sparse components already registered in the **same order**, and throws `SparseRestoreError` on any shape / field-identity / index-bounds / trailing-byte mismatch. The full-`ECS` [`snapshot()` / `restoreInto()`](./determinism.md) bundle the sparse section automatically.
+Both require `{ deterministic: true }` (else `DETERMINISM_DISABLED`). `restoreSparse` requires the sparse components already registered in the **same order**, and throws `SparseRestoreError` on any shape / field-identity / index-bounds / trailing-byte mismatch. The full-world [`ecs.snapshots.capture()` / `restore()`](./determinism.md) bundle the sparse section automatically.
 
 ## Types
 
@@ -96,4 +96,4 @@ type SparseComponentID;       // separate id space from ComponentID — does not
 - [relations](./relations.md) — `(relation, target)` pairs, built on sparse storage
 - [components](./components.md) — dense components and the 128-slot budget sparse escapes
 - [queries](./queries.md) — `withSparse` and the `forEachEntity` terminal
-- [determinism](./determinism.md) — `snapshotSparse` and the float ban
+- [determinism](./determinism.md) — `captureSparse` and the float ban

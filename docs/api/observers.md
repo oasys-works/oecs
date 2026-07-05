@@ -15,8 +15,13 @@ handle.dispose();   // unregister when done (idempotent)
 
 ```ts
 observe<S>(def: ComponentDef<S>, config: ObserverConfig): ObserverHandle;
-interface ObserverHandle { dispose(): void; }
+interface ObserverHandle {
+  dispose(): void;              // unregister; safe to call more than once
+  [Symbol.dispose](): void;     // same, as TC39 explicit-resource-management sugar
+}
 ```
+
+The `Symbol.dispose` member makes the handle `using`-compatible — `using h = ecs.observe(C, { … })` unregisters automatically at scope exit.
 
 The `config` shape decides which callbacks are allowed:
 
@@ -29,6 +34,7 @@ interface StructuralObserverConfig {
   onEnable?: (eid: EntityID, ctx: SystemContext) => void;
   access?: Partial<SystemAccessDeclaration>;   // + the reads/writes/spawns the callbacks need
   yieldExisting?: boolean;
+  name?: string;                               // diagnostic label in frame traces (observe-only)
 }
 
 // onSet, archetype-granular (the default) — one call per changed archetype-column:
@@ -70,13 +76,16 @@ ecs.observe(HexPos, {
 > **`onSet` is not a per-write hook** — it's *derived* change detection. Archetype grain reuses the change tick (free, but fires per changed archetype-column, so you get all its rows even if one changed). Entity grain fires exactly once per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Choose by change density.
 
 > [!WARNING]
-> **Only deferred, in-schedule ops fire observers.** An *immediate* host-side `ecs.addComponent` / `ecs.disable` fires nothing — only the deferred `ctx.commands.add` / `ctx.disable` (which drain at the flush) do. Register observers at build time, **before `startup()`**, so the archetypes they spawn into are prewarmed.
+> **Only deferred, in-schedule ops fire *structural* observers** (`onAdd` / `onRemove` / `onEnable` / `onDisable`). An *immediate* host-side `ecs.addComponent` / `ecs.disable` fires none of them — only the deferred `ctx.commands.add` / `ctx.commands.disable` (which drain at the flush) do. `onSet` is **not** gated by receiver: it is derived change detection (change ticks + the per-entity dirty list, scanned at the post-update detection point), so a host-side `ecs.setField` between frames is seen by `onSet` observers on the next `update()` exactly like `ctx.setField`. **This includes `ecs.despawn`** (immediate since 0.5.0): a host despawn fires no `onRemove` for the entity's components — nor for entities destroyed by a relation `delete`-policy cascade it triggers. Anything observer-driven (including the `@oasys/oecs/reactive-sync` bridges) only sees despawns that go through `ctx.commands.despawn` or the host-command seam. Register observers at build time, **before `startup()`**, so the archetypes they spawn into are prewarmed.
 
 > [!WARNING]
 > **Don't emit events from `onSet`** — it runs where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev). See [events](./events.md).
 
 > [!NOTE]
 > `yieldExisting: true` replays `onAdd` over the current **enabled** matches at registration — handy to seed a derived structure from entities that already exist (a disabled entity is skipped at seed). `dispose()` is idempotent and safe mid-flush.
+
+> [!TIP]
+> `name` labels the observer in the [frame trace](./tracing.md)'s `observer_fired` events — the same role a system's `name` plays. It is observe-only: it never touches `stateHash` or dispatch order. Unnamed observers fall back to `observer(<component debug name>)` when the component was registered with a `name`, else `observer(<cid>)`.
 
 ## Firing order (determinism)
 

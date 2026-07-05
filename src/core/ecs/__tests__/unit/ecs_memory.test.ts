@@ -179,7 +179,7 @@ describe("resolve_ecs_memory", () => {
 
 	it("heap: rejects a non-positive max_bytes", () => {
 		const malformed = JSON.parse('{ "heap": { "maxBytes": 0 } }');
-		expectInvalid(() => resolveECSMemory(malformed), "heap.max_bytes");
+		expectInvalid(() => resolveECSMemory(malformed), "heap.maxBytes");
 	});
 
 	it("rejects multiple sizing arms", () => {

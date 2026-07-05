@@ -9,11 +9,11 @@ describe("Destruction during system execution", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 30, y: 40 });
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 50, y: 60 });
 
 		const valuesRead: number[] = [];
@@ -30,7 +30,7 @@ describe("Destruction during system execution", () => {
 						// Destroy the first entity we encounter
 						if (destroyedEntity === null) {
 							destroyedEntity = arch.entityIds[i] as EntityID;
-							ctx.destroyEntity(arch.entityIds[i] as EntityID);
+							ctx.commands.despawn(arch.entityIds[i] as EntityID);
 						}
 						// All reads should succeed, including after the deferred destroy call
 						valuesRead.push(px[i], py[i]);
@@ -59,7 +59,7 @@ describe("Destruction during system execution", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 10; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
 			entities.push(e);
 		}
@@ -72,7 +72,7 @@ describe("Destruction during system execution", () => {
 			fn(ctx) {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
-						ctx.destroyEntity(arch.entityIds[i] as EntityID);
+						ctx.commands.despawn(arch.entityIds[i] as EntityID);
 						iterationCount++;
 					}
 				});
@@ -100,7 +100,7 @@ describe("Destruction during system execution", () => {
 		// Create 5 initial entities
 		const initial: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			initial.push(e);
 		}
@@ -112,12 +112,12 @@ describe("Destruction during system execution", () => {
 			fn(ctx) {
 				// Destroy 3 of the initial entities
 				for (let i = 0; i < 3; i++) {
-					ctx.destroyEntity(initial[i]);
+					ctx.commands.despawn(initial[i]);
 				}
 				// Create 4 new entities
 				for (let i = 0; i < 4; i++) {
-					const e = ctx.createEntity();
-					ctx.addComponent(e, Pos, { x: 100 + i, y: 0 });
+					const e = ctx.commands.spawn();
+					ctx.commands.add(e, Pos, { x: 100 + i, y: 0 });
 					created.push(e);
 				}
 			}
@@ -151,7 +151,7 @@ describe("Destruction during system execution", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 42, y: 84 });
 
 		let sys2SawEntity = false;
@@ -161,7 +161,7 @@ describe("Destruction during system execution", () => {
 		const sys1 = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 			}
 		});
 
@@ -200,7 +200,7 @@ describe("Destruction during system execution", () => {
 
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 1_000; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: 0 });
 			entities.push(e);
 		}
@@ -213,7 +213,7 @@ describe("Destruction during system execution", () => {
 			fn(ctx) {
 				posQuery.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
-						ctx.destroyEntity(arch.entityIds[i] as EntityID);
+						ctx.commands.despawn(arch.entityIds[i] as EntityID);
 					}
 				});
 			}

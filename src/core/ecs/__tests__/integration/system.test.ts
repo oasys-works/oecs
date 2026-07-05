@@ -137,8 +137,8 @@ describe("ECS system registration", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const AliveTag = world.registerTag();
-		const tagged = world.createEntity();
-		const untagged = world.createEntity();
+		const tagged = world.spawn();
+		const untagged = world.spawn();
 		world.addComponent(tagged, Pos, { x: 1, y: 2 });
 		world.addComponent(tagged, AliveTag);
 
@@ -429,7 +429,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system reads an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -441,7 +441,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			}
 		});
@@ -454,7 +456,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system writes an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -466,7 +468,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.setField(e, Pos, "x", 99);
 			}
 		});
@@ -480,7 +484,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -492,21 +496,23 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
-				ctx.addComponent(e, Vel, { vx: 0, vy: 0 });
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
+				ctx.commands.add(e, Vel, { vx: 0, vy: 0 });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'adder'.*add_component/);
+		expect(() => world.update(0)).toThrow(/system 'adder'.*addComponent/);
 	});
 
 	it("throws when system removes an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 0, vy: 0 });
 
@@ -519,20 +525,22 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
-				ctx.removeComponent(e, Vel);
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
+				ctx.commands.remove(e, Vel);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'remover'.*remove_component/);
+		expect(() => world.update(0)).toThrow(/system 'remover'.*removeComponent/);
 	});
 
 	it("throws when system destroys an entity without declaring any despawns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -544,20 +552,22 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
-				ctx.destroyEntity(e);
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
+				ctx.commands.despawn(e);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'killer'.*destroyEntity/);
+		expect(() => world.update(0)).toThrow(/system 'killer'.*despawn/);
 	});
 
 	it("throws when system reads an undeclared resource", () => {
 		const world = new ECS();
 		const Res = Symbol("R") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
 		const sys = world.registerSystem({
 			name: "res_reader",
@@ -568,7 +578,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.resource(Res);
 			}
 		});
@@ -581,7 +593,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("throws when system writes an undeclared resource", () => {
 		const world = new ECS();
 		const Res = Symbol("RW") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
 		const sys = world.registerSystem({
 			name: "res_writer",
@@ -592,7 +604,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [Res],
 			resourceWrites: [],
-			fn(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			fn(ctx: SystemContext) {
 				ctx.setResource(Res, { v: 2 });
 			}
 		});
@@ -606,18 +620,18 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Res = Symbol("Outside") as unknown as import("../../resource").ResourceKey<{ v: number }>;
-		world.registerResource(Res, { v: 1 });
+		world.resources.register(Res, { v: 1 });
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		expect(() => {
 			// All of these run with no active system → access_check is a no-op.
 			world.addComponent(e, Pos, { x: 1, y: 2 });
 			world.setField(e, Pos, "x", 99);
 			expect(world.getField(e, Pos, "x")).toBe(99);
-			world.resource(Res);
-			world.setResource(Res, { v: 2 });
+			world.resources.get(Res);
+			world.resources.set(Res, { v: 2 });
 			world.removeComponent(e, Pos);
-			world.destroyEntity(e);
+			world.despawn(e);
 			world.flush();
 		}).not.toThrow();
 	});
@@ -625,7 +639,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("declared writes implicitly cover reads of the same component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 6 });
 
 		let observed = -1;
@@ -667,9 +681,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			resourceReads: [],
 			resourceWrites: [],
 			fn(ctx) {
-				const e = ctx.createEntity();
-				ctx.addComponent(e, A, { x: 1 });
-				ctx.addComponent(e, B, { y: 2 });
+				const e = ctx.commands.spawn();
+				ctx.commands.add(e, A, { x: 1 });
+				ctx.commands.add(e, B, { y: 2 });
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -681,7 +695,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -694,8 +708,8 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			resourceReads: [],
 			resourceWrites: [],
 			fn(ctx) {
-				ctx.addComponent(e, Tag);
-				ctx.removeComponent(e, Tag);
+				ctx.commands.add(e, Tag);
+				ctx.commands.remove(e, Tag);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -706,7 +720,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 	it("on_added callbacks are also wrapped in access_check", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		const sys = world.registerSystem({
@@ -718,7 +732,9 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			onAdded(ctx) {
+			// ctx annotated permissive (§typestate escape hatch): this system
+			// DELIBERATELY violates its declaration to assert the runtime throw.
+			onAdded(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			},
 			fn() {}

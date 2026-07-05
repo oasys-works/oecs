@@ -34,7 +34,7 @@ describe("Query scale", () => {
 		// Create one entity per distinct pair so each archetype exists
 		for (let i = 0; i < pairs.length; i++) {
 			const [a, b] = pairs[i];
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, comps[a], { v: i });
 			world.addComponent(e, comps[b], { v: i });
 		}
@@ -61,7 +61,7 @@ describe("Query scale", () => {
 
 		// Create entities with various component combos
 		for (let i = 0; i < 500; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			// Always add comp[0]
 			world.addComponent(e, comps[0], { v: i });
 			// Add comp[1..9] based on bit pattern of i
@@ -102,7 +102,7 @@ describe("Query scale", () => {
 
 		// Create entities in TAG_COUNT different archetypes
 		for (let i = 0; i < TAG_COUNT; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Common, { v: i });
 			world.addComponent(e, tags[i]);
 		}

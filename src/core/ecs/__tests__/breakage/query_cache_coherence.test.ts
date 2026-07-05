@@ -11,18 +11,18 @@ describe("Query cache coherence edge cases", () => {
 		// Cache the query before any entities exist
 		const q = world.query(Pos);
 		expect(q.archetypeCount).toBe(0);
-		expect(q.count()).toBe(0);
+		expect(q.entityCount).toBe(0);
 
 		// Now create matching entities
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 
 		// Same query reference should now see the entities via live update
 		expect(q.archetypeCount).toBeGreaterThan(0);
-		expect(q.count()).toBe(2);
+		expect(q.entityCount).toBe(2);
 
 		// Verify we can iterate and read data
 		let total = 0;
@@ -43,16 +43,16 @@ describe("Query cache coherence edge cases", () => {
 		const q = world.query(Pos);
 
 		// Phase 1: create and populate
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
 
-		expect(q.count()).toBe(2);
+		expect(q.entityCount).toBe(2);
 
 		// Phase 2: destroy all via deferred + flush
-		world.destroyEntity(e1);
-		world.destroyEntity(e2);
+		world.despawn(e1);
+		world.despawn(e2);
 		world.flush();
 
 		// forEach should skip empty archetypes
@@ -63,7 +63,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(countAfterDestroy).toBe(0);
 
 		// Phase 3: add new entities to the same archetype shape
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 10, y: 20 });
 
 		// forEach should now yield exactly the new entity
@@ -86,11 +86,11 @@ describe("Query cache coherence edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
 		const qNoTag = world.query(Pos).without(Tag);
-		expect(qNoTag.count()).toBe(1);
+		expect(qNoTag.entityCount).toBe(1);
 
 		let countDuringSystem = -1;
 
@@ -98,9 +98,9 @@ describe("Query cache coherence edge cases", () => {
 			...openAccess([Pos, Tag]),
 			fn(ctx) {
 				// During system, add Tag to entity
-				ctx.addComponent(e, Tag);
+				ctx.commands.add(e, Tag);
 				// Query should still show the entity (deferred)
-				countDuringSystem = qNoTag.count();
+				countDuringSystem = qNoTag.entityCount;
 			}
 		});
 
@@ -112,7 +112,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(countDuringSystem).toBe(1);
 
 		// After flush, entity has Tag so it should no longer match .not(Tag)
-		expect(qNoTag.count()).toBe(0);
+		expect(qNoTag.entityCount).toBe(0);
 		// Entity should still be alive
 		expect(world.isAlive(e)).toBe(true);
 		expect(world.hasComponent(e, Tag)).toBe(true);
@@ -123,7 +123,7 @@ describe("Query cache coherence edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 3, vy: 4 });
 
@@ -131,13 +131,13 @@ describe("Query cache coherence edge cases", () => {
 		const q2 = world.query(Pos, Vel); // matches only [Pos,Vel]
 
 		// Before: entity is in both queries
-		expect(q1.count()).toBe(1);
-		expect(q2.count()).toBe(1);
+		expect(q1.entityCount).toBe(1);
+		expect(q2.entityCount).toBe(1);
 
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				ctx.removeComponent(e, Vel);
+				ctx.commands.remove(e, Vel);
 			}
 		});
 
@@ -147,9 +147,9 @@ describe("Query cache coherence edge cases", () => {
 
 		// After flush: entity moved from [Pos,Vel] archetype to [Pos] archetype
 		// q1 should still see it (entity still has Pos)
-		expect(q1.count()).toBe(1);
+		expect(q1.entityCount).toBe(1);
 		// q2 should NOT see it (entity no longer has Vel)
-		expect(q2.count()).toBe(0);
+		expect(q2.entityCount).toBe(0);
 	});
 
 	it("archetype empty -> re-populated — query yields exactly 1 archetype with 1 entity", () => {
@@ -157,19 +157,19 @@ describe("Query cache coherence edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 
 		// Create entity, populate archetype
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
 		const q = world.query(Pos);
-		expect(q.count()).toBe(1);
+		expect(q.entityCount).toBe(1);
 
 		// Empty it via deferred destroy + flush
-		world.destroyEntity(e1);
+		world.despawn(e1);
 		world.flush();
-		expect(q.count()).toBe(0);
+		expect(q.entityCount).toBe(0);
 
 		// Repopulate with a single entity
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 99, y: 88 });
 
 		// Query should yield exactly 1 non-empty archetype with 1 entity

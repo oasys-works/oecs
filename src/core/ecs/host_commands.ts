@@ -28,12 +28,14 @@
  * typed queue is the default for in-process hosts; the ring is the cross-thread
  * / wire path (the sim worker, later the server).
  */
-import type { ComponentDef, ComponentSchema, FieldValues } from "./component";
+import type { ComponentDef, ComponentSchema, CompleteFieldValues, FieldValues } from "./component";
 import type { ECS } from "./ecs";
 import type { EntityID } from "./entity";
 import type { SystemContext } from "./query";
+import type { SystemDescriptor } from "./system";
 import { SCHEDULE } from "./schedule";
 import { ECSError, ECS_ERROR } from "./utils/error";
+import { assertNever } from "../../type_primitives";
 import {
 	COMMAND_OP_EMPTY,
 	COMMAND_RING_SLOT_BYTES,
@@ -41,22 +43,44 @@ import {
 	drainCommandRing,
 	type PayloadCodec
 } from "../store";
+import { DEV } from "../../dev_flag";
 
-/** One component to attach to a freshly spawned entity. `values` are required and
- * complete: the deferred add path writes exactly the fields given and does NOT
- * zero-default omitted ones (unlike Template/direct spawn), so an omitted f64
- * field would read back NaN. Provide every field (use `0` for "default"); a tag
- * component takes `{}`. Build type-safely with `spawnEntry`. */
+/** One component to attach to a freshly spawned entity. `values` are required
+ * and complete as a *strictness* choice, not a runtime need: since #716 every
+ * attach path (deferred included — `writeFields`'s `?? 0`) zero-fills omitted
+ * fields, same as templates. A host command is a reified, replayable record,
+ * so it carries explicit intent for every field rather than relying on the
+ * zero-fill; a tag component takes `{}`. Build type-safely with `spawnEntry`. */
 export interface SpawnEntry {
 	readonly def: ComponentDef;
 	readonly values: FieldValues<ComponentSchema>;
 }
 
+/** Extracts the schema out of a `ComponentDef` handle. */
+type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : ComponentSchema;
+
+/** One schema-checked spawn entry: `values` is complete for its own def (see
+ * the `SpawnEntry` doc — explicit intent per field, though the attach path
+ * zero-fills since #716), and a tag takes exactly `{}`. */
+export type SpawnEntryFor<D extends ComponentDef> = {
+	readonly def: D;
+	readonly values: CompleteFieldValues<SchemaOf<D>>;
+};
+
+/** The entries tuple for `HostCommandQueue.spawn` — each element's `values` is
+ * checked against its own `def`'s schema. Unlike `TemplateEntries` (which
+ * stays `Partial` — a template is a reusable default set), a host command
+ * demands complete values: it is a reified, replayable record, so every
+ * field is explicit even though the attach path would zero-fill (#716). */
+export type SpawnEntries<Defs extends readonly ComponentDef[]> = readonly [
+	...{ [K in keyof Defs]: SpawnEntryFor<Defs[K]> }
+];
+
 /** Type-checked `SpawnEntry` constructor — keeps `values` aligned to `def`'s
  * schema at the call site even though the stored entry is schema-erased. */
 export function spawnEntry<S extends ComponentSchema>(
 	def: ComponentDef<S>,
-	values: FieldValues<S>
+	values: CompleteFieldValues<S>
 ): SpawnEntry {
 	return { def: def as ComponentDef, values };
 }
@@ -109,7 +133,7 @@ export type HostCommand =
  * That immediate/deferred split is a sharp edge: a `setField` targeting a
  * component the entity does NOT yet have — because an `addComponent`/`spawn`
  * enqueued in the SAME drain is still pending its flush — would otherwise fail
- * deep in `getColumn` with an opaque "component not registered". The `__DEV__`
+ * deep in `getColumn` with an opaque "component not registered". The `DEV`
  * guard below turns that into an actionable message. The fix is structural, not a
  * retry: pass the value in `addComponent`/`spawnEntry` (which carries complete
  * field values), or issue the `setField` on a later frame.
@@ -117,28 +141,28 @@ export type HostCommand =
 export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID | undefined {
 	switch (cmd.kind) {
 		case "spawn": {
-			const eid = ctx.createEntity();
+			const eid = ctx.commands.spawn();
 			for (const entry of cmd.components) {
-				ctx.addComponent(eid, entry.def, entry.values);
+				ctx.commands.add(eid, entry.def, entry.values);
 			}
 			cmd.onSpawned?.(eid);
 			return eid;
 		}
 		case "despawn":
-			ctx.destroyEntity(cmd.eid);
+			ctx.commands.despawn(cmd.eid);
 			return undefined;
 		case "add_component":
-			ctx.addComponent(cmd.eid, cmd.def, cmd.values);
+			ctx.commands.add(cmd.eid, cmd.def, cmd.values);
 			return undefined;
 		case "remove_component":
-			ctx.removeComponent(cmd.eid, cmd.def);
+			ctx.commands.remove(cmd.eid, cmd.def);
 			return undefined;
 		case "set_field":
-			// `hasComponent` itself throws ENTITY_NOT_ALIVE in __DEV__ for a dead
+			// `hasComponent` itself throws ENTITY_NOT_ALIVE in DEV for a dead
 			// eid (a clear error already); a `false` return is the alive-but-missing
 			// case the immediate/deferred split makes easy to hit (see the dispatch
 			// doc above).
-			if (__DEV__ && !ctx.hasComponent(cmd.eid, cmd.def)) {
+			if (DEV && !ctx.hasComponent(cmd.eid, cmd.def)) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
 					`host set_field on entity ${cmd.eid} targets a component it does not have. ` +
@@ -151,11 +175,16 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 			ctx.setField(cmd.eid, cmd.def, cmd.field, cmd.value);
 			return undefined;
 		case "disable":
-			ctx.disable(cmd.eid);
+			ctx.commands.disable(cmd.eid);
 			return undefined;
 		case "enable":
-			ctx.enable(cmd.eid);
+			ctx.commands.enable(cmd.eid);
 			return undefined;
+		default:
+			// Exhaustiveness: a new HostCommand kind that misses a case here is a
+			// compile error (and a hard throw for foreign/deserialized values) —
+			// without this, an unhandled kind silently returned `undefined`.
+			return assertNever(cmd, "HostCommand kind");
 	}
 }
 
@@ -170,7 +199,12 @@ export class HostCommandQueue {
 	private readonly queued: HostCommand[] = [];
 
 	/** Spawn an entity carrying `components`. `onSpawned` receives the new id
-	 * once the spawn applies. */
+	 * once the spawn applies. Each entry's `values` is checked against its own
+	 * `def`'s schema (`SpawnEntries`); the stored command stays schema-erased. */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): void;
 	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): void {
 		this.queued.push({ kind: "spawn", components, onSpawned });
 	}
@@ -182,7 +216,7 @@ export class HostCommandQueue {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): void {
 		this.queued.push({ kind: "add_component", eid, def: def as ComponentDef, values });
 	}
@@ -196,7 +230,7 @@ export class HostCommandQueue {
 	 * `addComponent`/`spawn` `def` and `setField` it in the same frame: the add is
 	 * still pending its flush when the immediate set runs (carry the value in
 	 * `addComponent`/`spawnEntry` instead). `applyHostCommand` throws an
-	 * actionable error in `__DEV__` if you do. */
+	 * actionable error in `DEV` if you do. */
 	setField<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
@@ -224,6 +258,15 @@ export class HostCommandQueue {
 	/** Commands buffered but not yet applied. */
 	pending(): number {
 		return this.queued.length;
+	}
+
+	/** Drop every buffered command without applying it (M15) — e.g. abandoning
+	 * queued edits on a scene unload. Returns how many were dropped. Does not
+	 * touch commands already drained into the world. */
+	clear(): number {
+		const n = this.queued.length;
+		this.queued.length = 0;
+		return n;
 	}
 
 	/**
@@ -456,6 +499,12 @@ export class HostCommandDispatcher {
 		return this;
 	}
 
+	/** Unbind `opCode` (M15). Returns whether a binding was removed; subsequent
+	 * slots carrying it hit the unknown-opcode path. */
+	off(opCode: number): boolean {
+		return this.appliers.delete(opCode);
+	}
+
 	/** Bind a `HostCommand` codec to `opCode`: each matching slot is decoded and
 	 * run through `applyHostCommand` — the SAME dispatch the typed queue uses.
 	 * A drain-time `tap` (record/replay, #702) sees the decoded command before it
@@ -545,7 +594,7 @@ export interface HostCommandSeamOptions {
  * {@link HostCommandQueue} to enqueue into. Opt-in and explicit, symmetric to
  * the read bridge's `syncComponentToMap`.
  *
- * Call this BEFORE adding your own systems and BEFORE `world.startup()`: the
+ * Call this BEFORE adding your own systems and BEFORE `ecs.startup()`: the
  * apply system must be registered first so insertion order runs it at the head
  * of its phase (the schedule has no dedicated "first" slot), and the PRE_STARTUP
  * drain only fires if it exists before startup.
@@ -554,11 +603,32 @@ export interface HostCommandSeamOptions {
  * external reactive kernel to quarantine — this is pure ECS plumbing over the
  * deferred buffers and `SystemContext` the core already owns.
  */
+// queue → the apply-system descriptors its seam registered, for uninstall.
+const seamSystems = new WeakMap<HostCommandQueue, SystemDescriptor[]>();
+
+/**
+ * Tear down a seam installed by {@link installHostCommandSeam} (M15): removes
+ * its apply systems from the world's schedule and clears any still-buffered
+ * commands. The queue itself stays usable as a buffer, but nothing drains it
+ * until a new seam is installed. No-op (returns `false`) if `queue` was not
+ * produced by `installHostCommandSeam` on this world.
+ */
+export function uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boolean {
+	const descs = seamSystems.get(queue);
+	if (descs === undefined) return false;
+	for (const desc of descs) ecs.removeSystem(desc);
+	seamSystems.delete(queue);
+	queue.clear();
+	return true;
+}
+
 export function installHostCommandSeam(
-	world: ECS,
+	ecs: ECS,
 	opts?: HostCommandSeamOptions
 ): HostCommandQueue {
 	const queue = new HostCommandQueue();
+	const installed: SystemDescriptor[] = [];
+	seamSystems.set(queue, installed);
 	const name = opts?.name ?? "host_command_apply";
 	const ring = opts?.ring;
 	const recorder = opts?.recorder;
@@ -566,7 +636,7 @@ export function installHostCommandSeam(
 	// drain). Stable across ticks — no per-tick allocation.
 	const tap = recorder?.record;
 	const schedules = opts?.schedules ?? [SCHEDULE.PRE_STARTUP, SCHEDULE.PRE_UPDATE];
-	// A recorder logs each tick's `world.update(dt)` so `replayCommandLog` can
+	// A recorder logs each tick's `ecs.update(dt)` so `replayCommandLog` can
 	// re-issue it. A FIXED_UPDATE drain receives the FIXED timestep, not the host's
 	// variable update dt, so recording there would replay `update(fixedTimestep)`
 	// and diverge — a different fixed sub-step count plus any dt-integrating system,
@@ -584,7 +654,7 @@ export function installHostCommandSeam(
 	// command enqueued between ticks drains at the next PRE_UPDATE.
 	for (const label of schedules) {
 		const isUpdateDrain = !STARTUP_SCHEDULES.has(label);
-		const apply = world.registerSystem({
+		const apply = ecs.registerSystem({
 			name: `${name}:${label}`,
 			// `reads`/`writes` are required by `SystemConfig` but empty here: the
 			// apply system declares nothing because it mutates components not known
@@ -604,13 +674,14 @@ export function installHostCommandSeam(
 				// `tap` (the recorder, if any) observes each in apply order.
 				queue.drain(ctx, tap);
 				if (ring !== undefined) {
-					const buffer = world.columnStore;
+					const buffer = ecs.columnStore;
 					const ringOff = buffer.header.commandRingOff;
 					if (ringOff !== 0) ring.drain(ctx, buffer.view, ringOff, tap);
 				}
 			}
 		});
-		world.addSystems(label, apply);
+		ecs.addSystems(label, apply);
+		installed.push(apply);
 	}
 	return queue;
 }

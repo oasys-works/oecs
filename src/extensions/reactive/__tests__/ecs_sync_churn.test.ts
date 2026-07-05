@@ -35,7 +35,7 @@
  * deletes, membership drift) and localises it to a minimal repro.
  */
 import { describe, expect, it } from "vitest";
-import { effect, reactiveMap, root, type ReactiveMap } from "../../../core/reactive";
+import { effect, reactiveMap, root, type ReactiveMap } from "../../../reactive";
 import {
 	ECS,
 	SCHEDULE,
@@ -203,9 +203,9 @@ function buildEngine(): ChurnEngine {
 			for (const op of ops) {
 				switch (op.kind) {
 					case "spawn": {
-						const e = ctx.createEntity();
-						ctx.addComponent(e, Pos, { x: op.x, y: op.y });
-						if (op.withHealth) ctx.addComponent(e, Health, { hp: op.hp });
+						const e = ctx.commands.spawn();
+						ctx.commands.add(e, Pos, { x: op.x, y: op.y });
+						if (op.withHealth) ctx.commands.add(e, Health, { hp: op.hp });
 						eidOf.set(born, e);
 						live.add(born);
 						born++;
@@ -213,7 +213,7 @@ function buildEngine(): ChurnEngine {
 					}
 					case "despawn": {
 						if (!live.has(op.h)) break;
-						ctx.destroyEntity(eidOf.get(op.h)!);
+						ctx.commands.despawn(eidOf.get(op.h)!);
 						live.delete(op.h);
 						break;
 					}
@@ -224,13 +224,13 @@ function buildEngine(): ChurnEngine {
 						// so settle the field via set when it's already there — the post-tick
 						// query is identical either way, which is all the oracle compares.
 						if (ctx.hasComponent(e, Health)) ctx.setField(e, Health, "hp", op.hp);
-						else ctx.addComponent(e, Health, { hp: op.hp });
+						else ctx.commands.add(e, Health, { hp: op.hp });
 						break;
 					}
 					case "removeHealth": {
 						if (!live.has(op.h)) break;
 						const e = eidOf.get(op.h)!;
-						if (ctx.hasComponent(e, Health)) ctx.removeComponent(e, Health);
+						if (ctx.hasComponent(e, Health)) ctx.commands.remove(e, Health);
 						break;
 					}
 					case "set": {
@@ -245,10 +245,10 @@ function buildEngine(): ChurnEngine {
 						break;
 					}
 					case "disable":
-						if (live.has(op.h)) ctx.disable(eidOf.get(op.h)!);
+						if (live.has(op.h)) ctx.commands.disable(eidOf.get(op.h)!);
 						break;
 					case "enable":
-						if (live.has(op.h)) ctx.enable(eidOf.get(op.h)!);
+						if (live.has(op.h)) ctx.commands.enable(eidOf.get(op.h)!);
 						break;
 					case "step":
 						break; // batches never carry the step marker
@@ -480,7 +480,7 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 		for (let seed = 0; seed < SEEDS; seed++) {
 			const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
 			const Session = world.registerComponent({ a: "f64", b: "f64", c: "f64" });
-			const singleton = world.createEntity();
+			const singleton = world.spawn();
 			world.addComponent(singleton, Session, { a: 1, b: 2, c: 3 });
 			let buffer: readonly SOp[] = [];
 			world.addSystems(
@@ -503,8 +503,8 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 						buffer = [];
 						for (const op of ops) {
 							if (op.kind === "set") ctx.setField(singleton, Session, op.field, op.value);
-							else if (op.kind === "disable") ctx.disable(singleton);
-							else if (op.kind === "enable") ctx.enable(singleton);
+							else if (op.kind === "disable") ctx.commands.disable(singleton);
+							else if (op.kind === "enable") ctx.commands.enable(singleton);
 						}
 					}
 				})

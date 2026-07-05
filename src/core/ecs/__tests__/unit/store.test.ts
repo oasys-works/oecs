@@ -525,13 +525,13 @@ describe("Store", () => {
 		expect(() => store.removeComponent(id, Pos)).toThrow();
 	});
 
-	it("throws on has_component for dead entity", () => {
+	it("hasComponent is total: false for a dead entity, no throw", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const id = store.createEntity();
 		store.destroyEntity(id);
 
-		expect(() => store.hasComponent(id, Pos)).toThrow();
+		expect(store.hasComponent(id, Pos)).toBe(false);
 	});
 
 	//=========================================================

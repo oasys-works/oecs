@@ -10,7 +10,7 @@ describe("Batch operation edge cases", () => {
 
 		// Create an entity with Pos to create the [Pos] archetype, then remove it
 		// to leave the archetype empty
-		const temp = world.createEntity();
+		const temp = world.spawn();
 		world.addComponent(temp, Pos, { x: 0, y: 0 });
 
 		// Get the archetype reference
@@ -18,7 +18,7 @@ describe("Batch operation edge cases", () => {
 		const arch = q.archetypes[0];
 
 		// Destroy the entity to empty the archetype
-		world.destroyEntity(temp);
+		world.despawn(temp);
 		world.flush();
 
 		expect(arch.entityCount).toBe(0);
@@ -36,9 +36,9 @@ describe("Batch operation edge cases", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 30, y: 40 });
 
 		const q = world.query(Pos);
@@ -64,13 +64,13 @@ describe("Batch operation edge cases", () => {
 		// Create entities with only Pos
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 2 });
 			entities.push(e);
 		}
 
 		const posVelQuery = world.query(Pos, Vel);
-		expect(posVelQuery.count()).toBe(0);
+		expect(posVelQuery.entityCount).toBe(0);
 
 		// batch_add Vel to all entities in the Pos archetype
 		const posQuery = world.query(Pos);
@@ -78,7 +78,7 @@ describe("Batch operation edge cases", () => {
 		world.batchAddComponent(srcArch.id, Vel, { vx: 100, vy: 200 });
 
 		// Now the Pos+Vel query should contain all 5 entities
-		expect(posVelQuery.count()).toBe(5);
+		expect(posVelQuery.entityCount).toBe(5);
 
 		// Verify data integrity
 		for (const e of entities) {
@@ -101,19 +101,19 @@ describe("Batch operation edge cases", () => {
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 		world.addComponent(e, Vel, { vx: 15, vy: 20 });
 
 		const posVelQuery = world.query(Pos, Vel);
-		expect(posVelQuery.count()).toBe(1);
+		expect(posVelQuery.entityCount).toBe(1);
 
 		// Get the source archetype and batch_remove Vel
 		const srcArch = posVelQuery.archetypes[0];
 		world.batchRemoveComponent(srcArch.id, Vel);
 
 		// Entity should no longer be in Pos+Vel query
-		expect(posVelQuery.count()).toBe(0);
+		expect(posVelQuery.entityCount).toBe(0);
 
 		// Entity should still be alive and have Pos
 		expect(world.isAlive(e)).toBe(true);
@@ -133,7 +133,7 @@ describe("Batch operation edge cases", () => {
 		// Create 5 entities with Pos
 		const entities: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i * 10, y: i * 100 });
 			entities.push(e);
 		}
@@ -148,7 +148,7 @@ describe("Batch operation edge cases", () => {
 		}
 
 		// Destroy the middle entity (index 2) using deferred + flush
-		world.destroyEntity(entities[2]);
+		world.despawn(entities[2]);
 		world.flush();
 
 		expect(world.isAlive(entities[2])).toBe(false);
@@ -174,11 +174,11 @@ describe("Batch operation edge cases", () => {
 		const Hp = world.registerComponent(["hp"] as const);
 
 		// Create 3 entities with Pos
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 3, y: 4 });
-		const e3 = world.createEntity();
+		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 5, y: 6 });
 
 		// Individually add Vel to e1

@@ -35,7 +35,7 @@ const BINDINGS_BYTES = 128;
 // Internal layout primitives not surfaced through the barrel — exercised
 // directly so the 2³¹ overflow guard (#382) can be pinned without allocating
 // a 2 GiB SharedArrayBuffer.
-import { alignUp, STORE_MAX_BYTE_OFFSET, StoreLayoutOverflowError, _planLayout } from "../column_store";
+import { alignUp, STORE_MAX_BYTE_OFFSET, StoreLayoutOverflowError, planLayout } from "../column_store";
 
 // Single-archetype spec with three columns of mixed widths so alignment
 // padding actually matters (u32 lands after a u8, exercises `alignUp`).
@@ -361,7 +361,7 @@ describe("align_up — 2³¹ overflow guard (#382)", () => {
 });
 
 describe("plan_layout — 2³¹ overflow guard (#382)", () => {
-	// `_planLayout` only computes byte offsets; it never allocates, so a spec
+	// `planLayout` only computes byte offsets; it never allocates, so a spec
 	// whose columns span >2 GiB can be exercised cheaply (no 2 GiB SAB).
 	const over2gibSpec: ArchetypeSpec = {
 		archetypeId: 1,
@@ -373,15 +373,15 @@ describe("plan_layout — 2³¹ overflow guard (#382)", () => {
 	};
 
 	it("throws StoreLayoutOverflowError when a column region crosses 2³¹", () => {
-		expect(() => _planLayout([over2gibSpec], 0)).toThrow(StoreLayoutOverflowError);
+		expect(() => planLayout([over2gibSpec], 0)).toThrow(StoreLayoutOverflowError);
 	});
 
 	it("does not emit a negative byte_off (the pre-fix symptom)", () => {
 		// Pinned as the inverse of the bug: rather than returning descriptors
 		// with a negative `byte_off`, the layout step now fails loud.
-		let descriptors: ReturnType<typeof _planLayout>["descriptors"] | undefined;
+		let descriptors: ReturnType<typeof planLayout>["descriptors"] | undefined;
 		try {
-			descriptors = _planLayout([over2gibSpec], 0).descriptors;
+			descriptors = planLayout([over2gibSpec], 0).descriptors;
 		} catch (e) {
 			expect(e).toBeInstanceOf(StoreLayoutOverflowError);
 		}
@@ -389,7 +389,7 @@ describe("plan_layout — 2³¹ overflow guard (#382)", () => {
 	});
 
 	it("still lays out a sub-ceiling spec correctly", () => {
-		const { totalBytes, descriptors } = _planLayout(
+		const { totalBytes, descriptors } = planLayout(
 			[
 				{
 					archetypeId: 1,

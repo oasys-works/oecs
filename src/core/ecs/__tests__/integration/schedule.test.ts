@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { logger, LOG_CATEGORY } from "../../../../log";
 import { Schedule, SCHEDULE } from "../../schedule";
 import { SystemContext } from "../../query";
 import { Store } from "../../store";
@@ -194,22 +193,15 @@ describe("Schedule (integration)", () => {
 	// Dropped-edge dev warnings (issue #432)
 	//=========================================================
 
-	/** Capture ECS-category log entries emitted while `run` executes. */
-	function captureEcsLogs(run: () => void): string[] {
-		const captured: string[] = [];
-		const unsubscribe = logger.subscribe((entry) => {
-			if (entry.category === LOG_CATEGORY.ECS) captured.push(entry.message);
-		});
-		try {
-			run();
-		} finally {
-			unsubscribe();
-		}
-		return captured;
+	/** A schedule wired to a capturing `onWarn` (the `ECSOptions.onWarn` seam —
+	 * the global logger it replaced is gone, M5). */
+	function makeCapturingSchedule(): { schedule: Schedule; logs: string[] } {
+		const logs: string[] = [];
+		return { schedule: new Schedule((message) => logs.push(message)), logs };
 	}
 
 	it("warns when a before-target is registered in no phase", () => {
-		const schedule = new Schedule();
+		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
 
@@ -218,7 +210,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { before: [ghost] } });
 
-		const logs = captureEcsLogs(() => schedule.runUpdate(ctx, 0, 0));
+		schedule.runUpdate(ctx, 0, 0);
 
 		// Constraint dropped, sort still succeeds.
 		expect(order).toEqual(["a"]);
@@ -229,7 +221,7 @@ describe("Schedule (integration)", () => {
 	});
 
 	it("warns when an after-target is registered in no phase", () => {
-		const schedule = new Schedule();
+		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 
 		const a = makeSystem();
@@ -237,14 +229,14 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { after: [ghost] } });
 
-		const logs = captureEcsLogs(() => schedule.runUpdate(ctx, 0, 0));
+		schedule.runUpdate(ctx, 0, 0);
 
 		expect(logs).toHaveLength(1);
 		expect(logs[0]).toContain("after");
 	});
 
 	it("does NOT warn when the target is registered in a different phase", () => {
-		const schedule = new Schedule();
+		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
 
@@ -255,14 +247,14 @@ describe("Schedule (integration)", () => {
 		schedule.addSystems(SCHEDULE.PRE_UPDATE, b);
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { after: [b] } });
 
-		const logs = captureEcsLogs(() => schedule.runUpdate(ctx, 0, 0));
+		schedule.runUpdate(ctx, 0, 0);
 
 		expect(order).toEqual(["b", "a"]);
 		expect(logs).toHaveLength(0);
 	});
 
 	it("does NOT warn for a valid within-label ordering edge", () => {
-		const schedule = new Schedule();
+		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
 
@@ -271,7 +263,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { before: [b] } }, b);
 
-		const logs = captureEcsLogs(() => schedule.runUpdate(ctx, 0, 0));
+		schedule.runUpdate(ctx, 0, 0);
 
 		expect(order).toEqual(["a", "b"]);
 		expect(logs).toHaveLength(0);
@@ -370,7 +362,7 @@ describe("Schedule (integration)", () => {
 		let createdEntity = false;
 		const sys = makeSystem({
 			fn: (ctxArg) => {
-				const id = ctxArg.createEntity();
+				const id = ctxArg.commands.spawn();
 				createdEntity = store.isAlive(id);
 			}
 		});
@@ -402,7 +394,7 @@ describe("Schedule (integration)", () => {
 		const destroyer = makeSystem({
 			despawns: [Anything],
 			fn: (c) => {
-				c.destroyEntity(entity);
+				c.commands.despawn(entity);
 			}
 		});
 

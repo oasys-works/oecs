@@ -101,7 +101,7 @@ batchedUpdate(ecs, dt): void;
 
 Bridges kernel values into SolidJS. **`solid-js` is an optional peer dependency** — only this entry pulls it.
 
-```ts
+```text
 import { fromKernel, fromKernelMap } from "@oasys/oecs/solid";
 
 fromKernel<T>(accessor: () => T): Accessor<T>;                       // kernel value → Solid signal

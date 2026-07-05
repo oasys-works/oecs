@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../../store";
 import type { EntityID } from "../../entity";
 
-const pairNums = (pairs: [EntityID, EntityID][]): [number, number][] =>
+const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, number][] =>
 	pairs.map(([s, t]) => [s as number, t as number]);
 
 describe("relations canonical fold — single source of truth (#498)", () => {
@@ -101,11 +101,11 @@ describe("relations canonical fold — single source of truth (#498)", () => {
 		// Reverse index rebuilt too (multi from bytes, exclusive from sparse field).
 		expect(
 			dst
-				.sourcesOf(Likes2, t[0])
+				.sourcesOf(t[0], Likes2)
 				.map((e) => e as number)
 				.sort((x, y) => x - y)
 		).toEqual([s[0] as number]);
-		expect(dst.sourcesOf(Targets2, t[0]).map((e) => e as number)).toEqual([s[1] as number]);
+		expect(dst.sourcesOf(t[0], Targets2).map((e) => e as number)).toEqual([s[1] as number]);
 	});
 
 	it("compact_relations reclaims dead-target reverse entries without changing state_hash or pairs_of", () => {
@@ -142,7 +142,7 @@ describe("relations canonical fold — single source of truth (#498)", () => {
 		expect(pairNums(store.pairsOf(Likes))).toEqual(likesAfterDestroy);
 		expect(pairNums(store.pairsOf(Targets))).toEqual(targetsAfterDestroy);
 		// The only observable change: sourcesOf on the dead handle goes to [].
-		expect(store.sourcesOf(Likes, victim)).toEqual([]);
-		expect(store.sourcesOf(Targets, victim)).toEqual([]);
+		expect(store.sourcesOf(victim, Likes)).toEqual([]);
+		expect(store.sourcesOf(victim, Targets)).toEqual([]);
 	});
 });

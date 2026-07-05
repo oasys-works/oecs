@@ -34,6 +34,8 @@ import type {
 	ComponentID,
 	ComponentDef,
 	ComponentSchema,
+	SchemaOf,
+	DeclaredQueryTerm,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -45,6 +47,7 @@ import { ECS_ERROR, ECSError } from "./utils/error";
 import { NO_SWAP, UNASSIGNED, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import type { BitSet } from "../../type_primitives";
 import { accessCheck } from "./access_check";
+import { DEV } from "../../dev_flag";
 
 export type ArchetypeID = Brand<number, "archetype_id">;
 
@@ -131,7 +134,9 @@ export type ArchetypeGrowHandler = (arch: Archetype, additional: number) => void
  * public `ECS.batchAddComponent`/`batchRemoveComponent` API can target an
  * archetype without the caller holding a concrete `Archetype` reference.
  */
-export interface ArchetypeView {
+export interface ArchetypeView<
+	out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]
+> {
 	/** Opaque archetype identity. Pass to `ECS.batch_*_component`. */
 	readonly id: ArchetypeID;
 	/** Number of **enabled** entities — the default-iteration bound (#577). Rows
@@ -150,16 +155,21 @@ export interface ArchetypeView {
 	readonly entityIds: ReadonlyEntityIdArray;
 	/** True if this archetype's mask includes the given component. */
 	hasComponent(id: ComponentID): boolean;
-	/** Get a single field's column (read-only). Valid data: indices 0..entityCount-1. */
-	getColumnRead<S extends ComponentSchema, K extends string & keyof S>(
-		def: ComponentDef<S>,
+	/** Get a single field's column (read-only). Valid data: indices
+	 * 0..entityCount-1. `def` must be a term of the iterating query
+	 * (POLISH_AUDIT #6); the bare-`ArchetypeView` default stays permissive. */
+	getColumnRead<D extends ComponentDef<any>, K extends string & keyof SchemaOf<D>>(
+		def: D & DeclaredQueryTerm<Defs, D>,
 		field: K
 	): ReadonlyColumn;
 	/** Tuple fetch of several of one component's columns —
 	 * `const [q, r] = arch.getColumnsRead(HexPos, "q", "r")`. One small
 	 * array allocation per call; see the class doc on `Archetype`. */
-	getColumnsRead<S extends ComponentSchema, const K extends readonly (string & keyof S)[]>(
-		def: ComponentDef<S>,
+	getColumnsRead<
+		D extends ComponentDef<any>,
+		const K extends readonly (string & keyof SchemaOf<D>)[]
+	>(
+		def: D & DeclaredQueryTerm<Defs, D>,
 		...fields: K
 	): { [I in keyof K]: ReadonlyColumn };
 	/** Get a single field's column **if this archetype has the component**,
@@ -220,6 +230,16 @@ export class Archetype implements ArchetypeView {
 	public _flushSeenEpoch: number = -1;
 	public _flushPreLen: number = 0;
 	public _flushPreEnabled: number = 0;
+	/**
+	 * DEV-only iteration guard: >0 while a dense query iterator (`forEach` /
+	 * `eachChunk` / `forEachUntil` / `ChangedQuery.forEach`) is delivering this
+	 * archetype to a user callback. The row-removing/reordering primitives
+	 * (`removeRow` / `disableRow` / `enableRow`) check it so an immediate
+	 * structural mutation from inside the walk — which would swap-remove under
+	 * the iterator and silently skip or repeat entities — throws instead.
+	 * Production builds never read or write it.
+	 */
+	public _iterDepth: number = 0;
 	private readonly edges: ArchetypeEdge[] = [];
 	/**
 	 * Cache of pre-computed transition maps for multi-component transitions
@@ -302,7 +322,7 @@ export class Archetype implements ArchetypeView {
 				if (layout.fieldNames.length > 0 && !columnFactory) {
 					throw new ECSError(
 						ECS_ERROR.COMPONENT_NOT_REGISTERED,
-						`Archetype ${id}: layouts with fields require a column_factory (the legacy heap path was removed in #171 §6.1.9 Phase 4 — use Archetype.from_column_store for SAB-backed columns, or pass a heap factory explicitly in tests)`
+						`Archetype ${id}: layouts with fields require a columnFactory — use Archetype.fromColumnStore for SAB-backed columns, or pass a heap factory explicitly in tests`
 					);
 				}
 
@@ -416,7 +436,7 @@ export class Archetype implements ArchetypeView {
 		// dev-only assert turn that invariant into a single boundary check
 		// instead of a per-column `instanceof` in the hot extend cascade.
 		const allCols = this._flatColumns as BufferBackedColumn<AnyTypedArray>[];
-		if (__DEV__) {
+		if (DEV) {
 			for (let i = 0; i < newViews.length; i++) {
 				if (!(allCols[i] instanceof BufferBackedColumn)) {
 					throw new ECSError(
@@ -493,7 +513,7 @@ export class Archetype implements ArchetypeView {
 	 * (byte-for-byte the pre-#577 behaviour, `entityRow` untouched). Rare case —
 	 * disabled rows occupy `[enabled_count, tail)`: swap the appended row into the
 	 * first disabled slot and push that disabled occupant to the tail, updating
-	 * its `entityRow`. Requires `entityRow` in that case (a `__DEV__` guard fires
+	 * its `entityRow`. Requires `entityRow` in that case (a `DEV` guard fires
 	 * if a caller appends into a disabled-bearing archetype without passing it). (#577) */
 	private _placeTail(tail: number, entityRow?: Int32Array): number {
 		const ec = this.enabledCount;
@@ -501,7 +521,7 @@ export class Archetype implements ArchetypeView {
 			this.enabledCount = tail + 1;
 			return tail;
 		}
-		if (__DEV__ && entityRow === undefined) throw partitionNoEntityRowError();
+		if (DEV && entityRow === undefined) throw partitionNoEntityRowError();
 		this.swapRows(ec, tail);
 		if (entityRow !== undefined) {
 			const eids = this._entityIds.buf;
@@ -516,10 +536,10 @@ export class Archetype implements ArchetypeView {
 	 * `[start, start+count)`. Common case (no disabled rows, `enabled_count ===
 	 * start`): `enabled_count += count`, return `start`. The bulk callers
 	 * (`spawnMany`, batch ops) fall back to a per-entity append loop when the
-	 * target already has disabled rows, so the rare branch is a `__DEV__` guard
+	 * target already has disabled rows, so the rare branch is a `DEV` guard
 	 * rather than a block-rotation. (#577) */
 	private _placeTailBulk(start: number, count: number): number {
-		if (__DEV__ && this.enabledCount !== start) throw partitionBulkIntoDisabledError();
+		if (DEV && this.enabledCount !== start) throw partitionBulkIntoDisabledError();
 		this.enabledCount += count;
 		return start;
 	}
@@ -530,6 +550,7 @@ export class Archetype implements ArchetypeView {
 	 * lands in the disabled tail with its data intact — no archetype transition,
 	 * O(1)+one row swap. Updates `entityRow` for both rows touched. (#577) */
 	public disableRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("disable");
 		const lastEnabled = this.enabledCount - 1;
 		if (row !== lastEnabled) {
 			this.swapRows(row, lastEnabled);
@@ -545,6 +566,7 @@ export class Archetype implements ArchetypeView {
 	 * Swaps it to the front of the disabled region and grows the enabled region.
 	 * Updates `entityRow` for both rows touched. (#577) */
 	public enableRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("enable");
 		const firstDisabled = this.enabledCount;
 		if (row !== firstDisabled) {
 			this.swapRows(row, firstDisabled);
@@ -568,6 +590,7 @@ export class Archetype implements ArchetypeView {
 	 * Updates `entityRow` for every relocated entity (never for the removed one —
 	 * the caller frees/repoints it). */
 	public removeRow(row: number, entityRow: Int32Array): void {
+		if (DEV && this._iterDepth > 0) throw structuralDuringIterationError("removeRow");
 		// Fast path — no disabled rows (`enabled_count === length`, the common
 		// case ADR-0016 promises pays nothing). The partition is trivial, so a
 		// one-directional swap-remove suffices: copy the last row into the hole
@@ -674,7 +697,7 @@ export class Archetype implements ArchetypeView {
 		field: K
 	): ReadonlyColumn {
 		const cid = def.id;
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (this._colOffset[cid] === undefined) {
 				throw new ECSError(
@@ -684,7 +707,7 @@ export class Archetype implements ArchetypeView {
 			}
 		}
 		const fi = this._fieldIndex[cid][field];
-		if (__DEV__) {
+		if (DEV) {
 			if (fi === undefined) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
@@ -727,7 +750,7 @@ export class Archetype implements ArchetypeView {
 	 *   });
 	 *
 	 * Unlike `getColumnRead`, a component the archetype lacks is the expected
-	 * **absent** branch, not a thrown error. The `__DEV__` checks still run
+	 * **absent** branch, not a thrown error. The `DEV` checks still run
 	 * **first** (before the absent short-circuit), so the requirements don't
 	 * depend on whether the current span happens to hold `T`. Two checks fire:
 	 * (1) `accessCheck.checkRead` — an optional read needs `reads:[T]` coverage
@@ -742,7 +765,7 @@ export class Archetype implements ArchetypeView {
 		field: K
 	): ReadonlyColumn | undefined {
 		const cid = def.id;
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			// The `.optional(T)` query term authorizes this fetch (#592): reject a
 			// fetch of a component the iterating query didn't declare optional.
@@ -751,7 +774,7 @@ export class Archetype implements ArchetypeView {
 		const offset = this._colOffset[cid];
 		if (offset === undefined) return undefined;
 		const fi = this._fieldIndex[cid][field];
-		if (__DEV__) {
+		if (DEV) {
 			if (fi === undefined) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
@@ -769,7 +792,7 @@ export class Archetype implements ArchetypeView {
 		tick: number
 	): TagToTypedArray[S[K]] {
 		const cid = def.id;
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkWrite(def);
 			if (this._colOffset[cid] === undefined) {
 				throw new ECSError(
@@ -780,7 +803,7 @@ export class Archetype implements ArchetypeView {
 		}
 		this._changedTick[cid] = tick;
 		const fi = this._fieldIndex[cid][field];
-		if (__DEV__) {
+		if (DEV) {
 			if (fi === undefined) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
@@ -810,7 +833,7 @@ export class Archetype implements ArchetypeView {
 		tick: number
 	): MutableColumnsForSchema<S> {
 		const cid = def.id;
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkWrite(def);
 			if (this._colOffset[cid] === undefined) {
 				throw new ECSError(
@@ -835,7 +858,7 @@ export class Archetype implements ArchetypeView {
 	/** Read-only field-keyed column group (no tick bump). */
 	public columnGroupRead<S extends ComponentSchema>(def: ComponentDef<S>): ColumnsForSchema<S> {
 		const cid = def.id;
-		if (__DEV__) {
+		if (DEV) {
 			accessCheck.checkRead(def);
 			if (this._colOffset[cid] === undefined) {
 				throw new ECSError(
@@ -927,12 +950,22 @@ export class Archetype implements ArchetypeView {
 		const cid = componentId as number;
 		const offset = this._colOffset[cid];
 		if (offset === undefined) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+			if (DEV)
+				throw new ECSError(
+					ECS_ERROR.COMPONENT_NOT_REGISTERED,
+					`readField: component ${cid} has no column in this archetype — the entity doesn't hold it`,
+					{ component: cid, field }
+				);
 			return NaN;
 		}
 		const fi = this._fieldIndex[cid][field];
 		if (fi === undefined) {
-			if (__DEV__) throw new ECSError(ECS_ERROR.FIELD_NOT_REGISTERED);
+			if (DEV)
+				throw new ECSError(
+					ECS_ERROR.FIELD_NOT_REGISTERED,
+					`readField: component ${cid} has no field "${field}" — check the schema passed to registerComponent`,
+					{ component: cid, field }
+				);
 			return NaN;
 		}
 		return this._flatColumns[offset + fi].buf[row];
@@ -963,7 +996,7 @@ export class Archetype implements ArchetypeView {
 	 * Store is responsible for tracking entityIndex → row.
 	 */
 	public addEntity(entityId: EntityID, entityRow?: Int32Array): number {
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 		const cols = this._flatColumns;
 		if (cols.length > 0 && this.length >= cols[0].buf.length && this.growHandler !== null) {
 			this.growHandler(this, 1);
@@ -1011,7 +1044,7 @@ export class Archetype implements ArchetypeView {
 
 	/** Tag-optimized add: skip column push entirely (no data to store). */
 	public addEntityTag(entityId: EntityID, entityRow?: Int32Array): number {
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 		const tail = this.length;
 		this._entityIds.push(entityId as number);
 		this.length++;
@@ -1029,7 +1062,7 @@ export class Archetype implements ArchetypeView {
 	 */
 	public addEntities(entityIds: Uint32Array, count: number = entityIds.length): number {
 		if (count === 0) return this.length;
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 
 		const cols = this._flatColumns;
 		if (cols.length > 0 && this.length + count > cols[0].buf.length && this.growHandler !== null) {
@@ -1047,7 +1080,7 @@ export class Archetype implements ArchetypeView {
 	/** Tag-optimized bulk add: skip the per-column zero-fill entirely. */
 	public addEntitiesTag(entityIds: Uint32Array, count: number = entityIds.length): number {
 		if (count === 0) return this.length;
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 		const startRow = this.length;
 		this._entityIds.bulkAppend(entityIds, 0, count);
 		this.length += count;
@@ -1090,7 +1123,7 @@ export class Archetype implements ArchetypeView {
 		tick: number,
 		entityRow?: Int32Array
 	): number {
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 		const cols = this._flatColumns;
 		if (cols.length > 0 && this.length >= cols[0].buf.length && this.growHandler !== null) {
 			this.growHandler(this, 1);
@@ -1114,7 +1147,7 @@ export class Archetype implements ArchetypeView {
 		tick: number
 	): number {
 		if (count === 0) return this.length;
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 		const cols = this._flatColumns;
 		if (cols.length > 0 && this.length + count > cols[0].buf.length && this.growHandler !== null) {
 			this.growHandler(this, count);
@@ -1159,6 +1192,9 @@ export class Archetype implements ArchetypeView {
 		tick: number,
 		entityRow: Int32Array
 	): void {
+		// Iteration guard BEFORE the dest append — throwing later (in
+		// `src.removeRow`) would leave the entity present in both archetypes.
+		if (DEV && src._iterDepth > 0) throw structuralDuringIterationError("moveEntityFrom");
 		// Preserve the entity's enabled/disabled state across the move (#577):
 		// read it from `src` BEFORE removing the row. A disabled entity that gains
 		// or loses an *unrelated* component stays disabled in the destination.
@@ -1225,6 +1261,8 @@ export class Archetype implements ArchetypeView {
 		entityId: EntityID,
 		entityRow: Int32Array
 	): void {
+		// Same pre-append iteration guard as `moveEntityFrom`.
+		if (DEV && src._iterDepth > 0) throw structuralDuringIterationError("moveEntityFrom");
 		const wasDisabled = srcRow >= src.enabledCount;
 		// Rowless empty-archetype destination — see `moveEntityFrom` above.
 		if (!this.materializesRows) {
@@ -1256,7 +1294,7 @@ export class Archetype implements ArchetypeView {
 		// The empty archetype never materialises rows, so a bulk move INTO it is
 		// invalid — the caller (`Store.batchRemoveComponent`) must instead
 		// unplace every entity (UNASSIGNED) and `src.clearRows()`.
-		if (__DEV__ && !this.materializesRows) throw emptyArchetypeRowError();
+		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 
 		const dstCols = this._flatColumns;
 		if (
@@ -1296,7 +1334,7 @@ export class Archetype implements ArchetypeView {
 		// region is `dstStart + src.enabled_count`. If the destination already had
 		// disabled rows, the appended enabled rows would land *after* them — the
 		// caller must fall back to per-entity moves in that (rare) case.
-		if (__DEV__ && this.enabledCount !== dstStart) throw partitionBulkIntoDisabledError();
+		if (DEV && this.enabledCount !== dstStart) throw partitionBulkIntoDisabledError();
 		this.enabledCount = dstStart + src.enabledCount;
 
 		src.clearRows();
@@ -1336,7 +1374,7 @@ export class Archetype implements ArchetypeView {
 	 */
 	public restoreHostRows(rowEntityIds: readonly number[], enabledCount: number): void {
 		const len = rowEntityIds.length;
-		if (__DEV__ && (enabledCount < 0 || enabledCount > len)) {
+		if (DEV && (enabledCount < 0 || enabledCount > len)) {
 			throw new ECSError(
 				ECS_ERROR.COMPONENT_NOT_REGISTERED,
 				`Archetype ${this.id}: restore enabledCount ${enabledCount} out of range [0, ${len}]`
@@ -1425,6 +1463,20 @@ function emptyArchetypeRowError(): ECSError {
  * disabled rows needs the `entityRow` map to repoint the displaced disabled
  * entity, but none was passed. Signals a Store append path that forgot to thread
  * `entityRow` through. Compiled out of production builds. */
+/** Dev-only guard error: an immediate structural mutation (despawn /
+ * removeComponent / addComponent transition / disable / enable) targeted an
+ * archetype that a live query walk is currently visiting. The swap-remove /
+ * partition swap would relocate rows under the iterator, silently skipping or
+ * repeating entities. Collect the entity ids during the walk and mutate after
+ * it (inside a system, use the deferred `ctx.commands`). Compiled out of
+ * production builds. */
+function structuralDuringIterationError(op: string): ECSError {
+	return new ECSError(
+		ECS_ERROR.STRUCTURAL_DURING_ITERATION,
+		`${op} hit an archetype a live query iteration is visiting — immediate structural mutation mid-walk relocates rows under the iterator (entities get skipped or visited twice). Collect ids during the walk and mutate after it; inside a system use the deferred ctx.commands.`
+	);
+}
+
 function partitionNoEntityRowError(): ECSError {
 	return new ECSError(
 		ECS_ERROR.PARTITION_APPEND_NEEDS_ENTITY_ROW,

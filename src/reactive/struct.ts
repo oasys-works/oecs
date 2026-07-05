@@ -25,6 +25,7 @@
  * a property *read* (the `get` trap) does.
  */
 import { signal } from "./kernel";
+import { DEV } from "../dev_flag";
 
 /** Per-field setters: `set.field(value)`. */
 export type StructSetters<T> = { readonly [K in keyof T]: (v: T[K]) => void };
@@ -34,7 +35,7 @@ export type StructEq<T> = { readonly [K in keyof T]?: (a: T[K], b: T[K]) => bool
 export function reactiveStruct<T extends object>(
 	initial: T,
 	eq: StructEq<T> = {}
-): readonly [proxy: T, set: StructSetters<T>] {
+): readonly [proxy: Readonly<T>, set: StructSetters<T>] {
 	const reads = {} as { [K in keyof T]: () => T[K] };
 	const set = {} as { -readonly [K in keyof T]: (v: T[K]) => void };
 	// `Object.keys(initial) as Array<keyof T>`: `initial` is the trusted source of
@@ -73,7 +74,22 @@ export function reactiveStruct<T extends object>(
 		getOwnPropertyDescriptor: (_, k) =>
 			fieldSet.has(k)
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
-				: undefined
+				: undefined,
+		// Writes go through `set.field(v)` — the proxy is a READ surface, and its
+		// public type says so (`Readonly<T>`, POLISH_AUDIT #8). The trap backs the
+		// type for JS callers / policed casts: without it, a field assignment threw
+		// an opaque "Cannot redefine property" (the accessor descriptor above has no
+		// setter) and a TYPO'D field silently stuck on the hidden target as a
+		// non-reactive value.
+		set: (_, k) => {
+			if (DEV) {
+				throw new TypeError(
+					`reactiveStruct proxy is read-only: use set.${String(k)}(value) — ` +
+						`the setters tuple returned alongside the proxy`
+				);
+			}
+			return false; // TypeError in strict mode, from the runtime
+		}
 	});
 	return [proxy, set];
 }

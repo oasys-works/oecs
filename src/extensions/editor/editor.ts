@@ -41,17 +41,18 @@ import type {
 	ComponentHandle,
 	ComponentSchema,
 	EntityID,
-	FieldValues,
+	CompleteFieldValues,
 	HostCommand,
 	HostCommandQueue,
-	SpawnEntry
+	SpawnEntry,
+	SpawnEntries
 } from "../../core/ecs";
 
 /**
  * Reads the committed value of one `(entity, component, field)` slot — the editor
  * uses it to seed a `setField` inverse with the value the edit replaced. Wire it
  * to the reactive read channel (e.g. a `reactiveMap`/`reactiveStruct` projection)
- * or to `world.getField`; `undefined` for an unknown slot falls back to `0`.
+ * or to `ecs.getField`; `undefined` for an unknown slot falls back to `0`.
  */
 export type FieldReader = (eid: EntityID, def: ComponentDef, field: string) => number | undefined;
 
@@ -77,6 +78,10 @@ function fieldKey(eid: EntityID, def: ComponentHandle, field: string): string {
 	return `${eid}:${def.id}:${field}`;
 }
 
+/** Builder → in-flight transaction. Module-scoped so the mutable escape hatch
+ * never appears on the published `TransactionBuilder` type. */
+const txns = new WeakMap<TransactionBuilder, MutableTxn>();
+
 /**
  * Accumulates the `forward`/`inverse` commands for ONE transaction. Each method
  * appends a forward command and its inverse, computing the inverse from the
@@ -86,14 +91,24 @@ function fieldKey(eid: EntityID, def: ComponentHandle, field: string): string {
  * Obtained from {@link Editor.transaction}; not constructed directly.
  */
 export class TransactionBuilder {
-	/** @internal */
-	readonly _txn: MutableTxn = { forward: [], inverse: [] };
+	/** Values staged by THIS build, layered over the editor's shared shadow. Kept
+	 * transaction-local so an aborted build (the callback throws before commit)
+	 * leaves the shared shadow untouched — a phantom staged value would poison
+	 * `pendingField` and seed the NEXT edit's inverse with a value the world never
+	 * held. The one merge point into the shared shadow is commit's `applyShadow`. */
+	private readonly staged = new Map<string, number>();
 
 	/** @internal */
 	constructor(
 		private readonly readField: FieldReader,
 		private readonly shadow: Map<string, number>
-	) {}
+	) {
+		txns.set(this, { forward: [], inverse: [] });
+	}
+
+	private get _txn(): MutableTxn {
+		return txns.get(this)!;
+	}
 
 	/**
 	 * Spawn an entity carrying `components`. Inverse: despawn the created entity,
@@ -101,11 +116,15 @@ export class TransactionBuilder {
 	 * also forwards the new id to the caller. The finalizer re-fires on redo, so the
 	 * inverse tracks the current id.
 	 */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): this;
 	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): this {
 		// One STABLE inverse object whose `eid` the finalizer MUTATES in place, rather
 		// than replacing the slot with a fresh object. `undo()` enqueues this object by
 		// reference, and `applyHostCommand` reads `eid` at apply time — so a second
-		// undo/redo issued before `world.update()` (more than one per frame) still
+		// undo/redo issued before `ecs.update()` (more than one per frame) still
 		// resolves to the live id: the paired respawn's `onSpawned` runs earlier in
 		// the same drain and updates this `eid` before the despawn applies. Replacing
 		// the slot instead left an already-enqueued despawn pointing at the dead
@@ -133,6 +152,7 @@ export class TransactionBuilder {
 	 * `onSpawned` rewrites this despawn's target so redo removes the respawned
 	 * entity rather than the dead original.
 	 */
+	despawn<Defs extends readonly ComponentDef[]>(eid: EntityID, restore: SpawnEntries<Defs>): this;
 	despawn(eid: EntityID, restore: readonly SpawnEntry[]): this {
 		// Symmetric with `spawn`: one STABLE forward despawn whose `eid` the respawn's
 		// `onSpawned` mutates in place, so a redo enqueued before the respawn applies
@@ -152,8 +172,9 @@ export class TransactionBuilder {
 
 	/**
 	 * Set `field` of `def` on `eid` to `value`. Inverse: set it back to the value
-	 * this edit replaced — read from the shadow (so stacked edits before a commit
-	 * invert correctly) or, failing that, the read channel (`0` if unknown).
+	 * this edit replaced — read from the staged overlay / shadow (so stacked edits,
+	 * within one build or before a commit, invert correctly) or, failing that, the
+	 * read channel (`0` if unknown).
 	 */
 	setField<S extends ComponentSchema>(
 		eid: EntityID,
@@ -162,8 +183,12 @@ export class TransactionBuilder {
 		value: number
 	): this {
 		const key = fieldKey(eid, def, field);
-		const old = this.shadow.get(key) ?? this.readField(eid, def as ComponentDef, field) ?? 0;
-		this.shadow.set(key, value);
+		const old =
+			this.staged.get(key) ??
+			this.shadow.get(key) ??
+			this.readField(eid, def as ComponentDef, field) ??
+			0;
+		this.staged.set(key, value);
 		this._txn.forward.push({ kind: "set_field", eid, def: def as ComponentDef, field, value });
 		this._txn.inverse.push({ kind: "set_field", eid, def: def as ComponentDef, field, value: old });
 		return this;
@@ -173,7 +198,7 @@ export class TransactionBuilder {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): this {
 		this._txn.forward.push({ kind: "add_component", eid, def: def as ComponentDef, values });
 		this._txn.inverse.push({ kind: "remove_component", eid, def: def as ComponentDef });
@@ -187,7 +212,7 @@ export class TransactionBuilder {
 	removeComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		restore: FieldValues<S>
+		restore: CompleteFieldValues<S>
 	): this {
 		this._txn.forward.push({ kind: "remove_component", eid, def: def as ComponentDef });
 		this._txn.inverse.push({
@@ -227,6 +252,8 @@ export class TransactionBuilder {
 export class Editor {
 	private readonly undoStack: MutableTxn[] = [];
 	private readonly redoStack: MutableTxn[] = [];
+	/** onChange subscribers — see {@link onChange}. */
+	private readonly listeners: (() => void)[] = [];
 	/** Per-`(entity, component, field)` shadow of edited values, for inverse correctness. */
 	private readonly shadow = new Map<string, number>();
 
@@ -243,10 +270,14 @@ export class Editor {
 	transaction(build: (tx: TransactionBuilder) => void): EditorTransaction {
 		const builder = new TransactionBuilder(this.readField, this.shadow);
 		build(builder);
-		return this.commit(builder._txn);
+		return this.commit(txns.get(builder)!);
 	}
 
 	/** Spawn `components` as its own undo entry. `onSpawned` reports the new id. */
+	spawn<Defs extends readonly ComponentDef[]>(
+		components: SpawnEntries<Defs>,
+		onSpawned?: (eid: EntityID) => void
+	): EditorTransaction;
 	spawn(
 		components: readonly SpawnEntry[],
 		onSpawned?: (eid: EntityID) => void
@@ -255,6 +286,10 @@ export class Editor {
 	}
 
 	/** Despawn `eid` as its own undo entry; `restore` recreates it on undo. */
+	despawn<Defs extends readonly ComponentDef[]>(
+		eid: EntityID,
+		restore: SpawnEntries<Defs>
+	): EditorTransaction;
 	despawn(eid: EntityID, restore: readonly SpawnEntry[]): EditorTransaction {
 		return this.transaction((tx) => tx.despawn(eid, restore));
 	}
@@ -273,7 +308,7 @@ export class Editor {
 	addComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		values: FieldValues<S>
+		values: CompleteFieldValues<S>
 	): EditorTransaction {
 		return this.transaction((tx) => tx.addComponent(eid, def, values));
 	}
@@ -282,7 +317,7 @@ export class Editor {
 	removeComponent<S extends ComponentSchema>(
 		eid: EntityID,
 		def: ComponentDef<S>,
-		restore: FieldValues<S>
+		restore: CompleteFieldValues<S>
 	): EditorTransaction {
 		return this.transaction((tx) => tx.removeComponent(eid, def, restore));
 	}
@@ -309,6 +344,7 @@ export class Editor {
 		for (const cmd of inverse) this.queue.push(cmd);
 		this.applyShadow(inverse);
 		this.redoStack.push(txn);
+		this.notify();
 		return true;
 	}
 
@@ -323,6 +359,7 @@ export class Editor {
 		for (const cmd of txn.forward) this.queue.push(cmd);
 		this.applyShadow(txn.forward);
 		this.undoStack.push(txn);
+		this.notify();
 		return true;
 	}
 
@@ -331,11 +368,48 @@ export class Editor {
 		this.undoStack.length = 0;
 		this.redoStack.length = 0;
 		this.shadow.clear();
+		this.notify();
 	}
 
 	/** Current stack depths — for an "Undo (3)" / "Redo" affordance. */
 	depths(): { undo: number; redo: number } {
 		return { undo: this.undoStack.length, redo: this.redoStack.length };
+	}
+
+	/** `true` when `undo()` would do something — allocation-free (M10). */
+	get canUndo(): boolean {
+		return this.undoStack.length > 0;
+	}
+
+	/** `true` when `redo()` would do something — allocation-free (M10). */
+	get canRedo(): boolean {
+		return this.redoStack.length > 0;
+	}
+
+	/**
+	 * Subscribe to undo/redo-stack changes: fires after every commit, undo,
+	 * redo, and clear — the push signal an "Undo (3)" affordance needs instead
+	 * of polling `depths()` per frame (M10). Returns an unsubscribe function.
+	 * Callbacks run synchronously in subscription order; read `canUndo` /
+	 * `canRedo` / `depths()` inside.
+	 */
+	onChange(cb: () => void): () => void {
+		this.listeners.push(cb);
+		return () => {
+			const i = this.listeners.indexOf(cb);
+			if (i !== -1) this.listeners.splice(i, 1);
+		};
+	}
+
+	private notify(): void {
+		for (const cb of this.listeners.slice()) cb();
+	}
+
+	/** Read one committed `(entity, component, field)` slot through the reader
+	 * this editor was constructed with — the default read for `fieldHandle`
+	 * when no channel thunk is supplied (M11). */
+	committedField(eid: EntityID, def: ComponentDef, field: string): number | undefined {
+		return this.readField(eid, def, field);
 	}
 
 	/**
@@ -344,8 +418,10 @@ export class Editor {
 	 * inspector echo an edit between the `set` and the tick that commits it.
 	 *
 	 * Self-resolving: once the read channel reports the shadowed value (the edit
-	 * landed), the entry is dropped and this returns `undefined` — so `pending` does
-	 * not outlive its set→commit window and shadow a later external write. The one
+	 * landed) — or reports `undefined` (the slot is gone: entity despawned or
+	 * component removed) — the entry is dropped and this returns `undefined`, so
+	 * `pending` does not outlive its set→commit window and shadow a later external
+	 * write, nor a dead slot's lifetime. The one
 	 * residual: if an external write changes the field to a *different* value within
 	 * the same window before this is next consulted, `pending` can read stale until
 	 * the next edit to the slot. `value` (the read channel) is always the source of
@@ -358,8 +434,11 @@ export class Editor {
 		// Reconcile-on-read: the committed channel reporting the shadowed value means
 		// the edit has landed, so the echo is done. Pruning is safe for inverse
 		// correctness — the next setField's `old` falls back to readField, which
-		// now returns the same number the shadow held.
-		if (this.readField(eid, def as ComponentDef, field) === shadowed) {
+		// now returns the same number the shadow held. An `undefined` committed read
+		// means the slot no longer exists (entity despawned / component removed):
+		// prune too, or the entry echoes a value for a dead slot forever and leaks.
+		const committed = this.readField(eid, def as ComponentDef, field);
+		if (committed === shadowed || committed === undefined) {
 			this.shadow.delete(key);
 			return undefined;
 		}
@@ -376,6 +455,7 @@ export class Editor {
 		this.applyShadow(txn.forward);
 		this.undoStack.push(txn);
 		this.redoStack.length = 0;
+		this.notify();
 		return txn;
 	}
 

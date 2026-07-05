@@ -20,7 +20,7 @@
  * carry forward, unlike the mechanism registry).
  *
  * Layout (mirrors the `RegionTableEntry` extern struct in
- * `packages/sim/src/abi.zig`; offsets generated into `__generated__/abi.ts`):
+ * `packages/sim/src/abi.zig`; offsets vendored into `vendored_abi/abi.ts`):
  *
  *   [ entry 0: { region_id: u32, byte_offset: u32, byte_length: u32 } ]
  *   [ entry 1: ... ]
@@ -31,7 +31,7 @@ import {
 	REGION_TABLE_ENTRY_BYTES,
 	REGION_TABLE_ENTRY_OFFSETS,
 	STORE_HEADER_OFFSETS
-} from "./__generated__/abi";
+} from "./vendored_abi/abi";
 
 export { REGION_TABLE_ENTRY_BYTES, REGION_TABLE_ENTRY_OFFSETS };
 

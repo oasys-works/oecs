@@ -1,5 +1,9 @@
 // ECS
 export { ECS, type ECSOptions } from "./ecs";
+// Grouped facades (H3 phase 2) — type-only: consumers reach the instances
+// via `ecs.relations` / `ecs.events` / `ecs.resources` / `ecs.snapshots`,
+// never construct them.
+export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./facades";
 
 // ECS memory sizing (#682) — the single surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). `resolveECSMemory` is exported so tests
@@ -19,7 +23,7 @@ export {
 } from "./ecs_memory";
 
 // Template / direct-create (#462) — opaque archetype template from `ECS.template`,
-// consumed by `ECS.createEntity` / `ECS.createEntities`.
+// consumed by `ECS.spawn` / `ECS.spawnMany`.
 export type { Template, TemplateEntry, TemplateEntries, TemplateOverrides } from "./store";
 
 // SAB layout subscription — generic hook for any consumer (e.g. a compute
@@ -53,7 +57,10 @@ export {
 	type ConditionContext,
 	runIfResourceEq,
 	runEveryNTicks,
-	runIfAnyMatch
+	runIfAnyMatch,
+	not,
+	allOf,
+	anyOf
 } from "./run_condition";
 
 // Systems
@@ -66,6 +73,33 @@ export type {
 	SystemAccessDeclaration,
 	SystemTransition
 } from "./system";
+// Compile-time access typing (§typestate) — the config-form `registerSystem`
+// narrows `ctx` to the declared access surface; these are the public names a
+// consumer needs to write helper signatures against a typed context.
+export type {
+	SystemAccess,
+	DeclaredAccess,
+	TypedSystemConfig,
+	DeclaredRead,
+	DeclaredWrite,
+	DeclaredAdd,
+	DeclaredRemove,
+	DeclaredSparseRead,
+	DeclaredSparseWrite,
+	DeclaredRelationRead,
+	DeclaredRelationWrite,
+	DeclaredResourceRead,
+	DeclaredResourceWrite,
+	DespawnArg,
+	DenseAccessDecl,
+	SpawnsAccessDecl,
+	DespawnsAccessDecl,
+	TransitionsAccessDecl,
+	SparseAccessDecl,
+	RelationsAccessDecl,
+	ResourcesAccessDecl
+} from "./system";
+export type { DeclaredBundleOrDef } from "./query";
 
 // Access check (Phase B of issue #213) — dev-mode validation singleton.
 export { accessCheck } from "./access_check";
@@ -95,6 +129,7 @@ export type {
 // the SAME `applyHostCommand`. See `docs/ideas/host-ecs-write-seam.md`.
 export {
 	installHostCommandSeam,
+	uninstallHostCommandSeam,
 	applyHostCommand,
 	HostCommandQueue,
 	HostCommandDispatcher,
@@ -109,6 +144,8 @@ export {
 export type {
 	HostCommand,
 	SpawnEntry,
+	SpawnEntryFor,
+	SpawnEntries,
 	HostCommandSeamOptions,
 	HostCommandSink,
 	RingCommandApplier
@@ -132,7 +169,7 @@ export type { CommandLog, RecordedTick, ReplayResult, ReplayOptions } from "./co
 // `ECS.setTrace(sink)` and the engine fires structured per-frame events
 // (systems, flushes, `ctx.commands.*`, observer firings, events) during
 // `update()`, so a consumer can reconstruct what travelled through the ECS each
-// frame. `__DEV__`-gated end to end (zero prod cost). `FrameTraceRecorder` is the
+// frame. `DEV`-gated end to end (zero prod cost). `FrameTraceRecorder` is the
 // in-tree sink. NOT the same as the global, count-aggregating `dispatchTrace`.
 export { FrameTraceRecorder } from "./frame_trace";
 export type {
@@ -143,10 +180,18 @@ export type {
 	ObserverOp
 } from "./frame_trace";
 
-// World resume (#789) — `WorldRestoreError` is thrown by `ECS.restoreInto` when a
+// Host-side frame driver — optional convenience over the authoritative
+// `ECS.update(dt)` primitive: play/pause on rAF (DI-able for tests and
+// non-browser hosts), explicit `step()`/`stepFrames()` for debuggers, editors,
+// and rollback playback, and a `maxDt` clamp so a resumed background tab
+// doesn't feed the whole suspension into the accumulator as one delta.
+export { FrameStepper } from "./frame_stepper";
+export type { FrameStepperOptions } from "./frame_stepper";
+
+// World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto` when a
 // snapshot's shape/field-identity/index-bounds fail closed BEFORE overwriting the
-// live backing; `WORLD_SNAPSHOT_VERSION` tags the combined snapshot framing.
-export { WorldRestoreError, WORLD_SNAPSHOT_VERSION } from "./resume";
+// live backing; `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
+export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./resume";
 
 // Ref.
 // NOTE: the `Readonly*` types exported from this barrel (ReadonlyComponentRef,
@@ -176,8 +221,7 @@ export type { EntityID, ReadonlyEntityIdArray } from "./entity";
 export { getEntityIndex } from "./entity";
 
 // The rest of the packed-EntityID codec + its bounds. Exposed for consumers
-// that mint or bounds-check handles outside the normal `createEntity` /
-// `createEntities` paths: snapshot / replication decode (paired with
+// that mint or bounds-check handles outside the normal `spawn` /// `spawnMany` paths: snapshot / replication decode (paired with
 // `getEntityIndex`, #723), and adversarial harnesses that forge out-of-range /
 // `RETIRED_GENERATION` / stale handles to prove `isAlive` + the mutators read
 // them dead (#778 / #781). `createEntityId` is the inverse of
@@ -197,8 +241,14 @@ export {
 export type {
 	ComponentDef,
 	ComponentHandle,
+	ComponentRegisterOptions,
 	ComponentSchema,
+	SchemaOf,
+	DeclaredQueryTerm,
 	FieldValues,
+	CompleteFieldValues,
+	ValuesArg,
+	AttachValuesArg,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -215,13 +265,13 @@ export type { Bundle, BundleOrDef } from "./component";
 // `SparseRestoreError` is thrown by `ECS.restoreSparse` on a shape, field-
 // identity, index-bounds, or trailing-bytes mismatch (#470, #494), so it's part
 // of the public determinism surface.
-export type { SparseComponentDef, SparseComponentID } from "./sparse_store";
+export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./sparse_store";
 export { SparseRestoreError } from "./sparse_store";
 
 // Relations — (relation, target) pairs on the sparse storage class (#471 /
 // ADR-0011). The handle type + registration options are public; the
 // `RelationStore` substrate stays internal (mutate via `ECS.addRelation` etc.).
-export type { RelationDef, RelationID, RelationOptions, OnDeleteTarget } from "./relation";
+export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./relation";
 // `(*, T)` wildcard query access sentinel (#579) — list in `relationReads` to
 // authorise `Query.forEachRelatedTo`, which reads every relation's reverse index.
 export { ANY_RELATION } from "./relation";
@@ -234,14 +284,22 @@ export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./bui
 // Events — the schema is a field → value-type record (`EventSchema`), so a
 // field declared as a branded number (e.g. `EntityID`) round-trips the brand
 // through emit/read. `SignalKey` is the distinct zero-payload key type.
-export type { EventReader, EventKey, EventSchema, EmptyEventSchema, SignalKey } from "./event";
+export type {
+	EventReader,
+	EventKey,
+	EventSchema,
+	EventShape,
+	EventFieldsCover,
+	EmptyEventSchema,
+	SignalKey
+} from "./event";
 export { eventKey, signalKey } from "./event";
 
 // Resources
-export type { ResourceKey } from "./resource";
+export type { ResourceKey, ResourceValueOf } from "./resource";
 export { resourceKey } from "./resource";
 
-// Dispatch trace (dev-mode only — gated by __DEV__ + VISUAL_INTEL_TRACE)
+// Dispatch trace (dev-mode only — gated by DEV + VISUAL_INTEL_TRACE)
 export {
 	dispatchTrace,
 	type DispatchTraceSnapshot,

@@ -89,7 +89,7 @@ export function topologicalSort<T>(
 		for (const [node, deg] of inDegree) {
 			if (deg > 0) remaining.push(name(node));
 		}
-		throw new globalThis.TypeError(
+		throw new TypeError(
 			`Cycle detected in topological sort. Nodes still pending: ${remaining.join(", ")}`
 		);
 	}

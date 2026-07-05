@@ -15,6 +15,14 @@
  * iteration was never affected — deferred mutations settle the epoch during
  * `flushStructural`, between systems, never mid-loop. The trigger is host /
  * immediate-mode code that iterates and mutates on the same Query.
+ *
+ * NOTE (STRUCTURAL_DURING_ITERATION): mutating the archetype the walk is
+ * CURRENTLY visiting is a dev error since the host-iteration guard landed —
+ * the row swap-remove skips/repeats entities under the per-row walk. These
+ * tests therefore cross the 0↔non-zero boundary on archetypes the outer
+ * callback is NOT standing in; the #431 fresh-array machinery still protects
+ * prod (where the dev guard is compiled out) and every not-currently-visited
+ * case.
  */
 
 import { describe, expect, it } from "vitest";
@@ -42,12 +50,12 @@ describe("Query.for_each re-entrancy (#431)", () => {
 		// one entity → three non-empty matching archetypes. One entity per arch
 		// means any immediate destroy crosses the 1→0 boundary and bumps the
 		// query dirty epoch.
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 }); // arch [Pos]
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, A, { v: 0 }); // arch [Pos, A]
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, B, { v: 0 }); // arch [Pos, B]
 
@@ -69,7 +77,7 @@ describe("Query.for_each re-entrancy (#431)", () => {
 				// count() on the SAME query. Pre-fix this rebuilt the shared
 				// array in place under the outer loop.
 				store.destroyEntity(e1);
-				q.count();
+				q.entityCount;
 			}
 		});
 
@@ -92,14 +100,14 @@ describe("Query.for_each re-entrancy (#431)", () => {
 		// Two non-empty matching archetypes plus one matching archetype that
 		// exists but is empty (created, then emptied) so a later add crosses
 		// 0→non-zero.
-		const e0 = world.createEntity();
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 }); // arch [Pos]
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, A, { v: 0 }); // arch [Pos, A]
 
 		// Materialise an empty matching archetype [Pos, B]: fill then empty it.
-		const filler = world.createEntity();
+		const filler = world.spawn();
 		world.addComponent(filler, Pos, { x: 9, y: 9 });
 		world.addComponent(filler, B, { v: 0 });
 		store.destroyEntity(filler); // [Pos, B] now exists but is empty
@@ -119,9 +127,13 @@ describe("Query.for_each re-entrancy (#431)", () => {
 				mutated = true;
 				// Fill the empty matching archetype (0→non-zero, bumps the
 				// epoch), then re-enter via a nested forEach on the SAME query.
-				const e2 = world.createEntity();
-				world.addComponent(e2, Pos, { x: 2, y: 2 });
-				world.addComponent(e2, B, { v: 0 });
+				// Single transition (empty arch → [Pos, B]) so no row leaves the
+				// archetype this callback is standing in (see header NOTE).
+				const e2 = world.spawn();
+				world.addComponents(e2, [
+					{ def: Pos, values: { x: 2, y: 2 } },
+					{ def: B, values: { v: 0 } }
+				]);
 				q.forEach(() => {});
 			}
 		});
@@ -137,25 +149,36 @@ describe("Query.for_each re-entrancy (#431)", () => {
 	it("non-crossing mutations (no epoch bump) keep iteration stable", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
+		const A = world.registerComponent(Tag);
 		const store = getStore(world);
 
-		// Two entities in the same [Pos] archetype; a 2→1 destroy is a
-		// same-side move (no 0-crossing, no epoch bump, no rebuild).
-		const e0 = world.createEntity();
+		// One entity in [Pos], two in [Pos, A]; a 2→1 destroy in [Pos, A] is a
+		// same-side move (no 0-crossing, no epoch bump, no rebuild). The destroy
+		// runs from [Pos]'s callback so the mutated archetype is not the one the
+		// walk is standing in (see header NOTE).
+		const e0 = world.spawn();
 		world.addComponent(e0, Pos, { x: 0, y: 0 });
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
+		world.addComponent(e1, A, { v: 0 });
+		const e2 = world.spawn();
+		world.addComponent(e2, Pos, { x: 2, y: 2 });
+		world.addComponent(e2, A, { v: 0 });
 
 		const q = world.query(Pos);
 		let visits = 0;
+		let destroyed = false;
 		q.forEach((arch) => {
 			visits++;
-			void arch.entityCount;
-			store.destroyEntity(e1 as EntityID); // 2→1, same side
-			q.count();
+			if (!destroyed && arch.entityIds[0] === (e0 as number)) {
+				destroyed = true;
+				store.destroyEntity(e1 as EntityID); // [Pos, A] 2→1, same side
+				q.entityCount;
+			}
 		});
 
-		expect(visits).toBe(1); // one archetype, visited once
-		expect(q.count()).toBe(1);
+		expect(visits).toBe(2); // both archetypes, visited once each
+		expect(destroyed).toBe(true);
+		expect(q.entityCount).toBe(2);
 	});
 });

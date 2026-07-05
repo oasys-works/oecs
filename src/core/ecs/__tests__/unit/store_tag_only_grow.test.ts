@@ -29,7 +29,7 @@ describe("Tag-only archetype growth (#210)", () => {
 
 		// Overflow the [T1, T2] tag-only archetype past row_capacity=4.
 		for (let i = 0; i < 10; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, T1);
 			world.addComponent(e, T2);
 		}
@@ -39,7 +39,7 @@ describe("Tag-only archetype growth (#210)", () => {
 		// threw `StoreExtendError: archetype N: row_count 10 > old
 		// row_capacity 4`.
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		expect(() => world.addComponent(e, Pos, { x: 1, y: 2 })).not.toThrow();
 	});
 
@@ -50,7 +50,7 @@ describe("Tag-only archetype growth (#210)", () => {
 
 		// Fill the tag-only [T1] archetype past row_capacity=4.
 		for (let i = 0; i < 10; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, T1);
 		}
 
@@ -59,7 +59,7 @@ describe("Tag-only archetype growth (#210)", () => {
 		// archetype <T1-id>: newRowCapacity 4 < row_count 10`.
 		expect(() => {
 			for (let i = 0; i < 10; i++) {
-				const e = world.createEntity();
+				const e = world.spawn();
 				world.addComponent(e, Pos, { x: i, y: i * 2 });
 			}
 		}).not.toThrow();
@@ -116,7 +116,7 @@ describe("Tag-only archetype growth (#210)", () => {
 			const dataDefs = pickList.filter((i) => i < 8).map((i) => components[i]);
 
 			for (let e = 0; e < PER_ITER; e++) {
-				const id = world.createEntity();
+				const id = world.spawn();
 				world.addComponents(id, defList);
 				// Snapshot the first entity of a few iterations that carry at
 				// least one data field, giving the post-loop check a `v` to read.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../query";
+import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 
 const Position = ["x", "y"] as const;
@@ -15,7 +16,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("reads current field values from the SoA columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let ctx!: SystemContext;
@@ -37,7 +38,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("reads updated values after set_field", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 
 		let ctx!: SystemContext;
@@ -64,7 +65,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("writes directly to the SoA columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		let ctx!: SystemContext;
@@ -89,7 +90,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("supports compound assignment operators", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let ctx!: SystemContext;
@@ -119,7 +120,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 10, vy: 20 });
 
@@ -149,8 +150,8 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("refs to the same component on different entities are independent", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e2, Pos, { x: 100, y: 200 });
 
@@ -181,8 +182,8 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("refs to the same component share a prototype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 
@@ -211,7 +212,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("ref reads live data — reflects external writes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		let ctx!: SystemContext;
@@ -239,7 +240,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		// A tiny columnCapacity forces the grow within a handful of appends.
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7, y: 8 });
 
 		let ctx!: SystemContext;
@@ -257,7 +258,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		// Pos column to grow (reallocating + refreshing the backing view).
 		const pos = ctx.ref(Pos, e);
 		for (let i = 0; i < 64; i++) {
-			const f = world.createEntity();
+			const f = world.spawn();
 			world.addComponent(f, Pos, { x: i, y: i });
 		}
 
@@ -278,7 +279,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 10, y: 20 });
 
 		let refXAfterDeferredAdd = -1;
@@ -293,7 +294,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(pos.y).toBe(20);
 
 				// Defer adding Vel — entity should NOT move archetypes yet
-				ctx.addComponent(e, Vel, { vx: 1, vy: 2 });
+				ctx.commands.add(e, Vel, { vx: 1, vy: 2 });
 
 				// Ref should still be valid: entity is still in [Pos]
 				pos.x = 99;
@@ -320,7 +321,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 6 });
 		world.addComponent(e, Vel, { vx: 7, vy: 8 });
 
@@ -333,7 +334,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(vel.vx).toBe(7);
 
 				// Defer removing Vel — entity stays in [Pos, Vel] until flush
-				ctx.removeComponent(e, Vel);
+				ctx.commands.remove(e, Vel);
 
 				// Ref still reads correct data from the old archetype
 				refVxAfterDeferredRemove = vel.vx;
@@ -355,7 +356,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 42, y: 84 });
 
 		let refXAfterDeferredDestroy = -1;
@@ -367,7 +368,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(pos.x).toBe(42);
 
 				// Defer destruction — entity is still alive and in its archetype
-				ctx.destroyEntity(e);
+				ctx.commands.despawn(e);
 
 				// Ref still works: entity has not been removed yet
 				refXAfterDeferredDestroy = pos.x;
@@ -388,7 +389,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Health = world.registerComponent(["hp"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
 		world.addComponent(e, Vel, { vx: 3, vy: 4 });
 
@@ -402,7 +403,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				const vel = ctx.refRead(Vel, e);
 
 				// Defer adding a third component
-				ctx.addComponent(e, Health, { hp: 100 });
+				ctx.commands.add(e, Health, { hp: 100 });
 
 				// Both refs still valid — use vel to update pos
 				pos.x += vel.vx;
@@ -433,7 +434,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	it("component fields are enumerable on the prototype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
 		let ctx!: SystemContext;
@@ -454,5 +455,110 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(keys).toContain("x");
 		expect(keys).toContain("y");
 		expect(keys).toHaveLength(2);
+	});
+
+	//=========================================================
+	// DEV guards: ref on a missing component / tag throws an
+	// ECSError instead of a raw TypeError from createRef.
+	//=========================================================
+
+	it("ecs.refRead on an alive entity missing the component throws COMPONENT_NOT_REGISTERED", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent(Position);
+		const Vel = world.registerComponent(Velocity);
+		const e = world.spawn();
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+
+		try {
+			world.refRead(Vel, e);
+			expect.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ecs.refRead with a tag def throws COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
+		const world = new ECS();
+		const Tag = world.registerTag();
+		const e = world.spawn();
+		world.addComponent(e, Tag);
+
+		try {
+			world.refRead(Tag, e);
+			expect.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ctx.ref / ctx.refRead on an alive entity missing the component throw COMPONENT_NOT_REGISTERED", () => {
+		const world = new ECS();
+		const Pos = world.registerComponent(Position);
+		const Vel = world.registerComponent(Velocity);
+		const e = world.spawn();
+		world.addComponent(e, Pos, { x: 1, y: 2 });
+
+		let ctx!: SystemContext;
+		const sys = world.registerSystem({
+			...openAccess([Pos, Vel]),
+			fn(_ctx) {
+				ctx = _ctx;
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+		world.update(0);
+
+		try {
+			ctx.ref(Vel, e);
+			expect.fail("ctx.ref should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+
+		try {
+			ctx.refRead(Vel, e);
+			expect.fail("ctx.refRead should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+	});
+
+	it("ctx.ref / ctx.refRead with a tag def throw COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
+		const world = new ECS();
+		const Tag = world.registerTag();
+		const e = world.spawn();
+		world.addComponent(e, Tag);
+
+		let ctx!: SystemContext;
+		const sys = world.registerSystem({
+			...openAccess([Tag]),
+			fn(_ctx) {
+				ctx = _ctx;
+			}
+		});
+		world.addSystems(SCHEDULE.UPDATE, sys);
+		world.startup();
+		world.update(0);
+
+		try {
+			ctx.ref(Tag, e);
+			expect.fail("ctx.ref should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
+
+		try {
+			ctx.refRead(Tag, e);
+			expect.fail("ctx.refRead should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ECSError);
+			expect((err as ECSError).category).toBe(ECS_ERROR.COMPONENT_NOT_REGISTERED);
+		}
 	});
 });

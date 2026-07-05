@@ -39,7 +39,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const D = world.registerComponent(["v"] as const);
 
 		const baseline = viewStamp(world);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } },
@@ -59,7 +59,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 
 		expect(world.archetypeCount).toBe(1); // empty archetype only
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } },
@@ -76,7 +76,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 10 } },
 			{ def: B, values: { v: 20 } },
@@ -95,7 +95,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } }
@@ -119,7 +119,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, A, { v: 1 });
 		// world is now: empty + [A] = 2 archetypes
 		expect(world.archetypeCount).toBe(2);
@@ -148,7 +148,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		const C = world.registerComponent(["v"] as const);
 		const D = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } },
@@ -176,7 +176,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, A, { v: 1 });
 		const before = viewStamp(world);
 
@@ -194,12 +194,12 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		const B = world.registerComponent(["v"] as const);
 
 		// Plant [A] explicitly via a separate entity.
-		const eAnchor = world.createEntity();
+		const eAnchor = world.spawn();
 		world.addComponent(eAnchor, A, { v: 99 });
 
 		// Now create an entity in [A, B] and remove B — target is [A], which
 		// already exists, so no SAB extend should fire.
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } }
@@ -228,7 +228,7 @@ describe("add_components composite-add edge cache (#659)", () => {
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
-		const ids = Array.from({ length: 5 }, () => world.createEntity());
+		const ids = Array.from({ length: 5 }, () => world.spawn());
 		// First call resolves cold (mask hash + archLookup) and plants the edge;
 		// calls 2..5 hit the composite cache. All must agree.
 		for (let i = 0; i < ids.length; i++) {
@@ -258,8 +258,8 @@ describe("add_components composite-add edge cache (#659)", () => {
 		// archetype) — this is the issue's target case: plural add on an entity
 		// that already exists. e1's add resolves cold; e2's hits the cache and
 		// must travel the cached src→target transition map via moveEntityFrom.
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponent(e1, A, { v: 1 });
 		world.addComponent(e2, A, { v: 2 });
 
@@ -290,8 +290,8 @@ describe("add_components composite-add edge cache (#659)", () => {
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
-		const e1 = world.createEntity();
-		const e2 = world.createEntity();
+		const e1 = world.spawn();
+		const e2 = world.spawn();
 		world.addComponents(e1, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } }
@@ -315,7 +315,7 @@ describe("add_components composite-add edge cache (#659)", () => {
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponents(e, [
 			{ def: A, values: { v: 1 } },
 			{ def: B, values: { v: 2 } }

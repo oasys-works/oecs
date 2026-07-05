@@ -39,10 +39,10 @@ describe("ChangedQuery composition (M6)", () => {
 		const Vel = world.registerComponent(["vx"] as const);
 		const Dead = world.registerComponent(["d"] as const);
 
-		const live = world.createEntity();
+		const live = world.spawn();
 		world.addComponent(live, Pos, { x: 0 });
 		world.addComponent(live, Vel, { vx: 0 });
-		const dead = world.createEntity();
+		const dead = world.spawn();
 		world.addComponent(dead, Pos, { x: 0 });
 		world.addComponent(dead, Vel, { vx: 0 });
 		world.addComponent(dead, Dead, { d: 0 });
@@ -75,10 +75,10 @@ describe("ChangedQuery composition (M6)", () => {
 		const Vel = world.registerComponent(["vx"] as const);
 		const Dead = world.registerComponent(["d"] as const);
 
-		const live = world.createEntity();
+		const live = world.spawn();
 		world.addComponent(live, Pos, { x: 0 });
 		world.addComponent(live, Vel, { vx: 0 });
-		const dead = world.createEntity();
+		const dead = world.spawn();
 		world.addComponent(dead, Pos, { x: 0 });
 		world.addComponent(dead, Vel, { vx: 0 });
 		world.addComponent(dead, Dead, { d: 0 });
@@ -112,9 +112,9 @@ describe("ChangedQuery composition (M6)", () => {
 		const Pos = world.registerComponent(["x"] as const);
 		const Vel = world.registerComponent(["vx"] as const);
 
-		const bare = world.createEntity();
+		const bare = world.spawn();
 		world.addComponent(bare, Pos, { x: 0 }); // {Pos}
-		const moving = world.createEntity();
+		const moving = world.spawn();
 		world.addComponent(moving, Pos, { x: 0 });
 		world.addComponent(moving, Vel, { vx: 0 }); // {Pos,Vel}
 
@@ -146,12 +146,12 @@ describe("ChangedQuery composition (M6)", () => {
 		const Vel = world.registerComponent(["vx"] as const);
 		const Tag = world.registerComponent(["t"] as const);
 
-		const bare = world.createEntity();
+		const bare = world.spawn();
 		world.addComponent(bare, Pos, { x: 0 }); // {Pos} — neither Vel nor Tag
-		const moving = world.createEntity();
+		const moving = world.spawn();
 		world.addComponent(moving, Pos, { x: 0 });
 		world.addComponent(moving, Vel, { vx: 0 }); // {Pos,Vel}
-		const tagged = world.createEntity();
+		const tagged = world.spawn();
 		world.addComponent(tagged, Pos, { x: 0 });
 		world.addComponent(tagged, Tag, { t: 0 }); // {Pos,Tag}
 
@@ -182,7 +182,7 @@ describe("ChangedQuery composition (M6)", () => {
 		const Pos = world.registerComponent(["x"] as const);
 		const Vel = world.registerComponent(["vx"] as const);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.addComponent(e, Vel, { vx: 7 });
 

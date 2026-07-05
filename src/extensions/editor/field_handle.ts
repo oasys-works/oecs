@@ -52,17 +52,22 @@ export interface FieldHandle {
  * tracked read of the reactive channel for this field (e.g.
  * `() => sync.map.get(eid)?.x`); `set` routes through `editor.setField`, so the
  * edit is queued, batched, and undoable.
+ *
+ * `read` is optional (M11): omitted, the handle reads through the editor's own
+ * committed-channel reader (`editor.committedField`). That default is correct
+ * but NOT reactive — supply the channel thunk when the handle's `value` must
+ * subscribe inside a tracking scope.
  */
 export function fieldHandle<S extends ComponentSchema>(
 	editor: Editor,
 	eid: EntityID,
 	def: ComponentDef<S>,
 	field: string & keyof S,
-	read: () => number | undefined
+	read?: () => number | undefined
 ): FieldHandle {
 	return {
 		get value(): number | undefined {
-			return read();
+			return read !== undefined ? read() : editor.committedField(eid, def as ComponentDef, field);
 		},
 		set(value: number): void {
 			editor.setField(eid, def, field, value);

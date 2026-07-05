@@ -36,6 +36,7 @@
  * into that index wakes them). Same invariant, same reason as the map.
  */
 import { batch, signal, untrack } from "./kernel";
+import { DEV } from "../dev_flag";
 
 /** Sentinel written to a detached slot to wake its readers as out-of-range. */
 const ABSENT = Symbol("reactiveArray.absent");
@@ -124,7 +125,7 @@ export function reactiveArray<T>(
 		set(i, value) {
 			if (i >= 0 && i < slots.length) slots[i][1](value); // fine-grained, no-op skip via eq
 			// Out-of-range `set` is a deliberate no-op (this is per-slot, not a grow). #731.
-			else if (__DEV__)
+			else if (DEV)
 				console.warn(
 					`reactiveArray.set(${i}): index out of range [0, ${slots.length}); ignored. ` +
 						"Use push / splice / reconcile to change length."

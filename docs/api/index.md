@@ -2,7 +2,7 @@
 
 `@oasys/oecs` is a **determinism-capable, archetype-based Entity Component System for TypeScript** — pure TypeScript, zero-dependency, and runs over a plain resizable `ArrayBuffer` by default (no `SharedArrayBuffer`, no COOP/COEP).
 
-This reference documents the **0.4** public surface in full. Every signature here is checked against source. If you are new, read the pages in the order below; if you know ECS already, jump to what you need.
+This reference documents the **0.5** public surface in full. Every signature here is checked against source. If you are new, read the pages in the order below; if you know ECS already, jump to what you need.
 
 > Examples name the instance `ecs` (`const ecs = new ECS()`). Methods are camelCase; type and handle names are PascalCase (`ECS`, `Pos`, `EntityID`); constants are `SCREAMING_SNAKE` (`SCHEDULE.UPDATE`).
 
@@ -43,7 +43,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const e = ecs.createEntity();
+const e = ecs.spawn();
 ecs.addComponent(e, Pos, { x: 0, y: 0 });
 ecs.addComponent(e, Vel, { vx: 100, vy: 50 });
 
@@ -64,6 +64,9 @@ oecs ships several import paths. The core is `@oasys/oecs`; the rest are opt-in 
 | `@oasys/oecs/editor` | undo/redo + field-handle layer over the host-write seam |
 | `@oasys/oecs/solid` | SolidJS adapter (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the standalone data structures oecs is built on (`BitSet`, `SparseSet`, …) |
+| `@oasys/oecs/internal` | **unstable** tooling surface — codecs, ABI constants, memory inspectors, dev singletons; no semver guarantees |
+
+The root also exports **`VERSION`** — the package version as a string constant, readable at runtime (`import { VERSION } from "@oasys/oecs"`). It's a source literal, not a build-time injection, so raw-source (JSR) consumers see the same value as the npm bundle.
 
 ## Pages
 
@@ -88,18 +91,23 @@ Read these in order for a working mental model.
 
 13. [determinism](./determinism.md) — `deterministic: true`, `stateHash`, snapshot / restore, command-log replay
 14. [memory](./memory.md) — the `memory` sizing surface and storage profiles
+15. [WASM backends](./wasm.md) — shared `WebAssembly.Memory`, `ComputeBackend`, and FFI ids
+16. [parallelism](./parallel.md) — shared-memory / worker seams and the sequential scheduler contract
 
 ### Host & UI integration
 
-15. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
-16. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
-17. [editor](./editor.md) — undo/redo + field handles
-18. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
+17. [extensions overview](../EXTENSIONS.md) — how optional entry points compose in real apps
+18. [host-write seam](./host-write-seam.md) — enqueue typed writes from a host / UI / editor
+19. [reactive](./reactive.md) — the optional reactive UI seam (`reactive`, `reactive-sync`, `solid`)
+20. [editor](./editor.md) — undo/redo + field handles
+21. [tracing](./tracing.md) — per-frame trace and dispatch trace (dev-only)
 
 ### Reference
 
-19. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
-20. [errors](./errors.md) — the `ECSError` taxonomy
+22. [primitives](./primitives.md) — the reusable data structures under `@oasys/oecs/primitives`
+23. [errors](./errors.md) — the `ECSError` taxonomy
+
+<a id="dev-vs-prod--read-this-once"></a>
 
 ## Dev vs prod — read this once
 

@@ -36,6 +36,8 @@ movers.eachChunk((cols, count) => {
 });
 ```
 
+The cursor and the `forEach` view are typed by the query's terms: `cols.mut(Health)` on the `query(Pos, Vel)` above is a **compile error** (`"component is not a term of this query — add it with .and(...)"`), as is `arch.getColumnRead(Health, "hp")`. Extend the term set with `.and(...)` to fetch more; `.optional(T)` fetches stay compile-permissive (the dev-mode optional-scope check owns those).
+
 ## Building queries
 
 Two entry points, same result:
@@ -79,6 +81,8 @@ ecs.query(Pos)
 - **`changed(...)`** returns a [`ChangedQuery`](./change-detection.md) — see that page; note the granularity is *archetype*, not row.
 - **`includeDisabled()`** widens iteration to cover [disabled](./entities.md#enable--disable) entities, which are excluded by default.
 
+<a id="foreach--read-only"></a>
+
 ## `forEach` — read-only
 
 ```ts
@@ -108,6 +112,8 @@ interface ArchetypeView {
 > [!NOTE]
 > The `ArchetypeView` deliberately **omits any mutable column accessor** — you cannot write through `forEach`. To mutate, either use [`eachChunk`](#eachchunk--mutable-hot-path), or write per entity with [`ctx.ref`](./refs.md) / `ctx.setField` (both bump the change tick). `ReadonlyColumn` is a compile-time barrier only; a cast can write through it, but doing so skips change detection and corrupts it — don't.
 
+<a id="eachchunk--mutable-hot-path"></a>
+
 ## `eachChunk` — mutable hot path
 
 ```ts
@@ -135,6 +141,8 @@ movers.eachChunk((cols, count) => {
 > [!WARNING]
 > **Destructure the group immediately; don't retain it.** The object `cols.mut(Pos)` returns is cached per `(archetype, component)` and refreshed **in place** on the next call — grab `{ x, y }` and use the arrays, don't stash the group object across iterations.
 
+<a id="foreachentity--non-dense-terms"></a>
+
 ## `forEachEntity` — non-dense terms
 
 ```ts
@@ -148,15 +156,22 @@ Yields matching entities one id at a time. This is **required** for any query ca
 
 ## Dense-only restriction
 
-`forEach`, `eachChunk`, `count`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
+`forEach`, `eachChunk`, `entityCount`, and `archetypeCount` operate on the archetype column layout and therefore **reject** queries carrying sparse/relation/hierarchy terms (they throw `SPARSE_QUERY_DENSE_PATH` in dev). Use `forEachEntity` (or [`forEachRelatedTo`](./relations.md)) for those.
 
-## Introspection
+## Introspection & singleton reads
 
 ```ts
-count(): number;                            // enabled rows (or all, under includeDisabled)
+get entityCount(): number;                  // enabled rows (or all, under includeDisabled)
 get archetypeCount(): number;               // matching archetypes, including empty ones
 get archetypes(): readonly ArchetypeView[]; // the raw list (not filtered to non-empty)
+
+firstEntity(): EntityID | undefined;        // first match, or undefined when none
+singleEntity(): EntityID;                   // THE match — dev-throws QUERY_NOT_SINGLETON on 0 or >1
 ```
+
+`firstEntity` is the singleton read (`player`, `camera`) without hand-rolling a `forEach` + closure capture. "First" is **iteration order, not spawn order** — with more than one match the pick is arbitrary; use `singleEntity` to assert uniqueness. `singleEntity` dev-throws `QUERY_NOT_SINGLETON` when the match count is 0 or >1; in prod the count check is gone and it returns the first match (`undefined` if none).
+
+Unlike the dense-only members above, both work on **any** query: dense-only queries answer from the first non-empty archetype in `O(archetypes)`, while queries with sparse/relation/hierarchy terms fall back to a full `forEachEntity` walk.
 
 ## Non-dense query terms (summary)
 

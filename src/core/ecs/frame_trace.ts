@@ -2,7 +2,7 @@
  * Per-world, per-frame structured trace seam (ADR-0030).
  *
  * A `FrameTraceSink` is a push interface the engine fires at well-defined points
- * inside one `world.update(dt)` so a consumer can reconstruct exactly what
+ * inside one `ecs.update(dt)` so a consumer can reconstruct exactly what
  * travelled through the ECS that single frame: which systems ran (per phase, in
  * topo order), the structural commands each queued (`ctx.commands.*`), the flush
  * boundaries, the per-phase settle points (`phaseBoundary`, the safe seam for an
@@ -14,9 +14,9 @@
  * causal sequence of one frame, not a population of dispatch counts. The two
  * answer different questions.
  *
- * Cost model: every call site is `if (__DEV__) store._trace?.…`, so a production
+ * Cost model: every call site is `if (DEV) store._trace?.…`, so a production
  * build dead-code-eliminates the whole branch — byte-identical to the existing
- * `if (__DEV__) accessCheck.enter(desc)` wrap it sits beside. The only un-gated
+ * `if (DEV) accessCheck.enter(desc)` wrap it sits beside. The only un-gated
  * residue is the one nullable `Store._trace` field (a pointer, like
  * `_structuralObserverHook`). The seam only *reads*; it never perturbs
  * `stateHash`, ordering, or any observable behaviour.
@@ -39,13 +39,13 @@ export type StructuralOp = "spawn" | "despawn" | "add" | "remove" | "enable" | "
 export type ObserverOp = "add" | "remove" | "set" | "enable" | "disable";
 
 /**
- * The push sink. All callers are `__DEV__`-gated, so the methods receive raw ids
+ * The push sink. All callers are `DEV`-gated, so the methods receive raw ids
  * and descriptor references (no string-building on the hot path); the recorder
  * decides what to retain. Implementations must be side-effect-free with respect
  * to the ECS — they observe, never mutate.
  */
 export interface FrameTraceSink {
-	/** Opens a frame. Fired first in `world.update`, before any phase runs. */
+	/** Opens a frame. Fired first in `ecs.update`, before any phase runs. */
 	tickBegin(tick: number, dt: number): void;
 	/** Closes the frame opened by `tickBegin` (after onSet + `clearEvents`). */
 	tickEnd(tick: number): void;

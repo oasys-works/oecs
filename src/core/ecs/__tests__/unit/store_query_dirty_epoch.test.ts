@@ -33,7 +33,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 
 		// Seed one entity so the [Pos] archetype exists and is non-empty;
 		// query and cache.
-		const seed = world.createEntity();
+		const seed = world.spawn();
 		world.addComponent(seed, Pos, { x: 0, y: 0 });
 		const q = world.query(Pos);
 		expect(q.archetypeCount).toBe(1);
@@ -51,7 +51,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		// set never changes.
 		const N = 1000;
 		for (let i = 0; i < N; i++) {
-			const e = world.createEntity();
+			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i });
 		}
 
@@ -75,7 +75,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
@@ -95,7 +95,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		const e = world.createEntity();
+		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
@@ -119,7 +119,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		expect(count).toBe(0);
 
 		// Refill — same archetype, new entity.
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 
 		count = 0;
@@ -135,7 +135,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		const Vel = world.registerComponent(Velocity);
 
 		// First archetype: [Pos] only. Query and cache.
-		const e1 = world.createEntity();
+		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
@@ -148,7 +148,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		// Force creation of a second matching archetype [Pos, Vel]. archInstall
 		// runs once for the new archetype; the epoch must bump so the cached
 		// `_nonEmptyArchetypes` list rebuilds on next read.
-		const e2 = world.createEntity();
+		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
 

@@ -1,13 +1,23 @@
 // Vendored ABI layout constants for the column store's binary header,
 // descriptor, and rings — re-export points are `header.ts` and `descriptor.ts`.
 //
-// Upstream (the oasys engine) these were machine-generated from a Zig `extern
-// struct` source via `@offsetOf` — real layout, padding included — hence the
-// `__generated__` directory and the exact byte offsets below. oecs carries them
-// as a hand-maintained snapshot: there is no Zig source or codegen step in this
-// package. Edit with care — every offset must match the layout `header.ts` /
-// `descriptor.ts` read and write. The column-store header/descriptor/state-hash
-// round-trip tests are the drift guard.
+// **This is a hand-maintained vendored snapshot, not generated output.**
+// Upstream (the oasys engine, `packages/sim/src/abi.zig`) these constants are
+// machine-generated from a Zig `extern struct` source via `@offsetOf` — real
+// layout, padding included. oecs carries no Zig source and no codegen step;
+// the exact byte offsets below were copied by hand. Sync provenance:
+// unverified — re-check against upstream before the next ABI-dependent change.
+//
+// To update: copy the constants from the upstream engine's generated
+// `abi.ts` (or re-derive from `abi.zig`'s `@offsetOf` output), keep the
+// `SIM_ABI_VERSION` in lockstep, then run the column-store header,
+// descriptor, and state-hash round-trip suites under
+// `src/core/store/__tests__/`.
+//
+// KNOWN TEST GAP: those round-trip tests verify TS-internal
+// self-consistency only — the same constants on the read and write side —
+// NOT agreement with the real upstream ABI. Cross-checking against the
+// engine remains a manual step.
 
 export const STORE_MAGIC = 0x314d4953;
 export const SIM_ABI_VERSION = 0;
