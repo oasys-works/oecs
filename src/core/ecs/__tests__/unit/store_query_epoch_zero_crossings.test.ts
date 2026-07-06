@@ -433,7 +433,7 @@ describe("enabled_count 0-crossings on row add (#812)", () => {
 		// createEntity(template) appends a fresh enabled row into the same
 		// (all-disabled) archetype.
 		const arch = store.getEntityArchetype(a);
-		const tmpl = world.template([{ def: Pos, values: { x: 5, y: 5 } }]);
+		const tmpl = world.template(Pos({ x: 5, y: 5 }));
 		world.spawn(tmpl);
 		expect(arch.enabledCount).toBe(1);
 		expect(q.entityCount).toBe(1);

@@ -58,7 +58,7 @@ describe("Template in spawns/despawns declarations", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const Vel = world.registerComponent({ vx: "f64" } as const);
-		const t = world.template([{ def: Pos }, { def: Vel }]);
+		const t = world.template(Pos, Vel);
 		const sys = world.registerSystem({
 			name: "spawner",
 			reads: [],
@@ -76,7 +76,7 @@ describe("Template in spawns/despawns declarations", () => {
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const Vel = world.registerComponent({ vx: "f64" } as const);
 		const Hp = world.registerComponent({ v: "i32" } as const);
-		const t = world.template([{ def: Pos }, { def: Vel }]);
+		const t = world.template(Pos, Vel);
 		const sys = world.registerSystem({
 			name: "mixed",
 			reads: [],
@@ -92,7 +92,7 @@ describe("Template in spawns/despawns declarations", () => {
 	it("a Template despawns declaration authorises destroy_entity at flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
-		const t = world.template([{ def: Pos, values: { x: 5 } }]);
+		const t = world.template(Pos({ x: 5 }));
 		const e = world.spawn(t);
 		const sys = world.registerSystem({
 			name: "reaper",
@@ -255,7 +255,7 @@ describe("spawn override explicit-undefined skip", () => {
 	it("keeps the template default instead of writing NaN", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
-		const t = world.template([{ def: Pos, values: { x: 1, y: 2 } }]);
+		const t = world.template(Pos({ x: 1, y: 2 }));
 		const e = world.spawn(t, { x: 9, y: undefined });
 		expect(world.getField(e, Pos, "x")).toBe(9);
 		expect(world.getField(e, Pos, "y")).toBe(2);

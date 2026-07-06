@@ -62,7 +62,7 @@
  *
  ***/
 
-import { Store, type Template, type TemplateEntries, type TemplateOverrides } from "./store";
+import { Store, type Template, type TemplateOverrides } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
 import {
 	ObserverRegistry,
@@ -94,7 +94,9 @@ import type {
 	ComponentSchema,
 	CompleteFieldValues,
 	Bundle,
-	BundleOrDef
+	BundleOrDef,
+	StrictBundles,
+	DefsOf
 } from "./component";
 import { bundleDef, bundleValues } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
@@ -593,18 +595,23 @@ export class ECS implements QueryResolver {
 
 	/**
 	 * Spawn an entity from varargs bundles (§bundles) — the immediate
-	 * host-side analog of `ctx.commands.spawn`. `ecs.spawnBundle(bundle(Pos,{x,y}),
-	 * bundle(Vel,{vx:1}), IsEnemy)` collapses the five attach shapes into one. Each
-	 * bundle is applied immediately; a single combined-archetype insertion (one
-	 * transition instead of one-per-component) is a later optimization — for the
-	 * prototype this mirrors the existing per-component `addComponent` path.
+	 * host-side analog of `ctx.commands.spawn`, and the same callable-bundle
+	 * grammar as `addComponents` / `template`. `ecs.spawnBundle(Pos({x,y}),
+	 * Vel({vx:1}), IsEnemy)` collapses the attach shapes into one; each item is
+	 * checked against its own def's schema (`StrictBundles`). Bundles are applied
+	 * immediately; a single combined-archetype insertion (one transition instead
+	 * of one-per-component) is a later optimization — for now this mirrors the
+	 * per-component `addComponent` path (unlike `addComponents`, which batches).
 	 */
-	public spawnBundle(...items: BundleOrDef[]): EntityID {
+	public spawnBundle<Items extends readonly BundleOrDef[]>(
+		...items: StrictBundles<Items>
+	): EntityID {
 		const e = this.store.createEntity();
 		for (let i = 0; i < items.length; i++) {
-			const def = bundleDef(items[i]);
+			const item = items[i] as BundleOrDef;
+			const def = bundleDef(item);
 			if (DEV) accessCheck.checkAdd(def);
-			this.store.addComponent(e, def, bundleValues(items[i]));
+			this.store.addComponent(e, def, bundleValues(item));
 		}
 		return e;
 	}
@@ -718,14 +725,20 @@ export class ECS implements QueryResolver {
 		return this;
 	}
 
-	/** Batch-attach several components in one archetype transition. Each
-	 * entry's `values` is checked against its own def's schema (a misspelled
-	 * field is a compile error; tags refuse `values`) — same typing as
-	 * `ECS.template` entries. Omitted fields zero-fill. */
-	public addComponents<Defs extends readonly ComponentDef[]>(
+	/** Batch-attach several components in one archetype transition. Takes the
+	 * same callable-bundle varargs as `spawnBundle` — `world.addComponents(e,
+	 * Pos({ x, y }), Vel({ vx }), Frozen)` — each item checked against its own
+	 * def's schema (a misspelled or cross-component field is a compile error;
+	 * tags refuse values). Omitted fields zero-fill. */
+	public addComponents<Items extends readonly BundleOrDef[]>(
 		entityId: EntityID,
-		entries: TemplateEntries<Defs>
+		...items: StrictBundles<Items>
 	): this {
+		const entries: { def: ComponentDef; values: Readonly<Record<string, number>> }[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i] as BundleOrDef;
+			entries.push({ def: bundleDef(item), values: bundleValues(item) });
+		}
 		if (DEV) {
 			this._assertHostMutationOutsideSystem(
 				"addComponents",
@@ -1272,6 +1285,32 @@ export class ECS implements QueryResolver {
 		this.schedule.clear();
 	}
 
+	/** Register an archetype template (#462). Resolves the component set +
+	 * default field values to a target archetype once (creating it if absent —
+	 * fits the prewarm model), so later `spawn` / `spawnMany` calls land
+	 * entities directly in that archetype with **zero archetype transitions**.
+	 *
+	 *   const Bullet = ecs.template(Position({ x: 0, y: 0 }), Velocity({ vx: 0, vy: 0 }));
+	 *
+	 * Takes the same callable-bundle varargs as `spawnBundle` / `addComponents`
+	 * (each item schema-checked against its own def); the resulting
+	 * `Template<[Position, Velocity]>` keeps the typed key set that `spawn`'s
+	 * `overrides` map over. Not a pass-through — it normalizes bundles to the
+	 * store's entry shape, so it lives here with the other real logic, not in the
+	 * delegation band. The big win is multi-component entities and bulk spawns; a
+	 * single-component spawn is no faster than `spawn` + `addComponent`, which
+	 * already bump-allocates a fresh entity into the target archetype. See
+	 * ADR-0010. */
+	public template<Items extends readonly BundleOrDef[]>(
+		...items: StrictBundles<Items>
+	): Template<DefsOf<Items>> {
+		const entries: { def: ComponentDef; values: Readonly<Record<string, number>> }[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i] as BundleOrDef;
+			entries.push({ def: bundleDef(item), values: bundleValues(item) });
+		}
+		return this.store.resolveTemplate(entries) as unknown as Template<DefsOf<Items>>;
+	}
 
 	// ============================================================================
 	// === BEGIN STORE PASS-THROUGH BAND ===
@@ -1352,26 +1391,6 @@ export class ECS implements QueryResolver {
 	/** Register a sparse tag (empty schema) — membership only, no data. */
 	public registerSparseTag(): SparseComponentDef<Record<string, never>> {
 		return this.store.registerSparseComponent({} as Record<string, never>);
-	}
-
-	/** Register an archetype template (#462). Resolves the component set +
-	 * default field values to a target archetype once (creating it if absent —
-	 * fits the prewarm model), so later `spawn` / `spawnMany` calls land
-	 * entities directly in that archetype with **zero archetype transitions**.
-	 *
-	 *   const Bullet = ecs.template([
-	 *     { def: Position, values: { x: 0, y: 0 } },
-	 *     { def: Velocity, values: { vx: 0, vy: 0 } },
-	 *   ]);
-	 *
-	 * The big win is multi-component entities and bulk spawns; a single-
-	 * component spawn is no faster than `spawn` + `addComponent`, which
-	 * already bump-allocates a fresh entity into the target archetype. See
-	 * ADR-0010. */
-	public template<Defs extends readonly ComponentDef[]>(
-		entries: TemplateEntries<Defs>
-	): Template<Defs> {
-		return this.store.resolveTemplate(entries);
 	}
 
 	/** Bulk-spawn `count` entities from `template`, optionally applying one

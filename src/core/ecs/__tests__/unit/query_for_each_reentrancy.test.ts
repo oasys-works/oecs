@@ -130,10 +130,7 @@ describe("Query.for_each re-entrancy (#431)", () => {
 				// Single transition (empty arch → [Pos, B]) so no row leaves the
 				// archetype this callback is standing in (see header NOTE).
 				const e2 = world.spawn();
-				world.addComponents(e2, [
-					{ def: Pos, values: { x: 2, y: 2 } },
-					{ def: B, values: { v: 0 } }
-				]);
+				world.addComponents(e2, Pos({ x: 2, y: 2 }), B({ v: 0 }));
 				q.forEach(() => {});
 			}
 		});

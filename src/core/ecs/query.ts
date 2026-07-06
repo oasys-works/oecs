@@ -59,6 +59,7 @@ import type {
 	AttachValuesArg,
 	BundleOrDef,
 	SchemaOf,
+	FieldValues,
 	DeclaredQueryTerm
 } from "./component";
 import { bundleDef, bundleValues } from "./component";
@@ -1557,9 +1558,22 @@ export class QueryBuilder {
  * and every helper taking a bare `SystemContext` stops accepting typed
  * contexts. Unmeasurable variance forces the structural path, where class
  * methods compare bivariantly and the conversion holds.
+ *
+ * The inner `D extends ComponentDef ? … : never` DISTRIBUTES over the declared
+ * add-set union, so each raw-literal branch carries its OWN def's schema
+ * (`Partial<FieldValues<SchemaOf<D>>>`) rather than the erased
+ * `Partial<Record<string, number>>`. A hand-written `{ def: Vel, values: { x }}`
+ * whose fields don't match its def is then rejected in a DECLARED-ACCESS system
+ * — matching the `StrictBundles` guarantee on the `ecs.*` surface. A PERMISSIVE
+ * context (`add: ComponentDef<any>`, i.e. an unnarrowed / `exclusive` system)
+ * keeps the loose shape, which is the point of opting out of narrowing. The
+ * outer no-op is preserved, so the variance invariant above still holds
+ * (verified: the `permissiveHelper(ctx)` assertion still compiles).
  */
 export type DeclaredBundleOrDef<D> = [D] extends [unknown]
-	? D | { readonly def: D; readonly values: Readonly<Partial<Record<string, number>>> }
+	? D extends ComponentDef
+		? D | { readonly def: D; readonly values: Readonly<Partial<FieldValues<SchemaOf<D>>>> }
+		: never
 	: never;
 
 /**

@@ -119,8 +119,9 @@ ecs.getField(e, Pos, "x"); // ≈ 1.667
   `despawn` / `disable` / `enable`) applies immediately.
 - **Entity enable/disable** — `disable` / `enable` / `isDisabled`; disabled rows sit in a partitioned
   tail and are skipped by default queries.
-- **Templates & bundles** — `ecs.template([...])` blueprints consumed by `spawn` /
-  `spawnMany` for zero-transition spawns; `bundle(...)` + `spawnBundle(...)`.
+- **Templates & bundles** — `ecs.template(Pos({ x, y }), …)` blueprints consumed by `spawn` /
+  `spawnMany` for zero-transition spawns; the same callable-bundle varargs drive `spawnBundle(...)`
+  and `addComponents(...)`.
 
 **Reactivity & relationships**
 

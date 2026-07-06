@@ -5,8 +5,11 @@
  * regression loosened a signature) fails the build as "Unused '@ts-expect-error'
  * directive", and a positive case that stops compiling fails directly.
  *
- * Covers the schema-precision seams: `addComponents` entry checking, tag
- * components refusing values, and `registerEvent` field coverage.
+ * Covers the schema-precision seams: the callable-bundle varargs shared by
+ * `addComponents` / `spawnBundle` / `template` (`StrictBundles`), the
+ * declared-access strictness on `ctx.commands` (distributive
+ * `DeclaredBundleOrDef`), tag components refusing values, and `registerEvent`
+ * field coverage.
  ***/
 
 import type { ECS } from "../ecs";
@@ -33,24 +36,24 @@ declare const Frozen: ComponentDef<Record<string, never>>;
 // Wrapped in a never-exported, never-called function so runtime cost is nil
 // and `noUnusedLocals` stays satisfied via the void reference below.
 function addComponentsAssertions(): void {
-	// Each entry's values are checked against its own def's schema.
-	world.addComponents(e, [
-		{ def: Pos, values: { x: 1, y: 2 } },
-		{ def: Vel, values: { vx: 3 } } // partial: omitted fields zero-fill
-	]);
-	world.addComponents(e, [{ def: Pos }, { def: Frozen }]);
+	// Callable-bundle varargs — each item checked against its own def's schema.
+	world.addComponents(e, Pos({ x: 1, y: 2 }), Vel({ vx: 3 })); // partial zero-fills
+	world.addComponents(e, Pos, Frozen); // bare defs: all-zero / tag
 
-	// @ts-expect-error — 'vx' is a Vel field, not a Pos field
-	world.addComponents(e, [{ def: Pos, values: { vx: 1 } }]);
+	// @ts-expect-error — 'vx' is a Vel field, not a Pos field (callable form)
+	world.addComponents(e, Pos({ vx: 1 }));
 
-	// @ts-expect-error — cross-entry mixup: Pos values on Vel
-	world.addComponents(e, [{ def: Vel, values: { x: 1 } }]);
+	// @ts-expect-error — StrictBundles rejects a raw literal whose values ⊄ its def
+	world.addComponents(e, { def: Pos, values: { vx: 1 } });
+
+	// @ts-expect-error — cross-item mixup: Pos values on Vel (raw literal)
+	world.addComponents(e, { def: Vel, values: { x: 1 } });
 
 	// @ts-expect-error — tags carry no fields
-	world.addComponents(e, [{ def: Frozen, values: { x: 1 } }]);
+	world.addComponents(e, Frozen({ x: 1 }));
 
 	// @ts-expect-error — field values are numbers
-	world.addComponents(e, [{ def: Pos, values: { x: "one" } }]);
+	world.addComponents(e, Pos({ x: "one" }));
 }
 
 function tagValueAssertions(): void {
@@ -70,11 +73,11 @@ function tagValueAssertions(): void {
 	// @ts-expect-error — misspelled field in a def-call bundle
 	void Pos({ vx: 1 });
 
-	// Template entries refuse values on tags too.
-	void world.template([{ def: Pos, values: { x: 0, y: 0 } }, { def: Frozen }]);
+	// `template` shares the callable-bundle grammar; tags refuse values too.
+	void world.template(Pos({ x: 0, y: 0 }), Frozen);
 
-	// @ts-expect-error — tag template entry carries no values
-	void world.template([{ def: Frozen, values: { x: 1 } }]);
+	// @ts-expect-error — tag template item carries no values
+	void world.template(Frozen({ x: 1 }));
 }
 
 function componentDefVariance(): void {
@@ -232,6 +235,15 @@ function typestateEnforcementAssertions(): void {
 
 			// @ts-expect-error — the explicit-values form requires complete values
 			ctx.commands.add(e, Vel, { vx: 1 });
+
+			// Raw-literal cross-field is caught in a DECLARED-ACCESS system (the
+			// distributive `DeclaredBundleOrDef` — §strictness). Vel is declared
+			// (writes), so its values are schema-checked; a permissive ctx stays
+			// loose by design (opted out of narrowing).
+			// @ts-expect-error — 'x' is not a Vel field (raw literal via add)
+			ctx.commands.add(e, { def: Vel, values: { x: 1 } });
+			// @ts-expect-error — 'x' is not a Vel field (raw literal via spawn)
+			void ctx.commands.spawn({ def: Vel, values: { x: 1 } });
 		}
 	});
 

@@ -243,7 +243,7 @@ describe("entity enable/disable (#577)", () => {
 	it("spawning into an archetype that holds disabled rows keeps the partition", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
-		const tmpl = world.template([{ def: P, values: { x: 0, y: 0 } }]);
+		const tmpl = world.template(P({ x: 0, y: 0 }));
 		const first = world.spawnMany(tmpl, 3);
 		const q = world.query(P);
 

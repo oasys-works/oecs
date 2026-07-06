@@ -40,12 +40,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 
 		const baseline = viewStamp(world);
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } },
-			{ def: C, values: { v: 3 } },
-			{ def: D, values: { v: 4 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }), C({ v: 3 }), D({ v: 4 }));
 
 		// One target archetype created ⇒ one extend.
 		expect(viewStamp(world) - baseline).toBe(1);
@@ -60,11 +55,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		expect(world.archetypeCount).toBe(1); // empty archetype only
 
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } },
-			{ def: C, values: { v: 3 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }), C({ v: 3 }));
 
 		// Pre-PR: empty + [A] + [A,B] + [A,B,C] = 4. Now: empty + [A,B,C] = 2.
 		expect(world.archetypeCount).toBe(2);
@@ -77,11 +68,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const C = world.registerComponent(["v"] as const);
 
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 10 } },
-			{ def: B, values: { v: 20 } },
-			{ def: C, values: { v: 30 } }
-		]);
+		world.addComponents(e, A({ v: 10 }), B({ v: 20 }), C({ v: 30 }));
 
 		expect(world.hasComponent(e, A)).toBe(true);
 		expect(world.hasComponent(e, B)).toBe(true);
@@ -96,17 +83,11 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const afterFirst = viewStamp(world);
 
 		// Add the same defs again with new values — entity stays in [A, B].
-		world.addComponents(e, [
-			{ def: A, values: { v: 100 } },
-			{ def: B, values: { v: 200 } }
-		]);
+		world.addComponents(e, A({ v: 100 }), B({ v: 200 }));
 
 		expect(viewStamp(world)).toBe(afterFirst); // no new archetype
 		expect(world.getField(e, A, "v")).toBe(100);
@@ -125,11 +106,11 @@ describe("add_components batching (issue #211 follow-up)", () => {
 		expect(world.archetypeCount).toBe(2);
 
 		const before = viewStamp(world);
-		world.addComponents(e, [
-			{ def: A, values: { v: 11 } }, // already present — overwrite
-			{ def: B, values: { v: 22 } }, // new
-			{ def: C, values: { v: 33 } } // new
-		]);
+		world.addComponents(e,
+			A({ v: 11 }), // already present — overwrite
+			B({ v: 22 }), // new
+			C({ v: 33 }) // new
+		);
 
 		// One new archetype [A, B, C] (no [A, B] intermediate).
 		expect(world.archetypeCount).toBe(3);
@@ -149,12 +130,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		const D = world.registerComponent(["v"] as const);
 
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } },
-			{ def: C, values: { v: 3 } },
-			{ def: D, values: { v: 4 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }), C({ v: 3 }), D({ v: 4 }));
 
 		const afterAdd = viewStamp(world);
 		// Remove three components — target [D] has not been planted yet, so
@@ -200,10 +176,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		// Now create an entity in [A, B] and remove B — target is [A], which
 		// already exists, so no SAB extend should fire.
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const before = viewStamp(world);
 
 		world.removeComponents(e, [B]);
@@ -232,10 +205,7 @@ describe("add_components composite-add edge cache (#659)", () => {
 		// First call resolves cold (mask hash + archLookup) and plants the edge;
 		// calls 2..5 hit the composite cache. All must agree.
 		for (let i = 0; i < ids.length; i++) {
-			world.addComponents(ids[i], [
-				{ def: A, values: { v: 10 + i } },
-				{ def: B, values: { v: 20 + i } }
-			]);
+			world.addComponents(ids[i], A({ v: 10 + i }), B({ v: 20 + i }));
 		}
 
 		// empty + [A,B] only — the cache plants no archetypes of its own.
@@ -263,15 +233,9 @@ describe("add_components composite-add edge cache (#659)", () => {
 		world.addComponent(e1, A, { v: 1 });
 		world.addComponent(e2, A, { v: 2 });
 
-		world.addComponents(e1, [
-			{ def: B, values: { v: 11 } },
-			{ def: C, values: { v: 12 } }
-		]);
+		world.addComponents(e1, B({ v: 11 }), C({ v: 12 }));
 		const archetypesAfterCold = world.archetypeCount;
-		world.addComponents(e2, [
-			{ def: B, values: { v: 21 } },
-			{ def: C, values: { v: 22 } }
-		]);
+		world.addComponents(e2, B({ v: 21 }), C({ v: 22 }));
 
 		// The cached hit reuses the [A,B,C] archetype — no new one.
 		expect(world.archetypeCount).toBe(archetypesAfterCold);
@@ -292,16 +256,10 @@ describe("add_components composite-add edge cache (#659)", () => {
 
 		const e1 = world.spawn();
 		const e2 = world.spawn();
-		world.addComponents(e1, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } }
-		]);
+		world.addComponents(e1, A({ v: 1 }), B({ v: 2 }));
 		// Reversed order — a distinct cache key, but the union {A,B} is the same
 		// archetype, so no second archetype is planted.
-		world.addComponents(e2, [
-			{ def: B, values: { v: 4 } },
-			{ def: A, values: { v: 3 } }
-		]);
+		world.addComponents(e2, B({ v: 4 }), A({ v: 3 }));
 
 		expect(world.archetypeCount).toBe(2);
 		expect(world.getField(e1, A, "v")).toBe(1);
@@ -316,19 +274,13 @@ describe("add_components composite-add edge cache (#659)", () => {
 		const B = world.registerComponent(["v"] as const);
 
 		const e = world.spawn();
-		world.addComponents(e, [
-			{ def: A, values: { v: 1 } },
-			{ def: B, values: { v: 2 } }
-		]);
+		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const stamp = viewStamp(world);
 
 		// Same set from the SAME (now [A,B]) source: every def is already present,
 		// so this is an in-place overwrite, not a transition — the cache must not
 		// short-circuit it into a spurious move.
-		world.addComponents(e, [
-			{ def: A, values: { v: 100 } },
-			{ def: B, values: { v: 200 } }
-		]);
+		world.addComponents(e, A({ v: 100 }), B({ v: 200 }));
 
 		expect(viewStamp(world)).toBe(stamp);
 		expect(world.getField(e, A, "v")).toBe(100);

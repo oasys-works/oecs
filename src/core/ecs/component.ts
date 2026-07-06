@@ -215,13 +215,45 @@ export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): Co
 
 export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 	readonly def: ComponentDef<S>;
-	// Partial, mirroring `TemplateEntry.values` — an omitted field zero-fills at
-	// attach (`writeFields`'s `?? 0`), so a bundle need not carry every field.
+	// Partial — an omitted field zero-fills at attach (`writeFields`'s `?? 0`),
+	// so a bundle need not carry every field.
 	readonly values: Partial<FieldValues<S>>;
 }
 
 /** Either a populated bundle or a bare def (tag / all-fields-zero). */
 export type BundleOrDef<S extends ComponentSchema = ComponentSchema> = Bundle<S> | ComponentDef<S>;
+
+/** Re-validate one bundle-or-def item against its OWN def's schema. A bare def
+ * (the callable) passes as-is; a bundle is re-stated as `Bundle<S>` for its
+ * def's `S`, so a hand-written `{ def, values }` literal whose fields don't
+ * match the def is rejected — closing the raw-literal leak that `bundle(Pos,…)`
+ * / `Pos(…)` never had (those validate at their own call site). Per-element
+ * mapper for `StrictBundles`. */
+export type StrictBundle<T> = T extends ComponentDef
+	? T
+	: T extends { def: ComponentDef<infer S> }
+		? Bundle<S>
+		: never;
+
+/** Mapped tuple over a bundle-or-def varargs list — each element re-checked
+ * against its own def's schema. The SolidJS-`on` per-element pattern (pull the
+ * tuple apart, map every element), over callable bundles instead of
+ * `{ def, values }` entry-objects. The one strictness mechanism shared by
+ * `spawnBundle`, `addComponents`, and `template`. */
+export type StrictBundles<Items extends readonly BundleOrDef[]> = {
+	[K in keyof Items]: StrictBundle<Items[K]>;
+};
+
+/** Recover the def tuple from a bundle-or-def varargs list, so `template(...)`
+ * still returns `Template<[Pos, Vel]>` — the typed key set that `spawn`'s
+ * `overrides` (`TemplateOverrides`) maps over. Also a per-element tuple map. */
+export type DefsOf<Items extends readonly BundleOrDef[]> = {
+	[K in keyof Items]: Items[K] extends { def: infer D extends ComponentDef }
+		? D
+		: Items[K] extends ComponentDef
+			? Items[K]
+			: never;
+};
 
 /** Pair a component def with field values to attach. Omitted fields zero-fill;
  * a tag def takes no values (see `ValuesArg`). */

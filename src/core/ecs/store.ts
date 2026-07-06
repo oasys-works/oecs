@@ -197,27 +197,15 @@ const COMPOSITE_ADD_MAX_ENTRIES = 7;
  * past the stride). Negative so it can't collide with any real packed key. */
 const COMPOSITE_ADD_UNKEYABLE = -1;
 
-/** Extracts the schema out of a `ComponentDef` handle. */
-type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : ComponentSchema;
-
-/** One typed template entry: `values` is checked against the def's schema —
- * a misspelled field is a compile error. Fields may be omitted (they default
- * to 0), so the map is `Partial`. Tag defs refuse `values` entirely — their
- * `FieldValues` would otherwise degenerate to `Record<string, number>` (same
- * pitfall as `ValuesArg`); a schema-erased `ComponentDef` falls into the
- * valued branch, so untyped call sites keep the loose shape. */
-export type TemplateEntry<D extends ComponentDef = ComponentDef> = SchemaOf<D> extends Record<
-	string,
-	never
->
-	? { readonly def: D; readonly values?: undefined }
-	: { readonly def: D; readonly values?: Partial<FieldValues<SchemaOf<D>>> };
-
-/** The entries tuple for `ECS.template` — each element's `values` is checked
- * against its own `def`'s schema. */
-export type TemplateEntries<Defs extends readonly ComponentDef[]> = readonly [
-	...{ [K in keyof Defs]: TemplateEntry<Defs[K]> }
-];
+/** Runtime shape of one template / `addComponents` entry: a def plus optional
+ * field values (omitted fields zero-fill). The public authoring surface is
+ * callable-bundle varargs, schema-checked per item by `StrictBundles`
+ * (component.ts); the `ECS` facade normalizes those bundles into this erased
+ * array before calling the store, so the store stays schema-agnostic. */
+type TemplateEntryData = {
+	readonly def: ComponentDef;
+	readonly values?: Readonly<Record<string, number>>;
+};
 
 /** Union of every field name owned by a component in `Defs` (distributes
  * over the def list). */
@@ -1439,9 +1427,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `_flatColumns` order, and build the override index (field name → flat
 	 * column index; `TEMPLATE_OVERRIDE_AMBIGUOUS` for a name shared by more than
 	 * one component, which a flat override cannot target). */
-	public resolveTemplate<Defs extends readonly ComponentDef[]>(
-		entries: TemplateEntries<Defs>
-	): Template<Defs> {
+	public resolveTemplate(entries: readonly TemplateEntryData[]): Template {
 		const mask = new BitSet();
 		for (let i = 0; i < entries.length; i++) mask.set(entries[i].def.id);
 		const archetypeId = this.archGetOrCreateFromMask(mask);
@@ -3254,17 +3240,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * skip the union-mask build entirely. First call per key still resolves via
 	 * the final-mask path below (no intermediate planting) and plants the edge.
 	 * See docs/reports/bench/regressions/add-components-composite-edge.md. */
-	public addComponents<Defs extends readonly ComponentDef[]>(
-		entityId: EntityID,
-		entries: TemplateEntries<Defs>
-	): void;
-	public addComponents(
-		entityId: EntityID,
-		entries: readonly {
-			def: ComponentDef;
-			values?: Readonly<Record<string, number>>;
-		}[]
-	): void {
+	public addComponents(entityId: EntityID, entries: readonly TemplateEntryData[]): void {
 		if (!this.isAlive(entityId)) {
 			if (DEV) throw entityNotAliveError("addComponents", entityId);
 			return;

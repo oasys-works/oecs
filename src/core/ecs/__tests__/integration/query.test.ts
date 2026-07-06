@@ -164,7 +164,7 @@ describe("ECS query (integration)", () => {
 		// archetype-level iteration guard happens to catch it.
 		const ops: [string, (world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void, RegExp][] = [
 			["addComponent", (w, e, d) => void w.addComponent(e, d, { x: 1 }), /host addComponent is immediate.*ctx\.commands\.add/],
-			["addComponents", (w, e, d) => void w.addComponents(e, [{ def: d, values: { x: 1 } }]), /host addComponents is immediate.*ctx\.commands\.add/],
+			["addComponents", (w, e, d) => void w.addComponents(e, d({ x: 1 })), /host addComponents is immediate.*ctx\.commands\.add/],
 			["removeComponent", (w, e, d) => void w.removeComponent(e, d), /host removeComponent is immediate.*ctx\.commands\.remove/],
 			["removeComponents", (w, e, d) => void w.removeComponents(e, [d]), /host removeComponents is immediate.*ctx\.commands\.remove/],
 			["disable", (w, e) => void w.disable(e), /host disable is immediate.*ctx\.commands\.disable/],

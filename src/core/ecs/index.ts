@@ -24,7 +24,7 @@ export {
 
 // Template / direct-create (#462) — opaque archetype template from `ECS.template`,
 // consumed by `ECS.spawn` / `ECS.spawnMany`.
-export type { Template, TemplateEntry, TemplateEntries, TemplateOverrides } from "./store";
+export type { Template, TemplateOverrides } from "./store";
 
 // SAB layout subscription — generic hook for any consumer (e.g. a compute
 // backend) that needs to know when SAB layout changes. The engine has no
@@ -258,7 +258,7 @@ export type {
 // Callable bundles — `bundle(Pos, {x,y})` pairs a def with values for the
 // unified varargs spawn/add path (`spawnBundle`, `ctx.commands.spawn/add`).
 export { bundle } from "./component";
-export type { Bundle, BundleOrDef } from "./component";
+export type { Bundle, BundleOrDef, StrictBundle, StrictBundles, DefsOf } from "./component";
 
 // Sparse storage class — out-of-identity components (#468 / ADR-0011). The
 // handle type is public; the `SparseComponentStore` substrate stays internal.

@@ -20,10 +20,7 @@ describe("template / direct-spawn (#462)", () => {
 	it("resolves the target archetype once, creating it if absent", () => {
 		const { ecs, Position, Velocity } = setup();
 		const before = ecs.archetypeCount;
-		const p = ecs.template([
-			{ def: Position, values: { x: 0, y: 0 } },
-			{ def: Velocity, values: { vx: 0, vy: 0 } }
-		]);
+		const p = ecs.template(Position({ x: 0, y: 0 }), Velocity({ vx: 0, vy: 0 }));
 		const afterRegister = ecs.archetypeCount;
 		expect(afterRegister).toBe(before + 1); // exactly one new archetype
 
@@ -33,17 +30,14 @@ describe("template / direct-spawn (#462)", () => {
 		expect(ecs.archetypeCount).toBe(afterRegister);
 
 		// Re-registering the same mask reuses the archetype.
-		const p2 = ecs.template([{ def: Velocity }, { def: Position }]);
+		const p2 = ecs.template(Velocity, Position);
 		expect(ecs.archetypeCount).toBe(afterRegister);
 		expect(p2).not.toBe(p);
 	});
 
 	it("spawn places the entity directly in the template archetype with defaults", () => {
 		const { ecs, Position, Health } = setup();
-		const p = ecs.template([
-			{ def: Position, values: { x: 3, y: 4 } },
-			{ def: Health, values: { current: 100, max: 120 } }
-		]);
+		const p = ecs.template(Position({ x: 3, y: 4 }), Health({ current: 100, max: 120 }));
 		const e = ecs.spawn(p);
 		expect(ecs.isAlive(e)).toBe(true);
 		expect(ecs.entityCount).toBe(1);
@@ -57,7 +51,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("missing default values fall back to zero", () => {
 		const { ecs, Position } = setup();
-		const p = ecs.template([{ def: Position }]); // no values
+		const p = ecs.template(Position); // no values
 		const e = ecs.spawn(p);
 		expect(ecs.getField(e, Position, "x")).toBe(0);
 		expect(ecs.getField(e, Position, "y")).toBe(0);
@@ -65,10 +59,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("applies flat per-instance overrides on top of defaults", () => {
 		const { ecs, Position, Health } = setup();
-		const p = ecs.template([
-			{ def: Position, values: { x: 0, y: 0 } },
-			{ def: Health, values: { current: 100, max: 100 } }
-		]);
+		const p = ecs.template(Position({ x: 0, y: 0 }), Health({ current: 100, max: 100 }));
 		const e = ecs.spawn(p, { x: 10, current: 25 });
 		expect(ecs.getField(e, Position, "x")).toBe(10); // overridden
 		expect(ecs.getField(e, Position, "y")).toBe(0); // default
@@ -78,10 +69,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("throws (dev) when overriding an ambiguous field name", () => {
 		const { ecs, AttackRange, EngageRange } = setup();
-		const p = ecs.template([
-			{ def: AttackRange, values: { range: 5 } },
-			{ def: EngageRange, values: { range: 7 } }
-		]);
+		const p = ecs.template(AttackRange({ range: 5 }), EngageRange({ range: 7 }));
 		// Spawning with the ambiguous defaults is fine.
 		const e = ecs.spawn(p);
 		expect(ecs.getField(e, AttackRange, "range")).toBe(5);
@@ -92,7 +80,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("throws (dev) when overriding an unknown field name", () => {
 		const { ecs, Position } = setup();
-		const p = ecs.template([{ def: Position, values: { x: 0, y: 0 } }]);
+		const p = ecs.template(Position({ x: 0, y: 0 }));
 		// The typed surface rejects `z` at compile time; widen to the untyped
 		// map to prove the runtime guard still catches untyped call sites.
 		const overrides: Record<string, number> = { z: 1 };
@@ -101,10 +89,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("spawn_many bulk-spawns identical entities with correct rows + defaults", () => {
 		const { ecs, Position, Health } = setup();
-		const p = ecs.template([
-			{ def: Position, values: { x: 1, y: 2 } },
-			{ def: Health, values: { current: 50, max: 50 } }
-		]);
+		const p = ecs.template(Position({ x: 1, y: 2 }), Health({ current: 50, max: 50 }));
 		const ids = ecs.spawnMany(p, 500);
 		expect(ids.length).toBe(500);
 		expect(ecs.entityCount).toBe(500);
@@ -119,10 +104,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("spawn_many applies one shared overrides object to every spawned row", () => {
 		const { ecs, Position, Health } = setup();
-		const p = ecs.template([
-			{ def: Position, values: { x: 1, y: 2 } },
-			{ def: Health, values: { current: 50, max: 50 } }
-		]);
+		const p = ecs.template(Position({ x: 1, y: 2 }), Health({ current: 50, max: 50 }));
 		const ids = ecs.spawnMany(p, 100, { x: 9, current: 25 });
 		for (const id of ids) {
 			expect(ecs.getField(id, Position, "x")).toBe(9); // overridden
@@ -134,7 +116,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("spawn_many overrides take the per-row path when the target holds disabled rows", () => {
 		const { ecs, Position } = setup();
-		const p = ecs.template([{ def: Position, values: { x: 1, y: 2 } }]);
+		const p = ecs.template(Position({ x: 1, y: 2 }));
 		// Force a disabled row in the target archetype so the bulk append can't
 		// land contiguously (`disabledCount > 0` branch).
 		const sleeper = ecs.spawn(p);
@@ -148,26 +130,23 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("spawn_many throws (dev) on ambiguous / unknown override field names", () => {
 		const { ecs, Position, AttackRange, EngageRange } = setup();
-		const dup = ecs.template([
-			{ def: AttackRange, values: { range: 5 } },
-			{ def: EngageRange, values: { range: 7 } }
-		]);
+		const dup = ecs.template(AttackRange({ range: 5 }), EngageRange({ range: 7 }));
 		expect(() => ecs.spawnMany(dup, 3, { range: 9 })).toThrow(/ambiguous/);
-		const single = ecs.template([{ def: Position }]);
+		const single = ecs.template(Position);
 		const overrides: Record<string, number> = { z: 1 };
 		expect(() => ecs.spawnMany(single, 3, overrides)).toThrow(/no field/);
 	});
 
 	it("spawn_many of 0 returns an empty array and spawns nothing", () => {
 		const { ecs, Position } = setup();
-		const p = ecs.template([{ def: Position }]);
+		const p = ecs.template(Position);
 		expect(ecs.spawnMany(p, 0)).toEqual([]);
 		expect(ecs.entityCount).toBe(0);
 	});
 
 	it("supports tag-only templates", () => {
 		const { ecs, Tag } = setup();
-		const p = ecs.template([{ def: Tag }]);
+		const p = ecs.template(Tag);
 		const e = ecs.spawn(p);
 		expect(ecs.isAlive(e)).toBe(true);
 		expect(ecs.hasComponent(e, Tag)).toBe(true);
@@ -175,7 +154,7 @@ describe("template / direct-spawn (#462)", () => {
 
 	it("performs ZERO archetype transitions (no move_entity_from)", () => {
 		const { ecs, Position, Velocity, Health } = setup();
-		const p = ecs.template([{ def: Position }, { def: Velocity }, { def: Health }]);
+		const p = ecs.template(Position, Velocity, Health);
 
 		const spy = vi.spyOn(Archetype.prototype, "moveEntityFrom");
 		ecs.spawn(p);

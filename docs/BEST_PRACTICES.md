@@ -309,16 +309,16 @@ Note `ctx.commands.spawn` returns the new id immediately (the create isn't defer
 Every dense structural change costs an archetype move. When building an entity with known defaults, prefer a template so it lands directly in the target archetype:
 
 ```ts
-const Enemy = ecs.template([
-  { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 1, vy: 2 } },
-  { def: Health, values: { current: 100, max: 100 } },
-]);
+const Enemy = ecs.template(
+  Pos({ x: 0, y: 0 }),
+  Vel({ vx: 1, vy: 2 }),
+  Health({ current: 100, max: 100 }),
+);
 
 const e = ecs.spawn(Enemy);
 ```
 
-For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking an add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
+For an existing entity, use `ecs.addComponents(e, ...bundles)` to resolve the final component set once instead of walking an add-then-add chain — the same callable-bundle grammar as `template` and `spawnBundle`. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
 
 For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch.id, Def)` / `batchRemoveComponent` (they take an `ArchetypeID`), which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
 
@@ -451,7 +451,7 @@ Ids obtained inside `forEach`/`eachChunk`/`forEachEntity` are implicitly alive f
 A template resolves a component set + defaults to a target archetype **once**, so every later spawn skips the per-component transitions and lands directly in the archetype:
 
 ```ts
-const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }, { def: Vel, values: { vx: 0, vy: 0 } }]);
+const Bullet = ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 0, vy: 0 }));
 const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // per-field overrides
 const swarm = ecs.spawnMany(Bullet, 500);          // O(columns) writes, not O(500 × columns)
 ```

@@ -103,7 +103,7 @@ describe("Tag-only archetype growth (#210)", () => {
 			if (picks.size < 2) picks.add((idx0 + 1) % 16);
 			const pickList = [...picks];
 			const defList = pickList.map((i) =>
-				i < 8 ? { def: components[i], values: { v: a } } : { def: tags[i - 8] }
+				i < 8 ? components[i]({ v: a }) : tags[i - 8]
 			);
 			// addComponents is a single transition (empty → target), so each
 			// distinct mask is exactly one archetype — no intermediates.
@@ -117,7 +117,7 @@ describe("Tag-only archetype growth (#210)", () => {
 
 			for (let e = 0; e < PER_ITER; e++) {
 				const id = world.spawn();
-				world.addComponents(id, defList);
+				world.addComponents(id, ...defList);
 				// Snapshot the first entity of a few iterations that carry at
 				// least one data field, giving the post-loop check a `v` to read.
 				if (e === 0 && sampleIters.has(a) && dataDefs.length > 0) {

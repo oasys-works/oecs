@@ -50,12 +50,9 @@ spawnBundle(...items: BundleOrDef[]): EntityID;                              // 
 A **template** resolves a component set + default values to a target archetype **once**, so every later spawn from it skips the per-component archetype transitions.
 
 ```ts
-template<Defs>(entries: TemplateEntries<Defs>): Template<Defs>;
+template<Items extends readonly BundleOrDef[]>(...items: StrictBundles<Items>): Template<DefsOf<Items>>;
 
-const Bullet = ecs.template([
-  { def: Pos, values: { x: 0, y: 0 } },
-  { def: Vel, values: { vx: 0, vy: 0 } },
-]);
+const Bullet = ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 0, vy: 0 }));
 
 const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // flat per-field overrides
 const swarm = ecs.spawnMany(Bullet, 500);   // 500 bullets, O(columns) writes

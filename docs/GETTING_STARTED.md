@@ -102,12 +102,13 @@ ecs.addComponent(player, Health, { current: 100, max: 100 });
 
 // addComponents resolves the final archetype once — cheaper when attaching several components
 const enemy = ecs.spawn();
-ecs.addComponents(enemy, [
-  { def: Pos, values: { x: 100, y: 100 } },
-  { def: Vel, values: { vx: 50, vy: 30 } },
-  { def: Health, values: { current: 50, max: 50 } },
-  { def: IsEnemy },
-]);
+ecs.addComponents(
+  enemy,
+  Pos({ x: 100, y: 100 }),
+  Vel({ vx: 50, vy: 30 }),
+  Health({ current: 50, max: 50 }),
+  IsEnemy,
+);
 ```
 
 Remove with `removeComponent` / `removeComponents`, check with `hasComponent`, destroy via `ecs.despawn(e)` (immediate — the entity is dead on the next line; from inside a system use `ctx.commands.despawn(e)`, which defers to the phase flush).
@@ -478,11 +479,12 @@ ecs.addSystems(SCHEDULE.POST_UPDATE, cleanupDead);
 let first: EntityID = 0 as EntityID;
 for (let i = 0; i < 100; i++) {
   const e = ecs.spawn();
-  ecs.addComponents(e, [
-    { def: Pos,    values: { x: Math.random() * 800, y: Math.random() * 600 } },
-    { def: Vel,    values: { vx: (Math.random() - 0.5) * 100, vy: (Math.random() - 0.5) * 100 } },
-    { def: Health, values: { current: 100, max: 100 } },
-  ]);
+  ecs.addComponents(
+    e,
+    Pos({ x: Math.random() * 800, y: Math.random() * 600 }),
+    Vel({ vx: (Math.random() - 0.5) * 100, vy: (Math.random() - 0.5) * 100 }),
+    Health({ current: 100, max: 100 }),
+  );
   if (i === 0) first = e;
 }
 

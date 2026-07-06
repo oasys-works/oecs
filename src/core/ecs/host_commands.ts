@@ -68,10 +68,12 @@ export type SpawnEntryFor<D extends ComponentDef> = {
 };
 
 /** The entries tuple for `HostCommandQueue.spawn` — each element's `values` is
- * checked against its own `def`'s schema. Unlike `TemplateEntries` (which
- * stays `Partial` — a template is a reusable default set), a host command
- * demands complete values: it is a reified, replayable record, so every
- * field is explicit even though the attach path would zero-fill (#716). */
+ * checked against its own `def`'s schema. Unlike the authoring-side bundle
+ * varargs (`StrictBundles` — `Partial`, a template/attach zero-fills omitted
+ * fields), a host command demands complete values: it is a reified, replayable
+ * record, so every field is explicit even though the attach path would
+ * zero-fill (#716). This is the one attach surface that stays on entry-objects
+ * — it is transport (record/replay, editor undo), not authoring. */
 export type SpawnEntries<Defs extends readonly ComponentDef[]> = readonly [
 	...{ [K in keyof Defs]: SpawnEntryFor<Defs[K]> }
 ];

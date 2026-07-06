@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] — 2026-07-06
 
+### Changed (breaking) — one attach grammar
+
+`addComponents` and `template` now take the same callable-bundle varargs as `spawnBundle`
+and `ctx.commands.spawn` / `add`, replacing the `{ def, values }[]` entry-object array — one
+grammar across every authoring surface:
+
+```ts
+// before
+ecs.addComponents(e, [{ def: Pos, values: { x, y } }, { def: Vel, values: { vx } }]);
+const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }]);
+// after
+ecs.addComponents(e, Pos({ x, y }), Vel({ vx }));
+const Bullet = ecs.template(Pos({ x: 0, y: 0 }));
+```
+
+To migrate: drop the array brackets, wrap a valued entry in its def's call
+(`{ def: X, values: V }` → `X(V)`), and leave a bare entry bare (`{ def: X }` → `X`).
+
+- Each item is schema-checked against its **own** def via the `StrictBundles` mapped tuple
+  (`{ [K in keyof Items]: … }`) — a misspelled or cross-component field, including a
+  hand-written raw `{ def, values }` literal, is a compile error. `spawnBundle` gains this
+  per-item checking (it previously had none).
+- `ctx.commands.spawn` / `ctx.commands.add` now schema-check their bundle values in
+  declared-access systems as well (the `DeclaredBundleOrDef` type distributes over the
+  declared add set); a permissive / `exclusive` context stays loose, as before.
+- The `TemplateEntry` / `TemplateEntries` public types are removed (they encoded the retired
+  entry-object grammar). The host command seam (`HostCommandQueue.spawn` — the record/replay
+  and editor-undo transport) deliberately keeps its entry-object + complete-values shape.
+
 ### Fixed
 
 - Added explicit public `QueryCache` cache-map type annotations so JSR publish passes
