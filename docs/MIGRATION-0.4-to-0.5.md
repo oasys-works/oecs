@@ -15,12 +15,14 @@ cluster into a handful of mechanical rules:
    `restoreInto` → `restore`, `resource` → `get`, …) (§3).
 4. **`sourcesOf` argument order flipped** to `(entity, def)` — a silent behavior change at
    untyped call sites, the compiler catches typed ones (§4).
-5. **Small renames** — `query.count()` → `query.entityCount` getter; `WorldRestoreError` →
-   `ECSRestoreError`; `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`; `DestroyEntityArg` →
-   `DespawnArg` (§5).
+5. **Small renames & the `/internal` split** — `query.count()` → `query.entityCount` getter;
+   `WorldRestoreError` → `ECSRestoreError`; `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`;
+   and the root `export *` became a curated list, moving internals (`HostCommandDispatcher`,
+   the ring codecs, `resolveECSMemory`, …) to `@oasys/oecs/internal` (§5).
 
 Everything else — host component ops (`addComponent`, `getField`, `hasComponent`, …), queries,
-iteration (`forEach` / `eachChunk`), sparse ops, observers, the schedule, and the system-side
+iteration (`forEach` / `eachChunk`), sparse ops, observers (the API is unchanged, but see §1:
+immediate host `despawn` no longer fires `onRemove`), the schedule, and the system-side
 data/event/resource surface (`ctx.emit`, `ctx.read`, `ctx.resource`, `ctx.ref`, `ctx.setField`,
 `ctx.addSparse`, `ctx.addRelation`, …) — is unchanged. (Docs now spell the receiver
 `const ecs = new ECS()` instead of `world`; that is prose only, your variable name is your own.)
@@ -35,7 +37,6 @@ data/event/resource surface (`ctx.emit`, `ctx.read`, `ctx.resource`, `ctx.ref`, 
 | `ecs.createEntity(template, overrides?)` | `ecs.spawn(template, overrides?)` |
 | `ecs.createEntities(template, count)` | `ecs.spawnMany(template, count, overrides?)` |
 | `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)` — **now immediate** |
-| `DestroyEntityArg` (type) | `DespawnArg` |
 
 `ecs.spawnBundle(...)` keeps its name. `spawnMany` gains an optional third parameter — one
 shared `TemplateOverrides<Defs>` object applied to every spawned row (contiguous batches use one
@@ -69,6 +70,12 @@ Because an immediate destroy mid-iteration can invalidate rows a running query i
 `batchAddComponent`/`batchRemoveComponent`, `disable`/`enable` — each pointing at its
 `ctx.commands` equivalent. Host-side calls (setup, event handlers, between updates) are the
 intended use.
+
+The immediacy also changes what observers see: observers fire only for **deferred** ops, so a
+host `despawn` no longer reaches `onRemove` — in 0.4 the deferred host destroy drained through
+the flush and fanned `onRemove` like any other remove. Anything keyed off `onRemove` (including
+the `reactive-sync` map bridges) will not see host-despawned entities; where that matters,
+despawn through `ctx.commands.despawn` or the host-command seam.
 
 ---
 
@@ -206,7 +213,8 @@ ecs.snapshots.restore(bytes);
 The facades mirror the compile-time typestate surface exactly (cardinality-stamped
 `relations.register`, exclusive-only traversal on `targetOf` / `ancestorsOf` / `rootOf` /
 `cascadeOf`). The facade classes are exported **type-only** (`ECSRelations`, `ECSEvents`,
-`ECSResources`, `ECSSnapshots`); the runtime export list is unchanged.
+`ECSResources`, `ECSSnapshots`); the facades add no runtime exports. (The root runtime export
+list itself did change in 0.5.0 — see §5.)
 
 ---
 
@@ -250,8 +258,11 @@ const inCtx    = ctx.sourcesOf(parent, ChildOf);
 - **`WorldRestoreError` → `ECSRestoreError`** and **`WORLD_SNAPSHOT_VERSION` →
   `ECS_SNAPSHOT_VERSION`** — the last `World*`-prefixed exports join the `ECS*` vocabulary
   (`ECSOptions`, `ECSError`, …). Thrown by / tags for the `ecs.snapshots` surface (§3).
-- **`DestroyEntityArg` → `DespawnArg`** — the `ctx.commands.despawn` parameter type follows the
-  verb rename (§1).
+- **Root exports curated; internals moved to `@oasys/oecs/internal`** — 0.4's root
+  `export *` became an explicit list, and the internals it used to leak now import from
+  `@oasys/oecs/internal` (unstable — no semver guarantees): `HostCommandDispatcher`, the ring
+  transport codecs, `resolveECSMemory`, the packed-EntityID codec, `accessCheck`, and
+  `dispatchTrace`. (`getEntityIndex` stays at the root.)
 
 ---
 
@@ -287,8 +298,8 @@ useful:
   `"multi"`), and resource/event keys are invariant. Existing correct code compiles as-is;
   code that under-declared access now fails at compile time instead of at dev runtime.
 - **Write-seam lifecycle** — `uninstallHostCommandSeam(world, queue)`,
-  `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)`,
-  `HostCommandRecorder.snapshotLog()`.
+  `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)` (the dispatcher class now
+  imports from `@oasys/oecs/internal`, §5), `HostCommandRecorder.snapshotLog()`.
 - **`VERSION` export** and a `"./package.json"` export.
 
 ---
@@ -317,4 +328,8 @@ Every 0.4 name below is grep-able; none has an alias in 0.5.
       host and `ctx`; do not trust grep alone, the old order fails silently in untyped code (§4).
 - [ ] `query.count()` → `query.entityCount` (getter — drop the parens) (§5).
 - [ ] `WorldRestoreError` → `ECSRestoreError`; `WORLD_SNAPSHOT_VERSION` →
-      `ECS_SNAPSHOT_VERSION`; `DestroyEntityArg` → `DespawnArg` (§5).
+      `ECS_SNAPSHOT_VERSION` (§5).
+- [ ] Root imports of `HostCommandDispatcher`, the ring codecs, `resolveECSMemory`, the
+      packed-EntityID codec, `accessCheck`, or `dispatchTrace` → `@oasys/oecs/internal` (§5).
+- [ ] Audit `onRemove` observers and `reactive-sync` bridges for entities despawned from the
+      host — immediate `despawn` no longer fires `onRemove` (§1).

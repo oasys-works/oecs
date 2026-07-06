@@ -34,7 +34,6 @@ rename/removal map:
 | `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)` — matches `targetOf` / `targetsOf` |
 | `query.count()` | `query.entityCount` (getter, beside `archetypeCount`) |
 | `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
-| `DestroyEntityArg` (type) | `DespawnArg` |
 
 - **Host `despawn` is immediate** — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
   line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).

@@ -145,8 +145,9 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		const store = (world as unknown as { store: Store }).store;
 		const epochBefore = store._queryDirtyEpoch;
 
-		// Force creation of a second matching archetype [Pos, Vel]. archInstall
-		// runs once for the new archetype; the epoch must bump so the cached
+		// Force creation of a second matching archetype [Pos, Vel].
+		// ArchetypeGraph.install runs once for the new archetype; the epoch
+		// must bump so the cached
 		// `_nonEmptyArchetypes` list rebuilds on next read.
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });

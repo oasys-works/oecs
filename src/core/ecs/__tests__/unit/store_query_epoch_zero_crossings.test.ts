@@ -84,7 +84,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 
 		const epochBefore = store._queryDirtyEpoch;
 
-		// New archetype [Pos, Vel]. archInstall does NOT bump (still empty),
+		// New archetype [Pos, Vel]. ArchetypeGraph.install does NOT bump (still empty),
 		// but the move into it crosses 0→1 and bumps once on the tgt side.
 		// (The src side — the previously [Pos] arch — drops from 1→0, that's
 		//  another 0-crossing, so two bumps total are expected.)

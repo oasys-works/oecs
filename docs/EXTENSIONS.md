@@ -75,7 +75,7 @@ health.dispose();
 Use `syncComponentToMap` for one component. Use `syncFieldsToMap` for the common "mirror these fields" case; it automatically uses shallow equality for the projected object. Use `syncJoinToMap` when the projection reads more than one component, because it subscribes to all joined components and avoids stale rows.
 
 > [!WARNING]
-> The sync bridges remove rows via `onRemove` observers, and observers only fire for **deferred** ops. An immediate host `ecs.despawn(e)` (0.5.0 semantics) is invisible to them — the mirrored `Map` keeps the dead entity's row until the next full resync. Despawn through `ctx.commands.despawn` or the host-command seam when a reactive bridge is attached.
+> The sync bridges remove rows via `onRemove` observers, and observers only fire for **deferred** ops. An immediate host `ecs.despawn(e)` (0.5.0 semantics) is invisible to them — the mirrored `Map` keeps the dead entity's row indefinitely (the bridges seed once at registration; there is no periodic resync). Despawn through `ctx.commands.despawn` or the host-command seam when a reactive bridge is attached.
 
 For high-churn components, consider `syncComponentToMap(..., { grain: "column" })`. It sweeps dirty archetype columns sequentially, which can be faster when most rows in a component change.
 
@@ -135,6 +135,7 @@ The host-write seam is exported from the core entry point because it is the comm
 
 ```ts
 import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
+import { batchedUpdate } from "@oasys/oecs/reactive-sync";
 
 const queue = installHostCommandSeam(ecs); // install before startup()
 const player = ecs.spawn();

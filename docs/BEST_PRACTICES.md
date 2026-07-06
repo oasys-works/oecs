@@ -155,7 +155,7 @@ ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 `resourceKey("Time")` inside a function body would produce a new symbol per call, and two sites would not see the same resource. Module scope also documents ownership: this key lives here, register it once, import it elsewhere. Duplicate registration throws loudly (`RESOURCE_ALREADY_REGISTERED`, `EVENT_ALREADY_REGISTERED`).
 
 > [!TIP]
-> Declare an event schema as a **type literal**, not an `interface` — `eventKey<{ a: EntityID }>("…")` works, but an `interface` lacks the implicit index signature the `EventSchema` constraint needs.
+> Event schemas can be declared as type literals **or** interfaces — the `EventShape<S>` constraint is homomorphic (`{ readonly [K in keyof S]: number }`), so no implicit index signature is required.
 
 ---
 
@@ -199,7 +199,7 @@ Rules worth internalizing:
 
 ### Narrow filters beat broad-plus-filter
 
-Prefer the narrowest include set that expresses what the system needs. `ecs.query(A, B)` matches every archetype with *at least* `A` and `B`; refine with `without`, `anyOf`, `optional`, `changed`, `withSparse`/`withRelation`. Each verb returns a new **cached** query, and composition is memoized, so equivalent filters are the same instance.
+Prefer the narrowest include set that expresses what the system needs. `ecs.query(A, B)` matches every archetype with *at least* `A` and `B`; refine with `without`, `anyOf`, `optional`, `changed`, `withSparse`/`withRelation`. Each verb returns a new **cached** query, and composition is memoized, so equivalent filters are the same instance (the one exception: multi-arg `changed(A, B)` mints a fresh `ChangedQuery`; single-arg `changed` is cached).
 
 ```ts
 ecs.query(Pos)
@@ -291,7 +291,7 @@ The single most important timing rule: the receiver implies the mode. Everything
 | `disable` / `enable` | immediate | deferred |
 | sparse & relation ops (`ctx.addSparse`, `ctx.addRelation`, …) | immediate | immediate (no archetype transition — live on `ctx` directly) |
 
-Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side, every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling **any** immediate host structural mutator from *inside* a system body throws in dev — `ecs.despawn`, `ecs.addComponent`/`addComponents`, `ecs.removeComponent`/`removeComponents`, `ecs.batchAddComponent`/`batchRemoveComponent`, `ecs.disable`/`ecs.enable` — pointing you at the `ctx.commands` equivalent. (Mid-system these ops can move rows a running query is walking, and they are invisible to observers.) Host-side query walks are live iteration too: despawning (or otherwise structurally mutating) an entity of an archetype you are walking in a host `forEach`/`eachChunk` throws `STRUCTURAL_DURING_ITERATION` in dev — collect the ids during the walk and mutate after it.
+Deferral inside systems is what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration. Host-side, every mutation applies immediately — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next line. Calling an immediate host structural mutator from *inside* a system body throws in dev — `ecs.despawn`, `ecs.addComponent`/`addComponents`, `ecs.removeComponent`/`removeComponents`, `ecs.batchAddComponent`/`batchRemoveComponent`, `ecs.disable`/`ecs.enable` — pointing you at the `ctx.commands` equivalent. (Mid-system these ops can move rows a running query is walking, and they are invisible to observers.) Host-side query walks are live iteration too: despawning (or otherwise structurally mutating) an entity of an archetype you are walking in a host `forEach`/`eachChunk` throws `STRUCTURAL_DURING_ITERATION` in dev — collect the ids during the walk and mutate after it.
 
 **Inside a system, `ctx.commands` is the only deferred surface.** The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable` duplicates were removed in 0.5.0 (with `ctx.createEntity` / `ctx.destroyEntity`), so a deferred op always reads as one at the call site:
 
@@ -320,7 +320,7 @@ const e = ecs.spawn(Enemy);
 
 For an existing entity, use `ecs.addComponents(e, [...])` to resolve the final component set once instead of walking an add-then-add chain. `spawnBundle(...)` is still useful ergonomically, but today it applies each bundle through the normal immediate add path.
 
-For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch, Def)` / `batchRemoveComponent`, which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
+For whole-archetype changes ("every entity with `Frozen` gets `Slow`"), use `ecs.batchAddComponent(arch.id, Def)` / `batchRemoveComponent` (they take an `ArchetypeID`), which bulk-move a column region via `TypedArray.set` instead of per-entity moves.
 
 ---
 
@@ -444,7 +444,7 @@ Ids obtained inside `forEach`/`eachChunk`/`forEachEntity` are implicitly alive f
 
 ### Disable to hide, destroy to remove
 
-`disable` hides an entity from queries **without** removing its data or changing its id — it sits in the disabled tail of its archetype (a single row swap, no transition), and `entityCount` excludes it. Prefer it over destroy-and-respawn for entities that toggle in and out of play (a pooled bullet, a paused unit); re-include them with `.includeDisabled()`. A disabled entity must hold at least one component. Note that an *immediate* `ecs.disable`/`ecs.enable` fires no observer — only the deferred `ctx.commands.disable`/`ctx.commands.enable` do.
+`disable` hides an entity from queries **without** removing its data or changing its id — it sits in the disabled tail of its archetype (a single row swap, no transition), and query iteration / the archetype's `entityCount` exclude it (the world-level `ecs.entityCount` counts alive entities, so it still includes disabled ones). Prefer it over destroy-and-respawn for entities that toggle in and out of play (a pooled bullet, a paused unit); re-include them with `.includeDisabled()`. A disabled entity must hold at least one component. Note that an *immediate* `ecs.disable`/`ecs.enable` fires no observer — only the deferred `ctx.commands.disable`/`ctx.commands.enable` do.
 
 ### Templates for bulk spawns
 
@@ -534,7 +534,7 @@ If you need it:
 
 - **Use integer columns.** Float columns are rejected at registration (`NON_DETERMINISTIC_COLUMN_TYPE`) because IEEE-754 rounds differently across engines. Since the array shorthand defaults to `"f64"`, pass an explicit integer type — `ecs.registerComponent(["x", "y"], "i32")` — and represent fractions as fixed-point.
 - **Seed RNG deterministically** and store its state in a component; keep all non-lockstep input (wall-clock, network jitter) out of column bytes.
-- **Compare `stateHash` only at a tick boundary** (between `update()` calls) or a `phaseBoundary` settle point. The digest is opaque — never compare it against a hard-coded literal.
+- **Compare `stateHash` only at a tick boundary** (between `update()` calls) or a `phaseBoundary` settle point (a `FrameTraceSink` hook attached via `ecs.setTrace`, not a callable API — and note the POST_UPDATE boundary fires before the tick-tail `onSet` dispatch and event clear, so its hash can differ from the per-tick hash). The digest is opaque — never compare it against a hard-coded literal.
 - **Size both instances identically** before `ecs.snapshots.restore` and register the same components/templates in the same order; restore validates completely and fails closed before touching live state, but only if the target's archetype set and entity-index capacity match. Re-seed resources after a restore (they aren't captured).
 
 Because every host/UI mutation crosses one apply chokepoint, `replayCommandLog(..., { hash: true })` returns the per-tick `stateHash` sequence — replaying the same log must reproduce it, and that equality *is* the fidelity check.
@@ -638,7 +638,7 @@ Prefer integration-style tests for your own code: construct a world, register wh
 
 **Add-then-set across the host seam in one frame.** `setField` drains immediately, structural commands defer to the phase flush — carry values in the `addComponent`/`spawnEntry`, or set next frame.
 
-**Storing refs in plain objects.** A ref snapshots the entity's row; the next `addComponent`/`destroy` can move the entity. Rebuild refs each frame — it's near-free.
+**Storing refs in plain objects.** A ref caches the entity's row location (archetype + row) and reads the columns live; the next `addComponent`/`despawn` can move the entity out from under that cached location. Rebuild refs each frame — it's near-free.
 
 **Using resources or a `Map<EntityID, …>` as per-entity storage.** That re-implements component storage, poorly — you lose archetype co-location, query filtering, SoA iteration, change detection, and you orphan destroyed entities. If it's per-entity, it's a component (or a sparse component).
 

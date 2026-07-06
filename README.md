@@ -114,8 +114,8 @@ ecs.getField(e, Pos, "x"); // ≈ 1.667
 **Structural changes**
 
 - **Deferred inside systems, immediate on the host** — `ctx.commands` (a Bevy-`Commands`-style
-  facade) buffers spawn / add / remove / despawn / enable / disable until the phase flush, so
-  iterators stay valid. Every host-side mutation (`ecs.addComponent` / `removeComponent` /
+  facade) buffers add / remove / despawn / enable / disable until the phase flush, so iterators
+  stay valid (`commands.spawn` returns the id immediately; its component attaches are deferred). Every host-side mutation (`ecs.addComponent` / `removeComponent` /
   `despawn` / `disable` / `enable`) applies immediately.
 - **Entity enable/disable** — `disable` / `enable` / `isDisabled`; disabled rows sit in a partitioned
   tail and are skipped by default queries.
@@ -139,8 +139,8 @@ ecs.getField(e, Pos, "x"); // ≈ 1.667
 
 **Determinism, persistence & integration**
 
-- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `ecs.snapshots.stateHash()` (FNV-1a over
-  live dense bytes, sparse stores, and multi-relation target sets), `ecs.snapshots.capture()` /
+- **Determinism** (opt-in) — `new ECS({ deterministic: true })`, then `ecs.snapshots.stateHash()` (an FNV-1a-style
+  32-bit digest over live dense bytes, sparse stores, and multi-relation target sets), `ecs.snapshots.capture()` /
   `ecs.snapshots.restore(...)`, plus sparse variants. Backing-agnostic: a heap world and a shared world with identical history produce
   identical hashes.
 - **Host → ECS write seam** — `installHostCommandSeam(ecs)` applies typed `HostCommand`s off-schedule
@@ -174,13 +174,16 @@ The core is `@oasys/oecs`; everything else is opt-in and costs nothing until imp
 | `@oasys/oecs/editor` | undo/redo + field-handle layer over the host-write seam |
 | `@oasys/oecs/solid` | SolidJS adapter (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the standalone data structures oecs is built on |
+| `@oasys/oecs/internal` | unstable internals (codecs, ABI constants, access checker) — **no semver guarantees** |
 
 ## Dev vs prod
 
 A compile-time `__DEV__` flag gates every runtime check — bounds and liveness checks, duplicate-system
 detection, registration validation, and the system access checker (`reads`/`writes`). These are
 **tree-shaken out of production builds**, so treat "throws in dev" as a development tripwire, not a
-production guarantee. The scheduler's cycle detection is the one check that is always active.
+production guarantee. (Raw-source consumers — JSR/Deno — get `__DEV__ = true` by default; set
+`globalThis.__DEV__ = false` to opt out.) The scheduler's cycle detection and constructor-option
+validation (timestep, memory options, relation cardinality) are always active.
 
 ## Documentation
 

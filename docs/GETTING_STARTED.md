@@ -44,7 +44,7 @@ const IsEnemy = ecs.registerTag();
 const Dead = ecs.registerTag();
 ```
 
-Supported tags: `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`, `"u16"`, `"u32"`. `as const` on the array shorthand is required — without it TypeScript widens to `string[]` and per-field types are lost.
+Supported tags: `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`, `"u16"`, `"u32"`. `as const` on the array shorthand is optional for inline literals — the overload uses a `const` type parameter, so per-field types are preserved either way. It only matters when the field list is built in a separate variable, which otherwise widens to `string[]`.
 
 ## 4. Define Resources
 

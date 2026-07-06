@@ -558,7 +558,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** Whether this query carries only dense terms — the precondition for the
-	 * archetype-walk fast paths (`count`, `firstEntity`, `singleEntity`). */
+	 * archetype-walk fast paths (`entityCount`, `firstEntity`, `singleEntity`). */
 	private _isDenseOnly(): boolean {
 		return (
 			this._sparseInclude.length === 0 &&

@@ -45,10 +45,10 @@ Representative renames (not exhaustive — the rule is universal): `register_com
 `register_system` → `registerSystem`, `add_systems` → `addSystems`, `remove_system` → `removeSystem`,
 `register_event` → `registerEvent`, `register_signal` → `registerSignal`, `register_resource` →
 `registerResource`, `set_resource` → `setResource`, `has_resource` → `hasResource`, `world_tick` →
-`worldTick`, `entity_count` → `entityCount`, `entity_ids` → `entityIds`.
+`ecsTick` (on the system context), `entity_count` → `entityCount`, `entity_ids` → `entityIds`.
 
-A `vitest` **casing guard** in the repo fails any regression back to snake_case, so the camelCase
-surface is the invariant, not a transitional state.
+The camelCase surface is the invariant, not a transitional state — 0.4 shipped no snake_case
+aliases.
 
 ### Names that changed the *word*, not just the casing
 
@@ -97,7 +97,8 @@ The default profile is **pure-TS heap** — a plain resizable `ArrayBuffer`, so 
 and no cross-origin isolation (COOP/COEP). Opt into the shared-memory profile (worker offload / a WASM
 compute backend) with `new ECS({ memory: { shared: {} } })` plus the `@oasys/oecs/shared` entry point.
 The `memory` field is one of the `budget` / `maxBytes` / `columnCapacity` / `shared` / `wasm` /
-`allocator` arms; `resolveECSMemory(...)` is exported if you want to inspect what an intent resolves to.
+`allocator` arms; `resolveECSMemory(...)` is exported if you want to inspect what an intent resolves to
+(since 0.5.0 it imports from `@oasys/oecs/internal`, not the package root).
 
 ---
 
@@ -310,7 +311,8 @@ Adopt as useful:
   immediate `world.addComponent`.
 - **Host → ECS write seam** — `installHostCommandSeam(world)`, `HostCommand`s applied off-schedule via
   a blessed `exclusive` system; plus record/replay (`HostCommandRecorder`, `replayCommandLog`,
-  `serializeCommandLog`) and a cross-thread ring transport (`HostCommandDispatcher`).
+  `serializeCommandLog`) and a cross-thread ring transport (`HostCommandDispatcher` — since
+  0.5.0 imported from `@oasys/oecs/internal`).
 - **Frame trace** — `world.setTrace(sink)` + `FrameTraceRecorder` for a structured per-frame event
   stream (`__DEV__`-gated).
 - **Compute backend seam** — `world.attachBackend(backend)` to run a system's body on a compiled
