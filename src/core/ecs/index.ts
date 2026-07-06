@@ -201,6 +201,13 @@ export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./resume";
 // through. Mutation-default accessors are unsuffixed (`ctx.ref`,
 // `Archetype.getColumn`); the read-only variants carry an explicit `_read`
 // suffix (`ctx.refRead`, `Archetype.getColumnRead`). See PATTERNS §10c.
+//
+// The column-cursor family shares this convention in a second spelling: the
+// eachChunk cursors `cols.mut(def)` / `cols.read(def)` are the explicit-verb
+// pair, and `ctx.ref` / `ctx.refRead` are their outside-iteration single-entity
+// analog. All are DEF-FIRST (`ref(Pos, e)`, `cols.mut(Pos)`) — a cursor is named
+// for what it points at — deliberately unlike the entity-first `getField(e, def,
+// field)` reader family. See docs/api/refs.md and queries.md.
 export type { ComponentRef, ReadonlyComponentRef } from "./ref";
 
 // Queries

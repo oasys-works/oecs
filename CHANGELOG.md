@@ -49,12 +49,43 @@ Cheap alignments from a public-API vocabulary audit that followed the grammar un
 - Source-compatible widenings: `ecs.despawn`, `ecs.removeSystem`, and the `HostCommandQueue`
   mutators now return `this` for chaining.
 
-Deeper consistency questions (the `ref`/`refRead` argument order, `ctx.resource` →
-`getResource`, `HostCommandQueue.add`/`remove`, and the spawn-family in-system guard) are left
-as a tracked follow-up investigation.
+The `ref` / `refRead` argument order was reviewed and **deliberately kept** def-first
+(`ctx.ref(def, entityId)`): these are the outside-iteration members of the `cols.mut` /
+`cols.read` column-cursor family, so def-first is the cursor convention, not an inconsistency
+to fix — flipping it would align with `getField` while breaking alignment with `cols.mut`.
+Documented as such (`refs.md`, `queries.md`) rather than flipped.
+
+### Changed (breaking) — host-write-seam verb grammar
+
+The host-write-seam handles are namespaced command buffers, so they drop the component noun
+to match `ctx.commands.add` / `remove` — and their own already-bare
+`spawn`/`despawn`/`disable`/`enable`/`setField`:
+
+- `HostCommandQueue.addComponent` / `removeComponent` → `add` / `remove`.
+- `Editor` and `TransactionBuilder` `.addComponent` / `.removeComponent` → `add` / `remove`
+  (the two surfaces are designed to match, so they move together).
+- The editor extension's entity-id parameters and its `FieldReader` type now read `entityId`,
+  completing the core's `eid` → `entityId` pass.
+
+The wire-format `kind` discriminants (`"add_component"` / `"remove_component"`), the ring
+codecs, and the `HostCommand` record's `eid` field are unchanged — transport vocabulary.
+
+### Changed (breaking) — `ctx.getResource`
+
+The in-system resource getter is now `ctx.getResource(key)` (was the verb-less `ctx.resource(key)`),
+matching its flat-surface siblings `setResource` / `removeResource` / `hasResource` and the
+`getField` / `setField` / `hasComponent` convention. The rule is now explicit: the flat `ctx`
+surface verbs every accessor; the grouped `ecs.resources` facade drops the noun (`get` / `set` /
+`remove` / `has`) because its receiver already names it. `ConditionContext` (run-condition
+predicates) moves in lockstep.
 
 ### Fixed
 
+- The immediate host spawn family (`spawn` / `spawnBundle` / `spawnMany`) now throws in DEV
+  when called from inside a system body — redirecting to `ctx.commands.spawn` — like every
+  other immediate host structural mutator. Previously it was silently unguarded (the archetype
+  iteration guard does not cover the append path), a live mid-iteration footgun; its guard
+  docstring's "one rule for every host mutator" claim is now true.
 - Added explicit public `QueryCache` cache-map type annotations so JSR publish passes
   slow-type validation and can generate package declarations cleanly.
 

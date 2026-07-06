@@ -234,7 +234,7 @@ describe("Run conditions", () => {
 		// Hand-rolled condition that reads Flag but forgets to declare it.
 		const undeclared: RunCondition = {
 			name: "reads_undeclared",
-			evaluate: (ctx) => ctx.resource(Flag) === true
+			evaluate: (ctx) => ctx.getResource(Flag) === true
 		};
 		const sys = world.registerSystem((/* ctx */) => {});
 		world.addSystems(SCHEDULE.UPDATE, { system: sys, runIf: undeclared });

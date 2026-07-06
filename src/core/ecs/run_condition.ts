@@ -47,7 +47,7 @@ export interface ConditionContext {
 	/** Current ECS tick — the deterministic clock built-ins key off. */
 	readonly ecsTick: number;
 	/** Read a resource value (checked against `resourceReads` in `DEV`). */
-	resource<T>(key: ResourceKey<T>): T;
+	getResource<T>(key: ResourceKey<T>): T;
 	/** Membership probe for a resource — unchecked, mirrors `hasComponent`. */
 	hasResource<T>(key: ResourceKey<T>): boolean;
 }
@@ -90,7 +90,7 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
 	return {
 		name: `runIfResourceEq(${(key as unknown as symbol).description ?? "?"})`,
 		resourceReads: [key],
-		evaluate: (ctx) => ctx.resource(key) === expected
+		evaluate: (ctx) => ctx.getResource(key) === expected
 	};
 }
 

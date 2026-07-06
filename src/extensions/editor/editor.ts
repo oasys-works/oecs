@@ -54,7 +54,7 @@ import type {
  * to the reactive read channel (e.g. a `reactiveMap`/`reactiveStruct` projection)
  * or to `ecs.getField`; `undefined` for an unknown slot falls back to `0`.
  */
-export type FieldReader = (eid: EntityID, def: ComponentDef, field: string) => number | undefined;
+export type FieldReader = (entityId: EntityID, def: ComponentDef, field: string) => number | undefined;
 
 /**
  * A reified, undoable unit of editor work: the `forward` commands and their
@@ -74,8 +74,8 @@ interface MutableTxn {
 }
 
 /** `(entity, component, field)` → string key for the setField shadow. */
-function fieldKey(eid: EntityID, def: ComponentHandle, field: string): string {
-	return `${eid}:${def.id}:${field}`;
+function fieldKey(entityId: EntityID, def: ComponentHandle, field: string): string {
+	return `${entityId}:${def.id}:${field}`;
 }
 
 /** Builder → in-flight transaction. Module-scoped so the mutable escape hatch
@@ -118,9 +118,9 @@ export class TransactionBuilder {
 	 */
 	spawn<Defs extends readonly ComponentDef[]>(
 		components: SpawnEntries<Defs>,
-		onSpawned?: (eid: EntityID) => void
+		onSpawned?: (entityId: EntityID) => void
 	): this;
-	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): this {
+	spawn(components: readonly SpawnEntry[], onSpawned?: (entityId: EntityID) => void): this {
 		// One STABLE inverse object whose `eid` the finalizer MUTATES in place, rather
 		// than replacing the slot with a fresh object. `undo()` enqueues this object by
 		// reference, and `applyHostCommand` reads `eid` at apply time — so a second
@@ -137,104 +137,106 @@ export class TransactionBuilder {
 		this._txn.forward.push({
 			kind: "spawn",
 			components,
-			onSpawned: (eid) => {
-				inverseDespawn.eid = eid;
-				onSpawned?.(eid);
+			onSpawned: (entityId) => {
+				inverseDespawn.eid = entityId;
+				onSpawned?.(entityId);
 			}
 		});
 		return this;
 	}
 
 	/**
-	 * Despawn `eid`. Inverse: respawn from `restore` (the components+values to
+	 * Despawn `entityId`. Inverse: respawn from `restore` (the components+values to
 	 * recreate — read them from the channel before despawning). Undo respawns the
 	 * DATA, not the identity: the new entity gets a fresh id, and the respawn's
 	 * `onSpawned` rewrites this despawn's target so redo removes the respawned
 	 * entity rather than the dead original.
 	 */
-	despawn<Defs extends readonly ComponentDef[]>(eid: EntityID, restore: SpawnEntries<Defs>): this;
-	despawn(eid: EntityID, restore: readonly SpawnEntry[]): this {
+	despawn<Defs extends readonly ComponentDef[]>(entityId: EntityID, restore: SpawnEntries<Defs>): this;
+	despawn(entityId: EntityID, restore: readonly SpawnEntry[]): this {
 		// Symmetric with `spawn`: one STABLE forward despawn whose `eid` the respawn's
 		// `onSpawned` mutates in place, so a redo enqueued before the respawn applies
 		// still despawns the RESPAWNED entity (resolved at apply time), not the dead
 		// original. #719
-		const forwardDespawn: { kind: "despawn"; eid: EntityID } = { kind: "despawn", eid };
+		const forwardDespawn: { kind: "despawn"; eid: EntityID } = { kind: "despawn", eid: entityId };
 		this._txn.forward.push(forwardDespawn);
 		this._txn.inverse.push({
 			kind: "spawn",
 			components: restore,
-			onSpawned: (newEid) => {
-				forwardDespawn.eid = newEid;
+			onSpawned: (newEntityId) => {
+				forwardDespawn.eid = newEntityId;
 			}
 		});
 		return this;
 	}
 
 	/**
-	 * Set `field` of `def` on `eid` to `value`. Inverse: set it back to the value
+	 * Set `field` of `def` on `entityId` to `value`. Inverse: set it back to the value
 	 * this edit replaced — read from the staged overlay / shadow (so stacked edits,
 	 * within one build or before a commit, invert correctly) or, failing that, the
 	 * read channel (`0` if unknown).
 	 */
 	setField<S extends ComponentSchema>(
-		eid: EntityID,
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		field: string & keyof S,
 		value: number
 	): this {
-		const key = fieldKey(eid, def, field);
+		const key = fieldKey(entityId, def, field);
 		const old =
 			this.staged.get(key) ??
 			this.shadow.get(key) ??
-			this.readField(eid, def as ComponentDef, field) ??
+			this.readField(entityId, def as ComponentDef, field) ??
 			0;
 		this.staged.set(key, value);
-		this._txn.forward.push({ kind: "set_field", eid, def: def as ComponentDef, field, value });
-		this._txn.inverse.push({ kind: "set_field", eid, def: def as ComponentDef, field, value: old });
+		this._txn.forward.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value });
+		this._txn.inverse.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value: old });
 		return this;
 	}
 
-	/** Add `def` (with complete `values`) to `eid`. Inverse: remove it. */
-	addComponent<S extends ComponentSchema>(
-		eid: EntityID,
+	/** Attach `def` (with complete `values`) to `entityId`. Inverse: remove it.
+	 * Bare `add` — the namespaced-handle grammar (matches `ctx.commands.add` and
+	 * the queue's `add`), not `addComponent`. */
+	add<S extends ComponentSchema>(
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
 	): this {
-		this._txn.forward.push({ kind: "add_component", eid, def: def as ComponentDef, values });
-		this._txn.inverse.push({ kind: "remove_component", eid, def: def as ComponentDef });
+		this._txn.forward.push({ kind: "add_component", eid: entityId, def: def as ComponentDef, values });
+		this._txn.inverse.push({ kind: "remove_component", eid: entityId, def: def as ComponentDef });
 		return this;
 	}
 
 	/**
-	 * Remove `def` from `eid`. Inverse: re-add it from `restore` (the field values
-	 * to recreate — read them from the channel before removing).
+	 * Detach `def` from `entityId`. Inverse: re-add it from `restore` (the field values
+	 * to recreate — read them from the channel before removing). Bare `remove` — see `add`.
 	 */
-	removeComponent<S extends ComponentSchema>(
-		eid: EntityID,
+	remove<S extends ComponentSchema>(
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		restore: CompleteFieldValues<S>
 	): this {
-		this._txn.forward.push({ kind: "remove_component", eid, def: def as ComponentDef });
+		this._txn.forward.push({ kind: "remove_component", eid: entityId, def: def as ComponentDef });
 		this._txn.inverse.push({
 			kind: "add_component",
-			eid,
+			eid: entityId,
 			def: def as ComponentDef,
 			values: restore
 		});
 		return this;
 	}
 
-	/** Disable `eid`. Inverse: enable it. */
-	disable(eid: EntityID): this {
-		this._txn.forward.push({ kind: "disable", eid });
-		this._txn.inverse.push({ kind: "enable", eid });
+	/** Disable `entityId`. Inverse: enable it. */
+	disable(entityId: EntityID): this {
+		this._txn.forward.push({ kind: "disable", eid: entityId });
+		this._txn.inverse.push({ kind: "enable", eid: entityId });
 		return this;
 	}
 
-	/** Enable `eid`. Inverse: disable it. */
-	enable(eid: EntityID): this {
-		this._txn.forward.push({ kind: "enable", eid });
-		this._txn.inverse.push({ kind: "disable", eid });
+	/** Enable `entityId`. Inverse: disable it. */
+	enable(entityId: EntityID): this {
+		this._txn.forward.push({ kind: "enable", eid: entityId });
+		this._txn.inverse.push({ kind: "disable", eid: entityId });
 		return this;
 	}
 }
@@ -276,60 +278,60 @@ export class Editor {
 	/** Spawn `components` as its own undo entry. `onSpawned` reports the new id. */
 	spawn<Defs extends readonly ComponentDef[]>(
 		components: SpawnEntries<Defs>,
-		onSpawned?: (eid: EntityID) => void
+		onSpawned?: (entityId: EntityID) => void
 	): EditorTransaction;
 	spawn(
 		components: readonly SpawnEntry[],
-		onSpawned?: (eid: EntityID) => void
+		onSpawned?: (entityId: EntityID) => void
 	): EditorTransaction {
 		return this.transaction((tx) => tx.spawn(components, onSpawned));
 	}
 
-	/** Despawn `eid` as its own undo entry; `restore` recreates it on undo. */
+	/** Despawn `entityId` as its own undo entry; `restore` recreates it on undo. */
 	despawn<Defs extends readonly ComponentDef[]>(
-		eid: EntityID,
+		entityId: EntityID,
 		restore: SpawnEntries<Defs>
 	): EditorTransaction;
-	despawn(eid: EntityID, restore: readonly SpawnEntry[]): EditorTransaction {
-		return this.transaction((tx) => tx.despawn(eid, restore));
+	despawn(entityId: EntityID, restore: readonly SpawnEntry[]): EditorTransaction {
+		return this.transaction((tx) => tx.despawn(entityId, restore));
 	}
 
 	/** Set one field as its own undo entry. */
 	setField<S extends ComponentSchema>(
-		eid: EntityID,
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		field: string & keyof S,
 		value: number
 	): EditorTransaction {
-		return this.transaction((tx) => tx.setField(eid, def, field, value));
+		return this.transaction((tx) => tx.setField(entityId, def, field, value));
 	}
 
-	/** Add a component as its own undo entry. */
-	addComponent<S extends ComponentSchema>(
-		eid: EntityID,
+	/** Attach a component as its own undo entry. Bare `add` (see `TransactionBuilder.add`). */
+	add<S extends ComponentSchema>(
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
 	): EditorTransaction {
-		return this.transaction((tx) => tx.addComponent(eid, def, values));
+		return this.transaction((tx) => tx.add(entityId, def, values));
 	}
 
-	/** Remove a component as its own undo entry; `restore` re-adds it on undo. */
-	removeComponent<S extends ComponentSchema>(
-		eid: EntityID,
+	/** Detach a component as its own undo entry; `restore` re-adds it on undo. Bare `remove`. */
+	remove<S extends ComponentSchema>(
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		restore: CompleteFieldValues<S>
 	): EditorTransaction {
-		return this.transaction((tx) => tx.removeComponent(eid, def, restore));
+		return this.transaction((tx) => tx.remove(entityId, def, restore));
 	}
 
-	/** Disable `eid` as its own undo entry. */
-	disable(eid: EntityID): EditorTransaction {
-		return this.transaction((tx) => tx.disable(eid));
+	/** Disable `entityId` as its own undo entry. */
+	disable(entityId: EntityID): EditorTransaction {
+		return this.transaction((tx) => tx.disable(entityId));
 	}
 
-	/** Enable `eid` as its own undo entry. */
-	enable(eid: EntityID): EditorTransaction {
-		return this.transaction((tx) => tx.enable(eid));
+	/** Enable `entityId` as its own undo entry. */
+	enable(entityId: EntityID): EditorTransaction {
+		return this.transaction((tx) => tx.enable(entityId));
 	}
 
 	/**
@@ -408,8 +410,8 @@ export class Editor {
 	/** Read one committed `(entity, component, field)` slot through the reader
 	 * this editor was constructed with — the default read for `fieldHandle`
 	 * when no channel thunk is supplied (M11). */
-	committedField(eid: EntityID, def: ComponentDef, field: string): number | undefined {
-		return this.readField(eid, def, field);
+	committedField(entityId: EntityID, def: ComponentDef, field: string): number | undefined {
+		return this.readField(entityId, def, field);
 	}
 
 	/**
@@ -427,8 +429,8 @@ export class Editor {
 	 * the next edit to the slot. `value` (the read channel) is always the source of
 	 * truth; `pending` is only the optimistic bridge.
 	 */
-	pendingField(eid: EntityID, def: ComponentHandle, field: string): number | undefined {
-		const key = fieldKey(eid, def, field);
+	pendingField(entityId: EntityID, def: ComponentHandle, field: string): number | undefined {
+		const key = fieldKey(entityId, def, field);
 		const shadowed = this.shadow.get(key);
 		if (shadowed === undefined) return undefined;
 		// Reconcile-on-read: the committed channel reporting the shadowed value means
@@ -437,7 +439,7 @@ export class Editor {
 		// now returns the same number the shadow held. An `undefined` committed read
 		// means the slot no longer exists (entity despawned / component removed):
 		// prune too, or the entry echoes a value for a dead slot forever and leaks.
-		const committed = this.readField(eid, def as ComponentDef, field);
+		const committed = this.readField(entityId, def as ComponentDef, field);
 		if (committed === shadowed || committed === undefined) {
 			this.shadow.delete(key);
 			return undefined;

@@ -300,7 +300,7 @@ for (let i = 0; i < dmg.length; i++) {
   const amount = dmg.amount[i];
 }
 
-const t = ctx.resource(Time);            // live reference, mutate in place
+const t = ctx.getResource(Time);         // live reference, mutate in place
 t.delta = dt;
 t.elapsed += dt;
 ctx.setResource(Score, { value: 0 });   // or replace the whole value
@@ -387,7 +387,7 @@ const tickTime = ecs.registerSystem({
   reads: [], writes: [],
   resourceWrites: [Time],
   fn: (ctx, dt) => {
-    const t = ctx.resource(Time);
+    const t = ctx.getResource(Time);
     t.delta = dt;
     t.elapsed += dt;
   },

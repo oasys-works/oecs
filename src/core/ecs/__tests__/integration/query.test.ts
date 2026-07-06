@@ -159,10 +159,16 @@ describe("ECS query (integration)", () => {
 	it("every immediate host structural mutator throws from inside a system in DEV", () => {
 		// The despawn guard, extended to the whole immediate host mutation
 		// surface: mid-system these ops can move/swap rows a running query is
-		// walking AND are invisible to observers, so the receiver rule ("inside
-		// a system, use ctx.commands") is enforced wholesale, not just where the
-		// archetype-level iteration guard happens to catch it.
+		// walking (or, for the spawn family, append-and-realloc under it) AND are
+		// invisible to observers, so the receiver rule ("inside a system, use
+		// ctx.commands") is enforced wholesale, not just where the archetype-level
+		// iteration guard happens to catch it. The spawn family (spawn/spawnBundle/
+		// spawnMany) redirects to ctx.commands.spawn — its append paths (addEntity*)
+		// skip even the _iterDepth guard, so this throw is the only backstop.
 		const ops: [string, (world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void, RegExp][] = [
+			["spawn", (w) => void w.spawn(), /host spawn is immediate.*ctx\.commands\.spawn/],
+			["spawnBundle", (w, _e, d) => void w.spawnBundle(d({ x: 1 })), /host spawnBundle is immediate.*ctx\.commands\.spawn/],
+			["spawnMany", (w, _e, d) => void w.spawnMany(w.template(d({ x: 1 })), 2), /host spawnMany is immediate.*ctx\.commands\.spawn/],
 			["addComponent", (w, e, d) => void w.addComponent(e, d, { x: 1 }), /host addComponent is immediate.*ctx\.commands\.add/],
 			["addComponents", (w, e, d) => void w.addComponents(e, d({ x: 1 })), /host addComponents is immediate.*ctx\.commands\.add/],
 			["removeComponent", (w, e, d) => void w.removeComponent(e, d), /host removeComponent is immediate.*ctx\.commands\.remove/],

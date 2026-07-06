@@ -21,6 +21,9 @@ type ReadonlyComponentRef<S> = {  readonly [K in keyof S]: number };  // get onl
 
 `ctx.ref` returns a mutable ref; `ctx.refRead` a read-only one. Mutability is in the name — there is no `refMut`.
 
+> [!NOTE]
+> **Why `def` comes first.** `ref` / `refRead` are the single-entity members of the **column-cursor family**, not the entity-accessor family — they are the *outside-iteration* analog of the in-loop cursors [`cols.mut(def)` / `cols.read(def)`](./queries.md#eachchunk--mutable-hot-path). All four share the same **mutable-default vs `Read`-suffix** split *and* the same **def-first** order: `ctx.ref(Pos, e)` reads as "a cursor onto `Pos`, for entity `e`," consistent with `cols.mut(Pos)`. That is deliberately *not* the entity-first order of `getField(e, def, field)` — those belong to a different family (a per-call reader, paid every access; a ref is created once and reused).
+
 The accessor does its archetype + row + column lookup **once, at creation**; each subsequent field read or write is a single typed-array index. Creating a ref is cheap (one `Object.create` over a cached prototype), so per-entity work stays fast.
 
 > [!IMPORTANT]

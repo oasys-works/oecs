@@ -226,7 +226,7 @@ export class ECSResources {
 	 * @example
 	 * const GameTime = resourceKey<{ elapsed: number }>("GameTime");
 	 * ecs.resources.register(GameTime, { elapsed: 0 });
-	 * ecs.resources.get(GameTime).elapsed; // or ctx.resource(GameTime) inside a system
+	 * ecs.resources.get(GameTime).elapsed; // or ctx.getResource(GameTime) inside a system
 	 */
 	public register<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
 		if (DEV && dispatchTrace.isActive()) {

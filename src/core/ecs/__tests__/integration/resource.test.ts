@@ -116,7 +116,7 @@ describe("Resource system", () => {
 		const sys = world.registerSystem({
 			...openAccess([], [Config]),
 			fn(ctx: SystemContext) {
-				readSpeed = ctx.resource(Config).speed;
+				readSpeed = ctx.getResource(Config).speed;
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -148,7 +148,7 @@ describe("Resource system", () => {
 		const sys = world.registerSystem({
 			...openAccess([], [Counter]),
 			fn(ctx: SystemContext) {
-				ctx.resource(Counter).value++;
+				ctx.getResource(Counter).value++;
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -284,7 +284,7 @@ describe("Resource lifecycle — remove / re-insert (#798)", () => {
 		const sys = world.registerSystem({
 			...openAccess([], [Mode]),
 			fn(ctx: SystemContext) {
-				seen.push(ctx.hasResource(Mode) ? ctx.resource(Mode).phase : null);
+				seen.push(ctx.hasResource(Mode) ? ctx.getResource(Mode).phase : null);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

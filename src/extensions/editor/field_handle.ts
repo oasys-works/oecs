@@ -13,7 +13,7 @@
  * The read side is a caller-supplied thunk, NOT a direct kernel import: the
  * handle stays framework-agnostic (no `solid-js`, no reactive-kernel dependency),
  * and the caller wires it to whatever channel it already has —
- * `() => sync.map.get(eid)?.x`, `() => struct.x`, etc. Read it inside a tracking
+ * `() => sync.map.get(entityId)?.x`, `() => struct.x`, etc. Read it inside a tracking
  * scope (a Solid `createMemo`/`<Index>` body, an `effect`) and the handle's value
  * tracks that channel; the write lands on the NEXT tick (the bus drains at the
  * schedule head), at which point the same channel re-publishes the new value.
@@ -48,9 +48,9 @@ export interface FieldHandle {
 }
 
 /**
- * Build a {@link FieldHandle} for one `(eid, def, field)` slot. `read` is the
+ * Build a {@link FieldHandle} for one `(entityId, def, field)` slot. `read` is the
  * tracked read of the reactive channel for this field (e.g.
- * `() => sync.map.get(eid)?.x`); `set` routes through `editor.setField`, so the
+ * `() => sync.map.get(entityId)?.x`); `set` routes through `editor.setField`, so the
  * edit is queued, batched, and undoable.
  *
  * `read` is optional (M11): omitted, the handle reads through the editor's own
@@ -60,20 +60,20 @@ export interface FieldHandle {
  */
 export function fieldHandle<S extends ComponentSchema>(
 	editor: Editor,
-	eid: EntityID,
+	entityId: EntityID,
 	def: ComponentDef<S>,
 	field: string & keyof S,
 	read?: () => number | undefined
 ): FieldHandle {
 	return {
 		get value(): number | undefined {
-			return read !== undefined ? read() : editor.committedField(eid, def as ComponentDef, field);
+			return read !== undefined ? read() : editor.committedField(entityId, def as ComponentDef, field);
 		},
 		set(value: number): void {
-			editor.setField(eid, def, field, value);
+			editor.setField(entityId, def, field, value);
 		},
 		get pending(): number | undefined {
-			return editor.pendingField(eid, def, field);
+			return editor.pendingField(entityId, def, field);
 		}
 	};
 }

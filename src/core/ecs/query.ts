@@ -2092,7 +2092,12 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// Resources
 	// =======================================================
 
-	public resource<K extends ResourceKey<any>>(
+	/** Read a resource (declared in `resourceReads`). The flat `ctx` surface verbs
+	 * its accessors — `getResource`/`setResource`/`removeResource`/`hasResource`,
+	 * matching `getField`/`setField`/`hasComponent`. The grouped `ecs.resources`
+	 * facade drops the noun (`get`/`set`/`remove`/`has`) because its receiver
+	 * already names it. */
+	public getResource<K extends ResourceKey<any>>(
 		key: K & DeclaredResourceRead<A, K>
 	): ResourceValueOf<K> {
 		if (DEV) {

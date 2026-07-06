@@ -154,7 +154,7 @@ Every queue method enqueues. Nothing reaches the world until the apply system dr
 Important timing rules:
 
 - Install the seam before adding systems that should run after host writes, and before `startup()`.
-- Carry initial values in `spawnEntry` or `addComponent`. Do not enqueue `addComponent(e, C, ...)` and `setField(e, C, ...)` for the same component in the same frame; structural writes flush after the immediate `setField` drain.
+- Carry initial values in `spawnEntry` or `add`. Do not enqueue `add(e, C, ...)` and `setField(e, C, ...)` for the same component in the same frame; structural writes flush after the immediate `setField` drain.
 - Use `onSpawned` to learn ids created by queued spawns.
 
 See [host-write seam](./api/host-write-seam.md) for command logging, replay, and cross-thread ring transport.
@@ -168,7 +168,7 @@ import { Editor, fieldHandle } from "@oasys/oecs/editor";
 import { installHostCommandSeam } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);
-const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
+const editor = new Editor(queue, (entityId, def, field) => ecs.getField(entityId, def, field));
 const player = ecs.spawn();
 ecs.addComponent(player, Pos, { x: 0, y: 0 });
 
@@ -216,7 +216,7 @@ import { batchedUpdate, shallow, syncComponentToMap } from "@oasys/oecs/reactive
 
 const ecs = new ECS();
 const queue = installHostCommandSeam(ecs);
-const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
+const editor = new Editor(queue, (entityId, def, field) => ecs.getField(entityId, def, field));
 
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 const player = ecs.spawn();

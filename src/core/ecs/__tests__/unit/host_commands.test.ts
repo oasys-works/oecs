@@ -103,12 +103,12 @@ describe("host command seam — the vocabulary applies", () => {
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
 
-		commands.addComponent(e!, Tag, { v: 3 });
+		commands.add(e!, Tag, { v: 3 });
 		world.update(1 / 60);
 		expect(world.hasComponent(e!, Tag)).toBe(true);
 		expect(world.getField(e!, Tag, "v")).toBe(3);
 
-		commands.removeComponent(e!, Tag);
+		commands.remove(e!, Tag);
 		world.update(1 / 60);
 		expect(world.hasComponent(e!, Tag)).toBe(false);
 	});
@@ -360,22 +360,22 @@ describe("host command seam — set_field immediate/deferred ordering guard", ()
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
 
-		// addComponent defers to the flush; setField is immediate — so setting a
+		// add defers to the flush; setField is immediate — so setting a
 		// field on the just-added (not-yet-flushed) Vel is illegal. The guard turns
 		// the opaque getColumn failure into an actionable message rather than
 		// letting it surface deep in the column lookup.
-		commands.addComponent(e!, Vel, { vx: 0 });
+		commands.add(e!, Vel, { vx: 0 });
 		commands.setField(e!, Vel, "vx", 9);
 		expect(() => world.update(1 / 60)).toThrow(/same frame/);
 
-		// Carrying the value in addComponent (the documented path) works fine.
+		// Carrying the value in add (the documented path) works fine.
 		const { world: w2, Cell: Cell2, commands: c2 } = makeWorld();
 		const Vel2 = w2.registerComponent({ vx: "i32" }) as ComponentDef<{ vx: "i32" }>;
 		w2.startup();
 		let e2: EntityID | undefined;
 		c2.spawn([spawnEntry(Cell2, { x: 0, heat: 0 })], (id) => (e2 = id));
 		w2.update(1 / 60);
-		c2.addComponent(e2!, Vel2, { vx: 9 });
+		c2.add(e2!, Vel2, { vx: 9 });
 		expect(() => w2.update(1 / 60)).not.toThrow();
 		expect(w2.getField(e2!, Vel2, "vx")).toBe(9);
 	});

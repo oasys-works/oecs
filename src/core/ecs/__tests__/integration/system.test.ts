@@ -581,7 +581,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			// ctx annotated permissive (§typestate escape hatch): this system
 			// DELIBERATELY violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
-				ctx.resource(Res);
+				ctx.getResource(Res);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

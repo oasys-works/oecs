@@ -516,11 +516,11 @@ Resources are the right home for frame- or world-scoped singletons: time/delta, 
 ```ts
 const advanceTime = ecs.registerSystem({
   reads: [], writes: [], resourceReads: [Time], resourceWrites: [Time],
-  fn: (ctx, dt) => { const t = ctx.resource(Time); t.delta = dt; t.elapsed += dt; },
+  fn: (ctx, dt) => { const t = ctx.getResource(Time); t.delta = dt; t.elapsed += dt; },
 });
 ```
 
-Inside a system, resource access is declared and checked (`resourceReads` / `resourceWrites`). Resources return the same reference on every read — mutate an object resource through `ctx.resource(key)` and use `ctx.setResource` only to swap the whole value. `ctx.removeResource` frees the key for re-registration and fails closed on a missing key.
+Inside a system, resource access is declared and checked (`resourceReads` / `resourceWrites`). Resources return the same reference on every read — mutate an object resource through `ctx.getResource(key)` and use `ctx.setResource` only to swap the whole value. `ctx.removeResource` frees the key for re-registration and fails closed on a missing key.
 
 When they're the *wrong* tool: per-entity data (use components — resources aren't filterable, iterable, or tick-tracked), or a fake singleton entity carrying a `GlobalState` component. And resources are **excluded from `stateHash` and snapshot/restore** — sim-affecting state you need to reproduce must live in a component or be re-seeded after restore.
 
@@ -552,13 +552,13 @@ const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup(
 ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after installing the seam
 ecs.startup();
 
-queue.addComponent(entity, Health, { hp: 100 });
+queue.add(entity, Health, { hp: 100 });
 queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (id) => console.log("spawned", id));
 ecs.update(1 / 60);   // the apply system drains the queue at PRE_UPDATE
 ```
 
 > [!WARNING]
-> Install the seam **before** adding your own systems and **before `startup()`** — insertion order is what places the apply system at the phase head. `spawnEntry` values are typed as **complete** `FieldValues<S>`; pass every field even though the shared write path zero-fills omitted fields in untyped command data. And **don't add-then-set in the same frame**: `setField` applies immediately at the drain while structural commands are deferred to the phase flush, so `addComponent(e, C)` then `setField(e, C, …)` fails — carry the value in the `addComponent`/`spawnEntry`, or set it next frame. `onSpawned` is the only way to learn a spawned id.
+> Install the seam **before** adding your own systems and **before `startup()`** — insertion order is what places the apply system at the phase head. `spawnEntry` values are typed as **complete** `FieldValues<S>`; pass every field even though the shared write path zero-fills omitted fields in untyped command data. And **don't add-then-set in the same frame**: `setField` applies immediately at the drain while structural commands are deferred to the phase flush, so `add(e, C)` then `setField(e, C, …)` fails — carry the value in the `add`/`spawnEntry`, or set it next frame. `onSpawned` is the only way to learn a spawned id.
 
 The **editor** layer (`@oasys/oecs/editor`) adds undo/redo and two-way field handles on top of this queue — every edit is a transaction of forward + inverse commands, and undo is just another command on the same bus. Note that despawn → undo round-trips the *data* but re-spawns with a **fresh `EntityID`**; don't hold an old id across an undo of its despawn.
 
@@ -636,7 +636,7 @@ Prefer integration-style tests for your own code: construct a world, register wh
 
 **Calling immediate `ecs.*` structural ops from inside a system.** `ecs.addComponent` / `ecs.disable` bypass the deferred buffer and can shuffle archetype membership mid-iteration. Inside a system, use `ctx.commands`.
 
-**Add-then-set across the host seam in one frame.** `setField` drains immediately, structural commands defer to the phase flush — carry values in the `addComponent`/`spawnEntry`, or set next frame.
+**Add-then-set across the host seam in one frame.** `setField` drains immediately, structural commands defer to the phase flush — carry values in the `add`/`spawnEntry`, or set next frame.
 
 **Storing refs in plain objects.** A ref caches the entity's row location (archetype + row) and reads the columns live; the next `addComponent`/`despawn` can move the entity out from under that cached location. Rebuild refs each frame — it's near-free.
 

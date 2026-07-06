@@ -127,7 +127,7 @@ function hostSeamAssertions(): void {
 	queue.spawn([{ def: Frozen, values: { x: 1 } }]);
 
 	// @ts-expect-error — junk values on a tag via the singular enqueue
-	queue.addComponent(e, Frozen, { x: 1 });
+	queue.add(e, Frozen, { x: 1 });
 
 	// @ts-expect-error — junk values on a tag via the immediate world API
 	world.addComponent(e, Frozen, { x: 1 });
@@ -193,7 +193,7 @@ function typestateEnforcementAssertions(): void {
 			ctx.setSparseField(e, SPos, "x", 1);
 			void ctx.getSparseField(e, SPos, "x");
 			// Granted: declared resource read.
-			void ctx.resource(KeyA);
+			void ctx.getResource(KeyA);
 			// A narrowed context flows into a permissive helper unchanged.
 			permissiveHelper(ctx);
 
@@ -221,7 +221,7 @@ function typestateEnforcementAssertions(): void {
 			ctx.setResource(KeyA, { v: 1 });
 
 			// @ts-expect-error — KeyB is not declared at all
-			void ctx.resource(KeyB);
+			void ctx.getResource(KeyB);
 
 			// @ts-expect-error — wrong field on a declared component
 			ctx.getField(e, Pos, "vx");

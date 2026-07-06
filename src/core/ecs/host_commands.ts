@@ -133,11 +133,11 @@ export type HostCommand =
  * `spawn`, otherwise `undefined`.
  *
  * That immediate/deferred split is a sharp edge: a `setField` targeting a
- * component the entity does NOT yet have — because an `addComponent`/`spawn`
+ * component the entity does NOT yet have — because an `add`/`spawn`
  * enqueued in the SAME drain is still pending its flush — would otherwise fail
  * deep in `getColumn` with an opaque "component not registered". The `DEV`
  * guard below turns that into an actionable message. The fix is structural, not a
- * retry: pass the value in `addComponent`/`spawnEntry` (which carries complete
+ * retry: pass the value in `add`/`spawnEntry` (which carries complete
  * field values), or issue the `setField` on a later frame.
  */
 export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID | undefined {
@@ -217,7 +217,13 @@ export class HostCommandQueue {
 		return this;
 	}
 
-	addComponent<S extends ComponentSchema>(
+	/** Attach `def` (with complete `values`) to `entityId` (deferred to the
+	 * drain). The namespaced-handle grammar — the queue is a commands buffer, so
+	 * it drops the noun (`add`, not `addComponent`), matching `ctx.commands.add`
+	 * and the queue's own bare `spawn`/`despawn`/`disable`/`enable`. Values are
+	 * complete (transport carries explicit intent per field; see `spawnEntry`),
+	 * unlike the authoring-side bundle sugar. */
+	add<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
@@ -226,16 +232,18 @@ export class HostCommandQueue {
 		return this;
 	}
 
-	removeComponent(entityId: EntityID, def: ComponentDef): this {
+	/** Detach `def` from `entityId` (deferred to the drain). Bare `remove`
+	 * matching `ctx.commands.remove` — see `add`. */
+	remove(entityId: EntityID, def: ComponentDef): this {
 		this.queued.push({ kind: "remove_component", eid: entityId, def });
 		return this;
 	}
 
 	/** Set `field` of `def` on `entityId`. Applied IMMEDIATELY at the drain, unlike
 	 * the deferred structural ops — so `def` must already be on `entityId`. Do NOT
-	 * `addComponent`/`spawn` `def` and `setField` it in the same frame: the add is
+	 * `add`/`spawn` `def` and `setField` it in the same frame: the add is
 	 * still pending its flush when the immediate set runs (carry the value in
-	 * `addComponent`/`spawnEntry` instead). `applyHostCommand` throws an
+	 * `add`/`spawnEntry` instead). `applyHostCommand` throws an
 	 * actionable error in `DEV` if you do. */
 	setField<S extends ComponentSchema>(
 		entityId: EntityID,

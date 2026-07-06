@@ -24,7 +24,8 @@ type VelDef = ComponentDef<{ vx: "i32" }>;
  * channel in these core tests); `undefined` for a missing slot so the editor
  * falls back to `0`. */
 function makeReader(world: ECS): FieldReader {
-	return (eid, def, field) => (world.isAlive(eid) ? world.getField(eid, def, field) : undefined);
+	return (entityId, def, field) =>
+		world.isAlive(entityId) ? world.getField(entityId, def, field) : undefined;
 }
 
 function setup(): { world: ECS; Cell: CellDef; editor: Editor } {
@@ -164,7 +165,7 @@ describe("Editor — add/remove component round-trips", () => {
 		editor.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (e) => (id = e));
 		world.update(1 / 60);
 
-		editor.addComponent(id!, Vel, { vx: 7 });
+		editor.add(id!, Vel, { vx: 7 });
 		world.update(1 / 60);
 		expect(world.hasComponent(id!, Vel)).toBe(true);
 		expect(world.getField(id!, Vel, "vx")).toBe(7);
@@ -178,8 +179,8 @@ describe("Editor — add/remove component round-trips", () => {
 		expect(world.hasComponent(id!, Vel)).toBe(true);
 		expect(world.getField(id!, Vel, "vx")).toBe(7);
 
-		// removeComponent carries the values to restore on undo.
-		editor.removeComponent(id!, Vel, { vx: 7 });
+		// remove carries the values to restore on undo.
+		editor.remove(id!, Vel, { vx: 7 });
 		world.update(1 / 60);
 		expect(world.hasComponent(id!, Vel)).toBe(false);
 

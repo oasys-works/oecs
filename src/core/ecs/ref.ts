@@ -18,6 +18,13 @@
  * not mutating. The read-only typing (`ReadonlyComponentRef`) is *advisory* —
  * see the note on that type below.
  *
+ * Argument order is DEF-FIRST — `ref(Pos, e)`, not `ref(e, Pos)` — because a
+ * ref is a single-entity member of the column-cursor family, the
+ * outside-iteration analog of `cols.mut(Pos)` / `cols.read(Vel)` (query.ts).
+ * It shares that family's mutable-default/`Read`-suffix split AND its def-first
+ * order; it deliberately does NOT follow the entity-first `getField(e, def,
+ * field)` reader family (a per-call reader vs a create-once, reused cursor).
+ *
  * Usage (inside a system):
  *
  *   const pos = ctx.ref(Pos, entity);       // mutable (default) — bumps change tick

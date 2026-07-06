@@ -14,7 +14,7 @@ ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after inst
 ecs.startup();
 
 // From your UI / editor / network handler, any time:
-queue.addComponent(entity, Health, { hp: 100 });
+queue.add(entity, Health, { hp: 100 });
 queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (id) => console.log("spawned", id));
 
 ecs.update(1 / 60);   // the apply system drains the queue at PRE_UPDATE
@@ -51,8 +51,8 @@ Every method **enqueues** — nothing reaches the `ECS` until the apply system d
 ```ts
 spawn(components: readonly SpawnEntry[], onSpawned?: (entityId: EntityID) => void): this;
 despawn(entityId): this;
-addComponent<S>(entityId, def, values: CompleteFieldValues<S>): this;
-removeComponent(entityId, def): this;
+add<S>(entityId, def, values: CompleteFieldValues<S>): this;   // bare verb — namespaced-handle grammar (cf. ctx.commands.add)
+remove(entityId, def): this;
 setField<S>(entityId, def, field, value): this;
 disable(entityId): this;   enable(entityId): this;
 push(cmd: HostCommand): this;   // enqueue pre-built command data (codec / replay / editor path)
@@ -63,7 +63,7 @@ clear(): number;                // drop every buffered command WITHOUT applying;
 `clear` is for abandoning queued edits (e.g. on a scene unload) — it does not touch commands already drained into the world.
 
 > [!WARNING]
-> **Don't add-then-set in the same frame.** `setField` is applied **immediately** at the drain, but structural commands (`spawn`/`addComponent`/…) are **deferred** to the phase flush. So `addComponent(e, C)` then `setField(e, C, …)` in one frame fails — the add is still pending when the set runs (dev throws an actionable `COMPONENT_NOT_REGISTERED`). Carry the value in the `addComponent`/`spawnEntry` (which take complete field values), or `setField` next frame.
+> **Don't add-then-set in the same frame.** `setField` is applied **immediately** at the drain, but structural commands (`spawn`/`add`/…) are **deferred** to the phase flush. So `add(e, C)` then `setField(e, C, …)` in one frame fails — the add is still pending when the set runs (dev throws an actionable `COMPONENT_NOT_REGISTERED`). Carry the value in the `add`/`spawnEntry` (which take complete field values), or `setField` next frame.
 
 > [!NOTE]
 > `onSpawned` is the **only** way to learn a spawned id — the create is deferred from the host's point of view, so the id doesn't exist until the drain. The callback runs after the id is created and after its component adds have been queued, but before those adds flush; commands that the callback enqueues run on the *next* drain.

@@ -589,6 +589,11 @@ export class ECS implements QueryResolver {
 		template?: Template<Defs>,
 		overrides?: TemplateOverrides<Defs>
 	): EntityID {
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"spawn",
+				"ctx.commands.spawn (deferred to the phase flush)"
+			);
 		if (template === undefined) return this.store.createEntity();
 		return this.store.spawn(template, overrides);
 	}
@@ -602,10 +607,21 @@ export class ECS implements QueryResolver {
 	 * immediately; a single combined-archetype insertion (one transition instead
 	 * of one-per-component) is a later optimization — for now this mirrors the
 	 * per-component `addComponent` path (unlike `addComponents`, which batches).
+	 *
+	 * Immediate — inside a system use the deferred `ctx.commands.spawn(...)`
+	 * (calling this from a system body throws in DEV). Note the redirect trades
+	 * timing: `commands.spawn` returns the id now but defers the attaches to the
+	 * phase flush, so the entity sits in its empty/partial archetype until then —
+	 * unlike `spawnBundle`'s immediate, fully-populated archetype.
 	 */
 	public spawnBundle<Items extends readonly BundleOrDef[]>(
 		...items: StrictBundles<Items>
 	): EntityID {
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"spawnBundle",
+				"ctx.commands.spawn (deferred to the phase flush)"
+			);
 		const e = this.store.createEntity();
 		for (let i = 0; i < items.length; i++) {
 			const item = items[i] as BundleOrDef;
@@ -616,15 +632,37 @@ export class ECS implements QueryResolver {
 		return e;
 	}
 
+	/** Bulk-spawn `count` entities from `template`, optionally applying one
+	 * shared `overrides` object to every spawned row (same typed keys as
+	 * `spawn`). Field writes are O(columns) (one `TypedArray.fill` per
+	 * column), not O(count×columns). Returns the new ids in spawn order.
+	 * Immediate — inside a system use `ctx.commands.spawn` per entity (calling
+	 * this from a system body throws in DEV). */
+	public spawnMany<Defs extends readonly ComponentDef[]>(
+		template: Template<Defs>,
+		count: number,
+		overrides?: TemplateOverrides<Defs>
+	): EntityID[] {
+		if (DEV)
+			this._assertHostMutationOutsideSystem(
+				"spawnMany",
+				"ctx.commands.spawn (deferred to the phase flush)"
+			);
+		return this.store.spawnMany(template, count, overrides);
+	}
+
 	/** DEV-only: throw when an *immediate* host structural mutator is called
 	 * from inside one of THIS world's system bodies (or an observer / onAdded
 	 * hook — they run in the same access spans). One rule for every host
-	 * mutator, not just despawn: an immediate structural op mid-schedule can
-	 * move or swap rows a running query is walking, and it is invisible to
-	 * observers. The archetype-level `_iterDepth` guard only catches mutations
-	 * touching the archetype currently being iterated — an op landing elsewhere
-	 * would silently skip observers, so the receiver rule ("inside a system,
-	 * use ctx.commands") is enforced wholesale here.
+	 * structural mutator — despawn, add/remove(Components), batchAdd/Remove,
+	 * disable/enable, AND the spawn family (spawn/spawnBundle/spawnMany): an
+	 * immediate structural op mid-schedule can move or swap rows a running query
+	 * is walking — or, for a spawn-append into that archetype, trip a column
+	 * realloc under it — and it is invisible to observers. The archetype-level
+	 * `_iterDepth` guard only catches mutations touching the archetype currently
+	 * being iterated (and the append paths skip even that), so an op landing
+	 * elsewhere would silently skip observers; the receiver rule ("inside a
+	 * system, use ctx.commands") is enforced wholesale here.
 	 *
 	 * `_updating` scopes the guard to THIS world: the accessCheck slot is
 	 * process-global, so without it a system of world A mutating world B (a
@@ -1395,18 +1433,6 @@ export class ECS implements QueryResolver {
 	/** Register a sparse tag (empty schema) — membership only, no data. */
 	public registerSparseTag(): SparseComponentDef<Record<string, never>> {
 		return this.store.registerSparseComponent({} as Record<string, never>);
-	}
-
-	/** Bulk-spawn `count` entities from `template`, optionally applying one
-	 * shared `overrides` object to every spawned row (same typed keys as
-	 * `spawn`). Field writes are O(columns) (one `TypedArray.fill` per
-	 * column), not O(count×columns). Returns the new ids in spawn order. */
-	public spawnMany<Defs extends readonly ComponentDef[]>(
-		template: Template<Defs>,
-		count: number,
-		overrides?: TemplateOverrides<Defs>
-	): EntityID[] {
-		return this.store.spawnMany(template, count, overrides);
 	}
 
 	public isAlive(entityId: EntityID): boolean {

@@ -10,7 +10,7 @@ import { installHostCommandSeam } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);
 // readField: how the editor reads current values to build inverses (from your read channel)
-const editor = new Editor(queue, (eid, def, field) => ecs.getField(eid, def, field));
+const editor = new Editor(queue, (entityId, def, field) => ecs.getField(entityId, def, field));
 
 editor.setField(player, Health, "hp", 50);   // enqueues forward + inverse; applies next tick
 editor.undo();   // → true (enqueues the inverse)
@@ -25,11 +25,11 @@ class Editor {
 
   // Each single-action method enqueues a one-command transaction and returns it:
   spawn(components: readonly SpawnEntry[], onSpawned?): EditorTransaction;
-  despawn(eid, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to rebuild on undo
-  setField<S>(eid, def, field, value): EditorTransaction;
-  addComponent<S>(eid, def, values: CompleteFieldValues<S>): EditorTransaction;
-  removeComponent<S>(eid, def, restore: CompleteFieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
-  disable(eid): EditorTransaction;   enable(eid): EditorTransaction;
+  despawn(entityId, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to rebuild on undo
+  setField<S>(entityId, def, field, value): EditorTransaction;
+  add<S>(entityId, def, values: CompleteFieldValues<S>): EditorTransaction;   // bare verb (cf. ctx.commands.add)
+  remove<S>(entityId, def, restore: CompleteFieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
+  disable(entityId): EditorTransaction;   enable(entityId): EditorTransaction;
 
   transaction(build: (tx: TransactionBuilder) => void): EditorTransaction;   // group many edits → one undo entry
 
@@ -39,11 +39,11 @@ class Editor {
   clear(): void;      // drop both stacks (does not touch the ECS)
   depths(): { undo: number; redo: number };
   onChange(cb: () => void): () => void;                // fires after every commit/undo/redo/clear; returns unsubscribe
-  committedField(eid, def, field): number | undefined; // read one committed slot through the constructor's FieldReader
-  pendingField(eid, def, field): number | undefined;   // optimistic, not-yet-committed value
+  committedField(entityId, def, field): number | undefined; // read one committed slot through the constructor's FieldReader
+  pendingField(entityId, def, field): number | undefined;   // optimistic, not-yet-committed value
 }
 
-type FieldReader = (eid: EntityID, def: ComponentDef, field: string) => number | undefined;
+type FieldReader = (entityId: EntityID, def: ComponentDef, field: string) => number | undefined;
 interface EditorTransaction { readonly forward: readonly HostCommand[]; readonly inverse: readonly HostCommand[]; }
 ```
 
@@ -53,12 +53,12 @@ Group several edits into a **single** undo entry with `transaction`:
 editor.transaction((tx) => {
   tx.setField(e, Pos, "x", 10)
     .setField(e, Pos, "y", 20)
-    .addComponent(e, Selected, {});
+    .add(e, Selected, {});
 });
 editor.undo();   // reverts all three at once
 ```
 
-`TransactionBuilder` mirrors the single-action methods (`spawn`, `despawn`, `setField`, `addComponent`, `removeComponent`, `disable`, `enable`), each returning `this` to chain. You get it from `transaction`; you don't construct it.
+`TransactionBuilder` mirrors the single-action methods (`spawn`, `despawn`, `setField`, `add`, `remove`, `disable`, `enable`), each returning `this` to chain. You get it from `transaction`; you don't construct it.
 
 For an "Undo (3)" / "Redo" affordance, subscribe with `onChange` instead of polling `depths()` per frame — callbacks fire synchronously after every commit, undo, redo, and clear; read `canUndo` / `canRedo` / `depths()` inside. `committedField` reads one committed `(entity, component, field)` slot through the `FieldReader` the editor was constructed with — it's the default read for `fieldHandle` when you pass no channel thunk.
 
@@ -73,7 +73,7 @@ For an "Undo (3)" / "Redo" affordance, subscribe with `onChange` instead of poll
 `fieldHandle` wraps one field as a two-way bound value — a read (reactive) plus an undoable write — ideal for an inspector input.
 
 ```ts
-fieldHandle<S>(editor: Editor, eid: EntityID, def: ComponentDef<S>, field: string & keyof S,
+fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: string & keyof S,
                read?: () => number | undefined): FieldHandle;   // omitted → falls back to editor.committedField
 
 interface FieldHandle {

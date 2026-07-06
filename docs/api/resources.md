@@ -43,13 +43,15 @@ remove<T>(key: ResourceKey<T>): void;
 has<T>(key: ResourceKey<T>): boolean;
 
 // Inside a system — on ctx:
-resource<T>(key: ResourceKey<T>): T;              // the getter (there is no "getResource")
+getResource<T>(key: ResourceKey<T>): T;
 setResource<T>(key: ResourceKey<T>, value: T): void;
 removeResource<T>(key: ResourceKey<T>): void;
 hasResource<T>(key: ResourceKey<T>): boolean;
 ```
 
-On `ctx` the key parameter is additionally narrowed to the system's declared access — `ctx.resource` accepts only keys listed in `resourceReads`, `ctx.setResource`/`ctx.removeResource` only keys in `resourceWrites` (undeclared keys are a compile error, backed by the dev-mode access check).
+The two surfaces follow two conventions on purpose. The **flat `ctx`** surface verbs every accessor — `getResource`/`setResource`/`removeResource`/`hasResource`, matching `getField`/`setField`/`hasComponent`. The **grouped `ecs.resources`** facade drops the noun to `get`/`set`/`remove`/`has` because the receiver already names it.
+
+On `ctx` the key parameter is additionally narrowed to the system's declared access — `ctx.getResource` accepts only keys listed in `resourceReads`, `ctx.setResource`/`ctx.removeResource` only keys in `resourceWrites` (undeclared keys are a compile error, backed by the dev-mode access check).
 
 Inside a system, resource access is **declared and checked**: list the key in `resourceReads` to read it, `resourceWrites` to write it.
 
@@ -58,8 +60,8 @@ ecs.registerSystem({
   reads: [], writes: [],
   resourceReads: [Time], resourceWrites: [Score],
   fn: (ctx) => {
-    const t = ctx.resource(Time);
-    ctx.setResource(Score, ctx.resource(Score) + t.delta);
+    const t = ctx.getResource(Time);
+    ctx.setResource(Score, ctx.getResource(Score) + t.delta);
   },
 });
 ```

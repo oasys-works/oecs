@@ -141,6 +141,9 @@ movers.eachChunk((cols, count) => {
 > [!WARNING]
 > **Destructure the group immediately; don't retain it.** The object `cols.mut(Pos)` returns is cached per `(archetype, component)` and refreshed **in place** on the next call — grab `{ x, y }` and use the arrays, don't stash the group object across iterations.
 
+> [!NOTE]
+> `cols.mut` / `cols.read` and [`ctx.ref` / `ctx.refRead`](./refs.md) are one family — the **mutable-default vs `Read`-suffix, def-first** cursor convention. `cols.*` is the in-iteration form (whole archetype, per pass); `ctx.ref*` is the outside-iteration single-entity form. Both put the component first because a cursor is named for what it points *at*.
+
 <a id="foreachentity--non-dense-terms"></a>
 
 ## `forEachEntity` — non-dense terms
