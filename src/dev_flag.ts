@@ -10,9 +10,11 @@
  * opt out, set `globalThis.__DEV__ = false` before the first import of this
  * package.
  */
-declare global {
-	// eslint-disable-next-line no-var
-	var __DEV__: boolean;
-}
+// Module-local ambient declaration, deliberately NOT `declare global` — JSR
+// rejects packages that modify global types. This form type-checks the bare
+// `__DEV__` reference below without touching the global scope; Vite's `define`
+// still substitutes the token at build, and raw-source consumers resolve it
+// off `globalThis` at runtime (unchanged emitted JS either way).
+declare const __DEV__: boolean;
 
 export const DEV: boolean = typeof __DEV__ !== "undefined" ? __DEV__ : true;
