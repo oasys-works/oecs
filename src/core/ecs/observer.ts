@@ -101,7 +101,7 @@ export interface ObserverHost {
 
 /** Per-entity observer callback (onAdd / onRemove / onDisable / onEnable, and
  * per-entity onSet). */
-export type ObserverFn = (eid: EntityID, ctx: SystemContext) => void;
+export type ObserverFn = (entityId: EntityID, ctx: SystemContext) => void;
 /** Archetype-granular onSet callback — fires once per changed archetype-column;
  * the consumer iterates `arch.entityCount` rows itself. */
 export type ArchetypeObserverFn = (arch: ArchetypeView, ctx: SystemContext) => void;

@@ -5,7 +5,7 @@ An **observer** runs a callback when a component is added, removed, changed, or 
 ```ts
 const handle = ecs.observe(Health, {
   access: { reads: [Health], writes: [], spawns: [[Corpse]] },  // declare what the callbacks touch
-  onRemove: (eid, ctx) => ctx.commands.spawn(Corpse({ /* … */ })),
+  onRemove: (entityId, ctx) => ctx.commands.spawn(Corpse({ /* … */ })),
 });
 
 handle.dispose();   // unregister when done (idempotent)
@@ -28,10 +28,10 @@ The `config` shape decides which callbacks are allowed:
 ```ts
 // Structural — add/remove/enable/disable:
 interface StructuralObserverConfig {
-  onAdd?: (eid: EntityID, ctx: SystemContext) => void;
-  onRemove?: (eid: EntityID, ctx: SystemContext) => void;
-  onDisable?: (eid: EntityID, ctx: SystemContext) => void;
-  onEnable?: (eid: EntityID, ctx: SystemContext) => void;
+  onAdd?: (entityId: EntityID, ctx: SystemContext) => void;
+  onRemove?: (entityId: EntityID, ctx: SystemContext) => void;
+  onDisable?: (entityId: EntityID, ctx: SystemContext) => void;
+  onEnable?: (entityId: EntityID, ctx: SystemContext) => void;
   access?: Partial<SystemAccessDeclaration>;   // + the reads/writes/spawns the callbacks need
   yieldExisting?: boolean;
   name?: string;                               // diagnostic label in frame traces (observe-only)
@@ -45,7 +45,7 @@ interface ArchetypeSetObserverConfig extends /* the base above */ {
 
 // onSet, entity-granular — one call per changed entity:
 interface EntitySetObserverConfig extends /* the base above */ {
-  onSet: (eid: EntityID, ctx: SystemContext) => void;
+  onSet: (entityId: EntityID, ctx: SystemContext) => void;
   granularity: "entity";
 }
 ```
@@ -56,14 +56,14 @@ interface EntitySetObserverConfig extends /* the base above */ {
 - **`onDisable` / `onEnable`** fire at the same boundary, **once per net transition** across a drain (disable → enable → disable in one tick fires a single `onDisable`), for every component the entity carries.
 - **`onSet`** fires at the post-update detection point (the tick tail):
   - *archetype-granular* (default) — `(arch, ctx)` per changed archetype-column, reusing the free change tick. You iterate `arch.entityCount` rows yourself.
-  - *entity-granular* — `(eid, ctx)` per changed entity, draining an opt-in per-row dirty list.
+  - *entity-granular* — `(entityId, ctx)` per changed entity, draining an opt-in per-row dirty list.
 
 ```ts
 // React to every entity whose HexPos changed, precisely once each:
 ecs.observe(HexPos, {
   access: { reads: [HexPos], writes: [] },
   granularity: "entity",
-  onSet: (eid, ctx) => reindexSpatial(eid, ctx.getField(eid, HexPos, "q")),
+  onSet: (entityId, ctx) => reindexSpatial(entityId, ctx.getField(entityId, HexPos, "q")),
 });
 ```
 

@@ -136,7 +136,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		// Remove three components — target [D] has not been planted yet, so
 		// one extend. The two intermediates ([B,C,D] and [C,D]) that the
 		// old graph walk would have created are skipped.
-		world.removeComponents(e, [A, B, C]);
+		world.removeComponents(e, A, B, C);
 
 		expect(viewStamp(world) - afterAdd).toBe(1);
 		expect(world.hasComponent(e, A)).toBe(false);
@@ -157,7 +157,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		const before = viewStamp(world);
 
 		// B and C are not on the entity.
-		world.removeComponents(e, [B, C]);
+		world.removeComponents(e, B, C);
 
 		expect(viewStamp(world)).toBe(before); // no transition, no extend
 		expect(world.hasComponent(e, A)).toBe(true);
@@ -179,7 +179,7 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const before = viewStamp(world);
 
-		world.removeComponents(e, [B]);
+		world.removeComponents(e, B);
 
 		expect(viewStamp(world)).toBe(before);
 		expect(world.hasComponent(e, A)).toBe(true);

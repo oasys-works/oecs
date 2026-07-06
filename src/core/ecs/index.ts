@@ -214,7 +214,7 @@ export { ChunkColumns, Commands } from "./query";
 export type { ArchetypeView, ArchetypeID } from "./archetype";
 
 // Entities
-export type { EntityID, ReadonlyEntityIdArray } from "./entity";
+export type { EntityID, ReadonlyEntityIDArray } from "./entity";
 // `getEntityIndex` decodes the dense 20-bit slot index out of a packed
 // EntityID — needed by replication's entity-index-keyed state store
 // (services/server diff). The generational guard stays the caller's job.

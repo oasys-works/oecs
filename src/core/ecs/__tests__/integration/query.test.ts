@@ -166,7 +166,7 @@ describe("ECS query (integration)", () => {
 			["addComponent", (w, e, d) => void w.addComponent(e, d, { x: 1 }), /host addComponent is immediate.*ctx\.commands\.add/],
 			["addComponents", (w, e, d) => void w.addComponents(e, d({ x: 1 })), /host addComponents is immediate.*ctx\.commands\.add/],
 			["removeComponent", (w, e, d) => void w.removeComponent(e, d), /host removeComponent is immediate.*ctx\.commands\.remove/],
-			["removeComponents", (w, e, d) => void w.removeComponents(e, [d]), /host removeComponents is immediate.*ctx\.commands\.remove/],
+			["removeComponents", (w, e, d) => void w.removeComponents(e, d), /host removeComponents is immediate.*ctx\.commands\.remove/],
 			["disable", (w, e) => void w.disable(e), /host disable is immediate.*ctx\.commands\.disable/],
 			["enable", (w, e) => void w.enable(e), /host enable is immediate.*ctx\.commands\.enable/]
 		];

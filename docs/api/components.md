@@ -127,7 +127,7 @@ Three attach shapes: a bare def attaches a tag; a bundle (`Pos({ x: 1 })`) zero-
 
 ```ts
 addComponents<Items extends readonly BundleOrDef[]>(entityId: EntityID, ...items: StrictBundles<Items>): this;
-removeComponents(entityId: EntityID, defs: ComponentDef[]): this;
+removeComponents(entityId: EntityID, ...defs: ComponentDef[]): this;
 ```
 
 `addComponents` batch-attaches several components in **one archetype transition** (it resolves the final archetype once and moves once, instead of stepping through an intermediate archetype per component). It takes the same callable-bundle varargs as [`spawnBundle`](./entities.md) and [`ECS.template`](./entities.md#templates) — `ecs.addComponents(e, Pos({ x, y }), Vel({ vx }), Frozen)` — each item checked against its own def's schema (a misspelled or cross-component field is a compile error; tags refuse values), and omitted fields zero-fill. Unlike `spawnBundle` — which only ever creates a **new** entity — `addComponents` extends an existing one. `removeComponents` is the detach mirror: one transition for the whole set.

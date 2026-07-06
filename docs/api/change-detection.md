@@ -69,7 +69,7 @@ The comparison is against the *system's* last-run tick, so each system sees chan
 Instead of polling with `changed()`, you can be **called** when a component changes, via an [`onSet` observer](./observers.md):
 
 - **archetype-granular** (`granularity: "archetype"`, the default) reuses the same free change tick — you get `(arch, ctx)` per changed archetype-column and iterate its rows yourself.
-- **entity-granular** (`granularity: "entity"`) gives you `(eid, ctx)` per changed entity, but registering it turns on per-row dirty tracking for that component (a write-path cost). Choose by how densely the component changes.
+- **entity-granular** (`granularity: "entity"`) gives you `(entityId, ctx)` per changed entity, but registering it turns on per-row dirty tracking for that component (a write-path cost). Choose by how densely the component changes.
 
 > [!TIP]
 > When you write a component through the **raw** mutable column (not `setField`/`ref`), an entity-granular `onSet` observer won't see it unless you call `ctx.markChanged(entity, def)` in the loop. `setField`/`updateField` record it automatically.

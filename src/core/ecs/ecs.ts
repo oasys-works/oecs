@@ -647,13 +647,14 @@ export class ECS implements QueryResolver {
 	 *  `ctx.commands.despawn` (applied at the phase flush); calling this from
 	 *  a system body throws in DEV, since an immediate destroy mid-iteration
 	 *  can invalidate rows the running query is walking. */
-	public despawn(id: EntityID): void {
+	public despawn(entityId: EntityID): this {
 		if (DEV)
 			this._assertHostMutationOutsideSystem(
 				"despawn",
 				"ctx.commands.despawn (deferred to the phase flush)"
 			);
-		this.store.destroyEntity(id);
+		this.store.destroyEntity(entityId);
+		return this;
 	}
 
 	// --- Entity enable/disable (#577) ---
@@ -667,25 +668,25 @@ export class ECS implements QueryResolver {
 	// least one component (a component-less entity has no archetype row to
 	// partition).
 
-	/** Disable `id` (idempotent). Excluded from default queries until re-enabled. */
-	public disable(id: EntityID): this {
+	/** Disable `entityId` (idempotent). Excluded from default queries until re-enabled. */
+	public disable(entityId: EntityID): this {
 		if (DEV)
 			this._assertHostMutationOutsideSystem(
 				"disable",
 				"ctx.commands.disable (deferred to the phase flush)"
 			);
-		this.store.disableEntity(id);
+		this.store.disableEntity(entityId);
 		return this;
 	}
 
-	/** Re-enable a disabled `id` (idempotent). */
-	public enable(id: EntityID): this {
+	/** Re-enable a disabled `entityId` (idempotent). */
+	public enable(entityId: EntityID): this {
 		if (DEV)
 			this._assertHostMutationOutsideSystem(
 				"enable",
 				"ctx.commands.enable (deferred to the phase flush)"
 			);
-		this.store.enableEntity(id);
+		this.store.enableEntity(entityId);
 		return this;
 	}
 
@@ -762,7 +763,9 @@ export class ECS implements QueryResolver {
 		return this;
 	}
 
-	public removeComponents(entityId: EntityID, defs: ComponentDef[]): this {
+	/** Detach several components in one archetype transition — the varargs
+	 * mirror of `addComponents` (bare defs; removing needs no values). */
+	public removeComponents(entityId: EntityID, ...defs: ComponentDef[]): this {
 		if (DEV) {
 			this._assertHostMutationOutsideSystem(
 				"removeComponents",
@@ -1117,10 +1120,11 @@ export class ECS implements QueryResolver {
 		return descriptor;
 	}
 
-	public removeSystem(system: SystemDescriptor): void {
+	public removeSystem(system: SystemDescriptor): this {
 		this.schedule.removeSystem(system);
 		system.onRemoved?.();
 		this.systems.delete(system);
+		return this;
 	}
 
 	public get systemCount(): number {
@@ -1405,8 +1409,8 @@ export class ECS implements QueryResolver {
 		return this.store.spawnMany(template, count, overrides);
 	}
 
-	public isAlive(id: EntityID): boolean {
-		return this.store.isAlive(id);
+	public isAlive(entityId: EntityID): boolean {
+		return this.store.isAlive(entityId);
 	}
 
 	public get entityCount(): number {
@@ -1417,10 +1421,10 @@ export class ECS implements QueryResolver {
 		return this.store.hasComponent(entityId, def);
 	}
 
-	/** Whether `id` is currently disabled. Toggle via `disable` / `enable`
+	/** Whether `entityId` is currently disabled. Toggle via `disable` / `enable`
 	 * (immediate, above the band — they carry the in-system dev guard). */
-	public isDisabled(id: EntityID): boolean {
-		return this.store.isDisabled(id);
+	public isDisabled(entityId: EntityID): boolean {
+		return this.store.isDisabled(entityId);
 	}
 
 	// --- Sparse (out-of-identity) component operations (#468) ---

@@ -405,7 +405,7 @@ An observer is the push-based counterpart to polling with `changed()`: register 
 ```ts
 const handle = ecs.observe(Health, {
   access: { reads: [Health], writes: [], spawns: [[Corpse]] },  // callbacks run in an access span
-  onRemove: (eid, ctx) => ctx.commands.spawn(Corpse()),
+  onRemove: (entityId, ctx) => ctx.commands.spawn(Corpse()),
 });
 handle.dispose();   // idempotent
 ```
@@ -414,7 +414,7 @@ Choose the grain deliberately:
 
 - **`onAdd` / `onRemove` / `onDisable` / `onEnable`** fire at the structural-flush boundary, after the batch commits, looping to a fixed point so cascades settle.
 - **`onSet` archetype-granular** (the default) reuses the free change tick — `(arch, ctx)` per changed archetype-column; you iterate the rows.
-- **`onSet` entity-granular** (`granularity: "entity"`) gives `(eid, ctx)` per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Pick it only when changes are sparse enough that per-entity precision beats sweeping the archetype.
+- **`onSet` entity-granular** (`granularity: "entity"`) gives `(entityId, ctx)` per changed entity, but **registering it turns on per-row dirty tracking** for that component — a write-path cost. Pick it only when changes are sparse enough that per-entity precision beats sweeping the archetype.
 
 > [!WARNING]
 > **Declare `access`** — callbacks run in an access span, and the declarations also drive firing order, so a wrong one can silently reorder the observer. **Register observers before `startup()`** so the archetypes they spawn into are prewarmed. **Only deferred, in-schedule ops fire *structural* observers** (`onAdd`/`onRemove`/`onEnable`/`onDisable` drain at the flush) — an immediate host-side `ecs.addComponent` / `ecs.disable` fires none of them; only the deferred `ctx.commands.add` / `ctx.commands.disable` do. `onSet` is the exception: it is *derived* change detection (change ticks + the dirty list, scanned at the post-update detection point), so it is receiver-blind — a host-side `ecs.setField` between frames is seen by `onSet` observers on the next `update()` exactly like `ctx.setField`. And **do not emit events from `onSet`** — it runs at the tick tail where events are about to be cleared (throws `OBSERVER_ONSET_EMIT` in dev); bridge a detected change to a next-tick event from a normal system reading the dirty list.

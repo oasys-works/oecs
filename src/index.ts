@@ -184,7 +184,7 @@ export type { ArchetypeView, ArchetypeID } from "./core/ecs";
 // packed EntityID — needed by replication-style consumers; the generational
 // guard stays the caller's job. The rest of the packed-ID codec
 // (`createEntityId`, the bounds constants) is `@oasys/oecs/internal`.
-export type { EntityID, ReadonlyEntityIdArray } from "./core/ecs";
+export type { EntityID, ReadonlyEntityIDArray } from "./core/ecs";
 export { getEntityIndex } from "./core/ecs";
 
 // Components

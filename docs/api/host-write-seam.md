@@ -49,14 +49,14 @@ It removes the seam's apply systems from the schedule and `clear`s any still-buf
 Every method **enqueues** — nothing reaches the `ECS` until the apply system drains.
 
 ```ts
-spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): void;
-despawn(eid): void;
-addComponent<S>(eid, def, values: CompleteFieldValues<S>): void;
-removeComponent(eid, def): void;
-setField<S>(eid, def, field, value): void;
-disable(eid): void;   enable(eid): void;
-push(cmd: HostCommand): void;   // enqueue pre-built command data (codec / replay / editor path)
-pending(): number;              // buffered-but-unapplied count
+spawn(components: readonly SpawnEntry[], onSpawned?: (entityId: EntityID) => void): this;
+despawn(entityId): this;
+addComponent<S>(entityId, def, values: CompleteFieldValues<S>): this;
+removeComponent(entityId, def): this;
+setField<S>(entityId, def, field, value): this;
+disable(entityId): this;   enable(entityId): this;
+push(cmd: HostCommand): this;   // enqueue pre-built command data (codec / replay / editor path)
+readonly pending: number;       // buffered-but-unapplied count
 clear(): number;                // drop every buffered command WITHOUT applying; returns how many
 ```
 

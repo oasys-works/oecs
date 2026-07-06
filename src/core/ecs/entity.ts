@@ -44,7 +44,7 @@ export type EntityID = Brand<number, "entity_id">;
  * underlying value is the live mutable buffer, and indexing past
  * `totalCount - 1` reads stale slots (the brand can't catch that).
  */
-export interface ReadonlyEntityIdArray {
+export interface ReadonlyEntityIDArray {
 	readonly [index: number]: EntityID;
 	readonly length: number;
 }

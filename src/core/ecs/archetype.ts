@@ -42,7 +42,7 @@ import type {
 	ReadonlyColumn,
 	ReadonlyUint32Array
 } from "./component";
-import { getEntityIndex, type EntityID, type ReadonlyEntityIdArray } from "./entity";
+import { getEntityIndex, type EntityID, type ReadonlyEntityIDArray } from "./entity";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { NO_SWAP, UNASSIGNED, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import type { BitSet } from "../../type_primitives";
@@ -152,7 +152,7 @@ export interface ArchetypeView<
 	readonly disabledCount: number;
 	/** Raw entity ID buffer (packed `EntityID`s). Valid data at indices
 	 * 0..totalCount-1 (enabled rows first, then disabled). */
-	readonly entityIds: ReadonlyEntityIdArray;
+	readonly entityIds: ReadonlyEntityIDArray;
 	/** True if this archetype's mask includes the given component. */
 	hasComponent(id: ComponentID): boolean;
 	/** Get a single field's column (read-only). Valid data: indices
@@ -475,10 +475,10 @@ export class Archetype implements ArchetypeView {
 
 	/** Raw entity ID buffer (packed `EntityID`s). Valid data at indices
 	 * 0..totalCount-1 (enabled rows first, then disabled). */
-	public get entityIds(): ReadonlyEntityIdArray {
+	public get entityIds(): ReadonlyEntityIDArray {
 		// branded-ID bridging: the buffer stores packed EntityIDs as raw u32s.
 		const ids: ReadonlyUint32Array = this._entityIds.buf;
-		return ids as ReadonlyEntityIdArray;
+		return ids as ReadonlyEntityIDArray;
 	}
 
 	/**

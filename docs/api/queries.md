@@ -98,7 +98,7 @@ interface ArchetypeView {
   readonly entityCount: number;   // ← your loop bound (enabled rows)
   readonly totalCount: number;    // includes disabled rows
   readonly disabledCount: number;
-  readonly entityIds: ReadonlyEntityIdArray;
+  readonly entityIds: ReadonlyEntityIDArray;
   hasComponent(id): boolean;
   getColumnRead(def, field): ReadonlyColumn;                 // read-only column
   getColumnsRead(def, ...fields): [ReadonlyColumn, ...];      // several at once

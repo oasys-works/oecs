@@ -104,7 +104,7 @@ export type HostCommand =
 			readonly components: readonly SpawnEntry[];
 			/** Fired with the new id once the spawn applies (the id only exists
 			 * after the deferred create) — lets a producer/editor learn it. */
-			readonly onSpawned?: (eid: EntityID) => void;
+			readonly onSpawned?: (entityId: EntityID) => void;
 	  }
 	| { readonly kind: "despawn"; readonly eid: EntityID }
 	| {
@@ -205,60 +205,68 @@ export class HostCommandQueue {
 	 * `def`'s schema (`SpawnEntries`); the stored command stays schema-erased. */
 	spawn<Defs extends readonly ComponentDef[]>(
 		components: SpawnEntries<Defs>,
-		onSpawned?: (eid: EntityID) => void
-	): void;
-	spawn(components: readonly SpawnEntry[], onSpawned?: (eid: EntityID) => void): void {
+		onSpawned?: (entityId: EntityID) => void
+	): this;
+	spawn(components: readonly SpawnEntry[], onSpawned?: (entityId: EntityID) => void): this {
 		this.queued.push({ kind: "spawn", components, onSpawned });
+		return this;
 	}
 
-	despawn(eid: EntityID): void {
-		this.queued.push({ kind: "despawn", eid });
+	despawn(entityId: EntityID): this {
+		this.queued.push({ kind: "despawn", eid: entityId });
+		return this;
 	}
 
 	addComponent<S extends ComponentSchema>(
-		eid: EntityID,
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
-	): void {
-		this.queued.push({ kind: "add_component", eid, def: def as ComponentDef, values });
+	): this {
+		this.queued.push({ kind: "add_component", eid: entityId, def: def as ComponentDef, values });
+		return this;
 	}
 
-	removeComponent(eid: EntityID, def: ComponentDef): void {
-		this.queued.push({ kind: "remove_component", eid, def });
+	removeComponent(entityId: EntityID, def: ComponentDef): this {
+		this.queued.push({ kind: "remove_component", eid: entityId, def });
+		return this;
 	}
 
-	/** Set `field` of `def` on `eid`. Applied IMMEDIATELY at the drain, unlike the
-	 * deferred structural ops — so `def` must already be on `eid`. Do NOT
+	/** Set `field` of `def` on `entityId`. Applied IMMEDIATELY at the drain, unlike
+	 * the deferred structural ops — so `def` must already be on `entityId`. Do NOT
 	 * `addComponent`/`spawn` `def` and `setField` it in the same frame: the add is
 	 * still pending its flush when the immediate set runs (carry the value in
 	 * `addComponent`/`spawnEntry` instead). `applyHostCommand` throws an
 	 * actionable error in `DEV` if you do. */
 	setField<S extends ComponentSchema>(
-		eid: EntityID,
+		entityId: EntityID,
 		def: ComponentDef<S>,
 		field: string & keyof S,
 		value: number
-	): void {
-		this.queued.push({ kind: "set_field", eid, def: def as ComponentDef, field, value });
+	): this {
+		this.queued.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value });
+		return this;
 	}
 
-	disable(eid: EntityID): void {
-		this.queued.push({ kind: "disable", eid });
+	disable(entityId: EntityID): this {
+		this.queued.push({ kind: "disable", eid: entityId });
+		return this;
 	}
 
-	enable(eid: EntityID): void {
-		this.queued.push({ kind: "enable", eid });
+	enable(entityId: EntityID): this {
+		this.queued.push({ kind: "enable", eid: entityId });
+		return this;
 	}
 
 	/** Enqueue a pre-built command. The path for a SAB-ring codec, an editor's
 	 * reified inverse, or a replay log — all of which produce `HostCommand` data
 	 * directly rather than calling the typed sugar above. */
-	push(cmd: HostCommand): void {
+	push(cmd: HostCommand): this {
 		this.queued.push(cmd);
+		return this;
 	}
 
 	/** Commands buffered but not yet applied. */
-	pending(): number {
+	get pending(): number {
 		return this.queued.length;
 	}
 

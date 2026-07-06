@@ -48,12 +48,12 @@ describe("host command seam — enqueue defers", () => {
 
 		commands.spawn([spawnEntry(Cell, { x: 5, heat: 0 })]);
 		// Off-schedule enqueue: the world is untouched, the queue holds it.
-		expect(commands.pending()).toBe(1);
+		expect(commands.pending).toBe(1);
 		expect(world.query(Cell).entityCount).toBe(0);
 
 		world.update(1 / 60);
 		// Drained at PRE_UPDATE head, applied at the flush.
-		expect(commands.pending()).toBe(0);
+		expect(commands.pending).toBe(0);
 		expect(world.query(Cell).entityCount).toBe(1);
 	});
 });

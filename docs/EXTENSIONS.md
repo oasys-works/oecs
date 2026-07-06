@@ -141,8 +141,8 @@ const queue = installHostCommandSeam(ecs); // install before startup()
 const player = ecs.spawn();
 ecs.addComponent(player, Health, { hp: 100, max: 100 });
 
-queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (eid) => {
-  console.log("spawned", eid);
+queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (entityId) => {
+  console.log("spawned", entityId);
 });
 queue.setField(player, Health, "hp", 75);
 

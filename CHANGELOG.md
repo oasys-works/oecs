@@ -36,6 +36,23 @@ To migrate: drop the array brackets, wrap a valued entry in its def's call
   entry-object grammar). The host command seam (`HostCommandQueue.spawn` — the record/replay
   and editor-undo transport) deliberately keeps its entry-object + complete-values shape.
 
+### Changed — API vocabulary consistency
+
+Cheap alignments from a public-API vocabulary audit that followed the grammar unification:
+
+- `removeComponents(e, ...defs)` is now varargs, mirroring `addComponents` (was
+  `removeComponents(e, defs[])`).
+- `HostCommandQueue.pending()` is now a `pending` getter (matching every other count accessor).
+- `ReadonlyEntityIdArray` → `ReadonlyEntityIDArray` (acronym casing, matching `EntityID`).
+- The entity-id parameter is now uniformly `entityId` across the core surface (ECS lifecycle,
+  host-command queue, `ObserverFn`); the `HostCommand` wire-format field stays `eid`.
+- Source-compatible widenings: `ecs.despawn`, `ecs.removeSystem`, and the `HostCommandQueue`
+  mutators now return `this` for chaining.
+
+Deeper consistency questions (the `ref`/`refRead` argument order, `ctx.resource` →
+`getResource`, `HostCommandQueue.add`/`remove`, and the spawn-family in-system guard) are left
+as a tracked follow-up investigation.
+
 ### Fixed
 
 - Added explicit public `QueryCache` cache-map type annotations so JSR publish passes
