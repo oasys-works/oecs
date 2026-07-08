@@ -1,86 +1,112 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
     ".": {
       "import": {
         "types": "./dist/index.d.ts",
+        "development": "./dist/index.development.js",
         "default": "./dist/index.js"
       },
       "require": {
         "types": "./dist/index.d.cts",
+        "development": "./dist/index.development.cjs",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./dev": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.development.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.development.cjs"
       }
     },
     "./primitives": {
       "import": {
         "types": "./dist/primitives.d.ts",
+        "development": "./dist/primitives.development.js",
         "default": "./dist/primitives.js"
       },
       "require": {
         "types": "./dist/primitives.d.cts",
+        "development": "./dist/primitives.development.cjs",
         "default": "./dist/primitives.cjs"
       }
     },
     "./reactive": {
       "import": {
         "types": "./dist/reactive/index.d.ts",
+        "development": "./dist/reactive/index.development.js",
         "default": "./dist/reactive/index.js"
       },
       "require": {
         "types": "./dist/reactive/index.d.cts",
+        "development": "./dist/reactive/index.development.cjs",
         "default": "./dist/reactive/index.cjs"
       }
     },
     "./reactive-sync": {
       "import": {
         "types": "./dist/extensions/reactive/index.d.ts",
+        "development": "./dist/extensions/reactive/index.development.js",
         "default": "./dist/extensions/reactive/index.js"
       },
       "require": {
         "types": "./dist/extensions/reactive/index.d.cts",
+        "development": "./dist/extensions/reactive/index.development.cjs",
         "default": "./dist/extensions/reactive/index.cjs"
       }
     },
     "./editor": {
       "import": {
         "types": "./dist/extensions/editor/index.d.ts",
+        "development": "./dist/extensions/editor/index.development.js",
         "default": "./dist/extensions/editor/index.js"
       },
       "require": {
         "types": "./dist/extensions/editor/index.d.cts",
+        "development": "./dist/extensions/editor/index.development.cjs",
         "default": "./dist/extensions/editor/index.cjs"
       }
     },
     "./solid": {
       "import": {
         "types": "./dist/extensions/solid/index.d.ts",
+        "development": "./dist/extensions/solid/index.development.js",
         "default": "./dist/extensions/solid/index.js"
       },
       "require": {
         "types": "./dist/extensions/solid/index.d.cts",
+        "development": "./dist/extensions/solid/index.development.cjs",
         "default": "./dist/extensions/solid/index.cjs"
       }
     },
     "./shared": {
       "import": {
         "types": "./dist/shared.d.ts",
+        "development": "./dist/shared.development.js",
         "default": "./dist/shared.js"
       },
       "require": {
         "types": "./dist/shared.d.cts",
+        "development": "./dist/shared.development.cjs",
         "default": "./dist/shared.cjs"
       }
     },
     "./internal": {
       "import": {
         "types": "./dist/internal.d.ts",
+        "development": "./dist/internal.development.js",
         "default": "./dist/internal.js"
       },
       "require": {
         "types": "./dist/internal.d.cts",
+        "development": "./dist/internal.development.cjs",
         "default": "./dist/internal.cjs"
       }
     },
@@ -96,7 +122,7 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/postbuild.mjs",
+    "build": "node scripts/build.mjs && node scripts/postbuild.mjs",
     "test": "vitest",
     "bench": "vitest bench",
     "prepublishOnly": "pnpm build"
@@ -138,6 +164,9 @@
   },
   "typesVersions": {
     "*": {
+      "dev": [
+        "./dist/index.d.ts"
+      ],
       "primitives": [
         "./dist/primitives.d.ts"
       ],

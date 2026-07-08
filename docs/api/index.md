@@ -113,5 +113,7 @@ Read these in order for a working mental model.
 
 A compile-time `__DEV__` flag gates every runtime check: bounds and liveness checks, duplicate-system detection, registration validation, and the **system access checker** (`reads`/`writes` enforcement). These are **tree-shaken out of production builds**.
 
+**Production is the default.** `@oasys/oecs` (npm) is the stripped production build; dev-mode bundlers auto-select the guards-on build via the `development` export condition, or import `@oasys/oecs/dev`. On JSR/Deno the default is also production — set `globalThis.__DEV__ = true` before the first import to enable the guards. The [Development guards & production builds](../PRODUCTION.md) guide has the full matrix.
+
 > [!IMPORTANT]
 > Everything documented as "throws in dev" is a **development tripwire, not a production guarantee**. In a production build those guards are gone and the same mistake *fails open* — a wrong value, a `NaN`, or silent corruption instead of an exception. Fix violations in dev; do not rely on them being caught in prod. The scheduler's cycle detection is the one check that is always active.

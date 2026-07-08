@@ -161,7 +161,7 @@ ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 
 ## 4. Declaring system access
 
-Real work goes in the **config form** of `registerSystem`, which declares the components the system touches. A dev-mode access checker (tree-shaken from production) enforces those declarations, so a system that reads or writes something it didn't declare throws in dev — catching a whole class of "I forgot this system also touches Health" bugs before they ship.
+Real work goes in the **config form** of `registerSystem`, which declares the components the system touches. A dev-mode access checker (tree-shaken from production) enforces those declarations, so a system that reads or writes something it didn't declare throws in dev — catching a whole class of "I forgot this system also touches Health" bugs before they ship. These guards are **off by default** (production is the default build); see [Development guards & production builds](PRODUCTION.md) for how to turn them on while developing on npm (`@oasys/oecs/dev` or a dev-mode bundler) and on Deno (`globalThis.__DEV__ = true`).
 
 ```ts
 const movers = ecs.query(Pos, Vel);

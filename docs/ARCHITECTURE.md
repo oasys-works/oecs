@@ -569,7 +569,7 @@ The internal assertion/brand/error helpers under `type_primitives/` are delibera
 
 ## 22. Dev mode
 
-`__DEV__` is a compile-time constant for bundled builds: every `if (__DEV__) { … }` branch is dead code in production and tree-shaken by the bundler. (Raw-source consumers — JSR/Deno — get `DEV = true` by default and must set `globalThis.__DEV__ = false` to opt out, `dev_flag.ts:18`.) — so everything documented as "throws in dev" is a development tripwire, not a production guarantee. In a production build the same mistake fails *open*: a wrong value, a `NaN`, or silent corruption instead of an exception.
+`__DEV__` is a compile-time constant for bundled builds: every `if (__DEV__) { … }` branch is dead code in the production build and tree-shaken by the bundler. **Production is the default on both distribution channels** (`dev_flag.ts` resolves `DEV = false` when nothing defines `__DEV__`). On npm, `@oasys/oecs` is the stripped production build (dev-mode bundlers pick the guards-on `development` build automatically, or import `@oasys/oecs/dev`); the `vite build` emits both variants (`scripts/build.mjs`). On raw-source JSR/Deno there is no bundler, so the guards are toggled rather than stripped — set `globalThis.__DEV__ = true` before the first import to turn them on. Either way everything documented as "throws in dev" is a development tripwire, not a production guarantee: in a production build the same mistake fails *open* — a wrong value, a `NaN`, or silent corruption instead of an exception. See the [Development guards & production builds](PRODUCTION.md) guide.
 
 ### What gets checked in dev
 

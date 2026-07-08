@@ -3,16 +3,25 @@ import dts from "vite-plugin-dts";
 import fs from "fs";
 import path from "path";
 
+// Two production-artifact variants are emitted from one config (see
+// scripts/build.mjs): the default `production` build (`__DEV__:false`, guards
+// DCE'd, plain `*.js`/`*.cjs`) and the `development` build (`__DEV__:true`,
+// guards retained, `*.development.js`/`*.development.cjs`). The variant is
+// selected via OECS_VARIANT; the dev server (`command !== "build"`) is always
+// guards-on. Declarations are identical across variants, so `dts` runs only in
+// the production pass and `emptyOutDir` clears the dir only on that first pass.
+const DEV_BUILD = process.env.OECS_VARIANT === "development";
+
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   plugins: [
-    ...(command === "build"
+    ...(command === "build" && !DEV_BUILD
       ? [dts({ tsconfigPath: "./tsconfig.build.json" })]
       : []),
   ],
 
   define: {
-    __DEV__: command === "build" ? "false" : "true",
+    __DEV__: command === "build" ? (DEV_BUILD ? "true" : "false") : "true",
   },
 
   resolve: {
@@ -30,6 +39,9 @@ export default defineConfig(({ command }) => ({
 
   build: {
     target: "es2022",
+    // Production pass wipes dist; the development pass adds its `*.development.*`
+    // artifacts alongside without clearing the production output.
+    emptyOutDir: !DEV_BUILD,
     lib: {
       // Multi-entry, one per published subpath. Keys are src-relative paths so
       // the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
@@ -58,7 +70,7 @@ export default defineConfig(({ command }) => ({
       },
       formats: ["es", "cjs"],
       fileName: (format, entryName) =>
-        `${entryName}.${format === "es" ? "js" : "cjs"}`,
+        `${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`,
     },
     rollupOptions: {
       // solid-js is an optional peerDependency — never bundle it.

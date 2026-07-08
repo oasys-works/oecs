@@ -168,7 +168,8 @@ The core is `@oasys/oecs`; everything else is opt-in and costs nothing until imp
 
 | Import | What it is |
 | --- | --- |
-| `@oasys/oecs` | the ECS — pure-TS heap profile by default |
+| `@oasys/oecs` | the ECS — pure-TS heap profile by default (production build; dev guards stripped) |
+| `@oasys/oecs/dev` | the same ECS with the dev guards **on** — for a direct guards-on import; see [Dev vs prod](#dev-vs-prod) |
 | `@oasys/oecs/shared` | opt-in `SharedArrayBuffer` allocators for worker offload / a WASM backend (needs COOP/COEP) |
 | `@oasys/oecs/reactive` | zero-dependency reactive kernel (`signal`/`computed`/`effect`, reactive collections) |
 | `@oasys/oecs/reactive-sync` | ECS→reactive bridge — publishes only dirty entities/columns |
@@ -182,9 +183,16 @@ The core is `@oasys/oecs`; everything else is opt-in and costs nothing until imp
 A compile-time `__DEV__` flag gates every runtime check — bounds and liveness checks, duplicate-system
 detection, registration validation, and the system access checker (`reads`/`writes`). These are
 **tree-shaken out of production builds**, so treat "throws in dev" as a development tripwire, not a
-production guarantee. (Raw-source consumers — JSR/Deno — get `__DEV__ = true` by default; set
-`globalThis.__DEV__ = false` to opt out.) The scheduler's cycle detection and constructor-option
-validation (timestep, memory options, relation cardinality) are always active.
+production guarantee. The scheduler's cycle detection and constructor-option validation (timestep,
+memory options, relation cardinality) are always active.
+
+**Production is the default on both channels; you opt *into* the guards.** On **npm**, `@oasys/oecs`
+is the stripped production build — dev-mode bundlers (`vite dev`, `webpack --mode development`) pick
+the guards-on build automatically via the `development` export condition, or import `@oasys/oecs/dev`
+for it directly. On **JSR/Deno** (raw source, no bundler) the default is also production
+(`__DEV__ = false`); set `globalThis.__DEV__ = true` before the first import to turn the guards on
+while developing. Full details — including the browser/CDN and manual-override paths — are in the
+[**Development guards & production builds**](docs/PRODUCTION.md) guide.
 
 ## Documentation
 

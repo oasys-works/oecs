@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-07-08
+
+### Added — a guards-on build and an explicit dev entry
+
+- **`@oasys/oecs/dev`** — the same public API as `@oasys/oecs` with the `__DEV__`
+  guards left **on**, for a direct guards-on import (browser/CDN, quick debugging,
+  or bundlers that don't auto-select conditions).
+- **`development` export condition** — dev-mode bundlers (`vite dev`,
+  `webpack --mode development`) now resolve `@oasys/oecs` (and every subpath) to a
+  guards-on build automatically; production-mode builds resolve to the stripped
+  build as before.
+- npm now ships a **dual build** (`scripts/build.mjs`): the default `*.js`/`*.cjs`
+  are the stripped production artifacts (unchanged), alongside new guards-on
+  `*.development.js`/`*.development.cjs`.
+- New guide: [Development guards & production builds](docs/PRODUCTION.md).
+
+### Changed — dev-guard default is now production on JSR/Deno
+
+- Raw-source (JSR/Deno) consumers now default to `__DEV__ = false` (**production —
+  guards off, no per-frame tax**), matching npm's default. Previously the raw path
+  defaulted to guards-on. To enable the guards while developing on Deno, set
+  `globalThis.__DEV__ = true` **before the first import**. The `globalThis.__DEV__`
+  override is unchanged; only the default flipped. (`dev_flag.ts`)
+
 ## [0.5.1] — 2026-07-06
 
 ### Changed (breaking) — one attach grammar
