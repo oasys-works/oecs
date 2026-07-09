@@ -2,7 +2,7 @@
  * `@oasys/oecs/shared` — the opt-in SharedArrayBuffer / WASM profile.
  *
  * The default `@oasys/oecs` profile runs the column store over a plain
- * resizable `ArrayBuffer` (no cross-origin isolation). This entry surfaces the
+ * fixed `ArrayBuffer` (no cross-origin isolation). This entry surfaces the
  * `SharedArrayBuffer`-backed allocators for worlds that opt into worker offload
  * or a WASM compute backend — construct with `new ECS({ memory: { shared: {} } })`,
  * or pass one of these allocators through `memory: { allocator }`.

@@ -45,6 +45,7 @@ import {
 	growBufferInPlace,
 	layoutColumnsAtTail,
 	reallocAndRepublish,
+	tailCursorBytes,
 	type ArchetypeGrowSpec,
 	type TailArchetypeLayout
 } from "./layout_ops";
@@ -263,10 +264,10 @@ function extendColumnStoreInPlace(
 	regionOff: number,
 	usedRegion: number
 ): ExtendResult {
-	// 1. Compute new column byte_offs at the SAB tail. `old.buffer.byteLength`
-	//    equals the previous `totalBytes` (last `cursor` from
-	//    `planLayout` / previous in-place extend). New columns have no prior
-	//    stride, so it's derived from the type tag here.
+	// 1. Compute new column byte_offs at the SAB tail — `tailCursorBytes(old)`
+	//    is the live extent (header `capacity` for the fixed heap buffer,
+	//    `buffer.byteLength` for the growable-SAB / wasm backings). New columns
+	//    have no prior stride, so it's derived from the type tag here.
 	const tailLayouts: TailArchetypeLayout[] = new Array(newArchetypes.length);
 	for (let i = 0; i < newArchetypes.length; i++) {
 		const spec = newArchetypes[i];
@@ -282,8 +283,12 @@ function extendColumnStoreInPlace(
 			}))
 		};
 	}
+	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
+	// `capacity` for the fixed heap ArrayBuffer, or `buffer.byteLength` for the
+	// growable-SAB / wasm backings (the wasm fast path deliberately lands new
+	// regions past its page-rounded tail — unchanged here).
 	const { descriptors: newDescriptors, newTotal } = layoutColumnsAtTail(
-		old.buffer.byteLength,
+		tailCursorBytes(old),
 		tailLayouts
 	);
 

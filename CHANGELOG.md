@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-07-09
+
+### Fixed — heap columns back on V8's fast element-access path (~5× iteration)
+
+- The pure-TS **heap profile** (`heapArraybufferAllocator` — the default backing)
+  now reserves its store as a **fixed, non-resizable `ArrayBuffer`** at the full
+  cap instead of a growable one resized via `.resize()`. V8 has no fast
+  element-access path for TypedArray views over a **resizable/growable**
+  `ArrayBuffer` — every `col[i]` re-checks the mutable length — so iterating a
+  column was ~4× slower than over a fixed buffer (measured on V8 13.6, an
+  isolated `col[i] *= 2` loop: ~0.37G vs ~1.6G element-accesses/s). This
+  silently regressed every iteration-bound system ~5× from 0.3.x (a
+  cross-library bench had oecs at ~85k op/s on the `packed_5` scenario vs
+  ~407k at 0.3.1); 0.5.3 restores it (~420k, measured against 0.5.2 in a
+  same-toolchain A/B: 85.9k → 422.7k op/s).
+- The fixed buffer faults pages in lazily, so RSS tracks real use, not the
+  reservation (a 256 MiB default cap on a 1000-entity world stays a few MiB
+  resident — measured ~4 MiB RSS, within ~1 MiB of the old resizable buffer).
+  Growth remains in place: the store relocates columns within the pre-reserved
+  buffer, so the buffer identity never changes and every existing view stays
+  valid —
+  `isInPlace: true` and ADR-0008's entity-index-hoist-across-grow invariant hold
+  unchanged. The store keys its tail cursor off the header `capacity` (the
+  logical high-water) rather than `buffer.byteLength` (now always the cap).
+- Only the heap backing changed. The `growable_sab` / `wasm_memory` backings
+  keep their resizable buffers and page-rounded tail layout byte-for-byte
+  (their determinism/layout goldens are unchanged).
+
 ## [0.5.2] — 2026-07-08
 
 ### Added — a guards-on build and an explicit dev entry

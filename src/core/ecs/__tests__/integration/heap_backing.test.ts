@@ -1,6 +1,6 @@
 /**
  * Pure-TS heap backing (`memory: { heap: {} }`) — ADR-0018 §1B / the oecs
- * profile. The engine's core/ecs runs over a plain resizable `ArrayBuffer`
+ * profile. The engine's core/ecs runs over a plain fixed `ArrayBuffer`
  * instead of a `SharedArrayBuffer`: no cross-origin isolation, no worker/WASM
  * transfer. These tests prove the heap world is functionally a peer of the SAB
  * world — construct, grow, tick, query, structural change, determinism,
@@ -84,6 +84,16 @@ describe("heap backing: construct + grow + tick", () => {
 		expect(world.memoryPlan.source).toBe("heap");
 		expect(world.columnStore.buffer).toBeInstanceOf(ArrayBuffer);
 		expect(isSab(world.columnStore.buffer)).toBe(false);
+	});
+
+	it("the live world's buffer is FIXED (non-resizable) — V8 fast-path guard (0.5.3)", () => {
+		// The user-facing end of the 0.5.3 fix: a real heap world's column buffer
+		// must be non-resizable so every `col[i]` in a system stays on V8's fast
+		// element-access path. Reverting the allocator to a resizable buffer would
+		// silently ~4-5× the iteration cost of every system; assert the shape here.
+		const { world } = worldWithMovers({ memory: { heap: {} } }, 2000, 1);
+		const buffer = world.columnStore.buffer as unknown as { resizable: boolean };
+		expect(buffer.resizable).toBe(false);
 	});
 
 	it("constructs + ticks + grows under a small heap.max_bytes cap (#710)", () => {

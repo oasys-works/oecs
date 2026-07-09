@@ -373,7 +373,7 @@
 		{
 			"label": "heap_arraybuffer/A/create",
 			"layout": {
-				"byteLength": 544,
+				"byteLength": 4194304,
 				"headerCapacity": 544,
 				"headerViewStamp": 0,
 				"headerArchetypeCount": 2,
@@ -417,7 +417,7 @@
 		{
 			"label": "heap_arraybuffer/A/extend",
 			"layout": {
-				"byteLength": 800,
+				"byteLength": 4194304,
 				"headerCapacity": 800,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 3,
@@ -497,7 +497,7 @@
 		{
 			"label": "heap_arraybuffer/A/grow",
 			"layout": {
-				"byteLength": 1184,
+				"byteLength": 4194304,
 				"headerCapacity": 1184,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
@@ -577,7 +577,7 @@
 		{
 			"label": "heap_arraybuffer/B/extend-realloc",
 			"layout": {
-				"byteLength": 384,
+				"byteLength": 4194304,
 				"headerCapacity": 384,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 2,
@@ -638,7 +638,7 @@
 		{
 			"label": "heap_arraybuffer/B/extend-existing-rows",
 			"layout": {
-				"byteLength": 448,
+				"byteLength": 4194304,
 				"headerCapacity": 448,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
@@ -711,7 +711,7 @@
 		{
 			"label": "heap_arraybuffer/C/grow-no-targets",
 			"layout": {
-				"byteLength": 136,
+				"byteLength": 4194304,
 				"headerCapacity": 136,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 1,

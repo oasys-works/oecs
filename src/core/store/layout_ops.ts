@@ -123,6 +123,30 @@ export function growBufferInPlace(
 }
 
 /**
+ * Byte offset where the next appended column region begins — the tail cursor
+ * the in-place grow/extend paths pass to `layoutColumnsAtTail`.
+ *
+ * For the growable-SAB and wasm backings the buffer is sized to the live extent
+ * (`SharedArrayBuffer.grow` resizes exactly; wasm rounds up to a page, and its
+ * fast path deliberately lands new regions past that page-rounded tail), so
+ * `buffer.byteLength` IS the tail. For the pure-TS **heap** backing (0.5.3) the
+ * buffer is a FIXED `ArrayBuffer` reserved at the full cap for V8 fast-path
+ * element access, so its `byteLength` is `maxBytes`, NOT the used size — the
+ * true tail is the header `capacity` (the logical high-water; new columns land
+ * in still-zero fixed-buffer space just past the last live column).
+ *
+ * A plain (non-shared) `ArrayBuffer` is uniquely the heap profile's fixed
+ * reservation — every other in-place backing is a `SharedArrayBuffer`. Keying
+ * off the backing keeps the SAB/wasm layouts byte-for-byte unchanged.
+ */
+export function tailCursorBytes(old: ColumnStoreInternal): number {
+	if (old.buffer instanceof ArrayBuffer) {
+		return old.view.getUint32(STORE_HEADER_OFFSETS.capacity, true);
+	}
+	return old.buffer.byteLength;
+}
+
+/**
  * Derive `CreateColumnStoreOptions` from an old ColumnStore so a slow-path realloc
  * preserves the same set of optional regions at the same byte offsets in the
  * new SAB. Without this, an extend / grow would silently drop a region — the

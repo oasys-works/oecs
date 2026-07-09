@@ -106,12 +106,12 @@ export type WasmMemoryArm =
 	  }
 	| { readonly maximumPages: number; readonly initialPages?: number; readonly memory?: never };
 
-/** Pure-TS **heap** backing (#643 / ADR-0018 §1B): a plain resizable
- * `ArrayBuffer` instead of a `SharedArrayBuffer`. Needs no cross-origin
- * isolation (COOP/COEP) and is the intended default for embedders that can't
- * set those headers (the oecs profile). Trade-off: no worker offload and no
- * WASM compute backend — both require a transferable `SharedArrayBuffer`. An
- * empty `{}` takes the default 256 MiB growable cap. */
+/** Pure-TS **heap** backing (#643 / ADR-0018 §1B): a plain fixed (non-resizable)
+ * `ArrayBuffer` reserved at the cap up front, instead of a `SharedArrayBuffer`.
+ * Needs no cross-origin isolation (COOP/COEP) and is the intended default for
+ * embedders that can't set those headers (the oecs profile). Trade-off: no
+ * worker offload and no WASM compute backend — both require a transferable
+ * `SharedArrayBuffer`. An empty `{}` takes the default 256 MiB cap. */
 export interface HeapMemoryArm {
 	/** Byte ceiling of the growable heap backing. Default
 	 * `DEFAULT_ECS_CAP_BYTES` (256 MiB), same hard-ceiling semantics as the
@@ -466,7 +466,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		};
 	}
 
-	// --- heap: pure-TS resizable ArrayBuffer, no SharedArrayBuffer ----------
+	// --- heap: pure-TS fixed ArrayBuffer, no SharedArrayBuffer --------------
 	if (opts?.heap !== undefined) {
 		if (opts.heap.maxBytes !== undefined)
 			requirePositiveInt("heap.maxBytes", opts.heap.maxBytes);
@@ -493,7 +493,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			intentLabel: `pure-TS heap backing (${fmtBytes(capBytes)} growable cap, no SharedArrayBuffer)`,
 			budgetEntities: null,
 			derivation: [
-				`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}) — resizable ArrayBuffer, no SAB / no COOP+COEP (is_in_place ✓)`,
+				`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}) — fixed ArrayBuffer reserved at the cap, no SAB / no COOP+COEP (is_in_place ✓)`,
 				"trade-off: no worker offload / no WASM backend (both need a transferable SharedArrayBuffer)",
 				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
 				`entity_index = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`

@@ -53,6 +53,7 @@ import {
 	growBufferInPlace,
 	layoutColumnsAtTail,
 	reallocAndRepublish,
+	tailCursorBytes,
 	type ArchetypeGrowSpec,
 	type TailArchetypeLayout
 } from "./layout_ops";
@@ -138,7 +139,10 @@ function growColumnStoreInPlace(
 			columns: oldArch.columnsInOrder
 		};
 	}
-	const { descriptors, newTotal } = layoutColumnsAtTail(old.buffer.byteLength, tailLayouts);
+	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
+	// `capacity` for the fixed heap ArrayBuffer (whose byteLength is the full
+	// cap), or `buffer.byteLength` for the growable-SAB / wasm backings (unchanged).
+	const { descriptors, newTotal } = layoutColumnsAtTail(tailCursorBytes(old), tailLayouts);
 	const newDescriptors = new Map<number, ArchetypeDescriptor>();
 	for (let i = 0; i < descriptors.length; i++) {
 		newDescriptors.set(descriptors[i].archetypeId, descriptors[i]);

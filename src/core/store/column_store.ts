@@ -102,7 +102,7 @@ export interface ArchetypeViews {
 
 export interface ColumnStore {
 	/** The backing buffer. `ArrayBufferLike` because the store is backing-agnostic:
-	 * a `SharedArrayBuffer` for the SAB/WASM/worker profile, or a plain resizable
+	 * a `SharedArrayBuffer` for the SAB/WASM/worker profile, or a plain fixed
 	 * `ArrayBuffer` for the pure-TS heap profile (`heapArraybufferAllocator`).
 	 * Consumers that genuinely require sharing (worker transfer, WASM memory)
 	 * narrow back to `SharedArrayBuffer` at their boundary. */

@@ -220,3 +220,44 @@ describe.each([
 		expect(shrunk.byteLength).toBeGreaterThanOrEqual(128);
 	});
 });
+
+// ── 0.5.3 regression guard: the heap buffer MUST stay FIXED ──────────────────
+// The pure-TS heap profile's iteration speed rests on one structural fact: its
+// `ArrayBuffer` is NON-resizable and born at the full cap. V8 has no fast
+// element-access path for TypedArray views over a resizable/growable buffer, so
+// a column view over a resizable ArrayBuffer deopts every `col[i]` (~4-5× slower
+// iteration — exactly the 0.5.0→0.5.2 regression this pins against). The
+// `byteLength >= n` assertions in the shared matrix above pass for BOTH the fixed
+// and the resizable shape, so they can't catch a revert; these lock the fixed
+// shape directly. If you're here because these fail after "optimizing" the heap
+// allocator back to a resizable buffer: don't — see `heapArraybufferAllocator`.
+describe("heap_arraybuffer_allocator — fixed-buffer fast-path invariant (0.5.3)", () => {
+	it("reserves the FULL cap up front, not the requested size", () => {
+		const cap = 4 * 1024 * 1024;
+		// Request a tiny 64 bytes; a resizable buffer would hand back byteLength 64.
+		const buffer = heapArraybufferAllocator(cap)(64);
+		expect(buffer).toBeInstanceOf(ArrayBuffer);
+		expect(buffer.byteLength).toBe(cap);
+	});
+
+	it("is NON-resizable — the property that keeps col[i] on V8's fast path", () => {
+		const cap = 2 * 1024 * 1024;
+		// ES2024 `resizable`/`maxByteLength` aren't in the project's ES2022 lib
+		// types; read through a narrow shape so the assertion stays strict.
+		const buffer = heapArraybufferAllocator(cap)(1024) as unknown as {
+			resizable: boolean;
+			maxByteLength: number;
+			byteLength: number;
+		};
+		expect(buffer.resizable).toBe(false);
+		// A fixed buffer reports maxByteLength === byteLength (=== cap here); a
+		// resizable one would report maxByteLength === cap but byteLength === 1024.
+		expect(buffer.maxByteLength).toBe(cap);
+		expect(buffer.byteLength).toBe(cap);
+	});
+
+	it("contrast: growable_sab_allocator IS growable — the shape heap must NOT have", () => {
+		const sab = growableSabAllocator(4 * 1024 * 1024)(1024) as unknown as { growable: boolean };
+		expect(sab.growable).toBe(true);
+	});
+});

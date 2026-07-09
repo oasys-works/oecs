@@ -59,10 +59,11 @@ export interface BufferAllocator {
 	/** Returns a buffer of byteLength >= `bytes`. The historical name is
 	 * "SAB", but the return is `ArrayBufferLike`: `growableSabAllocator` /
 	 * `wasmMemoryAllocator` produce a `SharedArrayBuffer` (the SAB profile),
-	 * while `heapArraybufferAllocator` produces a plain resizable
-	 * `ArrayBuffer` (the pure-TS heap profile — no cross-origin isolation
-	 * required). The store layer treats the backing uniformly; only the
-	 * WASM/worker boundary narrows back to `SharedArrayBuffer`. */
+	 * while `heapArraybufferAllocator` produces a plain fixed (non-resizable)
+	 * `ArrayBuffer` reserved at the cap (the pure-TS heap profile — no
+	 * cross-origin isolation required). The store layer treats the backing
+	 * uniformly; only the WASM/worker boundary narrows back to
+	 * `SharedArrayBuffer`. */
 	(bytes: number): ArrayBufferLike;
 	readonly isInPlace?: boolean;
 }
@@ -76,9 +77,11 @@ export interface BufferAllocator {
  * return it; `DEFAULT_SAB_ALLOCATOR` keeps the wide `BufferAllocator` type and
  * therefore cannot typecheck where a live-Store backing is required. Non-in-place
  * allocators remain valid for snapshot/test sizing only. The brand says nothing
- * about *shared* vs *heap* backing — `heapArraybufferAllocator`'s resizable
- * `ArrayBuffer` is just as in-place as a growable SAB (`.resize()` preserves
- * existing views exactly like `SharedArrayBuffer.prototype.grow`).
+ * about *shared* vs *heap* backing — `heapArraybufferAllocator`'s fixed
+ * `ArrayBuffer` is just as in-place as a growable SAB: it is reserved at the full
+ * cap up front and never moves, so grow/extend relocate columns *within* it
+ * (`copyWithin`) rather than resizing the buffer — existing views stay valid, the
+ * same guarantee `SharedArrayBuffer.prototype.grow` gives by resizing in place.
  */
 export type InPlaceBufferAllocator = BufferAllocator & { readonly isInPlace: true };
 
@@ -153,12 +156,13 @@ interface BufferStrategy {
 	growTo(buffer: ArrayBufferLike, byteLength: number): void;
 }
 
-/** One home for the growable single-buffer allocator: first call allocates a
- * resizable buffer with `maxByteLength: maxBytes`; later calls grow it in
- * place and return the same buffer. The cap check, the hard-ceiling throw
- * (#380 — deliberately no grow-beyond-cap fallback), and the `isInPlace`
- * marker live here exactly once; the public wrappers contribute only the
- * buffer primitive and any availability guard. */
+/** One home for the single-buffer allocators: the first call allocates the
+ * backing (a resizable SAB grown via `.grow()` for `growableSabAllocator`; a
+ * fixed `ArrayBuffer` reserved at `maxBytes` for `heapArraybufferAllocator`,
+ * whose growTo never fires); later in-cap calls return the same buffer. The cap
+ * check, the hard-ceiling throw (#380 — deliberately no grow-beyond-cap
+ * fallback), and the `isInPlace` marker live here exactly once; the public
+ * wrappers contribute only the buffer primitive and any availability guard. */
 function makeGrowableAllocator(
 	label: string,
 	strategy: BufferStrategy,
@@ -291,20 +295,42 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
 }
 
 /**
- * Allocator that backs the store by a single growable **plain `ArrayBuffer`**
- * (created with `{ maxByteLength: maxBytes }`, grown via `.resize()`). This is
- * the pure-TS **heap profile** — the oecs default and the answer to ADR-0018's
+ * Allocator that backs the store by a single **fixed (non-resizable) plain
+ * `ArrayBuffer`** reserved at the full `maxBytes` cap up front. This is the
+ * pure-TS **heap profile** — the oecs default and the answer to ADR-0018's
  * deferred §1B: no `SharedArrayBuffer`, hence no cross-origin isolation
  * (COOP/COEP) requirement, and no worker/WASM transfer (single-process worlds
- * only). Otherwise identical to `growableSabAllocator`:
+ * only).
  *
- *   - `isInPlace: true`. A resizable `ArrayBuffer`'s `.resize()` keeps the
- *     same buffer object and preserves existing TypedArray/DataView views, so
- *     the store's `extend`/`grow` fast path carries column views forward
- *     unchanged — exactly as `SharedArrayBuffer.prototype.grow` does. ADR-0008's
- *     entity-index-hoist-across-grow invariant holds identically.
- *   - same 256 MiB default cap with hard-ceiling semantics (#380): reaching it
- *     signals runaway growth upstream, not a limit to route around.
+ * WHY FIXED, NOT RESIZABLE (the 0.5.3 iteration-perf fix): V8 has no fast
+ * element-access path for TypedArray views over a **resizable/growable**
+ * `ArrayBuffer` — every `col[i]` re-checks bounds against the buffer's mutable
+ * length, a ~4× per-element tax measured on V8 13.6 (an isolated `col[i] *= 2`
+ * loop: fixed `ArrayBuffer` ~1.6G vs a view over a resizable buffer ~0.37G
+ * element-accesses/s). oecs 0.3.x gave each column its own fixed buffer and sat
+ * mid-pack among SoA ECS libs; the 0.5.0 switch to one resizable arena silently
+ * regressed all iteration-bound systems ~5× (the cross-library `packed_5`
+ * scenario: 0.5.2 ~86k op/s → 0.5.3 ~420k). A fixed buffer restores the fast path.
+ *
+ * How growth still works in place: the cap is reserved as one fixed buffer at
+ * construction. A resizable buffer was originally chosen so `.resize()` could
+ * grow in place without moving views; a fixed buffer never moves EITHER — the
+ * store's grow/extend relocate columns to the tail *within* this buffer
+ * (`copyWithin`), so the buffer object and every existing view stay valid.
+ * `isInPlace: true` therefore still holds, and ADR-0008's
+ * entity-index-hoist-across-grow invariant is preserved. The store keys its
+ * tail cursor off the header `capacity` (the logical high-water), NOT
+ * `buffer.byteLength` — which is now always `maxBytes` (the same decoupling the
+ * wasm page-rounded allocator already relied on).
+ *
+ *   - Memory cost is unchanged: a fixed `ArrayBuffer(maxBytes)` faults pages in
+ *     lazily (untouched pages cost no RSS), exactly like the resizable buffer's
+ *     `maxByteLength` reservation — a 256 MiB reservation on a 1000-entity world
+ *     stays a few MiB resident (measured ~4 MiB RSS, within ~1 MiB of the old
+ *     resizable buffer).
+ *   - same 256 MiB default cap with hard-ceiling semantics (#380): a request
+ *     past `maxBytes` throws `StoreCapExceededError` — runaway growth signal,
+ *     not a limit to route around.
  *
  * Why a non-shared buffer suffices: `Atomics` live only on the cross-thread
  * command/event/action rings, never on the core store path, so a single-process
@@ -317,22 +343,21 @@ export function heapArraybufferAllocator(
 	return makeGrowableAllocator(
 		"heap_arraybuffer_allocator",
 		{
-			create: (byteLength, maxByteLength) => {
-				// boundary: the resizable-`ArrayBuffer` constructor (`{ maxByteLength }`)
-				// is ES2024 / supported by Bun + V8, but the ES2022 lib types only
-				// declare the 1-arg overload. Cast the constructor here so the rest of
-				// the layer stays strictly typed (mirrors `growableSabAllocator`).
-				const AbCtor = ArrayBuffer as unknown as new (
-					len: number,
-					opts: { maxByteLength: number }
-				) => ArrayBuffer;
-				return new AbCtor(byteLength, { maxByteLength });
-			},
-			// boundary: `ArrayBuffer.prototype.resize` is ES2024, not in the ES2022
-			// lib types; widen here. Resize keeps the same buffer object and
-			// preserves existing views (the in-place contract).
-			growTo: (buffer, byteLength) =>
-				(buffer as unknown as { resize(n: number): void }).resize(byteLength)
+			// Reserve the whole cap as ONE fixed buffer. `byteLength` (the current
+			// need) is ignored: the buffer never resizes, so it must be born at the
+			// ceiling. Lazy page-faulting keeps RSS proportional to real use.
+			create: (_byteLength, maxByteLength) => new ArrayBuffer(maxByteLength),
+			// Unreachable: the buffer is created at `maxByteLength`, so
+			// `makeGrowableAllocator`'s `bytes > buffer.byteLength` guard never fires
+			// (a byte count past the cap throws first). A fixed `ArrayBuffer` has no
+			// `.resize()`; assert loudly rather than attempt one, in case the guard
+			// logic ever changes.
+			growTo: () => {
+				throw new Error(
+					"heap_arraybuffer_allocator: the heap buffer is fixed at maxBytes and must " +
+						"never grow — growth relocates columns within the buffer, not the buffer itself"
+				);
+			}
 		},
 		maxBytes
 	);
