@@ -96,7 +96,7 @@ describe("heap backing: construct + grow + tick", () => {
 		expect(buffer.resizable).toBe(false);
 	});
 
-	it("constructs + ticks + grows under a small heap.max_bytes cap (#710)", () => {
+	it("constructs + ticks + grows under a small heap.maxBytes cap (#710)", () => {
 		// Regression: the heap arm used to hardcode the full entity-index
 		// reservation (~12 MiB), so any `heap.maxBytes` below that threw
 		// StoreCapExceededError at `new ECS(...)` — before the world even existed.

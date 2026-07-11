@@ -1,6 +1,6 @@
 # Memory & storage profiles
 
-An `ECS` stores every component column in **one backing buffer**. The `memory` option on the constructor picks the buffer kind and its size cap. The default needs no configuration — a plain resizable `ArrayBuffer` that grows on demand up to 256 MiB — so reach for `memory` only to size deliberately or to switch to a shared/WASM backing.
+An `ECS` stores every component column in **one backing buffer**. The `memory` option on the constructor picks the buffer kind and its size cap. The default needs no configuration — a plain `ArrayBuffer` reserved fixed at a 256 MiB cap (untouched pages cost no resident memory; columns grow on demand within it) — so reach for `memory` only to size deliberately or to switch to a shared/WASM backing.
 
 ```ts
 new ECS();                                              // heap, 256 MiB cap — the default
@@ -15,10 +15,10 @@ new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (wor
 
 | Arm | What it does | Pick when |
 | --- | --- | --- |
-| *(omitted)* | growable heap `ArrayBuffer`, 256 MiB cap | you don't care yet |
-| `{ heap: { maxBytes? } }` | growable `ArrayBuffer`, explicit cap | the default profile, sized |
+| *(omitted)* | fixed heap `ArrayBuffer`, 256 MiB cap | you don't care yet |
+| `{ heap: { maxBytes? } }` | fixed heap `ArrayBuffer`, explicit cap | the default profile, sized |
 | `{ budget: { entities, … } }` | derives column cap, entity-index reservation, byte cap **and** cap-error wording from an entity count | you know your rough peak entity count |
-| `{ maxBytes: N }` | growable heap with an explicit byte ceiling | you want a hard byte cap |
+| `{ maxBytes: N }` | fixed heap with an explicit byte ceiling | you want a hard byte cap |
 | `{ shared: { maxBytes? } }` | growable `SharedArrayBuffer` | worker offload / a WASM backend |
 | `{ wasm: {…} }` | the backing **is** a `WebAssembly.Memory` | zero-copy sharing with a WASM sim |
 | `{ allocator }` | your own in-place allocator | expert escape hatch |
@@ -38,7 +38,7 @@ interface EntityBudget {
 
 Three backings, one core — same archetypes, same [`stateHash`](./determinism.md), only the buffer differs.
 
-- **Heap** (default) — a plain resizable `ArrayBuffer`. **No `SharedArrayBuffer`, no cross-origin isolation (COOP/COEP).** Trade-off: no worker offload, no WASM compute backend. This is why oecs works anywhere out of the box.
+- **Heap** (default) — a plain **fixed (non-resizable)** `ArrayBuffer` reserved at the cap. Fixed keeps TypedArray views on V8's fast element-access path (a resizable buffer taxes every `col[i]`), and untouched pages cost no resident memory, so the reservation is virtually free. **No `SharedArrayBuffer`, no cross-origin isolation (COOP/COEP).** Trade-off: no worker offload, no WASM compute backend. This is why oecs works anywhere out of the box.
 - **Shared** (`@oasys/oecs/shared`) — a growable `SharedArrayBuffer`. Enables sharing columns with a worker or a WASM sim. **Requires cross-origin isolation in browsers** (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`). Bun/Node expose SAB unconditionally.
 - **WASM** — a `WebAssembly.Memory` whose buffer *is* the store, so a WASM sim and the ECS columns share bytes with no copying.
 

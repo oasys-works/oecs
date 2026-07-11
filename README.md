@@ -6,7 +6,7 @@
 mature engine: observers, relations with wildcards, sparse storage, system sets and run conditions,
 entity enable/disable, templates, deterministic hashing with snapshot/restore, a typed host→ECS write
 seam, and an optional reactive UI bridge. It is **pure TypeScript and zero-dependency by default** — it
-runs over a plain resizable `ArrayBuffer`, so it needs no `SharedArrayBuffer` and no cross-origin
+runs over a single plain `ArrayBuffer`, so it needs no `SharedArrayBuffer` and no cross-origin
 isolation (COOP/COEP). An opt-in shared-memory profile swaps in a `SharedArrayBuffer` for worker offload
 or a WASM compute backend; both profiles share one core and agree, byte-for-byte, on `stateHash`.
 
@@ -28,8 +28,9 @@ deno add jsr:@oasys/oecs    # JSR (Deno)
 npx jsr add @oasys/oecs     # JSR (npm-compatible)
 ```
 
-Requires a runtime with resizable `ArrayBuffer` (the default heap profile grows in place):
-Node ≥ 20, Deno ≥ 1.38, Chrome 111+, Firefox 128+, Safari 16.4+.
+Supported runtimes: Node ≥ 20, Deno ≥ 1.38, Chrome 111+, Firefox 128+, Safari 16.4+. (The default
+heap profile uses a plain fixed `ArrayBuffer`; the opt-in shared/WASM profiles need growable
+`SharedArrayBuffer` / `WebAssembly.Memory`, which set those floors.)
 
 ## Quick start
 

@@ -113,9 +113,9 @@ export type WasmMemoryArm =
  * worker offload and no WASM compute backend — both require a transferable
  * `SharedArrayBuffer`. An empty `{}` takes the default 256 MiB cap. */
 export interface HeapMemoryArm {
-	/** Byte ceiling of the growable heap backing. Default
-	 * `DEFAULT_ECS_CAP_BYTES` (256 MiB), same hard-ceiling semantics as the
-	 * SAB backing (#380). */
+	/** Byte ceiling of the heap backing — reserved fixed (non-resizable) at
+	 * this cap up front. Default `DEFAULT_ECS_CAP_BYTES` (256 MiB), same
+	 * hard-ceiling semantics as the SAB backing (#380). */
 	readonly maxBytes?: number;
 }
 
@@ -215,7 +215,7 @@ export type ECSMemoryOptions =
  * diagnostics; `intentLabel`/`budgetEntities`/`capBytes` also travel
  * into `Store` so cap errors speak the caller's language. */
 export interface ResolvedECSMemory {
-	readonly source: "default" | "budget" | "max_bytes" | "wasm" | "allocator" | "heap" | "shared";
+	readonly source: "default" | "budget" | "maxBytes" | "wasm" | "allocator" | "heap" | "shared";
 	readonly allocator: InPlaceBufferAllocator;
 	readonly columnCapacity: number;
 	readonly entityIndexCapacity: number;
@@ -277,7 +277,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		);
 	}
 	const pinnedColumns = opts?.columnCapacity;
-	if (pinnedColumns !== undefined) requirePositiveInt("column_capacity", pinnedColumns);
+	if (pinnedColumns !== undefined) requirePositiveInt("columnCapacity", pinnedColumns);
 
 	// --- budget: derive everything from "I expect ~N entities" -------------
 	if (opts?.budget !== undefined) {
@@ -286,7 +286,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		const bytesPerEntity = opts.budget.bytesPerEntity ?? BUDGET_DEFAULT_BYTES_PER_ENTITY;
 		requirePositiveInt("budget.entities", entities);
 		requirePositiveInt("budget.archetypes", archetypes);
-		requirePositiveInt("budget.bytes_per_entity", bytesPerEntity);
+		requirePositiveInt("budget.bytesPerEntity", bytesPerEntity);
 		if (entities > 1 << 20) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
@@ -316,8 +316,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			intentLabel: `budget of ${entities} entities`,
 			budgetEntities: entities,
 			derivation: [
-				`column_capacity = ${pinnedColumns !== undefined ? `${columnCapacity} (pinned)` : `pow2(${entities}/${archetypes} per archetype) = ${columnCapacity}`}`,
-				`entity_index = pow2(2 × ${entities}) = ${entityIndexCapacity} slots × ${ENTITY_INDEX_BYTES_PER_SLOT} B = ${fmtBytes(indexBytes)}`,
+				`columnCapacity = ${pinnedColumns !== undefined ? `${columnCapacity} (pinned)` : `pow2(${entities}/${archetypes} per archetype) = ${columnCapacity}`}`,
+				`entityIndex = pow2(2 × ${entities}) = ${entityIndexCapacity} slots × ${ENTITY_INDEX_BYTES_PER_SLOT} B = ${fmtBytes(indexBytes)}`,
 				`columns = ${entities} × ${bytesPerEntity} B × ${BUDGET_GROWTH_HEADROOM} (double+holes headroom) = ${fmtBytes(columnBytes)}`,
 				`cap = align64K(max(index + columns, ${fmtBytes(BUDGET_CAP_FLOOR_BYTES)} floor)) = ${fmtBytes(capBytes)}`
 			],
@@ -337,7 +337,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			ENTITY_INDEX_DEFAULT_CAPACITY
 		);
 		return {
-			source: "max_bytes",
+			source: "maxBytes",
 			allocator: heapArraybufferAllocator(opts.maxBytes),
 			columnCapacity,
 			entityIndexCapacity,
@@ -346,8 +346,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			budgetEntities: null,
 			derivation: [
 				`cap = ${fmtBytes(opts.maxBytes)} (caller-declared)`,
-				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
-				`entity_index = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
+				`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
+				`entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
 			],
 			wasmMemory: null
 		};
@@ -381,18 +381,18 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				derivation: [
 					"backing = wasm_memory_allocator(memory) — zero-copy with the sim (is_in_place ✓)",
 					"cap = the Memory's own `maximum` (declared by the caller; not readable from JS)",
-					`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
+					`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
 				],
 				wasmMemory: arm.memory
 			};
 		}
-		requirePositiveInt("wasm.maximum_pages", arm.maximumPages);
+		requirePositiveInt("wasm.maximumPages", arm.maximumPages);
 		const initialPages = arm.initialPages ?? Math.min(32, arm.maximumPages);
-		requirePositiveInt("wasm.initial_pages", initialPages);
+		requirePositiveInt("wasm.initialPages", initialPages);
 		if (initialPages > arm.maximumPages) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				`memory.wasm.initial_pages (${initialPages}) exceeds maximum_pages (${arm.maximumPages})`
+				`memory.wasm.initialPages (${initialPages}) exceeds maximumPages (${arm.maximumPages})`
 			);
 		}
 		const memory = new WebAssembly.Memory({
@@ -421,8 +421,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			derivation: [
 				`cap = ${arm.maximumPages} pages × 64 KiB = ${fmtBytes(capBytes)} (Memory maximum)`,
 				`initial = ${initialPages} pages (${arm.initialPages !== undefined ? "declared" : "default"})`,
-				`entity_index = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`,
-				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
+				`entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`,
+				`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
 			],
 			wasmMemory: memory
 		};
@@ -443,7 +443,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		}
 		const columnCapacity = pinnedColumns ?? DEFAULT_COLUMN_CAPACITY;
 		const hint = opts.capBytesHint;
-		if (hint !== undefined) requirePositiveInt("cap_bytes_hint", hint);
+		if (hint !== undefined) requirePositiveInt("capBytesHint", hint);
 		return {
 			source: "allocator",
 			allocator: opts.allocator,
@@ -460,7 +460,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				hint !== undefined
 					? `cap = ${fmtBytes(hint)} (caller hint — diagnostics only; the allocator owns the real cap)`
 					: "cap = allocator-owned (no hint)",
-				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
+				`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`
 			],
 			wasmMemory: null
 		};
@@ -495,8 +495,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			derivation: [
 				`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}) — fixed ArrayBuffer reserved at the cap, no SAB / no COOP+COEP (is_in_place ✓)`,
 				"trade-off: no worker offload / no WASM backend (both need a transferable SharedArrayBuffer)",
-				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
-				`entity_index = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
+				`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
+				`entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
 			],
 			wasmMemory: null
 		};
@@ -526,8 +526,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			derivation: [
 				`backing = growable_sab_allocator(${fmtBytes(capBytes)}) — growable SharedArrayBuffer (is_in_place ✓); needs cross-origin isolation`,
 				"enables worker offload + a WASM compute backend (transferable SharedArrayBuffer)",
-				`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
-				`entity_index = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
+				`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "default"})`,
+				`entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
 			],
 			wasmMemory: null
 		};
@@ -545,8 +545,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		budgetEntities: null,
 		derivation: [
 			`cap = ${fmtBytes(DEFAULT_ECS_CAP_BYTES)} (heap_arraybuffer_allocator default)`,
-			`column_capacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "DEFAULT_COLUMN_CAPACITY"})`,
-			`entity_index = ${ENTITY_INDEX_DEFAULT_CAPACITY} slots (full EntityID space, ~12 MiB virtual)`
+			`columnCapacity = ${columnCapacity} (${pinnedColumns !== undefined ? "pinned" : "DEFAULT_COLUMN_CAPACITY"})`,
+			`entityIndex = ${ENTITY_INDEX_DEFAULT_CAPACITY} slots (full EntityID space, ~12 MiB virtual)`
 		],
 		wasmMemory: null
 	};

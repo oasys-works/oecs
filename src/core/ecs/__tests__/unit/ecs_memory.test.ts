@@ -51,7 +51,7 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.wasmMemory).toBeNull();
 	});
 
-	it("no-arm column_capacity pin is the minimal initial_capacity migration", () => {
+	it("no-arm columnCapacity pin is the minimal initial_capacity migration", () => {
 		const plan = resolveECSMemory({ columnCapacity: 64 });
 		expect(plan.source).toBe("default");
 		expect(plan.columnCapacity).toBe(64);
@@ -93,7 +93,7 @@ describe("resolve_ecs_memory", () => {
 		);
 	});
 
-	it("max_bytes: caller-declared cap with default and pinned columns", () => {
+	it("maxBytes: caller-declared cap with default and pinned columns", () => {
 		const plan = resolveECSMemory({ maxBytes: 8 * MiB });
 		expect(plan.capBytes).toBe(8 * MiB);
 		expect(plan.columnCapacity).toBe(DEFAULT_COLUMN_CAPACITY);
@@ -105,7 +105,7 @@ describe("resolve_ecs_memory", () => {
 		);
 	});
 
-	it("wasm (engine-constructed): cap from maximum_pages, Memory exposed", () => {
+	it("wasm (engine-constructed): cap from maximumPages, Memory exposed", () => {
 		const plan = resolveECSMemory({ wasm: { maximumPages: 256 } });
 		expect(plan.capBytes).toBe(256 * 64 * 1024);
 		expect(plan.wasmMemory).toBeInstanceOf(WebAssembly.Memory);
@@ -124,10 +124,10 @@ describe("resolve_ecs_memory", () => {
 		expectInvalid(() => resolveECSMemory({ wasm: { memory } }), "shared: true");
 	});
 
-	it("wasm: rejects initial_pages above maximum_pages", () => {
+	it("wasm: rejects initialPages above maximumPages", () => {
 		expectInvalid(
 			() => resolveECSMemory({ wasm: { maximumPages: 4, initialPages: 8 } }),
-			"exceeds maximum_pages"
+			"exceeds maximumPages"
 		);
 	});
 
@@ -161,7 +161,7 @@ describe("resolve_ecs_memory", () => {
 		expect(buf instanceof SharedArrayBuffer).toBe(false);
 	});
 
-	it("heap: honours an explicit max_bytes and a column pin", () => {
+	it("heap: honours an explicit maxBytes and a column pin", () => {
 		const plan = resolveECSMemory({ heap: { maxBytes: 8 * MiB }, columnCapacity: 128 });
 		expect(plan.source).toBe("heap");
 		expect(plan.capBytes).toBe(8 * MiB);
@@ -177,7 +177,7 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.entityIndexCapacity).toBeLessThan(ENTITY_INDEX_DEFAULT_CAPACITY);
 	});
 
-	it("heap: rejects a non-positive max_bytes", () => {
+	it("heap: rejects a non-positive maxBytes", () => {
 		const malformed = JSON.parse('{ "heap": { "maxBytes": 0 } }');
 		expectInvalid(() => resolveECSMemory(malformed), "heap.maxBytes");
 	});

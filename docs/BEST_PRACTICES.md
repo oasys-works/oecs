@@ -566,7 +566,7 @@ The **editor** layer (`@oasys/oecs/editor`) adds undo/redo and two-way field han
 
 ## 17. Memory sizing
 
-The default needs no configuration — a growable heap `ArrayBuffer` capped at 256 MiB, no `SharedArrayBuffer`, no cross-origin isolation. Reach for the `memory` option only to size deliberately or switch backing.
+The default needs no configuration — a heap `ArrayBuffer` reserved fixed at a 256 MiB cap (untouched pages cost no resident memory), no `SharedArrayBuffer`, no cross-origin isolation. Reach for the `memory` option only to size deliberately or switch backing.
 
 ```ts
 new ECS();                                              // heap default

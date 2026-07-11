@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed — diagnostic vocabulary catch-up (the deferred snake_case remnants)
+
+- **BREAKING (diagnostics):** `ECS.memoryPlan.source` now reports `"maxBytes"`
+  instead of `"max_bytes"` for the explicit-byte-cap arm, matching the option
+  key it names (every other arm already matched: `budget`, `heap`, `shared`,
+  `wasm`, `allocator`, `default`).
+- `INVALID_MEMORY_OPTIONS` messages and the `memoryPlan.derivation` trace now
+  name options by their real camelCase keys (`columnCapacity`, `entityIndex`,
+  `budget.bytesPerEntity`, `wasm.maximumPages`, `wasm.initialPages`,
+  `capBytesHint`) instead of the pre-0.4 snake_case spellings.
+- Docs: `ARCHITECTURE.md` re-stamped to 0.5.3 and, along with `README.md`,
+  `api/memory.md`, `api/index.md`, and `BEST_PRACTICES.md`, no longer describes
+  the default heap backing as a growable/resizable `ArrayBuffer` (fixed at cap
+  since 0.5.3).
+
 ## [0.5.3] — 2026-07-09
 
 ### Fixed — heap columns back on V8's fast element-access path (~5× iteration)
