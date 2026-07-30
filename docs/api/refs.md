@@ -134,6 +134,13 @@ all, and a cursor helps even when you read a single field.
 > `ctx.ref` sets it when you create a ref. Use **`ctx.cursorRead`** when you only read.
 > `ReadonlyComponentCursor` is a limit at compile time only, exactly as `ReadonlyComponentRef` is.
 
+> [!NOTE]
+> In development, a cursor does an access check on **each `at`**, and not only when you create it.
+> `cursor` does a write check, so declare the component in `writes`. `cursorRead` does a read check,
+> so declare it in `reads`. The check is on `at` because you keep a cursor: a cursor that you make
+> outside a system, or in a different system, is checked against the system that **uses** it. An
+> `at` outside every system stays free of the check, because no system can hold the fault.
+
 > [!WARNING]
 > You cannot read a component with a field named `at` through a cursor, because that name is the
 > same as the method of the cursor. Creation of the cursor throws, and the message says so. Use

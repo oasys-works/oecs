@@ -167,6 +167,167 @@ describe("cursor", () => {
 		expect(Object.getPrototypeOf(a)).toBe(Object.getPrototypeOf(b));
 	});
 
+	// The access check is on `at()`, not only on the call that makes the cursor.
+	// A cursor is made one time and then kept, so it outlives the span that made
+	// it — the two ways it escapes are below. Both wrote an undeclared component
+	// with no error while the check was at the creation site only.
+	describe("declared-access check follows the cursor to its point of use", () => {
+		/** A system that declares `Tick` and nothing else. */
+		const tickOnly = (name: string, Tick: any, fn: () => void) => ({
+			name,
+			reads: [Tick],
+			writes: [Tick],
+			spawns: [],
+			despawns: [],
+			transitions: [],
+			resourceReads: [],
+			resourceWrites: [],
+			fn
+		});
+
+		it("throws for a host-made cursor that a system body uses", () => {
+			const ecs = new ECS();
+			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
+			const Tick = ecs.registerComponent({ n: "f64" }, { name: "Tick" });
+			const e = ecs.spawn(ecs.template(Pos({ x: 1 }), Tick({ n: 0 })));
+
+			// Made at host level, where no system is active — so the check at the
+			// creation site passes, and only `at()` can catch this.
+			const p = ecs.cursor(Pos);
+
+			let err: unknown = null;
+			const sys = ecs.registerSystem(
+				tickOnly("declares_only_tick", Tick, () => {
+					try {
+						p.at(e);
+					} catch (ex) {
+						err = ex;
+					}
+				})
+			);
+			ecs.addSystems(SCHEDULE.UPDATE, sys);
+			ecs.update(1 / 60);
+
+			expect(String(err)).toMatch(/performed write on .*Pos.*didn't declare it/);
+			expect(ecs.getField(e, Pos, "x")).toBe(1); // the write never landed
+		});
+
+		it("throws for a ctx cursor that escapes into another system", () => {
+			// Worse than the host case: the cursor satisfies the DeclaredWrite
+			// typestate in the system that makes it, and then writes an undeclared
+			// component in the next one — both layers of the guarantee bypassed.
+			const ecs = new ECS();
+			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
+			const Tick = ecs.registerComponent({ n: "f64" }, { name: "Tick" });
+			const e = ecs.spawn(ecs.template(Pos({ x: 1 }), Tick({ n: 0 })));
+
+			let escaped: { at(id: any): unknown } | null = null;
+			const owner = ecs.registerSystem({
+				name: "owns_pos",
+				reads: [Pos],
+				writes: [Pos],
+				spawns: [],
+				despawns: [],
+				transitions: [],
+				resourceReads: [],
+				resourceWrites: [],
+				fn(ctx) {
+					escaped ??= ctx.cursor(Pos);
+				}
+			});
+			let err: unknown = null;
+			const thief = ecs.registerSystem(
+				tickOnly("declares_only_tick", Tick, () => {
+					try {
+						escaped?.at(e);
+					} catch (ex) {
+						err = ex;
+					}
+				})
+			);
+			ecs.addSystems(SCHEDULE.UPDATE, owner, {
+				system: thief,
+				ordering: { after: [owner] }
+			});
+			ecs.update(1 / 60);
+
+			expect(String(err)).toMatch(/performed write on .*Pos.*didn't declare it/);
+			expect(ecs.getField(e, Pos, "x")).toBe(1);
+		});
+
+		it("checks a read-only cursor against reads, not writes", () => {
+			// `cursorRead` needs `reads` only — a system that declares the component
+			// read-only may point one, and the mutable variant still may not.
+			const ecs = new ECS();
+			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
+			const e = ecs.spawn(ecs.template(Pos({ x: 5 })));
+
+			const readCursor = ecs.cursorRead(Pos);
+			const writeCursor = ecs.cursor(Pos);
+
+			let readErr: unknown = null;
+			let writeErr: unknown = null;
+			const sys = ecs.registerSystem({
+				name: "reads_pos_only",
+				reads: [Pos],
+				writes: [],
+				spawns: [],
+				despawns: [],
+				transitions: [],
+				resourceReads: [],
+				resourceWrites: [],
+				fn() {
+					try {
+						readCursor.at(e);
+					} catch (ex) {
+						readErr = ex;
+					}
+					try {
+						writeCursor.at(e);
+					} catch (ex) {
+						writeErr = ex;
+					}
+				}
+			});
+			ecs.addSystems(SCHEDULE.UPDATE, sys);
+			ecs.update(1 / 60);
+
+			expect(readErr).toBeNull();
+			expect(String(writeErr)).toMatch(/performed write on .*Pos.*didn't declare it/);
+		});
+
+		it("stays lenient at host level, where no system is active", () => {
+			// The unattributable case the access check deliberately skips — an
+			// `at()` outside every span must not start throwing.
+			const ecs = new ECS();
+			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
+			const e = ecs.spawn(ecs.template(Pos({ x: 1 })));
+			const p = ecs.cursor(Pos);
+			expect(() => p.at(e)).not.toThrow();
+			p.x = 2;
+			expect(ecs.getField(e, Pos, "x")).toBe(2);
+		});
+
+		it("passes for a host-made cursor the running system does declare", () => {
+			const ecs = new ECS();
+			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
+			const e = ecs.spawn(ecs.template(Pos({ x: 1 })));
+			const p = ecs.cursor(Pos);
+
+			const sys = ecs.registerSystem({
+				...openAccess([Pos]),
+				name: "declares_pos",
+				fn() {
+					p.at(e);
+					p.x = 42;
+				}
+			});
+			ecs.addSystems(SCHEDULE.UPDATE, sys);
+			expect(() => ecs.update(1 / 60)).not.toThrow();
+			expect(ecs.getField(e, Pos, "x")).toBe(42);
+		});
+	});
+
 	it("works inside a system through ctx", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent({ x: "f64", y: "f64" }, { name: "Pos" });

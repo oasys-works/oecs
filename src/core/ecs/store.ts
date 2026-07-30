@@ -79,6 +79,7 @@ import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
 import { SnapshotService } from "./snapshot_service";
 import { ArchetypeGraph } from "./archetype_graph";
+import { accessCheck } from "./access_check";
 import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import {
 	ACTION_RING_DEFAULT_CAPACITY_SLOTS,
@@ -3758,6 +3759,16 @@ export class Store implements ObserverHost, QueryHost {
 	 * `stampTick` distinguishes the two variants once, here, instead of per
 	 * `at()`: a mutable cursor bumps the component's change tick on every
 	 * repoint (matching `ctx.ref`), a read-only one never does.
+	 *
+	 * The access check lives HERE, in the binder, and not only at the call that
+	 * creates the cursor. A cursor is made one time and then kept, so it outlives
+	 * the span that made it: a cursor made at host level (where no system is
+	 * active, and the check at creation therefore passes) writes an undeclared
+	 * component when a system body uses it, and a `ctx.cursor` that a system
+	 * stores in an outer variable does the same in the NEXT system. Both slip
+	 * past a check that only runs at creation. `at()` is the point of use, so the
+	 * check belongs on it. The creation-site check stays as well: it fails early,
+	 * and its stack names the line that made the cursor.
 	 */
 	public cursorBinder(def: ComponentHandle, stampTick: boolean): CursorBinder {
 		const cid = def.id as number;
@@ -3765,6 +3776,10 @@ export class Store implements ObserverHost, QueryHost {
 			const index = (entity as number) & INDEX_MASK;
 			const arch = this.archGet(this.entityArchetype[index] as ArchetypeID);
 			if (DEV) {
+				// A mutable cursor writes through its setters, so it needs `writes`;
+				// a read-only one needs `reads`. Same split as the creation site.
+				if (stampTick) accessCheck.checkWrite(def);
+				else accessCheck.checkRead(def);
 				if (!this.isAlive(entity as EntityID))
 					throw entityNotAliveError("cursor.at", entity as EntityID, this.componentLabel(cid));
 				if (arch.columnGroups[cid] === undefined)

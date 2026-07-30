@@ -32,6 +32,13 @@ read a different entity. A cursor also follows an entity that changes archetype,
 do. Only the window between one `at` call and the reads that follow it must be free of structural
 change.
 
+In a development build, a cursor makes its declared-access check on **each `at`**, and not only when
+you create it. `cursor` makes a write check, and `cursorRead` makes a read check. The check is on
+`at` because you keep a cursor, and a cursor can therefore outlive the system that made it. A cursor
+that you make outside a system, or in a different system, is checked against the system that
+**uses** it. An `at` outside every system makes no check, because no system can hold the fault. A
+production build removes this check, as it removes each of the other development guards.
+
 A cursor obeys the rules of the family: the definition comes first, the mutable name has no suffix,
 and the read-only name has the `Read` suffix. There is one constraint. A component with a field
 named `at` collides with the method of the cursor. Creation of the cursor rejects that component,
