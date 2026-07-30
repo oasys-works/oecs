@@ -1,46 +1,63 @@
 # Extensions
 
-oecs keeps the core package small and framework-agnostic. The `@oasys/oecs` entry point is enough for a simulation, server, test harness, or headless game loop. Extensions are separate import paths for UI reads, host writes, editor workflows, framework adapters, shared memory, and reusable primitives.
+oecs keeps the core package small, and the core does not depend on a framework. The `@oasys/oecs`
+entry point is sufficient for a simulation, a server, a test harness, or a game loop with no
+display. The extensions are separate import paths for UI reads, host writes, editor work, framework
+adapters, shared memory, and primitives that you can use again.
 
-Use extensions when code outside the ECS schedule needs to observe or change world state. Import only the subpath you need; unused extensions are not pulled into the core bundle.
+Use an extension when code outside the ECS schedule must observe or change the state of the world.
+Import only the subpath that you need, because the core bundle does not contain an extension that
+you do not use.
 
-## Extension map
+## The map of the extensions
 
-| Import | Use it for | Depends on |
+| Import | Use it for | It depends on |
 | --- | --- | --- |
-| `@oasys/oecs/reactive` | framework-neutral signals, computed values, effects, and reactive collections | no third-party dependencies |
-| `@oasys/oecs/reactive-sync` | publishing ECS component changes into reactive collections | `@oasys/oecs` observers + `@oasys/oecs/reactive` |
-| `@oasys/oecs/editor` | undo/redo and inspector field handles | the host-write seam from `@oasys/oecs` |
-| `@oasys/oecs/solid` | reading oecs reactive values from SolidJS components | optional peer `solid-js` |
-| `@oasys/oecs/shared` | `SharedArrayBuffer` storage for workers or WASM backends | cross-origin isolation in browsers |
-| `@oasys/oecs/primitives` | standalone data structures used by oecs | no third-party dependencies |
+| `@oasys/oecs/reactive` | signals, computed values, effects, and reactive collections, with no framework | no third-party package |
+| `@oasys/oecs/reactive-sync` | how to publish the changes of an ECS component into a reactive collection | the observers in `@oasys/oecs`, and `@oasys/oecs/reactive` |
+| `@oasys/oecs/editor` | undo, redo, and field handles for an inspector | the host write path in `@oasys/oecs` |
+| `@oasys/oecs/solid` | how to read the reactive values of oecs from a SolidJS component | the optional peer `solid-js` |
+| `@oasys/oecs/shared` | `SharedArrayBuffer` storage for a worker or a WASM backend | cross-origin isolation, in a browser |
+| `@oasys/oecs/primitives` | the data structures of oecs, which operate alone | no third-party package |
 
-The UI and editor extensions are usually wired as two one-way channels:
+You usually connect the UI extension and the editor extension as two channels, each in one
+direction:
 
 ```txt
 ECS -> reactive-sync -> reactive collections -> framework adapter -> UI
 UI  -> editor/host command queue -> ECS schedule head
 ```
 
-The read side publishes only changed rows. The write side queues typed commands and applies them at a safe point in the schedule.
+The read side publishes only the rows that changed. The write side puts typed commands in a queue,
+and it applies them at a safe point in the schedule.
 
-## Picking the right extension
+## How to select the correct extension
 
-Use `@oasys/oecs/reactive` by itself when you want a tiny signal kernel or reactive collections outside the ECS. It is not tied to entities or components.
+Use `@oasys/oecs/reactive` alone when you want a small kernel for signals, or reactive collections,
+outside the ECS. It has no link to an entity or to a component.
 
-Use `@oasys/oecs/reactive-sync` when a UI, renderer, debug overlay, or telemetry panel should track ECS state without scanning every entity each frame.
+Use `@oasys/oecs/reactive-sync` when a UI, a renderer, an overlay for debugging, or a panel for
+telemetry must follow the state of the ECS without a scan of each entity in each frame.
 
-Use `@oasys/oecs/editor` when changes should be undoable or should feel like two-way bound inspector controls. It builds on the host-write seam, so edits are still applied by the ECS rather than directly from event handlers.
+Use `@oasys/oecs/editor` when a change must be reversible, or must operate as an inspector control
+that binds in two directions. It is built on the host write path, so the ECS applies each edit,
+instead of an event handler that writes directly.
 
-Use `@oasys/oecs/solid` only at the Solid component boundary. The kernel and Solid are separate reactive graphs; a bare kernel read inside Solid does not subscribe until it is bridged through `fromKernel`, `fromKernelMap`, `fromKernelStruct`, or `fromKernelArray`.
+Use `@oasys/oecs/solid` at the boundary of a Solid component alone. The kernel and Solid are
+separate reactive graphs. So a plain read of the kernel inside Solid does not subscribe, until
+you bridge it through `fromKernel`, `fromKernelMap`, `fromKernelStruct`, or `fromKernelArray`.
 
-Use `@oasys/oecs/shared` when you need shared memory for workers or a WASM compute backend. The default `ECS` uses a plain `ArrayBuffer` and does not require COOP/COEP.
+Use `@oasys/oecs/shared` when you need shared memory for a worker or for a WASM compute backend.
+The default `ECS` uses a plain `ArrayBuffer`, and it does not need COOP/COEP.
 
-Use `@oasys/oecs/primitives` when another package wants the same low-level structures without taking a dependency on the ECS.
+Use `@oasys/oecs/primitives` when a different package wants the same low-level structures, and does
+not want a dependency on the ECS.
 
 ## Reactive reads
 
-`reactive-sync` turns component state into reactive channels. Each sync returns the channel plus a `dispose()` function, and seeds existing matching entities by default.
+`reactive-sync` makes the state of a component into reactive channels. Each sync function gives you
+the channel and a `dispose()` function, and by default it sets the initial values from each entity
+that already agrees with it.
 
 ```ts
 import { ECS } from "@oasys/oecs";
@@ -62,7 +79,7 @@ const positions = syncComponentToMap(
 
 const health = syncFieldsToMap(ecs, Health, ["hp", "max"] as const);
 
-// In your frame loop, batch ECS observer publishes into one reactive flush.
+// In your frame loop, put the publications of the ECS observers into one reactive flush.
 batchedUpdate(ecs, 1 / 60);
 
 const p = positions.map.get(player);
@@ -72,14 +89,25 @@ positions.dispose();
 health.dispose();
 ```
 
-Use `syncComponentToMap` for one component. Use `syncFieldsToMap` for the common "mirror these fields" case; it automatically uses shallow equality for the projected object. Use `syncJoinToMap` when the projection reads more than one component, because it subscribes to all joined components and avoids stale rows.
+Use `syncComponentToMap` for one component. Use `syncFieldsToMap` for the frequent case of "make a
+copy of these fields", because it uses shallow equality for the object that it builds. Use
+`syncJoinToMap` when the projection reads more than one component, because it subscribes to each
+component in the join, and so no row becomes out of date.
 
 > [!WARNING]
-> The sync bridges remove rows via `onRemove` observers, and observers only fire for **deferred** ops. An immediate host `ecs.despawn(e)` (0.5.0 semantics) is invisible to them — the mirrored `Map` keeps the dead entity's row indefinitely (the bridges seed once at registration; there is no periodic resync). Despawn through `ctx.commands.despawn` or the host-command seam when a reactive bridge is attached.
+> The sync bridges remove a row through an `onRemove` observer, and an observer runs only for a
+> **deferred** operation. An immediate `ecs.despawn(e)` call on the host, which is the behavior
+> since 0.5.0, is invisible to them. So the copied `Map` keeps the row of the dead entity without
+> a limit, because the bridges set their values one time at registration and there is no periodic
+> synchronization. When a reactive bridge is attached, destroy each entity through
+> `ctx.commands.despawn` or through the host command path.
 
-For high-churn components, consider `syncComponentToMap(..., { grain: "column" })`. It sweeps dirty archetype columns sequentially, which can be faster when most rows in a component change.
+For a component that changes frequently, consider
+`syncComponentToMap(..., { grain: "column" })`. It examines the dirty archetype columns in sequence,
+and it keeps no list of the changed rows. Select it when most rows of a component change.
 
-For singleton-style UI state, put the state on a reserved entity and use `syncSingletonToStruct` or `syncSingletonToArray`:
+For UI state that is a single value, put that state on an entity that you keep for the purpose, and
+use `syncSingletonToStruct` or `syncSingletonToArray`:
 
 ```ts
 import { syncSingletonToStruct } from "@oasys/oecs/reactive-sync";
@@ -90,22 +118,27 @@ ecs.addComponent(netEntity, NetStats, { connected: 0, latencyMs: -1 });
 
 const net = syncSingletonToStruct(ecs, NetStats, netEntity, ["connected", "latencyMs"] as const);
 
-net.struct.connected; // per-field reactive read
+net.struct.connected; // a reactive read of one field
 net.dispose();
 ```
 
-Common reactive-sync rules:
+The rules for `reactive-sync`:
 
-- Pass `eq: shallow` or a custom comparator when a projection returns a fresh object. The default equality is `Object.is`, so a new object reference wakes subscribers even when its fields did not change.
-- Do not read another component from a single-component projection. Use `syncJoinToMap`.
-- Drive the world with `batchedUpdate(ecs, dt)` or wrap `ecs.update(dt)` in `batch(...)` from `@oasys/oecs/reactive`.
-- Keep the returned disposer and call it when the UI surface, world, or test fixture is torn down.
+- Give `eq: shallow`, or your own comparator, when a projection gives a new object. The default
+  equality is `Object.is`. So a new object reference starts each subscriber, also when the fields
+  did not change.
+- Do not read a second component from a projection of one component. Use `syncJoinToMap`.
+- Drive the world with `batchedUpdate(ecs, dt)`, or put `ecs.update(dt)` inside `batch(...)` from
+  `@oasys/oecs/reactive`.
+- Keep the dispose function that you receive, and call it when the UI, the world, or the test
+  fixture ends.
 
 See [reactive](./api/reactive.md) for the full API.
 
-## Solid rendering
+## Rendering with Solid
 
-The Solid adapter mirrors kernel values into Solid signals and disposes subscriptions with the surrounding Solid owner.
+The Solid adapter copies the values of the kernel into Solid signals, and it disposes of each
+subscription with the Solid owner that contains it.
 
 ```tsx
 import { For } from "solid-js";
@@ -127,17 +160,22 @@ function Dots() {
 }
 ```
 
-Use keyed Solid `<For>` for entity maps, keyed by stable `EntityID`s. Use `fromKernelArray` with Solid `<Index>` for ordered singleton arrays. Call `fromKernel*` inside a component or Solid `root` so the adapter has an owner for cleanup.
+Use the keyed Solid `<For>` for a map of entities, with the stable `EntityID` as the key. Use
+`fromKernelArray` with the Solid `<Index>` for an ordered array of one entity. Call each
+`fromKernel*` function inside a component, or inside a Solid `root`, so that the adapter has an
+owner for the cleanup.
 
 ## Host writes
 
-The host-write seam is exported from the core entry point because it is the common write path for UI, editor, network, and worker input. It buffers writes as typed commands and applies them through an exclusive system at the schedule head.
+The core entry point exports the host write path, because it is the usual write path for a UI, an
+editor, a network, and a worker. It holds each write as a typed command, and it applies each one
+through an exclusive system at the head of a phase.
 
 ```ts
 import { installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 import { batchedUpdate } from "@oasys/oecs/reactive-sync";
 
-const queue = installHostCommandSeam(ecs); // install before startup()
+const queue = installHostCommandSeam(ecs); // install it before startup()
 const player = ecs.spawn();
 ecs.addComponent(player, Health, { hp: 100, max: 100 });
 
@@ -146,22 +184,30 @@ queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (entityId) => {
 });
 queue.setField(player, Health, "hp", 75);
 
-batchedUpdate(ecs, 1 / 60); // drains queued commands, then publishes reactive reads
+batchedUpdate(ecs, 1 / 60); // drains the commands in the queue, then publishes the reactive reads
 ```
 
-Every queue method enqueues. Nothing reaches the world until the apply system drains on the next `startup()` or `update()`.
+Each method of the queue adds a command to the queue. Nothing reaches the world until the apply
+system drains, at the next `startup()` or `update()` call.
 
-Important timing rules:
+Important rules about timing:
 
-- Install the seam before adding systems that should run after host writes, and before `startup()`.
-- Carry initial values in `spawnEntry` or `add`. Do not enqueue `add(e, C, ...)` and `setField(e, C, ...)` for the same component in the same frame; structural writes flush after the immediate `setField` drain.
-- Use `onSpawned` to learn ids created by queued spawns.
+- Install the path before you add the systems that must run after a host write, and before
+  `startup()`.
+- Carry the initial values in `spawnEntry` or in `add`. Do not put `add(e, C, ...)` and
+  `setField(e, C, ...)` for the same component in the queue in the same frame, because a structural
+  write flushes after the immediate drain of `setField`.
+- Use `onSpawned` to learn the id of an entity that a queued spawn created.
 
-See [host-write seam](./api/host-write-seam.md) for command logging, replay, and cross-thread ring transport.
+See [the host write path](./api/host-write-seam.md) for the command log, the replay, and the ring
+transport between threads.
 
-## Editor usage
+## How to use the editor
 
-`@oasys/oecs/editor` wraps the host command queue with undo/redo transactions. Each edit records forward commands and inverse commands. `undo()` enqueues the inverse, and `redo()` enqueues the forward; both apply on the next tick like any other host write.
+`@oasys/oecs/editor` puts undo and redo transactions above the host command queue. Each edit
+records a list of forward commands and a list of inverse commands. `undo()` puts the inverse list
+in the queue, and `redo()` puts the forward list in the queue. Both apply in the next tick, as each
+other host write does.
 
 ```ts
 import { Editor, fieldHandle } from "@oasys/oecs/editor";
@@ -181,7 +227,7 @@ editor.undo();
 batchedUpdate(ecs, 1 / 60); // applies the undo
 ```
 
-A field handle pairs a reactive read with an undoable write:
+A field handle gives a reactive read together with a write that you can undo:
 
 ```ts
 const hpHandle = fieldHandle(
@@ -192,22 +238,23 @@ const hpHandle = fieldHandle(
   () => health.map.get(player)?.hp,
 );
 
-hpHandle.value;      // committed reactive value
-hpHandle.pending;    // optional optimistic echo before the next tick
-hpHandle.set(50);    // enqueues an undoable setField
+hpHandle.value;      // the committed reactive value
+hpHandle.pending;    // an optional optimistic copy, before the next tick
+hpHandle.set(50);    // adds a setField that you can undo
 ```
 
-Editor rules:
+The rules for the editor:
 
-- The `FieldReader` passed to `new Editor(...)` should read the committed state. Use `ecs.getField` for simple tools or your reactive read channel for UI code.
-- `pending` is not reactive. It is only an optimistic echo until the read side catches up.
-- Undoing a despawn restores the data but creates a fresh `EntityID`.
+- The `FieldReader` that you give to `new Editor(...)` must read the committed state. Use
+  `ecs.getField` for a simple tool, or your reactive read channel for UI code.
+- `pending` is not reactive. It is only an optimistic copy, until the read side is current.
+- An undo of a despawn returns the data, but it creates the entity with a new `EntityID`.
 
 See [editor](./api/editor.md) for the full transaction API.
 
 ## A complete UI loop
 
-This is the common browser/editor shape:
+This is the usual shape for a browser or an editor:
 
 ```ts
 import { ECS, installHostCommandSeam } from "@oasys/oecs";
@@ -243,19 +290,24 @@ requestAnimationFrame(frame);
 editor.setField(player, Pos, "x", 128);
 ```
 
-If you use Solid, bridge `positions.map` with `fromKernelMap`. If you use React, bridge kernel accessors with `toExternalStore` from `@oasys/oecs/reactive`.
+If you use Solid, bridge `positions.map` with `fromKernelMap`. If you use React, bridge the
+accessors of the kernel with `toExternalStore` from `@oasys/oecs/reactive`.
 
-## Shared memory and primitives
+## Shared memory and the primitives
 
-`@oasys/oecs/shared` is for advanced integration where the ECS store must live in shared memory. Browser apps need cross-origin isolation before using `SharedArrayBuffer`; the default heap world avoids that requirement.
+`@oasys/oecs/shared` is for advanced integration, where the store of the ECS must be in shared
+memory. A browser application needs cross-origin isolation before it can use a
+`SharedArrayBuffer`. The default heap world does not have that requirement.
 
-`@oasys/oecs/primitives` exports standalone structures such as `BitSet`, `SparseSet`, `SparseMap`, `GrowableTypedArray`, `BinaryHeap`, and `topologicalSort`. Import them directly when you need those utilities without creating an `ECS`.
+`@oasys/oecs/primitives` exports the structures that operate alone, such as `BitSet`, `SparseSet`,
+`SparseMap`, `GrowableTypedArray`, `BinaryHeap`, and `topologicalSort`. Import them directly when
+you need those tools and do not want to create an `ECS`.
 
 ## See also
 
 - [API reference](./api/index.md)
 - [reactive](./api/reactive.md)
-- [host-write seam](./api/host-write-seam.md)
+- [the host write path](./api/host-write-seam.md)
 - [editor](./api/editor.md)
 - [memory](./api/memory.md)
 - [primitives](./api/primitives.md)

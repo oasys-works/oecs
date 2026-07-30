@@ -1,12 +1,12 @@
 import { DEV } from "../dev_flag";
 /**
  * In-house fine-grained reactive kernel — signal / computed / effect / batch,
- * plus ownership scopes (`root` / `onCleanup`). Zero dependencies (ADR-0021).
+ * plus ownership scopes (`root` / `onCleanup`). Zero dependencies.
  *
  * This is the engine UI seam's propagation core. It is the same class of machine
- * as the ECS observer system (ADR-0013) — fine-grained, glitch-free, cascades to
- * a fixed point — at a different granularity, which is exactly why #646 chose to
- * own it rather than adopt solid-js / @preact/signals-core / alien-signals.
+ * as the ECS observer system — fine-grained, glitch-free, cascades to
+ * a fixed point — at a different granularity, which is exactly why we own
+ * it rather than adopt solid-js / @preact/signals-core / alien-signals.
  *
  * The dependency graph is an intrusive doubly-linked structure. One pooled `Link`
  * per edge is threaded into BOTH the source's subscriber list and the target's
@@ -35,7 +35,7 @@ import { DEV } from "../dev_flag";
  * track their sources (no auto-unsubscribe of unobserved computeds — the TRACKING
  * optimization) and there is no global-version fast path. The two help only a
  * workload heavy in *unobserved* computeds and are low-value without each other;
- * see ADR-0021. Cycle reads return the stale value rather than throwing.
+ * Cycle reads return the stale value rather than throwing.
  */
 
 export type Eq<T> = (a: T, b: T) => boolean;
@@ -486,7 +486,7 @@ export function root<T>(fn: (dispose: () => void) => T): T {
  */
 export function onCleanup(fn: () => void): void {
 	if (currentOwner === null) {
-		// Silently dropping the callback hides real teardown bugs (M13) — warn
+		// Silently dropping the callback hides real teardown bugs — warn
 		// in dev, matching Solid's "cleanups created outside a createRoot" warn.
 		if (DEV)
 			warnOnce(

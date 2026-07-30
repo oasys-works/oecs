@@ -50,7 +50,7 @@ describe("grow_column_store", () => {
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 		// The realloc path patches the returned header so its cached
 		// `view_stamp` matches the SAB bytes — consistent with the in-place
-		// path, no stale 0 (#386).
+		// path, no stale 0.
 		expect(next.header.viewStamp).toBe(1);
 		// `capacity` on the cached header must likewise match the SAB.
 		expect(next.header.capacity).toBe(readStoreHeader(next.view).capacity);
@@ -409,7 +409,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 	});
 });
 
-describe("grow_column_store — descriptor headroom policy survives (#541)", () => {
+describe("grow_column_store — descriptor headroom policy survives", () => {
 	it("an in-place grow carries the reserved-descriptor-bytes policy forward", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const reserved = archetypeDescriptorBytes(1) * 2;
@@ -433,7 +433,7 @@ describe("grow_column_store — descriptor headroom policy survives (#541)", () 
 
 		// The headroom policy must survive the in-place grow so a LATER extend
 		// realloc still re-reserves it. Without the carry, an extend→grow→extend
-		// sequence would drop to zero slack on the final realloc (#541).
+		// sequence would drop to zero slack on the final realloc.
 		expect((grown.store as ColumnStoreInternal)._reservedDescriptorBytes).toBe(reserved);
 	});
 });

@@ -162,7 +162,7 @@ describe("Event system", () => {
 		expect(readCount).toBe(2);
 	});
 
-	// Regression for #379: startup() had no clearEvents() (only update() did),
+	// Regression: startup() had no clearEvents() (only update() did),
 	// so events emitted in a startup phase leaked into the first update() — a
 	// frame-1 PRE_UPDATE/UPDATE reader saw them as if emitted this frame. They
 	// must be drained at the end of startup, since events live one *update* tick
@@ -334,14 +334,14 @@ describe("Event system", () => {
 		}
 	});
 
-	// Regression for #727: a `__DEV__` missing-field emit must not desync the
+	// Regression: a `__DEV__` missing-field emit must not desync the
 	// SoA columns. The old `emit` pushed per-field then threw mid-loop, so a
 	// two-field event missing the second field left the first column one row
 	// ahead of both `reader.length` and the un-pushed column — a permanent
 	// desync if the throw is caught. `emit` now validates ALL fields before
 	// mutating any column, so a caught throw leaves every column untouched and
 	// the next valid emit lands at row 0.
-	it("a thrown emit (missing field) does not desync the channel columns (#727)", () => {
+	it("a thrown emit (missing field) does not desync the channel columns", () => {
 		const world = new ECS();
 		const Pair = eventKey<{ a: number; b: number }>("Pair");
 		world.events.register(Pair, ["a", "b"] as const);
@@ -396,7 +396,7 @@ describe("Event system", () => {
 		expect(world.events.read(Ping).length).toBe(1);
 	});
 
-	// ==== Reader type-soundness (issue #377) ====
+	// ==== Reader type-soundness ====
 	//
 	// EventReader columns were declared Float64Array but backed by growable
 	// number[]: a system trusting the declared type and calling .subarray/.set/

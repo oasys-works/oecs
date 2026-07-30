@@ -1,7 +1,7 @@
 /**
- * ComputeBackend seam (#622) — the pure-TS fixture proof.
+ * ComputeBackend seam — the pure-TS fixture proof.
  *
- * Per ADR-0018 the pluggable opt-in backend seam is validated end-to-end by a
+ * The pluggable opt-in backend seam is validated end-to-end by a
  * fixture that attaches *no* game backend: a bare `ECS` runs pure-TS systems
  * (default = none), and a tiny fake `ComputeBackend` proves attach + route +
  * layout republish with **zero game vocabulary** crossing the engine boundary.
@@ -44,7 +44,7 @@ function config(fn: SystemFn, backendHandle?: BackendSystemHandle): SystemConfig
 	};
 }
 
-describe("ComputeBackend seam (#622)", () => {
+describe("ComputeBackend seam", () => {
 	it("default = none: a bare ECS runs pure-TS systems", () => {
 		const ecs = new ECS();
 		let ran = 0;

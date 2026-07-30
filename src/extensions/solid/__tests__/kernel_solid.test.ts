@@ -9,8 +9,7 @@
  * VALUE contract (kernel change → accessor value), which flows through our kernel's
  * `subscribe` (fully functional) into solid's signal get/set (value storage works
  * regardless of build). That a real Solid `<For>` / component RE-RENDERS off these
- * accessors is proven under browser conditions in
- * `workbench/reactive/check_for_keying.ts`.
+ * accessors is proven under browser conditions.
  */
 import { describe, expect, it } from "vitest";
 import { createRoot } from "solid-js";
@@ -145,7 +144,7 @@ describe("fromKernelStruct", () => {
 		});
 	});
 
-	describe("bridged view is enumerable and safe on non-field keys (#718)", () => {
+	describe("bridged view is enumerable and safe on non-field keys", () => {
 		it("Object.keys returns the field names", () => {
 			createRoot((dispose) => {
 				const [s] = reactiveStruct({ status: 2, latency: 20, fps: 60 });

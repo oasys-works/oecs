@@ -1,5 +1,5 @@
 /**
- * Golden-layout differential gate for the grow/extend consolidation (H5).
+ * Golden-layout differential gate for the grow/extend consolidation.
  *
  * `layout_golden.json` was captured from the PRE-consolidation grow/extend
  * implementation over the full allocator matrix (growable SAB, resizable
@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { runAllScenarios } from "./layout_scenarios";
 import golden from "./layout_golden.json";
 
-describe("grow/extend golden layouts (H5 differential gate)", () => {
+describe("grow/extend golden layouts", () => {
 	const actual = runAllScenarios();
 
 	for (const strategy of Object.keys(golden)) {

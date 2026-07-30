@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
@@ -29,7 +29,8 @@
       "pnpm-lock.yaml",
       "src/vite-env.d.ts",
       ".github",
-      "docs"
+      "docs",
+      "bench"
     ]
   }
 }

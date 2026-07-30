@@ -3,7 +3,7 @@ import { ECS } from "../../ecs";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { STORE_DESCRIPTOR_COMPONENT_LIMIT } from "../../../store";
 
-// #381: the SAB archetype descriptor carries a COMPONENT_MASK_WORDS-word
+// The SAB archetype descriptor carries a COMPONENT_MASK_WORDS-word
 // component mask (STORE_DESCRIPTOR_COMPONENT_LIMIT = 128 bits). Components past
 // that limit cannot be represented, and the Zig side matches archetypes on the
 // mask alone, so an overflow would silently conflate distinct archetypes.

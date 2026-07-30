@@ -15,7 +15,7 @@ import {
 } from "../../../../type_primitives";
 
 // Heap factory for the "heap vs SAB" comparison cases below. The
-// production path no longer takes the heap branch (#171 §6.1.9 Phase 4);
+// production path no longer takes the heap branch;
 // this factory is purely a test convenience to keep `isBufferBacked` and
 // `refreshViews` invariants pinned against a heap counterpart.
 const heapFactory: ColumnFactory = (_cid, _fidx, tag) => new TypedArrayFor[tag](16);

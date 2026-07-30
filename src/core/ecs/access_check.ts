@@ -1,10 +1,10 @@
 /***
- * accessCheck — Phase B of issue #213.
+ * accessCheck — runtime enforcement of a system's declared access.
  *
  * Module-level singleton that enforces a system's declared access surface
  * (`reads` / `writes` / `spawns` / `despawns` / `transitions` /
  * `resourceReads` / `resourceWrites`, plus the optional sparse/relation
- * terms added in #496) at runtime in `DEV`. Schedule calls
+ * terms) at runtime in `DEV`. Schedule calls
  * `accessCheck.enter(desc)` before invoking the system's `fn` (or
  * `onAdded`) and `accessCheck.leave()` after; SystemContext + Archetype
  * call the per-op `check_*` methods which throw `ECSError` if the running
@@ -17,7 +17,7 @@
  * is dead-code-eliminated by `DEV` guards at every call site.
  *
  * Sparse components (`SparseComponentID`) and relations (`RelationID`) are
- * each a SEPARATE id space from the dense archetype-mask `ComponentID` (#496).
+ * each a SEPARATE id space from the dense archetype-mask `ComponentID`.
  * Each gets its own `Set<number>` so a sparse id and a dense id sharing the
  * same numeric value never collide; a sparse/relation write implies a read,
  * exactly as for dense components.
@@ -44,7 +44,7 @@ interface AccessSets {
 	hasDespawns: boolean;
 	resourceReads: Set<symbol>;
 	resourceWrites: Set<symbol>;
-	// Separate id spaces from the dense sets above (#496) — see file header.
+	// Separate id spaces from the dense sets above — see file header.
 	sparseReads: Set<number>;
 	sparseWrites: Set<number>;
 	relationReads: Set<number>;
@@ -73,7 +73,7 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	for (let i = 0; i < desc.writes.length; i++) {
 		const cid = desc.writes[i].id;
 		writes.add(cid);
-		// A write implies a read (design doc §3) — reading the same field
+		// A write implies a read — reading the same field
 		// you write is normal (e.g. decrementing a counter you also read).
 		reads.add(cid);
 		// A declared write is also an authorised target of addComponent
@@ -119,7 +119,7 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 		// A write implies a read, same as for components.
 		resourceReads.add(key);
 	}
-	// Sparse / relation terms are OPTIONAL (#496) — a dense-only system omits
+	// Sparse / relation terms are OPTIONAL — a dense-only system omits
 	// them entirely, so coalesce undefined to a no-op. Write implies read, same
 	// as dense; add/remove/set_field all consult the `*_writes` set (sparse and
 	// relation mutations are not split into add/remove/write like the dense
@@ -173,7 +173,7 @@ function setsFor(desc: SystemDescriptor): AccessSets {
 	return computed;
 }
 
-/** The reads-only access surface a run condition declares (#576). A condition
+/** The reads-only access surface a run condition declares. A condition
  * can only `reads` components (via a captured query) and `resourceReads`; every
  * mutation set is empty by construction, so the same `check_*` machinery rejects
  * any write/structural/resource-write a misbehaving predicate attempts. */
@@ -229,10 +229,10 @@ class AccessCheck {
 	private active: SystemDescriptor | null = null;
 	private sets: AccessSets | null = null;
 	// The label used in violation messages. Tracks `active` for a system span,
-	// but a run-condition span (#576) has no descriptor — only this name — so the
+	// but a run-condition span has no descriptor — only this name — so the
 	// failure helpers read the label here rather than off `active`.
 	private activeName: string | null = null;
-	// An `exclusive` system (#681) has full world access: every check_* below
+	// An `exclusive` system has full world access: every check_* below
 	// passes for the whole span. Kept as an explicit flag (rather than leaving
 	// `sets` null) so `isActive()` stays truthful inside the span.
 	private exclusive = false;
@@ -247,7 +247,7 @@ class AccessCheck {
 		this.sets = this.exclusive ? null : setsFor(desc);
 	}
 
-	/** Open a reads-only span for a run condition (#576). No descriptor — a
+	/** Open a reads-only span for a run condition. No descriptor — a
 	 * condition can gate a whole SystemSet, so it isn't attributable to one
 	 * system — just its declared reads/resource_reads and a name for diagnostics.
 	 * Paired with `leave()`. */
@@ -323,7 +323,7 @@ class AccessCheck {
 		this.failResource("write", key, "resourceWrites");
 	}
 
-	// --- Sparse component / relation checks (#496) ---
+	// --- Sparse component / relation checks ---
 	// Keyed against the dedicated sparse/relation sets, NOT the dense
 	// `reads`/`writes` sets — the id spaces are disjoint by construction (see
 	// file header). `def as unknown as number` recovers the SparseComponentID /
@@ -357,7 +357,7 @@ class AccessCheck {
 		this.failRelation("write", rid, "relationWrites");
 	}
 
-	/** A `(*, T)` wildcard (`Query.forEachRelatedTo`, #579) reads every
+	/** A `(*, T)` wildcard (`Query.forEachRelatedTo`) reads every
 	 * relation's reverse index, so it can't name a specific relation — it is
 	 * authorised by the `ANY_RELATION` sentinel in `relationReads`. Honoured here
 	 * exactly like a per-relation read, just keyed on the reserved sentinel id
@@ -372,7 +372,7 @@ class AccessCheck {
 		);
 	}
 
-	// --- Optional query-term scope (#592) ---
+	// --- Optional query-term scope ---
 	// `Query.forEach` and `ChangedQuery.forEach` push the iterating query's
 	// `_optional` term list for the span of the callback;
 	// `Archetype.getOptionalColumnRead` then verifies the fetched component was
@@ -386,7 +386,7 @@ class AccessCheck {
 	// `query.archetypes` walk can't be attributed to an optional declaration, so it
 	// isn't checked — mirroring the unchecked outside-of-system calls in the header.
 	//
-	// CAVEAT (#594 Task 3): the gate always attributes to the INNERMOST active
+	// CAVEAT: the gate always attributes to the INNERMOST active
 	// `forEach`. If you nest `forEach` and call `getOptionalColumnRead` on an
 	// OUTER query's archetype inside the inner loop, it is checked against the inner
 	// query's terms (a false throw or false pass). Per-query attribution isn't worth

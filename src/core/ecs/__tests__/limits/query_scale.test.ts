@@ -3,7 +3,7 @@
  *
  * Query-cache dedup and live archetype growth over ≤63 tags / ≤20
  * components and a few hundred entities — well inside the 128-component SAB
- * descriptor limit (#381). These verify cached queries stay coherent and
+ * descriptor limit. These verify cached queries stay coherent and
  * grow live, not behavior AT the cap. The real cap boundary lives in
  * `limits/component_count_cap.test.ts`.
  */
@@ -87,8 +87,8 @@ describe("Query scale", () => {
 	it("live query stress: register query, create new archetypes, verify live growth", () => {
 		const world = new ECS();
 		const Common = world.registerComponent(["v"] as const);
-		// Common + tags must stay within the SAB descriptor component limit
-		// (#381); 63 distinct single-tag archetypes is plenty to exercise live
+		// Common + tags must stay within the SAB descriptor component limit;
+		// 63 distinct single-tag archetypes is plenty to exercise live
 		// query growth and stays well under the cap.
 		const TAG_COUNT = 63;
 		const tags = [];

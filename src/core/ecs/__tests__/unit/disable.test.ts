@@ -1,5 +1,5 @@
 /**
- * Entity enable/disable — the row-partition feature (#577).
+ * Entity enable/disable — the row-partition feature.
  *
  * A disabled entity keeps its components, relations, sparse data, and stable
  * `EntityID`, but is moved to the disabled tail of its archetype so default
@@ -31,7 +31,7 @@ function spawnPos(world: ECS, PosDef: ReturnType<ECS["registerComponent"]>, n: n
 	return ids;
 }
 
-describe("entity enable/disable (#577)", () => {
+describe("entity enable/disable", () => {
 	it("disable excludes from default queries; enable restores", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);

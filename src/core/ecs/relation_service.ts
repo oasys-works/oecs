@@ -16,7 +16,7 @@ import type { BitSet, TypedArrayTag } from "../../type_primitives";
 import { unsafeCast } from "../../type_primitives";
 import type { Archetype } from "./archetype";
 import { type EntityID, createEntityId, entityNotAliveError, getEntityIndex } from "./entity";
-// Value import (the hierarchy driver, #581, reuses the canonical eid radix);
+// Value import (the hierarchy driver reuses the canonical eid radix);
 // observer.ts imports only *types* from the ECS core, so this is a one-way
 // edge with no runtime cycle.
 import { radixSortByIndex } from "./observer";
@@ -70,13 +70,13 @@ export class RelationService {
 	// index and multi-target forward sets. Layered on the sparse storage class,
 	// so add/remove/re-target of a pair cause no archetype transition.
 	private readonly relations: RelationStore[] = [];
-	// True once any relation registers a non-`orphan` `onDeleteTarget` policy
-	// (#473). Gates the target-role cleanup branch in both of the Store's
+	// True once any relation registers a non-`orphan` `onDeleteTarget` policy.
+	// Gates the target-role cleanup branch in both of the Store's
 	// destroy paths so the common case (no cleanup policies) leaves the destroy
 	// hot path untouched — mirrors the Store's `count > 0` / sparse-store gates.
 	private _hasTargetCleanup = false;
 
-	// Reused radix scratch for the hierarchy depth-ordering driver (#581 follow-up).
+	// Reused radix scratch for the hierarchy depth-ordering driver.
 	// The motivating use case — transform propagation — is a per-tick depth-ordered
 	// pass, so `forEachHierarchyMatch` allocating two 1024-entry histograms + an
 	// `out` array per call would be per-tick GC churn. These three are
@@ -103,26 +103,26 @@ export class RelationService {
 	}
 
 	/** Whether any relation registered a non-`orphan` `onDeleteTarget` policy —
-	 * the destroy paths' gate for `cleanupTarget` (#473). */
+	 * the destroy paths' gate for `cleanupTarget`. */
 	public get hasTargetCleanup(): boolean {
 		return this._hasTargetCleanup;
 	}
 
 	/** Register a relation kind. `exclusive` (the default) → one target per
 	 * source, stored in a backing `{ target: f64 }` sparse component, so the
-	 * forward index rides the sparse store and inherits query membership (#469),
-	 * `stateHash` + snapshot/restore (#470) for free. `multi` → a set of
+	 * forward index rides the sparse store and inherits query membership,
+	 * `stateHash` + snapshot/restore for free. `multi` → a set of
 	 * targets per source, backed by a sparse tag for membership plus a side
 	 * forward index the relation owns. The two cardinalities are mutually
 	 * exclusive. `onDeleteTarget` selects the cleanup policy run when a target
 	 * is destroyed — `delete` (cascade-destroy sources), `clear` (drop the link,
-	 * sources survive), or `orphan` (default: leave it dangling, #473). See
-	 * ADR-0011 and `relation.ts`.
+	 * sources survive), or `orphan` (default: leave it dangling). See
+	 * `relation.ts`.
 	 *
 	 * The backing sparse store is resolved and handed to the relation so it can
 	 * drive forward/membership rows directly — the cardinality-specific
 	 * interaction is `ExclusiveRelationStore` / `MultiRelationStore`'s, not a
-	 * branch here (#498). */
+	 * branch here. */
 	public registerRelation(opts?: RelationOptions): RelationDef {
 		const wantMulti = opts?.multi === true;
 		const wantExclusive = opts?.exclusive === true;
@@ -135,7 +135,7 @@ export class RelationService {
 		const exclusive = !wantMulti;
 		const onDeleteTarget = opts?.onDeleteTarget ?? DEFAULT_ON_DELETE_TARGET;
 		// The exclusive `{ target: f64 }` slot holds an exact-integer EntityID, so
-		// it bypasses the #777 float guard (see `Store._pushSparseStore`); a
+		// it bypasses the float guard (see `Store._pushSparseStore`); a
 		// deterministic world must be free to use relations. Multi is a
 		// membership tag (no fields).
 		const sparse: SparseComponentDef = exclusive
@@ -163,13 +163,13 @@ export class RelationService {
 	 * `tgt` is already the target. Multi: adds `tgt` to the set, a no-op if
 	 * already present. A dead `src` *or* `tgt` is caller error: it throws in
 	 * `DEV` and is a no-op in production — symmetric, so a production build
-	 * never links a reverse-index entry keyed by a destroyed handle (#495). */
+	 * never links a reverse-index entry keyed by a destroyed handle. */
 	public addRelation(src: EntityID, def: RelationDef, tgt: EntityID): void {
 		const rs = this.relationOf(def);
 		// Liveness must be checked for BOTH ends symmetrically before any
 		// linking: a dead `src` or `tgt` throws in `DEV` and is a silent
 		// no-op in production, so a prod build never seeds a reverse-index entry
-		// keyed by a destroyed handle (#495). The forward + reverse + membership
+		// keyed by a destroyed handle. The forward + reverse + membership
 		// lockstep is the relation's (cardinality).
 		if (!this.host.isAlive(src)) {
 			if (DEV) throw entityNotAliveError("addRelation", src, "source");
@@ -235,8 +235,8 @@ export class RelationService {
 		return this.host.hasSparse(src, this.relationOf(def).sparse);
 	}
 
-	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard
-	 * (#472). Sources are emitted in **canonical entity-index order** (the #470
+	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard.
+	 * Sources are emitted in **canonical entity-index order** (the
 	 * determinism convention): exclusive relations ride the backing sparse
 	 * store's `canonicalIndices`, multi relations ride the same
 	 * `forEachCanonicalTargetSet` traversal `stateHash` / `snapshotRelations`
@@ -256,7 +256,7 @@ export class RelationService {
 	}
 
 	/** Every `(relation, source)` pointing at `tgt`, across **all** registered
-	 * relation kinds — the `(*, T)` wildcard (#472). Walks the relation registry
+	 * relation kinds — the `(*, T)` wildcard. Walks the relation registry
 	 * in id order (each relation's reverse index already returns sources
 	 * ascending by id), so the result is ordered by relation id then source id.
 	 * Empty when nothing targets `tgt`. The single-relation form is
@@ -272,15 +272,15 @@ export class RelationService {
 		return out;
 	}
 
-	// --- Wildcard query terms (#579) ---
+	// --- Wildcard query terms ---
 	// `(R, *)` and `(*, T)` as composable query terms (vs the cold materializing
 	// helpers `pairsOf` / `sourcesOfAny` above). Membership semantics: each
 	// matching SOURCE is yielded once; fetch its targets on demand with
 	// `targetsOf`. Insertion order, consistent with the `withSparse` path
 	// (deterministic by construction across lockstep peers; canonical sorting is
-	// reserved for `stateHash`/snapshot, PATTERNS §70) — the bench showed canonical
-	// ordering costs 4–5× per iteration for no determinism benefit
-	// (docs/reports/bench/relations/wildcard-query-iteration-2026-06-04.md).
+	// reserved for `stateHash`/snapshot). The measurement shows that
+	// canonical ordering costs much more for each iteration, and that it gives no
+	// advantage for determinism.
 
 	/** The backing sparse component id of relation `R` — the membership store a
 	 * `(R, *)` wildcard term (`Query.withRelation`) drives through the shared
@@ -363,7 +363,7 @@ export class RelationService {
 
 	/** Reclaim reverse-index memory: drop every relation's reverse entries whose
 	 * **target** has been destroyed, returning the total dropped across all
-	 * relations (#491). Under the default `orphan` policy a destroyed target
+	 * relations. Under the default `orphan` policy a destroyed target
 	 * leaves its reverse entry intact until each source re-targets or dies, so a
 	 * long-lived source that orphan-points at a churn of short-lived targets and
 	 * never re-targets accumulates dead-target keys without bound. This cold-path
@@ -386,7 +386,7 @@ export class RelationService {
 		return dropped;
 	}
 
-	// --- Traversal (parent / IsA chains over an exclusive relation, #474) ---
+	// --- Traversal (parent / IsA chains over an exclusive relation) ---
 	// Traversal is **exclusive-only**: an exclusive relation gives each source at
 	// most one target ("parent"), so the forward direction is a chain and the
 	// reverse index (`sourcesOf`) gives children — together a proper tree. A
@@ -517,14 +517,14 @@ export class RelationService {
 	 * intact: the reverse index is keyed by full `EntityID`, so a recycled slot
 	 * never aliases the dead target's sources. The destroyed entity's **target**
 	 * role is handled separately by `cleanupTarget` per each relation's
-	 * `OnDeleteTarget` policy (#473). Gated by the caller on `count > 0`. */
+	 * `OnDeleteTarget` policy. Gated by the caller on `count > 0`. */
 	public purgeSource(entityId: EntityID): void {
 		const rels = this.relations;
 		for (let r = 0; r < rels.length; r++) rels[r].purgeSource(entityId);
 	}
 
 	/** Apply each relation's `OnDeleteTarget` policy for a destroyed **target**
-	 * `targetId` (#473). Walks the registry; for every relation whose reverse
+	 * `targetId`. Walks the registry; for every relation whose reverse
 	 * index has sources pointing at the dead target:
 	 *
 	 *  - **`delete`** — append each source to `cascade`; the caller destroys them
@@ -557,7 +557,7 @@ export class RelationService {
 		}
 	}
 
-	/** Fourth query-match path (#581): yield the matched entities — the exact
+	/** Fourth query-match path: yield the matched entities — the exact
 	 * sparse-match intersection (dense mask + sparse require/exclude + the
 	 * default enabled-row filter) — in canonical **hierarchy depth order** over
 	 * exclusive relation `R`: depth ascending (parents before children), **entity

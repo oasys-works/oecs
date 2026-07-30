@@ -1,5 +1,5 @@
 /**
- * Store SAB grow + refresh (#171 §6.1.9 Phase 3).
+ * Store SAB grow + refresh.
  *
  * Insertions that would exceed an archetype's SAB row capacity now trigger
  * a host-side `growColumnStore` + `refreshViews` dance via a handler
@@ -11,7 +11,7 @@
  * These tests pin the surface — capacity doubling, view-stamp bump per
  * grow, data preservation across grow on the growing archetype AND on its
  * unaffected neighbours, and SAB-identity replacement (the realloc-and-
- * republish strategy from plan §8.4).
+ * republish strategy).
  */
 
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ function liveViewStamp(s: ColumnStore): number {
 	return readStoreHeader(s.view).viewStamp;
 }
 
-describe("Store — SAB grow + refresh (#171 §6.1.9 Phase 3)", () => {
+describe("Store — SAB grow + refresh", () => {
 	it("inserting past initial capacity grows the SAB and preserves earlier rows", () => {
 		const store = new Store(4);
 		const Pos = store.registerComponent(Position);
@@ -56,7 +56,7 @@ describe("Store — SAB grow + refresh (#171 §6.1.9 Phase 3)", () => {
 
 	it("doubles the offending archetype's row capacity (does not jump to N exactly)", () => {
 		// `Store` doubles until the new capacity covers `length + additional`,
-		// matching the §8.3 amortised-O(N) growth strategy. Starting from
+		// matching the amortised-O(N) growth strategy. Starting from
 		// initialCapacity=4 and inserting 10 entities crosses 4 → 8 → 16.
 		const store = new Store(4);
 		const Pos = store.registerComponent(Position);
@@ -145,7 +145,7 @@ describe("Store — SAB grow + refresh (#171 §6.1.9 Phase 3)", () => {
 		}
 	});
 
-	it("preserves the ColumnStore identity across a grow (growable in-place, #237)", () => {
+	it("preserves the ColumnStore identity across a grow (growable in-place)", () => {
 		const store = new Store(4);
 		const Pos = store.registerComponent(Position);
 
@@ -162,9 +162,9 @@ describe("Store — SAB grow + refresh (#171 §6.1.9 Phase 3)", () => {
 			store.addComponent(e, Pos, { x: i, y: i });
 		}
 
-		// With the default `growableSabAllocator` (since #237 Option A),
+		// With the default `growableSabAllocator`,
 		// the SAB is grown in place — same instance, larger byteLength.
-		// The realloc-and-republish behaviour from #171 §8.4 still works
+		// The realloc-and-republish behaviour still works
 		// (it's selected by passing `DEFAULT_SAB_ALLOCATOR` explicitly) but
 		// is no longer the default. The view_stamp still bumps so callers
 		// see grow as observable.

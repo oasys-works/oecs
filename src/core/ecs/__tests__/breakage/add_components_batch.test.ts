@@ -1,8 +1,7 @@
 /**
  * Dynamic batching contract for `addComponents` / `removeComponents` —
- * issue #211 follow-up to Phase C of #213.
  *
- * Before this PR, `Store.addComponents(eid, [A, B, C, D])` walked the
+ * `Store.addComponents(eid, [A, B, C, D])` used to walk the
  * archetype graph one component at a time. Each step that crossed into an
  * archetype the SAB had never carried triggered a fresh `extendColumnStore`
  * call — three of those intermediate archetypes ([+A], [+A,+B], [+A,+B,+C])
@@ -30,7 +29,7 @@ function viewStamp(world: ECS): number {
 	return world.columnStore.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 }
 
-describe("add_components batching (issue #211 follow-up)", () => {
+describe("add_components batching", () => {
 	it("a single add_components with 4 new components bumps view_stamp exactly once", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
@@ -121,7 +120,7 @@ describe("add_components batching (issue #211 follow-up)", () => {
 	});
 });
 
-describe("remove_components batching (issue #211 follow-up)", () => {
+describe("remove_components batching", () => {
 	it("a single remove_components dropping 3 components bumps view_stamp at most once", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
@@ -188,14 +187,14 @@ describe("remove_components batching (issue #211 follow-up)", () => {
 });
 
 /**
- * Composite-add edge cache (#659). The second+ add of the same (source
+ * Composite-add edge cache. The second+ add of the same (source
  * archetype, added-set) must resolve through `currentArch`'s cached composite
  * edge — one packed-key `Map.get` yielding target + transition map — yet land
  * the entity in exactly the same archetype, with the same field values, as the
  * first (cold) call's final-mask resolve. These pin that the cache is a pure
  * accelerator: identical observable state, no extra archetypes planted.
  */
-describe("add_components composite-add edge cache (#659)", () => {
+describe("add_components composite-add edge cache", () => {
 	it("repeated plural adds from the empty archetype are byte-identical to the cold call", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);

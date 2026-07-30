@@ -237,7 +237,7 @@ function typestateEnforcementAssertions(): void {
 			ctx.commands.add(e, Vel, { vx: 1 });
 
 			// Raw-literal cross-field is caught in a DECLARED-ACCESS system (the
-			// distributive `DeclaredBundleOrDef` — §strictness). Vel is declared
+			// distributive `DeclaredBundleOrDef`). Vel is declared
 			// (writes), so its values are schema-checked; a permissive ctx stays
 			// loose by design (opted out of narrowing).
 			// @ts-expect-error — 'x' is not a Vel field (raw literal via add)
@@ -261,7 +261,7 @@ function typestateEnforcementAssertions(): void {
 		}
 	});
 
-	// @ts-expect-error — compile-time Phase D lint: query term ∉ reads ∪ writes
+	// @ts-expect-error — compile-time declared-access lint: query term ∉ reads ∪ writes
 	world.registerSystem({ reads: [Pos], writes: [], queries: [[Vel]], fn() {} });
 }
 
@@ -326,7 +326,7 @@ declare const Health: ComponentDef<{ hp: "i32" }>;
 declare function archHelper(arch: ArchetypeView): void;
 
 function queryTermAssertions(): void {
-	// Column accessors are constrained to the query's terms (POLISH_AUDIT #6).
+	// Column accessors are constrained to the query's terms.
 	const movers = world.query(Pos, Vel);
 	movers.eachChunk((cols) => {
 		const { x, y } = cols.mut(Pos);
@@ -352,7 +352,7 @@ function queryTermAssertions(): void {
 		void cols.read(Health);
 		void cols.read(Pos);
 	});
-	// Optional fetches stay compile-permissive (runtime #592 owns them): the
+	// Optional fetches stay compile-permissive (the runtime owns them): the
 	// fetch-if-present accessor may name components outside the term set.
 	movers.optional(Health).forEach((arch) => {
 		void arch.getOptionalColumnRead(Health, "hp");
@@ -363,7 +363,7 @@ declare const ExclusiveRel: RelationDef<"exclusive">;
 declare const MultiRel: RelationDef<"multi">;
 
 function relationCardinalityAssertions(): void {
-	// The registerRelation overloads stamp the cardinality (POLISH_AUDIT #7).
+	// The registerRelation overloads stamp the cardinality.
 	const excl = world.relations.register();
 	const excl2 = world.relations.register({ onDeleteTarget: "delete" });
 	const multi = world.relations.register({ multi: true });
@@ -397,12 +397,12 @@ function eventReaderReadonlyAssertions(reader: EventReader<{ a: number }>): void
 	void reader.a[0];
 	void reader.length;
 	// @ts-expect-error — the reader is the channel's live shared view; a length
-	// write would desync every other system (POLISH_AUDIT #5)
+	// write would desync every other system
 	reader.length = 0;
 }
 
 function facadeCardinalityAssertions(): void {
-	// The grouped facades (H3 phase 2) mirror the typestate cardinality
+	// The grouped facades mirror the typestate cardinality
 	// surface — ecs.relations.register stamps the brand, and the facade's
 	// exclusive-only traversal rejects a multi handle exactly like the flat
 	// forms above. A facade must never be a typestate escape hatch.

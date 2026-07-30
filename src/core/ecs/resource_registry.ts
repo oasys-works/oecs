@@ -1,5 +1,5 @@
 /***
- * ResourceRegistry — the world's symbol-keyed resource dictionary (H1 step 2).
+ * ResourceRegistry — the world's symbol-keyed resource dictionary.
  *
  * Extracted from `Store`, which keeps one-line delegations; fully
  * self-contained (no Store reach-back). Resources stay out of `stateHash` and
@@ -46,7 +46,7 @@ export class ResourceRegistry {
 
 	/** Drop a resource from the world. Fails closed on a missing key (mirrors
 	 * `get` / `set`); afterwards the key is free to `register` again — the
-	 * present → absent → present lifecycle (#798). Purely a host-side
+	 * present → absent → present lifecycle. Purely a host-side
 	 * dictionary delete with no determinism-hash effect. */
 	public remove(key: symbol): void {
 		if (!this.map.has(key)) {

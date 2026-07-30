@@ -1,7 +1,6 @@
 /**
- * reactiveStruct gate — per-field channels for a fixed-shape record (ADR-0024).
- * Promotes the workbench `check_struct.ts` contract onto the shipped kernel and
- * adds the enumerable-proxy property `fromKernelStruct` relies on.
+ * reactiveStruct gate — per-field channels for a fixed-shape record.
+ * Adds the enumerable-proxy property `fromKernelStruct` relies on.
  */
 import { describe, expect, it } from "vitest";
 import { batch, computed, effect, root } from "../kernel";
@@ -109,7 +108,7 @@ describe("reactiveStruct — per-field channels", () => {
 		});
 	});
 
-	describe("non-field key access (#717/#721)", () => {
+	describe("non-field key access", () => {
 		it("JSON.stringify does not throw and yields the field values", () => {
 			const [s] = reactiveStruct({ a: 1, b: 2 });
 			expect(() => JSON.stringify(s)).not.toThrow();

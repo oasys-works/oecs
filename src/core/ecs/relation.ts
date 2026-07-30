@@ -4,10 +4,10 @@
  * A **relation** is a *kind* (one `RelationDef` handle), not a per-target
  * component: `a --LinksTo--> b` registers ONE relation, regardless of
  * how many distinct `b`s get linked. Pairs are stored out of the archetype
- * identity, on the sparse storage class (#468 / ADR-0011), so add / remove /
+ * identity, on the sparse storage class, so add / remove /
  * re-target cause **no** archetype transition and consume **no** identity bit —
- * the property the encoding bench proved decisive for churny pairs
- * (`docs/reports/bench/relations/relations-encoding-2026-05-31.md`).
+ * a measurement of the encoding shows that this property is decisive for pairs
+ * that change frequently.
  *
  * Two cardinalities, chosen at registration:
  *
@@ -16,8 +16,8 @@
  *     index *is* the sparse store row. This is the load-bearing reason
  *     exclusive relations inherit determinism + snapshot/restore + query
  *     membership *for free*: everything written through the sparse store is
- *     folded into `Store.stateHash()` and round-trips via `snapshotSparse`
- *     (#470), and matches `Query.withSparse(R)` (#469). Adding a second
+ *     folded into `Store.stateHash()` and round-trips via `snapshotSparse`,
+ * and matches `Query.withSparse(R)`. Adding a second
  *     target overwrites the first (engine-enforced one-per-source).
  *
  *   - **multi** — a set of targets per source. A set can't fit a fixed-width
@@ -39,10 +39,10 @@
  * and still keep the reverse index consistent (see `RelationRegistry.purge`):
  * a destroyed *target* leaves a dangling forward link (`targetOf` returns a
  * dead handle) until the source re-targets or is removed, which is the
- * dangling-target class that configurable `OnDeleteTarget` cleanup owns (#473),
+ * dangling-target class that configurable `OnDeleteTarget` cleanup owns,
  * deliberately out of scope here.
  *
- * **Cardinality is polymorphic, not branched (#498).** The exclusive-vs-multi
+ * **Cardinality is polymorphic, not branched.** The exclusive-vs-multi
  * split used to be an open-coded `if (rs.exclusive)` at ~12 mutation / read
  * sites in `Store`, every one of which had to keep forward link + reverse index
  * + sparse membership in lockstep — a missed site silently corrupted the
@@ -57,7 +57,7 @@
  * `purgeSource` / `forEachCanonicalPair`, with no cardinality branch. Each
  * cardinality's lockstep bookkeeping lives in exactly one method on one class,
  * so there is no scattered site to miss. The cardinality-free reclaim primitive
- * (`pruneDeadReverse`, #491) rides the shared base unchanged.
+ * (`pruneDeadReverse`) rides the shared base unchanged.
  ***/
 
 import { Brand, unsafeCast } from "../../type_primitives";
@@ -81,7 +81,7 @@ declare const __relationBrand: unique symbol;
  * source (re-add replaces), `multi` = a target set per source. */
 export type RelationCardinality = "exclusive" | "multi";
 
-// Phantom cardinality slot (POLISH_AUDIT #7): `registerRelation`'s overloads
+// Phantom cardinality slot: `registerRelation`'s overloads
 // stamp the literal cardinality into the handle type, and the exclusive-only
 // surfaces (`targetOf`, `ancestorsOf` / `rootOf` / `cascadeOf`,
 // `Query.hierarchy`) accept only `RelationDef<"exclusive">` — turning the
@@ -99,7 +99,7 @@ export type RelationDef<C extends RelationCardinality = RelationCardinality> = R
 };
 
 /** Access sentinel for the `(*, T)` wildcard query iteration
- * (`Query.forEachRelatedTo`, #579). A `(*, T)` term reads **every** registered
+ * (`Query.forEachRelatedTo`). A `(*, T)` term reads **every** registered
  * relation's reverse index to find sources of `T`, so it can't name a specific
  * relation in `relationReads` the way `withRelation(R)` (`(R, *)`) can. A
  * system that iterates a `(*, T)` wildcard lists `ANY_RELATION` in `relationReads`
@@ -109,7 +109,7 @@ export type RelationDef<C extends RelationCardinality = RelationCardinality> = R
 export const ANY_RELATION: RelationDef = unsafeCast<RelationDef>(0x7fff_ffff);
 
 /** Cleanup policy applied to a relation's **sources** when one of its
- * **targets** is destroyed (#473). Chosen per-relation at registration, run at
+ * **targets** is destroyed. Chosen per-relation at registration, run at
  * destroy-flush (and the immediate-destroy path) off the reverse index:
  *
  *   - **`delete`** — cascade: destroy every source of the dead target too,
@@ -118,11 +118,11 @@ export const ANY_RELATION: RelationDef = unsafeCast<RelationDef>(0x7fff_ffff);
  *   - **`orphan`** — leave the link intact but dangling. Reads stay safe (the
  *     reverse index is `EntityID`-keyed, so the dead handle never aliases a
  *     recycled slot); `targetOf` returns a dead handle until the source
- *     re-targets or is removed. This is the pre-#473 behaviour and the default.
+ *     re-targets or is removed. This is the original behaviour and the default.
  */
 export type OnDeleteTarget = "delete" | "clear" | "orphan";
 
-/** Default on-target-delete policy: leave the link dangling (pre-#473
+/** Default on-target-delete policy: leave the link dangling (the original
  * behaviour, zero change for callers that don't opt in). */
 export const DEFAULT_ON_DELETE_TARGET: OnDeleteTarget = "orphan";
 
@@ -160,14 +160,14 @@ export type CanonicalTargetSetFn = (sourceIndex: number, targets: readonly Entit
 
 /** Receives one canonical `(source, target)` pair during a fold over a
  * relation's forward links. Sources ascend by entity index, each source's
- * targets ascend by id — the #470 determinism order. */
+ * targets ascend by id — the determinism order. */
 export type CanonicalPairFn = (source: EntityID, target: EntityID) => void;
 
 /** Maps a source entity **index** to its full `EntityID` (generation from the
  * live slot). Supplied by `Store`, which owns entity generations. */
 export type MakeSourceID = (index: number) => EntityID;
 
-/** One relation's derived side state. **Abstract over cardinality (#498):** the
+/** One relation's derived side state. **Abstract over cardinality:** the
  * base owns the cardinality-agnostic **reverse index** (target → sources, keyed
  * by full `EntityID` so a recycled slot can't alias a dead target's sources) and
  * a handle on the backing `SparseComponentStore`; the forward representation and
@@ -191,12 +191,12 @@ export abstract class RelationStore {
 	 * multi. Carries membership (and the target, when exclusive). */
 	public readonly sparse: SparseComponentDef;
 	/** Cleanup policy applied to this relation's sources when a target is
-	 * destroyed (#473). `orphan` (the default) is a no-op — the link dangles
+	 * destroyed. `orphan` (the default) is a no-op — the link dangles
 	 * safely. `Store` reads this at destroy-flush off `sourcesOf`. */
 	public readonly onDeleteTarget: OnDeleteTarget;
 	/** The backing sparse store instance. Owned for registration/liveness by
 	 * `Store`, but the relation drives the forward/membership rows on it directly
-	 * — that is the cardinality interaction this class now encapsulates (#498). */
+	 * — that is the cardinality interaction this class now encapsulates. */
 	protected readonly _store: SparseComponentStore;
 	/** target `EntityID` → set of source `EntityID`s. Keyed by the full id, not
 	 * the index, so a recycled target slot can't alias a dead target's sources.
@@ -238,7 +238,7 @@ export abstract class RelationStore {
 	}
 
 	/** Drop every reverse-index entry whose **target** is no longer alive,
-	 * returning the count dropped (#491). The `orphan` policy intentionally
+	 * returning the count dropped. The `orphan` policy intentionally
 	 * leaves a destroyed target's reverse entry intact (the link dangles
 	 * safely), so a long-lived source that orphan-points at a stream of
 	 * short-lived targets and never re-targets/dies accumulates dead-target keys
@@ -304,7 +304,7 @@ export abstract class RelationStore {
 	 * reverse index in lockstep. Exclusive: replaces any existing target
 	 * (idempotent if `tgt` is already the target). Multi: adds to the set
 	 * (idempotent on a duplicate), establishing the membership tag on the first
-	 * target. `src` must be live — `Store` checks before delegating (#495). */
+	 * target. `src` must be live — `Store` checks before delegating. */
 	public abstract link(src: EntityID, tgt: EntityID): void;
 
 	/** Remove `(R, tgt)` from `src` — or, when `tgt` is omitted, every target of
@@ -325,7 +325,7 @@ export abstract class RelationStore {
 
 	/** All targets of source `index`, ascending by id — one or zero for
 	 * exclusive, the full sorted set for multi. The symmetric counterpart to
-	 * `sourcesOf` (#498 item 4). */
+	 * `sourcesOf`. */
 	public abstract targetsOf(index: number): EntityID[];
 
 	/** Whether source `index` holds any target under this relation (sparse
@@ -335,13 +335,13 @@ export abstract class RelationStore {
 	/** Fold `cb` over this relation's **multi** forward target sets in canonical
 	 * order (sources ascending by index, each source's targets ascending by id),
 	 * skipping empty sets. The single source of truth for the canonical multi
-	 * traversal shared by `stateHash`, `snapshotRelations`, and `pairsOf`
-	 * (#498 item 1). Exclusive relations contribute via the sparse store, so this
+	 * traversal shared by `stateHash`, `snapshotRelations`, and `pairsOf`.
+	 * Exclusive relations contribute via the sparse store, so this
 	 * is a no-op for them. */
 	public abstract forEachCanonicalTargetSet(cb: CanonicalTargetSetFn): void;
 
 	/** Fold `cb` over every `(source, target)` pair of this relation in canonical
-	 * order — the `(R, *)` wildcard drive order (#472). `makeId` maps a source
+	 * order — the `(R, *)` wildcard drive order. `makeId` maps a source
 	 * index to its full `EntityID`. Exclusive rides the backing store's
 	 * `canonicalIndices`; multi rides `forEachCanonicalTargetSet`. */
 	public abstract forEachCanonicalPair(makeId: MakeSourceID, cb: CanonicalPairFn): void;
@@ -362,7 +362,7 @@ export abstract class RelationStore {
 
 /** Exclusive relation (one target per source): the forward link **is** the
  * `{ target: f64 }` backing sparse row, so this class drives that row directly
- * and inherits #469 query membership + #470 `stateHash`/snapshot for free. */
+ * and inherits query membership + `stateHash`/snapshot for free. */
 class ExclusiveRelationStore extends RelationStore {
 	constructor(sparse: SparseComponentDef, store: SparseComponentStore, policy: OnDeleteTarget) {
 		super(true, sparse, store, policy);
@@ -526,8 +526,8 @@ class MultiRelationStore extends RelationStore {
 		// ascending id (in `targetsOf`); empty sets are skipped. This is the
 		// ONE place that ordering + skip-empty lives — `stateHash`,
 		// `snapshotRelations`, and `pairsOf` all fold through here, so they can
-		// no longer disagree on the empty-set branch (the latent divergence #498
-		// item 1 flagged: `snapshotRelations` used to emit a 0-target record).
+		// no longer disagree on the empty-set branch (a latent divergence:
+		// `snapshotRelations` used to emit a 0-target record).
 		const idxs = Array.from(this._forward.keys()).sort((a, b) => a - b);
 		for (let i = 0; i < idxs.length; i++) {
 			const targets = this.targetsOf(idxs[i]);
@@ -594,7 +594,7 @@ const F64_BYTES = 8;
  * Members are emitted in canonical order (sources ascending by entity index,
  * each source's targets ascending by id) so the bytes are independent of
  * add/remove history — the same byte-level determinism invariant the sparse
- * snapshot holds (#470). Layout (integers little-endian):
+ * snapshot holds. Layout (integers little-endian):
  *
  *   u32 relationCount
  *   repeat relationCount times (registration / id order):
@@ -609,7 +609,7 @@ export function snapshotRelations(relations: readonly RelationStore[]): Uint8Arr
 	// Materialize each multi relation's canonical `(source index, targets)` sets
 	// once, so the size and write passes read the *same* list rather than folding
 	// the canonical traversal twice and risking divergence. The ordering and the
-	// empty-set skip both live in `forEachCanonicalTargetSet` (#498 item 1) —
+	// empty-set skip both live in `forEachCanonicalTargetSet` —
 	// exclusive relations yield nothing (they ride the sparse snapshot), so an
 	// exclusive relation contributes only its header here.
 	const perRelation: ([number, readonly EntityID[]][] | null)[] = new Array(relations.length);
@@ -727,7 +727,7 @@ export function restoreRelations(
 				// Same crafted-index hazard as the sparse store: `idx` keys the
 				// forward `Map` and feeds `makeId` → `createEntityId(idx, …)`,
 				// which reads `gens[idx]` out of bounds for a wild index. Reject
-				// before that, against the 20-bit entity-index ceiling (#494).
+				// before that, against the 20-bit entity-index ceiling.
 				throw new SparseRestoreError(
 					`relation ${r} source index ${idx} exceeds MAX_INDEX (${MAX_INDEX})`
 				);
@@ -741,7 +741,7 @@ export function restoreRelations(
 				// above: a crafted / truncated snapshot can decode a target whose bits
 				// fall outside the 31-bit packed layout, and `getEntityIndex` would
 				// then mask it (`& INDEX_MASK`) onto an unrelated live slot — the ABA
-				// mis-binding the source-index guard exists to prevent (#723).
+				// mis-binding the source-index guard exists to prevent.
 				const tgtN = tgt as number;
 				if (!Number.isInteger(tgtN) || tgtN < 0 || tgtN > MAX_ENTITY_ID) {
 					throw new SparseRestoreError(

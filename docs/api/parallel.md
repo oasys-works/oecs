@@ -1,30 +1,38 @@
-# Parallelism
+# Parallel execution
 
-> **Current contract.** oecs has shared-memory and worker/WASM integration seams today. The built-in schedule is still **sequential and deterministic**: systems run one at a time in each phase after topological ordering. Access declarations are enforced in dev today and are the metadata a future parallel scheduler would use.
+> **The contract today.** oecs has connections for shared memory and for a worker or WASM backend
+> now. But the supplied schedule is still **sequential and deterministic**: after the topological
+> sort, the systems in each phase run one at a time. The engine holds you to the access
+> declarations in development builds today, and those declarations are the data that a parallel
+> scheduler would need later.
 
-There are two different ideas that are easy to blur:
+There are two different ideas here, and it is easy to confuse them:
 
-- **Shared execution substrate** — columns can live in `SharedArrayBuffer` or shared `WebAssembly.Memory`, so a worker or WASM backend can see the same bytes.
-- **Parallel schedule execution** — running independent systems at the same time. oecs does not do this yet; the public scheduler executes sequentially.
+- **Shared execution storage** — The columns can be in a `SharedArrayBuffer` or in a shared
+  `WebAssembly.Memory`. So a worker or a WASM backend can see the same bytes.
+- **Parallel execution of the schedule** — This runs independent systems at the same time. oecs
+  does not do this yet, and the public scheduler runs the systems in sequence.
 
-## What works today
+## What operates today
 
-### Shared backing
+### Shared storage
 
-Use `memory.shared` when another thread needs to observe the store, or `memory.wasm` when the store should be a `WebAssembly.Memory`.
+Use `memory.shared` when a second thread must see the store. Use `memory.wasm` when the store must
+be a `WebAssembly.Memory`.
 
 ```ts
 import { ECS } from "@oasys/oecs";
 
-new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer backing
-new ECS({ memory: { wasm: { maximumPages: 4096 } } }); // shared WebAssembly.Memory
+new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer storage
+new ECS({ memory: { wasm: { maximumPages: 4096 } } }); // a shared WebAssembly.Memory
 ```
 
-Browser builds need cross-origin isolation for either profile. Heap worlds need no isolation, but cannot be shared with workers or used as a WASM compute backend.
+A browser build needs cross-origin isolation for both profiles. A heap world needs no isolation,
+but you cannot share it with a worker, and you cannot use it with a WASM compute backend.
 
-### Backend-routed systems
+### Systems that a backend runs
 
-A system can run through a backend instead of its TypeScript closure:
+A system can run through a backend, in place of its TypeScript closure:
 
 ```ts
 const step = ecs.registerSystem({
@@ -38,51 +46,61 @@ const step = ecs.registerSystem({
 ecs.attachBackend(myBackend);
 ```
 
-The scheduler still reaches that system in normal phase order. The difference is only the body: `backend.run(stepHandle)` instead of `fn(ctx, dt)`.
+The scheduler still reaches that system in the usual order of the phase. Only the body is
+different: `backend.run(stepHandle)` in place of `fn(ctx, dt)`.
 
-### Cross-thread writes
+### Writes from a different thread
 
-Workers, dev tools, UI code, or network handlers should not mutate the ECS directly while a frame is running. Use the [host-write seam](./host-write-seam.md), which drains commands at a schedule head:
+A worker, a development tool, UI code, or a network handler must not mutate the ECS directly while
+a frame runs. Use the [host write path](./host-write-seam.md), which drains the commands at the
+head of a phase:
 
 ```ts
 import { installHostCommandSeam } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);
 
-// Any time, outside the schedule:
+// At any time, outside the schedule:
 queue.setField(entity, Pos, "x", 10);
 
-// Applied by the seam during update(), in a known place.
+// The host write path applies it during update(), at a known point.
 ecs.update(1 / 60);
 ```
 
-For worker / wire data, `HostCommandDispatcher` decodes fixed-size ring slots into the same command apply path.
+For data from a worker or from the wire, `HostCommandDispatcher` decodes ring slots of a fixed size
+into the same command apply path.
 
-## How to write systems that are parallel-ready
+## How to write systems that are ready for parallel execution
 
-Even though execution is sequential today, write systems as if their access declarations matter. They already do in dev builds, and they are the shape of safe parallelism later.
+Execution is sequential today, but write each system as if its access declarations were important.
+They already are important in development builds, and they are the shape of safe parallel execution
+later.
 
 ```ts
 const integrate = ecs.registerSystem({
   reads: [Vel],
   writes: [Pos],
   queries: [[Pos, Vel]],
-  fn: (ctx, dt) => { /* hot loop */ },
+  fn: (ctx, dt) => { /* the high-frequency loop */ },
 });
 ```
 
-Rules of thumb:
+Rules to follow:
 
-- Declare every component, sparse component, relation, and resource the system reads or writes.
-- Prefer narrow systems over broad `exclusive` systems.
-- Use `ctx.commands` for structural changes during iteration; let the phase flush apply them.
-- Keep run conditions deterministic and read-only.
-- Keep off-schedule host / worker writes behind `installHostCommandSeam`.
-- Keep backend systems honest: the TypeScript declaration must describe the memory the backend touches.
+- Declare each component, sparse component, relation, and resource that the system reads or writes.
+- Use narrow systems. Do not use broad `exclusive` systems.
+- Use `ctx.commands` for a structural change during iteration, and let the flush at the end of the
+  phase apply it.
+- Keep each run condition deterministic and read-only.
+- Keep each write from a host or a worker that is outside the schedule behind
+  `installHostCommandSeam`.
+- Keep the backend systems honest: the TypeScript declaration must describe the memory that the
+  backend touches.
 
-## `exclusive` means "runs alone" later
+## `exclusive` will mean "runs alone" later
 
-Today, `exclusive: true` is an access-check bypass for trusted engine or host machinery. Under a future parallel scheduler, the same flag would force that system to run alone.
+Today, `exclusive: true` bypasses the access check, for engine or host code that you trust. Under a
+parallel scheduler later, the same flag would make that system run alone.
 
 ```ts
 const applyHostCommands = ecs.registerSystem({
@@ -93,11 +111,13 @@ const applyHostCommands = ecs.registerSystem({
 });
 ```
 
-Use it for global apply / load / debug work that genuinely cannot declare a bounded surface. Do not use it as a convenience escape hatch for normal gameplay systems.
+Use it for global apply, load, or debug work that truly cannot declare a limited surface. Do not use
+it as a convenient alternative for a usual gameplay system.
 
-## Ordering is still explicit
+## The order is still explicit
 
-Sequential does not mean unordered. Within a phase, oecs topologically sorts `before` / `after` constraints, then uses insertion order as the deterministic tiebreaker.
+Sequential does not mean unordered. Inside a phase, oecs sorts the `before` and `after` constraints
+topologically. It then uses insertion order to break a tie, which keeps the result deterministic.
 
 ```ts
 ecs.addSystems(SCHEDULE.UPDATE,
@@ -107,30 +127,35 @@ ecs.addSystems(SCHEDULE.UPDATE,
 );
 ```
 
-If two systems are independent, do not add an artificial ordering edge. That keeps the current graph clear and leaves room for future parallel execution.
+If two systems are independent, do not add an order constraint between them. This keeps the current
+graph clear, and it leaves space for parallel execution later.
 
-## Determinism notes
+## Notes on determinism
 
-The default scheduler is deterministic because it has one canonical order per phase. Backend code can preserve that property if it follows the same rules:
+The default scheduler is deterministic, because it has one canonical order for each phase. Backend
+code can keep that property if it follows the same rules:
 
-- Avoid wall-clock time, ambient randomness, and unordered iteration.
-- Keep floating point out of `deterministic: true` component columns.
-- Apply worker / host writes through the seam so they land at the same phase boundary each run.
-- Keep backend writes within the declared system access surface.
+- Do not use clock time, ambient random numbers, or unordered iteration.
+- Keep floating-point numbers out of the component columns of a `deterministic: true` world.
+- Apply each write from a worker or a host through the host write path, so that each one lands at
+  the same phase boundary in each run.
+- Keep each backend write inside the declared access surface of the system.
 
-## Not provided by oecs today
+## What oecs does not supply today
 
-- No automatic work-stealing or multithreaded system scheduler.
-- No built-in worker entrypoint.
-- No bundled WASM module.
-- No automatic conflict graph beyond the current dev access checker and schedule metadata.
+- No automatic work-stealing scheduler, and no multithreaded system scheduler.
+- No supplied entry point for a worker.
+- No WASM module in the package.
+- No automatic conflict graph, past the current development access checker and the schedule data.
 
-Those omissions are intentional boundaries: the engine owns the store layout, schedule order, access declarations, and host-write transport; the consumer owns worker topology, backend compilation, and any domain-specific parallel kernels.
+These limits are intentional. The engine owns the store layout, the order of the schedule, the
+access declarations, and the transport for host writes. You own the topology of your workers, the
+compilation of your backend, and each parallel kernel that is specific to your problem.
 
 ## See also
 
-- [WASM backends](./wasm.md) — wiring shared memory and `ComputeBackend`
-- [memory](./memory.md) — heap vs shared vs WASM storage profiles
-- [systems](./systems.md) — access declarations and `exclusive`
-- [schedule](./schedule.md) — phases, ordering, system sets, and run conditions
-- [host-write seam](./host-write-seam.md) — safe off-schedule writes
+- [WASM backends](./wasm.md) — how to connect shared memory and `ComputeBackend`
+- [memory](./memory.md) — the heap, shared, and WASM storage profiles
+- [systems](./systems.md) — the access declarations and `exclusive`
+- [schedule](./schedule.md) — the phases, the order, system sets, and run conditions
+- [the host write path](./host-write-seam.md) — safe writes from outside the schedule

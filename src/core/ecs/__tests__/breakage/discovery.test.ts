@@ -13,7 +13,7 @@ import { openAccess } from "../test_helpers";
 // 1. Column reference stability across growth
 // ============================================================
 describe("Column buffer invalidation", () => {
-	// Post-#171 §6.1.9: columns are TypedArrays over a single SAB. A grow
+	// Columns are TypedArrays over a single SAB. A grow
 	// allocs a fresh SAB, copies live rows forward, and `refreshViews`
 	// repoints every `BufferBackedColumn._buf` at the new SAB. The contract
 	// below (a reference taken before the grow retains pre-grow values;
@@ -242,7 +242,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 		// isAlive correctly rejects stale ID
 		expect(world.isAlive(stale)).toBe(false);
 
-		// hasComponent is TOTAL (POLISH_AUDIT #9): a stale id returns false in
+		// hasComponent is TOTAL: a stale id returns false in
 		// dev and prod alike — a "has" probe must be safe to ask about dead ids.
 		expect(world.hasComponent(stale, Pos)).toBe(false);
 

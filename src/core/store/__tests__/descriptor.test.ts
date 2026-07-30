@@ -1,5 +1,5 @@
 /**
- * Binary-fixture lock for the SAB layout descriptor (#171 §6.1.2).
+ * Binary-fixture lock for the SAB layout descriptor.
  *
  * Pins the byte sequence of `ColumnDescriptor` (16 bytes) and
  * `ArchetypeDescriptor` (32-byte header + N × 16-byte columns) so the
@@ -47,7 +47,7 @@ const COLUMN_FIXTURE: ColumnDescriptor = {
 	stride: 4
 };
 
-// Bytes hand-derived from §7.3 + COLUMN_DESCRIPTOR_OFFSETS, little-endian.
+// Bytes hand-derived from COLUMN_DESCRIPTOR_OFFSETS, little-endian.
 // [0..2) cid=0x0005 → 05 00
 // [2..4) fid=0x0002 → 02 00
 // [4..5) tag=0x05   → 05
@@ -104,7 +104,7 @@ const REGION_FIXTURE: readonly ArchetypeDescriptor[] = [ARCHETYPE_FIXTURE, ARCHE
 
 // ───────────────────────── Tests ─────────────────────────────
 
-describe("SAB ColumnDescriptor — 16-byte fixed layout (#171 §7.3)", () => {
+describe("SAB ColumnDescriptor — 16-byte fixed layout", () => {
 	it("fixture writes to the golden byte sequence", () => {
 		const buf = new ArrayBuffer(COLUMN_DESCRIPTOR_BYTES);
 		const view = new DataView(buf);
@@ -114,7 +114,7 @@ describe("SAB ColumnDescriptor — 16-byte fixed layout (#171 §7.3)", () => {
 
 	it("ColumnDescriptor is exactly 16 bytes wide", () => {
 		expect(COLUMN_DESCRIPTOR_BYTES).toBe(16);
-		// Offsets must match Zig `extern struct` field positions in plan §7.3.
+		// Offsets must match the Zig `extern struct` field positions.
 		// Reordering or adding a field shifts these — fails before the fixture
 		// to point at the version-bump requirement.
 		expect(COLUMN_DESCRIPTOR_OFFSETS).toEqual({
@@ -157,7 +157,7 @@ describe("SAB ColumnDescriptor — 16-byte fixed layout (#171 §7.3)", () => {
 	});
 });
 
-describe("SAB ArchetypeDescriptor — 36-byte header + N × 16 (#171 §7.2 / #599)", () => {
+describe("SAB ArchetypeDescriptor — 36-byte header + N × 16", () => {
 	it("fixture writes to the golden byte sequence (1 column)", () => {
 		const buf = new ArrayBuffer(archetypeDescriptorBytes(1));
 		const view = new DataView(buf);
@@ -169,7 +169,7 @@ describe("SAB ArchetypeDescriptor — 36-byte header + N × 16 (#171 §7.2 / #59
 	it("header is exactly ARCHETYPE_DESCRIPTOR_HEADER_BYTES (36) bytes", () => {
 		expect(ARCHETYPE_DESCRIPTOR_HEADER_BYTES).toBe(36);
 		// archetype_id, component_mask (4 words @ 4), row_count, row_capacity,
-		// column_count, enabled_count (#599). Reordering or widening shifts these —
+		// column_count, enabled_count. Reordering or widening shifts these —
 		// fails before the fixture to point at the version-bump requirement.
 		expect(Object.values(ARCHETYPE_DESCRIPTOR_OFFSETS)).toEqual([0, 4, 20, 24, 28, 32]);
 	});

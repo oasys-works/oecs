@@ -1,5 +1,5 @@
 /**
- * Tag-only archetype growth regression (#210).
+ * Tag-only archetype growth regression.
  *
  * Tag-only archetypes (mask is all tags, no data fields) have an empty
  * `Archetype._flatColumns` array. Their `addEntity` / `moveEntityFromTag`
@@ -8,7 +8,7 @@
  * `_entityIds` instead. The SAB descriptor records `row_capacity =
  * initialCapacity` for them as metadata only.
  *
- * Before #210 was fixed, `extendColumnStore` / `_growHandler` reported
+ * Before the fix, `extendColumnStore` / `_growHandler` reported
  * `row_count: a.length` for every archetype, and any tag-only archetype
  * past its initial row_capacity would trip the primitive's vacuous bound
  * check (`row_count > row_capacity`) on the next structural change.
@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { EntityID } from "../../entity";
 
-describe("Tag-only archetype growth (#210)", () => {
+describe("Tag-only archetype growth", () => {
 	it("tag-only archetype length can exceed SAB row_capacity without throwing", () => {
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const T1 = world.registerTag();

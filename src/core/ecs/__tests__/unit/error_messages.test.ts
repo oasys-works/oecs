@@ -1,5 +1,5 @@
 /**
- * Error-experience contract (POLISH_AUDIT #4 / M6 / M17 / M18).
+ * Error-experience contract.
  *
  * Locks in the dev-mode diagnostic upgrades:
  *  - `registerComponent(schema, { name })` threads the debug name into

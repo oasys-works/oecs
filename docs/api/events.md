@@ -1,39 +1,48 @@
 # Events
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** Host-side event registration, emit, and read live on the **`ecs.events`** facade — `ecs.events.register(Damage, ["amount"])`, `ecs.events.registerSignal(Ping)`, `ecs.events.emit(Damage, {...})`, `ecs.events.read(Damage)` — system-side `ctx.emit`/`ctx.read` are unchanged. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
+> **0.5.0 — a grouped surface.** On the host, the registration, emission, and reading of an event
+> are on the **`ecs.events`** facade: `ecs.events.register(Damage, ["amount"])`,
+> `ecs.events.registerSignal(Ping)`, `ecs.events.emit(Damage, {...})`, and
+> `ecs.events.read(Damage)`. In a system, `ctx.emit` and `ctx.read` have not changed. Version 0.5.0
+> **removed** the flat `ecs.*` forms of 0.4 and earlier.
 
-An **event** is a fire-and-forget message with a typed payload. Systems `emit` them and other systems `read` them within the same frame. Events are stored struct-of-arrays (one column per field) and **cleared at the end of every `update()`** — they exist for exactly one frame.
+An **event** is a send-and-forget message with a typed payload. One system emits it with `emit`,
+and other systems read it with `read` in the same frame. The engine stores events as a
+struct-of-arrays, with one column for each field. It **clears them at the end of each `update()`**,
+so an event exists for exactly one frame.
 
 ```ts
 import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
 
-// A typed event and a payload-less signal, minted at module scope.
+// A typed event and a signal with no payload, both made at module scope.
 const Contact = eventKey<{ a: EntityID; b: EntityID }>("Contact");
 const Jumped  = signalKey("Jumped");
 
-ecs.events.register(Contact, ["a", "b"]);   // enumerate fields (defines column order)
+ecs.events.register(Contact, ["a", "b"]);   // list the fields (this sets the order of the columns)
 ecs.events.registerSignal(Jumped);
 ```
 
-## Emitting & reading
+## How to emit and read
 
-On the host they live on the facade — `ecs.events.emit` / `ecs.events.read`; inside a system they are `ctx.emit` / `ctx.read`. Same shapes on both:
+On the host these functions are on the facade: `ecs.events.emit` and `ecs.events.read`. In a system
+they are `ctx.emit` and `ctx.read`. The shapes are the same in both places:
 
 ```ts
 emit(key: SignalKey): void;                     // signal — no payload
-emit<S>(key: EventKey<S>, values: S): void;     // event — full payload
+emit<S>(key: EventKey<S>, values: S): void;     // event — the full payload
 read<S>(key: EventKey<S>): EventReader<S>;
 ```
 
-The reader is an SoA view: one read-only column array per field, plus a live `length`.
+The reader is a struct-of-arrays view. It has one read-only column array for each field, and a live
+`length`.
 
 ```ts
-// producer system:
+// the producer system:
 ctx.emit(Contact, { a: e1, b: e2 });
 ctx.emit(Jumped);
 
-// consumer system (same frame):
+// a consumer system (the same frame):
 const hits = ctx.read(Contact);
 for (let i = 0; i < hits.length; i++) {
   const a = hits.a[i];   // typed as EntityID — the brand survives emit → read
@@ -46,36 +55,53 @@ const jumps = ctx.read(Jumped).length;   // a signal carries only its count
 type EventReader<S> = { readonly length: number } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 ```
 
-## Keys & schemas
+## Keys and schemas
 
 ```ts
 eventKey<S extends EventShape<S>>(name: string): EventKey<S>;
 signalKey(name: string): SignalKey;
-type EventShape<S> = { readonly [K in keyof S]: number };  // the constraint: every field a number
-type EventSchema = Readonly<Record<string, number>>;       // the erased/default field → value-type map
+type EventShape<S> = { readonly [K in keyof S]: number };  // the rule: each field is a number
+type EventSchema = Readonly<Record<string, number>>;       // the default field → value-type map, with types removed
 ```
 
-A `SignalKey` is a distinct zero-field event — the type system stops you passing a payload to a signal or reading a signal's absent columns.
+A `SignalKey` is a separate kind of event with no field. The type system stops you if you give a
+payload to a signal, or if you read the columns that a signal does not have.
 
 > [!TIP]
-> Declare the schema as a **type literal or an `interface`** — both work. The `EventShape<S>` constraint is homomorphic (it checks every property is a number without requiring an index signature), so `interface`-declared schemas are accepted even though they lack the implicit index signature literals get. Every field must be a `number` (branded numbers included — see below).
+> Declare the schema as a **type literal or an `interface`**. Both operate correctly. The
+> `EventShape<S>` rule is homomorphic: it tests that each property is a number, and it does not
+> require an index signature. So a schema that you declare with `interface` is acceptable, even
+> though it does not have the implicit index signature that a literal has. Each field must be a
+> `number`, and this includes a number with a brand (see below).
 
 > [!TIP]
-> **Branded number fields round-trip.** A field typed `EntityID` (or any branded number) reads back branded from the `EventReader` with no cast — the brand is compile-time only, so at runtime it's just a `number` in a typed column.
+> **A number field with a brand keeps its brand.** A field with the `EntityID` type, or any other
+> branded number type, reads back from the `EventReader` with its brand, and you need no cast. The
+> brand exists at compile time only. At run time the value is a `number` in a typed column.
 
-## Lifetime
+## The lifetime of an event
 
 > [!IMPORTANT]
-> **Events live exactly one frame.** `ecs.update()` clears every channel as its final act, so an event emitted this frame is readable only this frame. Same-frame cross-system reads work; there is no cross-frame delivery. (`startup()` also drains events its phases emit, so frame 1 never sees stale startup events.) If you need durable state, use a [resource](./resources.md) or a component.
+> **An event exists for exactly one frame.** `ecs.update()` clears each channel as its final
+> action. So you can read an event in the frame in which it was emitted, and in no other frame. A
+> read across systems in the same frame operates correctly, but there is no delivery across frames.
+> `startup()` also clears the events that its phases emit, so frame 1 never sees an old startup
+> event. If you need persistent state, use a [resource](./resources.md) or a component.
 
 > [!WARNING]
-> **Do not emit from an `onSet` [observer](./observers.md).** `onSet` runs at the tick tail, inside the window where events are about to be cleared — an emission there would be wiped before any reader sees it and would break snapshot/restore. In dev this throws `OBSERVER_ONSET_EMIT`; emit from a normal system instead.
+> **Do not emit from an `onSet` [observer](./observers.md).** `onSet` runs at the end of the tick,
+> inside the window in which the engine is about to clear the events. An emission there would be
+> removed before a reader saw it, and it would make snapshot and restore incorrect. In development
+> this throws `OBSERVER_ONSET_EMIT`. Emit from a normal system instead.
 
 > [!NOTE]
-> The `EventReader` columns are the **live** backing arrays, read-only by type only. A cast can write through them, but that corrupts the channel — don't. Events, like resources, sit outside `stateHash` and snapshots (they're a per-frame scheduling artifact).
+> The columns of the `EventReader` are the **live** backing arrays, and their read-only state is at
+> the type level only. A type cast can write through them, but a write of that type corrupts the
+> channel. Do not do it. `stateHash` and snapshots do not include events, and they do not include
+> resources, because both are artifacts of one frame of the schedule.
 
 ## See also
 
 - [systems](./systems.md) — where you emit and read
-- [observers](./observers.md) — the `onSet`/`onAdd` callbacks (and why they can't emit)
-- [resources](./resources.md) — durable global state, in contrast to per-frame events
+- [observers](./observers.md) — the `onSet` and `onAdd` callbacks, and why they cannot emit
+- [resources](./resources.md) — persistent global state, in contrast to an event for one frame

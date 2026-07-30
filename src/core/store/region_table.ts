@@ -1,7 +1,7 @@
 /**
  * Generic SAB region table — the de-gamed replacement for the five game-named
  * header offset fields (`terrain_off`, `spatial_grid_off`, … ) the substrate
- * used to hard-code (#623 / ADR-0018).
+ * used to hard-code.
  *
  * The engine ships only genuinely-generic MECHANISM regions (the command /
  * event / action rings and the entity-index) as named `StoreHeader` fields. A
@@ -95,7 +95,7 @@ export function regionTableBytes(count: number): number {
  * within the buffer. `isValidSab` checks only header-length + magic + ABI, so a
  * corrupt / foreign store buffer can carry a garbage count that would drive a huge
  * `new Array(count)` and out-of-bounds `getUint32` reads. Reject with a typed
- * error before any entry is touched. (#729) */
+ * error before any entry is touched. */
 function readHeaderRegionTableCount(view: DataView, tableOff: number): number {
 	const count = view.getUint32(STORE_HEADER_OFFSETS.region_table_count, true);
 	if (tableOff + regionTableBytes(count) > view.byteLength) {

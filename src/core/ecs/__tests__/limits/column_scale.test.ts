@@ -2,11 +2,11 @@
  * Column scale — "no corruption at moderate scale", NOT a cap boundary.
  *
  * SoA column growth, swap-and-pop, and batch ops over up to 10k entities —
- * well under the 256 MiB SAB cap (#380) and the 1M `EntityID` index. The
+ * well under the 256 MiB SAB cap and the 1M `EntityID` index. The
  * point is that column data stays intact through growth and dense
  * swap-removes, not that anything is tested AT a documented limit. The real
  * cap boundaries live in `limits/component_count_cap.test.ts` (SAB
- * descriptor mask width) and `unit/store.test.ts` (#376 slot retirement).
+ * descriptor mask width) and `unit/store.test.ts` (slot retirement).
  */
 
 import { describe, expect, it } from "vitest";

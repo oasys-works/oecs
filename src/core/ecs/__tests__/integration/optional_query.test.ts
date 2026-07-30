@@ -1,5 +1,5 @@
 /**
- * Optional query terms — fetch-if-present (#575, Bevy `Option<&T>` / flecs `?`).
+ * Optional query terms — fetch-if-present (Bevy `Option<&T>` / flecs `?`).
  *
  * `q.optional(T)` fetches `T` when an entity has it but does NOT exclude
  * entities that lack it: the matched set stays at the required terms, spanning
@@ -12,9 +12,9 @@
  *  - the optional read is access-declared (`reads:[T]`), and the check fires even
  *    on the absent span;
  *  - composition with `and` / `not` / `anyOf` is symmetric — the term survives a
- *    dense compose in EITHER order (#592 finding #1, the silent-drop regression);
+ *    dense compose in EITHER order (the silent-drop regression);
  *  - the term gates the fetch — `getOptionalColumnRead` throws in `__DEV__` if
- *    the component wasn't declared via `.optional(T)` (#592 finding #2);
+ *    the component wasn't declared via `.optional(T)`;
  *  - cache identity.
  */
 
@@ -52,7 +52,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	return () => world.update(0);
 }
 
-describe("ECS optional query terms (#575)", () => {
+describe("ECS optional query terms", () => {
 	//=========================================================
 	// Both branches: iterate with AND without the optional component
 	//=========================================================
@@ -331,10 +331,10 @@ describe("ECS optional query terms (#575)", () => {
 
 	//=========================================================
 	// Composition is symmetric: the optional term survives a dense compose
-	// in EITHER order (#592 — the order-dependent silent-drop regression).
+	// in EITHER order (the order-dependent silent-drop regression).
 	//=========================================================
 
-	it("keeps the optional term when .optional() precedes .and() (the dropped order, #592)", () => {
+	it("keeps the optional term when .optional() precedes .and() (the dropped order)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -349,7 +349,7 @@ describe("ECS optional query terms (#575)", () => {
 		world.addComponent(e2, Hp, { hp: 50 }); // no Vel
 
 		// optional FIRST, then and — the order that used to drop the term and
-		// alias the plain `.and(Hp)` query (#592 finding #1).
+		// alias the plain `.and(Hp)` query.
 		const q = world.query(Pos).optional(Vel).and(Hp);
 
 		// The plain compose (no optional) is a DISTINCT object — proof the term
@@ -371,7 +371,7 @@ describe("ECS optional query terms (#575)", () => {
 		expect(withVel).toEqual([e1]);
 	});
 
-	it("optional survives compose through not() and any_of() too (#592)", () => {
+	it("optional survives compose through not() and any_of() too", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -385,7 +385,7 @@ describe("ECS optional query terms (#575)", () => {
 		world.addComponent(e2, Hp, { hp: 9 }); // {Pos,Hp} → excluded by not(Hp)
 
 		// optional FIRST, then not(Hp): the term must survive, and the fetch must
-		// not throw the #592 dev-gate.
+		// not throw the dev-gate.
 		const q = world.query(Pos).optional(Vel).without(Hp);
 		const seen: number[] = [];
 		q.forEach((arch) => {
@@ -407,11 +407,11 @@ describe("ECS optional query terms (#575)", () => {
 	});
 
 	//=========================================================
-	// The term gates the fetch (#592): getOptionalColumnRead requires the
+	// The term gates the fetch: getOptionalColumnRead requires the
 	// component to have been declared via .optional(T) on the iterating query.
 	//=========================================================
 
-	it("throws when fetching an optional column the query never declared (#592)", () => {
+	it("throws when fetching an optional column the query never declared", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -429,7 +429,7 @@ describe("ECS optional query terms (#575)", () => {
 		).toThrow(/getOptionalColumnRead.*didn't declare it/);
 	});
 
-	it("throws when fetching a different optional than the one declared (#592)", () => {
+	it("throws when fetching a different optional than the one declared", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -447,7 +447,7 @@ describe("ECS optional query terms (#575)", () => {
 		).toThrow(/getOptionalColumnRead.*didn't declare it/);
 	});
 
-	it("a changed-query loop gates the optional fetch too (#594 Task 1)", () => {
+	it("a changed-query loop gates the optional fetch too", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -457,7 +457,7 @@ describe("ECS optional query terms (#575)", () => {
 		world.addComponent(e, Pos, { x: 1, y: 1 });
 		world.addComponent(e, Vel, { vx: 2, vy: 2 });
 
-		// .optional(Vel) declared; changed(Pos) wraps it. Before #594 the changed-query
+		// .optional(Vel) declared; changed(Pos) wraps it. The changed-query
 		// loop never entered an optional scope, so this fetch silently passed.
 		const cq = world.query(Pos).optional(Vel).changed(Pos);
 
@@ -476,12 +476,12 @@ describe("ECS optional query terms (#575)", () => {
 	});
 
 	//=========================================================
-	// Multi-arg dense compose is cached/stable on a non-dense receiver (#594
-	// Task 2): folding through the single-arg cache stops _carry_nondense from
+	// Multi-arg dense compose is cached/stable on a non-dense receiver:
+	// folding through the single-arg cache stops _carry_nondense from
 	// minting a fresh query-id per call.
 	//=========================================================
 
-	it("and(A, B) folds to and(A).and(B) on an optional-carrying query (#594 Task 2)", () => {
+	it("and(A, B) folds to and(A).and(B) on an optional-carrying query", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");

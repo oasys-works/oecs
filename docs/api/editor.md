@@ -1,19 +1,24 @@
 # Editor
 
-> **Optional.** `@oasys/oecs/editor` adds **undo/redo** and two-way **field handles** on top of the [host-write seam](./host-write-seam.md). It's for building editors and inspectors; a game runtime doesn't need it.
+> **Optional.** `@oasys/oecs/editor` adds **undo and redo**, and **field handles** that operate in
+> two directions, above the [host write path](./host-write-seam.md). It is for editors and
+> inspectors. A game at run time does not need it.
 
-Every edit is reified as a transaction with a **forward** and an **inverse** command list. Undo enqueues the inverse on the same command bus; redo re-enqueues the forward. Undo is just another command — it applies at the next schedule head like any other host write.
+The editor makes each edit into a transaction with a **forward** list of commands and an
+**inverse** list. Undo puts the inverse list on the same command queue. Redo puts the forward list
+on it again. So an undo is only one more command: it applies at the head of the next phase, as
+each other write from the host does.
 
 ```ts
 import { Editor, fieldHandle } from "@oasys/oecs/editor";
 import { installHostCommandSeam } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);
-// readField: how the editor reads current values to build inverses (from your read channel)
+// readField: how the editor reads the current values to build an inverse (from your read channel)
 const editor = new Editor(queue, (entityId, def, field) => ecs.getField(entityId, def, field));
 
-editor.setField(player, Health, "hp", 50);   // enqueues forward + inverse; applies next tick
-editor.undo();   // → true (enqueues the inverse)
+editor.setField(player, Health, "hp", 50);   // adds the forward and inverse commands; applies in the next tick
+editor.undo();   // → true (adds the inverse commands)
 editor.redo();   // → true
 ```
 
@@ -23,31 +28,31 @@ editor.redo();   // → true
 class Editor {
   constructor(queue: HostCommandQueue, readField: FieldReader);
 
-  // Each single-action method enqueues a one-command transaction and returns it:
+  // Each single-action method adds a transaction of one command, and gives it back:
   spawn(components: readonly SpawnEntry[], onSpawned?): EditorTransaction;
-  despawn(entityId, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to rebuild on undo
+  despawn(entityId, restore: readonly SpawnEntry[]): EditorTransaction;       // restore = how to build it again on undo
   setField<S>(entityId, def, field, value): EditorTransaction;
-  add<S>(entityId, def, values: CompleteFieldValues<S>): EditorTransaction;   // bare verb (cf. ctx.commands.add)
-  remove<S>(entityId, def, restore: CompleteFieldValues<S>): EditorTransaction;  // restore = values to re-add on undo
+  add<S>(entityId, def, values: CompleteFieldValues<S>): EditorTransaction;   // a bare verb (compare ctx.commands.add)
+  remove<S>(entityId, def, restore: CompleteFieldValues<S>): EditorTransaction;  // restore = the values to add again on undo
   disable(entityId): EditorTransaction;   enable(entityId): EditorTransaction;
 
   transaction(build: (tx: TransactionBuilder) => void): EditorTransaction;   // group many edits → one undo entry
 
-  undo(): boolean;    // false if the undo stack is empty
-  redo(): boolean;    // false if the redo stack is empty
-  get canUndo(): boolean;   get canRedo(): boolean;   // allocation-free "would undo()/redo() do something"
-  clear(): void;      // drop both stacks (does not touch the ECS)
+  undo(): boolean;    // false when the undo stack is empty
+  redo(): boolean;    // false when the redo stack is empty
+  get canUndo(): boolean;   get canRedo(): boolean;   // "would undo()/redo() do something", with no allocation
+  clear(): void;      // remove both stacks (this does not touch the ECS)
   depths(): { undo: number; redo: number };
-  onChange(cb: () => void): () => void;                // fires after every commit/undo/redo/clear; returns unsubscribe
-  committedField(entityId, def, field): number | undefined; // read one committed slot through the constructor's FieldReader
-  pendingField(entityId, def, field): number | undefined;   // optimistic, not-yet-committed value
+  onChange(cb: () => void): () => void;                // runs after each commit, undo, redo, and clear; gives an unsubscribe function
+  committedField(entityId, def, field): number | undefined; // read one committed slot through the FieldReader of the constructor
+  pendingField(entityId, def, field): number | undefined;   // the optimistic value that is not yet committed
 }
 
 type FieldReader = (entityId: EntityID, def: ComponentDef, field: string) => number | undefined;
 interface EditorTransaction { readonly forward: readonly HostCommand[]; readonly inverse: readonly HostCommand[]; }
 ```
 
-Group several edits into a **single** undo entry with `transaction`:
+To group several edits into a **single** undo entry, use `transaction`:
 
 ```ts
 editor.transaction((tx) => {
@@ -55,35 +60,48 @@ editor.transaction((tx) => {
     .setField(e, Pos, "y", 20)
     .add(e, Selected, {});
 });
-editor.undo();   // reverts all three at once
+editor.undo();   // reverses all three at the same time
 ```
 
-`TransactionBuilder` mirrors the single-action methods (`spawn`, `despawn`, `setField`, `add`, `remove`, `disable`, `enable`), each returning `this` to chain. You get it from `transaction`; you don't construct it.
+`TransactionBuilder` has the same methods as the single actions (`spawn`, `despawn`, `setField`,
+`add`, `remove`, `disable`, and `enable`). Each one gives `this`, so that you can chain them. You
+get the builder from `transaction`. You do not construct it.
 
-For an "Undo (3)" / "Redo" affordance, subscribe with `onChange` instead of polling `depths()` per frame — callbacks fire synchronously after every commit, undo, redo, and clear; read `canUndo` / `canRedo` / `depths()` inside. `committedField` reads one committed `(entity, component, field)` slot through the `FieldReader` the editor was constructed with — it's the default read for `fieldHandle` when you pass no channel thunk.
+For an "Undo (3)" or "Redo" control, subscribe with `onChange`. Do not poll `depths()` in each
+frame. The callbacks run synchronously after each commit, undo, redo, and clear. Read `canUndo`,
+`canRedo`, or `depths()` inside the callback. `committedField` reads one committed
+`(entity, component, field)` slot through the `FieldReader` that you gave to the constructor. It is
+the default read for `fieldHandle` when you give no read function.
 
 > [!WARNING]
-> **Entity identity is not preserved across despawn → undo.** The data round-trips (rebuilt from the `restore` you supplied), but the re-spawned entity gets a **fresh** `EntityID`. Don't hold an old id across an undo of its despawn.
+> **A despawn, and then an undo, does not keep the identity of the entity.** The data returns,
+> because the editor builds it again from the `restore` list that you supplied. But the new entity
+> gets a **new** `EntityID`. Do not keep an old id across an undo of its despawn.
 
 > [!NOTE]
-> `setField` inverses come from a per-`(entity, component, field)` shadow seeded via the `FieldReader` you passed (falling back to `0`). `pendingField` returns the editor's optimistic value before the read channel catches up, then self-resolves to `undefined`.
+> The inverse of a `setField` comes from a shadow value for each `(entity, component, field)` slot.
+> The editor gets the first shadow value through the `FieldReader` that you gave it, and it uses
+> `0` when that read gives nothing. `pendingField` gives the optimistic value of the editor before
+> the read channel is current. It then gives `undefined` again by itself.
 
 ## Field handles
 
-`fieldHandle` wraps one field as a two-way bound value — a read (reactive) plus an undoable write — ideal for an inspector input.
+`fieldHandle` makes one field into a value that operates in two directions: a reactive read, and a
+write that you can undo. This is correct for an input in an inspector.
 
 ```ts
 fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: string & keyof S,
-               read?: () => number | undefined): FieldHandle;   // omitted → falls back to editor.committedField
+               read?: () => number | undefined): FieldHandle;   // absent → it uses editor.committedField
 
 interface FieldHandle {
-  readonly value: number | undefined;    // reactive read of the channel (tracked in a tracking scope)
-  set(value: number): void;               // enqueue an undoable setField; applies next tick
-  readonly pending: number | undefined;   // NON-reactive optimistic echo of the editor's shadow
+  readonly value: number | undefined;    // a reactive read of the channel (tracked in a tracking scope)
+  set(value: number): void;               // adds a setField that you can undo; applies in the next tick
+  readonly pending: number | undefined;   // a NON-reactive optimistic copy of the shadow value of the editor
 }
 ```
 
-`read` is a caller-supplied thunk into your [reactive read channel](./reactive.md), which keeps the handle framework-agnostic:
+`read` is a function that you supply, and it reads from your
+[reactive read channel](./reactive.md). So the handle does not depend on a framework:
 
 ```ts
 const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.get(player)?.hp);
@@ -91,9 +109,10 @@ const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.
 ```
 
 > [!NOTE]
-> `pending` is an optimistic echo, not a substitute for `value` in a tracking scope — it does **not** subscribe. Bind UI display to `value`.
+> `pending` is an optimistic copy. It is not a replacement for `value` in a tracking scope, because
+> it does **not** subscribe. Bind the UI display to `value`.
 
 ## See also
 
-- [host-write seam](./host-write-seam.md) — the command bus undo/redo rides on
-- [reactive](./reactive.md) — the read channel a `FieldHandle` reads from
+- [the host write path](./host-write-seam.md) — the command queue that undo and redo use
+- [reactive](./reactive.md) — the read channel that a `FieldHandle` reads from

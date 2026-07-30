@@ -38,7 +38,7 @@ describe("dispatch_trace.resolve_callsite_from_stack", () => {
 
 	it("skips engine ECS frames and attributes the first user frame", () => {
 		const stack = [...engineFrames, userFrame].join("\n");
-		// Regression guard from #546: if the ENGINE_FRAME_MARKER skip is removed
+		// Regression guard: if the ENGINE_FRAME_MARKER skip is removed
 		// (or its marker string drifts), the first engine frame
 		// (dispatch_trace.ts) is attributed instead and this assertion fails.
 		expect(resolveCallsiteFromStack(stack, "/repo")).toBe(
@@ -133,7 +133,7 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 		expect(snap.channels.resources.read[0]!.key).toBe("PlayerState");
 	});
 
-	it("records resource removes on the dedicated 'remove' op (#798)", () => {
+	it("records resource removes on the dedicated 'remove' op", () => {
 		const t = create();
 		t.recordResourceRemove("Mode");
 		const snap = t.snapshot();

@@ -1,10 +1,10 @@
 /**
- * Sparse storage class — determinism surface (#470 / ADR-0011).
+ * Sparse storage class — determinism surface.
  *
  * Brings the sparse store into `stateHash` + snapshot/restore. The load-
  * bearing property is **canonical ordering**: the sparse store iterates in
  * SparseMap insertion/swap order, so the determinism paths sort by source
- * entity index before hashing/serializing. These tests pin the epic's
+ * entity index before hashing/serializing. These tests pin the
  * acceptance criteria:
  *
  *  - snapshot → restore round-trips membership + data with full equality.
@@ -25,7 +25,7 @@ const Hp = { hp: "i32" } as const;
 // Mixed field widths so the hash fold covers more than one field per row.
 const Cooldown = { ready_at: "i16", charges: "i32" } as const;
 
-describe("sparse state_hash — canonical ordering (#470)", () => {
+describe("sparse state_hash — canonical ordering", () => {
 	it("is independent of sparse insertion order", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
@@ -117,7 +117,7 @@ describe("sparse state_hash — canonical ordering (#470)", () => {
 	});
 });
 
-describe("sparse determinism across destroy / generation bump (#470)", () => {
+describe("sparse determinism across destroy / generation bump", () => {
 	it("excludes a destroyed (purged) source canonically", () => {
 		// World A holds three members then destroys the middle one.
 		const a = new Store({ deterministic: true });
@@ -177,7 +177,7 @@ describe("sparse determinism across destroy / generation bump (#470)", () => {
 	});
 });
 
-describe("sparse snapshot / restore round-trip (#470)", () => {
+describe("sparse snapshot / restore round-trip", () => {
 	function build(): { store: Store; health: ReturnType<Store["registerSparseComponent"]> } {
 		const store = new Store({ deterministic: true });
 		const health = store.registerSparseComponent(Hp);
@@ -248,14 +248,14 @@ describe("sparse snapshot / restore round-trip (#470)", () => {
 	});
 });
 
-describe("sparse restore validation — defensive hardening (#494)", () => {
+describe("sparse restore validation — defensive hardening", () => {
 	it("rejects a field-identity swap with matching shape (relation backing vs user component)", () => {
 		// SRC registers a user {hp} (sparse id 0) then a relation, whose exclusive
-		// backing {target:f64} is sparse id 1 (the relation target bypasses the #777
+		// backing {target:f64} is sparse id 1 (the relation target bypasses the
 		// float guard). Both stores are single-field, so their snapshot record shape
 		// is identical. DST registers them in the OPPOSITE order, so slot 0 is the
 		// relation backing and slot 1 is {hp}. Field count matches per slot; the field
-		// identity (name + type) differs. Pre-#494 a count-only check passed validation
+		// identity (name + type) differs. An earlier count-only check passed validation
 		// and loaded hp into the relation's target field (a bogus handle) while the
 		// real target landed in the Hp store. The schema fingerprint must reject it.
 		const src = new Store({ deterministic: true });

@@ -1,4 +1,4 @@
-// M6 — ChangedQuery is composable.
+// ChangedQuery is composable.
 //
 // `q.changed(...)` used to return a terminal `ChangedQuery` exposing only
 // `forEach`, so refining AFTER it (`q.changed(Pos).without(Dead)`) was
@@ -32,7 +32,7 @@ function posWriter(world: ECS, Pos: ComponentDef): SystemDescriptor {
 	});
 }
 
-describe("ChangedQuery composition (M6)", () => {
+describe("ChangedQuery composition", () => {
 	it(".without() after .changed() excludes the matching archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);

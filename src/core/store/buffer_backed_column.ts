@@ -1,7 +1,7 @@
 /**
  * BufferBackedColumn — `GrowableTypedArray<T>` API over a fixed SAB view.
  *
- * Plan §6.1.3 wants Archetype's per-column storage to come from a single
+ * Archetype's per-column storage comes from a single
  * SharedArrayBuffer instead of a per-archetype `new TypedArrayFor[tag](cap)`.
  * The challenge is that `Archetype._flatColumns` calls `push` / `pop` /
  * `swapRemove` / `bulkAppend` / `bulkAppendZeroes` / `clear`, and a
@@ -9,8 +9,8 @@
  *
  * BufferBackedColumn wraps a view at a known `(byte_off, row_capacity)` inside
  * a SAB and tracks a logical length on top of it. Capacity is the view's
- * length; overrun throws. Growth (via SAB realloc + `view_stamp` bump) lands
- * in #171 §6.1.4 — until then, callers must size `row_capacity` for the
+ * length; overrun throws. Growth uses a SAB realloc plus a `view_stamp`
+ * bump; until that is available, callers must size `row_capacity` for the
  * worst case at construction time.
  *
  * Surface intentionally mirrors `GrowableTypedArray<T>` so the same archetype
@@ -56,8 +56,8 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	 * `newView` already (`growColumnStore` does this). The logical length is
 	 * preserved across the swap; capacity becomes `newView.length`.
 	 *
-	 * Used to honour the `view_stamp` invariant after a host-side SAB realloc
-	 * (#171 §6.1.4 / §8.1): every cached column view must be rebuilt before
+	 * Used to honour the `view_stamp` invariant after a host-side SAB realloc:
+	 * every cached column view must be rebuilt before
 	 * the next read/write. */
 	public refreshView(newView: T): void {
 		if (newView.length < this._len) {
@@ -108,7 +108,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 
 	/** Set the logical length directly, declaring that `[0, len)` of the backing
 	 * SAB view already holds valid data. The snapshot-mount path
-	 * (`Archetype.restoreHostRows`, #789) uses this to re-sync the column's
+	 * (`Archetype.restoreHostRows`) uses this to re-sync the column's
 	 * logical length with the restored `Archetype.length` — the bytes come from
 	 * the restored SAB, but `_len` is host state. Throws on overrun (cannot grow
 	 * a fixed SAB view here — the mount already adopted the restored capacity). */
@@ -121,8 +121,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 
 	/** Raw backing view. Stable for the lifetime of the SAB; views over a
 	 * SAB do not invalidate the way a `GrowableTypedArray`'s `buf` does
-	 * after a grow. (`view_stamp` will signal "underlying SAB swapped"
-	 * once #171 §6.1.4 lands.) */
+	 * after a grow. (`view_stamp` signals "underlying SAB swapped".) */
 	public get buf(): T {
 		return this._buf;
 	}
@@ -151,7 +150,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	/** Throw if the backing view cannot hold `capacity` elements. Mirrors
 	 * `GrowableTypedArray.ensureCapacity` but cannot allocate — a SAB
 	 * grow requires republishing the underlying buffer and rebuilding views
-	 * across every archetype, which is the §6.1.4 invariant. */
+	 * across every archetype, which is the republish invariant. */
 	public ensureCapacity(capacity: number): void {
 		if (capacity > this._capacity) {
 			throw new StoreColumnOverflowError(this._capacity, capacity);

@@ -1,90 +1,127 @@
-# Memory & storage profiles
+# Memory and storage profiles
 
-An `ECS` stores every component column in **one backing buffer**. The `memory` option on the constructor picks the buffer kind and its size cap. The default needs no configuration — a plain `ArrayBuffer` reserved fixed at a 256 MiB cap (untouched pages cost no resident memory; columns grow on demand within it) — so reach for `memory` only to size deliberately or to switch to a shared/WASM backing.
+An `ECS` keeps each component column in **one backing buffer**. The `memory` option on the
+constructor selects the kind of buffer and the limit on its size. The default needs no
+configuration: it is a plain `ArrayBuffer`, fixed at a limit of 256 MiB. Pages that you do not
+touch use no resident memory, and the columns grow inside that reservation when they must. So you
+need the `memory` option only to set the size deliberately, or to change to shared or WASM storage.
 
 ```ts
-new ECS();                                              // heap, 256 MiB cap — the default
-new ECS({ memory: { budget: { entities: 50_000 } } }); // size from an entity budget
-new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });   // explicit byte ceiling
+new ECS();                                              // heap, a 256 MiB limit — the default
+new ECS({ memory: { budget: { entities: 50_000 } } }); // set the size from an entity budget
+new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });   // an explicit byte limit
 new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (workers / WASM)
 ```
 
 ## The arms
 
-`memory` is a discriminated union — pick **exactly one** arm (or none). `columnCapacity` (initial rows per archetype column) can be pinned on any arm.
+`memory` is a discriminated union. Select **exactly one** arm, or none. You can set
+`columnCapacity`, which is the initial number of rows in each archetype column, on any arm.
 
-| Arm | What it does | Pick when |
+| Arm | What it does | Select it when |
 | --- | --- | --- |
-| *(omitted)* | fixed heap `ArrayBuffer`, 256 MiB cap | you don't care yet |
-| `{ heap: { maxBytes? } }` | fixed heap `ArrayBuffer`, explicit cap | the default profile, sized |
-| `{ budget: { entities, … } }` | derives column cap, entity-index reservation, byte cap **and** cap-error wording from an entity count | you know your rough peak entity count |
-| `{ maxBytes: N }` | fixed heap with an explicit byte ceiling | you want a hard byte cap |
-| `{ shared: { maxBytes? } }` | growable `SharedArrayBuffer` | worker offload / a WASM backend |
-| `{ wasm: {…} }` | the backing **is** a `WebAssembly.Memory` | zero-copy sharing with a WASM sim |
-| `{ allocator }` | your own in-place allocator | expert escape hatch |
+| *(absent)* | a fixed heap `ArrayBuffer`, with a 256 MiB limit | you have no requirement yet |
+| `{ heap: { maxBytes? } }` | a fixed heap `ArrayBuffer`, with an explicit limit | you want the default profile, with a size |
+| `{ budget: { entities, … } }` | derives the column capacity, the reservation of the entity index, the byte limit, **and** the words of a limit error from a number of entities | you know your approximate peak number of entities |
+| `{ maxBytes: N }` | a fixed heap with an explicit byte limit | you want a hard byte limit |
+| `{ shared: { maxBytes? } }` | a growable `SharedArrayBuffer` | you offload to a worker or use a WASM backend |
+| `{ wasm: {…} }` | the storage **is** a `WebAssembly.Memory` | you share bytes with a WASM simulation, with no copy |
+| `{ allocator }` | your own in-place allocator | you are an expert and need an alternative |
 
 ```ts
 interface EntityBudget {
-  readonly entities: number;         // expected peak live entities (bounded by 2^20)
+  readonly entities: number;         // the expected peak of live entities (a maximum of 2^20)
   readonly archetypes?: number;      // default 8
   readonly bytesPerEntity?: number;  // default 64
 }
 ```
 
 > [!TIP]
-> **`budget` is the arm to reach for.** Give it an entity count and it derives sensible column capacity, entity-index reservation, and byte cap, and phrases any cap-overflow error in your terms ("3× the declared budget — runaway entity creation upstream?"). `entities > 2^20` (≈1M) throws `INVALID_MEMORY_OPTIONS`.
+> **`budget` is the arm to select.** Give it a number of entities. It then derives a good column
+> capacity, a good reservation of the entity index, and a good byte limit. It also gives an error
+> about a limit in your terms ("3× the declared budget — runaway entity creation upstream?"). A
+> value of `entities` more than 2^20 (about 1 million) throws `INVALID_MEMORY_OPTIONS`.
 
 ## Storage profiles
 
-Three backings, one core — same archetypes, same [`stateHash`](./determinism.md), only the buffer differs.
+There are three kinds of storage above one core. The archetypes are the same, and the
+[`stateHash`](./determinism.md) is the same. Only the buffer is different.
 
-- **Heap** (default) — a plain **fixed (non-resizable)** `ArrayBuffer` reserved at the cap. Fixed keeps TypedArray views on V8's fast element-access path (a resizable buffer taxes every `col[i]`), and untouched pages cost no resident memory, so the reservation is virtually free. **No `SharedArrayBuffer`, no cross-origin isolation (COOP/COEP).** Trade-off: no worker offload, no WASM compute backend. This is why oecs works anywhere out of the box.
-- **Shared** (`@oasys/oecs/shared`) — a growable `SharedArrayBuffer`. Enables sharing columns with a worker or a WASM sim. **Requires cross-origin isolation in browsers** (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`). Bun/Node expose SAB unconditionally.
-- **WASM** — a `WebAssembly.Memory` whose buffer *is* the store, so a WASM sim and the ECS columns share bytes with no copying.
+- **Heap** (the default) — a plain **fixed** `ArrayBuffer`, which is not resizable, reserved at the
+  limit. A fixed buffer keeps the TypedArray views on the fast element-access path of V8. A
+  resizable buffer adds a cost to each `col[i]` operation. Pages that you do not touch use no
+  resident memory, so the reservation is almost free. This profile needs **no `SharedArrayBuffer`,
+  and no cross-origin isolation (COOP/COEP)**. The compromise: no offload to a worker, and no WASM
+  compute backend. This is why oecs operates everywhere with no configuration.
+- **Shared** (`@oasys/oecs/shared`) — a growable `SharedArrayBuffer`. It lets you share the columns
+  with a worker or with a WASM simulation. In a browser it **requires cross-origin isolation**
+  (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`). Bun
+  and Node give `SharedArrayBuffer` with no condition.
+- **WASM** — a `WebAssembly.Memory` whose buffer *is* the store. So a WASM simulation and the ECS
+  columns share the same bytes, with no copy.
 
 ```ts
-// The opt-in shared/WASM allocators live behind a separate entry:
+// The optional shared and WASM allocators are behind a separate entry point:
 import { growableSabAllocator, wasmMemoryAllocator, DEFAULT_SAB_ALLOCATOR, SabUnavailableError } from "@oasys/oecs/shared";
 
 new ECS({ memory: { shared: {} } });
-new ECS({ memory: { allocator: growableSabAllocator() } });         // equivalent, explicit
-new ECS({ memory: { wasm: { maximumPages: 4096 } } });              // engine builds the Memory
-new ECS({ memory: { wasm: { memory: myWasmMemory } } });            // bring your own (must be shared: true)
+new ECS({ memory: { allocator: growableSabAllocator() } });         // equivalent, and explicit
+new ECS({ memory: { wasm: { maximumPages: 4096 } } });              // the engine builds the Memory
+new ECS({ memory: { wasm: { memory: myWasmMemory } } });            // supply your own (it must have shared: true)
 ```
 
 > [!WARNING]
-> A shared/WASM allocator throws `SabUnavailableError` at construction if `SharedArrayBuffer` is absent — i.e. no cross-origin isolation. Either serve isolated, or use the heap profile (which needs neither).
+> A shared or WASM allocator throws `SabUnavailableError` at construction when `SharedArrayBuffer`
+> is absent, which means that there is no cross-origin isolation. Either serve the page with
+> isolation, or use the heap profile, which needs neither header.
 
-## Inspecting the plan
+## How to examine the plan
 
 ```ts
 get memoryPlan(): ResolvedECSMemory;   // what `memory` resolved to
 get wasmMemory(): WebAssembly.Memory | null;
 ```
 
-`memoryPlan` reports the chosen allocator, column capacity, entity-index reservation, byte cap, and a human-readable `derivation` trace (one line per sizing decision) — useful when a cap error surprises you.
+`memoryPlan` reports:
 
-## The cap is a hard ceiling
+- the allocator that the engine selected;
+- the column capacity;
+- the reservation of the entity index;
+- the byte limit;
+- a `derivation` trace that a person can read, with one line for each decision about the size.
 
-The byte cap is a **hard limit with no grow-beyond fallback** — exceeding it throws `STORE_CAP_EXCEEDED`, phrased in your `budget`/`intentLabel` terms rather than raw bytes.
+It is useful when an error about a limit surprises you.
+
+## The limit is absolute
+
+The byte limit is an **absolute limit, and there is no alternative that grows past it**. If you
+exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `budget` or `intentLabel`, and not
+in raw bytes.
 
 > [!WARNING]
-> **A too-small cap fails at construction, not later.** The entity-index region is reserved eagerly when the store is built (≈12 MiB at the default cap), so an unreasonably small `maxBytes` / `heap.maxBytes` / `wasm.maximumPages` throws `STORE_CAP_EXCEEDED` *before the `ECS` even exists*. Size the cap to your actual peak.
+> **A limit that is too small fails at construction, and not later.** The engine reserves the
+> region of the entity index immediately when it builds the store, which is about 12 MiB at
+> the default limit. So a `maxBytes`, `heap.maxBytes`, or `wasm.maximumPages` value that is too
+> small throws `STORE_CAP_EXCEEDED` *before the `ECS` exists*. Set the limit to your actual peak.
 
-## Migration guard
+## Protection during migration
 
 > [!NOTE]
-> The pre-release `initial_capacity` and `buffer_allocator` options were **removed** (not aliased). Passing them throws `INVALID_MEMORY_OPTIONS` loudly — replace them with a `memory` arm.
+> The pre-release options `initial_capacity` and `buffer_allocator` are **removed**, and there is no
+> alias for them. If you give them, it throws `INVALID_MEMORY_OPTIONS` clearly. Replace them with
+> an arm of `memory`.
 
-## WASM interop & the compute backend
+## WASM interoperation and the compute backend
 
-The shared/WASM profile exists to let a WASM sim run system bodies directly against the shared columns. The seam is in the core; the WASM module and worker entry are yours to provide.
+The shared and WASM profile exists so that a WASM simulation can run the bodies of systems directly
+against the shared columns. The connection is part of the core. You must supply the WASM module and
+the worker entry point.
 
 ```ts
-get wasmMemory(): WebAssembly.Memory | null;                     // hand to your WASM module
-fieldId<S>(def: ComponentDef<S>, fieldName: keyof S): number;    // stable (componentId, fieldId) for FFI
-attachBackend(backend: ComputeBackend): () => void;              // returns a detach function
-onStoreLayoutPublished(listener: StoreLayoutListener): () => void; // notified on every SAB grow
+get wasmMemory(): WebAssembly.Memory | null;                     // give this to your WASM module
+fieldId<S>(def: ComponentDef<S>, fieldName: keyof S): number;    // a stable (componentId, fieldId) for FFI
+attachBackend(backend: ComputeBackend): () => void;              // gives a function that detaches it
+onStoreLayoutPublished(listener: StoreLayoutListener): () => void; // called on each growth of the SAB
 ```
 
 <a id="compute-backend"></a>
@@ -93,18 +130,28 @@ onStoreLayoutPublished(listener: StoreLayoutListener): () => void; // notified o
 
 ```ts
 interface ComputeBackend extends StoreLayoutListener { run(handle: BackendSystemHandle): void; }
-type BackendSystemHandle = /* opaque branded number the backend mints */;
+type BackendSystemHandle = /* an opaque branded number that the backend makes */;
 ```
 
-`ecs.attachBackend(backend)` opts into running a system's body via the backend instead of its TS closure. A system carrying a `backendHandle` (on its [`SystemConfig`](./systems.md#systemconfig)) is executed as `backend.run(handle)`; systems without one are untouched. `run` executes inside the system's access span, so its declared `writes` authorize whatever shared columns the backend mutates. Default is none — a bare `ECS` is pure-TS and pays nothing.
+`ecs.attachBackend(backend)` selects the backend to run the body of a system, in place of its
+TypeScript closure. A system that carries a `backendHandle` on its
+[`SystemConfig`](./systems.md#systemconfig) runs as `backend.run(handle)`. A system with no handle
+is not affected. `run` executes inside the access span of the system, so its declared `writes`
+authorize the shared columns that the backend mutates. There is no backend by default: a plain
+`ECS` is pure TypeScript, and it costs nothing.
 
 > [!NOTE]
-> One backend per `ECS` — attaching a second throws `BACKEND_ALREADY_ATTACHED` in dev builds. The returned function detaches it and reverts to the pure-TS path. The handle is engine-opaque; the backend owns its id space.
+> There is one backend for each `ECS`. If you attach a second one, it throws
+> `BACKEND_ALREADY_ATTACHED` in development builds. The function that `attachBackend` gives you
+> detaches the backend, and the systems return to the pure-TypeScript path. The handle is opaque to
+> the engine, and the backend owns its id space.
 
 ## See also
 
-- [determinism](./determinism.md) — heap and shared backings agree on `stateHash`; sizing both instances for restore
-- [WASM backends](./wasm.md) — wiring `WebAssembly.Memory`, `ComputeBackend`, and FFI ids
-- [parallelism](./parallel.md) — what shared-memory and worker support means today
+- [determinism](./determinism.md) — the heap and shared storage agree on `stateHash`; how to size
+  two instances for a restore
+- [WASM backends](./wasm.md) — how to connect `WebAssembly.Memory`, `ComputeBackend`, and the FFI
+  ids
+- [parallel execution](./parallel.md) — what shared memory and worker support give you today
 - [systems](./systems.md) — `backendHandle` on a system config
-- [components](./components.md) — `columnCapacity` and the field ids `fieldId` returns
+- [components](./components.md) — `columnCapacity`, and the field ids that `fieldId` gives

@@ -1,10 +1,10 @@
 /**
- * BufferAllocator — pluggable buffer source for the SAB layer (#234 / PR 3D).
+ * BufferAllocator — pluggable buffer source for the SAB layer.
  *
  * The engine has historically allocated its SAB as a fresh
  * `new SharedArrayBuffer(totalBytes)` inside `createColumnStore`.
- * Phase 3D requires the SAB to optionally be backed by a
- * `WebAssembly.Memory.buffer` so the WASM sim can read/write the live
+ * A WASM backend needs the SAB to optionally be backed by a
+ * `WebAssembly.Memory.buffer` instead, so the sim can read and write the live
  * ECS columns through its own memory handle. This module abstracts the
  * "where does the buffer come from" decision behind a single function
  * type.
@@ -69,7 +69,7 @@ export interface BufferAllocator {
 }
 
 /**
- * The only allocator shape a **live `Store`** accepts (#682). ADR-0008 makes
+ * The only allocator shape a **live `Store`** accepts. The engine makes
  * "a live Store is backed by an in-place allocator" a correctness invariant —
  * the flush loops hoist entity-index views across grows. This brand moves
  * that invariant from runtime convention to the type/construction boundary:
@@ -87,10 +87,10 @@ export type InPlaceBufferAllocator = BufferAllocator & { readonly isInPlace: tru
 
 /**
  * Thrown when an allocator cannot satisfy a request because its by-design
- * byte ceiling is reached (#380: the cap is a runaway-growth signal, not a
+ * byte ceiling is reached (the cap is a runaway-growth signal, not a
  * limit to paper over — there is deliberately no grow-beyond-cap fallback).
  * Typed so `Store`'s grow handler can recognise the cap case and re-throw
- * with the caller's declared sizing intent attached (#682) without ever
+ * with the caller's declared sizing intent attached without ever
  * catching-to-recover.
  */
 export class StoreCapExceededError extends Error {
@@ -147,9 +147,9 @@ export const DEFAULT_SAB_ALLOCATOR: BufferAllocator = (bytes) => {
 /** WASM linear-memory page size; `memory.grow(n)` adds `n` of these. */
 const WASM_PAGE_BYTES = 64 * 1024;
 
-/** The buffer primitive a growable single-buffer allocator runs over (M9).
+/** The buffer primitive a growable single-buffer allocator runs over.
  * `growableSabAllocator` and `heapArraybufferAllocator` are the same
- * allocator — cap arithmetic, hard-ceiling semantics (#380), `isInPlace`
+ * allocator — cap arithmetic, hard-ceiling semantics, `isInPlace`
  * reporting — differing only in these two operations. */
 interface BufferStrategy {
 	create(byteLength: number, maxByteLength: number): ArrayBufferLike;
@@ -160,7 +160,7 @@ interface BufferStrategy {
  * backing (a resizable SAB grown via `.grow()` for `growableSabAllocator`; a
  * fixed `ArrayBuffer` reserved at `maxBytes` for `heapArraybufferAllocator`,
  * whose growTo never fires); later in-cap calls return the same buffer. The cap
- * check, the hard-ceiling throw (#380 — deliberately no grow-beyond-cap
+ * check, the hard-ceiling throw (deliberately no grow-beyond-cap
  * fallback), and the `isInPlace` marker live here exactly once; the public
  * wrappers contribute only the buffer primitive and any availability guard. */
 function makeGrowableAllocator(
@@ -175,7 +175,7 @@ function makeGrowableAllocator(
 	const alloc = (bytes: number): ArrayBufferLike => {
 		if (bytes > maxBytes) {
 			// BY DESIGN: the cap is a hard ceiling, not a soft target. We do
-			// NOT fall back to a fresh allocator or compact here — see #380 and
+			// NOT fall back to a fresh allocator or compact here — see
 			// the footprint analysis on `growableSabAllocator`. A real workload
 			// uses ~16 MiB of the 256 MiB cap and columns never grow, so
 			// reaching this throw means something upstream is creating entities
@@ -185,7 +185,7 @@ function makeGrowableAllocator(
 			throw new StoreCapExceededError(
 				`${label}: requested ${bytes} bytes exceeds the by-design ` +
 					`maxBytes cap of ${maxBytes}. This is a hard ceiling with no ` +
-					`grow-beyond-cap fallback (#380); a real workload stays ~16 MiB. ` +
+					`grow-beyond-cap fallback; a real workload stays ~16 MiB. ` +
 					`Reaching it signals runaway entity/column growth upstream — ` +
 					`diagnose that rather than raising the cap blindly.`,
 				bytes,
@@ -218,16 +218,16 @@ function makeGrowableAllocator(
  * in place rather than relocating).
  *
  * Sizing: `maxBytes` is committed *virtual* memory, not resident RAM —
- * physical pages fault in lazily as the SAB actually grows. Larger caps
- * cost more per allocation than smaller ones — Bun benchmark
- * `alloc(64,max=1GB)+grow(65568)` measures ~32 µs vs ~21 µs at 256 MB
- * and ~12 µs at 1 MB (V8 per-byte bookkeeping at construction).
- * Production callers with bigger worlds can pass a larger cap; the bench
- * gains are ~10 µs/Store-construction by staying under 256 MB.
+ * physical pages fault in lazily as the SAB actually grows. A larger cap costs
+ * more time per allocation than a smaller one, because V8 does per-byte
+ * bookkeeping when it constructs the buffer. The cost increases with the cap, so
+ * a 1 GiB cap is the slowest of the sizes we measured and a 1 MiB cap the
+ * quickest. A caller with a bigger world can pass a larger cap; a caller that
+ * stays under the 256 MiB default keeps the quicker Store construction.
  *
  * THE 256 MiB DEFAULT IS A HARD DESIGN CEILING, NOT A SOFT TARGET — and
  * exceeding it is INTENDED to be fatal. There is deliberately no
- * grow-beyond-cap fallback or compaction pass (see #380, and the loud
+ * grow-beyond-cap fallback or compaction pass (see the loud
  * note at the `bytes > maxBytes` throw below). If you are here because
  * a workload died at the cap and you are tempted to add a fresh-allocator
  * realloc fallback: don't, unless the numbers below have changed. They
@@ -254,13 +254,13 @@ function makeGrowableAllocator(
  * therefore signals a real defect upstream (runaway entity creation), not
  * a sizing shortfall to paper over.
  *
- * Cited verification (#237 audit, this branch): Bun runtime check
+ * Cited verification: a Bun runtime check
  * confirms `new Int32Array(buffer, off, len)` retains identical byteOffset,
  * length, and stored values after `.grow()`; DataView byteLength
  * auto-tracks the grown buffer.
  *
  * Used by the `extendColumnStore` fast path during lazy archetype
- * registration (#237 Option A) — keeps existing column views valid so
+ * registration — keeps existing column views valid so
  * `refreshViews` is a no-op for old archetypes.
  */
 export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPlaceBufferAllocator {
@@ -271,7 +271,7 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
 	// of the buffer primitive, and only this one needs SAB.
 	if (typeof SharedArrayBuffer === "undefined") throw new SabUnavailableError();
 	return makeGrowableAllocator(
-		"growable_sab_allocator",
+		"growableSabAllocator",
 		{
 			create: (byteLength, maxByteLength) => {
 				// boundary: `SharedArrayBuffer` constructor with `{ maxByteLength }`
@@ -297,27 +297,25 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
 /**
  * Allocator that backs the store by a single **fixed (non-resizable) plain
  * `ArrayBuffer`** reserved at the full `maxBytes` cap up front. This is the
- * pure-TS **heap profile** — the oecs default and the answer to ADR-0018's
- * deferred §1B: no `SharedArrayBuffer`, hence no cross-origin isolation
+ * pure-TS **heap profile** — the oecs default: no `SharedArrayBuffer`,
+ * hence no cross-origin isolation
  * (COOP/COEP) requirement, and no worker/WASM transfer (single-process worlds
  * only).
  *
  * WHY FIXED, NOT RESIZABLE (the 0.5.3 iteration-perf fix): V8 has no fast
- * element-access path for TypedArray views over a **resizable/growable**
- * `ArrayBuffer` — every `col[i]` re-checks bounds against the buffer's mutable
- * length, a ~4× per-element tax measured on V8 13.6 (an isolated `col[i] *= 2`
- * loop: fixed `ArrayBuffer` ~1.6G vs a view over a resizable buffer ~0.37G
- * element-accesses/s). oecs 0.3.x gave each column its own fixed buffer and sat
- * mid-pack among SoA ECS libs; the 0.5.0 switch to one resizable arena silently
- * regressed all iteration-bound systems ~5× (the cross-library `packed_5`
- * scenario: 0.5.2 ~86k op/s → 0.5.3 ~420k). A fixed buffer restores the fast path.
+ * element-access path for TypedArray views over a **resizable or growable**
+ * `ArrayBuffer`, because each `col[i]` reads the mutable length again. Thus a
+ * loop over a column is much slower than the same loop over a fixed buffer.
+ * Version 0.3.x gave each column its own fixed buffer. The change in 0.5.0 to
+ * one resizable arena made every iteration-bound system slower, and it gave no
+ * signal. A fixed buffer restores the fast path.
  *
  * How growth still works in place: the cap is reserved as one fixed buffer at
  * construction. A resizable buffer was originally chosen so `.resize()` could
  * grow in place without moving views; a fixed buffer never moves EITHER — the
  * store's grow/extend relocate columns to the tail *within* this buffer
  * (`copyWithin`), so the buffer object and every existing view stay valid.
- * `isInPlace: true` therefore still holds, and ADR-0008's
+ * `isInPlace: true` therefore still holds, and the
  * entity-index-hoist-across-grow invariant is preserved. The store keys its
  * tail cursor off the header `capacity` (the logical high-water), NOT
  * `buffer.byteLength` — which is now always `maxBytes` (the same decoupling the
@@ -328,7 +326,7 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
  *     `maxByteLength` reservation — a 256 MiB reservation on a 1000-entity world
  *     stays a few MiB resident (measured ~4 MiB RSS, within ~1 MiB of the old
  *     resizable buffer).
- *   - same 256 MiB default cap with hard-ceiling semantics (#380): a request
+ *   - same 256 MiB default cap with hard-ceiling semantics: a request
  *     past `maxBytes` throws `StoreCapExceededError` — runaway growth signal,
  *     not a limit to route around.
  *
@@ -341,7 +339,7 @@ export function heapArraybufferAllocator(
 	maxBytes: number = 256 * 1024 * 1024
 ): InPlaceBufferAllocator {
 	return makeGrowableAllocator(
-		"heap_arraybuffer_allocator",
+		"heapArraybufferAllocator",
 		{
 			// Reserve the whole cap as ONE fixed buffer. `byteLength` (the current
 			// need) is ignored: the buffer never resizes, so it must be born at the
@@ -368,7 +366,7 @@ export function heapArraybufferAllocator(
  * live SAB *be* a WASM module's `WebAssembly.Memory`. Grows the memory in
  * 64 KiB page increments when `bytes` exceeds the current buffer.
  *
- * This is the **opt-in storage backing for the WASM path** (#625). A consumer
+ * This is the **opt-in storage backing for the WASM path**. A consumer
  * that attaches a WASM `ComputeBackend` passes
  * `bufferAllocator: wasmMemoryAllocator(memory)` so the Zig systems read/write
  * the same bytes the host's columns live in — zero-copy across the FFI boundary.
@@ -408,7 +406,7 @@ export function wasmMemoryAllocator(memory: WebAssembly.Memory): InPlaceBufferAl
 	// successor, which is also SAB-backed for shared memory).
 	if (!(memory.buffer instanceof SharedArrayBuffer)) {
 		throw new Error(
-			"wasm_memory_allocator: WebAssembly.Memory must be constructed with `shared: true` " +
+			"wasmMemoryAllocator: WebAssembly.Memory must be constructed with `shared: true` " +
 				"so its buffer is a SharedArrayBuffer"
 		);
 	}
@@ -456,8 +454,7 @@ export function wasmMemoryAllocator(memory: WebAssembly.Memory): InPlaceBufferAl
 	// the previous `memory.buffer` ref read/write the same bytes the new
 	// ref exposes. The SAB layer's `isInPlace` fast path relies on
 	// exactly that property (views survive grow), so set the marker.
-	// Confirms thread A of #362 / #361: closing the missed fast path was
-	// the 6× mutation-tax fix.
+	// Closing this missed fast path removed a large mutation tax.
 	Object.defineProperty(alloc, "isInPlace", { value: true, enumerable: true });
 	return alloc as InPlaceBufferAllocator;
 }

@@ -155,8 +155,8 @@ export type SchemaOf<D> = D extends ComponentDef<infer S extends ComponentSchema
 
 /**
  * `unknown` if `D` is one of the query's declared terms, else an error tuple —
- * the query-seam sibling of system.ts's `DeclaredRead` (§typestate,
- * POLISH_AUDIT #6). `Query.eachChunk`'s cursor and `ArchetypeView`'s column
+ * the query-seam sibling of system.ts's `DeclaredRead` (§typestate).
+ * `Query.eachChunk`'s cursor and `ArchetypeView`'s column
  * accessors intersect this into their `def` parameter so fetching a component
  * that is NOT a term of the iterating query fails to compile (previously
  * caught only by the dev-mode access check, and only when the system's
@@ -202,7 +202,7 @@ const NO_VALUES = Object.freeze({});
  * returned function produces a `Bundle` when called (`Pos({x,y})`) and carries
  * its numeric id on a non-enumerable `.id` (invisible to spreads / `JSON`).
  * The single cast bridges the function value to the branded handle type — the
- * `.id` is installed at runtime by `defineProperty` (§10c branded-ID boundary).
+ * `.id` is installed at runtime by `defineProperty` (the branded-ID boundary).
  */
 export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): ComponentDef<S> {
 	const def = ((values?: Partial<FieldValues<S>>): Bundle<S> => ({
@@ -280,7 +280,7 @@ export function bundleValues(item: BundleOrDef): Readonly<Record<string, number>
  *
  * **Advisory, not a runtime barrier:** the value behind this type is the live
  * mutable backing `TypedArray` (`Archetype.getColumnRead` returns
- * `.buf as unknown as ReadonlyColumn`), so a §10c-policed cast can still write
+ * `.buf as unknown as ReadonlyColumn`), so a deliberate cast can still write
  * through. For mutation use the mutable `Archetype.getColumn` (tick-bumping).
  * Enforced by the escape-hatch lint, not the runtime.
  */

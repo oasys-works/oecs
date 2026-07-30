@@ -1,10 +1,10 @@
 /**
- * ecs_sync CHURN ORACLE (#784, a torture sub-issue of epic #774) — the property
+ * ecs_sync CHURN ORACLE (a torture suite) — the property
  * test the ~40 scripted single-tick gates in `ecs_sync.test.ts` can't reach.
  *
- * `ecs_sync` maintains its projection INCREMENTALLY: ADR-0013 observers drain only
+ * `ecs_sync` maintains its projection INCREMENTALLY: component observers drain only
  * the entities the ECS flagged dirty this tick (O(changed) publish work, the whole
- * point of #646/ADR-0021). Incremental state is where membership drift, missed
+ * point of the in-house kernel). Incremental state is where membership drift, missed
  * deletes, and staleness hide — and a scripted "set x, assert one wake" test never
  * runs the bridge long enough or randomly enough to surface them.
  *
@@ -276,15 +276,15 @@ function buildEngine(): ChurnEngine {
 // ---------------------------------------------------------------------------
 // Oracle — recompute the projection from scratch via `world.query(...)` and compare
 // it to the bridge's incrementally-built map. The channel mirrors the DEFAULT query
-// (enabled members of the mask), which is the bridge's disable=soft-remove contract
-// (#677 / ADR-0023), so the two agree on membership without special-casing.
+// (enabled members of the mask), which is the bridge's disable=soft-remove contract,
+// so the two agree on membership without special-casing.
 //
 // We recompute via `query(...).includeDisabled()` + an `isDisabled` filter rather
 // than the bare default query: the two describe the SAME set (enabled members), but
 // the default-query `_nonEmpty` cache filters on `enabledCount` and goes stale when
-// an enabled row is added to an all-disabled archetype — the engine query bug #812
+// an enabled row is added to an all-disabled archetype — the engine query bug
 // this torture surfaced. `includeDisabled` filters on `totalCount`, so its cache is
-// robust to #812; the explicit `isDisabled` filter restores default-query semantics.
+// robust to it; the explicit `isDisabled` filter restores default-query semantics.
 // Values are read with `getField`, exactly as a default-query projection would.
 // ---------------------------------------------------------------------------
 type V2 = { x: number; y: number };

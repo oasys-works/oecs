@@ -1,6 +1,6 @@
 /**
  * `CommandDispatcher` — the generic register-a-handler-per-opcode drain surface
- * (#624, game-agnostic ECS). The engine ships no game opcodes; a consumer binds
+ * (a game-agnostic ECS). The engine ships no game opcodes; a consumer binds
  * a payload codec + handler to each opcode and round-trips a fabricated,
  * non-game command through the ring. This is the acceptance test for "a consumer
  * can register opcodes + payload codecs and round-trip a fabricated non-game

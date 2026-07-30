@@ -1,5 +1,5 @@
 /**
- * Editor layer (#701) — reified undo/redo over the typed `HostCommandQueue`.
+ * Editor layer — reified undo/redo over the typed `HostCommandQueue`.
  *
  * Asserts the properties the issue's acceptance criteria name, against the REAL
  * engine (real `installHostCommandSeam`, real deferred flush):
@@ -241,7 +241,7 @@ describe("Editor — transaction grouping", () => {
 	});
 });
 
-describe("Editor — more than one undo/redo per frame (the stale-id regression, #719)", () => {
+describe("Editor — more than one undo/redo per frame (the stale-id regression)", () => {
 	it("a respawn + a despawn enqueued before the same world.update do not crash and leave consistent state", () => {
 		const { world, Cell, editor } = setup();
 
@@ -256,7 +256,7 @@ describe("Editor — more than one undo/redo per frame (the stale-id regression,
 		expect(world.isAlive(id!)).toBe(false);
 
 		// Two more editor actions BEFORE the next world.update — the multi-undo/redo-
-		// per-frame sequence #719 regressed on. redo re-enqueues the spawn (respawns
+		// per-frame sequence that once regressed. redo re-enqueues the spawn (respawns
 		// under a NEW id once it applies); the immediately-following undo re-enqueues
 		// the SAME stable inverse-despawn object by reference. Pre-fix, the redo's
 		// `onSpawned` REPLACED the inverse slot with a fresh object, so this already-
@@ -395,7 +395,7 @@ describe("Editor — pending_field self-resolves when the slot dies", () => {
 	});
 });
 
-describe("Editor — onChange / canUndo / canRedo (M10)", () => {
+describe("Editor — onChange / canUndo / canRedo", () => {
 	it("fires on commit, undo, redo, clear; unsubscribe stops it", () => {
 		const { world, Cell, editor } = setup();
 		let fires = 0;

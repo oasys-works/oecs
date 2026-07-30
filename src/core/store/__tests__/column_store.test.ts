@@ -1,5 +1,5 @@
 /**
- * ColumnStore behavior tests (#171 §6.1.3).
+ * ColumnStore behavior tests.
  *
  * Verifies the sizing + layout primitive end-to-end: given a set of
  * archetype specs, the resulting SAB contains a valid locked header, a
@@ -27,13 +27,13 @@ import {
 	type ArchetypeSpec
 } from "../index";
 
-// The sim-bindings region size is game-owned since #625 — the engine no longer
+// The sim-bindings region size is game-owned — the engine no longer
 // exports a `SIM_BINDINGS_BYTES` ABI constant. A consumer that opts into a WASM
 // backend supplies its own size via `bindingsRegionBytes`; this test owns its
 // own value (mirrors @internal/sim's 64-field × 2-byte region).
 const BINDINGS_BYTES = 128;
 // Internal layout primitives not surfaced through the barrel — exercised
-// directly so the 2³¹ overflow guard (#382) can be pinned without allocating
+// directly so the 2³¹ overflow guard can be pinned without allocating
 // a 2 GiB SharedArrayBuffer.
 import { alignUp, STORE_MAX_BYTE_OFFSET, StoreLayoutOverflowError, planLayout } from "../column_store";
 
@@ -79,7 +79,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 		expect(h.simAbiVersion).toBe(SIM_ABI_VERSION);
 		expect(h.viewStamp).toBe(0);
 		expect(h.archetypeCount).toBe(1);
-		// No bindings region by default (opt-in since #625) — a pure-TS store
+		// No bindings region by default (opt-in) — a pure-TS store
 		// pays nothing for the WASM seam, so the descriptor sits right after the
 		// header and `bindings_off` is the absent sentinel 0.
 		expect(h.bindingsOff).toBe(0);
@@ -194,7 +194,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 	});
 
 	it("SAB is exactly the size the header reports", () => {
-		// Useful invariant for snapshot/restore (#171 §6.1.6) — header.capacity
+		// Useful invariant for snapshot/restore — header.capacity
 		// is the authoritative size and `Store.snapshot()` will return a
 		// Uint8Array view of that many bytes. If the SAB and the header
 		// disagree, snapshot/restore truncates or overruns.
@@ -211,7 +211,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 		expect(isValidSab(store.view)).toBe(true);
 		const h = readStoreHeader(store.view);
 		expect(h.archetypeCount).toBe(0);
-		// Header only — no bindings region by default (#625), descriptor region
+		// Header only — no bindings region by default, descriptor region
 		// zero-sized with no archetypes.
 		expect(h.capacity).toBe(STORE_HEADER_BYTES);
 		expect(store.archetypes.size).toBe(0);
@@ -233,7 +233,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 	});
 });
 
-describe("create_column_store — sim-bindings region (opt-in, #625)", () => {
+describe("create_column_store — sim-bindings region (opt-in)", () => {
 	it("reserves the region before the descriptor when bindings_region_bytes is set", () => {
 		const store = createColumnStore([SPEC_SINGLE], undefined, {
 			bindingsRegionBytes: BINDINGS_BYTES
@@ -267,13 +267,13 @@ describe("create_column_store — sim-bindings region (opt-in, #625)", () => {
 	});
 });
 
-describe("create_column_store — command ring (plan §7.5, #243 PR 4A)", () => {
+describe("create_column_store — command ring", () => {
 	it("command_ring_off is 0 when option is omitted (legacy layout)", () => {
 		const store = createColumnStore([SPEC_SINGLE]);
 		const h = readStoreHeader(store.view);
 		expect(h.commandRingOff).toBe(0);
 		// Descriptor region sits right after the header; no command ring, no
-		// bindings region (opt-in, #625).
+		// bindings region (opt-in).
 		expect(h.layoutDescriptorOff).toBe(STORE_HEADER_BYTES);
 	});
 
@@ -320,7 +320,7 @@ describe("create_column_store — command ring (plan §7.5, #243 PR 4A)", () => 
 	});
 });
 
-describe("align_up — 2³¹ overflow guard (#382)", () => {
+describe("align_up — 2³¹ overflow guard", () => {
 	it("rounds up correctly for in-range offsets", () => {
 		expect(alignUp(0, 8)).toBe(0);
 		expect(alignUp(1, 8)).toBe(8);
@@ -360,7 +360,7 @@ describe("align_up — 2³¹ overflow guard (#382)", () => {
 	});
 });
 
-describe("plan_layout — 2³¹ overflow guard (#382)", () => {
+describe("plan_layout — 2³¹ overflow guard", () => {
 	// `planLayout` only computes byte offsets; it never allocates, so a spec
 	// whose columns span >2 GiB can be exercised cheaply (no 2 GiB SAB).
 	const over2gibSpec: ArchetypeSpec = {

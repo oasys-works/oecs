@@ -1,5 +1,5 @@
 /**
- * Relations — canonical fold is the single source of truth (#498).
+ * Relations — canonical fold is the single source of truth.
  *
  * After the polymorphic `RelationStore` refactor, the canonical multi traversal
  * (sources ascending by index, each source's targets ascending by id, empty
@@ -8,10 +8,10 @@
  * through it. These tests lock in that they can no longer disagree:
  *
  *  - the digest + the `(R,*)` enumeration are insertion-order-independent (the
- *    #470 determinism property the canonical ordering exists to give);
+ *    determinism property the canonical ordering exists to give);
  *  - snapshot → restore round-trips the multi forward sets so `stateHash` and
  *    `pairsOf` are preserved across the wire-shaped buffer;
- *  - `compactRelations` (#491 / #504) is pure reverse-index reclaim — it
+ *  - `compactRelations` is pure reverse-index reclaim — it
  *    perturbs neither `stateHash` (reverse index isn't folded) nor `pairsOf`
  *    (forward links are left dangling), which is the cardinality-free shape the
  *    refactor rides.
@@ -24,7 +24,7 @@ import type { EntityID } from "../../entity";
 const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, number][] =>
 	pairs.map(([s, t]) => [s as number, t as number]);
 
-describe("relations canonical fold — single source of truth (#498)", () => {
+describe("relations canonical fold — single source of truth", () => {
 	it("state_hash + pairs_of are insertion-order-independent for a multi relation", () => {
 		// World A and B hold identical logical content reached by DIFFERENT
 		// add orders. The canonical fold must make them hash + enumerate the same.

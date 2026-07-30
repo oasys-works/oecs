@@ -1,0 +1,16 @@
+{
+  "name": "oecs-vs",
+  "private": true,
+  "type": "module",
+  "description": "Head-to-head benchmark deps. Local investigation tooling; not part of the package.",
+  "dependencies": {
+    "@lastolivegames/becsy": "^0.15.5",
+    "bitecs": "0.4.0",
+    "harmony-ecs": "0.0.12",
+    "koota": "^0.6.6",
+    "miniplex": "^2.0.0",
+    "piecs": "0.4.0",
+    "thyseus": "^0.18.0",
+    "wolf-ecs": "2.1.3"
+  }
+}

@@ -1,9 +1,9 @@
 /**
- * onDisable / onEnable observers (#677 / ADR-0023) — the entity enable/disable
- * (#577) transition surfaced as a structural-style observer signal so a consumer
+ * onDisable / onEnable observers — the entity enable/disable
+ * transition surfaced as a structural-style observer signal so a consumer
  * (the reactive bridge) can drain it.
  *
- * Discipline mirrors onAdd/onRemove (ADR-0013): fires at the DEFERRED toggle
+ * Discipline mirrors onAdd/onRemove: fires at the DEFERRED toggle
  * drain in `flushStructural`, in canonical order, for EVERY component the entity
  * carries (a disable is a soft remove of the whole mask from default queries), and
  * collapses to one event per NET transition across a drain. An IMMEDIATE
@@ -38,7 +38,7 @@ function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
 	return cmds;
 }
 
-describe("Observers — onDisable / onEnable (#677)", () => {
+describe("Observers — onDisable / onEnable", () => {
 	it("a deferred disable fires onDisable at the flush boundary; re-enable fires onEnable", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
@@ -74,7 +74,7 @@ describe("Observers — onDisable / onEnable (#677)", () => {
 		const e = world.spawn();
 		world.addComponent(e, P, { x: 0, y: 0 });
 		world.startup();
-		world.disable(e); // immediate path — not an observed point (ADR-0013/0023)
+		world.disable(e); // immediate path — not an observed point
 		expect(world.isDisabled(e)).toBe(true);
 		expect(fires).toBe(0);
 	});

@@ -155,7 +155,7 @@ describe("drain_action_ring", () => {
 	});
 });
 
-describe("zero-length entry (#430)", () => {
+describe("zero-length entry", () => {
 	// Manually enqueue a slot whose length prefix is 0, bypassing
 	// `pushAction` (which now rejects empty payloads). This simulates the
 	// ABI-skew case the issue guards against: a slot present in the ring whose
@@ -204,7 +204,7 @@ describe("zero-length entry (#430)", () => {
 	});
 });
 
-describe("Atomics head ordering (#374)", () => {
+describe("Atomics head ordering", () => {
 	// The head region is the cross-thread synchronization edge between the
 	// main-thread producer and the sim-worker consumer. These assert the
 	// observable contract: heads live at the documented Int32Array indices

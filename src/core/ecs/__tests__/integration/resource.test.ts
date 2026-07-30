@@ -181,7 +181,7 @@ describe("Resource system", () => {
 	});
 });
 
-describe("Resource lifecycle — remove / re-insert (#798)", () => {
+describe("Resource lifecycle — remove / re-insert", () => {
 	it("removeResource drops the resource — hasResource is false afterwards", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");

@@ -1,10 +1,10 @@
 /**
- * Store.stateHash — live-row FNV-1a state digest (#171 §6.1.9 Phase 5).
+ * Store.stateHash — live-row FNV-1a state digest.
  *
  * `Store.stateHash()` folds (archetype_id, live row count, live column
  * bytes) for every archetype in id order. It's the canonical "live ECS
  * state digest" used by `compute_state_hash` for cross-replay determinism:
- * strictly broader than the pre-§6.1.9 per-networked-component fold (every
+ * strictly broader than the earlier per-networked-component fold (every
  * column contributes), strictly tighter than `columnStoreStateHash` (skips
  * trailing unused SAB capacity).
  */
@@ -15,13 +15,13 @@ import { ECS_ERROR } from "../../utils/error";
 
 const Position = { x: "i32", y: "i32" } as const;
 const Velocity = { vx: "i32", vy: "i32" } as const;
-// Component shapes used by the per-word-fold tail-byte regression test
-// (#326). A u8 column with an odd row count produces 1–3 tail bytes after
+// Component shapes used by the per-word-fold tail-byte regression test.
+// A u8 column with an odd row count produces 1–3 tail bytes after
 // the word-aligned chunk; a u16 column with an odd row count produces 2.
 const ByteFlags = { flag: "u8" } as const;
 const HalfWord = { v: "u16" } as const;
 
-describe("Store.state_hash — live-row FNV-1a (#171 §6.1.9 Phase 5)", () => {
+describe("Store.state_hash — live-row FNV-1a", () => {
 	it("two identically-built stores produce identical hashes", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
@@ -107,7 +107,7 @@ describe("Store.state_hash — live-row FNV-1a (#171 §6.1.9 Phase 5)", () => {
 		expect(s.stateHash()).not.toBe(before);
 	});
 
-	it("per-word fold notices a flip in a u8 tail byte (#326)", () => {
+	it("per-word fold notices a flip in a u8 tail byte", () => {
 		// Three u8 rows ⇒ 3 tail bytes, no word-aligned chunk. The per-word
 		// fold must still hash those bytes — otherwise mutations in a
 		// non-aligned tail would silently match across replays.
@@ -128,7 +128,7 @@ describe("Store.state_hash — live-row FNV-1a (#171 §6.1.9 Phase 5)", () => {
 		expect(s.stateHash()).not.toBe(before);
 	});
 
-	it("per-word fold notices a flip in a u16 tail (#326)", () => {
+	it("per-word fold notices a flip in a u16 tail", () => {
 		// One u16 row ⇒ 2 tail bytes. Same reasoning as the u8 case but at
 		// the 2-byte residue branch of the tail folder.
 		const s = new Store({ deterministic: true });
@@ -159,7 +159,7 @@ describe("Store.state_hash — live-row FNV-1a (#171 §6.1.9 Phase 5)", () => {
 	});
 });
 
-describe("determinism surface is opt-in (#626 / ADR-0020)", () => {
+describe("determinism surface is opt-in", () => {
 	// Build identical state under both modes so the only variable under test is
 	// the `deterministic` flag, not the contents.
 	function seed(s: Store): void {

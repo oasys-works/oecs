@@ -1,6 +1,6 @@
 /**
  * Host-side SAB realloc — the realloc-and-republish growth path the plan
- * commits to (#171 §6.1.4 / §8.1 / §8.3 / §8.4). Allocates a new
+ * commits to. Allocates a new
  * `SharedArrayBuffer` sized for the new per-archetype row capacities, copies
  * live row data column by column from the old SAB, writes the descriptors,
  * and bumps `view_stamp` so consumers know their cached TypedArray views
@@ -11,7 +11,6 @@
  * needing more rows forces every following column to relocate — the in-place
  * `grow()` API can't avoid the copy. We need the realloc path for the
  * non-tail case anyway, so we use it everywhere and keep one code path.
- * (See plan §8.4.)
  *
  * The caller is responsible for two things:
  *   1. **Telling us how many live rows each archetype has.** Descriptors
@@ -20,17 +19,17 @@
  *      `GrowPlan` shape below makes the caller pass it explicitly so this
  *      primitive doesn't need to dig through the old descriptor's
  *      potentially-stale `row_count`.
- *   2. **Picking the new capacities.** Doubling is the §8.3 default but the
+ *   2. **Picking the new capacities.** Doubling is the default but the
  *      caller chooses — different archetypes may pick different growth
  *      multipliers, or some may stay the same.
  *
- * Growth never happens during `tick()` (§8.2). The intended sequence is:
+ * Growth never happens during `tick()`. The intended sequence is:
  *   - Tick observes a column at capacity, defers the structural change to
  *     the next inter-tick safe point.
  *   - Host calls `growColumnStore(old, plan)` between ticks.
  *   - Host calls `Archetype.refreshViews(newStore)` on every archetype
  *     that drew columns from the old store.
- *   - Worker (Phase 5) receives the new SAB via `postMessage`.
+ *   - A worker receives the new SAB via `postMessage`.
  */
 
 import {
@@ -92,7 +91,7 @@ interface GrowTarget {
 
 /**
  * In-place grow fast path — the grow-side analogue of
- * `extendColumnStoreInPlace` (#361). Pre-conditions (checked by the caller):
+ * `extendColumnStoreInPlace`. Pre-conditions (checked by the caller):
  *   - `allocator.isInPlace === true` (existing TypedArray/DataView views
  *     stay valid after the next allocator call).
  *   - `old._allocator === allocator`.
@@ -100,9 +99,9 @@ interface GrowTarget {
  * Why this is needed: the realloc path (below) snapshots EVERY archetype's
  * live columns, allocates a fresh whole-store SAB, and copies it all back —
  * O(total-live-data) per grow, even though only one archetype overflowed.
- * That whole-store relayout is what made `frame_loop` 0.29x vs oecs: a hot
- * archetype doubling 1k→100k fires ~7 grows, each re-copying all 80+
- * archetypes. (See docs/reports/bench/ frame_loop diagnosis.)
+ * That relayout of the whole store is what made `frame_loop` much slower. A hot
+ * archetype that becomes larger in steps fires one grow at each step, and each
+ * grow copies every other archetype again.
  *
  * The fast path relocates ONLY the growing archetypes' columns to the SAB
  * tail (copying just their live rows), rewrites their descriptors in place
@@ -182,7 +181,7 @@ function growColumnStoreInPlace(
 			// the on-store descriptor write order (`createColumnStore` writes in that
 			// order). Lock the invariant: the descriptor physically at `descOff` must
 			// already carry this `archetype_id`, else the cursor is overwriting the
-			// wrong descriptor. (#731)
+			// wrong descriptor.
 			const onStore = newView.getUint32(descOff + ARCHETYPE_DESCRIPTOR_OFFSETS.archetype_id, true);
 			if (onStore !== archetypeId) {
 				throw new StoreGrowError(
@@ -221,7 +220,7 @@ function growColumnStoreInPlace(
 		_regionBytes: old._regionBytes,
 		_allocator: old._allocator,
 		// Carry the headroom policy forward so a LATER extend realloc
-		// re-reserves the same descriptor-region margin (#541).
+		// re-reserves the same descriptor-region margin.
 		_reservedDescriptorBytes: old._reservedDescriptorBytes
 	};
 
@@ -251,7 +250,7 @@ export class StoreGrowError extends Error {
  * the new views. With a `wasmMemoryAllocator`, `old`'s typed-array
  * views may be detached as soon as `createColumnStore` returns — live
  * data is snapshotted before the allocator call to make both code paths
- * behave identically from the caller's perspective. (PR 3D / #234) */
+ * behave identically from the caller's perspective. */
 export function growColumnStore(
 	old: ColumnStore,
 	plan: GrowPlan,
@@ -274,7 +273,7 @@ export function growColumnStore(
 		const newCapacity = growSpec?.newRowCapacity ?? oldArch.rowCapacity;
 		if (newCapacity < (growSpec?.rowCount ?? 0)) {
 			throw new StoreGrowError(
-				`archetype ${archetypeId}: new_row_capacity ${newCapacity} < row_count ${growSpec?.rowCount}`
+				`archetype ${archetypeId}: newRowCapacity ${newCapacity} < rowCount ${growSpec?.rowCount}`
 			);
 		}
 		if (newCapacity < oldArch.rowCapacity) {
@@ -321,11 +320,11 @@ export function growColumnStore(
 		}
 	}
 
-	// IN-PLACE FAST PATH (grow-side analogue of extend's #361 fast path).
+	// IN-PLACE FAST PATH (grow-side analogue of extend's fast path).
 	// When the allocator keeps views valid across grow (`isInPlace`) and is
 	// the same one this store was built with, relocate only the growing
 	// archetypes to the SAB tail instead of reallocating + snapshotting the
-	// whole store. This is the fix for the frame_loop 0.29x regression — see
+	// whole store. This is the fix for the frame-loop regression — see
 	// `growColumnStoreInPlace`.
 	if (
 		allocator?.isInPlace === true &&

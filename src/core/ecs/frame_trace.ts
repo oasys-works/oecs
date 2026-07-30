@@ -1,12 +1,12 @@
 /**
- * Per-world, per-frame structured trace seam (ADR-0030).
+ * Per-world, per-frame structured trace seam.
  *
  * A `FrameTraceSink` is a push interface the engine fires at well-defined points
  * inside one `ecs.update(dt)` so a consumer can reconstruct exactly what
  * travelled through the ECS that single frame: which systems ran (per phase, in
  * topo order), the structural commands each queued (`ctx.commands.*`), the flush
  * boundaries, the per-phase settle points (`phaseBoundary`, the safe seam for an
- * in-frame `stateHash`, #797 / ADR-0032), which observers fired in response, and
+ * in-frame `stateHash`), which observers fired in response, and
  * which events emitted/read.
  *
  * Unlike the global, callsite-keyed, count-aggregating `dispatchTrace` (this
@@ -68,7 +68,7 @@ export interface FrameTraceSink {
 	 *
 	 * This is the blessed seam for a consumer to read `stateHash()` between the
 	 * phases of one `update()` and bisect a divergence to the exact phase that
-	 * introduced it (#797 / ADR-0032). `flushEnd` marks the same instant, but it
+	 * introduced it. `flushEnd` marks the same instant, but it
 	 * is an observation of the flush *mechanism*, not a "safe to read consistent
 	 * state" contract — so per-phase fingerprinting binds to this method, not to a
 	 * flush-internal name. Like every sink method the call is read-only w.r.t. the
@@ -170,7 +170,7 @@ export class FrameTraceRecorder implements FrameTraceSink {
 		this._current?.events.push({ kind: "flush_end", phase });
 	}
 
-	/** No-op (#797 / ADR-0032). The recorder already marks this instant with
+	/** No-op. The recorder already marks this instant with
 	 * `flushEnd`, and a per-phase fingerprint is a consumer concern — the recorder
 	 * holds no world reference to hash. The seam exists so a consumer's OWN sink can
 	 * run code (e.g. `stateHash()`) at the safe post-flush point; the in-tree

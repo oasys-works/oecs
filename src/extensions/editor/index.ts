@@ -1,8 +1,8 @@
 /**
- * The host write seam's EDITOR layer (#701) — layer 2 of #681 / PATTERNS §85.
+ * The host write seam's EDITOR layer — layer 2 of the seam.
  *
  * Reified undo/redo + the inspector field-handle, built on the shipped typed
- * `HostCommandQueue` (#698). Application policy, so it lives here in
+ * `HostCommandQueue`. Application policy, so it lives here in
  * `engine-extensions`, not engine core — and it pulls NO third-party / framework
  * dependency (the field-handle reads through a caller-supplied thunk).
  *

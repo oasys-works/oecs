@@ -1,7 +1,7 @@
 /**
- * Relationship wildcard QUERY TERMS (#579) — `(R, *)` / `(*, T)` as composable
+ * Relationship wildcard QUERY TERMS — `(R, *)` / `(*, T)` as composable
  * query terms, distinct from the cold materializing helpers `pairsOf(R)` /
- * `sourcesOfAny(T)` (#472).
+ * `sourcesOfAny(T)`.
  *
  *  - `withRelation(R)` / `withoutRelation(R)` — `(R, *)`: match sources that
  *    hold (or don't hold) any target under `R`. Membership semantics (each source
@@ -199,7 +199,7 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 });
 
 // ─────────────────────────── (R, *) cache stability ────────────────────────
-describe("(R, *) require_relation — cached, stable instances (#497)", () => {
+describe("(R, *) require_relation — cached, stable instances", () => {
 	it("repeated require_relation from the same parent returns the identical Query", () => {
 		const world = new ECS();
 		const R = world.relations.register();
@@ -332,7 +332,7 @@ describe("(R, *) determinism — identical histories yield identical order", () 
 });
 
 // ─────────────────────────── dense-path guard ──────────────────────────────
-describe("(R, *) — dense-path methods refuse the wildcard query (#556 shape)", () => {
+describe("(R, *) — dense-path methods refuse the wildcard query", () => {
 	it("count() / for_each() throw, steering to for_each_entity", () => {
 		const world = new ECS();
 		const R = world.relations.register();
@@ -342,7 +342,7 @@ describe("(R, *) — dense-path methods refuse the wildcard query (#556 shape)",
 	});
 });
 
-// ─────────────────────────── access checks (#579 / #496) ───────────────────
+// ─────────────────────────── access checks ───────────────────
 function base(overrides: Partial<SystemConfig>): SystemConfig {
 	return {
 		reads: [],
@@ -364,7 +364,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	return () => world.update(0);
 }
 
-describe("(R, *) / (*, T) access validation (#579)", () => {
+describe("(R, *) / (*, T) access validation", () => {
 	it("throws when a system iterates require_relation without declaring relation_reads", () => {
 		const world = new ECS();
 		const R = world.relations.register();

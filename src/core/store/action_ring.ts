@@ -1,7 +1,6 @@
 /**
  * Action ring — main-thread producer / worker-thread consumer SPSC ring
- * for client input intents (`send_action`-shaped bytes). Plan §6.5 task
- * 3 / `docs/ideas/buffer-wasm-sim-plan-2026-05-14T1600.md`.
+ * for client input intents (`send_action`-shaped bytes).
  *
  * Same on-the-wire shape as `command_ring.ts`, but with two practical
  * differences:
@@ -28,8 +27,8 @@
  *   - Consumer: sim worker, drained on each `apply_diff` / `apply_snapshot`
  *     boundary. `Atomics.store`s `read_head` after each pop.
  *   - Today's consumer is a no-op observer (logs / counts in DEV) — the
- *     wire path still goes main → WebSocket → server. PR 5N migrates the
- *     `PredictionReconciler` into the worker so the action ring becomes
+ *     wire path still goes main → WebSocket → server. A later change moves
+ *     the `PredictionReconciler` into the worker so the action ring becomes
  *     load-bearing for client-side prediction.
  *
  * Overflow:
@@ -46,7 +45,7 @@
  * `Atomics.store`s `write_head`; the consumer `Atomics.load`s
  * `write_head` before touching the slot, reads it, then `Atomics.store`s
  * `read_head`. These SeqCst ops establish the happens-before that a
- * plain `DataView` write does not under the JS memory model (#374):
+ * plain `DataView` write does not under the JS memory model:
  * without them the worker could observe a bumped `write_head` before the
  * producer's `setUint8(len)` + payload `set()` are visible and read a
  * torn/stale slot, and the producer could read a stale `read_head`
@@ -101,7 +100,7 @@ const HEAD_OVERFLOW_IDX = ACTION_RING_HEADER_OFFSETS.overflow_flag / 4;
  * unsigned by callers via `>>> 0`, matching the prior `getUint32`. */
 function headView(view: DataView, ringOff: number): Int32Array {
 	// boundary: TypedArray interop. The header u32s are int-aliased so the
-	// head bumps can use Atomics for cross-thread ordering (#374).
+	// head bumps can use Atomics for cross-thread ordering.
 	return new Int32Array(view.buffer, view.byteOffset + ringOff, 4);
 }
 
@@ -133,7 +132,7 @@ export function initActionRing(view: DataView, ringOff: number, capacitySlots: n
 	if ((view.byteOffset + ringOff) % 4 !== 0) {
 		throw new ActionRingError(
 			`action ring header must be 4-byte aligned for Atomics ` +
-				`(view.byteOffset ${view.byteOffset} + ring_off ${ringOff} is not a multiple of 4)`
+				`(view.byteOffset ${view.byteOffset} + ringOff ${ringOff} is not a multiple of 4)`
 		);
 	}
 	const heads = headView(view, ringOff);
@@ -171,7 +170,7 @@ export function pendingActionCount(view: DataView, ringOff: number): number {
  * lower-bound footgun: a 0-byte slot is indistinguishable from
  * `popAction`'s empty-ring sentinel (`0`), so admitting one would let it
  * masquerade as "ring empty". No encoder produces a 0-byte payload, so this
- * only ever rejects the ABI-skew bug case (#430). Returns `false` on
+ * only ever rejects the ABI-skew bug case. Returns `false` on
  * overflow and sets the overflow flag. */
 export function pushAction(view: DataView, ringOff: number, payload: Uint8Array): boolean {
 	const len = payload.byteLength;
@@ -206,7 +205,7 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
 	// Release store of write_head: the SeqCst store publishes the slot
 	// writes above. The consumer's acquire load of write_head (in
 	// `popAction`) sees them before it touches the slot — this is the
-	// happens-before edge (#374).
+	// happens-before edge.
 	Atomics.store(heads, HEAD_WRITE_IDX, (writeHead + 1) >>> 0);
 	return true;
 }
@@ -220,17 +219,17 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
  * slot" (the latter only reachable via ABI-skew, since `pushAction`
  * rejects empty payloads). Callers that loop must decide emptiness from
  * the heads (`pendingActionCount` / `write_head === read_head`), not
- * from this return value; see `drainActionRing` and #430. */
+ * from this return value; see `drainActionRing`. */
 export function popAction(view: DataView, ringOff: number, outPayload: Uint8Array): number {
 	if (outPayload.byteLength < ACTION_RING_MAX_PAYLOAD_BYTES) {
 		throw new ActionRingError(
-			`out_payload must be at least ${ACTION_RING_MAX_PAYLOAD_BYTES} bytes (got ${outPayload.byteLength})`
+			`outPayload must be at least ${ACTION_RING_MAX_PAYLOAD_BYTES} bytes (got ${outPayload.byteLength})`
 		);
 	}
 	const heads = headView(view, ringOff);
 	// Acquire load of write_head before touching the slot: pairs with the
 	// producer's release store so the slot bytes written before that store
-	// are visible here (#374).
+	// are visible here.
 	const writeHead = Atomics.load(heads, HEAD_WRITE_IDX) >>> 0;
 	const readHead = Atomics.load(heads, HEAD_READ_IDX) >>> 0;
 	if (writeHead === readHead) return 0;
@@ -256,7 +255,7 @@ export function popAction(view: DataView, ringOff: number, outPayload: Uint8Arra
  * `popAction`'s return value. A genuine 0-byte slot returns `0` — the same
  * value `popAction` yields on an empty ring — so terminating on `len === 0`
  * would silently consume the zero-length entry and strand everything queued
- * behind it for a tick (#430). The heads check is SPSC-safe: this consumer
+ * behind it for a tick. The heads check is SPSC-safe: this consumer
  * is the sole reader, so a non-zero pending count cannot race to empty before
  * the `popAction` below. */
 export function drainActionRing(

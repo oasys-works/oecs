@@ -1,31 +1,37 @@
 # WASM backends
 
-> **Advanced / optional.** A plain `ECS` is pure TypeScript and runs over a heap `ArrayBuffer`. Use the WASM path only when you provide a compiled module or worker that can read the oecs store layout and run system bodies against shared columns.
+> **Advanced and optional.** A plain `ECS` is pure TypeScript, and it runs over a heap
+> `ArrayBuffer`. Use the WASM path only when you supply a compiled module or a worker that can read
+> the store layout of oecs and run the bodies of systems against the shared columns.
 
-oecs does **not** ship a compiled WASM sim. It ships the engine seams a WASM sim needs:
+oecs does **not** supply a compiled WASM simulation. It supplies the engine connections that a WASM
+simulation needs:
 
-- `memory.wasm` — make the ECS backing buffer a shared `WebAssembly.Memory`.
-- `ecs.wasmMemory` — hand that memory to your module.
-- `ecs.fieldId(def, field)` — translate component fields into stable numeric ids for FFI.
-- `ecs.onStoreLayoutPublished(listener)` — re-walk column offsets after attach and every grow.
-- `ecs.attachBackend(backend)` + `SystemConfig.backendHandle` — route selected systems to your backend instead of their TypeScript closure.
-- `HostCommandDispatcher` — optional fixed-slot ring transport for worker / wire writes back into the host ECS.
+- `memory.wasm` — make the backing buffer of the ECS a shared `WebAssembly.Memory`.
+- `ecs.wasmMemory` — give that memory to your module.
+- `ecs.fieldId(def, field)` — translate the fields of a component into stable numeric ids for FFI.
+- `ecs.onStoreLayoutPublished(listener)` — read the column offsets again after each attach and each
+  growth.
+- `ecs.attachBackend(backend)` with `SystemConfig.backendHandle` — send the systems that you select
+  to your backend, in place of their TypeScript closure.
+- `HostCommandDispatcher` — an optional ring transport with fixed slots, for writes from a worker
+  or from the wire back into the host ECS.
 
-## Pick a memory profile
+## Select a memory profile
 
-For a zero-copy WASM sim, make the store itself a shared `WebAssembly.Memory`:
+For a WASM simulation with no copy, make the store itself a shared `WebAssembly.Memory`:
 
 ```ts
 import { ECS } from "@oasys/oecs";
 
 const ecs = new ECS({
-  memory: { wasm: { maximumPages: 4096 } }, // 4096 * 64 KiB = 256 MiB cap
+  memory: { wasm: { maximumPages: 4096 } }, // 4096 * 64 KiB = 256 MiB limit
 });
 
-const memory = ecs.wasmMemory!; // WebAssembly.Memory when memory.wasm is used
+const memory = ecs.wasmMemory!; // a WebAssembly.Memory when you use memory.wasm
 ```
 
-You can also bring your own shared memory:
+You can also supply your own shared memory:
 
 ```ts
 const memory = new WebAssembly.Memory({
@@ -38,15 +44,17 @@ const ecs = new ECS({ memory: { wasm: { memory } } });
 ```
 
 > [!WARNING]
-> `memory.wasm.memory` must be constructed with `shared: true`. A non-shared memory is rejected at construction because the WASM path relies on a `SharedArrayBuffer` backing.
+> You must construct `memory.wasm.memory` with `shared: true`. The engine rejects a memory that is
+> not shared, at construction, because the WASM path depends on a `SharedArrayBuffer` backing.
 
-If your backend does not need the backing to be a `WebAssembly.Memory`, but does need worker-visible bytes, use the shared profile instead:
+If your backend does not need the storage to be a `WebAssembly.Memory`, but does need bytes that a
+worker can see, use the shared profile instead:
 
 ```ts
 const ecs = new ECS({ memory: { shared: { maxBytes: 256 * 1024 * 1024 } } });
 ```
 
-In browsers, both shared paths require cross-origin isolation:
+In a browser, both shared paths require cross-origin isolation:
 
 ```http
 Cross-Origin-Opener-Policy: same-origin
@@ -55,7 +63,8 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## Attach a compute backend
 
-A compute backend is deliberately tiny. The engine publishes the current store layout, then calls `run(handle)` when a scheduled system opted into backend execution.
+A compute backend is small by design. The engine publishes the current store layout. It then calls
+`run(handle)` when a scheduled system selected backend execution.
 
 ```ts
 import type { BackendSystemHandle, ComputeBackend } from "@oasys/oecs";
@@ -78,13 +87,19 @@ class WasmBackend implements ComputeBackend {
 const detach = ecs.attachBackend(new WasmBackend(simExports));
 ```
 
-`setLayout(0)` is called immediately on attach and again after every backing grow / layout republish. If your WASM side caches descriptor offsets, column pointers, or typed views, invalidate them in `setLayout`.
+The engine calls `setLayout(0)` immediately when you attach the backend. It calls it again after
+each growth of the storage, and after each new publication of the layout. If your WASM side caches
+the offsets of the descriptors, the pointers to the columns, or typed views, make them invalid in
+`setLayout`.
 
-Only one backend can be attached to an `ECS` at a time. The returned function detaches it and returns matching systems to their TypeScript fallback.
+You can attach one backend to an `ECS` at a time. The function that `attachBackend` gives you
+detaches the backend, and the matching systems return to their TypeScript alternative.
 
-## Route systems to the backend
+## Send systems to the backend
 
-A system opts in by carrying a backend-minted `backendHandle`. With a backend attached, the schedule calls `backend.run(handle)` instead of `fn`. With no backend attached, `fn` runs normally.
+A system selects backend execution when it carries a `backendHandle` that the backend made. With a
+backend attached, the schedule calls `backend.run(handle)` in place of `fn`. With no backend
+attached, `fn` runs as usual.
 
 ```ts
 const moveHandle = 1 as BackendSystemHandle;
@@ -96,7 +111,7 @@ const move = ecs.registerSystem({
   queries: [[Pos, Vel]],
   backendHandle: moveHandle,
   fn: (ctx, dt) => {
-    // Pure-TS fallback for tests, unsupported browsers, or no backend attached.
+    // The pure-TS alternative, for tests, for browsers that do not support WASM, or when no backend is attached.
     movers.eachChunk((cols, count) => {
       const { x, y } = cols.mut(Pos);
       const { vx, vy } = cols.read(Vel);
@@ -109,11 +124,15 @@ const move = ecs.registerSystem({
 });
 ```
 
-Keep `reads`, `writes`, `resourceReads`, and other access declarations accurate. The backend call runs inside the same system access span as a TypeScript body, so those declarations authorize the shared columns the backend mutates and document the ordering constraints the schedule should respect.
+Keep `reads`, `writes`, `resourceReads`, and each other access declaration correct. The call to the
+backend runs inside the same access span as a TypeScript body. So those declarations authorize
+the shared columns that the backend mutates, and they document the order constraints that the
+schedule must respect.
 
-## Pass ids across FFI
+## Send ids across FFI
 
-Component ids are stable for the lifetime of an `ECS`; field ids are assigned in registration order. Pass numeric `(componentId, fieldId)` pairs to your module instead of strings:
+Component ids are stable for the life of an `ECS`. Field ids come from the order of registration.
+Give numeric `(componentId, fieldId)` pairs to your module, and not strings:
 
 ```ts
 const posX = ecs.fieldId(Pos, "x");
@@ -122,19 +141,22 @@ const posY = ecs.fieldId(Pos, "y");
 simExports.register_pos_fields(Pos.id, posX, posY);
 ```
 
-When a backend needs to turn an archetype row back into an entity handle, use:
+When a backend must turn a row of an archetype back into a handle to an entity, use:
 
 ```ts
 const eid = ecs.entityIdAtRow(archetypeId, row);
 ```
 
-## Writes from WASM or a worker
+## Writes from WASM or from a worker
 
-For host-visible mutations that originate outside the schedule, do not write the `ECS` directly mid-frame. Use the [host-write seam](./host-write-seam.md). For worker / wire writes, bind a ring dispatcher and let the seam drain it at the schedule head:
+For mutations that the host must see, and that start outside the schedule, do not write to the
+`ECS` directly during a frame. Use the [host write path](./host-write-seam.md). For writes from a
+worker or from the wire, connect a ring dispatcher, and let the host write path drain it at the
+head of the schedule:
 
 ```ts
 import { installHostCommandSeam } from "@oasys/oecs";
-// Ring transport = wire/ABI surface — @oasys/oecs/internal (no semver guarantees):
+// The ring transport is a wire and ABI surface — @oasys/oecs/internal (no semver guarantees):
 import { HostCommandDispatcher, ringDespawnCodec, ringSetFieldCodec } from "@oasys/oecs/internal";
 
 const ring = new HostCommandDispatcher()
@@ -144,21 +166,28 @@ const ring = new HostCommandDispatcher()
 installHostCommandSeam(ecs, { ring });
 ```
 
-The ring codecs are fixed-slot. They are good for small commands such as `set_field`, `despawn`, `disable`, `enable`, and `remove_component`; variable-width `spawn` and `add_component` stay on the typed queue.
+The ring codecs use fixed slots. They are good for small commands such as `set_field`, `despawn`,
+`disable`, `enable`, and `remove_component`. The variable-width commands `spawn` and
+`add_component` stay on the typed queue.
 
 ## Checklist
 
-1. Construct the world with `memory.wasm` for zero-copy WASM, or `memory.shared` for worker-visible shared columns.
-2. Serve browser builds with COOP/COEP so `SharedArrayBuffer` exists.
-3. Register components in the same order the backend expects.
-4. Pass `ecs.wasmMemory!`, component ids, and `fieldId(...)` results to the module.
-5. Implement `ComputeBackend.setLayout` by re-reading the header / descriptor offsets.
-6. Put `backendHandle` on only the systems your backend can run, and keep `fn` as a fallback.
-7. Route off-schedule writes through the host-write seam, not direct ECS mutation.
+1. Construct the world with `memory.wasm` for WASM with no copy, or with `memory.shared` for shared
+   columns that a worker can see.
+2. Serve browser builds with COOP and COEP, so that `SharedArrayBuffer` exists.
+3. Register the components in the order that the backend expects.
+4. Give `ecs.wasmMemory!`, the component ids, and the results of `fieldId(...)` to the module.
+5. Implement `ComputeBackend.setLayout` so that it reads the header and the offsets of the
+   descriptors again.
+6. Put `backendHandle` on the systems that your backend can run, and on no others. Keep `fn` as the
+   alternative.
+7. Send each write that starts outside the schedule through the host write path. Do not mutate the
+   ECS directly.
 
 ## See also
 
-- [memory](./memory.md) — storage profiles, caps, and `memoryPlan`
-- [systems](./systems.md) — `backendHandle` and system access declarations
-- [host-write seam](./host-write-seam.md) — typed queue and cross-thread ring transport
-- [determinism](./determinism.md) — keeping heap/shared/WASM runs comparable
+- [memory](./memory.md) — the storage profiles, the limits, and `memoryPlan`
+- [systems](./systems.md) — `backendHandle` and the access declarations of a system
+- [the host write path](./host-write-seam.md) — the typed queue and the ring transport between
+  threads
+- [determinism](./determinism.md) — how to keep the heap, shared, and WASM runs comparable

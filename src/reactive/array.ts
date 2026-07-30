@@ -2,7 +2,7 @@
  * Reactive array — ordered, per-slot channels with structural-sharing reconcile.
  *
  * The ordered sibling of `reactiveMap` (per-entity channels) and `reactiveStruct`
- * (fixed-field channels) — the last #646 collection shape (ADR-0021). A reader of
+ * (fixed-field channels) — the third collection shape. A reader of
  * slot `i` subscribes to slot `i` *alone*; changing slot 7 wakes only the things
  * reading slot 7, not the readers of the other slots. The shape `reactiveMap` can't
  * serve is the *positional* one: a fixed/variable list where order is meaningful
@@ -124,7 +124,7 @@ export function reactiveArray<T>(
 		},
 		set(i, value) {
 			if (i >= 0 && i < slots.length) slots[i][1](value); // fine-grained, no-op skip via eq
-			// Out-of-range `set` is a deliberate no-op (this is per-slot, not a grow). #731.
+			// Out-of-range `set` is a deliberate no-op (this is per-slot, not a grow).
 			else if (DEV)
 				console.warn(
 					`reactiveArray.set(${i}): index out of range [0, ${slots.length}); ignored. ` +

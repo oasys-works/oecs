@@ -1,13 +1,13 @@
 /**
- * ECS memory sizing (#682) — the single place a consumer says how big an
+ * ECS memory sizing — the single place a consumer says how big an
  * ECS is and what backs it.
  *
- * Before #682 this surface was two loosely-coupled knobs (`initialCapacity`
+ * This surface used to be two loosely-coupled knobs (`initialCapacity`
  * + `bufferAllocator`) plus invariants that lived as tribal knowledge: which
- * allocators may back a live Store (ADR-0008), what the 256 MiB default cap
- * means (#380), and the hand-wired `new WebAssembly.Memory(...) →
+ * allocators may back a live Store, what the 256 MiB default cap
+ * means, and the hand-wired `new WebAssembly.Memory(...) →
  * wasmMemoryAllocator(memory)` incantation for the WASM path. Now that
- * SAB is the always-on substrate for every consumer (ADR-0004 / ADR-0018),
+ * SAB is the always-on substrate for every consumer,
  * this is public API: a caller expresses *intent* through
  * `ECSOptions.memory` and `resolveECSMemory` turns it into a concrete
  * plan — allocator, column capacity, entity-index reservation, byte cap —
@@ -26,15 +26,15 @@
  * Any arm may pin `columnCapacity` explicitly (benches and tests want exact
  * row counts; the budget arm derives one otherwise).
  *
- * The ADR-0008 in-place invariant is enforced *here*, at construction: the
+ * The in-place invariant is enforced *here*, at construction: the
  * escape-hatch arm is typed `InPlaceBufferAllocator` (so `DEFAULT_SAB_ALLOCATOR`
  * does not typecheck) and a runtime backstop rejects untyped JS callers.
  *
  * The resolved `intentLabel` / `budgetEntities` travel into `Store` so the
- * #380 hard-fail at the cap is phrased in the caller's own terms ("3.2× the
+ * hard-fail at the cap is phrased in the caller's own terms ("3.2× the
  * declared budget — runaway entity creation upstream?") instead of raw bytes.
  * The cap stays a hard ceiling with no grow-beyond fallback — that decision
- * (#380, wontfix) is not this module's to revisit.
+ * is not this module's to revisit.
  */
 
 import {
@@ -93,11 +93,11 @@ export interface EntityBudget {
 	readonly bytesPerEntity?: number;
 }
 
-/** WASM-backed memory, first-class (#682). Either bring your own shared
+/** WASM-backed memory, first-class. Either bring your own shared
  * `WebAssembly.Memory` (the server match context does — its sim factory
  * owns the memory), or declare page bounds and let the engine construct
- * it — replacing the hand-wired incantation that previously lived only in
- * `workbench/ecs/scripts/run-memory.ts`. */
+ * it. This replaces the hand-wired sequence that each caller had to do
+ * before. */
 export type WasmMemoryArm =
 	| {
 			readonly memory: WebAssembly.Memory;
@@ -106,7 +106,7 @@ export type WasmMemoryArm =
 	  }
 	| { readonly maximumPages: number; readonly initialPages?: number; readonly memory?: never };
 
-/** Pure-TS **heap** backing (#643 / ADR-0018 §1B): a plain fixed (non-resizable)
+/** Pure-TS **heap** backing: a plain fixed (non-resizable)
  * `ArrayBuffer` reserved at the cap up front, instead of a `SharedArrayBuffer`.
  * Needs no cross-origin isolation (COOP/COEP) and is the intended default for
  * embedders that can't set those headers (the oecs profile). Trade-off: no
@@ -115,7 +115,7 @@ export type WasmMemoryArm =
 export interface HeapMemoryArm {
 	/** Byte ceiling of the heap backing — reserved fixed (non-resizable) at
 	 * this cap up front. Default `DEFAULT_ECS_CAP_BYTES` (256 MiB), same
-	 * hard-ceiling semantics as the SAB backing (#380). */
+	 * hard-ceiling semantics as the SAB backing. */
 	readonly maxBytes?: number;
 }
 
@@ -125,7 +125,7 @@ export interface HeapMemoryArm {
  * (COOP/COEP) in browsers. Empty `{}` takes the default 256 MiB growable cap. */
 export interface SharedMemoryArm {
 	/** Byte ceiling of the growable shared backing. Default
-	 * `DEFAULT_ECS_CAP_BYTES` (256 MiB), hard-ceiling semantics (#380). */
+	 * `DEFAULT_ECS_CAP_BYTES` (256 MiB), hard-ceiling semantics. */
 	readonly maxBytes?: number;
 }
 
@@ -186,7 +186,7 @@ export type ECSMemoryOptions =
 	| ({
 			/** Expert escape hatch. Typed `InPlaceBufferAllocator` so only
 			 * allocators that statically declare `isInPlace: true` compile —
-			 * the ADR-0008 boundary. `DEFAULT_SAB_ALLOCATOR` is rejected by the
+			 * the in-place boundary. `DEFAULT_SAB_ALLOCATOR` is rejected by the
 			 * type system; non-in-place allocators stay snapshot/test-sizing
 			 * utilities. */
 			readonly allocator: InPlaceBufferAllocator;
@@ -366,7 +366,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				throw new ECSError(
 					ECS_ERROR.INVALID_MEMORY_OPTIONS,
 					"memory.wasm.memory must be constructed with `shared: true` — the SAB substrate " +
-						"requires a SharedArrayBuffer-backed WebAssembly.Memory (ADR-0004 / ADR-0018)"
+						"requires a SharedArrayBuffer-backed WebAssembly.Memory"
 				);
 			}
 			return {
@@ -430,15 +430,15 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 
 	// --- allocator: expert escape hatch -------------------------------------
 	if (opts?.allocator !== undefined) {
-		// Runtime backstop of the ADR-0008 type boundary for untyped JS
+		// Runtime backstop of the in-place type boundary for untyped JS
 		// callers: the brand can be cast away, the flush-loop invariant can't.
 		if (opts.allocator.isInPlace !== true) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				"memory.allocator must declare `is_in_place: true` (ADR-0008): a live Store's flush " +
+				"memory.allocator must declare `isInPlace: true`: a live Store's flush " +
 					"loops hoist entity-index views across grows, so a non-in-place allocator (e.g. " +
-					"DEFAULT_SAB_ALLOCATOR) corrupts the entity→row mapping. Use growable_sab_allocator " +
-					"/ wasm_memory_allocator; non-in-place allocators are snapshot/test sizing only."
+					"DEFAULT_SAB_ALLOCATOR) corrupts the entity→row mapping. Use growableSabAllocator " +
+					"/ wasmMemoryAllocator; non-in-place allocators are snapshot/test sizing only."
 			);
 		}
 		const columnCapacity = pinnedColumns ?? DEFAULT_COLUMN_CAPACITY;

@@ -14,7 +14,7 @@ import { BitSet, TypedArrayFor } from "../../../../type_primitives";
 // column surface directly without standing up a ColumnStore. The production
 // path (`archGetOrCreateFromMask`) always goes through
 // `Archetype.fromColumnStore` — these tests intentionally bypass that to
-// pin per-method semantics in isolation. (#171 §6.1.9 Phase 4)
+// pin per-method semantics in isolation.
 function makeHeapFactory(initialCapacity = 16): ColumnFactory {
 	return (_cid, _fidx, tag) => new TypedArrayFor[tag](initialCapacity);
 }
@@ -176,7 +176,7 @@ describe("Archetype", () => {
 	});
 
 	//=========================================================
-	// Bulk add (addEntities / addEntitiesTag) — #330
+	// Bulk add (addEntities / addEntitiesTag)
 	//=========================================================
 
 	it("add_entities_tag bulk-adds entities and returns starting row", () => {

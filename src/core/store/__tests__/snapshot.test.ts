@@ -238,7 +238,7 @@ describe("restore_column_store rejection", () => {
 	// layout-descriptor region itself was trusted: a snapshot that passes them
 	// yet whose descriptor offset / column extents read past the buffer used to
 	// surface a raw `RangeError`. Both paths now throw `StoreRestoreError` so a
-	// caller sees one error class for every malformed input. (#724)
+	// caller sees one error class for every malformed input.
 	it("rejects an out-of-range layout_descriptor_off", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])

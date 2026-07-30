@@ -1,12 +1,12 @@
 /**
  * Host-side SAB extend — plant a NEW archetype region at the SAB tail
- * (#171 §6.1.9 prerequisite). Where `growColumnStore` resizes existing
+ * Where `growColumnStore` resizes existing
  * archetype rows, `extendColumnStore` adds an archetype the SAB has never
  * carried before.
  *
  * Motivation: live ECS discovers archetypes dynamically — a new component
  * combination first seen at tick T spawns a new `Archetype` at runtime.
- * For ECS to live on a single SAB (the Phase 1 endgame), the host needs
+ * For ECS to live on a single SAB, the host needs
  * a way to add that archetype's column region without throwing away the
  * existing rows. `extendColumnStore` is that primitive.
  *
@@ -64,7 +64,7 @@ export interface ExtendResult {
 	readonly store: ColumnStore;
 	readonly oldViewStamp: number;
 	readonly newViewStamp: number;
-	/** True when the in-place fast path (#237 Option A) was taken: the SAB
+	/** True when the in-place fast path was taken: the SAB
 	 * instance is reused, existing column TypedArray views are unchanged,
 	 * and callers may skip `refreshViews` on every pre-existing
 	 * Archetype. False when the slow path ran (fresh SAB or wasm-memory
@@ -83,7 +83,7 @@ export class StoreExtendError extends Error {
 /** Allocate a new SAB sized for `old` + `plan.newArchetypes`, copy
  * existing rows, bump `view_stamp`.
  *
- * `allocator` (PR 3D / #234): pluggable buffer source forwarded into
+ * `allocator`: pluggable buffer source forwarded into
  * `createColumnStore`. When the allocator is `wasmMemoryAllocator`,
  * `memory.grow` may detach `old`'s typed-array views before the copy
  * runs — so live rows are snapshotted into heap `Uint8Array`s BEFORE the
@@ -96,7 +96,7 @@ export function extendColumnStore(
 	allocator?: BufferAllocator
 ): ExtendResult {
 	if (plan.newArchetypes.length === 0) {
-		throw new StoreExtendError("extend plan has no new archetypes; use grow_column_store for resizes");
+		throw new StoreExtendError("extend plan has no new archetypes; use growColumnStore for resizes");
 	}
 
 	// 1. Validate new archetype IDs: no duplicates within the plan, no
@@ -109,7 +109,7 @@ export function extendColumnStore(
 		}
 		if (old.archetypes.has(id)) {
 			throw new StoreExtendError(
-				`archetype_id ${id} already exists in the SAB; use grow_column_store to resize it`
+				`archetype_id ${id} already exists in the SAB; use growColumnStore to resize it`
 			);
 		}
 		newIds.add(id);
@@ -144,7 +144,7 @@ export function extendColumnStore(
 		}
 	}
 
-	// 2.5. IN-PLACE FAST PATH (#237 Option A).
+	// 2.5. IN-PLACE FAST PATH.
 	//
 	// When the old store was built with `growableSabAllocator` AND it
 	// has enough descriptor-region headroom for the new archetypes'
@@ -181,7 +181,7 @@ export function extendColumnStore(
 		// path. The store carries forward the SAME growable allocator so
 		// the new SAB also grows in place (just allocated fresh here), and
 		// `optionsFromOld` re-reserves the descriptor-region headroom so
-		// the realloc'd store keeps taking this fast path next time (#541).
+		// the realloc'd store keeps taking this fast path next time.
 	}
 
 	// 3. Compose the merged spec list. Existing archetypes preserve their
@@ -229,8 +229,8 @@ export function extendColumnStore(
 }
 
 /**
- * In-place extend (#237 Option A fast path, generalised in #361 to cover
- * `wasmMemoryAllocator`). Pre-conditions verified by the caller in
+ * In-place extend (fast path, generalised to cover `wasmMemoryAllocator`).
+ * Pre-conditions verified by the caller in
  * `extendColumnStore`:
  *   - `old._allocator.isInPlace === true` (i.e. the allocator promises
  *     existing TypedArray/DataView views remain valid after the next
@@ -250,7 +250,7 @@ export function extendColumnStore(
  *   - `wasmMemoryAllocator` returns a NEW SAB ref pointing to the
  *     same underlying shared linear memory; `grownBuffer !== old.buffer` but
  *     old views still operate on the same bytes (verified empirically
- *     against Bun + V8, #361 thread A / PR #363 probe 3).
+ *     against Bun + V8).
  *
  * When the SAB ref changed we mint a fresh `DataView` over `grownBuffer`
  * so header / descriptor writes past the pre-grow `byteLength` are
@@ -350,7 +350,7 @@ function extendColumnStoreInPlace(
 		_regionBytes: old._regionBytes,
 		_allocator: old._allocator,
 		// Carry the headroom policy forward so a LATER realloc (once this
-		// in-place slack is exhausted) re-reserves the same margin (#541).
+		// in-place slack is exhausted) re-reserves the same margin.
 		_reservedDescriptorBytes: old._reservedDescriptorBytes
 	};
 

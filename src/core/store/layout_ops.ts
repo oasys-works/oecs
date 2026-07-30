@@ -1,6 +1,6 @@
 /**
  * Shared layout/realloc operations for `growColumnStore` / `extendColumnStore`
- * (H5). The two files used to duplicate ~200 lines of structurally parallel
+ *. The two files used to duplicate ~200 lines of structurally parallel
  * logic — the tail-cursor `alignUp` placement with its 2³¹ offset guard, the
  * in-place buffer grow + view-mint step, and the whole realloc-and-republish
  * choreography (snapshot → createColumnStore → restore → view-stamp bump →
@@ -61,7 +61,7 @@ export interface TailArchetypeLayout {
 }
 
 /** Tail-cursor column placement — the single home for the in-place paths'
- * layout rule and the 2³¹ offset cap (#382). Starting at `startCursor`
+ * layout rule and the 2³¹ offset cap. Starting at `startCursor`
  * (the current buffer byteLength), each archetype's columns are placed
  * `alignUp(cursor, stride)` then advanced by `stride * rowCapacity`; the
  * final tail (last column's advance, not re-aligned) becomes the grown
@@ -159,12 +159,12 @@ export function tailCursorBytes(old: ColumnStoreInternal): number {
  * separately via `snapshotPrefixRegions`.
  *
  * Also re-applies the descriptor-region headroom policy
- * (`reservedDescriptorBytes`, #541). Unlike the prefix regions this is NOT
+ * (`reservedDescriptorBytes`). Unlike the prefix regions this is NOT
  * read from the SAB bytes — it's a JS-side policy carried on
  * `ColumnStoreInternal._reservedDescriptorBytes` — but it belongs here for the
  * same reason: without it the realloc'd store drops to zero descriptor
  * headroom and every later `extendColumnStore` takes the slow path forever.
- * Re-reserving the same margin (additive, see `planLayout`) keeps the #237
+ * Re-reserving the same margin (additive, see `planLayout`) keeps the
  * in-place fast path alive across reallocs.
  */
 export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
@@ -174,7 +174,7 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 		const off = old.view.getUint32(STORE_HEADER_OFFSETS[region.headerOff], true);
 		if (off !== 0) region.readOptions(old.view, off, options);
 	}
-	// Consumer regions (#623): the region-table directory is self-describing —
+	// Consumer regions: the region-table directory is self-describing —
 	// each entry carries the region's id and byte length — so the new SAB can be
 	// re-laid-out identically WITHOUT re-deriving the consumer's sizing knobs.
 	// `init` is a no-op here: the region's live bytes are restored verbatim by
@@ -191,7 +191,7 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 			})
 		);
 	}
-	// Sim-bindings region (#625): self-describing from the old header — the
+	// Sim-bindings region: self-describing from the old header — the
 	// region is the gap between `bindings_off` and the descriptor region, so its
 	// size is re-derived rather than carried as a JS-side policy. `bindings_off`
 	// = 0 means the consumer never opted into a bindings region (pure-TS game),
@@ -343,9 +343,9 @@ export function restoreColumnSnapshots(
  *      (command ring, entity-index) BEFORE the allocator call — the
  *      wasmMemoryAllocator may detach `old`'s views on grow, so everything
  *      needed is captured first. The prefix-region preservation is the
- *      contract `Store` relies on to keep its entity table across resizes
- *      (#245); `optionsFromOld` re-reserves regions and descriptor headroom
- *      (#541) so the republished store keeps its layout and fast paths.
+ *      contract `Store` relies on to keep its entity table across resizes;
+ * `optionsFromOld` re-reserves regions and descriptor headroom
+ * so the republished store keeps its layout and fast paths.
  *   2. `createColumnStore` with the derived options (fresh buffer; the same
  *      growable allocator carries forward so the new buffer also grows in
  *      place).
@@ -354,7 +354,7 @@ export function restoreColumnSnapshots(
  *      overwrite the empty state `createColumnStore` initialised.
  *   4. Bump `view_stamp` from the pre-capture value and patch the returned
  *      header so its cached `viewStamp` matches the buffer bytes just
- *      written — `createColumnStore` stamped it 0 (#386). `capacity` /
+ *      written — `createColumnStore` stamped it 0. `capacity` /
  *      `archetype_count` are already correct (createColumnStore sized them),
  *      so the spread carries them — and the internal `_allocator` /
  *      `_regionBytes` fields — through unchanged.

@@ -1,5 +1,5 @@
 /**
- * Built-in relations — `registerIsA` / `registerChildOf` (#477 / #463).
+ * Built-in relations — `registerIsA` / `registerChildOf`.
  *
  * Thin presets over `registerRelation`; these tests prove the IsA/ChildOf
  * acceptance criteria ride the generic relation surface:

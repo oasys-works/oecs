@@ -1,5 +1,5 @@
 /**
- * Host → ECS write seam (#681) × reactive read bridge (ADR-0022) — the loop
+ * Host → ECS write seam × reactive read bridge — the loop
  * closes. The write seam funnels host commands into the SAME deferred flush and
  * observers the read bridge already drains, so a frame's worth of host writes
  * surfaces through the existing change detection as ONE coalesced commit.
@@ -99,7 +99,7 @@ describe("host command seam → reactive read bridge", () => {
 	});
 });
 
-describe("host command SAB-ring transport → reactive read bridge (#700)", () => {
+describe("host command SAB-ring transport → reactive read bridge", () => {
 	const OP_DESPAWN = 11;
 
 	it("a ring-sourced despawn fires the observers the bridge drains (entity leaves the map)", () => {
@@ -126,7 +126,7 @@ describe("host command SAB-ring transport → reactive read bridge (#700)", () =
 		expect(sync.map.size()).toBe(1);
 
 		// Despawn it via the OTHER transport — opaque bytes on the SAB ring. The
-		// structural change must route through the same deferred flush + ADR-0013
+		// structural change must route through the same deferred flush +
 		// observers the read bridge drains, so the entity leaves the map.
 		const sab = world.columnStore;
 		pushCommand(

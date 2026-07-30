@@ -20,7 +20,7 @@ import {
 } from "../command_ring";
 
 // Fabricated, non-game op codes. The engine command ring treats the opCode as
-// an opaque u8 slot prefix — it ships no game opcode enum (#624). These three
+// an opaque u8 slot prefix — it ships no game opcode enum. These three
 // stand in for whatever a consumer registers; only `0` is reserved
 // (`COMMAND_OP_EMPTY`, the empty-slot marker).
 const OP_A = 1;
@@ -59,7 +59,7 @@ describe("command_ring — constants and sizing", () => {
 
 	it("reserves op_code 0 as the empty-slot marker (no game opcode enum)", () => {
 		// The engine ships only `COMMAND_OP_EMPTY` — the game opcode enum
-		// (`OP_A`, …) moved to `@internal/sim` in #624. Every
+		// (`OP_A`, …) moved to `@internal/sim`. Every
 		// non-zero u8 is an opaque, consumer-defined code.
 		expect(COMMAND_OP_EMPTY).toBe(0);
 	});
@@ -306,7 +306,7 @@ describe("command_ring — drain", () => {
 });
 
 describe("command_ring — validation", () => {
-	// Mirror of event_ring's opCode guard (#731): the command ring's slot
+	// Mirror of event_ring's opCode guard: the command ring's slot
 	// prefix is a u8 and opCode 0 is the reserved empty-slot marker, so the TS
 	// host producer must reject 0, out-of-u8-range, and non-integer codes — a
 	// corrupt op byte would otherwise be indistinguishable from an empty slot or

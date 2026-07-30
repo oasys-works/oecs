@@ -1,5 +1,5 @@
 /**
- * Relations — `addRelation` endpoint-liveness guard in a *production* build (#495).
+ * Relations — `addRelation` endpoint-liveness guard in a *production* build.
  *
  * `Store.addRelation` rejects a dead `src`/`tgt` by throwing in `__DEV__` and
  * no-opping in production (symmetric). The dev throw is the only behaviour the
@@ -108,7 +108,7 @@ export function run() {
 	}
 }
 
-describe("addRelation production endpoint-liveness guard (#495)", () => {
+describe("addRelation production endpoint-liveness guard", () => {
 	it("linking a dead target no-ops and leaks no reverse entry (exclusive + multi)", async () => {
 		const out = await runProdHarness();
 

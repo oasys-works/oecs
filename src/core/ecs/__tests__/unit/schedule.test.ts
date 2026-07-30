@@ -141,9 +141,83 @@ describe("Schedule", () => {
 		expect(() => schedule.runStartup(ctx, 0)).not.toThrow();
 		expect(() => schedule.runUpdate(ctx, 0.016, 0)).not.toThrow();
 	});
+
+	//=========================================================
+	// systemLastRun slot recycling
+	//=========================================================
+
+	it("does not recycle a lastRun slot into a system added mid-phase", () => {
+		// `runLabel` hoists its plan's `slots` into a local, so a system removed
+		// from inside the phase still runs (the snapshot holds it) and still writes
+		// `systemLastRun[itsSlot] = tick` on the way out. If `removeSystem`'s freed
+		// slot were handed straight to a system added in the same phase, that tail
+		// write would land on the new system's last-run tick and silently shift its
+		// `changed()` window — cross-talk the `Map` this array replaced could not
+		// produce. Reachable from an observer or a teardown helper that removes and
+		// re-adds systems mid-phase (e.g. `uninstallHostCommandSeam`).
+		const schedule = new Schedule();
+		const ctx = makeCtx();
+		const seen: number[] = [];
+
+		// `late` is added during the phase, so it first runs on the NEXT tick.
+		const late = makeSystem({ fn: () => seen.push(ctx.lastRunTick) });
+		// `victim` is removed during the phase but still runs from the snapshot,
+		// after the remover — its tail write is the hazard.
+		const victim = makeSystem();
+		let swapped = false;
+		const remover = makeSystem({
+			fn: () => {
+				if (swapped) return;
+				swapped = true;
+				schedule.removeSystem(victim);
+				schedule.addSystems(SCHEDULE.UPDATE, late);
+			}
+		});
+
+		// Insertion order is the tiebreak, so the phase runs remover then victim.
+		schedule.addSystems(SCHEDULE.UPDATE, remover, victim);
+
+		schedule.runUpdate(ctx, 0.016, 7);
+		// `late` was not in the plan this phase captured.
+		expect(seen).toEqual([]);
+		expect(schedule.hasSystem(victim)).toBe(false);
+		expect(schedule.hasSystem(late)).toBe(true);
+
+		// First run of `late`: a freshly added system's window starts at tick 0, not
+		// at 7 — which is what `victim`'s tail write left in the slot it freed.
+		schedule.runUpdate(ctx, 0.016, 8);
+		expect(seen).toEqual([0]);
+
+		// And on the run after that it sees its own previous tick, so the fresh slot
+		// is a real slot and not a hole that reads 0 forever.
+		schedule.runUpdate(ctx, 0.016, 9);
+		expect(seen).toEqual([0, 8]);
+	});
+
+	it("a slot reused outside a phase starts the new system at tick 0", () => {
+		// The guard above is scoped to the running-phase window only; between phases
+		// reuse proceeds, and a reused slot must be zeroed so the incoming system
+		// does not inherit the outgoing one's last-run tick.
+		const schedule = new Schedule();
+		const ctx = makeCtx();
+		const seen: number[] = [];
+		const sys = makeSystem({ fn: () => seen.push(ctx.lastRunTick) });
+
+		schedule.addSystems(SCHEDULE.UPDATE, sys);
+		schedule.runUpdate(ctx, 0.016, 3);
+		schedule.runUpdate(ctx, 0.016, 4);
+		expect(seen).toEqual([0, 3]);
+
+		// Remove and re-add between phases: the slot comes back off the free list,
+		// so the window restarts at 0 rather than resuming from 4.
+		schedule.removeSystem(sys);
+		schedule.addSystems(SCHEDULE.UPDATE, sys);
+		schedule.runUpdate(ctx, 0.016, 5);
+		expect(seen).toEqual([0, 3, 0]);
+	});
 });
 
-describe("Schedule — system sets (#576)", () => {
+describe("Schedule — system sets", () => {
 	// Build a system that records `label` into `order` when it runs.
 	function recorder(order: string[], label: string): SystemDescriptor {
 		return makeSystem({ fn: () => order.push(label) });

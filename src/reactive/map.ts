@@ -61,7 +61,7 @@ export function reactiveMap<K, V>(eq: (a: V, b: V) => boolean = Object.is): Reac
 		set(key, value) {
 			if (DEV && value === undefined) {
 				// `undefined` is the absent sentinel (see `cellEq`), so a stored
-				// `undefined` reads back identically to a never-set key on `get`. #731.
+				// `undefined` reads back identically to a never-set key on `get`.
 				console.warn(
 					"reactiveMap.set(key, undefined): undefined is the absent sentinel — " +
 						"get(key) cannot distinguish it from an unset key; use delete(key) to remove."

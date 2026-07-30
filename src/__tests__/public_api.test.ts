@@ -1,5 +1,5 @@
 /**
- * Public-API snapshot (M6) — the root entry is a curated, explicit list, and
+ * Public-API snapshot — the root entry is a curated, explicit list, and
  * this test makes any widening (or narrowing) of the published runtime
  * surface an explicit diff in review. Type-only exports have no runtime
  * presence and are not covered here; the explicit export lists in

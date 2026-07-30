@@ -1,6 +1,6 @@
 /**
  * `@oasys/oecs/solid` — the SolidJS adapter plugin for oecs's reactive
- * kernel (`@oasys/oecs/reactive` / `../../reactive`, #646 / ADR-0021).
+ * kernel (`@oasys/oecs/reactive` / `../../reactive`).
  */
 export {
 	fromKernel,

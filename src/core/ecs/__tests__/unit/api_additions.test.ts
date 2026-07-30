@@ -1,5 +1,5 @@
 /**
- * Batch-4 API additions (POLISH_AUDIT #9 / M7 / M8 + combinators + dispose):
+ * Batch-4 API additions (combinators + dispose):
  *  - total `has*` probes + `tryGetField` (dead/missing → undefined, no throw);
  *  - `Query.firstEntity` / `Query.singleEntity`;
  *  - host-side `ecs.refRead` parity with `ctx.refRead`;
@@ -18,7 +18,7 @@ function staleOf(e: number): never {
 	return (e + (1 << 20)) as never; // same index, bumped generation — dead
 }
 
-describe("total has* + tryGetField (#9)", () => {
+describe("total has* + tryGetField", () => {
 	it("hasComponent/hasSparse/hasRelation return false for a dead entity", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
@@ -69,7 +69,7 @@ describe("total has* + tryGetField (#9)", () => {
 	});
 });
 
-describe("Query.firstEntity / singleEntity (M8)", () => {
+describe("Query.firstEntity / singleEntity", () => {
 	it("firstEntity: undefined on no match, an entity on match", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
@@ -116,7 +116,7 @@ describe("Query.firstEntity / singleEntity (M8)", () => {
 	});
 });
 
-describe("host refRead (M7)", () => {
+describe("host refRead", () => {
 	it("reads whole-component fields through a readonly ref", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" });

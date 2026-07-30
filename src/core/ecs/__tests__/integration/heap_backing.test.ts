@@ -1,5 +1,5 @@
 /**
- * Pure-TS heap backing (`memory: { heap: {} }`) — ADR-0018 §1B / the oecs
+ * Pure-TS heap backing (`memory: { heap: {} }`) — the oecs
  * profile. The engine's core/ecs runs over a plain fixed `ArrayBuffer`
  * instead of a `SharedArrayBuffer`: no cross-origin isolation, no worker/WASM
  * transfer. These tests prove the heap world is functionally a peer of the SAB
@@ -35,7 +35,7 @@ function worldWithMovers(
 	steps: number
 ): { world: ECS; Pos: ComponentDef; Vel: ComponentDef; ids: EntityID[]; dt: number } {
 	const world = new ECS(memory);
-	// A `{ deterministic: true }` world rejects f32/f64 columns (#777), so size the
+	// A `{ deterministic: true }` world rejects f32/f64 columns, so size the
 	// mover columns as integers there; non-deterministic worlds keep f64 for the
 	// fractional-dt precision assertions (`toBeCloseTo`) the grow tests rely on.
 	const colType = world.snapshots.deterministic ? "i32" : "f64";
@@ -96,7 +96,7 @@ describe("heap backing: construct + grow + tick", () => {
 		expect(buffer.resizable).toBe(false);
 	});
 
-	it("constructs + ticks + grows under a small heap.maxBytes cap (#710)", () => {
+	it("constructs + ticks + grows under a small heap.maxBytes cap", () => {
 		// Regression: the heap arm used to hardcode the full entity-index
 		// reservation (~12 MiB), so any `heap.maxBytes` below that threw
 		// StoreCapExceededError at `new ECS(...)` — before the world even existed.

@@ -1,4 +1,4 @@
-/** Locks `VERSION` to the manifests so a release bump can't drift (M21). */
+/** Locks `VERSION` to the manifests so a release bump can't drift. */
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";

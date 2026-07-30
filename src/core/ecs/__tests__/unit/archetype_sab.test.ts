@@ -217,7 +217,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(fresh[1]).toBe(22);
 	});
 
-	it("add_entities bulk-zero-fills SAB-backed columns (#330)", () => {
+	it("add_entities bulk-zero-fills SAB-backed columns", () => {
 		const layouts = [makeLayout(1, ["x", "y"], "i32")];
 		const columnStore = createColumnStore([specFromLayouts(0, 8, layouts)]);
 		const a = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0);

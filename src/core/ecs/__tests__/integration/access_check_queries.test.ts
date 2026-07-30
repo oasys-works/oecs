@@ -1,8 +1,8 @@
-// Issue #213 Phase D — the `queries ⊆ reads ∪ writes` registration lint.
+// The `queries ⊆ reads ∪ writes` registration lint.
 //
 // `SystemConfig.queries` is an OPTIONAL declaration of the components a system
-// iterates via `ctx.query(...)`. Phase B's `accessCheck` already throws at the
-// first iteration if a system reads a component it never declared; the Phase D
+// iterates via `ctx.query(...)`. The runtime `accessCheck` already throws at
+// the first iteration if a system reads a component it never declared; this
 // lint moves that failure forward to `registerSystem` by checking the two
 // declarations agree. A query term reads each listed component's presence /
 // columns, so every id in `queries` must appear in `reads ∪ writes`.
@@ -29,7 +29,7 @@ function base(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 /** The undeclared component ids the lint message lists in its `[…]` block.
- * Parsing the bracket avoids false matches against digits in "#213". */
+ * Parsing the bracket avoids false matches against other digits. */
 function undeclaredIds(message: string): number[] {
 	const m = message.match(/\[([0-9,\s]*)\]/);
 	if (m === null) return [];
@@ -39,7 +39,7 @@ function undeclaredIds(message: string): number[] {
 		.filter((n) => !Number.isNaN(n));
 }
 
-describe("queries ⊆ reads ∪ writes lint (issue #213 Phase D)", () => {
+describe("queries ⊆ reads ∪ writes lint", () => {
 	it("registers cleanly when every queried component is in reads", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);

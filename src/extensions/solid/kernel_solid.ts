@@ -12,11 +12,12 @@
  * For a keyed entity collection use `fromKernelMap`: render with a Solid `<For>`
  * keyed on `view.keys()` (the stable entity ids) and read each row's value via
  * `view.cell(id)`. Key on the id, never on a per-tick value object, and never use
- * `<Index>` for entities — see `docs/ideas/ecs-to-solid-three-rendering.md` and
- * `workbench/reactive/check_for_keying.ts` for why each of those bites.
+ * `<Index>` for entities. A per-tick value object gives a new identity at each
+ * tick, and `<Index>` keys on the position and not on the entity. Each of the two
+ * makes Solid rebuild rows that did not change.
  *
  * This is the packaged Solid plugin over oecs's reactive kernel
- * (`@oasys/oecs/reactive`, #646 / ADR-0021), shipped as the `@oasys/oecs/solid`
+ * (`@oasys/oecs/reactive`), shipped as the `@oasys/oecs/solid`
  * extension. The core stays zero-dependency and framework-agnostic; the
  * `solid-js` dependency lives here in the extension, never in the core.
  */
@@ -62,7 +63,7 @@ export function fromKernelMap<K, V>(map: ReactiveMap<K, V>): KernelMapView<K, V>
  * `view.field` in a Solid scope tracks that field alone (one `fromKernel` per
  * field), so a change to one field re-renders only its readers. Completes the
  * `fromKernel` / `fromKernelMap` / `fromKernelStruct` trio — the read side for the
- * singleton/ephemeral UI state `syncSingletonToStruct` publishes (ADR-0024). The
+ * singleton/ephemeral UI state `syncSingletonToStruct` publishes. The
  * field set is read once from the (enumerable) struct proxy; call inside a component
  * or `root` so each field's `onCleanup` has an owner. The kernel struct's per-field
  * `eq` and batching carry through `fromKernel` unchanged.
@@ -86,7 +87,7 @@ export function fromKernelStruct<T extends object>(struct: Readonly<T>): Readonl
 			fieldSet.has(k)
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
 				: undefined,
-		// Read surface only (`Readonly<T>`, POLISH_AUDIT #8) — mirrors the kernel
+		// Read surface only (`Readonly<T>`) — mirrors the kernel
 		// struct proxy's trap so a JS-side assignment fails loudly instead of
 		// sticking a non-reactive value on the hidden target.
 		set: (_, k) => {

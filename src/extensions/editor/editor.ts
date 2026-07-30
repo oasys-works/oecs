@@ -1,7 +1,7 @@
 /**
- * editor — the host write seam's EDITOR layer (#701, layer 2 of #681 / PATTERNS §85).
+ * editor — the host write seam's EDITOR layer, layer 2 of the seam.
  *
- * Reified undo/redo built on the shipped typed `HostCommandQueue` (#698). Each
+ * Reified undo/redo built on the shipped typed `HostCommandQueue`. Each
  * editor action becomes a TRANSACTION carrying its `forward` commands and their
  * `inverse` — both plain `HostCommand` data on the ONE bus. `undo()`/`redo()`
  * enqueue the inverse/forward like any other write, so they apply at the next
@@ -34,7 +34,7 @@
  *      shadow, seeded from the read channel (`FieldReader`), gets this right; undo
  *      and redo keep it in step.
  *
- * See `docs/ideas/host-ecs-write-seam.md` and PATTERNS §85.
+ * See `docs/api/editor.md`.
  */
 import type {
 	ComponentDef,
@@ -128,7 +128,7 @@ export class TransactionBuilder {
 		// resolves to the live id: the paired respawn's `onSpawned` runs earlier in
 		// the same drain and updates this `eid` before the despawn applies. Replacing
 		// the slot instead left an already-enqueued despawn pointing at the dead
-		// original → `ENTITY_NOT_ALIVE` / leaked entity. #719
+		// original → `ENTITY_NOT_ALIVE` / leaked entity.
 		const inverseDespawn: { kind: "despawn"; eid: EntityID } = {
 			kind: "despawn",
 			eid: 0 as EntityID
@@ -157,7 +157,7 @@ export class TransactionBuilder {
 		// Symmetric with `spawn`: one STABLE forward despawn whose `eid` the respawn's
 		// `onSpawned` mutates in place, so a redo enqueued before the respawn applies
 		// still despawns the RESPAWNED entity (resolved at apply time), not the dead
-		// original. #719
+		// original.
 		const forwardDespawn: { kind: "despawn"; eid: EntityID } = { kind: "despawn", eid: entityId };
 		this._txn.forward.push(forwardDespawn);
 		this._txn.inverse.push({
@@ -378,12 +378,12 @@ export class Editor {
 		return { undo: this.undoStack.length, redo: this.redoStack.length };
 	}
 
-	/** `true` when `undo()` would do something — allocation-free (M10). */
+	/** `true` when `undo()` would do something — allocation-free. */
 	get canUndo(): boolean {
 		return this.undoStack.length > 0;
 	}
 
-	/** `true` when `redo()` would do something — allocation-free (M10). */
+	/** `true` when `redo()` would do something — allocation-free. */
 	get canRedo(): boolean {
 		return this.redoStack.length > 0;
 	}
@@ -391,7 +391,7 @@ export class Editor {
 	/**
 	 * Subscribe to undo/redo-stack changes: fires after every commit, undo,
 	 * redo, and clear — the push signal an "Undo (3)" affordance needs instead
-	 * of polling `depths()` per frame (M10). Returns an unsubscribe function.
+	 * of polling `depths()` per frame. Returns an unsubscribe function.
 	 * Callbacks run synchronously in subscription order; read `canUndo` /
 	 * `canRedo` / `depths()` inside.
 	 */
@@ -409,7 +409,7 @@ export class Editor {
 
 	/** Read one committed `(entity, component, field)` slot through the reader
 	 * this editor was constructed with — the default read for `fieldHandle`
-	 * when no channel thunk is supplied (M11). */
+	 * when no channel thunk is supplied. */
 	committedField(entityId: EntityID, def: ComponentDef, field: string): number | undefined {
 		return this.readField(entityId, def, field);
 	}

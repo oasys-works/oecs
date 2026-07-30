@@ -8,7 +8,7 @@
  * stores an arbitrary typed value. The key carries the value type as a
  * phantom type parameter, so reads are type-safe at compile time.
  *
- * Lifecycle (#798). A resource is register-once *until removed*: a second
+ * Lifecycle. A resource is register-once *until removed*: a second
  * `registerResource` for a live key throws RESOURCE_ALREADY_REGISTERED, but
  * `removeResource(key)` drops it (failing closed on a missing key) and frees the
  * key to be registered again — the present → absent → present axis. Removal is

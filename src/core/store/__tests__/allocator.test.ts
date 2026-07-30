@@ -11,8 +11,7 @@ import {
 /**
  * Allocator boundary behaviours. The grow/extend suites exercise these
  * paths *incidentally*; this file pins them at their own boundary so a
- * regression surfaces here rather than as a corrupted live Store. Each
- * test maps to a finding in #552.
+ * regression surfaces here rather than as a corrupted live Store.
  */
 
 describe("DEFAULT_SAB_ALLOCATOR", () => {
@@ -29,11 +28,11 @@ describe("DEFAULT_SAB_ALLOCATOR", () => {
 		expect(a).not.toBe(b);
 	});
 
-	it("is NOT marked is_in_place — fresh-alloc moves memory (ADR-0008)", () => {
+	it("is NOT marked is_in_place — fresh-alloc moves memory", () => {
 		// The load-bearing invariant: views over a returned buffer do NOT
 		// survive the next allocator call, so extendColumnStore must take the
 		// snapshot+restore path. Flipping this marker corrupts the
-		// entity→row map. See docs/adr/0008-in-place-sab-allocator-required.md.
+		// entity→row map.
 		expect(DEFAULT_SAB_ALLOCATOR.isInPlace).toBeFalsy();
 	});
 });
@@ -58,10 +57,10 @@ describe("growable_sab_allocator — maxBytes validation", () => {
 	});
 });
 
-describe("growable_sab_allocator — hard cap throw (#380)", () => {
+describe("growable_sab_allocator — hard cap throw", () => {
 	it("throws when the FIRST request exceeds maxBytes", () => {
 		const alloc = growableSabAllocator(64);
-		// The entire #380 design hinges on the cap being fatal — there is no
+		// The entire design hinges on the cap being fatal — there is no
 		// grow-beyond-cap fallback or compaction pass.
 		expect(() => alloc(128)).toThrow(/maxBytes/);
 	});
@@ -83,7 +82,7 @@ describe("growable_sab_allocator — hard cap throw (#380)", () => {
 	});
 });
 
-describe("growable_sab_allocator — in-place contract (ADR-0008)", () => {
+describe("growable_sab_allocator — in-place contract", () => {
 	it("is marked is_in_place: true", () => {
 		expect(growableSabAllocator().isInPlace).toBe(true);
 	});
@@ -135,7 +134,7 @@ describe("wasm_memory_allocator — rejections", () => {
 	});
 });
 
-describe("wasm_memory_allocator — in-place contract (ADR-0008)", () => {
+describe("wasm_memory_allocator — in-place contract", () => {
 	it("is marked is_in_place: true on shared memory", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 4, shared: true });
 		expect(wasmMemoryAllocator(memory).isInPlace).toBe(true);
@@ -157,7 +156,7 @@ describe("wasm_memory_allocator — in-place contract (ADR-0008)", () => {
 });
 
 // The two growable single-buffer allocators are one factory parameterized
-// over the buffer primitive (M9). This matrix runs the same scenarios over
+// over the buffer primitive. This matrix runs the same scenarios over
 // both so any future divergence in cap arithmetic, in-place reporting, or
 // buffer-identity semantics fails loudly on the strategy that drifted.
 describe.each([
@@ -185,7 +184,7 @@ describe.each([
 		expect(second.byteLength).toBeGreaterThanOrEqual(128);
 	});
 
-	it("is marked is_in_place (ADR-0008)", () => {
+	it("is marked is_in_place", () => {
 		expect(factory(64).isInPlace).toBe(true);
 	});
 
@@ -199,7 +198,7 @@ describe.each([
 		expect(view[3]).toBe(7);
 	});
 
-	it("throws StoreCapExceededError past the cap, with the cap attached (#380)", () => {
+	it("throws StoreCapExceededError past the cap, with the cap attached", () => {
 		const alloc = factory(64);
 		alloc(64); // exactly at cap is fine
 		try {

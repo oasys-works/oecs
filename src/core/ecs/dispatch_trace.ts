@@ -38,7 +38,7 @@
 // This module holds only the in-memory tracer — no filesystem access. It is
 // transitively reachable from the browser `client` bundle (via core/ecs), so it
 // must stay free of `node:fs` / `node:path`. Persisting a snapshot to disk is a
-// server-only concern and lives in `services/server` (#384).
+// server-only concern and lives in `services/server`.
 
 export type DispatchChannel = "ecs-events" | "actions" | "resources";
 export type EcsEventOp = "emit" | "read";

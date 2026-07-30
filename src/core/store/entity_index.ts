@@ -1,12 +1,12 @@
 /**
  * Entity-index SAB region — `EntityID` → `(archetype_id, row, generation)`
- * lookup table shared with the Zig sim. (#245 / Phase 4 PR 4B)
+ * lookup table shared with the Zig sim.
  *
  * Every hot fixed-update system that needs to resolve an `EntityID`
  * held in a column (e.g. a component field that points at another
  * entity → that entity's columns) has to do
- * `entityId → archetype + row` translation. The plan forbids
- * WASM-into-TS callbacks during `tick()` (§4 / §5.2), so the lookup
+ * `entityId → archetype + row` translation. WASM-into-TS callbacks
+ * during `tick()` are forbidden, so the lookup
  * tables must live in shared memory.
  *
  * Layout:
@@ -77,7 +77,7 @@ export const ENTITY_INDEX_DEFAULT_CAPACITY = 1 << 20;
 export function entityIndexRegionBytes(capacity: number): number {
 	if (capacity < 0 || !Number.isInteger(capacity)) {
 		throw new EntityIndexError(
-			`entity_index capacity must be a non-negative integer (got ${capacity})`
+			`entity index capacity must be a non-negative integer (got ${capacity})`
 		);
 	}
 	return ENTITY_INDEX_HEADER_BYTES + capacity * ENTITY_INDEX_BYTES_PER_SLOT;
@@ -117,7 +117,7 @@ export function initEntityIndexRegion(
 ): void {
 	if (capacity < 0 || !Number.isInteger(capacity)) {
 		throw new EntityIndexError(
-			`entity_index capacity must be a non-negative integer (got ${capacity})`
+			`entity index capacity must be a non-negative integer (got ${capacity})`
 		);
 	}
 	view.setUint32(regionOff + ENTITY_INDEX_HEADER_OFFSETS.length, 0, true);

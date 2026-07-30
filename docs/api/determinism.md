@@ -1,28 +1,41 @@
 # Determinism
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** The determinism surface (state digest + world snapshot/resume) live on the **`ecs.snapshots`** facade — `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()` / `ecs.snapshots.restore(bytes)` (the flat `snapshot()`/`restoreInto()`), `ecs.snapshots.captureSparse()` / `restoreSparse()`, and the `ecs.snapshots.deterministic` flag. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
+> **0.5.0 — a grouped surface.** The determinism surface is the state digest with the snapshot and
+> resume functions. It is on the **`ecs.snapshots`** facade. The members are
+> `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()`, `ecs.snapshots.restore(bytes)`,
+> `ecs.snapshots.captureSparse()`, `restoreSparse()`, and the `ecs.snapshots.deterministic` flag.
+> `capture` and `restore` were the flat `snapshot()` and `restoreInto()`. Version 0.5.0 **removed**
+> the flat `ecs.*` forms of 0.4 and earlier.
 
-A **deterministic** `ECS` guarantees that the same sequence of operations produces the same state, **bit-for-bit** — across backings (heap vs `SharedArrayBuffer`), across processes on the same architecture, and after a snapshot round-trip. That's the foundation for lockstep multiplayer, replay, deterministic debugging, and save/load.
+A **deterministic** `ECS` guarantees that the same sequence of operations gives the same state,
+**bit for bit**. This is true across storage types (heap or `SharedArrayBuffer`), across processes
+on the same architecture, and after a snapshot and a restore. That guarantee is the base for
+lockstep multiplayer, replay, deterministic debugging, and save and load.
 
-Determinism is **opt-in** because it costs a little (canonical ordering, an integer-only column rule). A plain `ECS` runs faster and doesn't expose the hash/snapshot surface.
+Determinism is **optional**, because it has a cost: the engine keeps a canonical order, and the
+rule that permits integer columns only applies. A plain `ECS` keeps no canonical order, and it does
+not expose the hash and snapshot surface.
 
 ```ts
 const ecs = new ECS({ deterministic: true });
-const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns — see the float ban
+const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns — see the rule against floats
 
-// …run identical history on two ECS instances…
-ecs.snapshots.stateHash();   // same number on both, at the same tick boundary
+// …run the same history on two ECS instances…
+ecs.snapshots.stateHash();   // the same number on both, at the same tick boundary
 ```
 
-## Turning it on
+## How to turn it on
 
 ```ts
-new ECS({ deterministic: true });   // default false
-ecs.snapshots.deterministic;        // read the flag back — a getter on the facade
+new ECS({ deterministic: true });   // false by default
+ecs.snapshots.deterministic;        // read the flag — a getter on the facade
 ```
 
-The flag gates exactly the canonical-ordering surface — the rest of the `ecs.snapshots` facade: `stateHash`, `capture`/`restore`, `captureSparse`/`restoreSparse`. Call any of them without it and you get `DETERMINISM_DISABLED`. Memory-safety invariants and the enabled/disabled partition are always on regardless.
+The flag controls exactly the surface that has a canonical order: `stateHash`, `capture` and
+`restore`, and `captureSparse` and `restoreSparse`. If you call one of them without the flag, you
+get `DETERMINISM_DISABLED`. The invariants for memory safety, and the division into enabled and
+disabled rows, are always active.
 
 ## `stateHash`
 
@@ -30,58 +43,114 @@ The flag gates exactly the canonical-ordering surface — the rest of the `ecs.s
 ecs.snapshots.stateHash(): number;
 ```
 
-An FNV-1a-32 digest folded over `(archetype id, live row count, enabled count, live column bytes)` for every archetype in id order, then over sparse stores in canonical entity-index order, then over multi-relation forward target sets in canonical order. It is **backing-agnostic** — a heap `ECS` and a `SharedArrayBuffer` `ECS` with identical history produce the same number — and its cost scales with live entity count / sparse membership, not buffer capacity.
+This is an FNV-1a-32 digest. The engine folds it over
+`(archetype id, live row count, enabled count, live column bytes)` for each archetype in id order.
+It then folds the sparse stores, in a canonical order of the entity index. It then folds the
+forward target sets of the multi relations, in a canonical order. The digest is **independent of
+the storage type**: a heap `ECS` and a `SharedArrayBuffer` `ECS` with the same history give the same
+number. Its cost is proportional to the number of live entities and to the sparse membership, and
+not to the capacity of the buffer.
 
 > [!IMPORTANT]
-> Compare hashes **only at a tick boundary** (between `update()` calls) or at a phase-boundary settle point (via [`ecs.setTrace`](./tracing.md), whose `phaseBoundary` hook is the safe seam to read `stateHash()` and bisect a divergence to one phase). The digest is **opaque** — never compare it against a hard-coded literal; endianness and the exact fold are implementation details, not a wire contract. It's valid only within one architecture/algorithm.
+> Compare two hashes **at a tick boundary only**, which is between two `update()` calls, or at a
+> settle point on a phase boundary. For the second option, use [`ecs.setTrace`](./tracing.md). Its
+> `phaseBoundary` hook is the safe point to read `stateHash()`, and to reduce a divergence to one
+> phase. The digest is **opaque**. Never compare it against a literal that you wrote by hand,
+> because the byte order and the exact fold are internal details, and not a contract for the wire.
+> The digest is valid inside one architecture and one algorithm only.
 
-## Snapshot & restore
+## Snapshot and restore
 
 ```ts
 ecs.snapshots.capture(): Uint8Array;           // capture the full live ECS
-ecs.snapshots.restore(bytes: Uint8Array): void; // mount a snapshot onto this live ECS
-const ECS_SNAPSHOT_VERSION: number;  // tags the combined-frame format; restore throws on a version mismatch
+ecs.snapshots.restore(bytes: Uint8Array): void; // put a snapshot onto this live ECS
+const ECS_SNAPSHOT_VERSION: number;  // this tags the format of the combined frame; restore throws for a different version
 class ECSRestoreError extends Error {}
 ```
 
-A snapshot captures three sections into one self-contained `Uint8Array`: **dense** column bytes + the entity index, **sparse** components + relations (canonical order), and **host bookkeeping** (the tick, the entity recycle free-list *in live order*, alive count, per-archetype partition counts). Take it at a tick boundary.
+A snapshot captures three sections into one `Uint8Array` that is complete in itself:
+
+- **dense** — the column bytes and the entity index;
+- **sparse** — the sparse components and the relations, in a canonical order;
+- **host bookkeeping** — the tick, the free list of recycled entities *in live order*, the count of
+  live entities, and the partition counts of each archetype.
+
+Take a snapshot at a tick boundary.
 
 > [!IMPORTANT]
-> A snapshot does **not** capture resources, events, or change-detection baselines. Re-seed resources after a restore; events are per-frame anyway; `changed()` queries reset their tick baseline.
+> A snapshot does **not** capture the resources, the events, or the baselines of change detection.
+> Set the resources again after a restore. The events are for one frame in any condition. Each
+> `changed()` query sets its tick baseline to the start value.
 
-### Fail-closed restore
+### Restore fails safely
 
-`restore` validates the incoming bytes **completely, before touching the live backing** — magic/version, exact frame length, entity-index capacity, the archetype set, each column's `(componentId, fieldId, typeTag)` field identity, and index bounds. Only then does it overwrite. Any mismatch throws (`ECSRestoreError` for the combined frame/host sections, `StoreRestoreError` on the dense column-store side, `SparseRestoreError` on the sparse side) and **leaves the live `ECS` untouched**.
+`restore` validates the incoming bytes **completely, before it touches the live backing**. It
+checks:
+
+- the magic number and the version;
+- the exact length of the frame;
+- the capacity of the entity index;
+- the set of archetypes;
+- the `(componentId, fieldId, typeTag)` identity of each column;
+- the bounds of each index.
+
+Only then does it write. Each difference throws, and it **leaves the live
+`ECS` unchanged**. The error is `ECSRestoreError` for the combined frame and the host sections,
+`StoreRestoreError` on the side of the dense column store, and `SparseRestoreError` on the sparse
+side.
 
 > [!WARNING]
-> Restore preconditions — the target `ECS` must:
-> - be built with the **same component/archetype registration** as the snapshot (the graph is rebuilt from your registration code, not the bytes) — **prewarm** it (register the same components/templates, run `startup()`) so its archetype set is stable;
-> - have the **same entity-index capacity** — size both with the same [`memory`](./memory.md) options;
+> The conditions for a restore. The target `ECS` must:
+> - have the **same registration of components and archetypes** as the snapshot, because the engine
+>   rebuilds the graph from your registration code, and not from the bytes. To **prepare** the ECS,
+>   register the same components and templates, and then run `startup()`. Its set of archetypes is
+>   then stable;
+> - have the **same capacity of the entity index**, so give the same [`memory`](./memory.md)
+>   options to both;
 > - be `{ deterministic: true }`.
 >
-> Feeding a bare column-store snapshot (not a full-world `capture()`) fails with a clear magic error.
+> If you give it a snapshot of the column store alone, and not a full-world `capture()`, it fails
+> with a clear error about the magic number.
 
-## Record & replay
+## Record and replay
 
-Because every mutation from a host/UI crosses one apply chokepoint, you can log the applied commands per tick and replay a whole session deterministically. See the [host-write seam](./host-write-seam.md#record--replay) for `HostCommandRecorder` / `replayCommandLog`.
+Each mutation from a host or a UI goes through one control point. So you can log the applied
+commands for each tick, and then replay a full session deterministically. See the
+[host write path](./host-write-seam.md#record--replay) for `HostCommandRecorder` and
+`replayCommandLog`.
 
 > [!TIP]
-> On a deterministic `ECS`, `replayCommandLog(..., { hash: true })` returns the per-tick `stateHash` sequence. Replaying the same log from the same seed **must** reproduce that exact sequence — that equality *is* the fidelity check. With determinism off, replay still reproduces state structurally, but there's no hash to compare.
+> On a deterministic `ECS`, `replayCommandLog(..., { hash: true })` gives the sequence of
+> `stateHash` values for each tick. A replay of the same log from the same seed **must** reproduce
+> that exact sequence, and that equality *is* the test of fidelity. With determinism off, a replay
+> still reproduces the state structurally, but there is no hash to compare.
 
-## What breaks determinism
+## What makes determinism fail
 
 > [!WARNING]
-> **Floats.** On a deterministic `ECS`, registering an `f32`/`f64` column is rejected at registration (`NON_DETERMINISTIC_COLUMN_TYPE`) — IEEE-754 rounds differently across V8/Bun/Zig by a ULP, a silent per-tick divergence. Because the array shorthand defaults to `"f64"`, you **must** pass an integer type: `ecs.registerComponent(["x", "y"], "i32")`. Represent fractional quantities as fixed-point (e.g. Q16.16).
+> **Floats.** On a deterministic `ECS`, registration rejects an `f32` or `f64` column
+> (`NON_DETERMINISTIC_COLUMN_TYPE`). IEEE-754 rounds differently in V8, Bun, and Zig, by one unit
+> in the last place, which gives a quiet divergence in each tick. The array shorthand uses `"f64"`
+> by default. So you **must** give an integer type:
+> `ecs.registerComponent(["x", "y"], "i32")`. Use fixed-point numbers for fractional quantities,
+> for example Q16.16.
 
-Other divergence sources, all on you to avoid:
+You must avoid the other sources of divergence yourself:
 
-- **`Math.random`, wall-clock, network jitter** — any non-lockstep input folds into column bytes and diverges the hash. Seed an RNG deterministically and store its state in a component.
-- **Iteration / insertion order** — the canonical ordering the flag enforces (sparse indices, sorted relation sets, free-list reuse order) *is* what makes replay reproduce; don't reintroduce order-dependence.
-- **Resources & events** are excluded from the hash — don't rely on them to carry reproducible sim state (see above).
+- **`Math.random`, clock time, and network jitter.** Each input that is not part of the lockstep
+  goes into the column bytes and makes the hash different. Give a deterministic seed to a random
+  number generator, and store its state in a component.
+- **The order of iteration and insertion.** The canonical order that the flag holds you to is what
+  makes a replay reproduce the result. This includes the sparse indices, the sorted relation sets,
+  and the order in which the engine uses the free list. Do not introduce a dependence on a
+  different order.
+- **Resources and events** are not part of the hash. Do not use them to carry simulation state that
+  you must reproduce (see above).
 
 ## See also
 
-- [memory](./memory.md) — sizing both instances identically for restore; the shared/heap backings that agree on the hash
-- [host-write seam](./host-write-seam.md) — the command log that record/replay is built on
-- [components](./components.md) — the integer-column requirement
-- [tracing](./tracing.md) — `phaseBoundary` for bisecting a divergence
+- [memory](./memory.md) — how to size two instances the same for a restore, and the shared and heap
+  storage that agree on the hash
+- [the host write path](./host-write-seam.md) — the command log that record and replay is built on
+- [components](./components.md) — the requirement for integer columns
+- [traces](./tracing.md) — `phaseBoundary`, to reduce a divergence to one phase

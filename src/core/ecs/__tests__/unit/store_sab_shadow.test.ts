@@ -1,13 +1,13 @@
 /**
- * Store SAB shadow (#171 §6.1.9 Phase 1).
+ * Store SAB shadow.
  *
  * The Store now maintains a parallel ColumnStore alongside its heap-backed
  * archetype columns. The shadow is built incrementally — every new
  * archetype discovered via `archGetOrCreateFromMask` plants a
  * matching region in the SAB via `extendColumnStore`. Heap columns remain
- * the source of truth; the shadow is not read in Phase 1.
+ * the source of truth; the shadow is not read yet.
  *
- * These tests pin the discovery path so the upcoming Phase 2 flip to
+ * These tests pin the discovery path so a later flip to
  * `Archetype.fromColumnStore` lands on top of a shadow whose archetype
  * graph already matches the heap-side one one-for-one.
  */
@@ -29,7 +29,7 @@ const Velocity = { vx: "f32", vy: "f32" } as const;
 const Health = { current: "i32", max: "i32" } as const;
 const Tag = {} as const;
 
-describe("Store — SAB shadow (#171 §6.1.9 Phase 1)", () => {
+describe("Store — SAB shadow", () => {
 	it("seeds the SAB shadow with the empty archetype at construction", () => {
 		const store = new Store();
 		// The constructor plants the empty (zero-component) archetype.

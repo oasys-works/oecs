@@ -1,5 +1,5 @@
 /**
- * Multi-world isolation (#785).
+ * Multi-world isolation.
  *
  * Simulation state is per-`Store`, so most multi-world concern is already
  * isolated. The untested seam is the *process-global* mutable singletons that
@@ -11,7 +11,7 @@
  * These tests run N worlds with interleaved ticks and assert zero state bleed,
  * and exercise the `accessCheck` re-entrancy case (a system that ticks a
  * *second* world inside its own open access span) — the guard `ECS.update()`
- * restores at the tick boundary (#785).
+ * restores at the tick boundary.
  *
  * NOTE — the two upstream cases that pinned the parallel-kernel `REGISTRY`
  * cross-world collision contract (a process-global `Map<string, fn>`
@@ -57,7 +57,7 @@ function buildWorld(seed: number): { world: ECS; tick: () => void } {
 	return { world, tick: () => world.update(1 / 60) };
 }
 
-describe("multi-world isolation (#785)", () => {
+describe("multi-world isolation", () => {
 	// ────────────────────────────────────────────────────────────────────────
 	// AC1: N interleaved worlds, zero state bleed via shared globals.
 	// ────────────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ describe("multi-world isolation (#785)", () => {
 	// drives world B's tick, B's schedule opens and closes its own spans,
 	// ending with the global slot nulled. Without a save/restore at the tick
 	// boundary, A's enforcement would be silently disabled for the rest of its
-	// body. `ECS.update` snapshots + restores the caller's span (#785), the same
+	// body. `ECS.update` snapshots + restores the caller's span, the same
 	// way the observer dispatch already does for nested spans, so A's span is
 	// intact — and correctly ATTRIBUTED to A's system — after B's tick.
 	// ────────────────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ describe("multi-world isolation (#785)", () => {
 			worldB.startup();
 
 			// World A: its system declares access to `Allowed` only. Mid-span it
-			// ticks world B, then reads the UNDECLARED `Forbidden`. Pre-#785 that
+			// ticks world B, then reads the UNDECLARED `Forbidden`. Once, that
 			// read silently passed (B's tick nulled the span); now it must throw,
 			// attributed to A's system.
 			const worldA = new ECS();

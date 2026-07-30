@@ -1,7 +1,7 @@
 /**
- * Generic consumer region registry (#623 — de-game the SAB substrate).
+ * Generic consumer region registry (it de-games the SAB substrate).
  *
- * The load-bearing acceptance claim for the epic: a consumer can declare an
+ * The load-bearing acceptance claim: a consumer can declare an
  * ARBITRARY named region (a `region_id` the engine has never heard of) and the
  * engine lays it out, addresses it through the generic region-table directory,
  * and — crucially — snapshots and restores it across a SAB grow without knowing
@@ -50,7 +50,7 @@ const ARCH: ArchetypeSpec = {
 	columns: [{ componentId: 0, fieldId: 0, typeTag: TYPE_TAG.u32 }]
 };
 
-describe("generic consumer region table (#623)", () => {
+describe("generic consumer region table", () => {
 	it("lays out a fabricated non-game region and resolves it by id", () => {
 		const store = createColumnStore([ARCH], undefined, {
 			regions: [fabricatedRegion(FABRICATED_ID, 64, 0xcafe_f00d)]
@@ -85,7 +85,7 @@ describe("generic consumer region table (#623)", () => {
 		});
 		const off0 = findRegionOffset(store.view, FABRICATED_ID);
 		// Write live bytes AFTER init — these are the consumer's runtime state
-		// that must survive a realloc (the class of data #245 lost for the
+		// that must survive a realloc (the class of data once lost for the
 		// mechanism regions; here we prove it for a consumer region).
 		store.view.setUint32(off0 + 8, 0xdead_beef, true);
 		store.view.setUint32(off0 + 60, 0x0bad_cafe, true); // last u32 in the 64-byte region
@@ -153,7 +153,7 @@ describe("generic consumer region table (#623)", () => {
 //     exactly like the extend slow path.
 //   - in-place `growColumnStore` (growable allocator): like the in-place extend,
 //     the region is untouched while only the grown archetype's columns relocate.
-describe("consumer regions survive every grow/extend path (#623)", () => {
+describe("consumer regions survive every grow/extend path", () => {
 	it("carries a consumer region across an IN-PLACE extend (growable allocator)", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const store = createColumnStore([ARCH], alloc, {
@@ -226,8 +226,8 @@ describe("consumer regions survive every grow/extend path (#623)", () => {
 // garbage count. Reading it blindly drives a huge `new Array(count)` and
 // out-of-bounds `getUint32` reads — surfacing a raw `RangeError` rather than a
 // typed registry error. The readers now bound `tableOff + count*ENTRY_BYTES`
-// against the buffer and throw `RegionRegistryError`. (#729)
-describe("header region-table readers reject an overrunning count (#729)", () => {
+// against the buffer and throw `RegionRegistryError`.
+describe("header region-table readers reject an overrunning count", () => {
 	/** A standalone DataView with the header's `region_table_off` pointing just
 	 * past the header and a `region_table_count` whose directory runs past the
 	 * end of the buffer. Only the two header fields the readers consult are

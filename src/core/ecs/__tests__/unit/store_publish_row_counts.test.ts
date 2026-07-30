@@ -1,14 +1,13 @@
 /**
- * `Store.publishRowCountsToDescriptor` correctness and idempotence
- * (#323 + #324).
+ * `Store.publishRowCountsToDescriptor` correctness and idempotence.
  *
- * #323 — the lockstep descriptor walk must stamp every SAB-backed
+ * The lockstep descriptor walk must stamp every SAB-backed
  * archetype's live `length` into its descriptor's `row_count` field
  * without allocating a per-call lookup Map. Equivalence with the prior
  * behaviour is verified by reading back the descriptor region and
  * checking each archetype's `row_count` matches `Archetype.length`.
  *
- * #324 — the publish path is gated by an internal `_rowCountsDirty`
+ * The publish path is gated by an internal `_rowCountsDirty`
  * flag set by every mutation site (`_mark_queries_dirty` + immediate
  * `Store.destroyEntity`) and cleared by publish. Read-only tick phases
  * call `ctx.flush()` which drains empty buffers and then invokes
@@ -38,7 +37,7 @@ function rowCountByArchId(store: Store): Map<number, number> {
 	return out;
 }
 
-describe("Store.publish_row_counts_to_descriptor (#323 + #324)", () => {
+describe("Store.publish_row_counts_to_descriptor", () => {
 	it("stamps live archetype length into every SAB descriptor's row_count", () => {
 		const store = new Store(8);
 		const Pos = store.registerComponent(Position);
@@ -78,7 +77,7 @@ describe("Store.publish_row_counts_to_descriptor (#323 + #324)", () => {
 		expect(counts.get(posVelArch)).toBe(2);
 	});
 
-	it("is a no-op when nothing has changed since the last publish (#324)", () => {
+	it("is a no-op when nothing has changed since the last publish", () => {
 		const store = new Store(8);
 		const Pos = store.registerComponent(Position);
 
@@ -152,7 +151,7 @@ describe("Store.publish_row_counts_to_descriptor (#323 + #324)", () => {
 		expect(rowCountByArchId(store).get(archId)).toBe(4);
 
 		// Immediate-mode destroy bypasses _mark_queries_dirty (known bug
-		// #316) but MUST still flag row_counts dirty — otherwise the SAB
+		// path) but MUST still flag row_counts dirty — otherwise the SAB
 		// descriptor would silently keep the pre-destroy count and any
 		// WASM tick reading it would loop over a freed slot.
 		store.destroyEntity(entities[0]);

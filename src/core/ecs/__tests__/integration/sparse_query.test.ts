@@ -1,5 +1,5 @@
 /**
- * Sparse storage class — query integration (#469 / ADR-0011).
+ * Sparse storage class — query integration.
  *
  * The second query-match path: queries can `withSparse` / `withoutSparse`
  * a sparse component and iterate the matching entities via `forEachEntity`,
@@ -20,7 +20,8 @@ const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
 // Collect the entities a sparse query yields, as a sorted plain-number array
-// (iteration order over a sparse set is not canonical — determinism is #470).
+// (iteration order over a sparse set is not canonical — the determinism
+// paths sort first).
 function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] {
 	const out: number[] = [];
 	q.forEachEntity((e) => out.push(e as number));
@@ -29,7 +30,7 @@ function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-describe("ECS sparse query integration (#469)", () => {
+describe("ECS sparse query integration", () => {
 	//=========================================================
 	// withSparse — members only, across all archetypes
 	//=========================================================
@@ -268,7 +269,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(base.withSparse(Marked)).toBe(base.withSparse(Marked));
 	});
 
-	it("multi-arg require_sparse returns a stable cached query (#497)", () => {
+	it("multi-arg require_sparse returns a stable cached query", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -279,7 +280,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(base.withSparse(A, B)).toBe(base.withSparse(A, B));
 	});
 
-	it("multi-arg exclude_sparse returns a stable cached query (#497)", () => {
+	it("multi-arg exclude_sparse returns a stable cached query", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -287,7 +288,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(base.withoutSparse(A, B)).toBe(base.withoutSparse(A, B));
 	});
 
-	it("multi-arg require_sparse(A, B) is the same instance as the chained form (#497)", () => {
+	it("multi-arg require_sparse(A, B) is the same instance as the chained form", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -298,7 +299,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(base.withoutSparse(A, B)).toBe(base.withoutSparse(A).withoutSparse(B));
 	});
 
-	it("multi-arg require_sparse still yields the correct intersection (#497)", () => {
+	it("multi-arg require_sparse still yields the correct intersection", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -368,7 +369,7 @@ describe("ECS sparse query integration (#469)", () => {
 	});
 
 	//=========================================================
-	// Dense-path methods guard against sparse terms (#556)
+	// Dense-path methods guard against sparse terms
 	//=========================================================
 	//
 	// count() / forEach() / archetype_count walk only the dense archetype list
@@ -377,7 +378,7 @@ describe("ECS sparse query integration (#469)", () => {
 	// steering the caller to forEachEntity. Tests run under vitest, where
 	// __DEV__ is true, so the guard is live.
 
-	it("count() throws on a query carrying a require_sparse term (#556)", () => {
+	it("count() throws on a query carrying a require_sparse term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -389,7 +390,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
-	it("count() throws on a query carrying an exclude_sparse term (#556)", () => {
+	it("count() throws on a query carrying an exclude_sparse term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Stunned = world.registerSparseTag();
@@ -400,7 +401,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
-	it("for_each() throws on a sparse-derived query (#556)", () => {
+	it("for_each() throws on a sparse-derived query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -412,7 +413,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
 	});
 
-	it("archetype_count throws on a sparse-derived query (#556)", () => {
+	it("archetype_count throws on a sparse-derived query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -424,7 +425,7 @@ describe("ECS sparse query integration (#469)", () => {
 		expect(() => q.archetypeCount).toThrow(/forEachEntity/);
 	});
 
-	it("dense-only queries keep count() / for_each() / archetype_count working (#556)", () => {
+	it("dense-only queries keep count() / for_each() / archetype_count working", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const a = world.spawn();

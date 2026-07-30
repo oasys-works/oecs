@@ -1,7 +1,6 @@
 /**
- * Hierarchy depth-ordering QUERY TERM (#581) — `.hierarchy(R)`, the in-query
- * analog of flecs `cascade` / bitECS `Hierarchy()`. Re-homed from the closed
- * parity epic #517 §3.
+ * Hierarchy depth-ordering QUERY TERM — `.hierarchy(R)`, the in-query
+ * analog of flecs `cascade` / bitECS `Hierarchy()`.
  *
  * `.hierarchy(R)` reorders a query's matched entities into **hierarchy depth
  * order** over the exclusive relation `R` (parents before children) — it does NOT
@@ -44,7 +43,7 @@ function order(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] 
 	return out;
 }
 
-describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
+describe(".hierarchy(R) — canonical depth ordering", () => {
 	it("yields parents before children: depth ascending, then eid ascending in band", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -138,7 +137,7 @@ describe(".hierarchy(R) — canonical depth ordering (#581)", () => {
 	});
 });
 
-describe(".hierarchy(R) — max_depth (#581)", () => {
+describe(".hierarchy(R) — max_depth", () => {
 	it("drops entities deeper than max_depth (inclusive)", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -211,7 +210,7 @@ describe(".hierarchy(R) — intersection / composition", () => {
 	});
 
 	it("survives a require_sparse composed AFTER hierarchy (routes through _derive_sparse)", () => {
-		// The #592 drop-on-compose trap: a sparse term composed onto a
+		// The drop-on-compose trap: a sparse term composed onto a
 		// hierarchy-bearing query must thread `_hierarchy` through `_deriveSparse`,
 		// or the ordering is silently lost. Build the SAME world as the
 		// hierarchy-last sparse test and assert both orders agree with the spec.
@@ -283,8 +282,8 @@ describe(".hierarchy(R) — guards", () => {
 		const Likes = world.relations.register({ multi: true });
 		const a = world.spawn();
 		world.addComponent(a, Node);
-		// cast (§10c): deliberately defeat the cardinality brand to assert the
-		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
+		// cast: deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop
 		expect(() =>
 			world
 				.query(Node)
@@ -330,9 +329,9 @@ describe(".hierarchy(R) — guards", () => {
 	it("rejects a negative or non-integer max_depth (caller typo), accepts valid limits", () => {
 		const world = new ECS();
 		const R = world.relations.register();
-		expect(() => world.query().hierarchy(R, -1)).toThrow(/max_depth/);
-		expect(() => world.query().hierarchy(R, 1.5)).toThrow(/max_depth/);
-		expect(() => world.query().hierarchy(R, NaN)).toThrow(/max_depth/);
+		expect(() => world.query().hierarchy(R, -1)).toThrow(/maxDepth/);
+		expect(() => world.query().hierarchy(R, 1.5)).toThrow(/maxDepth/);
+		expect(() => world.query().hierarchy(R, NaN)).toThrow(/maxDepth/);
 		// Valid limits do not throw: 0, a positive integer, and the unbounded sentinel.
 		expect(() => world.query().hierarchy(R, 0)).not.toThrow();
 		expect(() => world.query().hierarchy(R, 3)).not.toThrow();
@@ -356,7 +355,7 @@ describe(".hierarchy(R) — cached, stable instances", () => {
 	});
 });
 
-describe(".hierarchy(R) — access declaration (relation_reads, #496)", () => {
+describe(".hierarchy(R) — access declaration (relation_reads)", () => {
 	function base(overrides: Partial<SystemConfig>): SystemConfig {
 		return {
 			reads: [],

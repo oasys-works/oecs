@@ -1,5 +1,5 @@
 /**
- * ECS facade — pass-through band guard (H3 phase 1).
+ * ECS facade — pass-through band guard.
  *
  * `ecs.ts` ends with a marker-delimited "STORE PASS-THROUGH BAND": the
  * contiguous section holding every ECS method that is a *pure mechanical
@@ -22,8 +22,7 @@
  * may only forward parameters (identifiers / spreads) or supply inert
  * literals (e.g. `registerSignal`'s `[]`, `registerTag`'s `{}` cast).
  *
- * See plans/H3-ecs-facade-slimming.md (phase 1) and the band header comment
- * in ecs.ts.
+ * See the band header comment in ecs.ts.
  */
 
 import { describe, expect, it } from "vitest";
@@ -152,7 +151,7 @@ function checkBody(name: string, body: ts.Block, violations: Violation[]): void 
 	}
 }
 
-describe("ECS pass-through band (H3 phase 1)", () => {
+describe("ECS pass-through band", () => {
 	const beginOffset = source.indexOf(BEGIN_MARKER);
 	const endOffset = source.indexOf(END_MARKER);
 
@@ -177,8 +176,8 @@ describe("ECS pass-through band (H3 phase 1)", () => {
 		expect(ecsClass).toBeDefined();
 		// 38 delegating members after the 0.5.0 flat-form removal (the
 		// relations/events/resources/snapshots delegations moved to the
-		// facades). Shrinking is fine — methods may move out as H1
-		// progresses — but an empty band means the markers drifted.
+		// facades). Shrinking is fine — methods can move out later — but an
+		// empty band means the markers drifted.
 		expect(bandMembers.length).toBeGreaterThan(30);
 		const names = new Set(
 			bandMembers.map((m) => (m.name && ts.isIdentifier(m.name) ? m.name.text : "?"))

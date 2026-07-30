@@ -1,5 +1,5 @@
 /**
- * The per-world frame-trace seam (ADR-0030). Asserts that a `FrameTraceRecorder`
+ * The per-world frame-trace seam. Asserts that a `FrameTraceRecorder`
  * attached via `ECS.setTrace` captures one frame per `update()`, with the causal
  * nesting the seam promises: `ctx.commands.*` events land inside the issuing
  * system's `systemStart`/`systemEnd` span, and observer firings land between a
@@ -253,7 +253,7 @@ describe("frame-trace seam", () => {
 	it("fires phase_boundary at each phase's post-flush settle point, in order", () => {
 		// A sink that records flushEnd and phaseBoundary into one stream, so we can
 		// pin that phaseBoundary fires immediately AFTER its phase's flushEnd — the
-		// consistent, fingerprint-able point (#797 / ADR-0032).
+		// consistent, fingerprint-able point.
 		class PhaseProbe extends FrameTraceRecorder {
 			readonly marks: string[] = [];
 			override flushEnd(phase: SCHEDULE): void {
@@ -322,7 +322,7 @@ describe("frame-trace seam", () => {
 	});
 
 	it("does NOT reconcile when an onSet observer mutates at the tail (the documented limitation, fenced)", () => {
-		// The complement of the reconciliation test above, fencing ADR-0032's stated
+		// The complement of the reconciliation test above, fencing the stated
 		// limitation: the POST_UPDATE phaseBoundary fires BEFORE the tick-tail onSet
 		// dispatch (ecs.ts), so a world whose onSet observer mutates hash-relevant state
 		// at the tail reads a boundary hash that PRECEDES that mutation — it must diverge

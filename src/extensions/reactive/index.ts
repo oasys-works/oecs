@@ -1,8 +1,8 @@
 /**
- * The production ECS→UI reactive bridge (#672 / ADR-0021).
+ * The production ECS→UI reactive bridge.
  *
- * Drains the engine's own change detection (ADR-0013 component observers, riding
- * the ADR-0012 per-row dirty list) into a `reactiveMap` — publishing O(changed),
+ * Drains the engine's own change detection (component observers, riding
+ * the per-row dirty list) into a `reactiveMap` — publishing O(changed),
  * not O(all), each tick. Declarative selection + closure projection (the Bevy
  * `ExtractComponent` / WatermelonDB `observeWithColumns` shape):
  *   - `syncComponentToMap(def, project)` — one component, grain `"entity"`/`"column"`.
@@ -11,7 +11,7 @@
  *
  * For singleton/ephemeral UI state (net status+latency, FPS/mem, wave timer), model
  * it as a component on a reserved singleton entity and read it keyless via per-field
- * channels (#687 / ADR-0024) — NOT a separate reactive-resource subsystem:
+ * channels — NOT a separate reactive-resource subsystem:
  *   - `syncSingletonToStruct(def, eid, [fields])` — one singleton entity → `reactiveStruct`.
  *   - `syncSingletonToArray(def, eid, [fields])` — one singleton entity → `reactiveArray` (ordered slots).
  *

@@ -1,6 +1,6 @@
 /**
  * Command dispatch — the generic drain surface a consumer registers against
- * (#624, game-agnostic ECS / epic #616).
+ * (a game-agnostic ECS).
  *
  * The command ring (`command_ring.ts`) carries opaque `(opCode, payload)`
  * slots; the engine never interprets a code. This module is the thin,
@@ -59,11 +59,11 @@ export class CommandDispatcher {
 	on<T>(opCode: number, codec: PayloadCodec<T>, handler: (value: T) => void): this {
 		if (opCode === COMMAND_OP_EMPTY) {
 			throw new CommandRingError(
-				`cannot register a handler for op_code 0 (reserved as the empty-slot marker)`
+				`cannot register a handler for opCode 0 (reserved as the empty-slot marker)`
 			);
 		}
 		if (opCode < 0 || opCode > 0xff || !Number.isInteger(opCode)) {
-			throw new CommandRingError(`command op_code must be a u8 in [1, 255] (got ${opCode})`);
+			throw new CommandRingError(`command opCode must be a u8 in [1, 255] (got ${opCode})`);
 		}
 		this.bindings.set(opCode, {
 			decode: (payload) => codec.decode(payload),

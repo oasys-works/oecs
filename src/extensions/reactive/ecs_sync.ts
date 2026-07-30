@@ -1,14 +1,14 @@
 /**
- * ecs_sync — the production ECS→UI reactive bridge (#672, the #646 "unlock").
+ * ecs_sync — the production ECS→UI reactive bridge.
  *
  * Each tick, publish into a `reactiveMap` *only the entities the ECS actually
  * changed* — O(changed) publish work, not O(all). This is the claim that decided
- * #646/ADR-0021 to build the kernel in-house: because we own BOTH the ECS change
+ * the decision to build the kernel in-house: because we own BOTH the ECS change
  * detection AND the reactive kernel, the bridge can drain exactly what the ECS
  * flagged dirty this tick. A third-party kernel is blind to our change detection,
  * so it must blind-republish every entity every frame (O(all)) and lean on a
- * downstream equality skip. Proven against a mock in `workbench/reactive/`; this
- * wires it to the REAL engine.
+ * downstream equality skip. We first proved this claim against a mock. This
+ * module connects it to the REAL engine.
  *
  * The API follows the shape every strong prior art converges on (Bevy
  * `ExtractComponent`, WatermelonDB `observeWithColumns`, TanStack `select`, Solid
@@ -23,17 +23,17 @@
  *     STALE — its change isn't subscribed; this is Bevy's `Or<Changed<A>,
  *     Changed<B>>` lesson and why the join is a first-class entry point.)
  *
- * Dirty source: ADR-0013 component observers, NOT a per-frame scan. Per-component
- * grain (`workbench/reactive/bench_ecs_publish_work.ts` measured the crossover):
+ * Dirty source: component observers, NOT a per-frame scan. Per-component
+ * grain — we measured the point where one becomes better than the other:
  *   - **"entity"** (default) — per-entity `onSet` drains the opt-in per-row dirty
- *     list (#531): O(changed) publishes. The right default for UI (most entities
+ *     list: O(changed) publishes. The right default for UI (most entities
  *     idle per frame). Each publish is a random-access read.
  *   - **"column"** — archetype-granular `onSet` republishes every row of a dirty
  *     archetype via SoA column reads: O(dirty-archetype-rows). For a HIGH-churn
  *     component a sequential column sweep beats per-entity random access, and
  *     `reactiveMap`'s value `eq` still collapses it to O(changed) renders.
  *
- * Entity enable/disable (#577) is bridged as a soft remove/re-add (#677, ADR-0023):
+ * Entity enable/disable is bridged as a soft remove/re-add:
  * `onDisable` deletes the row (a disabled entity leaves the default-query result
  * set, so it leaves the channel — flecs query-monitor / Bevy default-query-filter /
  * RxDB observable-query semantics), `onEnable` republishes it. `seedExisting` seeds
@@ -42,7 +42,7 @@
  * but a live `onAdd` fires for a component added to an already-disabled entity (a
  * structural event is enable-agnostic), so each publish guards on `ctx.isDisabled`
  * before writing — completing a (join) membership while disabled must not surface a
- * row the default query excludes (#784). ("Freeze / show-disabled" — Bevy's
+ * row the default query excludes. ("Freeze / show-disabled" — Bevy's
  * `Has<Disabled>` — is a future `includeDisabled`-scoped sync that reads the disabled
  * bit, not a mode of this default-scoped channel.)
  *
@@ -61,7 +61,7 @@
  * batched, so attaching to an already-populated, already-subscribed world is one
  * flush, not one per existing row.
  *
- * Limitations (inherited from the ADR-0013 observer layer; see ADR-0022):
+ * Limitations (inherited from the observer layer):
  *   - **High-churn + `syncFieldsToMap` is the worst allocation path.** `syncFieldsToMap`
  *     builds a fresh object per dirty row and `shallow` runs two `Object.keys` per
  *     compare — fine for low-churn, but for a high-churn component (the case you'd
@@ -96,7 +96,7 @@ import type {
 	SystemContext
 } from "../../core/ecs";
 
-// `shallow` moved to the dependency-free kernel entry (M12); imported for the
+// `shallow` moved to the dependency-free kernel entry; imported for the
 // field-list sugar's default eq and re-exported so existing `/reactive-sync`
 // imports keep working.
 import { shallow } from "../../reactive/shallow";
@@ -271,7 +271,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 
 	const er = new EntityRowReader(def);
 	const publishEntity = (eid: EntityID, ctx: SystemContext): void => {
-		// A disabled entity is absent from the default-query channel (#677 / ADR-0023):
+		// A disabled entity is absent from the default-query channel:
 		// it leaves on disable and is republished by onEnable. The engine pre-filters
 		// disabled out of onSet and the seed, but a LIVE onAdd fires for a component
 		// added to an already-disabled entity (a structural event is enable-agnostic),
@@ -307,7 +307,7 @@ export function syncComponentToMap<S extends ComponentSchema, V>(
 				},
 				onAdd: (eid, ctx) => publishEntity(eid, ctx),
 				onRemove: (eid) => map.delete(eid),
-				// Disable = soft remove from the channel; enable = re-add (#677). The
+				// Disable = soft remove from the channel; enable = re-add. The
 				// column sweep is bounded by enabled rows, so a disabled row would never
 				// refresh — drop it on disable, republish on enable.
 				onDisable: (eid) => map.delete(eid),
@@ -403,7 +403,7 @@ export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
 	};
 	// A value change or a component-add re-evaluates membership and republishes.
 	const publishIfMember = (eid: EntityID, ctx: SystemContext): void => {
-		// Disabled → absent from the default-query channel (#677 / ADR-0023). A live
+		// Disabled → absent from the default-query channel. A live
 		// onAdd fires for a joined component added to an already-disabled entity (the
 		// structural event is enable-agnostic), so completing the join while disabled
 		// must NOT publish a row the `query(...defs)` default excludes — guard here,
@@ -432,7 +432,7 @@ export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
 				onAdd: publishIfMember,
 				onRemove: dropRow,
 				// Disabling any joined component soft-removes the entity from the
-				// channel; enabling re-evaluates membership and republishes (#677). A
+				// channel; enabling re-evaluates membership and republishes. A
 				// disable fires once per carried joined component — `dropRow` is
 				// idempotent, and `publishIfMember` re-checks the full join.
 				onDisable: dropRow,
@@ -484,14 +484,14 @@ export interface SingletonSyncOptions<V extends object = Record<string, number>>
 
 /**
  * Sync ONE singleton entity's single-component state into a `reactiveStruct`,
- * keyless — the singleton/resource shape (ADR-0024). This is how heterogeneous
+ * keyless — the singleton/resource shape. This is how heterogeneous
  * ephemeral UI state (net status + latency, FPS/mem, wave timer, hovered hex) joins
  * the same reactive view as per-entity components: model it as components on a
  * reserved singleton entity (the flecs / Unity-DOTS "singleton-as-entity" model)
  * and read it through per-field channels — NOT a separate reactive-resource
  * subsystem. Resources stay non-reactive internal singletons.
  *
- * It reuses the entity-grain ADR-0013 component observer verbatim, filtered to the
+ * It reuses the entity-grain component observer verbatim, filtered to the
  * one target eid: an `onSet` (or seed `onAdd`) republishes the entity's field values
  * into the struct via per-field setters. The per-field `Object.is` eq means an
  * unchanged field writes nothing — "equal write → 0 renders" — and per-field signals
@@ -505,7 +505,7 @@ export interface SingletonSyncOptions<V extends object = Record<string, number>>
  * `syncFieldsToMap`. Project a subset to channel only what the UI reads.
  *
  * A `reactiveStruct` has a fixed field set and no `delete`, so the map adapter's
- * delete-on-disable (#677 / ADR-0023) has no struct analog: `onRemove`/`onDisable`
+ * delete-on-disable has no struct analog: `onRemove`/`onDisable`
  * **reset the fields to the channel's declared initial values** (`onSet` skips
  * disabled entities), `onEnable` republishes. The defaults are the channel's own
  * initials — the eager `into` struct's declared values (e.g. `NetStats.latency = -1`),
@@ -564,7 +564,7 @@ export function syncSingletonToStruct<
 			onAdd: (e, ctx) => {
 				// Skip an add to an already-disabled singleton (a structural event is
 				// enable-agnostic): it must stay at the channel's defaults until onEnable
-				// republishes, mirroring the map/join publish guard (#677 / ADR-0023).
+				// republishes, mirroring the map/join publish guard.
 				if (e === eid && !ctx.isDisabled(eid)) publish(ctx);
 			},
 			onRemove: (e) => {
@@ -602,7 +602,7 @@ export interface SingletonArraySyncOptions<T> {
 
 /**
  * Sync ONE singleton entity's component into a `reactiveArray`, one slot per field
- * in `fields` order (#685 / ADR-0024) — the ORDERED sibling of `syncSingletonToStruct`,
+ * in `fields` order — the ORDERED sibling of `syncSingletonToStruct`,
  * for positional UI state (the army slots). On every change to the component it
  * `reconcile`s the array from the field values: a slot whose value is unchanged keeps
  * its reference (structural sharing), only changed slots wake. `onRemove`/`onDisable`
@@ -631,7 +631,7 @@ export function syncSingletonToArray<S extends ComponentSchema>(
 	// reconciles to a `fields.length` array, but `reset` reconciles to this
 	// `into`-sized `defaults` snapshot — so a length mismatch oscillates the array's
 	// length on every enable↔disable cycle (waking/absenting rows spuriously). Reject
-	// the misconfiguration at setup rather than let it flap silently. #722
+	// the misconfiguration at setup rather than let it flap silently.
 	if (opts.into !== undefined && defaults.length !== fields.length) {
 		throw new Error(
 			`syncSingletonToArray: into.length (${defaults.length}) must equal fields.length (${fields.length})`
@@ -660,7 +660,7 @@ export function syncSingletonToArray<S extends ComponentSchema>(
 			onAdd: (e, ctx) => {
 				// Skip an add to an already-disabled singleton (a structural event is
 				// enable-agnostic): it must stay at the channel's defaults until onEnable
-				// republishes, mirroring the map/join publish guard (#677 / ADR-0023).
+				// republishes, mirroring the map/join publish guard.
 				if (e === eid && !ctx.isDisabled(eid)) publish(ctx);
 			},
 			onRemove: (e) => {

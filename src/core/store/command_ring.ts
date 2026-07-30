@@ -1,7 +1,6 @@
 /**
  * Command ring — WASM-side producer / TS-side consumer SPSC ring buffer
- * for structural-change intents emitted during `sim.tick()`. Plan §7.5
- * (`docs/ideas/buffer-wasm-sim-plan-2026-05-14T1600.md`).
+ * for structural-change intents emitted during `sim.tick()`.
  *
  * Layout:
  *
@@ -13,13 +12,13 @@
  *   [ slot 1:       16 B ]  ...
  *   ...
  *
- * SPSC contract (Phase 4 scope):
+ * SPSC contract (single host thread):
  *   - Producer: WASM `sim.tick()`. Pushes 0..N commands during one tick;
  *     bumps `write_head` after each.
  *   - Consumer: TS host, immediately after `wasm.tick()` returns. Drains
  *     0..N pending commands; bumps `read_head` after each.
- *   - The two never run concurrently in Phase 4 (single host thread
- *     orchestrates both). Phase 5's worker offload promotes the head
+ *   - The two never run concurrently (one host thread orchestrates
+ *     both). A later worker offload promotes the head
  *     bumps to `Atomics.store`; that's an additive change without
  *     altering the layout.
  *
@@ -29,7 +28,7 @@
  *     a hard error in dev builds; production logs and continues (a command
  *     might be lost rather than crash the host).
  *
- * Slot format (plan §7.5):
+ * Slot format:
  *   byte 0:       opCode (u8). 0 is reserved as the empty-slot marker
  *                 (`COMMAND_OP_EMPTY`); all other codes are consumer-defined.
  *                 The engine never interprets a code — it drains
@@ -55,7 +54,7 @@ export const COMMAND_RING_SLOT_BYTES = 16;
 
 /** Default ring capacity in slots. 256 × 16 B = 4 KiB of ring data plus
  * 16 B header. Sized for the worst-case burst (peak spawn intents per
- * tick) × small safety margin. Tune up if a Phase 4 burst pushes past it
+ * tick) × small safety margin. Tune up if a burst pushes past it
  * in the bench harness. */
 export const COMMAND_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
@@ -145,12 +144,12 @@ export function pushCommand(
 	// Symmetric with `pushEvent` / `CommandDispatcher.on` / `checkRingOpCode`:
 	// opCode 0 is the empty-slot marker and a non-u8 corrupts the slot byte. The
 	// production producer is WASM (op-codes ≥ 1), so this guards the TS test/host
-	// producer for parity. (#731)
+	// producer for parity.
 	if (opCode === COMMAND_OP_EMPTY) {
-		throw new CommandRingError(`command op_code must be > 0 (0 is reserved as the empty-slot marker)`);
+		throw new CommandRingError(`command opCode must be > 0 (0 is reserved as the empty-slot marker)`);
 	}
 	if (opCode < 0 || opCode > 0xff || !Number.isInteger(opCode)) {
-		throw new CommandRingError(`command op_code must be a u8 in [1, 255] (got ${opCode})`);
+		throw new CommandRingError(`command opCode must be a u8 in [1, 255] (got ${opCode})`);
 	}
 	if (payload.byteLength !== COMMAND_RING_SLOT_BYTES - 1) {
 		throw new CommandRingError(
@@ -184,7 +183,7 @@ export function pushCommand(
 export function popCommand(view: DataView, ringOff: number, outPayload: Uint8Array): number {
 	if (outPayload.byteLength !== COMMAND_RING_SLOT_BYTES - 1) {
 		throw new CommandRingError(
-			`out_payload must be ${COMMAND_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
+			`outPayload must be ${COMMAND_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
 		);
 	}
 	const writeHead = ringWriteHead(view, ringOff);

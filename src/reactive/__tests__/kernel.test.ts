@@ -2,8 +2,7 @@
  * Reactive kernel gate: the signal/effect/batch fundamentals the dependency graph
  * depends on, and the two computed properties every consumer relies on —
  * glitch-freedom (a diamond join recomputes ONCE with consistent inputs) and the
- * equal-value cutoff (a recompute to an equal value wakes nobody). Ported from the
- * workbench correctness harness (#646) so the gate runs in CI.
+ * equal-value cutoff (a recompute to an equal value wakes nobody).
  */
 import { describe, expect, it } from "vitest";
 import { signal, computed, effect, batch, untrack } from "../kernel";

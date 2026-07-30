@@ -1,7 +1,7 @@
 /**
  * SAB layout descriptor — the "where is each column in memory" lookup table
  * that both the WASM sim and the TS host read from. Lives in the SAB region
- * at `header.layout_descriptor_off` (#171 §6.1.2).
+ * at `header.layout_descriptor_off`.
  *
  * Layout is locked by `descriptor.test.ts`'s golden bytes the same way
  * `header.test.ts` locks the header. Any schema change is a `SIM_ABI_VERSION`
@@ -24,8 +24,8 @@
  */
 
 // Byte-layout constants GENERATED from the Zig `extern struct`s in
-// `packages/sim/src/abi.zig` via `bun run gen:abi` (in-house Zig bindgen,
-// #392). `@offsetOf` reads the real layout (explicit `_pad`/`_pad2` included),
+// `packages/sim/src/abi.zig` via `bun run gen:abi` (in-house Zig
+// bindgen). `@offsetOf` reads the real layout (explicit `_pad`/`_pad2` included),
 // so the TS offsets always match the bytes the wasm dereferences — a
 // transposed field is impossible. Re-exported here so `./descriptor` importers
 // and the `core/buffer` barrel keep the same surface; golden bytes in
@@ -155,7 +155,7 @@ export function readColumnDescriptor(view: DataView, off: number): ColumnDescrip
  * ≥ this limit would be invisible there while the heap-side `BitSet` stayed
  * correct — silently conflating archetypes that differ only in such a
  * component. `Store.registerComponent` enforces this as a hard registration
- * ceiling so the overflow fails loudly instead (#381). The mask is sized to
+ * ceiling so the overflow fails loudly instead. The mask is sized to
  * the `BitSet`'s `INITIAL_WORD_COUNT`, so a registry within the limit never
  * grows a component mask past its initial words. */
 export const STORE_DESCRIPTOR_COMPONENT_LIMIT = COMPONENT_MASK_WORDS * 32;
@@ -167,7 +167,7 @@ export interface ArchetypeDescriptor {
 	readonly componentMask: readonly number[];
 	readonly rowCount: number;
 	readonly rowCapacity: number;
-	/** Enabled-row count `≤ row_count` (#577 / #599). Per-row entity-scan loops in
+	/** Enabled-row count `≤ row_count`. Per-row entity-scan loops in
 	 * the WASM sim bound on this so disabled entities (swapped to the tail
 	 * `[enabled_count, row_count)`) are not simulated; row-indexed cross-entity
 	 * reads still use `row_count`. */

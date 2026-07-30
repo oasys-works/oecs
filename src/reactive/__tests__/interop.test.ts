@@ -2,9 +2,9 @@
  * Interop contract gate: the two invariants a foreign UI framework relies on —
  * `subscribe` fires once per coalesced change (never on an equal write), and
  * `getSnapshot` is referentially stable (so React's useSyncExternalStore can't
- * storm). This is the zero-dep CI gate; the full proof against REAL mounted React
- * / Preact / Vue / Solid trees lives in workbench/reactive/framework_render_check.ts
- * (it needs those renderers + a DOM, which don't belong in engine's unit CI).
+ * storm). This is the zero-dep CI gate. A full proof needs REAL mounted React
+ * / Preact / Vue / Solid trees, which needs those renderers + a DOM. They do
+ * not belong in the engine's unit CI.
  *
  * The React model here mirrors useSyncExternalStore's actual mount/commit loop so
  * the negative control (an unstable snapshot) is a genuine storm, caught — the

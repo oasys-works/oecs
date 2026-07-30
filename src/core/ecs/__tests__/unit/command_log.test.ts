@@ -1,12 +1,12 @@
 /**
- * Record / replay over the host command log (#702) — slice 5 (final) of the
- * host → ECS write seam (#681). Asserts the deterministic-sim payoff:
+ * Record / replay over the host command log — the final layer of the
+ * host → ECS write seam. Asserts the deterministic-sim payoff:
  *   - the apply path logs the applied `HostCommand`s + per-tick `dt` + seed,
  *     behind an opt-in recorder (off by default — the un-recorded drain is
  *     unchanged);
  *   - the log round-trips through serialize → deserialize (plain JSON);
  *   - a replay driver re-applies it against a FRESH world and, under the
- *     determinism opt-in (ADR-0020), reproduces the per-tick `stateHash`
+ *     determinism opt-in, reproduces the per-tick `stateHash`
  *     sequence bit-for-bit — including the dt-driven evolution of a system
  *     (the clock), proving `dt` is a real replayed input, not just the commands;
  *   - both transports (typed queue + `onCommand` ring) land in the one log.
@@ -143,7 +143,7 @@ function recordSession(): { recorder: HostCommandRecorder; hashes: number[] } {
 	return { recorder, hashes };
 }
 
-describe("command log — recorder buckets startup vs ticks (#702)", () => {
+describe("command log — recorder buckets startup vs ticks", () => {
 	it("seed-time commands land in the startup bucket, frame commands in ticks", () => {
 		const recorder = new HostCommandRecorder(7);
 		const { world, Cell, commands } = buildWorld(recorder);
@@ -191,7 +191,7 @@ describe("command log — recorder buckets startup vs ticks (#702)", () => {
 	});
 });
 
-describe("command log — serialize ↔ deserialize round-trips (#702)", () => {
+describe("command log — serialize ↔ deserialize round-trips", () => {
 	it("a recorded log survives JSON serialize → deserialize unchanged", () => {
 		const { recorder } = recordSession();
 		const log = recorder.log();
@@ -277,7 +277,7 @@ describe("command log — serialize ↔ deserialize round-trips (#702)", () => {
 	});
 });
 
-describe("command log — replay reaches the same state (#702)", () => {
+describe("command log — replay reaches the same state", () => {
 	it("replaying a deserialized log reproduces per-tick state_hash bit-for-bit", () => {
 		const { recorder, hashes: original } = recordSession();
 
@@ -286,7 +286,7 @@ describe("command log — replay reaches the same state (#702)", () => {
 		const fresh = buildWorld(); // no recorder
 		const result = replayCommandLog(fresh.world, fresh.commands, log);
 
-		// Determinism opt-in (ADR-0020): the per-tick hashes must match exactly.
+		// Determinism opt-in: the per-tick hashes must match exactly.
 		expect(result.stateHashes).toEqual(original);
 		expect(result.ticks).toBe(TICK_DTS.length);
 		expect(result.startupCommands).toBe(2);
@@ -328,7 +328,7 @@ describe("command log — replay reaches the same state (#702)", () => {
 	});
 });
 
-describe("command log — both transports land in one log (#702)", () => {
+describe("command log — both transports land in one log", () => {
 	const OP_SET = 10;
 
 	it("a ring-sourced command is recorded, and replays through the typed queue", () => {
@@ -385,7 +385,7 @@ describe("command log — both transports land in one log (#702)", () => {
 	});
 });
 
-describe("command log — replay without determinism (#702)", () => {
+describe("command log — replay without determinism", () => {
 	let recorder: HostCommandRecorder;
 
 	beforeEach(() => {

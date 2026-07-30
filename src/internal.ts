@@ -11,7 +11,7 @@
  * @module oecs/internal
  */
 
-// ECS memory sizing internals (#682) — `resolveECSMemory` inspects what an
+// ECS memory sizing internals — `resolveECSMemory` inspects what an
 // `ECSOptions.memory` intent resolves to without constructing an ECS; the
 // constants document the budget arm's derivation inputs.
 export {
@@ -23,14 +23,14 @@ export {
 } from "./core/ecs";
 export type { ResolvedECSMemory, ECSMemoryCapContext } from "./core/ecs";
 
-// Access check (Phase B of issue #213) — dev-mode validation singleton.
+// Access check — dev-mode validation singleton.
 export { accessCheck } from "./core/ecs";
 
 // Dispatch trace (dev-mode only — gated by DEV + VISUAL_INTEL_TRACE).
 // The per-world causal tracer (`FrameTraceRecorder`) is public, at the root.
 export { dispatchTrace, type DispatchTraceSnapshot, type DispatchTraceEntry } from "./core/ecs";
 
-// SAB command-ring transport (#700) — the wire/ABI half of the host→ECS write
+// SAB command-ring transport — the wire/ABI half of the host→ECS write
 // seam: a `HostCommandDispatcher` + `ring*Codec` decode cross-thread bytes
 // into the same `applyHostCommand` the in-process queue uses. Byte layouts
 // are engine ABI, not consumer contract.
@@ -45,7 +45,7 @@ export {
 } from "./core/ecs";
 export type { RingCommandApplier } from "./core/ecs";
 
-// Packed-EntityID codec + bounds (#723 / #778 / #781) — for consumers that
+// Packed-EntityID codec + bounds — for consumers that
 // mint or bounds-check handles outside the normal `spawn` paths:
 // snapshot / replication decode (paired with the root's `getEntityIndex`) and
 // adversarial harnesses forging out-of-range / retired / stale handles.

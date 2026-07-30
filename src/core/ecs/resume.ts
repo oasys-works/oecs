@@ -1,5 +1,5 @@
 /**
- * World snapshot/resume framing + host-state (de)serialization — #789.
+ * World snapshot/resume framing + host-state (de)serialization.
  *
  * `Store.snapshot()` / `Store.restoreInto()` mount a captured world back onto a
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
@@ -70,7 +70,7 @@ export interface ArchetypeRowState {
 	readonly archetypeId: number;
 	/** Total live rows (enabled + disabled). */
 	readonly length: number;
-	/** Enabled-row partition boundary (#577): rows `[0, enabledCount)` enabled. */
+	/** Enabled-row partition boundary: rows `[0, enabledCount)` enabled. */
 	readonly enabledCount: number;
 }
 
@@ -242,8 +242,8 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 /**
  * Fail-closed registration guard, read **directly from the snapshot's dense
  * bytes** so it can run BEFORE the dense backing is touched. `restoreInto`
- * builds the restored store through the live world's in-place allocator
- * (ADR-0008), which reuses the live backing buffer — so validating a
+ * builds the restored store through the live world's in-place allocator,
+ * which reuses the live backing buffer — so validating a
  * *materialised* `ColumnStore` would already have overwritten live column data
  * (the buffer is overwritten inside `restoreColumnStore`, before any post-build
  * check could run). Parsing the descriptors off the raw `dense` `Uint8Array`

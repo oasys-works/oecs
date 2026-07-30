@@ -1,6 +1,5 @@
 /***
- * DeferredCommandBuffer — deferred structural-command queue + drain policy
- * (H1 step 4).
+ * DeferredCommandBuffer — deferred structural-command queue + drain policy.
  *
  * Owns the flat parallel pending buffers (no per-operation object allocation)
  * and the *transaction semantics* of the phase flush: the no-observer fast
@@ -9,19 +8,17 @@
  * re-entrancy flag. The four batch *appliers* stay on `Store` (reached via
  * the closure host below): they are archetype-transition logic entangled
  * with the graph, the 0-crossing dirty bookkeeping, and observer event
- * collection — they belong with that machinery, not with the queue. See
- * plans/H1-store-god-object-decomposition.md step 4 for the boundary
- * rationale.
+ * collection — they belong with that machinery, not with the queue.
  *
  * Ordering invariants the drain policy encodes (owned here, verbatim from
  * the pre-extraction `Store.flushStructural`):
  *  - adds/removes settle before destroys, so an explicit remove's onRemove
- *    fires with the entity live (pre-#531 behavior preserved);
+ *    fires with the entity live (the original behavior is preserved);
  *  - destroys settle before toggles, so a toggle sees its entity's final
- *    archetype for the tick (#577);
+ *    archetype for the tick;
  *  - each observed round dispatches only effective transitions, and any
  *    structural op a callback enqueues is re-settled by a later round, up
- *    to the OBSERVER_MAX_ROUNDS runaway guard (ADR-0013).
+ *    to the OBSERVER_MAX_ROUNDS runaway guard.
  */
 
 import type { ComponentDef } from "./component";
@@ -45,7 +42,7 @@ export interface DeferredCommandHost {
 	readonly applyRemoves: () => void;
 	readonly applyDestroys: () => void;
 	readonly applyToggles: () => void;
-	/** Hot-path gates — live counts of observed components (#531 / #677).
+	/** Hot-path gates — live counts of observed components.
 	 * While both are 0 the flush takes the byte-for-byte fast path. */
 	readonly structuralObserverCount: () => number;
 	readonly toggleObserverCount: () => number;
@@ -66,7 +63,7 @@ export class DeferredCommandBuffer {
 	public readonly addValues: Record<string, number>[] = [];
 	public readonly removeIds: EntityID[] = [];
 	public readonly removeDefs: ComponentDef[] = [];
-	// Deferred entity enable/disable (#577). `true` = disable, `false` =
+	// Deferred entity enable/disable. `true` = disable, `false` =
 	// enable; entries apply in operation order at flush (idempotent if
 	// redundant), so last write per entity wins.
 	public readonly toggleIds: EntityID[] = [];
@@ -130,20 +127,20 @@ export class DeferredCommandBuffer {
 	}
 
 	public flushStructural(): void {
-		// Each applier owns its dirty bookkeeping (#328) — it captures
+		// Each applier owns its dirty bookkeeping — it captures
 		// per-archetype pre-lengths during its loop and settles the
 		// row-counts / query-epoch flags from those captures.
 
-		// No-observer fast path — byte-for-byte the pre-#531 flush. While no
+		// No-observer fast path — byte-for-byte the original flush. While no
 		// onAdd/onRemove/onDisable/onEnable observer is registered we never
-		// enter the fixed-point machinery below. The toggle counter (#677)
+		// enter the fixed-point machinery below. The toggle counter
 		// joins the gate so a toggle-only consumer still reaches the observed
 		// path.
 		if (this.host.structuralObserverCount() === 0 && this.host.toggleObserverCount() === 0) {
 			if (this.addIds.length > 0) this.host.applyAdds();
 			if (this.removeIds.length > 0) this.host.applyRemoves();
 			// Toggles last: a disable/enable sees the entity's final archetype
-			// for the tick (after any add/remove transition above) (#577).
+			// for the tick (after any add/remove transition above).
 			if (this.toggleIds.length > 0) this.host.applyToggles();
 			return;
 		}
@@ -154,7 +151,7 @@ export class DeferredCommandBuffer {
 		if (this._flushing) return;
 
 		// Observed path — commit the batch, then fire observers in canonical
-		// order, looping to a fixed point so cascades settle (ADR-0013). An
+		// order, looping to a fixed point so cascades settle. An
 		// observer that adds/removes/destroys enqueues onto the (now-drained)
 		// deferred buffers; the next round commits + observes them. Observers
 		// never see a torn state — they fire only AFTER the commit.
@@ -163,16 +160,16 @@ export class DeferredCommandBuffer {
 		const hook = this.host.structuralObserverHook();
 		try {
 			let rounds = 0;
-			// Joint fixed point over adds/removes, destroys, AND toggles (#677).
+			// Joint fixed point over adds/removes, destroys, AND toggles.
 			// Each round runs an add/remove pass; or, once those are quiescent,
 			// one destroy pass; or, once destroys are quiescent too, one toggle
 			// pass — never more than one kind — so an explicit remove's onRemove
-			// still fires with the entity live (pre-#531 behavior preserved), a
+			// still fires with the entity live (the original behavior), a
 			// destroy is only drained after no live structural work remains, and
-			// a toggle is applied LAST so it sees its entity's final archetype
-			// (#577). A destroy fans out to an onRemove per carried component
-			// with the entity already freed (#531); a net disable/enable fans
-			// out to an onDisable/onEnable per carried component (#677). Any
+			// a toggle is applied LAST so it sees its entity's final archetype.
+			// A destroy fans out to an onRemove per carried component
+			// with the entity already freed; a net disable/enable fans
+			// out to an onDisable/onEnable per carried component. Any
 			// structural op or toggle a callback queues is re-settled by a later
 			// round.
 			while (
@@ -202,8 +199,7 @@ export class DeferredCommandBuffer {
 				} else {
 					// All structural work quiescent — drain toggles (collects
 					// onDisable/onEnable for net transitions). Toggles strictly
-					// last preserves the "toggle sees final archetype" invariant
-					// (#577).
+					// last preserves the "toggle sees final archetype" invariant.
 					this.host.applyToggles();
 				}
 				// Dispatch only effective transitions; a pass of pure no-ops

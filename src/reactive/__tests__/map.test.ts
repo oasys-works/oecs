@@ -3,7 +3,7 @@
  * wakes only that entity's reader), structure-vs-value separation (size/keys track
  * membership, not value updates), the absent→present→deleted lifecycle, and batch
  * coalescing. The per-key isolation is what makes an O(changed) ECS→UI sync
- * possible. Ported from the workbench harness.
+ * possible.
  */
 import { describe, expect, it } from "vitest";
 import { effect, batch } from "../kernel";

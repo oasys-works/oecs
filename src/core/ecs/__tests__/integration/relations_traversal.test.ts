@@ -1,5 +1,5 @@
 /**
- * Relations — traversal over an exclusive relation's tree (#474 / ADR-0011).
+ * Relations — traversal over an exclusive relation's tree.
  *
  * Covers the issue's acceptance criteria:
  *  - `ancestorsOf` / `rootOf`: walk an exclusive relation from a source up to
@@ -19,7 +19,7 @@ import { getEntityIndex, type EntityID } from "../../entity";
 const ids = (es: EntityID[]): number[] => es.map((e) => e as number);
 const getIndex = (e: EntityID): number => getEntityIndex(e);
 
-describe("ECS relation traversal — up chain (#474)", () => {
+describe("ECS relation traversal — up chain", () => {
 	it("walks a multi-level chain from a source to its root", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register(); // exclusive
@@ -63,7 +63,7 @@ describe("ECS relation traversal — up chain (#474)", () => {
 	});
 
 	it("up-walk stops at a dangling dead handle, not the recycled slot's occupant", () => {
-		// Regression (review #493, rank 1): the up-walk advanced by entity INDEX
+		// Regression: the up-walk advanced by entity INDEX
 		// via the index-keyed sparse store, so a dangling target handle (orphan
 		// policy) whose slot was recycled would splice the chain onto the
 		// unrelated new occupant. It must terminate at the dead handle instead.
@@ -103,7 +103,7 @@ describe("ECS relation traversal — up chain (#474)", () => {
 	});
 });
 
-describe("ECS relation traversal — cascade (#474)", () => {
+describe("ECS relation traversal — cascade", () => {
 	it("visits parents before children, breadth-first", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
@@ -143,7 +143,7 @@ describe("ECS relation traversal — cascade (#474)", () => {
 	});
 });
 
-describe("ECS relation traversal — cycle guard (#474)", () => {
+describe("ECS relation traversal — cycle guard", () => {
 	it("throws RELATION_CYCLE on an up-walk through a cycle (no hang)", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
@@ -174,7 +174,7 @@ describe("ECS relation traversal — cycle guard (#474)", () => {
 	});
 });
 
-describe("ECS relation traversal — exclusive only (#474)", () => {
+describe("ECS relation traversal — exclusive only", () => {
 	it("throws on a multi relation", () => {
 		const world = new ECS();
 		const Likes = world.relations.register({ multi: true });
@@ -182,8 +182,8 @@ describe("ECS relation traversal — exclusive only (#474)", () => {
 		const tgt = world.spawn();
 		world.relations.add(src, Likes, tgt);
 
-		// cast (§10c): deliberately defeat the cardinality brand to assert the
-		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
+		// cast: deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop
 		const LikesAsExclusive = Likes as unknown as RelationDef<"exclusive">;
 		expect(() => world.relations.ancestorsOf(src, LikesAsExclusive)).toThrow();
 		expect(() => world.relations.rootOf(src, LikesAsExclusive)).toThrow();

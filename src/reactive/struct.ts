@@ -1,7 +1,7 @@
 /**
  * Reactive struct — per-field channels for a flat, fixed-shape record.
  *
- * The third collection shape after `reactiveMap` (#646 / ADR-0021, ADR-0024). A
+ * The third collection shape after `reactiveMap`. A
  * struct has a FIXED set of fields of heterogeneous type, keyed by a known field
  * name; each declared field gets its own signal. Reading `proxy.field` inside a
  * tracked scope subscribes to that field *alone*, so a per-frame write of an
@@ -13,7 +13,7 @@
  * values; use the struct for a fixed set of heterogeneous fields. The struct is the
  * read target for singleton/ephemeral UI state — net status + latency, FPS/mem,
  * wave timer — bridged from a singleton entity's component via
- * `@oasys/oecs/reactive-sync`'s `syncSingletonToStruct` (ADR-0024), and
+ * `@oasys/oecs/reactive-sync`'s `syncSingletonToStruct`, and
  * rendered through `@oasys/oecs/solid`'s `fromKernelStruct`.
  *
  * `eq` is per-field `Object.is` by default (matching `signal`); pass an `eq` map to
@@ -76,7 +76,7 @@ export function reactiveStruct<T extends object>(
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
 				: undefined,
 		// Writes go through `set.field(v)` — the proxy is a READ surface, and its
-		// public type says so (`Readonly<T>`, POLISH_AUDIT #8). The trap backs the
+		// public type says so (`Readonly<T>`). The trap backs the
 		// type for JS callers / policed casts: without it, a field assignment threw
 		// an opaque "Cannot redefine property" (the accessor descriptor above has no
 		// setter) and a TYPO'D field silently stuck on the hidden target as a

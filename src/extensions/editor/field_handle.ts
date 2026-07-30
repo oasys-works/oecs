@@ -1,9 +1,9 @@
 /**
- * fieldHandle — the inspector field-handle (#701), the two-way sugar that sits
+ * fieldHandle — the inspector field-handle, the two-way sugar that sits
  * back-to-back with the reactive read bridge.
  *
  * An inspector field is a READ through the reactive channel (`syncFieldsToMap` /
- * `syncSingletonToStruct`, ADR-0022/0024) and a WRITE through a `setField` host
+ * `syncSingletonToStruct`) and a WRITE through a `setField` host
  * command. {@link fieldHandle} pairs them: `handle.value` reads the channel, and
  * `handle.set(v)` enqueues a `setField` via the {@link Editor} — so the field
  * FEELS two-way while staying safe (the write applies at the drain point, never
@@ -53,7 +53,7 @@ export interface FieldHandle {
  * `() => sync.map.get(entityId)?.x`); `set` routes through `editor.setField`, so the
  * edit is queued, batched, and undoable.
  *
- * `read` is optional (M11): omitted, the handle reads through the editor's own
+ * `read` is optional: omitted, the handle reads through the editor's own
  * committed-channel reader (`editor.committedField`). That default is correct
  * but NOT reactive — supply the channel thunk when the handle's `value` must
  * subscribe inside a tracking scope.

@@ -1,17 +1,16 @@
 /***
- * Grouped ECS facades (H3 phase 2, signed off 2026-07-05).
+ * Grouped ECS facades.
  *
  * Four cohesive secondary surfaces move off the flat `ECS` namespace onto
  * narrow typed facades: `ecs.relations`, `ecs.events`, `ecs.resources`,
  * `ecs.snapshots`. Each wraps the same `Store` entry points the flat
- * methods used (monomorphic one-hop delegation — bench-established as free
- * by the H1 A/B runs), and the `DEV` adaptation the flat methods
- * carried (dispatch-trace recording, access checks) moves here with them.
+ * methods used (monomorphic one-hop delegation — measured as free), and the
+ * `DEV` adaptation the flat methods carried (dispatch-trace recording,
+ * access checks) moves here with them.
  *
  * The pre-0.5 flat forms were removed from `ECS` in 0.5.0 (never published
  * as deprecated aliases — 0.5.0 is the break). Hot-path API (component ops,
- * queries, spawn/destroy, sparse ops) stays flat by design — see
- * plans/H3-ecs-facade-slimming.md.
+ * queries, spawn/destroy, sparse ops) stays flat by design.
  *
  * Constructed once per `ECS`; hold no state of their own.
  */
@@ -34,8 +33,8 @@ import { dispatchTrace } from "./dispatch_trace";
 import { unsafeCast } from "../../type_primitives";
 import { DEV } from "../../dev_flag";
 
-/** Relations — sparse `(relation, target)` pairs and hierarchy traversal
- * (#471 / #474, ADR-0011). Add/remove/re-target cause no archetype
+/** Relations — sparse `(relation, target)` pairs and hierarchy traversal.
+ * Add/remove/re-target cause no archetype
  * transition; ops are immediate and safe mid-tick. Traversal and wildcard
  * reads are cold-path. */
 export class ECSRelations {
@@ -48,10 +47,10 @@ export class ECSRelations {
 	/** Register a relation kind. Exclusive (default) stores one target per
 	 * source; `{ multi: true }` stores a target set per source.
 	 * `{ onDeleteTarget: "delete" | "clear" | "orphan" }` selects target-death
-	 * cleanup (default `orphan`, #473).
+	 * cleanup (default `orphan`).
 	 *
-	 * The overloads stamp the CARDINALITY into the handle type (typestate
-	 * a173382 / POLISH_AUDIT #7), exactly like the flat `registerRelation`:
+	 * The overloads stamp the CARDINALITY into the handle type, exactly like
+	 * the flat `registerRelation`:
 	 * the exclusive-only surfaces (`targetOf`, `ancestorsOf`/`rootOf`/
 	 * `cascadeOf`, `Query.hierarchy`) accept only `RelationDef<"exclusive">`,
 	 * so passing a `{ multi: true }` relation is a compile error. A
@@ -112,14 +111,14 @@ export class ECSRelations {
 		return this.store.sourcesOf(tgt, def);
 	}
 
-	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard
-	 * (#472). Sources in canonical entity-index order. Cold path. */
+	/** All `(source, target)` pairs of relation `R` — the `(R, *)` wildcard.
+	 * Sources in canonical entity-index order. Cold path. */
 	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
 		return this.store.pairsOf(def);
 	}
 
 	/** Every `(relation, source)` pointing at `tgt`, across all relation kinds —
-	 * the `(*, T)` wildcard (#472). Ordered by relation id then source id. */
+	 * the `(*, T)` wildcard. Ordered by relation id then source id. */
 	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
 		return this.store.sourcesOfAny(tgt);
 	}
@@ -144,7 +143,7 @@ export class ECSRelations {
 	}
 
 	/** Reclaim relation reverse-index memory: drop every reverse entry whose
-	 * target has been destroyed, returning the total dropped (#491). Purely
+	 * target has been destroyed, returning the total dropped. Purely
 	 * cold-path, no observable state change — call at scene/snapshot
 	 * boundaries. */
 	public compact(): number {
@@ -255,7 +254,7 @@ export class ECSResources {
 		this.store.setResource(key, value);
 	}
 
-	/** Drop a resource from the world (#798). Access-checked as a *write*;
+	/** Drop a resource from the world. Access-checked as a *write*;
 	 * fails closed on a missing key. Afterwards the key is free to `register`
 	 * again — the present → absent → present lifecycle. */
 	public remove<T>(key: ResourceKey<T>): void {
@@ -273,7 +272,7 @@ export class ECSResources {
 	}
 }
 
-/** The determinism surface (#626 / ADR-0020): world snapshot/resume and the
+/** The determinism surface: world snapshot/resume and the
  * canonical state digest. Every member except `deterministic` throws
  * `DETERMINISM_DISABLED` unless the world was constructed with
  * `{ deterministic: true }`. All cold-path — take captures at tick
@@ -299,8 +298,8 @@ export class ECSSnapshots {
 
 	/** Capture the full live world (dense + sparse/relations + host-side
 	 * bookkeeping) to one self-contained byte buffer that `restore` can mount
-	 * back onto a live, ticking world (#789). v1 does NOT capture resources,
-	 * events, or change-detection baselines (ADR-0031). */
+	 * back onto a live, ticking world. v1 does NOT capture resources,
+	 * events, or change-detection baselines. */
 	public capture(): Uint8Array {
 		return this.store.snapshot();
 	}
@@ -314,8 +313,8 @@ export class ECSSnapshots {
 	}
 
 	/** Serialize the sparse stores + relations to a self-contained buffer —
-	 * the sparse half of a world snapshot, canonical entity-index order
-	 * (#470). Pairs with `restoreSparse`. */
+	 * the sparse half of a world snapshot, canonical entity-index order.
+	 * Pairs with `restoreSparse`. */
 	public captureSparse(): Uint8Array {
 		return this.store.snapshotSparse();
 	}

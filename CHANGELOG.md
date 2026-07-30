@@ -5,45 +5,186 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.4] — 2026-07-30
+
+### Added — `cursor` and `cursorRead`, the accessor for a sweep by id
+
+`ecs.cursor(def)` and `ecs.cursorRead(def)`, with the two equivalents on `ctx`, give a single-entity
+accessor that you can **point again**. You create it one time, and then you aim it with
+`at(entity)`.
+
+```ts
+const p = ctx.cursor(Pos);
+for (let i = 0; i < ids.length; i++) {
+  p.at(ids[i]);
+  p.x += p.y * dt;
+}
+```
+
+The engine creates a ref for each entity. Over a list of ids, the loop then discards each ref that
+it created. A cursor lifts that creation out of the loop: `at` writes the archetype, the offset, and
+the row, and nothing else. A cursor also resolves the position of each field when you create it, so
+a read does not look up a field name.
+
+A cursor is **safer than a ref that you hold**, and not more dangerous. `at` resolves the archetype
+and the row again on each call. So a structural change between two `at` calls cannot make the cursor
+read a different entity. A cursor also follows an entity that changes archetype, which a ref cannot
+do. Only the window between one `at` call and the reads that follow it must be free of structural
+change.
+
+A cursor obeys the rules of the family: the definition comes first, the mutable name has no suffix,
+and the read-only name has the `Read` suffix. There is one constraint. A component with a field
+named `at` collides with the method of the cursor. Creation of the cursor rejects that component,
+and the message says so.
+
+See [refs and cursors](docs/api/refs.md#cursors--many-entities-by-id).
+
+### Added — `ECS_ERROR.ARCHETYPE_ROW_INVARIANT`
+
+This error reports that the row bookkeeping of an archetype does not agree with its backing columns.
+There are three causes. A reserve did not give the capacity that the engine asked for. A restore
+gave a partition boundary that is out of range. Or a cached row plane points at a buffer that is no
+longer current. The error is for development builds only. It reports a failure of an internal
+invariant, and not a mistake by the caller. That is what makes it different from
+`STORE_CAP_EXCEEDED`, which is the allocator that refuses a legitimate grow. Two development
+assertions that reported the general `COMPONENT_NOT_REGISTERED` now use it.
+
+### Changed — structural churn, system dispatch, and fragmented iteration
+
+No signature changed on a function that exists, and no result changed. Each entry below is a change
+to the internal mechanism. What moved:
+
+- **The row plane of an archetype.** Row placement went through the `ColumnBacking` API (`push`,
+  `swapRemove`, and `pop`). That API costs three things **for each column and for each row**: a call
+  to the `.buf` accessor, a comparison against the capacity, and a load and store of `_len`. The
+  actual work is one move of an element. But `Archetype.length` is already the row count of every
+  column. So the archetype now indexes cached raw views (`_bufs[i][row]`), and it moves `length` one
+  time. The probe for an overflow on an append becomes one comparison against a cached capacity.
+- **`eachChunk` no longer refreshes a column group on each call.** `cols.mut(def)` and
+  `cols.read(def)` used one cached object for each (archetype, component) pair. But they wrote one
+  property for each field on *every* call, and a fragmented pass makes that call one time for each
+  chunk. Only `_syncRowPlane` can change the identity of the buffer of a column. So `_syncRowPlane`
+  now points the cached groups at the current buffers, and the accessors make no test for a stale
+  buffer.
+- **`readField` indexes the row plane.** It reads `_bufs[i][row]`, and not
+  `_flatColumns[i].buf[row]`. This removes a `.buf` accessor whose concrete type is different for a
+  heap column and for a `SharedArrayBuffer` column.
+- **The last-run ticks of the schedule.** `systemLastRun` was a `Map<SystemDescriptor, number>`, and
+  a phase read it and wrote it one time for each system. It is now a packed array that a slot, local
+  to the schedule, indexes. The slots travel in the cached phase plan, next to the sorted
+  descriptors. `hasFixedSystems()` holds the node list of `FIXED_UPDATE` directly, and it makes no
+  lookup by key for each frame.
+- **One probe of the edge for a single add or remove.** `addComponent` made four lookups before it
+  touched a row: `mask.has`, `archResolveAdd`, which read both again, `archGet`, and then a second
+  `getEdge` for the transition map. An `edge.add` value that is not null means exactly "this
+  archetype does not hold the component, and the destination is resolved". So one probe of the holey
+  `edges` array answers all of it. The first-sight case and the overwrite-in-place case move to a
+  cold tail. `removeComponent` is the mirror image.
+- **One resolve of liveness and index, in place of two derivations.** `Store.hasComponent` called
+  `isAlive`, which derived the packed entity index. It then derived that index a second time to
+  reach `entityArchetype`. The read of the generations also went through a call into the allocator.
+  Both now fold into one `_liveIndex`. `getEntityArchetype` and `getEntityRow` become one
+  `resolveEntity`.
+- **`ecs.query(...)` allocates nothing when the cache holds the query.** The caller copied its
+  scratch mask before it gave that mask to the resolver, and the resolver copies each mask that it
+  keeps. That copy made a `BitSet` and a backing `number[]` for each call, for nothing. The contract
+  for the borrowed mask is now written at the resolver.
+- **`clearEvents` returns immediately when the frame emitted no event.** A write of `length` on an
+  array is a property store, and V8 does not remove that store for an array that is already empty.
+  This ran one time for each `update()` call, and most phases emit no event.
 
 ### Changed — diagnostic vocabulary catch-up (the deferred snake_case remnants)
 
-- **BREAKING (diagnostics):** `ECS.memoryPlan.source` now reports `"maxBytes"`
-  instead of `"max_bytes"` for the explicit-byte-cap arm, matching the option
-  key it names (every other arm already matched: `budget`, `heap`, `shared`,
-  `wasm`, `allocator`, `default`).
-- `INVALID_MEMORY_OPTIONS` messages and the `memoryPlan.derivation` trace now
-  name options by their real camelCase keys (`columnCapacity`, `entityIndex`,
-  `budget.bytesPerEntity`, `wasm.maximumPages`, `wasm.initialPages`,
-  `capBytesHint`) instead of the pre-0.4 snake_case spellings.
-- Docs: `ARCHITECTURE.md` re-stamped to 0.5.3 and, along with `README.md`,
-  `api/memory.md`, `api/index.md`, and `BEST_PRACTICES.md`, no longer describes
-  the default heap backing as a growable/resizable `ArrayBuffer` (fixed at cap
-  since 0.5.3).
+- **BREAKING (diagnostics):** `ECS.memoryPlan.source` now reports `"maxBytes"` instead of
+  `"max_bytes"` for the arm with the explicit byte cap. The name now agrees with the option key
+  that it names. Every other arm already agreed: `budget`, `heap`, `shared`, `wasm`, `allocator`,
+  and `default`.
+- The `INVALID_MEMORY_OPTIONS` messages and the `memoryPlan.derivation` trace now name the options
+  by their real camelCase keys (`columnCapacity`, `entityIndex`, `budget.bytesPerEntity`,
+  `wasm.maximumPages`, `wasm.initialPages`, and `capBytesHint`), and not by the snake_case
+  spellings from before 0.4.
+
+### Fixed — row-plane and schedule-slot correctness under the new caches
+
+- **A grow that throws no longer leaves the row plane on a buffer that the engine released.** The
+  reserve grows the entity-id array on the heap before it asks the store to grow the columns. So
+  when a refusal of the `SharedArrayBuffer` cap threw out of the grow handler, the cached entity-id
+  view pointed at a buffer that the engine had released, and the array itself had moved. The world
+  must survive a refusal of the cap, because that refusal is the basis of the fail-closed `spawn`
+  and `spawnMany` contract. But a later append that fitted the stale capacity wrote its entity id
+  into the released buffer. The next re-sync then put in the buffer that never received that row. A
+  re-sync occurs on a successful grow, and on the `refreshViews` call that each new archetype
+  causes. The id then read back as `0`, and the swap-remove that followed corrupted the row pointer
+  of a *different live entity*. The engine now derives the plane again on the path that throws.
+- **A shortfall of capacity in the entity-id array alone no longer causes a reallocation of the
+  full store.** The cached row capacity is the smaller of two values: the capacity of the entity-id
+  array, and the capacity of every column. But the *decision to grow* belongs to the column term
+  alone. A decision on the smaller value sent a shortfall to the store when only the entity-id array
+  had one, and that array had already grown. The store then calculated a capacity that did not
+  change, and it found no column to resize. But it still did a full snapshot, create, and restore of
+  the full column store, plus a `refreshViews` call on each archetype. It did all of that to resize
+  nothing. This is reachable after a restore from a snapshot, because a restore grows the entity-id
+  array to the *number* of restored rows, and not to its capacity.
+- **A recycled `systemLastRun` slot can no longer be the slot of two systems.** A phase copies the
+  slot array of its plan into a local. So a system that you remove from inside that phase still runs
+  from the snapshot, and it still writes its last-run tick as it ends. Before this fix, the engine
+  could give that freed slot to a system that you added during the same drive. The write of the
+  removed system then landed on the tick of the new system. That write moved the `changed()` window
+  of the new system, and it gave no signal. The engine now recycles a slot only outside a running
+  drive. Between drives the slots recycle as before, so the array stays bounded.
+
+### Note — the lookup of a field name stays as it is
+
+`getField` resolves a field name through the `_fieldIndex[cid][field]` table. The engine builds that
+table with `Object.create(null)`, which puts it in dictionary mode. The investigation covered three
+replacements: a `{}` literal, a `Map`, and interning of the names with a perfect hash for each
+component. None of the three is better than the table that exists in a world that has many
+components with different field names. The table stays, and a comment next to it records the
+investigation. To remove the lookup, the caller must hold the ordinal of the field, and not its name.
+`cursor` does exactly that for a sweep. To do the measurement again, use
+`bench/vs/probe-fieldshape.mjs` and `bench/vs/probe-lookupcost.mjs`.
+
+### Docs
+
+- `ARCHITECTURE.md` carries the 0.5.4 stamp. It now describes the row plane of an archetype, the
+  packed last-run slots of the schedule, and the `ARCHETYPE_ROW_INVARIANT` assertion.
+- `ARCHITECTURE.md` gives **no line numbers**. A reference names its source file only, because a
+  line number becomes incorrect as the source changes. To find a claim, search for the name of the
+  symbol next to the reference.
+- The documentation gives no benchmark figures. Each entry describes what changed.
+- `ARCHITECTURE.md`, `README.md`, `api/memory.md`, `api/index.md`, and `BEST_PRACTICES.md` no
+  longer describe the default heap backing as a growable or resizable `ArrayBuffer`. It is fixed at
+  the cap, and has been since 0.5.3.
+- `api/refs.md` documents cursors, and `api/errors.md` documents
+  `ARCHETYPE_ROW_INVARIANT`. The error count in `api/errors.md` is now 48.
+
+### Packaging
+
+- `bench/` is no longer part of the JSR package. npm ships from a list of the files to include
+  (`files: ["dist", "CHANGELOG.md"]`), so npm was never affected. But JSR publishes the source tree
+  against a list of the files to exclude, and the local bench and oracle harnesses would have
+  shipped as soon as git tracked them.
 
 ## [0.5.3] — 2026-07-09
 
-### Fixed — heap columns back on V8's fast element-access path (~5× iteration)
+### Fixed — heap columns are again on the fast element-access path of V8
 
 - The pure-TS **heap profile** (`heapArraybufferAllocator` — the default backing)
   now reserves its store as a **fixed, non-resizable `ArrayBuffer`** at the full
-  cap instead of a growable one resized via `.resize()`. V8 has no fast
-  element-access path for TypedArray views over a **resizable/growable**
-  `ArrayBuffer` — every `col[i]` re-checks the mutable length — so iterating a
-  column was ~4× slower than over a fixed buffer (measured on V8 13.6, an
-  isolated `col[i] *= 2` loop: ~0.37G vs ~1.6G element-accesses/s). This
-  silently regressed every iteration-bound system ~5× from 0.3.x (a
-  cross-library bench had oecs at ~85k op/s on the `packed_5` scenario vs
-  ~407k at 0.3.1); 0.5.3 restores it (~420k, measured against 0.5.2 in a
-  same-toolchain A/B: 85.9k → 422.7k op/s).
-- The fixed buffer faults pages in lazily, so RSS tracks real use, not the
-  reservation (a 256 MiB default cap on a 1000-entity world stays a few MiB
-  resident — measured ~4 MiB RSS, within ~1 MiB of the old resizable buffer).
+  cap. Before this release it used a growable buffer, and it made that buffer
+  larger with `.resize()`. V8 has no fast element-access path for a TypedArray
+  view over a **resizable or growable** `ArrayBuffer`, because each `col[i]`
+  reads the mutable length again. Thus a loop over a column was much slower than
+  the same loop over a fixed buffer. This made each iteration-bound system slower
+  from 0.3.x, and it gave no signal. Version 0.5.3 corrects the fault, and a
+  cross-library bench gives the throughput of 0.3.1 again.
+- The fixed buffer faults pages in lazily. Thus RSS follows the real use, and not
+  the reservation: a world with few entities keeps a small resident set at the
+  256 MiB default cap, which is equivalent to the old resizable buffer.
   Growth remains in place: the store relocates columns within the pre-reserved
   buffer, so the buffer identity never changes and every existing view stays
   valid —
-  `isInPlace: true` and ADR-0008's entity-index-hoist-across-grow invariant hold
+  `isInPlace: true` and the entity-index-hoist-across-grow invariant hold
   unchanged. The store keys its tail cursor off the header `capacity` (the
   logical high-water) rather than `buffer.byteLength` (now always the cap).
 - Only the heap backing changed. The `growable_sab` / `wasm_memory` backings
@@ -182,7 +323,8 @@ rename/removal map:
 | `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
 
 - **Host `despawn` is immediate** — `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
-  line, closing the audit's M1 finding (host `addComponent` immediate but destroy buffered).
+  line. This removes the inconsistency: host `addComponent` was immediate, but destroy was
+  buffered.
   **Observer note:** like every immediate op, host `despawn` fires no *structural* observers —
   `onRemove` no longer sees host-despawned entities (it did at 0.4, when host destroy was
   deferred). Observer-driven consumers, including the `reactive-sync` map bridges, only see
@@ -194,7 +336,7 @@ rename/removal map:
   `ctx.commands` equivalent. Mid-system these ops can move rows a running query is walking and
   are invisible to observers; previously only `despawn` was guarded wholesale (the others were
   caught only when they touched the archetype being iterated). Cross-world host mutation from
-  another world's system (#785) is unaffected — the guard is scoped to the mutated world.
+  another world's system is unaffected — the guard is scoped to the mutated world.
 - **The bare deferred duplicates on `ctx` are removed** — `ctx.addComponent`,
   `ctx.removeComponent`, `ctx.disable`, `ctx.enable` join the already-removed
   `ctx.createEntity` / `ctx.destroyEntity`. `ctx.commands` is now the *only* deferred surface,
@@ -203,7 +345,7 @@ rename/removal map:
   `ctx.addComponent` carried, so compile-checked complete attaches survive the move.
   `ctx.isDisabled` stays (immediate read), as do the immediate sparse/relation ops.
 - **`sourcesOf` canonicalized to `(entity, def)`** on `ecs.relations` and `SystemContext` —
-  it was the one arg-order outlier on the relation surface (M3).
+  it was the one arg-order outlier on the relation surface.
 - **The package root is now a curated, explicit export list** — `export *` no longer flattens the
   whole core barrel, so future barrel additions cannot silently widen the public API. A checked-in
   public-API snapshot test makes any surface change an explicit diff in review.
@@ -217,14 +359,14 @@ rename/removal map:
 ### Added
 
 - **`addComponent` bundle overload** — `ecs.addComponent(e, Pos({ x: 1 }))` accepts a bundle
-  with the usual zero-fill semantics (M2); the explicit `(e, def, values)` form stays
+  with the usual zero-fill semantics; the explicit `(e, def, values)` form stays
   complete-values, so a typo'd or missing field is still a compile error.
 - **`spawnMany` typed template + shared overrides** — bulk spawn takes the same typed
   `Template<Defs>` as `spawn` plus one optional `TemplateOverrides<Defs>` object applied to
   every row (contiguous batches use one `fill` per overridden column).
 - **JSDoc `@example` on the core surface** — `registerComponent`, `spawn`, `addComponent`,
   `query`, `registerSystem`, `startup`, `update`, `ctx.emit` / `ctx.read`,
-  `events.register`, `resources.register` now carry hover-visible examples (M23).
+  `events.register`, `resources.register` now carry hover-visible examples.
 - **Component debug names** — `registerComponent(schema, { name: "Pos" })` (and the sparse
   sibling) records a diagnostic label, so access-violation and liveness errors read
   `'Pos' (component 5)` instead of leaving you to count registration order
@@ -275,13 +417,13 @@ rename/removal map:
   ops on an archetype a live dense walk is standing in now throw in dev, *before* any mutation
   lands (the transition path checks ahead of the destination append, so no dual-residency
   half-state). Collect ids during the walk and mutate after it. Mutating archetypes the walk is
-  *not* currently visiting stays legal — the #431 fresh-snapshot machinery still covers those.
+  *not* currently visiting stays legal — the fresh-snapshot machinery still covers those.
 - **Cross-world despawn false positive** — `worldB.despawn(e)` from inside world A's system no
   longer trips the in-system despawn guard (the accessCheck span is process-global; the guard now
-  also requires *this* world to be mid-schedule). Driving a second world from a system (#785)
+  also requires *this* world to be mid-schedule). Driving a second world from a system
   mutates it host-style, which is safe — B is not iterating. Unnamed systems in the guard message
   now render as `system_<id>` instead of `'?'`.
-- **Frame trace records every deferred command (ADR-0030)** — the removed bare `ctx.*` deferred
+- **Frame trace records every deferred command** — the removed bare `ctx.*` deferred
   forms bypassed the `commandQueued` trace hook, so host-command-seam adds/removes/toggles (and
   any system using the bare forms) were invisible to an attached `FrameTraceSink` while their
   spawns/despawns were visible. With `ctx.commands` as the only deferred surface every queued
@@ -289,7 +431,7 @@ rename/removal map:
   (previously only the spawn itself).
 - **Stale deferred-attach docs** — `host_commands.ts` / the host-write-seam page claimed the
   deferred add path does not zero-fill omitted fields (NaN readback); every attach path
-  zero-fills since #716 (`writeFields`'s `?? 0`). The complete-values requirement on
+  zero-fills (`writeFields`'s `?? 0`). The complete-values requirement on
   `SpawnEntry` is documented as what it is — explicit intent in a reified, replayable record —
   and the observer docs now scope "immediate ops fire no observers" to *structural* observers
   (`onSet` is derived change detection and sees host `setField` writes).
@@ -326,11 +468,11 @@ rename/removal map:
   `runEveryNTicks` validation throws `ECSError` (`INVALID_RUN_CONDITION`).
 - **Docs standardized on the `ecs` receiver** — README, GETTING_STARTED, BEST_PRACTICES, the
   api reference, and every in-source JSDoc example now spell `const ecs = new ECS()`
-  (M22; with the `World*` names renamed to `ECS*`, "world" survives only as prose). The
+  (with the `World*` names renamed to `ECS*`, "world" survives only as prose). The
   host-write-seam docs now explain *why* `queue.spawn` takes complete-value `spawnEntry`s
-  rather than zero-filling bundles (M4: commands are a reified, replayable record — complete
+  rather than zero-filling bundles: commands are a reified, replayable record — complete
   values are explicit intent legible to replay, not a correctness need; the deferred add path
-  zero-fills omitted fields since #716).
+  zero-fills omitted fields.
 - **JSR publish no longer ships `__tests__` helper files** (`casing_codemod.ts`,
   `test_helpers.ts` — including a `node:fs` import subject to JSR type-checking).
 
@@ -523,8 +665,8 @@ Performance-only patch release. Two targeted allocation-elimination changes on h
 
 ### Performance
 
-- **Cache multi-component transition maps on `Archetype`.** `add_components` / `remove_components` on already-populated entities previously allocated a fresh `Int16Array` per call via `build_transition_map`. A per-archetype `batch_transition_maps: Map<ArchetypeID, Int16Array>` now caches the map on first use. Single-component paths unchanged. Measured: **+12–15%** throughput on `add_components` (already-populated) at 10k / 100k / 1M; **−35–42%** peak heap and **−49–61%** peak RSS on the same workload. ([#9](https://github.com/oasys-works/oecs/pull/9))
-- **Per-Query composition cache for single-component composition shapes.** `q.and(X)`, `q.not(X)`, `q.any_of(X)`, and `q.changed(X)` previously allocated a BitSet copy, a defs slice (and, for `.changed`, a new `ChangedQuery`) on every call, even though the resolver already cached the resulting `Query` object. Single-component calls now short-circuit through a per-parent-`Query` Map and skip the allocation path entirely. Multi-component compositions fall through unchanged. Measured: **~6×** throughput on a 4-shape compose loop at 10k / 100k / 1M; **−40–56%** peak heap and **essentially zero RSS growth** during the workload. ([#10](https://github.com/oasys-works/oecs/pull/10))
+- **Cache multi-component transition maps on `Archetype`.** `add_components` / `remove_components` on already-populated entities previously allocated a fresh `Int16Array` per call via `build_transition_map`. A per-archetype `batch_transition_maps: Map<ArchetypeID, Int16Array>` now caches the map on first use. Single-component paths unchanged. Measured on the same workload: a higher throughput of `add_components` on an already-populated entity, a much smaller peak heap, and a much smaller peak RSS. ([#9](https://github.com/oasys-works/oecs/pull/9))
+- **Per-Query composition cache for single-component composition shapes.** `q.and(X)`, `q.not(X)`, `q.any_of(X)`, and `q.changed(X)` previously allocated a BitSet copy, a defs slice (and, for `.changed`, a new `ChangedQuery`) on every call, even though the resolver already cached the resulting `Query` object. Single-component calls now short-circuit through a per-parent-`Query` Map and skip the allocation path entirely. Multi-component compositions fall through unchanged. Measured on a compose loop with four shapes: a much higher throughput, a much smaller peak heap, and almost no growth of RSS during the workload. ([#10](https://github.com/oasys-works/oecs/pull/10))
 
 ## [0.3.0] — 2026-04-21
 

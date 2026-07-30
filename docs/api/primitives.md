@@ -1,6 +1,9 @@
 # Primitives
 
-`@oasys/oecs/primitives` exposes the low-level data structures the ECS is built on, for direct reuse. They're standalone and dependency-free — handy well outside an ECS. (The internal assertion/brand/error helpers are intentionally *not* exported.)
+`@oasys/oecs/primitives` gives you the low-level data structures that the ECS is built from, so that
+you can use them directly. They operate alone, and they have no dependencies. So they are useful
+far outside an ECS. The package does not export the internal helpers for assertions, brands, and
+errors, and that is intentional.
 
 ```ts
 import { BitSet, SparseSet, SparseMap, BinaryHeap, topologicalSort,
@@ -9,7 +12,8 @@ import { BitSet, SparseSet, SparseMap, BinaryHeap, topologicalSort,
 
 ## `BitSet`
 
-An auto-growing bit set backed by a `number[]` — how archetype component signatures are represented.
+A bit set that grows automatically, with a `number[]` behind it. This is how oecs represents the
+component signature of an archetype.
 
 ```ts
 new BitSet(words?: number[]);
@@ -21,7 +25,8 @@ hash(): number;   forEach(fn: (bit: number) => void): void;
 
 ## `SparseSet`
 
-O(1) add/delete/has of dense integer keys, with the values iterable as a dense array. Ideal for "which entity ids are in this set" without a hash map.
+This adds, deletes, and tests dense integer keys in O(1) time, and you can iterate the values as a
+dense array. It is correct for "which entity ids are in this set", and it needs no hash map.
 
 ```ts
 new SparseSet();
@@ -32,7 +37,7 @@ has(key): boolean;   add(key): void;   delete(key): boolean;   clear(): void;
 
 ## `SparseMap<V>`
 
-A sparse-set-backed map from integer keys to values `V`.
+A map from integer keys to values of type `V`, with a sparse set behind it.
 
 ```ts
 new SparseMap<V>();
@@ -42,9 +47,10 @@ clear(): void;   forEach(fn: (key: number, value: V) => void): void;
 [Symbol.iterator](); // iterates [key, value] pairs
 ```
 
-## `GrowableTypedArray` family
+## The `GrowableTypedArray` family
 
-Auto-growing typed-array columns — the backing behind component storage. Use the concrete subclass for the element type you want:
+These are typed-array columns that grow automatically. They are the storage behind a component. Use
+the concrete subclass for the type of element that you want:
 
 ```ts
 GrowableFloat32Array   GrowableFloat64Array
@@ -56,18 +62,21 @@ GrowableUint8Array     GrowableUint16Array   GrowableUint32Array
 ```ts
 get length: number;   push(value): void;   pop(): number;   get(i): number;   setAt(i, value): void;
 swapRemove(i): number;   clear(): void;   setLength(len): void;
-get buf: T;   view(): T;                       // the underlying typed array
+get buf: T;   view(): T;                       // the typed array below
 ensureCapacity(n): void;
 bulkAppend(src, srcOffset, count): void;   bulkAppendZeroes(count): void;   bulkAppendValue(value, count): void;
 [Symbol.iterator]();
 ```
 
 > [!WARNING]
-> `buf` and `view()` are invalidated by any `push`/append that triggers a grow (the buffer is reallocated) — don't cache the reference across appends; re-fetch it after.
+> A `push` or an append that causes growth makes `buf` and `view()` invalid, because the object
+> allocates a new buffer. Do not keep the reference across an append. Read it again after the
+> append.
 
 ## `BinaryHeap<T>`
 
-A min-heap ordered by a comparator — the ready queue behind the topological sort.
+A minimum heap, with an order from a comparator. It is the queue of ready nodes behind the
+topological sort.
 
 ```ts
 type CompareFn<T> = (a: T, b: T) => number;
@@ -77,21 +86,24 @@ get size: number;   peek(): T | undefined;   push(value): void;   pop(): T | und
 
 ## `topologicalSort<T>`
 
-Kahn's algorithm with a `BinaryHeap` ready queue — the deterministic system-ordering core.
+Kahn's algorithm, with a `BinaryHeap` as the queue of ready nodes. It is the deterministic core
+that puts the systems in order.
 
 ```ts
 topologicalSort<T>(
   nodes: readonly T[],
-  edges: Map<T, T[]>,               // edges.get(a) = nodes that must come AFTER a
-  tiebreaker: (a: T, b: T) => number,  // orders simultaneously-ready nodes (lower = higher priority)
+  edges: Map<T, T[]>,               // edges.get(a) = the nodes that must come AFTER a
+  tiebreaker: (a: T, b: T) => number,  // puts the nodes that are ready at the same time in order (a lower value is a higher priority)
   nodeName?: (node: T) => string,
 ): T[];
 ```
 
 > [!NOTE]
-> Throws a plain `TypeError` on a cycle, naming the unschedulable nodes (via `nodeName`). The `tiebreaker` makes the output deterministic among nodes that are ready at the same time.
+> It throws a plain `TypeError` for a cycle, and the message names the nodes that it cannot
+> schedule, through `nodeName`. The `tiebreaker` makes the output deterministic for the nodes that
+> are ready at the same time.
 
 ## See also
 
-- [schedule](./schedule.md) — `topologicalSort` in action, ordering systems within a phase
-- [components](./components.md) — the typed-array columns `GrowableTypedArray` backs
+- [schedule](./schedule.md) — `topologicalSort` in use, to put the systems of a phase in order
+- [components](./components.md) — the typed-array columns that `GrowableTypedArray` supports

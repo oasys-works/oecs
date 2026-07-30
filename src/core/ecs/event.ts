@@ -59,7 +59,7 @@ export const asEventId = (value: number) =>
 export type EventSchema = Readonly<Record<string, number>>;
 
 /**
- * Homomorphic constraint for event-schema type params (POLISH_AUDIT M9):
+ * Homomorphic constraint for event-schema type params:
  * `S extends EventShape<S>` checks every property of `S` is a number WITHOUT
  * requiring an index signature, so `interface`-declared schemas (which lack
  * the implicit index signature type literals get) are accepted too.
@@ -90,7 +90,7 @@ export type EventDef<S extends EventShape<S> = EventSchema> = EventID & {
  * The "cannot mutate the live channel through the reader" property is
  * **advisory** — the columns are the same live `number[]` objects the channel
  * mutates (see `EventChannel` below), so the `readonly` typing blocks writes
- * at the type layer only; a §10c-policed cast can still write through.
+ * at the type layer only; a deliberate cast can still write through.
  */
 export type EventReader<S extends EventShape<S>> = {
 	readonly length: number;
@@ -103,8 +103,8 @@ export class EventChannel {
 	public readonly reader: EventReader<any>;
 	// The ONE mutable view of the reader's `length`. The public `EventReader`
 	// type declares it readonly (a consumer writing `reader.length = 0` on the
-	// live shared object would permanently desync every other system's view —
-	// POLISH_AUDIT #5), so the channel keeps this private alias to the same
+	// live shared object would permanently desync every other system's view),
+	// so the channel keeps this private alias to the same
 	// object for emit/clear bookkeeping.
 	private readonly _readerLen: { length: number };
 
@@ -138,7 +138,7 @@ export class EventChannel {
 			// throwing mid-loop would leave earlier columns one row ahead of
 			// `reader.length` and the un-pushed columns — a permanent desync if the
 			// throw is caught. Validate-then-push leaves the production path (no
-			// DEV) a single tight push loop. #727.
+			// DEV) a single tight push loop.
 			for (let i = 0; i < names.length; i++) {
 				if (!(names[i] in values)) {
 					throw new ECSError(

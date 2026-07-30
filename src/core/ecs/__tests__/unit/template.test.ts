@@ -4,7 +4,7 @@ import { Archetype } from "../../archetype";
 
 // Component schemas. AttackRange + EngageRange deliberately share the field
 // name `range` — the skirmisher template shape that motivated the ambiguous-
-// override guard (#462).
+// override guard.
 function setup() {
 	const ecs = new ECS({ memory: { columnCapacity: 64 } });
 	const Position = ecs.registerComponent({ x: "f64", y: "f64" });
@@ -16,7 +16,7 @@ function setup() {
 	return { ecs, Position, Velocity, Health, AttackRange, EngageRange, Tag };
 }
 
-describe("template / direct-spawn (#462)", () => {
+describe("template / direct-spawn", () => {
 	it("resolves the target archetype once, creating it if absent", () => {
 		const { ecs, Position, Velocity } = setup();
 		const before = ecs.archetypeCount;

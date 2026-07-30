@@ -1,9 +1,8 @@
 /**
- * ecs_sync gate — moves the #646 "unlock" proof from the workbench mock
- * (`workbench/reactive/ecs_sync.ts`, a `MockWorld`) onto the REAL engine.
+ * ecs_sync gate — the "unlock" proof on the REAL engine, not a mock world.
  *
- * Asserts the acceptance criteria of #672 end-to-end through actual ADR-0013
- * observers + ADR-0012 change detection:
+ * Asserts the acceptance criteria end-to-end through actual component
+ * observers + change detection:
  *   - one changed entity in an N-entity world wakes exactly one row;
  *   - a quiet tick wakes nobody (publish-only-dirty);
  *   - spawn inserts a row, despawn deletes it (structural observers);
@@ -37,8 +36,8 @@ function makeWorld() {
 	const toWrite: { eid: EntityID; x: number }[] = [];
 	const toSpawn: number[] = []; // values for newly-spawned entities
 	const toDespawn: EntityID[] = [];
-	const toDisable: EntityID[] = []; // entities to ctx.commands.disable this tick (#677)
-	const toEnable: EntityID[] = []; // entities to ctx.commands.enable this tick (#677)
+	const toDisable: EntityID[] = []; // entities to ctx.commands.disable this tick
+	const toEnable: EntityID[] = []; // entities to ctx.commands.enable this tick
 	const spawned: EntityID[] = [];
 
 	world.addSystems(
@@ -278,8 +277,8 @@ function makeJoinWorld() {
 	const writeHp: { eid: EntityID; hp: number }[] = [];
 	const addHp: { eid: EntityID; hp: number }[] = [];
 	const removeHp: EntityID[] = [];
-	const toDisable: EntityID[] = []; // #677
-	const toEnable: EntityID[] = []; // #677
+	const toDisable: EntityID[] = [];
+	const toEnable: EntityID[] = [];
 	world.addSystems(
 		SCHEDULE.UPDATE,
 		world.registerSystem({
@@ -368,12 +367,12 @@ describe("syncJoinToMap — multi-component join", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Entity enable/disable (#677 / ADR-0023) — disable = soft remove from the
+// Entity enable/disable — disable = soft remove from the
 // channel, enable = re-add. A disabled entity leaves the default-query result
 // set, so it leaves the map (flecs query-monitor / Bevy default-query-filter /
 // RxDB observable-query semantics). seedExisting seeds enabled members only.
 // ---------------------------------------------------------------------------
-describe("syncComponentToMap — enable/disable (#677)", () => {
+describe("syncComponentToMap — enable/disable", () => {
 	it.each(["entity", "column"] as const)(
 		"[grain=%s] disabling deletes the row; re-enabling republishes it",
 		(grain) => {
@@ -440,7 +439,7 @@ describe("syncComponentToMap — enable/disable (#677)", () => {
 	});
 });
 
-describe("syncJoinToMap — enable/disable (#677)", () => {
+describe("syncJoinToMap — enable/disable", () => {
 	it("disabling a join member drops the row; re-enabling re-adds it", () => {
 		const { world, Pos, Health, toDisable, toEnable } = makeJoinWorld();
 		const e = world.spawn();
@@ -464,8 +463,8 @@ describe("syncJoinToMap — enable/disable (#677)", () => {
 		expect(sync.map.get(e)).toEqual({ x: 7, hp: 100 });
 	});
 
-	it("completing the join on a DISABLED entity does not add it (#784 — on_add enabled-only)", () => {
-		// The bug the #784 churn oracle caught: a live onAdd fires for a joined
+	it("completing the join on a DISABLED entity does not add it (on_add enabled-only)", () => {
+		// The bug the churn oracle caught: a live onAdd fires for a joined
 		// component ADDED to an already-disabled entity (a structural event is
 		// enable-agnostic), and `publishIfMember` checked only `hasComponent` — so it
 		// published a row `query(Pos, Health)` excludes. Here `e` has Pos, is disabled,
@@ -495,11 +494,11 @@ describe("syncJoinToMap — enable/disable (#677)", () => {
 	});
 });
 
-describe("syncComponentToMap — enable/disable add path (#784)", () => {
+describe("syncComponentToMap — enable/disable add path", () => {
 	it.each(["entity", "column"] as const)(
 		"[grain=%s] adding the synced component to a DISABLED entity does not add it (on_add enabled-only)",
 		(grain) => {
-			// The single-component twin of the join bug (#784): onAdd fires for the
+			// The single-component twin of the join bug: onAdd fires for the
 			// synced component added to an already-disabled entity, and `publishEntity`
 			// had no enabled guard — so it published a row `query(Health)` excludes. Sync
 			// HEALTH (the addable component); `e` carries Pos, is disabled, then gains
@@ -524,7 +523,7 @@ describe("syncComponentToMap — enable/disable add path (#784)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// syncSingletonToStruct — singleton entity → reactiveStruct (#687 / ADR-0024).
+// syncSingletonToStruct — singleton entity → reactiveStruct.
 // The singleton/resource shape: per-FIELD channels (not per-entity), keyless. The
 // three load-bearing properties end-to-end through a real tick, plus seed / quiet /
 // dispose / disable+enable. A struct has no delete, so disable resets to defaults.
@@ -742,7 +741,7 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 });
 
 // ---------------------------------------------------------------------------
-// syncSingletonToArray — singleton entity → reactiveArray (#685 / ADR-0024). The
+// syncSingletonToArray — singleton entity → reactiveArray. The
 // ORDERED sibling of syncSingletonToStruct: positional slots (the army). Gates the
 // army's real delivery path — a HOST-SIDE setField (network callbacks write the
 // ArmyComposition OUTSIDE any system) drained into the channel at the next tick —
@@ -887,7 +886,7 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		expect(sync.array.get(0)).toBe(EMPTY); // unchanged
 	});
 
-	it("rejects an `into` whose length differs from fields.length (#722)", () => {
+	it("rejects an `into` whose length differs from fields.length", () => {
 		// A mismatched `into` makes `publish` reconcile to a `fields.length` array while
 		// `reset` reconciles to the `into`-sized defaults snapshot, so the array's length
 		// oscillates on every enable↔disable cycle. Reject the misconfiguration at setup.
@@ -906,7 +905,7 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		).toThrow(Error);
 	});
 
-	it("accepts an `into` whose length equals fields.length and syncs normally (#722)", () => {
+	it("accepts an `into` whose length equals fields.length and syncs normally", () => {
 		// The correctly-sized `into` is the supported path: no throw, and it drives the
 		// SAME array, seeds it, and publishes host-side writes at the next tick.
 		const { world, Army, singleton } = makeSingletonArrayWorld();

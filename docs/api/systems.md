@@ -1,6 +1,9 @@
 # Systems
 
-A **system** is a plain function that runs over queries each frame. You register it, declare what it `reads` and `writes`, and add it to a [schedule](./schedule.md) phase. The function receives a **`SystemContext`** (`ctx`) — its window onto the `ECS` — and the frame's delta time.
+A **system** is a plain function that runs over queries in each frame. You register it, you declare
+what it `reads` and `writes`, and you add it to a phase of the [schedule](./schedule.md). The
+function receives a **`SystemContext`** (`ctx`), which is its window into the `ECS`, and the delta
+time of the frame.
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
@@ -24,22 +27,24 @@ const move = ecs.registerSystem({
   },
 });
 
-ecs.addSystems(SCHEDULE.UPDATE, move);   // registration ≠ scheduling — do both
+ecs.addSystems(SCHEDULE.UPDATE, move);   // registration is not scheduling — do both
 ```
 
 > [!IMPORTANT]
-> `registerSystem` returns a handle but does **not** schedule anything. You must also call `ecs.addSystems(phase, descriptor)` (see [schedule](./schedule.md)) or the system never runs.
+> `registerSystem` gives you a handle, but it schedules **nothing**. You must also call
+> `ecs.addSystems(phase, descriptor)` (see [schedule](./schedule.md)). If you do not, the system
+> never runs.
 
 ## `registerSystem` — three forms
 
 ```ts
-// 1. Config form — the one you'll use for real work.
+// 1. Config form — the form for real work.
 registerSystem(config: SystemConfig): SystemDescriptor;
 
-// 2. Bare function — no query, NO declared access.
+// 2. Function alone — no query, NO declared access.
 registerSystem(fn: (ctx, dt) => void): SystemDescriptor;
 
-// 3. Function + query builder — query resolved once at registration.
+// 3. Function with a query builder — the query is resolved one time, at registration.
 registerSystem<Defs>(
   fn: (q: Query<Defs>, ctx, dt) => void,
   queryFn: (qb: QueryBuilder) => Query<Defs>,
@@ -47,10 +52,18 @@ registerSystem<Defs>(
 ```
 
 > [!WARNING]
-> The **bare** and **function + builder** forms register with **empty access declarations**. Any component/resource/relation access they attempt throws in dev (they touch nothing, by declaration). They're only for trivial glue that touches no ECS state — for example, bumping an external counter. Real work that reads/writes ECS data uses the **config form** so the access checker can protect you.
+> The **function alone** form and the **function with a builder** form register with **empty access
+> declarations**. Each attempt to touch a component, a resource, or a relation in them throws in
+> development, because they declare that they touch nothing. Use them only for small connection
+> code that touches no ECS state, such as an increase to an external counter. For real work that
+> reads or writes ECS data, use the **config form**, so that the access checker can protect you.
 
 > [!WARNING]
-> **Arity trap.** A bare 3-parameter function is almost certainly the `(q, ctx, dt)` builder form with the second `queryFn` argument forgotten — which would silently bind `q := ctx`, `dt := undefined` and `NaN` your math. In dev this throws `SYSTEM_FN_ARITY`. In prod the guard is gone; get the second argument right.
+> **A risk with the number of parameters.** A function alone with three parameters is almost
+> certainly the `(q, ctx, dt)` builder form, with the second `queryFn` argument absent. That
+> mistake binds `q` to `ctx` and `dt` to `undefined`, and your calculations then give `NaN`. In
+> development this throws `SYSTEM_FN_ARITY`. In production the guard is absent, so give the second
+> argument correctly.
 
 ## `SystemConfig`
 
@@ -59,50 +72,59 @@ interface SystemConfig {
   fn?: (ctx: SystemContext, dt: number) => void;  // the update body — required unless backendHandle is set
                                                   // (one of the two, DEV-enforced; see compute backends below)
 
-  // --- Access declarations (dev-checked) ---
+  // --- Access declarations (checked in development) ---
   reads:  readonly ComponentDef[];                // required (empty = "touches no columns")
-  writes: readonly ComponentDef[];                // required; a write implies a read
+  writes: readonly ComponentDef[];                // required; a write also gives read access
   spawns?:    readonly (readonly ComponentDef[] | Template)[];
   despawns?:  readonly (ComponentDef | Template)[];
-  transitions?: readonly SystemTransition[];      // mid-tick add/remove sets
+  transitions?: readonly SystemTransition[];      // add/remove sets during a tick
   resourceReads?:  readonly ResourceKey<any>[];
   resourceWrites?: readonly ResourceKey<any>[];
   sparseReads?:   readonly SparseComponentDef[];
   sparseWrites?:  readonly SparseComponentDef[];
   relationReads?:  readonly RelationDef[];        // include ANY_RELATION for forEachRelatedTo
   relationWrites?: readonly RelationDef[];
-  queries?: readonly (readonly ComponentDef[])[]; // one entry per closed-over / builder query — lint only
+  queries?: readonly (readonly ComponentDef[])[]; // one entry for each closed-over / builder query — a check only
 
   // --- Optional ---
   name?: string;                                  // diagnostics
   exclusive?: boolean;                            // full-access bypass (see below)
-  backendHandle?: BackendSystemHandle;            // route body to a compute backend
-  onAdded?: (ctx) => void;                        // once, during startup()
+  backendHandle?: BackendSystemHandle;            // send the body to a compute backend
+  onAdded?: (ctx) => void;                        // one time, during startup()
   onRemoved?: () => void;                         // on removeSystem
   dispose?: () => void;                           // on ecs.dispose()
 }
 ```
 
-Key rules the access checker enforces (dev only):
+The access checker holds you to these rules (in development only):
 
-- **`reads`/`writes` are mandatory** — pass empty arrays to say "this system touches no columns" explicitly. Every other declaration field defaults to empty.
-- **A write implies a read**, and authorizes `addComponent` on that column.
-- **`despawn` removes every component** on the entity — declare the superset in `despawns`.
-- **Sparse and relation ids live in separate id spaces.** Declare them in `sparse*`/`relation*`, never in `reads`/`writes`.
-- **`queries`** is a *lint*, not a runtime term: at registration it checks `queries ⊆ reads ∪ writes` and throws `QUERY_ACCESS_UNDECLARED` if you query a component you didn't declare. It can't catch a component missing from *both*, so keep it mirroring your closed-over `ecs.query(...)` terms or the query-builder terms you pass to `registerSystem`.
+- **`reads` and `writes` are necessary.** Give empty arrays to say "this system touches no columns"
+  explicitly. Each other declaration field is empty by default.
+- **A write also gives read access**, and it authorizes `addComponent` on that column.
+- **`despawn` removes each component** on the entity. Declare the full set in `despawns`.
+- **Sparse ids and relation ids are in separate id spaces.** Declare them in the `sparse*` and
+  `relation*` fields. Never declare them in `reads` or `writes`.
+- **`queries`** is a *check*, and not a run-time term. At registration it tests that
+  `queries ⊆ reads ∪ writes`, and it throws `QUERY_ACCESS_UNDECLARED` if you query a component that
+  you did not declare. It cannot find a component that is absent from *both* lists. So keep it
+  equal to the terms of your closed-over `ecs.query(...)` calls, or to the terms of the query
+  builder that you give to `registerSystem`.
 
 ### Compile-time enforcement
 
-The config form doesn't just feed the dev-mode runtime checker. `registerSystem` infers your declaration lists as literal types and hands `fn` / `onAdded` a `SystemContext` **narrowed to exactly what you declared** — undeclared access fails to *compile*, with the missing declaration named in the error:
+The config form does more than supply the development-mode checker. `registerSystem` reads your
+declaration lists as literal types, and it gives `fn` and `onAdded` a `SystemContext` that is
+**limited to exactly what you declared**. So access that you did not declare does not *compile*,
+and the error names the declaration that is absent:
 
 ```ts
 const sys = ecs.registerSystem({
   reads: [Pos],
   writes: [Vel],
   fn(ctx) {
-    ctx.setField(e, Vel, "vx", 1);   // ✓ declared write
-    ctx.getField(e, Pos, "x");       // ✓ declared read
-    ctx.getField(e, Vel, "vy");      // ✓ a write implies a read
+    ctx.setField(e, Vel, "vx", 1);   // ✓ a declared write
+    ctx.getField(e, Pos, "x");       // ✓ a declared read
+    ctx.getField(e, Vel, "vy");      // ✓ a write also gives read access
 
     ctx.setField(e, Pos, "x", 1);
     // ✗ compile error: […, "component is not declared in this system's writes", …]
@@ -112,16 +134,26 @@ const sys = ecs.registerSystem({
 });
 ```
 
-Every rule in the list above is mirrored: `add` is authorized by `writes ∪ spawns ∪ transitions.add` (Templates included), `remove` by `despawns ∪ transitions.remove`, destroy requires a non-empty `despawns`, write-implies-read holds for the sparse/relation/resource terms, and the `queries ⊆ reads ∪ writes` lint runs at compile time too.
+The compiler applies each rule in the list above. `writes ∪ spawns ∪ transitions.add` authorizes
+`add`, and templates are part of that union. `despawns ∪ transitions.remove` authorizes `remove`. A
+destroy operation requires a `despawns` list that is not empty. The rule that a write also gives
+read access applies to the sparse, relation, and resource terms. The check
+`queries ⊆ reads ∪ writes` also runs at compile time.
 
-The compiler is the first line, not a replacement — keep dev-mode runtime checks on. They still catch what structural typing can't:
+The compiler is the first line of defence, and not a replacement. Keep the development-mode
+run-time checks on. They find the errors that the type system cannot:
 
-- Two components with **identical schemas** are interchangeable to the compiler.
-- Two resource keys carrying the same value type are interchangeable.
-- Relations are one nominal type — the compiler only distinguishes "declared *some* relation access" from "declared none".
-- A dynamically-built config (a value typed `SystemConfig`) registers with a permissive context.
+- Two components with **identical schemas** are equivalent to the compiler.
+- Two resource keys that carry the same value type are equivalent.
+- Relations are one nominal type. The compiler only knows the difference between "declares *some*
+  relation access" and "declares none".
+- A config that you build dynamically (a value with the `SystemConfig` type) registers with a
+  permissive context.
 
-**Escape hatch:** annotate the context parameter — `fn(ctx: SystemContext) { … }` — to opt one system out of narrowing (the runtime checker still applies). This is how tests that deliberately violate their declaration assert the dev throw. Helper functions can keep taking a bare `SystemContext`; every narrowed context is assignable to it.
+**An alternative:** add a type to the context parameter — `fn(ctx: SystemContext) { … }` — to
+remove the limits from one system. The run-time checker still applies. This is how a test that
+violates its own declaration on purpose asserts the development throw. A helper function can
+continue to take a plain `SystemContext`, because you can assign each limited context to it.
 
 ### `exclusive` systems
 
@@ -129,7 +161,11 @@ The compiler is the first line, not a replacement — keep dev-mode runtime chec
 ecs.registerSystem({ exclusive: true, reads: [], writes: [], fn: (ctx) => { /* anything */ } });
 ```
 
-`exclusive: true` grants **full `ECS` access** for the system's whole run — every access check passes, `reads`/`writes` may be empty, and `ctx` stays the permissive `SystemContext` at the type level (no compile-time narrowing). Use it sparingly for systems that genuinely touch everything: the [host-command apply system](./host-write-seam.md), save/load, debug tooling. The schedule is sequential today, so this is purely the access-bypass grant.
+`exclusive: true` gives **full `ECS` access** for the full run of the system. Each access check
+passes, `reads` and `writes` can be empty, and `ctx` stays the permissive `SystemContext` at the
+type level, with no compile-time limits. Use it only for the systems that truly touch everything:
+the [apply system for host commands](./host-write-seam.md), save and load, and debug tools. The
+schedule is sequential today, so this flag is only the grant that bypasses the access check.
 
 ### `SystemTransition`
 
@@ -141,34 +177,38 @@ interface SystemTransition {
 }
 ```
 
-Declares an archetype transition a system performs mid-tick, so the access checker allows the add/remove and the target archetypes are prewarmed.
+This declares an archetype transition that a system does during a tick. The access checker then
+permits the add and the remove, and the engine prepares the target archetypes.
 
 ## The system context (`ctx`)
 
-`ctx` is a `SystemContext` — the only handle a system gets. It splits cleanly into **deferred** structural ops (buffered to the phase flush, so iteration stays safe) and **immediate** reads/writes.
+`ctx` is a `SystemContext`, and it is the only handle that a system receives. It divides into
+**deferred** structural operations, which the engine holds until the flush at the end of the phase
+so that iteration stays safe, and **immediate** reads and writes.
 
-### Component reads & writes (immediate)
+### Reads and writes of components (immediate)
 
 ```ts
-ref<S>(def, entityId): ComponentRef<S>;         // mutable cached accessor — bumps the change tick
-refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only — no tick bump
+ref<S>(def, entityId): ComponentRef<S>;         // a mutable cached accessor — sets the change tick
+refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only — no change to the tick
 getField<S>(entityId, def, field): number;
 tryGetField<S>(entityId, def, field): number | undefined; // total: dead/missing → undefined
-setField<S>(entityId, def, field, value): void; // writes + bumps the change tick
-updateField<S>(entityId, def, field, fn): number;     // read-modify-write; returns the new value
-markChanged(entityId, def): void;               // manually flag a per-entity onSet (hot raw loops)
+setField<S>(entityId, def, field, value): void; // writes and sets the change tick
+updateField<S>(entityId, def, field, fn): number;     // read, modify, write; gives the new value
+markChanged(entityId, def): void;               // mark one entity for onSet by hand (raw loops)
 ```
 
-See [refs](./refs.md) for `ref`/`refRead`, and [change detection](./change-detection.md) for what "bumps the tick" means.
+See [refs](./refs.md) for `ref` and `refRead`, and [change detection](./change-detection.md) for
+the meaning of "sets the change tick".
 
 <a id="ctxcommands--deferred-structural-ops"></a>
 
-### `ctx.commands` — deferred structural ops
+### `ctx.commands` — deferred structural operations
 
 ```ts
-ctx.commands.spawn(...items: BundleOrDef[]): EntityID;   // create immediate, attaches deferred
-ctx.commands.add(entityId, ...items: BundleOrDef[]): this;   // bundles zero-fill omitted fields
-ctx.commands.add(entityId, def, values): this;               // explicit complete values (compile-checked)
+ctx.commands.spawn(...items: BundleOrDef[]): EntityID;   // the create is immediate, the attaches are deferred
+ctx.commands.add(entityId, ...items: BundleOrDef[]): this;   // a bundle writes 0 in each absent field
+ctx.commands.add(entityId, def, values): this;               // all values, explicit (checked at compile time)
 ctx.commands.remove(entityId, def): this;
 ctx.commands.despawn(entityId): this;
 ctx.commands.disable(entityId): this;
@@ -176,40 +216,53 @@ ctx.commands.enable(entityId): this;
 ```
 
 > [!TIP]
-> `ctx.commands` is the **only** deferred surface — the bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable` duplicates were removed in 0.5.0, so a deferred op always reads as one at the call site. Build entities from [bundles](./components.md#the-handle-is-callable--bundles): `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
+> `ctx.commands` is the **only** deferred surface. Version 0.5.0 removed the equivalent bare
+> functions `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable`, and `ctx.enable`. So a
+> deferred operation always reads as one at the call site. Build entities from
+> [bundles](./components.md#the-handle-is-callable--bundles):
+> `ctx.commands.spawn(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`.
 
 > [!NOTE]
-> `ctx.commands.spawn` returns the new id **immediately** (the create isn't deferred), but the components attach at the flush. A query later in the *same phase* can observe the entity half-built. To learn a spawned id after its data lands, spawn from the [host-write seam](./host-write-seam.md) with an `onSpawned` callback instead.
+> `ctx.commands.spawn` gives you the new id **immediately**, because the create is not deferred.
+> But the components attach at the flush. So a query later in the *same phase* can see the entity
+> only partially built. To learn the id of a new entity after its data is present, use the
+> [host write path](./host-write-seam.md) with an `onSpawned` callback instead.
 
-### The rest of `ctx`
+### The remainder of `ctx`
 
 ```ts
 isAlive(id): boolean;            hasComponent(id, def): boolean;   isDisabled(id): boolean;
 
-// Sparse & relation ops — IMMEDIATE (see sparse-storage.md / relations.md)
+// Sparse and relation operations — IMMEDIATE (see sparse-storage.md / relations.md)
 addSparse / removeSparse / hasSparse / getSparseField / setSparseField
 addRelation / removeRelation / targetOf / targetsOf / sourcesOf / hasRelation
 
-// Events & resources (see events.md / resources.md)
+// Events and resources (see events.md / resources.md)
 emit(key, values?): void;   read(key): EventReader;
 resource(key): T;   setResource(key, value): void;   removeResource(key): void;   hasResource(key): boolean;
 
-get ecsTick(): number;   // current store write tick
-flush(): void;           // force-apply buffered structural ops now
+get ecsTick(): number;   // the current write tick of the store
+flush(): void;           // apply the buffered structural operations now
 ```
 
 > [!WARNING]
-> Every sparse/relation op on `ctx` is **immediate** (no archetype transition — safe mid-system). Everything on `ctx.commands` is **deferred**. This mirror-with-different-timing is intentional (see [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)).
+> Each sparse and relation operation on `ctx` is **immediate**. There is no archetype transition,
+> so it is safe during a system. Each operation on `ctx.commands` is **deferred**. This difference
+> in timing is intentional (see
+> [entities](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize)).
 
 ## Lifecycle hooks
 
-- **`onAdded(ctx)`** — runs once during `ecs.startup()`, inside the system's access span (so its access *is* checked). Use it to spawn initial entities or seed resources.
-- **`onRemoved()`** — runs when you `ecs.removeSystem(descriptor)`.
-- **`dispose()`** — runs on `ecs.dispose()`.
+- **`onAdded(ctx)`** runs one time during `ecs.startup()`, inside the access span of the system.
+  So the engine *does* check its access. Use it to create the first entities, or to give
+  resources their initial values.
+- **`onRemoved()`** runs when you call `ecs.removeSystem(descriptor)`.
+- **`dispose()`** runs on `ecs.dispose()`.
 
 ## `SystemDescriptor`
 
-`registerSystem` returns a frozen `SystemDescriptor` — the identity handle. Use it (by object identity) to schedule the system, to order it relative to others, and to remove it:
+`registerSystem` gives you a frozen `SystemDescriptor`, which is the identity handle. Use it, by
+object identity, to schedule the system, to set its order against other systems, and to remove it:
 
 ```ts
 ecs.addSystems(SCHEDULE.UPDATE, move);
@@ -219,12 +272,18 @@ ecs.removeSystem(move);
 
 ## Compute backend (advanced)
 
-If the system carries a `backendHandle` **and** a [compute backend](./memory.md#compute-backend) is attached via `ecs.attachBackend(...)`, the schedule runs `backend.run(handle)` **instead of** `fn`. Still declare `reads`/`writes` accurately — they authorize the shared-memory columns the backend touches. With no backend attached, `fn` runs as the pure-TS fallback.
+If the system carries a `backendHandle` **and** you attached a
+[compute backend](./memory.md#compute-backend) with `ecs.attachBackend(...)`, the schedule runs
+`backend.run(handle)` **in place of** `fn`. Continue to declare `reads` and `writes` correctly,
+because they authorize the shared-memory columns that the backend touches. If you attach no
+backend, `fn` runs as the pure-TypeScript alternative.
 
 ## See also
 
-- [schedule](./schedule.md) — phases, ordering, system sets, run conditions, the frame loop
-- [queries](./queries.md) — the iteration terminals a system body uses
+- [schedule](./schedule.md) — the phases, the order of systems, system sets, run conditions, and
+  the frame loop
+- [queries](./queries.md) — the terminal functions that a system body uses
 - [refs](./refs.md) · [change detection](./change-detection.md) — the mutation surface and the tick
-- [WASM backends](./wasm.md) · [parallelism](./parallel.md) — backend-routed systems and parallel-ready access declarations
-- [host-write seam](./host-write-seam.md) — feeding writes in from outside the schedule
+- [WASM backends](./wasm.md) · [parallel execution](./parallel.md) — systems that a backend runs,
+  and access declarations that are ready for parallel execution
+- [the host write path](./host-write-seam.md) — how to send writes in from outside the schedule

@@ -1,6 +1,6 @@
 /**
  * Event ring — SPSC ring buffer for ECS signal/event payloads shared
- * between TS and the Zig sim. (#247 / Phase 4 PR 4C)
+ * between TS and the Zig sim.
  *
  * Same byte layout as the command ring (`command_ring.ts`); the two
  * could share a primitive but keeping them separate makes the
@@ -19,18 +19,18 @@
  *   [ slot 1:        16 B ]  ...
  *
  * Op codes: event-def IDs (assigned by `ECS.registerEvent()` at
- * registration time; #247 plan §required-FFI). The 0 op-code is
+ * registration time). The 0 op-code is
  * reserved as the empty-slot marker so a zero-initialised SAB does not
  * appear to hold a valid event. Event-def registration starts numbering
  * from 1 to honour this; the engine integration in 4D+ enforces it.
  *
- * SPSC contract (Phase 4 scope, single host thread):
+ * SPSC contract (single host thread):
  *   - Producer: Zig sim `tick()` (post-4D) OR TS host (test producers /
  *     existing JS-side emitters bridged into the ring).
  *   - Consumer: TS host drain (post-4D) OR Zig system that reads
  *     queued events from a sibling system.
- *   - The two never run concurrently in Phase 4 (single host thread
- *     orchestrates both). Phase 5's worker offload promotes the head
+ *   - The two never run concurrently (one host thread orchestrates
+ *     both). A later worker offload promotes the head
  *     bumps to `Atomics.store`; that's an additive change without
  *     altering the layout.
  *
@@ -41,8 +41,8 @@
  *
  * Region placement: between the entity-index region and the descriptor
  * region so its offset is stable across descriptor / column growth.
- * `header.event_ring_off` (the field promoted out of `_reserved0` in
- * #245's reservation) carries the offset; 0 means absent.
+ * `header.event_ring_off` (the field promoted out of `_reserved0`)
+ * carries the offset; 0 means absent.
  */
 
 /** Total bytes for the ring header. Matches command ring exactly. */
@@ -130,10 +130,10 @@ export function pushEvent(
 	payload: Uint8Array
 ): boolean {
 	if (opCode === EVENT_OP_EMPTY) {
-		throw new EventRingError(`event op_code must be > 0 (0 is reserved as the empty-slot marker)`);
+		throw new EventRingError(`event opCode must be > 0 (0 is reserved as the empty-slot marker)`);
 	}
 	if (opCode < 0 || opCode > 0xff || !Number.isInteger(opCode)) {
-		throw new EventRingError(`event op_code must be a u8 in [1, 255] (got ${opCode})`);
+		throw new EventRingError(`event opCode must be a u8 in [1, 255] (got ${opCode})`);
 	}
 	if (payload.byteLength !== EVENT_RING_SLOT_BYTES - 1) {
 		throw new EventRingError(
@@ -164,7 +164,7 @@ export function pushEvent(
 export function popEvent(view: DataView, ringOff: number, outPayload: Uint8Array): number {
 	if (outPayload.byteLength !== EVENT_RING_SLOT_BYTES - 1) {
 		throw new EventRingError(
-			`out_payload must be ${EVENT_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
+			`outPayload must be ${EVENT_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
 		);
 	}
 	const writeHead = ringWriteHead(view, ringOff);

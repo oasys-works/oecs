@@ -6,7 +6,7 @@
  * game's own regions (terrain, spatial grid, … ) are NOT here — they are
  * consumer-declared `StoreRegionSpec`s laid out into the generic region table
  * (`region_table.ts`), keyed by an opaque `region_id` the engine never
- * interprets. (#623 — de-game the SAB substrate; ADR-0018.)
+ * interprets. This de-games the SAB substrate.
  *
  * Before this registry the region set was hand-mirrored across four places:
  *   - `createColumnStore` (column_store.ts) sized each region, computed its byte
@@ -19,7 +19,7 @@
  *     new SAB.
  * Adding a region meant editing all four in lockstep, and nothing enforced
  * that you did — a missed entry silently dropped that region's live state
- * across a grow (the class of bug behind #245). This registry collapses the
+ * across a grow (a real class of bug). This registry collapses the
  * four enumerations into one ordered list; each consumer is now a loop over it.
  *
  * ORDER IS LOAD-BEARING. The array order is the byte order of the regions in

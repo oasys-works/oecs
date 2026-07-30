@@ -147,7 +147,7 @@ describe("BufferBackedColumn", () => {
 		expect(() => col.bulkAppendZeroes(3)).toThrow(StoreColumnOverflowError);
 	});
 
-	it("bulk_append_value fills with the value and advances length (#462)", () => {
+	it("bulk_append_value fills with the value and advances length", () => {
 		const { col } = makeColumn(Int32Array, 6, 4);
 		col.push(7);
 		col.bulkAppendValue(9, 3);

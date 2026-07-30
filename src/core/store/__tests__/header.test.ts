@@ -1,8 +1,7 @@
 /**
- * Binary-fixture lock for the 52-byte SAB header (#171 §6.1.1; widened
- * to 48 B in #245 / PR 4B, 56 B in #263 / PR-C+D, 60 B in #268 / PR-B,
- * 64 B in v5 / "SAB-is-the-interface", then shrunk to 52 B in #623 when
- * the five game-named region offsets became a generic region table).
+ * Binary-fixture lock for the 52-byte SAB header. It widened from 32 B to
+ * 48 B, then 56 B, then 60 B, then 64 B, and then shrank to 52 B when the
+ * five game-named region offsets became a generic region table.
  *
  * The bytes in `GOLDEN_HEX` are the contract: any unintentional change to
  * field order, width, or endianness will flip them and fail this test. Treat
@@ -33,7 +32,7 @@ import {
 	type StoreHeader
 } from "../header";
 
-// Hand-derived from the layout in plan §7.1, written little-endian per the
+// Hand-derived from the layout, written little-endian per the
 // "WASM is LE; every host we target is LE" invariant in `header.ts`. Held
 // here as a string so a diff failure prints the exact byte that flipped.
 const FIXTURE: StoreHeader = {
@@ -54,17 +53,17 @@ const FIXTURE: StoreHeader = {
 
 const GOLDEN_HEX = [
 	"53494d31", // magic ('SIM1' as bytes on disk; LE u32 = 0x314D4953)
-	"00000000", // sim_abi_version = 0  (pre-publish sentinel; bumps start at 1 on release, #165)
+	"00000000", // sim_abi_version = 0  (pre-publish sentinel; bumps start at 1 on release)
 	"00000000", // view_stamp = 0
 	"00100000", // capacity = 4096
 	"03000000", // archetype_count = 3
 	"34000000", // layout_descriptor_off = 52 (header is now 52 B wide)
 	"a00f0000", // command_ring_off = 4000
 	"e00f0000", // action_ring_off = 4064
-	"00040000", // entity_index_off = 1024  (new in #245)
-	"00080000", // event_ring_off = 2048    (new in #247)
-	"000c0000", // region_table_off = 3072  (#623 — generic consumer region table)
-	"05000000", // region_table_count = 5   (#623)
+	"00040000", // entity_index_off = 1024
+	"00080000", // event_ring_off = 2048
+	"000c0000", // region_table_off = 3072  (generic consumer region table)
+	"05000000", // region_table_count = 5
 	"c00f0000" //  bindings_off = 4032       (v5 / SAB-is-the-interface)
 ].join("");
 
@@ -76,7 +75,7 @@ function toHex(bytes: Uint8Array): string {
 	return s;
 }
 
-describe("SAB header — locked binary layout (#171 §7.1)", () => {
+describe("SAB header — locked binary layout", () => {
 	it("fixture writes to the golden byte sequence", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
@@ -88,7 +87,7 @@ describe("SAB header — locked binary layout (#171 §7.1)", () => {
 	});
 
 	it("header is exactly STORE_HEADER_BYTES (52) bytes wide", () => {
-		// 52 bytes since #623: the five game-named region offsets were replaced
+		// 52 bytes: the five game-named region offsets were replaced
 		// by the generic `region_table_off` + `region_table_count` pair (a net
 		// −5 +2 = −3 u32 fields). Game regions now live in the region-table
 		// directory, not as named header fields. A further mechanism field

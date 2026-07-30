@@ -1,5 +1,5 @@
 /***
- * EventRegistry — event channel registry + the per-tick dirty list (H1 step 2).
+ * EventRegistry — event channel registry + the per-tick dirty list.
  *
  * Owns the `EventChannel` array (parallel, indexed by EventID), the
  * symbol-key → def map behind `eventKey`/`signalKey` registration, and the
@@ -47,7 +47,7 @@ export class EventRegistry {
 		// Sample emptiness, emit, THEN mark dirty: if `emit` throws (a DEV
 		// missing-field check), `reader.length` stays 0 and a later successful emit
 		// would push the id a second time — breaking the at-most-once-per-tick
-		// dirty-list invariant. Push only on a clean emit. #728.
+		// dirty-list invariant. Push only on a clean emit.
 		const wasEmpty = channel.reader.length === 0;
 		channel.emit(values);
 		if (wasEmpty) this.dirtyChannels.push(id);
@@ -67,6 +67,12 @@ export class EventRegistry {
 
 	public clearEvents(): void {
 		const dirty = this.dirtyChannels;
+		// Bail before touching `dirty.length`. Setting `length` on an array is a
+		// property store, not a field write — V8 does not fold it away when the
+		// array is already empty — and this runs once per `update()` whether or
+		// not anything was emitted. In a schedule that emits no events (the common
+		// case for most phases) that store was a measurable part of each tick.
+		if (dirty.length === 0) return;
 		const channels = this.channels;
 		for (let i = 0; i < dirty.length; i++) {
 			channels[dirty[i]].clear();
@@ -78,7 +84,7 @@ export class EventRegistry {
 	 * `ECS.update` samples this either side of `dispatchSet` to assert an onSet
 	 * observer emitted nothing — its emissions would be wiped by the tick-tail
 	 * `clearEvents` and break the empty-channel-at-boundary invariant snapshot /
-	 * restore relies on (#586). Walks only the dirty list, never the hot emit path. */
+	 * restore relies on. Walks only the dirty list, never the hot emit path. */
 	public devBufferedEventCount(): number {
 		const dirty = this.dirtyChannels;
 		const channels = this.channels;

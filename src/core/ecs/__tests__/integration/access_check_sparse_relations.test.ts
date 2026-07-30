@@ -1,7 +1,8 @@
-// Issue #496 — sparse-component / relation access-declaration coverage.
+// Sparse-component / relation access-declaration coverage.
 //
 // The dense `SystemContext` mutators have run an `accessCheck` guard under
-// `__DEV__` since issue #213 Phase B. Sparse (`addSparse` / `removeSparse` /
+// `__DEV__` since access declarations became mandatory. Sparse
+// (`addSparse` / `removeSparse` /
 // `setSparseField`) and relation (`addRelation` / `removeRelation`)
 // mutators used to forward straight to the store with no check, because
 // `SystemAccessDeclaration` had no vocabulary for the two new id spaces. These
@@ -40,7 +41,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	return () => world.update(0);
 }
 
-describe("Sparse access validation (issue #496)", () => {
+describe("Sparse access validation", () => {
 	it("throws when a system adds an undeclared sparse component", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
@@ -202,7 +203,7 @@ describe("Sparse access validation (issue #496)", () => {
 	});
 });
 
-describe("Relation access validation (issue #496)", () => {
+describe("Relation access validation", () => {
 	it("throws when a system adds an undeclared relation", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
@@ -307,7 +308,7 @@ describe("Relation access validation (issue #496)", () => {
 	});
 });
 
-describe("Access id spaces are disjoint (issue #496)", () => {
+describe("Access id spaces are disjoint", () => {
 	it("a dense write declaration does not authorise a same-numbered sparse component", () => {
 		const world = new ECS();
 		// First dense component and first sparse component both erase to numeric
@@ -354,7 +355,7 @@ describe("Access id spaces are disjoint (issue #496)", () => {
 	});
 });
 
-describe("Sparse/relation access outside any system (issue #496)", () => {
+describe("Sparse/relation access outside any system", () => {
 	it("host-side sparse + relation mutations are never access-checked", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);

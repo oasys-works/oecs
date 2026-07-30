@@ -1,5 +1,5 @@
 /**
- * Relations — (relation, target) pairs on the sparse storage class (#471 / ADR-0011).
+ * Relations — (relation, target) pairs on the sparse storage class.
  *
  * Covers the issue's acceptance criteria:
  *  - register exclusive + multi-target relations; add/remove pairs; query
@@ -20,7 +20,7 @@ import { SparseRestoreError } from "../../sparse_store";
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-describe("ECS relations — exclusive (#471)", () => {
+describe("ECS relations — exclusive", () => {
 	it("registers, adds, queries forward + reverse, and removes", () => {
 		const world = new ECS({ deterministic: true });
 		const Targets = world.relations.register(); // exclusive by default
@@ -94,7 +94,7 @@ describe("ECS relations — exclusive (#471)", () => {
 
 	// Dev-build contract: a dead src/tgt is caller error and throws here. The
 	// production no-op + no-leak branch is covered separately, against a
-	// `__DEV__: false` bundle, in relations_prod_guard.test.ts (#495). Uses the
+	// `__DEV__: false` bundle, in relations_prod_guard.test.ts. Uses the
 	// Store directly for an *immediate* destroy (ECS.destroyEntity is deferred,
 	// so the handle would still be alive until flush).
 	it("throws on a dead source or target, leaving the reverse index clean", () => {
@@ -115,7 +115,7 @@ describe("ECS relations — exclusive (#471)", () => {
 	});
 });
 
-describe("ECS relations — multi-target (#471)", () => {
+describe("ECS relations — multi-target", () => {
 	it("adds, removes individual pairs, and queries the set both ways", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
@@ -179,7 +179,7 @@ describe("ECS relations — multi-target (#471)", () => {
 	});
 });
 
-describe("relations registration + validation (#471)", () => {
+describe("relations registration + validation", () => {
 	it("rejects a relation declared both exclusive and multi-target", () => {
 		const world = new ECS({ deterministic: true });
 		// Now a compile error too (RelationOptions is a union) — the cast covers
@@ -193,13 +193,13 @@ describe("relations registration + validation (#471)", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
-		// cast (§10c): deliberately defeat the cardinality brand to assert the
-		// runtime RELATION_MODE_MISMATCH backstop (POLISH_AUDIT #7)
+		// cast: deliberately defeat the cardinality brand to assert the
+		// runtime RELATION_MODE_MISMATCH backstop
 		expect(() => world.relations.targetOf(src, Likes as unknown as RelationDef<"exclusive">)).toThrow();
 	});
 });
 
-describe("relations cause no archetype transition (#471)", () => {
+describe("relations cause no archetype transition", () => {
 	it("add / re-target / remove leave archetype_count and archetype_id stable", () => {
 		const store = new Store({ deterministic: true });
 		const Pos = store.registerComponent({ x: "i32", y: "i32" });
@@ -226,7 +226,7 @@ describe("relations cause no archetype transition (#471)", () => {
 	});
 });
 
-describe("relations stay consistent through churn + destroy (#471)", () => {
+describe("relations stay consistent through churn + destroy", () => {
 	it("destroying a SOURCE purges it from the reverse index (immediate)", () => {
 		const store = new Store({ deterministic: true });
 		const R = store.registerRelation();
@@ -286,7 +286,7 @@ describe("relations stay consistent through churn + destroy (#471)", () => {
 		}
 	});
 
-	it("exclusive relations fold into state_hash + snapshot for free (#470 inherited)", () => {
+	it("exclusive relations fold into state_hash + snapshot for free (inherited)", () => {
 		// Exclusive targets live in the sparse field, so they ride the sparse
 		// determinism surface with no extra wiring — two worlds with identical
 		// pairs reached by different add/re-target histories hash equal, and the
@@ -488,7 +488,7 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 	});
 });
 
-describe("relation restore validation — defensive hardening (#494)", () => {
+describe("relation restore validation — defensive hardening", () => {
 	it("rejects a multi relation source index past MAX_INDEX", () => {
 		// The multi forward set is keyed by source entity index and that index is
 		// fed to createEntityId(idx, gens[idx]); an unvalidated wild u32 reads
@@ -515,7 +515,7 @@ describe("relation restore validation — defensive hardening (#494)", () => {
 		expect(() => dst.w.snapshots.restoreSparse(bytes)).toThrow(SparseRestoreError);
 	});
 
-	it("rejects a decoded multi-relation target that is not a well-formed packed EntityID (#723)", () => {
+	it("rejects a decoded multi-relation target that is not a well-formed packed EntityID", () => {
 		// Symmetric with the source-index guard above: a crafted / truncated snapshot
 		// can decode a multi target whose bits fall outside the 31-bit packed layout.
 		// `getEntityIndex` would then mask it onto an unrelated live slot (the ABA

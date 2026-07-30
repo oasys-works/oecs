@@ -1,5 +1,5 @@
 /**
- * Component observers (#517 §1 / ADR-0013) — onAdd / onRemove / onSet.
+ * Component observers — onAdd / onRemove / onSet.
  *
  * Ports the two locked proofs to the REAL engine:
  *   - determinism: one logical op-set in several INPUT ORDERINGS → identical
@@ -72,7 +72,7 @@ describe("Observers — onAdd / onRemove basics", () => {
 		let fires = 0;
 		world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
 		const e = world.spawn();
-		world.addComponent(e, Tag); // immediate path — ADR-0013: not an observed point
+		world.addComponent(e, Tag); // immediate path — not an observed point
 		expect(fires).toBe(0);
 	});
 
@@ -102,7 +102,7 @@ describe("Observers — onAdd / onRemove basics", () => {
 });
 
 // ============================================================================
-// A handle disposed MID-ROUND must not fire later in the same flush (#726).
+// A handle disposed MID-ROUND must not fire later in the same flush.
 //
 // `dispatchStructural` captures the topo order ONCE, then walks it. A sibling
 // observer's callback can reach another observer's `dispose()` handle and flip
@@ -115,7 +115,7 @@ describe("Observers — onAdd / onRemove basics", () => {
 // the second case, removes) both so one flush dispatches both in topo order.
 // ============================================================================
 
-describe("Observers — dispose mid-round (#726)", () => {
+describe("Observers — dispose mid-round", () => {
 	it("an observer disposed from a sibling's on_add does not fire later the same round", () => {
 		const world = new ECS({ deterministic: true });
 		const A = world.registerTag(); // registered first → lower cid → fires first
@@ -191,11 +191,11 @@ describe("Observers — dispose mid-round (#726)", () => {
 });
 
 // ============================================================================
-// onRemove fans out across a destroy (#531). A destroy is a remove of the whole
+// onRemove fans out across a destroy. A destroy is a remove of the whole
 // mask, so it must fire onRemove for every carried component — at the deferred
 // flush boundary, in the same commit-then-observe / canonical-order discipline
 // as an explicit remove. The entity is freed before the callback runs, so the
-// onRemove identifies WHAT was destroyed by its (now dead) eid. PATTERNS §72.
+// onRemove identifies WHAT was destroyed by its (now dead) eid.
 // ============================================================================
 
 describe("Observers — onRemove on destroy", () => {
@@ -300,7 +300,7 @@ describe("Observers — onRemove on destroy", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 		world.update(1 / 60);
-		expect(aliveWhenARemoved).toBe(true); // pre-#531 remove semantics preserved
+		expect(aliveWhenARemoved).toBe(true); // the original remove semantics stay
 		expect(aliveWhenBRemoved).toBe(false); // destroy is commit-then-observe
 	});
 
@@ -419,7 +419,7 @@ describe("Observers — canonical ordering", () => {
 
 	it("orders by bare entity index across the high radix pass and recycled generations", () => {
 		// Hardens the canonical-order guard against the two radix-internal
-		// regressions the 8-entity case above can't see (#550):
+		// regressions the 8-entity case above can't see:
 		//   1. a single-pass radix — caught by spanning > 1024 indices so the
 		//      second 10-bit pass is load-bearing (8 entities all fit the low pass);
 		//   2. a sort keyed on the full packed handle (index | generation) rather
@@ -811,7 +811,7 @@ describe("Observers — yield_existing", () => {
 	});
 
 	it("a yield_existing registration mid-system does not disable access_check for the rest of the frame", () => {
-		// #554: the replay enters/leaves the observer's access frame; a bare leave
+		// The replay enters/leaves the observer's access frame; a bare leave
 		// nulls the caller's frame (leave() doesn't pop), silently disabling
 		// dev-mode enforcement for the remainder of the registering system. The
 		// undeclared Pos write below must still throw under the restored frame.
@@ -1045,10 +1045,10 @@ describe("Observers — dirty state stays out of state_hash", () => {
 	});
 });
 
-describe("Observers — onSet and the one-tick event window (#586)", () => {
+describe("Observers — onSet and the one-tick event window", () => {
 	it("onSet reads events emitted earlier in the same tick (it fires inside the window)", () => {
 		// `clearEvents` is the tick's last act (after `dispatchSet`), so onSet sees
-		// the settled component snapshot AND this tick's events. (Was 0 pre-#586,
+		// the settled component snapshot AND this tick's events. (Was 0 before,
 		// when the clear ran before `dispatchSet`.)
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");

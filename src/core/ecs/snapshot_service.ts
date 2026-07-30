@@ -1,14 +1,14 @@
 /***
- * SnapshotService — world snapshot / resume orchestration (H1 step 5).
+ * SnapshotService — world snapshot / resume orchestration.
  *
  * Owns the serialization, framing, and fail-closed validation of the
  * determinism-gated snapshot surface: the sparse+relation section
  * (`snapshotSparse` / `restoreSparse`), and the full-world capture/mount
- * (`snapshot` / `restoreInto`, #789). The `DETERMINISM_DISABLED` gate stays
- * on `Store`'s public delegations (ADR-0020) — this service assumes the gate
+ * (`snapshot` / `restoreInto`). The `DETERMINISM_DISABLED` gate stays
+ * on `Store`'s public delegations — this service assumes the gate
  * already passed.
  *
- * Boundary (per plan H1 step 5): the service reaches other state ONLY
+ * Boundary: the service reaches other state ONLY
  * through explicit snapshot seams —
  *   - `EntityAllocator` exposes its own snapshot interface
  *     (`snapshotFreeIndices` / `setHighWater` / `restoreHostState`), passed
@@ -82,7 +82,7 @@ export interface SnapshotHost {
 
 export class SnapshotService {
 	private readonly host: SnapshotHost;
-	/** The allocator IS its own snapshot seam (H1 step 3): free-list copy on
+	/** The allocator IS its own snapshot seam: free-list copy on
 	 * capture; `setHighWater` + `restoreHostState` on mount. */
 	private readonly allocator: EntityAllocator;
 
@@ -98,7 +98,7 @@ export class SnapshotService {
 	 * by the relation side data (`snapshotRelations` — multi forward target
 	 * sets, which live outside the sparse store). Both are written in canonical
 	 * entity-index order, so two worlds with identical contents inserted in
-	 * different orders snapshot byte-for-byte the same (#470). The reverse index
+	 * different orders snapshot byte-for-byte the same. The reverse index
 	 * is derived and never serialized — `restoreSparse` rebuilds it. */
 	public snapshotSparse(): Uint8Array {
 		const sparse = snapshotSparseStores(this.host.sparseStores());
@@ -134,7 +134,7 @@ export class SnapshotService {
 		// Exact frame, not a lower bound: a buffer LONGER than the declared frame
 		// must be rejected too, or two buffers differing only in trailing padding
 		// would restore identically — the snapshot wouldn't be a canonical
-		// encoding (#494). `!==` also subsumes the old under-declared (truncated)
+		// encoding. `!==` also subsumes the old under-declared (truncated)
 		// case.
 		if (8 + sparseLen + relLen !== bytes.byteLength) {
 			throw new SparseRestoreError(
@@ -163,7 +163,7 @@ export class SnapshotService {
 	}
 
 	/** Capture the full live world to one self-contained byte buffer that
-	 * `restoreInto` can mount back onto a live, ticking world (#789). Three
+	 * `restoreInto` can mount back onto a live, ticking world. Three
 	 * sections (see `resume.ts`): the dense SAB column bytes, the sparse +
 	 * relation bytes, and the host-side bookkeeping the SAB omits. */
 	public snapshot(): Uint8Array {
@@ -211,7 +211,7 @@ export class SnapshotService {
 
 		// --- Fail closed BEFORE mutating any live state ---
 		// `restoreColumnStore` (below) builds the restored store through the live
-		// world's in-place allocator (ADR-0008), which reuses the live backing
+		// world's in-place allocator, which reuses the live backing
 		// buffer — so it OVERWRITES live column bytes as it copies the snapshot
 		// in. A guard run on the materialised store would therefore fire only
 		// after the live world was already clobbered. So validate everything that

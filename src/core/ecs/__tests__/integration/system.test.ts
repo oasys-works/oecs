@@ -173,7 +173,7 @@ describe("ECS system registration", () => {
 		expect(untaggedHasTag).toBe(false);
 	});
 
-	// #213 H4: the bare-fn overload is `(ctx, dt)`. Forgetting the query builder
+	// The bare-fn overload is `(ctx, dt)`. Forgetting the query builder
 	// on the `(q, ctx, dt)` form would silently misbind args (q := ctx, dt := undefined);
 	// the __DEV__ arity guard fails fast instead. Strict TS already rejects the
 	// literal 3-param-arrow-with-no-builder form, so this 3-arity function reaches
@@ -371,13 +371,12 @@ describe("ECS fixed timestep", () => {
 });
 
 // ============================================================================
-// Phase A+B of issue #213 — mandatory system access declarations + runtime
-// validation. Phase A landed the type-level surface; Phase B replaced the
-// PHASE_A_PLACEHOLDER_ACCESS sentinel with real per-system declarations and
-// wired SystemContext + Archetype + World methods to throw under __DEV__
-// when a system performs access it didn't declare.
+// Mandatory system access declarations + runtime validation. Every system
+// declares real per-system access, and SystemContext + Archetype + World
+// methods throw under __DEV__ when a system performs access it did not
+// declare.
 // ============================================================================
-describe("SystemConfig access declarations (issue #213 Phase A)", () => {
+describe("SystemConfig access declarations", () => {
 	it("descriptor preserves declared reads/writes/spawns/despawns/transitions/resources", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["x"] as const);
@@ -420,12 +419,12 @@ describe("SystemConfig access declarations (issue #213 Phase A)", () => {
 });
 
 // ============================================================================
-// Phase B of issue #213 — runtime validation of declared access surface.
+// Runtime validation of the declared access surface.
 // accessCheck.enter(desc) is called by Schedule before fn() runs; every
 // component read / write / structural change / resource access is checked
 // against the descriptor's declarations and throws ECSError on a violation.
 // ============================================================================
-describe("Runtime access validation (issue #213 Phase B)", () => {
+describe("Runtime access validation", () => {
 	it("throws when system reads an undeclared component", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -647,7 +646,7 @@ describe("Runtime access validation (issue #213 Phase B)", () => {
 			name: "rmw",
 			reads: [],
 			// Only declares writes — must still be allowed to read Pos because
-			// every write implies a read (design §3).
+			// every write implies a read.
 			writes: [Pos],
 			spawns: [],
 			despawns: [],

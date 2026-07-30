@@ -13,7 +13,7 @@
  * value is never issued to a live handle, every stale handle to the
  * retired slot reads as dead — closing the ABA window where a wrapped
  * counter would otherwise let an old generation-0 handle alias a new
- * occupant (#376).
+ * occupant.
  *
  * The packed layout fits in 31 bits, so the sign bit is never set.
  * This means all bitwise results are positive — no unsigned coercion
@@ -59,7 +59,7 @@ export const MAX_GENERATION = (1 << GENERATION_BITS) - 1; // 0x7FF (2047)
 // handle. The slot allocator stamps it into a retired slot so that every
 // stale handle (which can only carry generations 0..MAX_GENERATION-1) fails
 // the `isAlive` generation check. Reserving it — rather than wrapping the
-// counter back to 0 — is what closes the ABA stale-handle window (#376),
+// counter back to 0 — is what closes the ABA stale-handle window,
 // and it stays in-range so SAB readers never see an out-of-range generation.
 export const RETIRED_GENERATION = MAX_GENERATION; // 0x7FF — tombstone, not issued
 // Highest generation actually handed out to a live entity (2046). A slot is
@@ -69,7 +69,7 @@ export const MAX_LIVE_GENERATION = MAX_GENERATION - 1; // 0x7FE (2046)
 // Largest well-formed packed EntityID — every index and generation bit set
 // (generation MAX_GENERATION, index MAX_INDEX). The 31-bit layout's ceiling, so
 // the sign bit is never set. Bounds-check a decoded handle from semi-trusted bytes
-// (snapshot / postMessage) against this before it masks onto a slot index (#723).
+// (snapshot / postMessage) against this before it masks onto a slot index.
 export const MAX_ENTITY_ID = (MAX_GENERATION << INDEX_BITS) | MAX_INDEX; // 0x7FFFFFFF
 
 export const createEntityId = (index: number, generation: number): EntityID => {

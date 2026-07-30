@@ -65,7 +65,7 @@ describe("extend_column_store — happy path", () => {
 		expect(newViewStamp).toBe(1);
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 		// The realloc path patches the returned header so its cached
-		// `view_stamp` / `capacity` match the SAB bytes — no stale 0 (#386).
+		// `view_stamp` / `capacity` match the SAB bytes — no stale 0.
 		expect(next.header.viewStamp).toBe(1);
 		expect(next.header.capacity).toBe(readStoreHeader(next.view).capacity);
 	});
@@ -199,7 +199,7 @@ describe("extend_column_store — happy path", () => {
 	});
 });
 
-describe("extend_column_store — growable in-place fast path (#237 Option A)", () => {
+describe("extend_column_store — growable in-place fast path", () => {
 	it("reuses the same SAB across extends when allocator is growable + headroom present", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
@@ -329,7 +329,7 @@ describe("extend_column_store — growable in-place fast path (#237 Option A)", 
 	});
 });
 
-describe("extend_column_store — descriptor headroom survives realloc (#541)", () => {
+describe("extend_column_store — descriptor headroom survives realloc", () => {
 	// One single-column archetype's descriptor footprint.
 	const ONE_COL = archetypeDescriptorBytes(1);
 
@@ -381,7 +381,7 @@ describe("extend_column_store — descriptor headroom survives realloc (#541)", 
 		}
 
 		expect(sawRealloc).toBe(true); // exhaustion really triggered a realloc
-		expect(inPlaceAfterRealloc).toBe(true); // #541: not permanently slow
+		expect(inPlaceAfterRealloc).toBe(true); // not permanently slow
 	});
 
 	it("realloc'd store carries the policy and is sized natural + headroom", () => {
@@ -410,7 +410,7 @@ describe("extend_column_store — descriptor headroom survives realloc (#541)", 
 	});
 });
 
-describe("extend_column_store — wasm-memory in-place fast path (#361)", () => {
+describe("extend_column_store — wasm-memory in-place fast path", () => {
 	it("takes the in-place branch under wasm_memory_allocator (views_preserved=true)", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 64, shared: true });
 		const alloc = wasmMemoryAllocator(memory);

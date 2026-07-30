@@ -3,7 +3,7 @@
  *
  * flecs ships `IsA` / `ChildOf` as builtin relationships the core special-cases
  * (component inheritance, name-scoping). We deliberately do NOT: our relations
- * carry no engine-integrated semantics (ADR-0011 — the SoA/WASM hot loop
+ * carry no engine-integrated semantics (the SoA/WASM hot loop
  * disfavours traversal-per-read), so these are *thin* — each is just
  * `ecs.relations.register(...)` with a chosen cardinality + cleanup policy, and
  * the generic relation surface (`targetOf` / `sourcesOf` / `ancestorsOf` /
@@ -14,12 +14,12 @@
  *
  * Both are **exclusive** (one direct target per source): an instance is-a one
  * direct exemplar, a child has one parent — which forms a chain/tree and is what
- * makes the exclusive-only traversal helpers (#474) available. `multi` is
+ * makes the exclusive-only traversal helpers available. `multi` is
  * intentionally not offered (it'd break traversal and isn't the IsA/ChildOf
  * shape). `onDeleteTarget` is overridable; the defaults follow flecs.
  *
- * Resolves #517-adjacent #477 (IsA); ChildOf is the sibling slice of the
- * relations epic #463. No live inheritance is introduced (see #478).
+ * IsA and ChildOf are siblings in the relations work. No live inheritance
+ * is introduced.
  ***/
 
 import type { ECS } from "./ecs";
@@ -42,7 +42,7 @@ export interface BuiltinRelationOptions {
  *   `ecs.relations.ancestorsOf(instance, IsA)` / `rootOf` / `cascadeOf(exemplar, IsA)`.
  * - **No component inheritance** — IsA records the link only; materialization of
  *   an instance from its exemplar stays a spawn-time copy (the template path,
- *   #462), deliberately decoupled (#477 / #478). An exemplar is a real entity,
+ *   deliberately decoupled. An exemplar is a real entity,
  *   not a `Template` (a non-entity template can't be a relation target).
  *
  * Default `onDeleteTarget: "clear"` — destroying an exemplar drops its

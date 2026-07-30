@@ -1,19 +1,30 @@
-# Host-write seam
+# The host write path
 
-> **Advanced / optional.** A plain `ECS` doesn't need any of this. Reach for it when writes originate **outside** the schedule — a UI, an editor, a dev tool, a network handler, a worker.
+> **Advanced and optional.** A plain `ECS` needs none of this. Use it when a write starts
+> **outside** the schedule: in a UI, an editor, a development tool, a network handler, or a worker.
 
-The problem: those callers run off-schedule, but writing to the `ECS` mid-frame (or from another thread) would corrupt live iteration. The seam solves it by making every outside write a **typed command** that is buffered off-schedule and applied at one blessed point.
+The problem: those callers run outside the schedule, but a write to the `ECS` during a frame, or
+from a second thread, would corrupt the live iteration. The host write path solves it. It makes each
+write from outside a **typed command**. It holds that command outside the schedule, and it applies
+it at one approved point. The API calls this path a *seam*, as in `installHostCommandSeam`.
 
-**The model:** a host enqueues typed `HostCommand`s into a `HostCommandQueue` (pure buffering — nothing touches the `ECS`). A single blessed **`exclusive`** apply system drains the queue at the **schedule head** (`PRE_STARTUP` for seed-time, `PRE_UPDATE` each frame) through one dispatch, `applyHostCommand`, which issues the normal deferred `ctx` structural ops. The exception is `setField`, which applies immediately during the drain and bumps the change tick. Structural writes then land at the usual phase-tail flush, observers fire, and (if wired) the reactive bridge publishes one batched commit.
+**The model:** A host puts typed `HostCommand` values into a `HostCommandQueue`. That is pure
+buffering, and nothing touches the `ECS`. One approved **`exclusive`** apply system drains the
+queue at the **head of a phase**: `PRE_STARTUP` for the initial values, and `PRE_UPDATE` in each
+frame. It drains through one dispatch function, `applyHostCommand`, which issues the usual deferred
+structural operations on `ctx`. The one exception is `setField`, which applies immediately during
+the drain and sets the change tick. The structural writes then land at the usual flush at the end of
+the phase, the observers run, and, if you connected it, the reactive bridge publishes one batched
+commit.
 
 ```ts
 import { SCHEDULE, installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
 const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup()
-ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after installing the seam
+ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after you install the seam
 ecs.startup();
 
-// From your UI / editor / network handler, any time:
+// From your UI, editor, or network handler, at any time:
 queue.add(entity, Health, { hp: 100 });
 queue.spawn([spawnEntry(Pos, { x: 0, y: 0 })], (id) => console.log("spawned", id));
 
@@ -28,45 +39,61 @@ installHostCommandSeam(ecs: ECS, opts?: HostCommandSeamOptions): HostCommandQueu
 interface HostCommandSeamOptions {
   readonly schedules?: readonly SCHEDULE[];   // default [PRE_STARTUP, PRE_UPDATE]
   readonly name?: string;                      // default "host_command_apply"
-  readonly ring?: HostCommandDispatcher;       // opt-in SAB cross-thread transport
-  readonly recorder?: HostCommandSink;         // opt-in record/replay tap
+  readonly ring?: HostCommandDispatcher;       // the optional SAB transport between threads
+  readonly recorder?: HostCommandSink;         // the optional connection for record and replay
 }
 ```
 
 > [!WARNING]
-> Call it **before** adding your own systems and **before `startup()`**. The schedule has no dedicated "first" slot — insertion order is what places the apply system at the phase head, and the `PRE_STARTUP` drain only fires if the system exists before startup.
+> Call it **before** you add your own systems, and **before `startup()`**. The schedule has no
+> reserved "first" position. Insertion order is what puts the apply system at the head of the
+> phase. Also, the `PRE_STARTUP` drain runs only when the system exists before startup.
 
-The teardown counterpart:
+The equivalent function to remove it:
 
 ```ts
 uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boolean;
 ```
 
-It removes the seam's apply systems from the schedule and `clear`s any still-buffered commands. The queue stays usable as a buffer, but nothing drains it until a new seam is installed. Returns `false` (no-op) if `queue` was not produced by `installHostCommandSeam` on this world.
+It removes the apply systems of the seam from the schedule, and it calls `clear` on each command
+that is still in the buffer. The queue continues to operate as a buffer, but nothing drains it
+until you install a new seam. It gives `false`, and does nothing, when
+`installHostCommandSeam` on this world did not produce `queue`.
 
 ## `HostCommandQueue`
 
-Every method **enqueues** — nothing reaches the `ECS` until the apply system drains.
+Each method **adds a command to the queue**. Nothing reaches the `ECS` until the apply system
+drains.
 
 ```ts
 spawn(components: readonly SpawnEntry[], onSpawned?: (entityId: EntityID) => void): this;
 despawn(entityId): this;
-add<S>(entityId, def, values: CompleteFieldValues<S>): this;   // bare verb — namespaced-handle grammar (cf. ctx.commands.add)
+add<S>(entityId, def, values: CompleteFieldValues<S>): this;   // a bare verb, in the grammar of a namespaced handle (compare ctx.commands.add)
 remove(entityId, def): this;
 setField<S>(entityId, def, field, value): this;
 disable(entityId): this;   enable(entityId): this;
-push(cmd: HostCommand): this;   // enqueue pre-built command data (codec / replay / editor path)
-readonly pending: number;       // buffered-but-unapplied count
-clear(): number;                // drop every buffered command WITHOUT applying; returns how many
+push(cmd: HostCommand): this;   // add command data that you built (the codec, replay, or editor path)
+readonly pending: number;       // the number of commands in the buffer that are not applied
+clear(): number;                // remove each buffered command WITHOUT applying it; gives how many
 ```
 
-`clear` is for abandoning queued edits (e.g. on a scene unload) — it does not touch commands already drained into the world.
+`clear` is for the removal of the edits in the queue, for example when a scene unloads. It does not
+touch a command that already drained into the world.
 
 > [!WARNING]
-> **Don't add-then-set in the same frame.** `setField` is applied **immediately** at the drain, but structural commands (`spawn`/`add`/…) are **deferred** to the phase flush. So `add(e, C)` then `setField(e, C, …)` in one frame fails — the add is still pending when the set runs (dev throws an actionable `COMPONENT_NOT_REGISTERED`). Carry the value in the `add`/`spawnEntry` (which take complete field values), or `setField` next frame.
+> **Do not add a component and then set a field on it in the same frame.** `setField` applies
+> **immediately** at the drain, but a structural command (`spawn`, `add`, and the others) is
+> **deferred** to the flush at the end of the phase. So `add(e, C)` and then
+> `setField(e, C, …)` in one frame fails, because the add is still in the queue when the set runs.
+> In development this throws a `COMPONENT_NOT_REGISTERED` error that tells you what to do. Carry
+> the value in the `add` or in the `spawnEntry`, which take all the field values. As an
+> alternative, call `setField` in the next frame.
 
 > [!NOTE]
-> `onSpawned` is the **only** way to learn a spawned id — the create is deferred from the host's point of view, so the id doesn't exist until the drain. The callback runs after the id is created and after its component adds have been queued, but before those adds flush; commands that the callback enqueues run on the *next* drain.
+> `onSpawned` is the **only** way to learn the id of a new entity. From the point of view of the
+> host, the create is deferred, so the id does not exist until the drain. The callback runs after
+> the engine creates the id, and after it puts the component adds in the queue, but before those
+> adds flush. A command that the callback adds to the queue runs at the *next* drain.
 
 ### `SpawnEntry`
 
@@ -76,19 +103,34 @@ interface SpawnEntry { readonly def: ComponentDef; readonly values: FieldValues<
 ```
 
 > [!WARNING]
-> **`spawnEntry` is typed for complete values** — pass every field (`0` for "default"); a tag takes `{}`. The shared field-write path zero-fills omitted fields if untyped command data reaches it, but the public TypeScript surface treats host-command values as complete (`CompleteFieldValues<S>`).
+> **`spawnEntry` has a type that demands all the values.** Give each field, and use `0` for "the
+> default". A tag takes `{}`. The shared write path for fields writes `0` in each absent field, if
+> command data with no type reaches it. But the public TypeScript surface treats the values of a
+> host command as complete (`CompleteFieldValues<S>`).
 
-#### Why `spawnEntry` and not a `bundle`?
+#### Why `spawnEntry`, and not a bundle?
 
-Elsewhere "def + values" is spelled as a [bundle](./components.md#the-handle-is-callable--bundles) — `Pos({ x: 1 })` — with **partial** values that zero-fill at attach. The host seam deliberately does not accept bundles: a `HostCommand` is plain, serializable data that may cross a thread or wire, be logged for replay, or be stacked for undo — a record read far from where it was written. Every attach path zero-fills omitted fields (`writeFields`'s `?? 0`, #716), so a partial entry would still *work*; what it loses is legibility — "absent because zero was intended" and "absent because a field was forgotten" become indistinguishable in the reified command. `spawnEntry` keeps the record explicit at the type level by demanding every field at the point where you still know what the values should be. In-process code that wants bundle ergonomics doesn't need the seam — use `ecs.spawnBundle(...)` or `ctx.commands.spawn(...)` directly.
+In other places, "a definition and its values" is a
+[bundle](./components.md#the-handle-is-callable--bundles), such as `Pos({ x: 1 })`. A bundle takes
+**a subset of the values**, and the engine writes `0` in each absent field at the attach. The host
+write path does not accept a bundle, by design. A `HostCommand` is plain data that you can
+serialize. It can cross a thread or a wire, you can log it for replay, or you can put it on a stack
+for undo. It is a record that a reader sees far from the place where you wrote it. Each attach path
+writes `0` in an absent field (the `?? 0` in `writeFields`), so a partial entry would
+still *operate*. What it loses is clarity: in the command as a record, "absent because I wanted
+zero" and "absent because I forgot the field" then look the same. `spawnEntry` keeps the record
+explicit at the type level, because it demands each field at the point where you still know what
+the values must be. In-process code that wants the convenience of a bundle does not need the host
+write path: use `ecs.spawnBundle(...)` or `ctx.commands.spawn(...)` directly.
 
 ## `HostCommand`
 
-Plain, serializable data — the same vocabulary drives both the in-process queue and the cross-thread ring, and both resolve through `applyHostCommand(ctx, cmd)`.
+This is plain data that you can serialize. The same vocabulary drives the in-process queue and the
+ring between threads, and both resolve through `applyHostCommand(ctx, cmd)`.
 
 | `kind` | timing | carries |
 | --- | --- | --- |
-| `"spawn"` | deferred | `components`, optional `onSpawned` |
+| `"spawn"` | deferred | `components`, and an optional `onSpawned` |
 | `"despawn"` | deferred | `eid` |
 | `"add_component"` | deferred | `eid`, `def`, `values` |
 | `"remove_component"` | deferred | `eid`, `def` |
@@ -97,9 +139,11 @@ Plain, serializable data — the same vocabulary drives both the in-process queu
 
 <a id="record--replay"></a>
 
-## Record & replay
+## Record and replay
 
-Because every mutation crosses `applyHostCommand`, logging the applied commands per tick + each tick's `dt` + a seed is enough to replay a session. See [determinism](./determinism.md) for the guarantee.
+Each mutation crosses `applyHostCommand`. So a log of the applied commands for each tick, plus the
+`dt` of each tick and a seed, is enough to replay a session. See [determinism](./determinism.md)
+for the guarantee.
 
 ```ts
 import { HostCommandRecorder, serializeCommandLog, deserializeCommandLog, replayCommandLog } from "@oasys/oecs";
@@ -107,7 +151,7 @@ import { HostCommandRecorder, serializeCommandLog, deserializeCommandLog, replay
 const recorder = new HostCommandRecorder(seed);
 const queue = installHostCommandSeam(ecs, { recorder });
 // …run the session…
-const log = recorder.log();                 // live view — serialize to snapshot it
+const log = recorder.log();                 // a live view — serialize it to make a copy
 const json = serializeCommandLog(log);
 ```
 
@@ -115,8 +159,8 @@ const json = serializeCommandLog(log);
 class HostCommandRecorder implements HostCommandSink {
   constructor(seed?: number);
   readonly seed: number;
-  log(): CommandLog;                         // LIVE view, not a copy
-  snapshotLog(): CommandLog;                 // stable deep copy — the safe default
+  log(): CommandLog;                         // a LIVE view, and not a copy
+  snapshotLog(): CommandLog;                 // a stable deep copy — the safe default
 }
 interface CommandLog { readonly seed: number; readonly startup: readonly HostCommand[]; readonly ticks: readonly RecordedTick[]; }
 interface RecordedTick { readonly tick: number; readonly dt: number; readonly commands: readonly HostCommand[]; }
@@ -125,38 +169,56 @@ replayCommandLog(ecs: ECS, queue: HostCommandQueue, log: CommandLog, opts?: { ha
 interface ReplayResult { readonly startupCommands: number; readonly ticks: number; readonly stateHashes: readonly number[]; }
 ```
 
-`deserializeCommandLog(json: string): CommandLog` parses `serializeCommandLog` output back into a `CommandLog`: entity ids ride as plain numbers, and each tagged component def is revived into a callable handle from its serialized id — which is one more reason the replay world must register components in the same order.
+`deserializeCommandLog(json: string): CommandLog` parses the output of `serializeCommandLog` back
+into a `CommandLog`. The entity ids travel as plain numbers. The engine makes each tagged component
+definition into a callable handle again, from its serialized id. This is one more reason that the
+world for the replay must register its components in the same order.
 
-To replay: build a **fresh, not-yet-started** `ECS` identically to the recorded run (same components in the same order, same systems, same `seed` from `log.seed`), install the seam, then hand its `queue` to `replayCommandLog`. It pushes the seed-time commands, calls `startup()`, then per tick pushes commands and calls `update(dt)` — even empty ticks, because `dt` drives the sim.
+To replay a session: build a **new `ECS` that you did not start**, in the same way as the recorded
+run. Give it the same components in the same order, the same systems, and the same `seed` from
+`log.seed`. Install the seam, then give its `queue` to `replayCommandLog`. That function pushes the
+commands from the initial phase, calls `startup()`, and then, for each tick, pushes the commands and
+calls `update(dt)`. It does this also for an empty tick, because the `dt` drives the simulation.
 
 > [!WARNING]
-> **The recorder cannot record from `FIXED_UPDATE`** — a fixed-step drain sees the fixed timestep, not the frame `dt`, which diverges on replay. `installHostCommandSeam({ recorder })` with `FIXED_UPDATE` in `schedules` throws `INVALID_RECORDER_SCHEDULE`. Record from variable-update phases only.
+> **The recorder cannot record from `FIXED_UPDATE`.** A drain in a fixed step sees the fixed
+> timestep, and not the frame `dt`, which then makes the replay different. If you call
+> `installHostCommandSeam({ recorder })` with `FIXED_UPDATE` in `schedules`, it throws
+> `INVALID_RECORDER_SCHEDULE`. Record from the variable update phases only.
 
 > [!NOTE]
-> `serializeCommandLog` throws `COMMAND_LOG_TAG_COLLISION` if a command's `values` map owns a field literally named `__component_def` (the reserved in-band def tag) — rename that field. This keeps the JSON round-trip lossless rather than corrupting on parse.
+> `serializeCommandLog` throws `COMMAND_LOG_TAG_COLLISION` when the `values` map of a command has a
+> field with the exact name `__component_def`, which is the reserved in-band tag for a definition.
+> Give that field a different name. This keeps the JSON round trip complete, and it prevents
+> corruption at the parse.
 
-## Cross-thread ring transport (advanced)
+## The ring transport between threads (advanced)
 
-For writes coming from a **worker or the wire**, a second transport decodes fixed-size ring slots into the same `applyHostCommand`. You supply the opcodes; oecs ships the mechanism and codecs.
+For a write that comes from a **worker or from the wire**, a second transport decodes ring slots of
+a fixed size into the same `applyHostCommand`. You supply the operation codes. oecs supplies the
+mechanism and the codecs.
 
 ```ts
-// The ring transport is wire/ABI surface — @oasys/oecs/internal (no semver guarantees).
+// The ring transport is a wire and ABI surface — @oasys/oecs/internal (no semver guarantees).
 import { HostCommandDispatcher, ringSetFieldCodec, ringDespawnCodec, ringDisableCodec,
          ringEnableCodec, ringRemoveComponentCodec, HOST_COMMAND_PAYLOAD_BYTES } from "@oasys/oecs/internal";
 
 const dispatcher = new HostCommandDispatcher()
   .onCommand(1, ringSetFieldCodec(Pos, "x"))      // decode → applyHostCommand
   .onCommand(2, ringDespawnCodec())
-  .on(10, myRawSpawnUnitApplier);                  // raw consumer op
+  .on(10, myRawSpawnUnitApplier);                  // a raw operation of your own
 
-installHostCommandSeam(ecs, { ring: dispatcher }); // drains the ring at each schedule head
+installHostCommandSeam(ecs, { ring: dispatcher }); // drains the ring at the head of each phase
 ```
 
-Each `ring*Codec` binds its component/field into the codec (they aren't carried in the 15-byte payload). There is deliberately **no `spawn`/`add_component` ring codec** — variable-width field values don't fit a fixed slot, so those two are typed-transport-only. Exactly one dispatcher should drain a given ring.
+Each `ring*Codec` holds its component and field inside the codec, because the payload of 15 bytes
+does not carry them. There is deliberately **no ring codec for `spawn` or `add_component`**,
+because field values of a variable width do not fit a slot of a fixed size. So those two commands
+use the typed transport only. Exactly one dispatcher must drain each ring.
 
 ## See also
 
-- [determinism](./determinism.md) — the replay fidelity guarantee
-- [editor](./editor.md) — undo/redo built on this queue
-- [reactive](./reactive.md) — the read side (ECS → UI) that pairs with this write side
+- [determinism](./determinism.md) — the guarantee of fidelity for a replay
+- [editor](./editor.md) — undo and redo, which are built on this queue
+- [reactive](./reactive.md) — the read side (ECS to UI) that pairs with this write side
 - [systems](./systems.md) — `exclusive` systems, which the apply system is

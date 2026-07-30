@@ -1,5 +1,5 @@
 /**
- * Entity-index SAB region tests (#245 / Phase 4 PR 4B).
+ * Entity-index SAB region tests.
  *
  * Covers the standalone region primitive in `entity_index.ts` —
  * sizing, header field offsets, init, and the typed-array view

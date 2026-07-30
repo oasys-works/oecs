@@ -1,19 +1,28 @@
-# Tracing
+# Traces
 
-> **Dev-only.** Both tracers are gated by the compile-time `__DEV__` flag and **tree-shaken to nothing in production** — zero cost in a release build. They answer different questions: `FrameTrace` reconstructs the causal sequence of **one frame**; `dispatchTrace` aggregates **counts** across the whole process.
+> **Development builds only.** The compile-time `__DEV__` flag controls both tracers, and the build
+> tool **removes them completely from a production build**. So they cost nothing in a release
+> build. They answer different questions. `FrameTrace` shows the sequence of causes and effects in
+> **one frame**. `dispatchTrace` collects **counts** across the full process.
 
-## Frame trace — what happened this frame
+## The frame trace — what happened in this frame
 
-Attach a sink and the engine emits ordered events inside each `update(dt)`: which systems ran (per phase, in topological order), the structural commands each queued, flush boundaries, observer firings, event emits/reads.
+Attach a sink. The engine then emits ordered events inside each `update(dt)` call:
+
+- which systems ran, in each phase, in topological order;
+- the structural commands that each one put in the queue;
+- the flush boundaries;
+- the observers that ran;
+- the emissions and the reads of events.
 
 ```ts
 import { FrameTraceRecorder } from "@oasys/oecs";
 
 const recorder = new FrameTraceRecorder();
-ecs.setTrace(recorder);        // no-op in a production build
+ecs.setTrace(recorder);        // does nothing in a production build
 ecs.update(1 / 60);
-recorder.frames();             // readonly FrameTrace[] — one per update(), in order
-recorder.reset();              // drop captured frames
+recorder.frames();             // readonly FrameTrace[] — one for each update(), in order
+recorder.reset();              // remove the captured frames
 ecs.setTrace(null);            // detach
 ```
 
@@ -33,7 +42,9 @@ type StructuralOp = "spawn" | "despawn" | "add" | "remove" | "enable" | "disable
 type ObserverOp   = "add" | "remove" | "set" | "enable" | "disable";
 ```
 
-`FrameTraceRecorder` is the shipped sink; it captures each frame as a flat, JSON-serializable `FrameTrace` (string names + numeric ids) you can stream to a browser renderer:
+`FrameTraceRecorder` is the sink that oecs supplies. It captures each frame as a flat `FrameTrace`
+that you can serialize to JSON, with string names and numeric ids. So you can send it to a
+renderer in a browser:
 
 ```ts
 interface FrameTrace { readonly tick: number; readonly dt: number; readonly events: FrameTraceEvent[]; }
@@ -42,20 +53,34 @@ interface FrameTrace { readonly tick: number; readonly dt: number; readonly even
 ```
 
 > [!TIP]
-> **`phaseBoundary` is the seam for bisecting a [determinism](./determinism.md) divergence.** Implement your own `FrameTraceSink` and read `ecs.snapshots.stateHash()` inside `phaseBoundary(phase)` — it fires once per phase, right after that phase's flush, the one safe point to hash. Diff the per-phase hashes between two peers to pin a divergence to a single phase. (The built-in `FrameTraceRecorder` no-ops `phaseBoundary`, since it holds no `ECS` reference to hash.)
+> **`phaseBoundary` is the point at which you can find a divergence in
+> [determinism](./determinism.md).** Write your own `FrameTraceSink`, and read
+> `ecs.snapshots.stateHash()` inside `phaseBoundary(phase)`. That hook runs one time for each
+> phase, immediately after the flush of that phase, and it is the one safe point at which to read
+> the hash. Compare the hashes for each phase between two peers, and you can reduce a divergence to
+> one phase. The supplied `FrameTraceRecorder` does nothing in `phaseBoundary`, because it holds no
+> reference to an `ECS` and so cannot read the hash.
 
 > [!NOTE]
-> The `POST_UPDATE` boundary fires **before** the tick-tail `onSet` dispatch and event clear, so for an `ECS` with `onSet` observers the final per-tick hash may differ from the `POST_UPDATE` phase hash; one without them reconciles exactly. `observerFired` uses `entity === -1` for archetype-granular `onSet`. The `observer` field carries the observer's `name` from its config, falling back to `observer(<component debug name>)`, then `observer(<cid>)` — see [observers](./observers.md). Sinks must be side-effect-free with respect to the `ECS` — the seam only observes.
+> The `POST_UPDATE` boundary runs **before** the `onSet` dispatch and the event clear at the end of
+> the tick. So, for an `ECS` with `onSet` observers, the final hash for the tick can be different
+> from the hash at the `POST_UPDATE` phase. For an `ECS` with no `onSet` observer, the two agree
+> exactly. `observerFired` uses `entity === -1` for an `onSet` observer with archetype
+> granularity. The `observer` field carries the `name` from the config of the observer. When there
+> is no name, it uses `observer(<component debug name>)`, and then `observer(<cid>)`. See
+> [observers](./observers.md). A sink must have no effect on the `ECS`, because this connection
+> observes only.
 
-## Dispatch trace — counts across the process
+## The dispatch trace — counts across the process
 
-A global singleton that aggregates event/resource/action dispatch **counts** by call site — a profiling view of *how often* channels fire, not the order.
+This is a global object. It collects the **counts** of the dispatches of events, resources, and
+actions, by call site. It is a profile of *how frequently* a channel runs, and not of the order.
 
 ```ts
-import { dispatchTrace } from "@oasys/oecs/internal"; // unstable tooling surface
+import { dispatchTrace } from "@oasys/oecs/internal"; // an unstable surface for tools
 
-dispatchTrace.isActive();    // the runtime half of the gate: VISUAL_INTEL_TRACE env var (__DEV__ is checked at call sites)
-dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, JSON-serializable
+dispatchTrace.isActive();    // the run-time half of the gate: the VISUAL_INTEL_TRACE environment variable (the call sites check __DEV__)
+dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, and serializable to JSON
 dispatchTrace.reset();
 ```
 
@@ -73,9 +98,14 @@ interface DispatchTraceSnapshot {
 ```
 
 > [!NOTE]
-> **Double gate:** compile-time `__DEV__` removes every call site in production, and at runtime it stays inert unless `VISUAL_INTEL_TRACE` is `"1"`/`"true"`. It's in-memory only (browser-safe, no filesystem) and resolves call sites from stack traces (cached per line). Contrast with `FrameTrace`, which is per-`ECS` and ordered.
+> **There are two gates.** The compile-time `__DEV__` flag removes each call site from a production
+> build. At run time, the trace stays inactive unless `VISUAL_INTEL_TRACE` is `"1"` or `"true"`. It
+> is in memory only, so it is safe in a browser and it uses no file system. It finds the call sites
+> from stack traces, and it caches the result for each line. Compare it with `FrameTrace`, which
+> belongs to one `ECS` and which keeps the order.
 
 ## See also
 
-- [determinism](./determinism.md) — using `phaseBoundary` + `stateHash` to bisect a divergence
-- [systems](./systems.md) · [observers](./observers.md) — the entities a frame trace reports on
+- [determinism](./determinism.md) — how to use `phaseBoundary` with `stateHash` to find a
+  divergence
+- [systems](./systems.md) · [observers](./observers.md) — the objects that a frame trace reports on

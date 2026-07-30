@@ -1,6 +1,5 @@
 /**
- * reactiveArray gate — ordered per-slot channels + structural-sharing reconcile
- * (ADR-0021). Promotes the workbench `check_array.ts` contract onto the kernel.
+ * reactiveArray gate — ordered per-slot channels + structural-sharing reconcile.
  */
 import { describe, expect, it } from "vitest";
 import { batch, effect, root } from "../kernel";

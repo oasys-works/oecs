@@ -1,6 +1,6 @@
 /***
  * ArchetypeGraph — archetype topology: mask → archetype resolution/creation,
- * add/remove edge caching, and the inverted component index (H1 step 6).
+ * add/remove edge caching, and the inverted component index.
  *
  * Owns the graph STATE (`archetypes`, the hash-bucketed mask map, the
  * monotonic id counter, `componentIndex`) and the topology operations over
@@ -11,7 +11,7 @@
  * storage-vs-orchestration split as `SnapshotService`'s mount seam. The
  * graph never touches `_columnStore`.
  *
- * Hot-path notes (#368 discipline): `get` / `resolveAdd` / `resolveRemove`
+ * Hot-path notes: `get` / `resolveAdd` / `resolveRemove`
  * are called per structural op; both resolve paths are edge-cache hits on
  * the steady state (one array index + one property read). `archetypes` and
  * `componentIndex` are exposed as the live arrays so Store's flush loops
@@ -51,7 +51,7 @@ export interface ArchetypeGraphHost {
 	/** Row capacity for a new archetype's column region. */
 	readonly initialCapacity: () => number;
 	/** Extend the SAB with the new archetypes' column regions (one call for
-	 * the whole batch — the bulk path's O(N²)→O(N) win, #213). */
+	 * the whole batch — the bulk path's O(N²)→O(N) win). */
 	readonly extendStore: (specs: ArchetypeSpec[]) => void;
 	/** Materialise the `Archetype` over the live column store and attach the
 	 * store's grow handler. */
@@ -76,7 +76,7 @@ export class ArchetypeGraph {
 	 * superset scan from the smallest bucket. Each bucket is a plain push-only
 	 * array — NOT a Set — and deliberately does NOT dedup: a (component,
 	 * archetype) pair can be inserted here at most once (see the "no duplicate
-	 * pair" invariant on `install` + ADR-0015), so there is nothing for a Set
+	 * pair" invariant on `install`), so there is nothing for a Set
 	 * to collapse. Archetypes are never removed from a Store, so buckets only
 	 * grow, in ascending archetype-id order — which is canonical order,
 	 * exploited by `_forEachChangedArchetype` to skip a sort. */
@@ -104,9 +104,9 @@ export class ArchetypeGraph {
 	 * Find or create an archetype for the given component mask.
 	 * Also updates the componentIndex and pushes into matching registered queries.
 	 *
-	 * Hot single-mask path. The bulk batched variant — used by Phase C
-	 * pre-warming at `ecs.startup()` — is `createManyFromMasks`;
-	 * see #213 / `ECS.startup()` for how it gets called and why.
+	 * Hot single-mask path. The bulk batched variant — used by the prewarm
+	 * pass at `ecs.startup()` — is `createManyFromMasks`;
+	 * see `ECS.startup()` for how it gets called and why.
 	 */
 	public getOrCreateFromMask(mask: BitSet): ArchetypeID {
 		const hash = mask.hash();
@@ -127,15 +127,15 @@ export class ArchetypeGraph {
 	}
 
 	/**
-	 * Bulk variant of `getOrCreateFromMask` — Phase C of issue #213.
+	 * Bulk variant of `getOrCreateFromMask` — the archetype prewarm pass.
 	 *
 	 * Given a set of masks, creates Archetypes for the ones not already
 	 * planted, in a SINGLE `extendColumnStore` call (instead of one per
 	 * archetype). Single-mask creation is O(N) in archetypes-so-far because
 	 * the extend has to copy every existing archetype's live rows forward;
 	 * N such calls compound to O(N²). Batching collapses the per-archetype
-	 * setup-and-copy down to one pass — the per-startup cost the design doc
-	 * §5.2 calls out as "O(N²) → O(N)" for in-tree systems whose archetype
+	 * setup-and-copy down to one pass — the per-startup cost goes from
+	 * O(N²) to O(N) for in-tree systems whose archetype
 	 * set is known at registration time via `spawns` + `transitions`.
 	 *
 	 * Masks already in the map are skipped. Returns the resolved
@@ -265,14 +265,14 @@ export class ArchetypeGraph {
 		//      `lookup`, so an id is never re-installed.
 		//   3. The multiplicity that DOES exist in the data model — a source with
 		//      many relation targets — is held OUT of the mask, on the
-		//      sparse/relation id spaces (ADR-0011), precisely because a 128-bit
+		//      sparse/relation id spaces, precisely because a 128-bit
 		//      mask cannot express a duplicate. So it never reaches this index.
 		// Ids are minted monotonically and installed in order, so each bucket stays
 		// sorted ascending BY CONSTRUCTION — i.e. canonical archetype order, which
 		// lets `_forEachChangedArchetype` iterate without re-sorting. The
 		// `DEV` guard collapses all three points into one loud check: a push
 		// that isn't strictly ascending means the invariant broke (a second writer,
-		// or a re-installed id). See ADR-0015.
+		// or a re-installed id).
 		mask.forEach((bit) => {
 			const componentId = bit as number;
 			let bucket = this.componentIndex[componentId];
@@ -283,7 +283,7 @@ export class ArchetypeGraph {
 			if (DEV && bucket.length > 0 && (id as number) <= (bucket[bucket.length - 1] as number)) {
 				throw new ECSError(
 					ECS_ERROR.COMPONENT_INDEX_INVARIANT,
-					`component_index bucket for component ${componentId} received archetype ${id as number} out of ascending order (last = ${bucket[bucket.length - 1] as number}). Buckets are duplicate-free and ascending by construction (see install / ADR-0015) — this means install ran twice for an id, or a second writer of component_index was introduced.`
+					`componentIndex bucket for component ${componentId} received archetype ${id as number} out of ascending order (last = ${bucket[bucket.length - 1] as number}). Buckets are duplicate-free and ascending by construction (see install) — this means install ran twice for an id, or a second writer of componentIndex was introduced.`
 				);
 			}
 			bucket.push(id);
@@ -291,7 +291,7 @@ export class ArchetypeGraph {
 
 		// Push new archetype into any registered query whose masks it satisfies
 		// (Store-side seam — the query registry stays on Store). No epoch bump
-		// (#328) — the new archetype is empty, so any cached
+		// — the new archetype is empty, so any cached
 		// `_nonEmptyArchetypes` list is still correct (it skips empty entries
 		// when it rebuilds). The first mutation that puts an entity into this
 		// archetype will detect the 0→non-zero crossing and bump then. SAB
@@ -360,7 +360,7 @@ export class ArchetypeGraph {
  * BitSet's first words. Components past bit `STORE_DESCRIPTOR_COMPONENT_LIMIT`
  * cannot be represented here, so `registerComponent` enforces that ceiling —
  * by the time any archetype is built, no component ID can exceed it, so the
- * copy below is lossless (#381). The mask width matches the BitSet's
+ * copy below is lossless. The mask width matches the BitSet's
  * `INITIAL_WORD_COUNT`, so these words never come from a grown BitSet. */
 function storeSpecFromLayouts(
 	archetypeId: ArchetypeID,

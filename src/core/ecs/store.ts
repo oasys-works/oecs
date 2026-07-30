@@ -35,6 +35,7 @@ import {
 ,
 	entityNotAliveError
 } from "./entity";
+import type { CursorBinder } from "./ref";
 import type { FrameTraceSink } from "./frame_trace";
 import { setComponentDebugName } from "./debug_names";
 import {
@@ -70,7 +71,7 @@ import {
 } from "./archetype";
 import type { Query, QueryHost } from "./query";
 import { RelationService } from "./relation_service";
-// Type-only: the per-consumer host seams Store implements (M1). observer.ts /
+// Type-only: the per-consumer host seams Store implements. observer.ts /
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
 import { ECS_ERROR, ECSError } from "./utils/error";
@@ -119,7 +120,7 @@ export interface ComponentMeta {
 	fieldNames: string[];
 	fieldIndex: Record<string, number>;
 	fieldTypes: TypedArrayTag[];
-	// --- Component observers (#517 §1 / ADR-0013) ---
+	// --- Component observers ---
 	// Hot-path flags consulted by the structural flush + the field-write path.
 	// All false unless `ecs.observe(...)` registered a matching observer; the
 	// no-observer flush path is byte-for-byte unchanged (`_structuralObserverCount`
@@ -128,14 +129,14 @@ export interface ComponentMeta {
 	obsAdd: boolean;
 	/** Has an onRemove observer — collect effective removes for this component. */
 	obsRem: boolean;
-	/** Has an onDisable observer (#677) — collect effective disables for this
+	/** Has an onDisable observer — collect effective disables for this
 	 * component at the toggle drain. */
 	obsDisable: boolean;
-	/** Has an onEnable observer (#677) — collect effective enables for this
+	/** Has an onEnable observer — collect effective enables for this
 	 * component at the toggle drain. */
 	obsEnable: boolean;
 	/** Has a per-entity onSet observer — record dirty rows on the write path
-	 * (the ADR-0012 opt-in dirty list). */
+	 * (the opt-in dirty list). */
 	trackDirty: boolean;
 }
 
@@ -153,13 +154,13 @@ export interface StructuralObserverEvents {
 	remComp: number[];
 	remEid: number[];
 	remLen: number;
-	/** Effective disable events (#677) — collected during the toggle drain
+	/** Effective disable events — collected during the toggle drain
 	 * (`_flushToggles`), one per `(component, entity)` of each net-disabled
 	 * entity's mask. Empty on a structural (add/remove/destroy) round. */
 	disComp: number[];
 	disEid: number[];
 	disLen: number;
-	/** Effective enable events (#677), symmetric with the disable arrays. */
+	/** Effective enable events, symmetric with the disable arrays. */
 	enaComp: number[];
 	enaEid: number[];
 	enaLen: number;
@@ -182,7 +183,7 @@ const TEMPLATE_OVERRIDE_AMBIGUOUS = -1;
 const F64_HASH_SCRATCH = new DataView(new ArrayBuffer(8));
 
 /**
- * Composite-add edge cache key construction (#659). The plural-add key packs
+ * Composite-add edge cache key construction. The plural-add key packs
  * the entry def ids as a base-`COMPOSITE_ADD_ID_STRIDE` number seeded with the
  * entry count: digits are `def + 1` (so id 0 is never a vanishing leading
  * zero), the stride exceeds the `< 128` dense-component-id ceiling, and the
@@ -227,14 +228,14 @@ export type TemplateOverrides<Defs extends readonly ComponentDef[]> = {
 // override checking — there is no write-direction hole to close.
 declare const __templateDefs: unique symbol;
 
-/** A resolved template (#462) — an archetype template produced by
+/** A resolved template — an archetype template produced by
  * `ECS.template(...)`. **Opaque** apart from `defs`: callers hold it and pass
  * it to `ECS.spawn` / `ECS.spawnMany` (and may reference it in a system's
  * `spawns` / `despawns` access declaration — the scheduler expands it to
  * `defs`); the remaining fields are engine-internal and may change. `spawn`
  * lands an entity directly in `archetype_id` with zero archetype transitions,
  * writing `flatValues` (defaults in `_flatColumns` order) in one append
- * pass. See ADR-0010. */
+ * pass. */
 export interface Template<Defs extends readonly ComponentDef[] = readonly ComponentDef[]> {
 	readonly archetypeId: ArchetypeID;
 	readonly flatValues: number[];
@@ -248,13 +249,13 @@ export interface StoreOptions {
 	initialCapacity?: number;
 	/** Pluggable SAB buffer source. When provided, `createColumnStore`,
 	 * `extendColumnStore`, and `growColumnStore` route through it. Default is
-	 * `growableSabAllocator()`. Typed `InPlaceBufferAllocator` (#682): a live
+	 * `growableSabAllocator`. Typed `InPlaceBufferAllocator`: a live
 	 * Store's flush loops hoist entity-index views across grows, so only
-	 * in-place allocators may back one (ADR-0008) — the constructor also
+	 * in-place allocators may back one — the constructor also
 	 * runtime-asserts the marker for untyped JS callers. Consumers normally
 	 * don't touch this directly; `ECSOptions.memory` resolves to it. */
 	bufferAllocator?: InPlaceBufferAllocator;
-	/** Sizing intent the world was constructed with (#682), used to phrase
+	/** Sizing intent the world was constructed with, used to phrase
 	 * allocator-cap and entity-index-overflow errors in the caller's own
 	 * terms ("3.2× the declared budget") instead of raw bytes. Wired by
 	 * `ECS` from `resolveECSMemory`; absent for bare test Stores. */
@@ -264,29 +265,29 @@ export interface StoreOptions {
 	 * views by the time this fires. Used by ECS to call
 	 * `sim.setLayout(0)` so WASM-side cached pointers re-walk. */
 	onBufferResized?: () => void;
-	/** Max live entities the SAB entity-index region holds (#245 / PR 4B).
+	/** Max live entities the SAB entity-index region holds.
 	 * Default `ENTITY_INDEX_DEFAULT_CAPACITY` (`1 << 20` — the full EntityID
 	 * index space). Exceeding this at runtime throws `EID_MAX_INDEX_OVERFLOW`.
 	 * Tests with small entity counts may set lower to bench the SAB region size
 	 * or to make index exhaustion reachable; a 1000-entity workload fits
 	 * comfortably in the default. */
 	entityIndexCapacity?: number;
-	/** Consumer-declared SAB regions (#623), forwarded verbatim to
+	/** Consumer-declared SAB regions, forwarded verbatim to
 	 * `createColumnStore`. Each `StoreRegionSpec` carries an opaque `region_id`,
 	 * a precomputed byte size, and an `init` closure; the engine lays them out
 	 * generically and exposes them via `regionHandle(id)` / `regionOffset(id)`.
 	 * A game (e.g. `@internal/sim`'s region specs) supplies these — the engine
 	 * ships no game regions of its own. Omitted ⇒ none. */
 	regions?: readonly StoreRegionSpec[];
-	/** Byte size of the opt-in sim-bindings region (#625), forwarded verbatim to
+	/** Byte size of the opt-in sim-bindings region, forwarded verbatim to
 	 * `createColumnStore`. A consumer that attaches a WASM backend passes its own
 	 * size (`@internal/sim`'s `SIM_BINDINGS_BYTES`, computed from the binding
 	 * manifest); the host then writes the `(component_id, field_id)` IDs into the
 	 * region. Omitted / 0 ⇒ no region (a pure-TS game pays nothing for the WASM
-	 * seam). De-welded from the engine ABI in #625 so a manifest edit doesn't
+	 * seam). De-welded from the engine ABI so a manifest edit doesn't
 	 * drift an engine golden. */
 	bindingsRegionBytes?: number;
-	/** Opt into the **determinism surface** (#626 / ADR-0020). Default `false`.
+	/** Opt into the **determinism surface**. Default `false`.
 	 * Gates the three methods that fold/serialize state in canonical (sorted)
 	 * order: `stateHash`, `snapshotSparse`, `restoreSparse`. When `false`
 	 * those throw `DETERMINISM_DISABLED` — the canonical-ordering tax (sparse
@@ -294,7 +295,7 @@ export interface StoreOptions {
 	 * consumer can't accidentally read a non-canonical digest. When `true`,
 	 * today's behavior is reproduced bit-for-bit. This is the ONLY effect of the
 	 * flag: it does not touch the per-tick path, the in-place-allocator invariant
-	 * (ADR-0008, a memory-safety requirement that holds regardless), or the
+	 * (a memory-safety requirement that holds regardless), or the
 	 * always-on `enabled_count` partition maintenance. The flag's value is a
 	 * capability gate, not a hot-path switch — `stateHash`/snapshot are never
 	 * called per tick. */
@@ -304,11 +305,11 @@ export interface StoreOptions {
 export class Store implements ObserverHost, QueryHost {
 	// --- Entity ID management ---
 	// Generational slot allocation (generations view, high-water, free-list,
-	// alive count) lives in `EntityAllocator` (H1 step 3). `entityArchetype` /
+	// alive count) lives in `EntityAllocator`. `entityArchetype` /
 	// `entityRow` stay here — which archetype/row a live slot occupies is
 	// membership state, not allocation state.
 	//
-	// As of #245 (Phase 4 PR 4B), the generations/archetype/row views are
+	// The generations/archetype/row views are
 	// Int32Arrays into the SAB's entity-index region, so Zig systems can
 	// resolve `entityId → (archetype_id, row)` during `sim.tick()` without
 	// callback-into-TS. The view objects get replaced whenever the SAB is
@@ -323,7 +324,7 @@ export class Store implements ObserverHost, QueryHost {
 	private readonly componentMetas: ComponentMeta[] = [];
 	private componentCount = 0;
 
-	// --- Sparse storage class (out-of-identity components, #468 / ADR-0011) ---
+	// --- Sparse storage class (out-of-identity components) ---
 	// Parallel array indexed by SparseComponentID. Each store holds a sparse
 	// component's membership + data keyed by entity index, OUTSIDE the archetype
 	// mask — add/remove cause no archetype transition and consume no identity
@@ -333,7 +334,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Debug names parallel to `sparseStores` — diagnostics only. */
 	private readonly sparseNames: (string | undefined)[] = [];
 
-	// --- Relations (sparse (relation, target) pairs, #471 / ADR-0011) ---
+	// --- Relations (sparse (relation, target) pairs) ---
 	// Registry + traversal algorithms live in `RelationService`; the Store's
 	// relation methods below are one-line delegations. Wired in the constructor
 	// through the narrow `RelationServiceHost` seam.
@@ -341,12 +342,12 @@ export class Store implements ObserverHost, QueryHost {
 
 	// --- Event channels ---
 	// Channel array + key map + per-tick dirty list live in `EventRegistry`
-	// (event_registry.ts, H1 step 2); the event methods below delegate.
+	// (event_registry.ts); the event methods below delegate.
 	private readonly events = new EventRegistry();
 
 	// --- Archetype management ---
 	// Topology (archetype list, mask→id map, id counter, inverted component
-	// index, edge resolution/creation) lives in `ArchetypeGraph` (H1 step 6).
+	// index, edge resolution/creation) lives in `ArchetypeGraph`.
 	// Storage lifecycle stays here: `_archExtendStoreWithNewSpecs` (SAB
 	// extend + view refresh), `_materializeArchetype` (column-store binding
 	// + grow handler), `_fanIntoQueries` (query-registry fan-in) are the
@@ -366,21 +367,21 @@ export class Store implements ObserverHost, QueryHost {
 	private emptyArchetypeId: ArchetypeID;
 
 	// entityIndex → ArchetypeID (UNASSIGNED = not in any archetype).
-	// SAB-backed since #245 (Phase 4 PR 4B). See `entityGenerations`
+	// SAB-backed. See `entityGenerations`
 	// comment for the lifecycle.
 	private entityArchetype: Int32Array;
 	// entityIndex → row within its archetype (UNASSIGNED = no row).
-	// SAB-backed since #245.
+	// SAB-backed.
 	private entityRow: Int32Array;
 
 	// --- Deferred operation buffers ---
 	// The pending buffers and the phase-flush drain policy (fast path,
 	// observed fixed point, re-entrancy guard) live in `DeferredCommandBuffer`
-	// (H1 step 4); the batch appliers (`_flushAdds` etc.) stay here with the
+	//; the batch appliers (`_flushAdds` etc.) stay here with the
 	// transition/dirty/observer machinery they are entangled with, reached
 	// through the collaborator's closure host.
 	private readonly _deferred: DeferredCommandBuffer;
-	// Snapshot / resume orchestration (H1 step 5) — serialization, framing,
+	// Snapshot / resume orchestration — serialization, framing,
 	// and fail-closed validation live in `SnapshotService`; the Store keeps
 	// the DETERMINISM_DISABLED gates and the live-world mutation seams
 	// (`_mountRestoredDense`, `_reconstructHostRows`).
@@ -388,7 +389,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	public _tick: number = 0;
 
-	/** Per-world frame-trace sink (ADR-0030), installed via `ECS.setTrace`.
+	/** Per-world frame-trace sink, installed via `ECS.setTrace`.
 	 * `null` unless a consumer attaches a recorder. Every call site is
 	 * `if (DEV) store._trace?.…`, so production builds dead-code-eliminate
 	 * the seam and pay only this one nullable field. The sink observes; it never
@@ -396,7 +397,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * observer state below). */
 	public _trace: FrameTraceSink | null = null;
 
-	// --- Component observers (#517 §1 / ADR-0013) ---
+	// --- Component observers ---
 	// Count of components with any onAdd/onRemove observer. While 0, the
 	// structural-flush fast path is byte-for-byte unchanged (no event collection,
 	// no fixed-point loop). The whole subsystem is additive and inert until an
@@ -404,7 +405,7 @@ export class Store implements ObserverHost, QueryHost {
 	// NOT folded into `stateHash` or snapshot (a scheduling artifact, like
 	// `_changedTick`).
 	private _structuralObserverCount = 0;
-	/** Count of components with any onDisable/onEnable observer (#677). While 0
+	/** Count of components with any onDisable/onEnable observer. While 0
 	 * (with `_structuralObserverCount` also 0), `flushStructural` takes the
 	 * byte-for-byte fast path and the toggle drain skips event collection. */
 	private _toggleObserverCount = 0;
@@ -430,7 +431,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Install the structural-observer dispatch hook (called once by `ECS`
 	 * during construction) — the named seam replacing direct writes to the
-	 * previously-public field (M1). */
+	 * previously-public field. */
 	public setStructuralObserverHook(fn: (ev: StructuralObserverEvents) => void): void {
 		this._structuralObserverHook = fn;
 	}
@@ -452,7 +453,7 @@ export class Store implements ObserverHost, QueryHost {
 	};
 
 	// Disable/enable fan a *net* toggle transition out to an onDisable / onEnable
-	// per carried component (#677) — like the destroy fan-out above, a disable is a
+	// per carried component — like the destroy fan-out above, a disable is a
 	// soft remove of the whole mask from default queries. `_flushToggles` walks
 	// each net-toggled entity's archetype mask through the matching pre-bound
 	// visitor, collecting an event per observed component into `_obsEvents`.
@@ -473,7 +474,7 @@ export class Store implements ObserverHost, QueryHost {
 		ev.enaEid[ev.enaLen] = this._collectToggleEid;
 		ev.enaLen++;
 	};
-	/** Net-transition snapshot for the toggle drain (#677): entity → its disabled
+	/** Net-transition snapshot for the toggle drain: entity → its disabled
 	 * state at the START of the drain. Reused, cleared each drain. Lets
 	 * `_flushToggles` emit one event per *net* transition (disable→enable→disable
 	 * within a tick = a single onDisable) instead of one per buffered op — required
@@ -481,7 +482,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * and mis-sequence a consumer's delete/republish. */
 	private readonly _toggleInitial = new Map<EntityID, boolean>();
 
-	// --- Per-entity onSet: opt-in per-row dirty list (ADR-0012, built for #531) ---
+	// --- Per-entity onSet: opt-in per-row dirty list ---
 	// `_dirtyLists[cid]` is the list of dirty entity ids; `_dirtyMarks[cid]` is
 	// the per-entity-index dedup bit (append to the list only if the bit was
 	// clear). Drained as the onSet callback at the post-update detection point.
@@ -495,7 +496,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * (`flushStructural`/`flushDestroyed` when they did work; immediate
 	 * `destroyEntity`, `addComponent(s)`, `removeComponent(s)` on the
 	 * Store). Cleared by `publishRowCountsToDescriptor`. Lets read-only
-	 * phases' `ctx.flush()` skip the descriptor walk entirely (#324). */
+	 * phases' `ctx.flush` skip the descriptor walk entirely. */
 	private _rowCountsDirty: boolean = false;
 
 	/** Monotonic counter bumped by every membership-changing path (immediate
@@ -504,7 +505,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `flushDestroyed`, and new-archetype installs in `ArchetypeGraph.install`).
 	 * Read by `Query._nonEmpty()` via `QueryResolver._getQueryDirtyEpoch`
 	 * — a query whose stored `_lastSeenEpoch` matches the current epoch
-	 * reuses its cached non-empty list (#327). Replaces the previous walk
+	 * reuses its cached non-empty list. Replaces the previous walk
 	 * over `registeredQueries` that wrote one dirty bit per query per
 	 * mutation; 5000 startup adds × Q queries used to be 5000×Q writes,
 	 * now it's 5000 integer increments. Public so ECS can forward through
@@ -525,15 +526,15 @@ export class Store implements ObserverHost, QueryHost {
 	// back into them.
 	private readonly _scratchTargetMask: BitSet = new BitSet();
 
-	// --- SAB-backed ECS columns (#171 §6.1.9) ---
+	// --- SAB-backed ECS columns ---
 	// Every Archetype's column views are TypedArrays over this SAB. When a
 	// new archetype is discovered we `extendColumnStore` to plant its region
 	// at the SAB tail, refresh every pre-existing archetype's column views
 	// (the realloc moved them — that's the `view_stamp` contract), then
 	// construct the new archetype via `Archetype.fromColumnStore`. The
 	// heap-backed `TypedArrayFor[tag]` fallback in `archetype.ts` is no
-	// longer reached from this code path; it stays compileable for
-	// Phase 4 removal.
+	// longer reached from this code path; it stays compileable until a
+	// later change removes it.
 	private _columnStore: ColumnStore;
 
 
@@ -543,20 +544,20 @@ export class Store implements ObserverHost, QueryHost {
 	 * to whatever fits `arch.length + additional`, whichever is larger),
 	 * reallocs the SAB via `growColumnStore` (live rows of every archetype
 	 * are carried forward), and republishes column views to every
-	 * SAB-backed archetype. Plan §8.1 / §8.3 / §8.4. (#171 §6.1.9 Phase 3) */
+	 * SAB-backed archetype. */
 	private readonly _growHandler = (arch: Archetype, additional: number): void => {
 		const archId = arch.id as number;
 		const storeArch = this._columnStore.archetypes.get(archId);
 		if (storeArch === undefined) {
 			throw new ECSError(
 				ECS_ERROR.ARCHETYPE_NOT_FOUND,
-				`grow_handler invoked on archetype ${archId} which has no SAB region`
+				`growHandler invoked on archetype ${archId} which has no SAB region`
 			);
 		}
 		const oldCapacity = storeArch.rowCapacity;
 		const required = arch.length + additional;
-		// Double until the new capacity covers `required`. Doubling is the
-		// §8.3 default and keeps the amortised cost of N inserts O(N).
+		// Double until the new capacity covers `required`. Doubling keeps the
+		// amortised cost of N inserts O(N).
 		let newCapacity = oldCapacity > 0 ? oldCapacity : 1;
 		while (newCapacity < required) newCapacity = newCapacity * 2;
 
@@ -575,7 +576,7 @@ export class Store implements ObserverHost, QueryHost {
 				// grows on the heap-backed `_entityIds` past `sa.row_capacity`
 				// (the SAB descriptor's capacity is metadata only when columns
 				// is empty). Report row_count=0 for them so growColumnStore
-				// doesn't reject the spec on a vacuous bound check (#210).
+				// doesn't reject the spec on a vacuous bound check.
 				rowCount: a.hasColumns ? a.length : 0
 			});
 		}
@@ -583,14 +584,14 @@ export class Store implements ObserverHost, QueryHost {
 		// `growableSabAllocator`, this call throws once the requested size
 		// crosses the allocator's 256 MiB cap. We deliberately let that throw
 		// propagate (the match dies) rather than catching it to realloc into a
-		// fresh allocator or compact holes (#380). A real workload uses ~16 MiB
+		// fresh allocator or compact holes. A real workload uses ~16 MiB
 		// and columns never grow (1024 initial capacity > the typical ~1000-row
 		// budget), and the entity-ID space (`1<<20`) caps total entities below the
 		// point where columns could fill 256 MiB. So hitting the cap means runaway
 		// entity creation upstream — a defect to diagnose, not a limit to paper
 		// over. See `growableSabAllocator`'s doc comment for the full numbers.
 		// The catch below does NOT soften that: a cap hit is re-thrown — still
-		// fatal — with the caller's declared sizing intent attached (#682) so
+		// fatal — with the caller's declared sizing intent attached so
 		// the failure is diagnosable in the caller's own terms.
 		let growResult;
 		try {
@@ -604,7 +605,7 @@ export class Store implements ObserverHost, QueryHost {
 			throw cause;
 		}
 		this._columnStore = growResult.store;
-		// In-place fast path (#361's grow-side analogue): only the grown
+		// In-place fast path (the grow-side analogue): only the grown
 		// archetypes' columns moved, so every other archetype's views are
 		// still valid — refresh just the grown ones. The realloc path moved
 		// everything, so `viewsPreserved` is false and we refresh all.
@@ -622,12 +623,12 @@ export class Store implements ObserverHost, QueryHost {
 		this._handleBufferResized();
 	};
 
-	/** Build the intent-aware fatal for an allocator cap hit (#682). The
+	/** Build the intent-aware fatal for an allocator cap hit. The
 	 * allocator can only name raw bytes; the Store knows what the caller
 	 * declared (`capContext`) and how many entities are live, so the error
 	 * says "3.2× the declared budget — runaway creation upstream?" instead
 	 * of leaving the caller to reverse-engineer byte counts. Fatality is
-	 * unchanged (#380: no grow-beyond-cap fallback). */
+	 * unchanged (no grow-beyond-cap fallback). */
 	private _capExceededError(cause: StoreCapExceededError): ECSError {
 		const ctx = this._capContext;
 		const live = this.entityAllocator.aliveCount;
@@ -651,7 +652,7 @@ export class Store implements ObserverHost, QueryHost {
 			ECS_ERROR.STORE_CAP_EXCEEDED,
 			requested +
 				intent +
-				` The cap is a hard ceiling with no grow-beyond fallback (#380) — ` +
+				` The cap is a hard ceiling with no grow-beyond fallback — ` +
 				`diagnose growth before raising it. Caused by: ${cause.message}`
 		);
 	}
@@ -661,35 +662,34 @@ export class Store implements ObserverHost, QueryHost {
 	private readonly _onBufferResized: (() => void) | undefined;
 
 	/** Construct with an `initialCapacity` number (legacy form) or an
-	 * options object (new in PR 3D — adds `bufferAllocator` and
+	 * options object (adds `bufferAllocator` and
 	 * `onBufferResized` callback). Both signatures coexist so test fixtures
 	 * that pass `new Store(4)` keep working. */
 	constructor(arg?: number | StoreOptions) {
 		const opts: StoreOptions = typeof arg === "number" ? { initialCapacity: arg } : (arg ?? {});
 		this.initialCapacity = opts.initialCapacity ?? DEFAULT_COLUMN_CAPACITY;
-		// Default to `growableSabAllocator()` (#237 Option A). Existing
+		// Default to `growableSabAllocator`. Existing
 		// TypedArray column views survive `.grow()` in-place — the engine's
 		// hot extend path skips the realloc-and-republish work that
 		// dominated lazy archetype registration. Callers wanting the
 		// classical per-extend fresh-SAB behavior (or `wasmMemoryAllocator`
 		// for the sim FFI) pass an explicit `bufferAllocator`. Default cap is
 		// 256 MiB — plenty for a 1000-entity workload (~2 MiB live SAB), well
-		// below browser per-origin SAB ceilings, and ~10 µs cheaper per
-		// Store construction than 1 GiB (V8 per-byte bookkeeping at
-		// `maxByteLength` reservation; see allocator.ts header note).
+		// below browser per-origin SAB ceilings, and quicker to construct than a
+		// 1 GiB cap (V8 does per-byte bookkeeping at the `maxByteLength`
+		// reservation; see the allocator.ts header note).
 		this._bufferAllocator = opts.bufferAllocator ?? growableSabAllocator();
-		// ADR-0008 enforced at the boundary (#682): a live Store's flush loops
+		// Enforced at the boundary: a live Store's flush loops
 		// hoist entity-index views across grows, which is only correct for an
 		// in-place allocator. The option type already rejects non-in-place
-		// allocators at compile time; this backstop catches untyped JS callers
-		// (the previously "deferred but obvious hardening" from the ADR).
+		// allocators at compile time; this backstop catches untyped JS callers.
 		if (this._bufferAllocator.isInPlace !== true) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				"Store requires an in-place SAB allocator (ADR-0008): the flush loops keep " +
+				"Store requires an in-place SAB allocator: the flush loops keep " +
 					"writing through hoisted entity-index views across grows, so a non-in-place " +
 					"allocator (e.g. DEFAULT_SAB_ALLOCATOR) corrupts the entity→row mapping. " +
-					"Use growable_sab_allocator / wasm_memory_allocator; non-in-place allocators " +
+					"Use growableSabAllocator / wasmMemoryAllocator; non-in-place allocators " +
 					"are snapshot/test sizing utilities only."
 			);
 		}
@@ -703,14 +703,14 @@ export class Store implements ObserverHost, QueryHost {
 		// pre-reserve descriptor-region headroom: future `extendColumnStore`
 		// calls can append new archetype descriptors without shifting any
 		// existing column byte_offs. This is the engine-side wiring for
-		// the #237 Option A fast path. 64 KiB ≈ 2000 archetypes at the
+		// the in-place growable-SAB fast path. 64 KiB ≈ 2000 archetypes at the
 		// typical ~3 columns/archetype — comfortable headroom for runtime
 		// archetype discovery without bloating empty stores.
 		this._entityIndexCapacity = opts.entityIndexCapacity ?? ENTITY_INDEX_DEFAULT_CAPACITY;
 		this._regions = opts.regions;
 		this._bindingsRegionBytes = opts.bindingsRegionBytes ?? 0;
 		this._deterministic = opts.deterministic ?? false;
-		// Deferred-command queue + drain policy (H1 step 4). Closure host (the
+		// Deferred-command queue + drain policy. Closure host (the
 		// `RelationServiceHost` style): appliers and observer gates re-read
 		// live Store state per flush call — never per entity.
 		this._deferred = new DeferredCommandBuffer(
@@ -759,17 +759,17 @@ export class Store implements ObserverHost, QueryHost {
 					includeDisabled
 				)
 		});
-		// Always-on event ring (#247 / PR 4C). 4 KiB + 16 B header per
+		// Always-on event ring. 4 KiB + 16 B header per
 		// Store is negligible and means any system that needs to emit
 		// SAB-visible events finds `header.event_ring_off` non-zero
 		// without per-test wiring. Symmetric with `entityIndex` being
 		// always-on.
-		// Always-on command ring (#263 PR-C+D). Same reasoning as the
+		// Always-on command ring. Same reasoning as the
 		// always-on event ring: a consumer's WASM structural-change drain
 		// needs it; bare-SAB tests pay the negligible 4 KiB + 16 B cost.
 		// Without it, the drain returns 0 (RingAbsent) and the parity test
 		// cannot drain commands.
-		// Always-on action ring (#623). Was an opt-in `actionRingCapacitySlots`
+		// Always-on action ring. Was an opt-in `actionRingCapacitySlots`
 		// ECS option; now de-gamed to an always-on engine mechanism region at the
 		// default capacity (like the command/event rings), so the public surface
 		// carries no ring-sizing knob. The TS→WASM action drain finds it present.
@@ -794,7 +794,7 @@ export class Store implements ObserverHost, QueryHost {
 		this.entityRow = views.rows;
 		// boundary: TypedArray interop. The allocator owns the generations
 		// view plus a single-slot view over the region's `length` field (the
-		// #368 pre-built-view optimization).
+		// pre-built-view optimization).
 		this.entityAllocator = new EntityAllocator(
 			this._entityIndexCapacity,
 			views.generations,
@@ -804,7 +804,7 @@ export class Store implements ObserverHost, QueryHost {
 				1
 			)
 		);
-		// Snapshot/resume orchestration (H1 step 5). Closure host — accessors
+		// Snapshot/resume orchestration. Closure host — accessors
 		// re-read live fields per call (the column store and entity-index views
 		// are replaced on restore); the allocator rides in whole as its own
 		// snapshot seam (step 3). All cold-path.
@@ -831,7 +831,7 @@ export class Store implements ObserverHost, QueryHost {
 			},
 			this.entityAllocator
 		);
-		// Archetype topology (H1 step 6). Creation-path-only closures — an
+		// Archetype topology. Creation-path-only closures — an
 		// edge-cache hit never calls the host.
 		this.archGraph = new ArchetypeGraph({
 			componentMetas: () => this.componentMetas,
@@ -844,28 +844,28 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	/** Capacity of the entity-index SAB region (max slots ≈ max live
-	 * entities). Fixed at construction in #245's PR 4B scope; a future
+	 * entities). Fixed at construction; a future
 	 * follow-up will grow it via `growColumnStore` when `entityHighWater`
 	 * hits the cap. */
 	private readonly _entityIndexCapacity: number;
-	/** Consumer-declared SAB regions (#623), captured so the realloc path
+	/** Consumer-declared SAB regions, captured so the realloc path
 	 * re-lays them out. `undefined` when no consumer regions were declared.
 	 * The region contents survive a grow via the self-describing region table
 	 * (`extend.ts` snapshot/restore), so this is only the layout recipe. */
 	private readonly _regions: readonly StoreRegionSpec[] | undefined;
-	/** Byte size of the opt-in sim-bindings region (#625). 0 ⇒ no region (the
+	/** Byte size of the opt-in sim-bindings region. 0 ⇒ no region (the
 	 * pure-TS default). Captured so the initial `createColumnStore` reserves it;
 	 * across a realloc the size is re-derived from the old header by
 	 * `optionsFromOld`, so it is not threaded through the grow/extend path. */
 	private readonly _bindingsRegionBytes: number;
-	/** Determinism opt-in (#626 / ADR-0020). When `false` (the default), the
+	/** Determinism opt-in. When `false` (the default), the
 	 * canonical-ordering determinism surface (`stateHash` / `snapshotSparse` /
 	 * `restoreSparse`) throws `DETERMINISM_DISABLED` rather than running its
-	 * sort. Memory-safety invariants (the in-place allocator, ADR-0008) and the
+	 * sort. Memory-safety invariants (the in-place allocator) and the
 	 * `enabled_count` partition are unaffected — they hold regardless. */
 	private readonly _deterministic: boolean;
 
-	/** Whether the determinism surface is enabled (#626). `false` ⇒ `stateHash`
+	/** Whether the determinism surface is enabled. `false` ⇒ `stateHash`
 	 * / `snapshotSparse` / `restoreSparse` throw `DETERMINISM_DISABLED`. */
 	public get deterministic(): boolean {
 		return this._deterministic;
@@ -883,16 +883,16 @@ export class Store implements ObserverHost, QueryHost {
 				ECS_ERROR.DETERMINISM_DISABLED,
 				`${method} requires determinism — construct the Store/ECS with ` +
 					`{ deterministic: true }. The canonical-ordering determinism surface ` +
-					`(state_hash / snapshot_sparse / restore_sparse) is opt-in; see ADR-0020.`
+					`(stateHash / snapshotSparse / restoreSparse) is opt-in.`
 			);
 		}
 	}
 
-	/** Reject `f32`/`f64` fields on a `deterministic: true` world at registration
-	 * (#777). IEEE-754 rounds differently across V8 / Bun / Zig at the 1-ULP
+	/** Reject `f32`/`f64` fields on a `deterministic: true` world at registration.
+	 * IEEE-754 rounds differently across V8 / Bun / Zig at the 1-ULP
 	 * level, so a float column in a fixed-update path is a silent per-tick
 	 * `stateHash` divergence between client and server — the one thing the
-	 * determinism opt-in (ADR-0020) exists to prevent. Non-deterministic worlds
+	 * determinism opt-in exists to prevent. Non-deterministic worlds
 	 * skip this entirely (floats stay allowed), so it costs the default path
 	 * nothing. `kind` names the storage class in the error ("component" /
 	 * "sparse component"); the array shorthand's `f64` default lands here too, so
@@ -910,8 +910,8 @@ export class Store implements ObserverHost, QueryHost {
 					ECS_ERROR.NON_DETERMINISTIC_COLUMN_TYPE,
 					`Cannot register ${kind} field "${fieldNames[i]}" as "${t}" on a ` +
 						`{ deterministic: true } world: floating-point columns round differently ` +
-						`across V8 / Bun / Zig (1-ULP IEEE-754), breaking cross-host state_hash ` +
-						`agreement (ADR-0020). Use an integer type (e.g. "i32") — represent ` +
+						`across V8 / Bun / Zig (1-ULP IEEE-754), breaking cross-host stateHash ` +
+						`agreement. Use an integer type (e.g. "i32") — represent ` +
 						`fractional quantities as fixed-point (Q16.16). Note the array shorthand ` +
 						`defaults to "f64", so pass an explicit integer type there.`,
 					{ field: fieldNames[i], type: t, kind }
@@ -961,7 +961,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Resolve a consumer-declared SAB region's byte offset by `region_id`, or
 	 * 0 when the region is absent (no region was declared with that id). The
-	 * generic, de-gamed replacement (#623) for the removed game-named accessors
+	 * generic, de-gamed replacement for the removed game-named accessors
 	 * (`terrain_view` / `spatial_grid_view` / … ); a consumer pairs this with
 	 * its own region module (e.g. `@internal/sim`'s region helpers) to
 	 * materialise a typed view. TS twin of Zig `abi.find_region`. */
@@ -973,7 +973,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `null` when absent. Carries the live `buffer`/`view` plus the region's byte
 	 * `offset` and `bytes`, so a consumer's region module can build a TypedArray
 	 * view over exactly the region's span without re-reading the directory.
-	 * Re-fetch after a SAB grow (the offset/view may have moved). (#623) */
+	 * Re-fetch after a SAB grow (the offset/view may have moved). */
 	public regionHandle(regionId: number): ColumnStoreRegionHandle | null {
 		const entry = findRegionEntry(this._columnStore.view, regionId);
 		if (entry === null) return null;
@@ -987,12 +987,12 @@ export class Store implements ObserverHost, QueryHost {
 
 	/**
 	 * Stamp every SAB-backed archetype's live `length` into its descriptor's
-	 * `row_count` field (#252 / Phase 4 PR 4E). `extendColumnStore` /
+	 * `row_count` field. `extendColumnStore` /
 	 * `growColumnStore` are the only other writers of `row_count`, and they
 	 * record the count at the moment of the resize — `Archetype.addEntity`
 	 * does not update it, so any insertion after the most recent resize
 	 * leaves the descriptor stale. Zig systems that drive their per-row loop
-	 * off `arch_hdr.row_count` (every `tick_*` export added since PR 3B)
+	 * off `arch_hdr.row_count` (every `tick_*` export)
 	 * read those stale bytes and silently skip the just-spawned rows.
 	 *
 	 * Lockstep walk: SAB descriptors are written by `extendColumnStore` in
@@ -1001,10 +1001,10 @@ export class Store implements ObserverHost, QueryHost {
 	 * once, skipping non-SAB entries, and advancing an `archAddr` cursor
 	 * by the descriptor's `column_count` lets us write `row_count` without
 	 * the throwaway `Map<archId, length>` the previous version allocated
-	 * on every call (#323). Cheap: descriptor-region seeks only, no column
+	 * on every call. Cheap: descriptor-region seeks only, no column
 	 * I/O.
 	 *
-	 * Gated by `_rowCountsDirty` (#324) — mutation paths
+	 * Gated by `_rowCountsDirty` — mutation paths
 	 * (`flushStructural`, `flushDestroyed`, immediate `destroyEntity`,
 	 * `addComponent(s)`, `removeComponent(s)`) set the flag; this method
 	 * clears it. Read-only phases that flush only to drain empty buffers
@@ -1038,7 +1038,7 @@ export class Store implements ObserverHost, QueryHost {
 				a.hasColumns ? a.length : 0,
 				true
 			);
-			// Publish the enabled-row count too (#577 / #599) so the WASM sim's
+			// Publish the enabled-row count too so the WASM sim's
 			// per-row scan loops skip disabled rows. Mirrors row_count: 0 for a
 			// column-less archetype (no SAB rows to scan).
 			view.setUint32(
@@ -1053,12 +1053,11 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** FNV-1a-style 32-bit digest over (archetype_id, live_row_count, live
 	 * column bytes) for each archetype in id order, followed by the sparse
-	 * stores (out-of-identity components, ADR-0011) in registration order.
-	 * Replaces the per-networked-component fold that compute_state_hash used
-	 * pre-#171 §6.1.9 Phase 5 — this is the canonical "live ECS state digest"
-	 * for cross-replay determinism.
+	 * stores (out-of-identity components) in registration order.
+	 * This is the canonical "live ECS state digest" for cross-replay
+	 * determinism. It replaces the earlier per-networked-component fold.
 	 *
-	 * **Sparse coverage (#470).** Sparse data lives outside the archetype
+	 * **Sparse coverage.** Sparse data lives outside the archetype
 	 * graph, so it is folded separately after the archetype loop — per store:
 	 * the sparse-component id, the member count, then each member's source
 	 * entity index + f64 field words, walked in CANONICAL ascending-index order
@@ -1073,11 +1072,11 @@ export class Store implements ObserverHost, QueryHost {
 	 * components), and strictly tighter than `columnStoreStateHash(...)`
 	 * which scans the full SAB including trailing unused capacity.
 	 *
-	 * **Per-word fold (#326).** The inner column loop folds one 32-bit
+	 * **Per-word fold.** The inner column loop folds one 32-bit
 	 * word at a time using FNV-1a's `xor + imul(PRIME)` step. This is NOT
 	 * byte-for-byte FNV-1a-32 of the column bytes — it's a deterministic
-	 * digest with the same equality semantics, ~4× faster than the per-
-	 * byte loop it replaces. Trailing 0–3 tail bytes (only possible for
+	 * digest with the same equality semantics, and much quicker than the
+	 * per-byte loop it replaces. Trailing 0–3 tail bytes (only possible for
 	 * u8/u16 columns at odd row counts) are folded together as a single
 	 * little-endian word so the algorithm stays branch-free in the inner
 	 * loop. The 4-byte `id` and `len` headers are folded as words for the
@@ -1090,7 +1089,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * processes on the same architecture (which is all `replay_match`
 	 * needs — both replays run the same algorithm on the same words).
 	 *
-	 * **Opt-in (#626 / ADR-0020).** Throws `DETERMINISM_DISABLED` unless the
+	 * **Opt-in.** Throws `DETERMINISM_DISABLED` unless the
 	 * Store was constructed with `{ deterministic: true }`. The canonical
 	 * ordering this fold relies on (sparse `canonicalIndices`, sorted relation
 	 * target sets) is the determinism tax the flag gates. */
@@ -1108,7 +1107,7 @@ export class Store implements ObserverHost, QueryHost {
 			// Fold live row count as one word — so removed rows show up even
 			// when their bytes happen to remain in trailing slots.
 			h = fnv1aStepWord(h, len);
-			// Fold the enabled/disabled partition boundary (#577): the disabled set
+			// Fold the enabled/disabled partition boundary: the disabled set
 			// is real game state, so two worlds with identical row bytes but a
 			// different `enabled_count` must diverge. The disabled rows' bytes are
 			// still folded below (they're within `[0, len)`); this word pins which
@@ -1125,8 +1124,9 @@ export class Store implements ObserverHost, QueryHost {
 				let k = 0;
 				// Hot inner loop: the per-word FNV step is deliberately INLINED here
 				// rather than calling `fnv1aStepWord` (the shared definition the
-				// cold folds below use). Inlining the column fold is the #326 / §56
-				// perf decision — ~4× over the per-byte loop it replaced — and this
+				// cold folds below use). Inlining the column fold is a
+				// deliberate perf decision — it is much quicker than the per-byte loop
+				// it replaced — and this
 				// scan dominates `stateHash`, run per tick over every live column.
 				// The step is identical to `fnv1aStepWord`; keep them in sync.
 				for (let w = 0; w < wordCount; w++) {
@@ -1152,13 +1152,13 @@ export class Store implements ObserverHost, QueryHost {
 			}
 		}
 
-		// Fold the sparse stores (out-of-identity components, ADR-0011) so the
+		// Fold the sparse stores (out-of-identity components) so the
 		// per-tick digest covers their membership + data too. Sparse data lives
 		// outside the archetype graph, so the loop above misses it entirely.
 		// Each store is walked in CANONICAL entity-index order: SparseMap's
 		// native iteration is insertion/swap order, so two worlds with identical
 		// sparse contents reached by different add/remove histories would
-		// otherwise diverge (#470). Stores are folded in registration order —
+		// otherwise diverge. Stores are folded in registration order —
 		// their `SparseComponentID` is their index here, stable across a run.
 		const sparse = this.sparseStores;
 		for (let s = 0; s < sparse.length; s++) {
@@ -1205,7 +1205,7 @@ export class Store implements ObserverHost, QueryHost {
 			// side but empty on the other still perturbs the digest.
 			h = fnv1aStepWord(h, r);
 			// Canonical source/target ordering and the empty-set skip live solely in
-			// `forEachCanonicalTargetSet` (#498 item 1) — shared with
+			// `forEachCanonicalTargetSet` — shared with
 			// `snapshotRelations` and `pairsOf`, so the three can't disagree. Fold
 			// the source index + target count, then each target id (full EntityID,
 			// generation included — matching the exclusive sparse-field path).
@@ -1230,8 +1230,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * by a WASM system to resolve an
 	 * `EntityID` from an event-ring payload — Zig writes
 	 * `(archId, row, …)` to the event ring,
-	 * and TS bridges it back through `ctx.emit(...)` via this method. (#250 /
-	 * Phase 4 PR 4D)
+	 * and TS bridges it back through `ctx.emit(...)` via this method.
 	 *
 	 * Throws `ECSError` if `archetype_id` is out of range or `row` is
 	 * past the archetype's live row count — these would indicate a
@@ -1258,7 +1257,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	/** Bulk variant of `archGetOrCreateFromMask` — one `extendColumnStore`
-	 * call for the whole batch (Phase C prewarm, #213). See
+	 * call for the whole batch (the prewarm pass). See
 	 * `ArchetypeGraph.createManyFromMasks`. */
 	public archCreateManyFromMasks(masks: readonly BitSet[]): ArchetypeID[] {
 		return this.archGraph.createManyFromMasks(masks);
@@ -1287,12 +1286,12 @@ export class Store implements ObserverHost, QueryHost {
 				// `_entityIds` and is allowed to exceed the SAB descriptor's
 				// `row_capacity` (which is meaningless when there are no
 				// columns). Report row_count=0 for them so extendColumnStore
-				// doesn't reject the spec on a vacuous bound check (#210).
+				// doesn't reject the spec on a vacuous bound check.
 				rowCount: a.hasColumns ? a.length : 0
 			});
 		}
-		// Like the grow path: a cap hit here stays fatal (#380), it's just
-		// re-thrown with the declared sizing intent attached (#682).
+		// Like the grow path: a cap hit here stays fatal, it's just
+		// re-thrown with the declared sizing intent attached.
 		let extendResult;
 		try {
 			extendResult = extendColumnStore(
@@ -1305,7 +1304,7 @@ export class Store implements ObserverHost, QueryHost {
 			throw cause;
 		}
 		this._columnStore = extendResult.store;
-		// #237 Option A fast-path (#361 generalised to wasm allocator):
+		// In-place fast path, generalised to the wasm allocator:
 		// when extendColumnStore took the in-place branch (isInPlace
 		// allocator + descriptor headroom), every existing archetype's
 		// TypedArray column views are still valid — `isInPlace`
@@ -1386,7 +1385,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Template / direct-spawn (#462)
+	// Template / direct-spawn
 	// =======================================================
 	//
 	// A template resolves a component set + default field values to a target
@@ -1395,8 +1394,7 @@ export class Store implements ObserverHost, QueryHost {
 	// `moveEntityFrom` column copy. The default values are pre-flattened into
 	// one array in `_flatColumns` order so the append writes them in a single
 	// pass (`addEntityWithValues`), skipping the zero-fill-then-overwrite of
-	// the `addComponent` path. See ADR-0010 and the strategy-selection bench
-	// at docs/reports/bench/template/.
+	// the `addComponent` path.
 
 	/** Allocate an entity slot WITHOUT placing it in the empty archetype, for
 	 * the template spawn paths. Returns the packed `EntityID`; the slot index
@@ -1406,14 +1404,14 @@ export class Store implements ObserverHost, QueryHost {
 	 * generation so `isAlive` is already true), so the caller MUST have
 	 * reserved the column capacity for the row first
 	 * (`Archetype.ensureRowCapacity`) — otherwise a cap throw from the
-	 * subsequent append leaves the slot phantom-alive (#775). */
+	 * subsequent append leaves the slot phantom-alive. */
 	private _allocEntity(): EntityID {
 		return this.entityAllocator.alloc();
 	}
 
 	/** Pre-check that `count` fresh entity slots can be allocated without
-	 * exhausting the entity-index space, so `spawnMany` commits all-or-nothing
-	 * (#775). `_allocEntity`'s own per-call high-water guard would otherwise
+	 * exhausting the entity-index space, so `spawnMany` commits all-or-nothing.
+	 * `_allocEntity`'s own per-call high-water guard would otherwise
 	 * throw `EID_MAX_INDEX_OVERFLOW` partway through the alloc loop, leaving the
 	 * slots it already committed phantom-alive. Free-list reuse covers the first
 	 * `entityFreeIndices.length` slots; only the remainder draws down the
@@ -1528,7 +1526,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * applies any per-instance overrides. */
 	public spawn(p: Template, overrides?: Record<string, number | undefined>): EntityID {
 		const arch = this.archGraph.archetypes[p.archetypeId as number];
-		// Fail-closed (#775): reserve the target's column capacity for the new row
+		// Fail-closed: reserve the target's column capacity for the new row
 		// BEFORE committing the entity slot. A SAB-cap grow throws here, while the
 		// world is still untouched — so there is no phantom-alive slot left behind
 		// (slot committed, but `entityArchetype`/`entityRow` never written, and
@@ -1566,10 +1564,10 @@ export class Store implements ObserverHost, QueryHost {
 	): EntityID[] {
 		// Guard BEFORE `new Array(count)`: a negative count makes the allocation
 		// throw `RangeError('Invalid array length')`, so the `count <= 0` guard was
-		// dead for negatives. #730.
+		// dead for negatives.
 		if (count <= 0) return [];
 		const arch = this.archGraph.archetypes[p.archetypeId as number];
-		// Fail-closed + atomic (#775): reserve BOTH the entity-index headroom and
+		// Fail-closed + atomic: reserve BOTH the entity-index headroom and
 		// the target's column capacity for all `count` rows BEFORE committing any
 		// slot. Either pre-check throws with the world untouched (no partial
 		// spawn), or neither the commit loop nor the append below can hit a cap —
@@ -1628,7 +1626,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * With no `delete`/`clear` target-cleanup policy registered (the common
 	 * case) this tears the one entity down and returns — no allocation. When a
 	 * policy is in play, a `delete`-target's sources are appended to a local
-	 * work-list this method then drains in the same iterative pass (#473, #492):
+	 * work-list this method then drains in the same iterative pass:
 	 * the `work.length` re-read drives chains and trees out without recursion, so
 	 * depth is bounded by entity count, not tree depth. This mirrors the deferred
 	 * `flushDestroyed` buffer mechanism — both paths are iterative and reach the
@@ -1649,7 +1647,7 @@ export class Store implements ObserverHost, QueryHost {
 			return;
 		}
 
-		// `delete`-policy cascade (#473, #492): `_destroyOne` appends each dead
+		// `delete`-policy cascade: `_destroyOne` appends each dead
 		// target's sources to `work`; the `work.length` re-read drains them in
 		// this same loop. `isAlive` guards already-dead sources (a diamond or
 		// cycle reaching the same entity twice), which terminates the walk.
@@ -1664,7 +1662,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * then recycle (or retire) its slot. Shared by both immediate-destroy entry
 	 * points (the fast no-cascade path and the work-list driver in
 	 * `destroyEntity`). When `cascade` is non-null, a `delete`-policy target's
-	 * surviving sources are appended to it for the driver to drain (#473, #492);
+	 * surviving sources are appended to it for the driver to drain;
 	 * `null` skips that collection for callers that cannot cascade. The caller
 	 * must have already confirmed `id` is alive. */
 	private _destroyOne(id: EntityID, cascade: EntityID[] | null): void {
@@ -1674,10 +1672,10 @@ export class Store implements ObserverHost, QueryHost {
 		if (row !== UNASSIGNED) {
 			const arch = this.archGet(this.entityArchetype[index] as ArchetypeID);
 			const preLen = arch.length;
-			// Partition-aware swap-remove (#577): keeps the enabled prefix contiguous
+			// Partition-aware swap-remove: keeps the enabled prefix contiguous
 			// and owns its own entityRow updates for any relocated rows.
 			arch.removeRow(row, this.entityRow);
-			// Dirty bookkeeping (#328) — also closes #316: previously this path
+			// Dirty bookkeeping: previously this path
 			// only flagged row counts, leaving query caches stale if the entity
 			// was the last in its archetype. Pure shrink — no enabled-crossing test.
 			this._onArchLenChange(arch, preLen);
@@ -1688,7 +1686,7 @@ export class Store implements ObserverHost, QueryHost {
 
 		// Relations ride the sparse store; purge the entity's source role first
 		// (it reads the exclusive target field, which `_purgeSparse` clears).
-		// Then apply each relation's target-role cleanup policy (#473): `clear`
+		// Then apply each relation's target-role cleanup policy: `clear`
 		// drops surviving sources' links in place; `delete` appends them to
 		// `cascade` for the driver to destroy through this same path.
 		if (this.relationService.count > 0) {
@@ -1697,39 +1695,72 @@ export class Store implements ObserverHost, QueryHost {
 		}
 		// Out-of-identity sparse data is keyed by entity index, so it's untouched
 		// by the archetype swap-remove above — purge it explicitly so a recycled
-		// slot can't inherit stale sparse components (#468).
+		// slot can't inherit stale sparse components.
 		if (this.sparseStores.length > 0) this._purgeSparse(index);
 		// Per-entity onSet dirty bits are keyed by index too — clear so a recycled
-		// slot can be marked afresh (#531). Gated so the no-onSet path is untouched.
+		// slot can be marked afresh. Gated so the no-onSet path is untouched.
 		if (this._anyDirtyTracked) this._clearDirtyForIndex(index);
 
 		// Generation bump / RETIRED_GENERATION tombstone / free-list push —
-		// see `EntityAllocator.recycle` (#376).
+		// see `EntityAllocator.recycle`.
 		this.entityAllocator.recycle(index, getEntityGeneration(id));
 	}
 
 	/**
 	 * Liveness check, **fail-closed** against forged / retired / out-of-bounds
-	 * handles (#778). For a general-purpose engine that may receive a handle from
+	 * handles. For a general-purpose engine that may receive a handle from
 	 * serialization, IPC, or any untrusted caller, three malformed inputs must read
 	 * dead rather than alias a slot:
 	 *   - **Out of range** — an `id` outside the 31-bit packed space (`< 0` or
 	 *     `> MAX_ENTITY_ID`). Without this, the 20-bit index mask below silently
 	 *     folds garbage high bits onto a valid slot. (Same bound the snapshot /
-	 *     postMessage decode applies, #723.)
+	 *     postMessage decode applies.)
 	 *   - **Tombstone generation** — a handle carrying `RETIRED_GENERATION`, which
 	 *     the allocator stamps into a retired slot and never issues to a live
 	 *     entity, would otherwise match a retired slot's parked generation and read
 	 *     alive (the ABA tombstone, previously documented as a known gap).
 	 * Both guards are comparisons predicted not-taken on the live path, so a
-	 * well-formed handle pays two branches and nothing else (#778 measured).
+	 * well-formed handle pays two branches and nothing else.
 	 */
 	public isAlive(id: EntityID): boolean {
-		if ((id as number) < 0 || (id as number) > MAX_ENTITY_ID) return false;
-		const generation = getEntityGeneration(id);
-		if (generation === RETIRED_GENERATION) return false;
-		const index = getEntityIndex(id);
-		return this.entityAllocator.isAliveIndex(index, generation);
+		return this._liveIndex(id) >= 0;
+	}
+
+	/**
+	 * Liveness and the packed index in one result: the entity index if `id` is
+	 * live, else `-1`. Same three fail-closed guards as `isAlive` (documented
+	 * above), and the sole implementation of them — `isAlive` is a comparison on
+	 * top of this.
+	 *
+	 * Why it returns the index instead of a boolean: every by-id caller needs
+	 * BOTH answers, and the pair used to cost two derivations of the same index.
+	 * `hasComponent` called `isAlive(id)` — which computed `getEntityIndex(id)`
+	 * internally — and then computed `getEntityIndex(id)` again to reach
+	 * `entityArchetype`. The generational check has already touched the index; a
+	 * caller that is about to index a parallel array with it should be handed the
+	 * one that was computed, not re-derive it. The generations read is inlined
+	 * here for the same reason, rather than delegated to
+	 * `entityAllocator.isAliveIndex` — which stays as the index-domain entry point
+	 * for callers that already hold an index.
+	 *
+	 * **This gives much less than it appears to give.** The estimate for this
+	 * change was a large decrease. The measurement shows that `has` and `isAlive`
+	 * are only a little faster. The decrease is real, but it is much smaller than
+	 * the estimate. The work that we removed was truly not necessary. But V8
+	 * already made both one-line functions inline, and it already removed most of
+	 * the duplicated calculation. Therefore "the work is plainly not necessary" is
+	 * not an argument about performance for a JIT compiler. This note stops the
+	 * next reader from making the same estimate again.
+	 */
+	private _liveIndex(id: EntityID): number {
+		const raw = id as number;
+		if (raw < 0 || raw > MAX_ENTITY_ID) return -1;
+		const generation = raw >> INDEX_BITS;
+		if (generation === RETIRED_GENERATION) return -1;
+		const index = raw & INDEX_MASK;
+		const alloc = this.entityAllocator;
+		if (index >= alloc.highWater || alloc.generations[index] !== generation) return -1;
+		return index;
 	}
 
 	public get entityCount(): number {
@@ -1738,14 +1769,14 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** An archetype's row count moved from `preLen` to its current
 	 * `arch.length` on a **shrink** (rows removed: the source of a transition, a
-	 * destroy, a batch-source drain). Always marks SAB row counts dirty (#324 —
-	 * the descriptor walk just needs "something moved"); bumps the query-dirty
-	 * epoch (#327) only on a `length` 0/non-zero crossing, the only case where
-	 * `Query._nonEmptyArchetypes` can change on a shrink (#328). Mutations that
+	 * destroy, a batch-source drain). Always marks SAB row counts dirty
+	 * (the descriptor walk just needs "something moved"); bumps the query-dirty
+	 * epoch only on a `length` 0/non-zero crossing, the only case where
+	 * `Query._nonEmptyArchetypes` can change on a shrink. Mutations that
 	 * move row counts within the same side (6→5) leave the non-empty set unchanged
 	 * and skip the bump.
 	 *
-	 * A shrink does **not** need the `enabledCount` crossing test (#812): the
+	 * A shrink does **not** need the `enabledCount` crossing test: the
 	 * only enabled-count move it can make is 1→0 (the last enabled row leaves an
 	 * archetype that keeps disabled rows), which leaves the archetype in a default
 	 * query's non-empty list as a harmless stale *inclusion* — `count`/`forEach`
@@ -1756,12 +1787,12 @@ export class Store implements ObserverHost, QueryHost {
 	 * **Inlining-sensitive — keep the body tiny.** This function is called
 	 * once or twice per immediate-mode `addComponent` / `removeComponent` and the
 	 * mutation hot path depends on it being inlined at every call site.
-	 * #351 / PR #353 added an `if (registeredQueries.length === 0) return;`
-	 * gate to skip the bump for no-query workloads — bench showed it
-	 * regressed `mutation: churn_loop` 16-18% because the extra statement
-	 * pushed the function past V8's per-call inlining budget. Reverted in
-	 * PR #355. Any future change here needs a `bench-vs-commit` run before
-	 * merging, not just code review. */
+	 * An earlier change added an `if (registeredQueries.length === 0) return;`
+	 * gate to skip the bump for no-query workloads. The bench showed a large
+	 * regression of the mutation churn loop, because the extra statement pushed
+	 * the function past V8's per-call inlining budget. The gate is no longer in
+	 * the code. Do a bench run before you merge a change here. Code review
+	 * alone is not sufficient. */
 	private _onArchLenChange(arch: Archetype, preLen: number): void {
 		this._rowCountsDirty = true;
 		if ((preLen === 0) !== (arch.length === 0)) this._queryDirtyEpoch++;
@@ -1771,18 +1802,18 @@ export class Store implements ObserverHost, QueryHost {
 	 * spawn, a batch-target fill). Like `_onArchLenChange` it marks row counts
 	 * dirty and bumps the query-dirty epoch on a `length` 0/non-zero crossing
 	 * (`includeDisabled` membership), but it *also* bumps on an `enabledCount`
-	 * 0→1 crossing (#812). The non-empty filter is field-split (#577): a default
+	 * 0→1 crossing. The non-empty filter is field-split: a default
 	 * query keeps archetypes with `enabledCount > 0`. An enabled row appended to
 	 * an archetype that is non-empty but all-disabled (`length > 0,
 	 * enabledCount == 0`) crosses `enabledCount` 0→1 without touching `length`,
-	 * so the `preLen` test alone (the valid-while-`enabledCount === length`
-	 * pre-#577 proxy) misses it and a cached default query keeps a stale
+	 * so the `preLen` test alone (the earlier proxy, valid only while
+	 * `enabledCount === length`) misses it and a cached default query keeps a stale
 	 * `_nonEmpty` list. Only grows can do this, so only grow sites carry the test.
 	 *
 	 * **Precondition: ≥1 row was appended** (every caller adds at least one row),
 	 * so `arch.length > 0` afterward — which is why the crossings simplify and the
 	 * body stays inlinable (the inlining caveat on `_onArchLenChange` applies
-	 * here too; verified with `bench-vs-commit mutation`). The general
+	 * here too; this is bench-verified). The general
 	 * `(pre === 0) !== (post === 0)` boundary test collapses given the post side:
 	 *   - `length`: post > 0 always ⇒ a crossing iff `preLen === 0`.
 	 *   - `enabledCount`: non-decreasing on a grow ⇒ a 0-crossing iff it was 0
@@ -1795,7 +1826,7 @@ export class Store implements ObserverHost, QueryHost {
 		if (preLen === 0 || (preEnabled === 0 && arch.enabledCount !== 0)) this._queryDirtyEpoch++;
 	}
 
-	/** Dirty bookkeeping for an enable/disable toggle (#577). `length` is
+	/** Dirty bookkeeping for an enable/disable toggle. `length` is
 	 * unchanged (no row added/removed) but `enabled_count` moved, so: republish
 	 * row counts (the descriptor's `enabled_count` changed, so the WASM sim and
 	 * snapshot see the new partition), and bump the query epoch only when the
@@ -1808,7 +1839,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Entity enable / disable (#577)
+	// Entity enable / disable
 	// =======================================================
 	//
 	// A disabled entity keeps its components, relations, sparse data, and stable
@@ -1875,7 +1906,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** 0-crossing detection for the per-entity flush paths (`_flushAdds`,
 	 * `_flushRemoves`) without per-entity Map traffic — the same cost the
-	 * destroy drain shed in #457. Each touched archetype is stamped with the
+	 * destroy drain also avoids. Each touched archetype is stamped with the
 	 * current flush epoch (`Archetype._flushSeenEpoch`), its pre-length and
 	 * pre-enabled-count recorded on first sight (`_flushPreLen` /
 	 * `_flushPreEnabled`), and pushed onto this scratch list;
@@ -1890,7 +1921,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * the query epoch once if any touched archetype crossed the 0 boundary on
 	 * *either* `length` (includeDisabled membership) or `enabledCount`
 	 * (default-query membership) — the deferred analog of the immediate
-	 * `_onArchLenChange` two-field check (#812). A single bump is sufficient
+	 * `_onArchLenChange` two-field check. A single bump is sufficient
 	 * (queries only need to know "something changed"). Clears the touched list
 	 * and advances the flush epoch on exit. */
 	private _settleFlushDirty(): void {
@@ -1920,7 +1951,7 @@ export class Store implements ObserverHost, QueryHost {
 		this._deferred.queueDestroy(id);
 	}
 
-	/** Buffer an enable/disable toggle for the phase flush (#577). The row swap a
+	/** Buffer an enable/disable toggle for the phase flush. The row swap a
 	 * toggle performs would corrupt a `forEach` over that archetype if applied
 	 * mid-system, so it is deferred like add/remove. */
 	public disableEntityDeferred(id: EntityID): void {
@@ -1939,10 +1970,10 @@ export class Store implements ObserverHost, QueryHost {
 	 * entity's final archetype placement for the tick.
 	 *
 	 * When an onDisable/onEnable observer is registered (`_toggleObserverCount >
-	 * 0`, #677) this also collects effective toggle events into `_obsEvents` for
+	 * 0`) this also collects effective toggle events into `_obsEvents` for
 	 * the dispatch hook, collapsed to one event per *net* transition across the
 	 * drain (see `_toggleInitial`). The no-observer path is byte-for-byte the
-	 * pre-#677 drain. */
+	 * earlier drain. */
 	private _flushToggles(): void {
 		const ids = this._deferred.toggleIds;
 		const dis = this._deferred.toggleDisable;
@@ -1991,7 +2022,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	/** Fan one entity's net toggle transition out to an onDisable / onEnable event
-	 * per carried component (#677). Walks the entity's archetype mask through the
+	 * per carried component. Walks the entity's archetype mask through the
 	 * matching pre-bound bit visitor; a component-less entity (no row) carries
 	 * nothing and is skipped. */
 	private _collectToggle(id: EntityID, nowDisabled: boolean): void {
@@ -2016,7 +2047,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * Same commit-then-observe discipline as `_flushRemoves`: the entity is fully
 	 * freed before the callback runs, so onRemove receives the (now dead) eid as
 	 * the identity of what was destroyed, not a live handle to read. The
-	 * no-observer path is byte-for-byte unchanged (`collecting` gate). #531.
+	 * no-observer path is byte-for-byte unchanged (`collecting` gate).
 	 *
 	 * Re-entrancy: while the observed fixed point owns the flush, the loop
 	 * drains destroys itself via `_drainDestroyed`, so a re-entrant
@@ -2039,9 +2070,9 @@ export class Store implements ObserverHost, QueryHost {
 		const archs = this.archGraph.archetypes;
 		const hw = alloc.highWater;
 
-		// 0-crossing detection without per-entity Map traffic (#457). The
-		// generic settle path (the `_flushEpoch` stamps + `_settleFlushDirty`,
-		// #328) captures each touched archetype's pre-length so it can compare
+		// 0-crossing detection without per-entity Map traffic. The
+		// generic settle path (the `_flushEpoch` stamps + `_settleFlushDirty`)
+		// captures each touched archetype's pre-length so it can compare
 		// `(pre === 0) !== (cur === 0)` afterwards — one `Map.has` per entity,
 		// which profiling showed was the dominant cost of this loop.
 		//
@@ -2055,23 +2086,23 @@ export class Store implements ObserverHost, QueryHost {
 
 		// Out-of-identity sparse data is keyed by entity index — purge it per
 		// destroyed entity so a recycled slot can't inherit stale sparse
-		// components (#468). Gated so the no-sparse-storage path is untouched.
+		// components. Gated so the no-sparse-storage path is untouched.
 		const hasSparse = this.sparseStores.length > 0;
 		// Relations layer on the sparse store; purge each destroyed entity's
 		// source role *before* its sparse rows go (the exclusive purge reads the
-		// target field). Gated so the no-relations path is untouched (#471).
+		// target field). Gated so the no-relations path is untouched.
 		const hasRelations = this.relationService.count > 0;
-		// Target-role cleanup policies (#473): `clear` drops surviving sources'
+		// Target-role cleanup policies: `clear` drops surviving sources'
 		// links in place; `delete` pushes sources back onto `buf` so this same
 		// loop destroys them (the `buf.length` re-read drives the cascade — chains
 		// and trees fall out, the generation guard dedups and terminates cycles).
 		// Gated so no-policy worlds skip the whole reverse-index walk.
 		const hasTargetCleanup = hasRelations && this.relationService.hasTargetCleanup;
-		// Per-entity onSet dirty bits are keyed by index (#531) — clear on destroy
+		// Per-entity onSet dirty bits are keyed by index — clear on destroy
 		// so a recycled slot can be marked afresh. Gated like the others.
 		const hasDirty = this._anyDirtyTracked;
 		// onRemove fan-out: collect an effective-remove event per observed
-		// component on each dying entity (#531). Gated so the no-observer path is
+		// component on each dying entity. Gated so the no-observer path is
 		// byte-for-byte unchanged; dispatched by `flushStructural`.
 		const collecting = this._structuralObserverCount > 0;
 
@@ -2086,7 +2117,7 @@ export class Store implements ObserverHost, QueryHost {
 			const row = entRow[idx];
 			if (row !== UNASSIGNED) {
 				const arch = archs[entArch[idx] as ArchetypeID];
-				// Fan a destroy out to an onRemove per carried component (#531).
+				// Fan a destroy out to an onRemove per carried component.
 				// Read the mask before the row goes; the event fires post-free.
 				// A component-less entity (row === UNASSIGNED) carries nothing, so
 				// it is correctly skipped along with this whole block.
@@ -2094,7 +2125,7 @@ export class Store implements ObserverHost, QueryHost {
 					this._collectDestroyEid = eid as number;
 					arch.mask.forEach(this._collectDestroyRemoveBit);
 				}
-				// Partition-aware swap-remove (#577) — owns its entityRow updates and
+				// Partition-aware swap-remove — owns its entityRow updates and
 				// handles tag-only archetypes via its hasColumns guard.
 				arch.removeRow(row, entRow);
 				removedRow = true;
@@ -2108,8 +2139,8 @@ export class Store implements ObserverHost, QueryHost {
 
 			entArch[idx] = UNASSIGNED;
 			entRow[idx] = UNASSIGNED;
-			// Generation bump / tombstone retire / free-list push (#376) —
-			// the inline block this loop carried pre-H1-step-3 lives in
+			// Generation bump / tombstone retire / free-list push —
+			// the inline block this loop carried before the extraction lives in
 			// `EntityAllocator.recycle` now (monomorphic call, bench-gated).
 			alloc.recycle(idx, gen);
 		}
@@ -2157,7 +2188,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Phase-boundary structural flush. The drain policy — no-observer fast
 	 * path, observed fixed point (adds/removes → destroys → toggles),
 	 * convergence guard, re-entrancy — lives in `DeferredCommandBuffer`
-	 * (H1 step 4); the batch appliers it drives are the `_flush*` /
+	 *; the batch appliers it drives are the `_flush*` /
 	 * `_drainDestroyed` methods below. */
 	public flushStructural(): void {
 		this._deferred.flushStructural();
@@ -2179,9 +2210,9 @@ export class Store implements ObserverHost, QueryHost {
 		const tick = this._tick;
 		const epoch = this._flushEpoch;
 		const touched = this._flushTouched;
-		// Effective-event collection (#531). `collecting` is a single hoisted
+		// Effective-event collection. `collecting` is a single hoisted
 		// guard — false on the no-observer fast path, so the loop body is the
-		// pre-#531 flush plus one predicted-not-taken branch (measured free).
+		// earlier flush plus one predicted-not-taken branch (measured free).
 		const collecting = this._structuralObserverCount > 0;
 		const ev = this._obsEvents;
 
@@ -2210,10 +2241,10 @@ export class Store implements ObserverHost, QueryHost {
 			const srcRow = entRow[idx];
 			const tagOnly = !tgt.hasColumns && !src.hasColumns;
 
-			// Record pre-counts for the 0-crossing detector (#328, #812) before
+			// Record pre-counts for the 0-crossing detector before
 			// the move mutates either side. Both `length` and `enabledCount` are
 			// snapshotted — an enabled append into an all-disabled archetype crosses
-			// `enabledCount` 0→1 without touching `length` (#812). Only first sight
+			// `enabledCount` 0→1 without touching `length`. Only first sight
 			// per archetype counts — epoch-stamped on the archetype itself, not a
 			// Map probe (see `_flushEpoch`).
 			if (srcRow !== UNASSIGNED && src._flushSeenEpoch !== epoch) {
@@ -2301,7 +2332,7 @@ export class Store implements ObserverHost, QueryHost {
 			const srcRow = entRow[idx];
 			const tagOnly = !tgt.hasColumns && !src.hasColumns;
 
-			// Record pre-counts for 0-crossing detection (#328, #812) — both
+			// Record pre-counts for 0-crossing detection — both
 			// `length` and `enabledCount`, epoch-stamped, not a Map probe (see
 			// `_flushEpoch`).
 			if (src._flushSeenEpoch !== epoch) {
@@ -2347,7 +2378,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Component observers (#517 §1 / ADR-0013)
+	// Component observers
 	// =======================================================
 	// The `ObserverRegistry` (observer.ts, owned by ECS) drives ordering +
 	// callback dispatch; the Store owns the hot-path flags, the effective-event
@@ -2357,7 +2388,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Set the per-component observation flags from the registry's aggregate of
 	 * live observers for `cid`. Maintains `_structuralObserverCount` and
-	 * `_toggleObserverCount` (#677) (the fast-path gates) and lazily allocates the
+	 * `_toggleObserverCount` (the fast-path gates) and lazily allocates the
 	 * dirty list when per-entity onSet tracking turns on. */
 	public _configureComponentObservation(
 		cid: number,
@@ -2414,7 +2445,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Record a per-entity onSet "changed" event for the entity. Called from the
 	 * field-write path (`SystemContext.setField` / `markChanged`) and gated by
 	 * the caller on `_anyDirtyTracked`. Appends to the dirty list only if the
-	 * dedup bit was clear (the ADR-0012 list + dedup-bit mechanism). */
+	 * dedup bit was clear (the dirty list + dedup-bit mechanism). */
 	public _noteSet(def: ComponentHandle, eid: EntityID): void {
 		const cid = def.id;
 		const meta = this.componentMetas[cid];
@@ -2485,7 +2516,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	/** Enabled live entities currently carrying `cid`, used by `yieldExisting` to
-	 * replay onAdd on registration. Bounded by `enabled_count` (#677): a disabled
+	 * replay onAdd on registration. Bounded by `enabled_count`: a disabled
 	 * entity is excluded from default queries, so seeding it via onAdd would
 	 * publish a row that an immediate onDisable should have removed — it is simply
 	 * absent at seed (the "delete on disable" semantics). Unordered here — the
@@ -2516,7 +2547,7 @@ export class Store implements ObserverHost, QueryHost {
 		// invisible to the Zig side, which matches archetypes on that mask alone.
 		// The heap-side BitSet can grow past it, so an overflow would silently
 		// conflate archetypes differing only in such a component. Fail loudly
-		// here (#381).
+		// here.
 		if (this.componentCount >= STORE_DESCRIPTOR_COMPONENT_LIMIT) {
 			throw new ECSError(
 				ECS_ERROR.COMPONENT_LIMIT_EXCEEDED,
@@ -2534,7 +2565,7 @@ export class Store implements ObserverHost, QueryHost {
 			fieldTypes[i] = schema[fieldNames[i]];
 		}
 		// Reject float columns on a deterministic world BEFORE consuming an id /
-		// pushing metas, so a rejected registration leaves no partial state (#777).
+		// pushing metas, so a rejected registration leaves no partial state.
 		this._rejectNonDeterministicFields(fieldNames, fieldTypes, "component");
 		const id = asComponentId(this.componentCount++);
 		this.componentMetas.push({
@@ -2563,7 +2594,7 @@ export class Store implements ObserverHost, QueryHost {
 	/** Return the field index assigned to `(def, fieldName)` at component
 	 * registration. Indexes are insertion-order, zero-based, and stable for
 	 * the lifetime of the ECS. Used by systems that pass `(component_id,
-	 * field_id)` pairs across the WASM FFI (PR 3C / #231). */
+	 * field_id)` pairs across the WASM FFI. */
 	public fieldIdOf(def: ComponentHandle, fieldName: string): number {
 		const cid = def.id;
 		const meta = this.componentMetas[cid];
@@ -2584,13 +2615,13 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Sparse storage class (out-of-identity components, #468)
+	// Sparse storage class (out-of-identity components)
 	// =======================================================
 
 	/** Register a sparse component or tag. Unlike `registerComponent`, this
 	 * allocates from a separate id space and never touches the archetype mask,
 	 * so it does **not** count against `STORE_DESCRIPTOR_COMPONENT_LIMIT`. See
-	 * ADR-0011 and `sparse_store.ts`. */
+	 * `sparse_store.ts`. */
 	public registerSparseComponent<S extends Record<string, TypedArrayTag>>(
 		schema: S,
 		name?: string
@@ -2599,7 +2630,7 @@ export class Store implements ObserverHost, QueryHost {
 		const fieldTypes: TypedArrayTag[] = new Array(fieldNames.length);
 		for (let i = 0; i < fieldNames.length; i++) fieldTypes[i] = schema[fieldNames[i]];
 		// Same float ban as dense registration — a sparse column feeds stateHash
-		// too (#777). Check before allocating the store id, no partial state.
+		// too. Check before allocating the store id, no partial state.
 		this._rejectNonDeterministicFields(fieldNames, fieldTypes, "sparse component");
 		return this._pushSparseStore<S>(fieldNames, fieldTypes, name);
 	}
@@ -2612,7 +2643,7 @@ export class Store implements ObserverHost, QueryHost {
 			: `sparse component ${sid}`;
 	}
 
-	/** Allocate the backing sparse store WITHOUT the #777 float guard, for
+	/** Allocate the backing sparse store WITHOUT the float guard, for
 	 * engine-internal backings whose `f64` holds an EXACT integer rather than a
 	 * user quantity: the exclusive-relation `{ target }` slot stores an `EntityID`
 	 * (≤ 2^53, so f64 is bit-exact and cross-host identical — the ban targets float
@@ -2740,11 +2771,11 @@ export class Store implements ObserverHost, QueryHost {
 	 * by the relation side data (`snapshotRelations` — multi forward target
 	 * sets, which live outside the sparse store). Both are written in canonical
 	 * entity-index order, so two worlds with identical contents inserted in
-	 * different orders snapshot byte-for-byte the same (#470). The reverse index
+	 * different orders snapshot byte-for-byte the same. The reverse index
 	 * is derived and never serialized — `restoreSparse` rebuilds it. Pairs with
 	 * `restoreSparse`.
 	 *
-	 * **Opt-in (#626 / ADR-0020).** Throws `DETERMINISM_DISABLED` unless the
+	 * **Opt-in.** Throws `DETERMINISM_DISABLED` unless the
 	 * Store was constructed with `{ deterministic: true }` — the canonical
 	 * entity-index ordering is the determinism tax the flag gates. */
 	public snapshotSparse(): Uint8Array {
@@ -2762,7 +2793,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * code). Throws `SparseRestoreError` if the snapshot's shape, field identity,
 	 * entity-index bounds, or frame length don't validate.
 	 *
-	 * **Opt-in (#626 / ADR-0020).** Throws `DETERMINISM_DISABLED` unless the
+	 * **Opt-in.** Throws `DETERMINISM_DISABLED` unless the
 	 * Store was constructed with `{ deterministic: true }`; paired with
 	 * `snapshotSparse`, which produces the canonical bytes restore consumes. */
 	public restoreSparse(bytes: Uint8Array): void {
@@ -2771,7 +2802,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// World snapshot / resume — mount onto a live world (#789)
+	// World snapshot / resume — mount onto a live world
 	// =======================================================
 
 	/**
@@ -2784,7 +2815,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * order is load-bearing for byte-identical resume), the alive count, and each
 	 * archetype's `length` / `enabledCount`.
 	 *
-	 * **Opt-in (ADR-0020).** Throws `DETERMINISM_DISABLED` unless constructed with
+	 * **Opt-in.** Throws `DETERMINISM_DISABLED` unless constructed with
 	 * `{ deterministic: true }` — the sparse section rides the canonical-ordering
 	 * surface and byte-identical resume is a determinism property. Pairs with
 	 * `restoreInto`.
@@ -2809,7 +2840,7 @@ export class Store implements ObserverHost, QueryHost {
 	 *
 	 * Requires a world whose SAB-backed archetype set + column layout match the
 	 * snapshot's exactly (prewarm so the archetype set is stable) and the same
-	 * entity-index capacity. **Opt-in (ADR-0020):** throws `DETERMINISM_DISABLED`
+	 * entity-index capacity. **Opt-in:** throws `DETERMINISM_DISABLED`
 	 * unless `{ deterministic: true }`. See `snapshot()` for the v1 scope. */
 	public restoreInto(bytes: Uint8Array): void {
 		this._requireDeterministic("restoreInto()");
@@ -2843,7 +2874,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `_entityIds` after the dense backing was swapped in `restoreInto`. `length`
 	 * + the per-row entity-id back-reference come from a scan of the restored
 	 * entity-index region (which entity occupies which row); `enabledCount` comes
-	 * from the captured host-state (the #577 partition boundary is positional only
+	 * from the captured host-state (the partition boundary is positional only
 	 * — it has no per-entity byte source). */
 	private _reconstructHostRows(host: HostState): void {
 		const highWater = this.entityAllocator.highWater;
@@ -2889,7 +2920,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Relations — (relation, target) pairs on the sparse store (#471)
+	// Relations — (relation, target) pairs on the sparse store
 	// =======================================================
 	// Registry, traversal, and hierarchy ordering live in `RelationService`
 	// (relation_service.ts) — semantics and rationale are documented there.
@@ -2982,7 +3013,7 @@ export class Store implements ObserverHost, QueryHost {
 		return this.relationService.cascadeOf(root, def);
 	}
 
-	/** Second query-match path (#469 / ADR-0011): iterate entities matching a
+	/** Second query-match path: iterate entities matching a
 	 * dense mask **and** sparse-membership terms, invoking `cb` per entity.
 	 * Yields `EntityID`s, not archetype spans — sparse members are scattered
 	 * across archetypes, so there is no SoA column to hand back. Driven by the
@@ -2998,7 +3029,7 @@ export class Store implements ObserverHost, QueryHost {
 	 *  - **neither** → walk `denseArchetypes`' entity ids (dense-only fallback).
 	 *
 	 * Only reached via `Query.forEachEntity`; dense `forEach` never consults
-	 * the sparse stores, so dense-only queries are unaffected (#469 AC). */
+	 * the sparse stores, so dense-only queries are unaffected. */
 	public _forEachSparseMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -3065,7 +3096,7 @@ export class Store implements ObserverHost, QueryHost {
 				if (!mask.contains(include)) continue;
 				if (exclude !== null && mask.overlaps(exclude)) continue;
 				if (anyOf !== null && !mask.overlaps(anyOf)) continue;
-				// Skip disabled entities by default (#577): a disabled entity's sparse
+				// Skip disabled entities by default: a disabled entity's sparse
 				// data is still present (disable doesn't touch sparse stores), so this
 				// membership-driven path would otherwise yield it. A component-less
 				// entity (row UNASSIGNED) is never disabled.
@@ -3085,7 +3116,7 @@ export class Store implements ObserverHost, QueryHost {
 		for (let a = 0; a < denseArchetypes.length; a++) {
 			const arch = denseArchetypes[a];
 			const eids = arch.entityIds;
-			// Default: only the enabled prefix; includeDisabled: all rows (#577).
+			// Default: only the enabled prefix; includeDisabled: all rows.
 			// Read the partition fields directly (not the flag-dependent
 			// `entityCount` getter — `forEachEntity` doesn't set that flag).
 			const n = includeDisabled ? arch.totalCount : arch.enabledCount;
@@ -3107,7 +3138,7 @@ export class Store implements ObserverHost, QueryHost {
 		}
 	}
 
-	/** Fourth query-match path (#581): the matched set in hierarchy depth order
+	/** Fourth query-match path: the matched set in hierarchy depth order
 	 * (parents before children) — see `RelationService.forEachHierarchyMatch`. */
 	public _forEachHierarchyMatch(
 		include: BitSet,
@@ -3159,18 +3190,26 @@ export class Store implements ObserverHost, QueryHost {
 		const currentArchetypeId = this.entityArchetype[entityIndex] as ArchetypeID;
 		const currentArch = this.archGet(currentArchetypeId);
 
-		// Already has this component → overwrite in-place (no archetype transition)
-		if (currentArch.hasComponent(def.id)) {
-			currentArch.writeFields(
-				this.entityRow[entityIndex],
-				def.id,
-				values as Record<string, number>,
-				this._tick
-			);
+		// Single edge probe (#hot-add). The steady state — a repeated (source
+		// archetype, added component) pair — used to pay FOUR redundant lookups
+		// before touching a row: `mask.has(cid)`, then `archResolveAdd` (which
+		// re-reads `mask.has(cid)` and the same `edges[cid]` slot), then
+		// `archGet(target)`, then `getEdge(cid)` a second time for `addMap`.
+		// `edges[cid]` is a holey array, so each probe is a hole-check load.
+		//
+		// One probe answers all of it: `cacheEdge` records the add direction on
+		// the source (`edge.add`/`addMap`) and the remove direction on the
+		// target, so a non-null `edge.add` means *exactly* "this archetype does
+		// NOT hold cid, and the destination is already resolved" — an archetype
+		// that holds cid can never be the `from` of an add edge for cid. The
+		// cold path (first time this pair is seen, or the entity already holds
+		// the component) falls through to the original resolve below.
+		const edge = currentArch.getEdge(def.id);
+		if (edge === undefined || edge.add === null) {
+			this._addComponentCold(entityId, entityIndex, currentArch, currentArchetypeId, def, values);
 			return;
 		}
-
-		const targetArchetypeId = this.archResolveAdd(currentArchetypeId, def.id);
+		const targetArchetypeId = edge.add;
 		const targetArch = this.archGet(targetArchetypeId);
 		const srcRow = this.entityRow[entityIndex];
 
@@ -3180,7 +3219,6 @@ export class Store implements ObserverHost, QueryHost {
 			const srcPre = currentArch.length;
 			const tgtPre = targetArch.length;
 			const tgtPreE = targetArch.enabledCount;
-			const edge = currentArch.getEdge(def.id)!;
 			const tagOnly = !targetArch.hasColumns && !currentArch.hasColumns;
 
 			if (tagOnly) {
@@ -3218,6 +3256,42 @@ export class Store implements ObserverHost, QueryHost {
 		this.entityRow[entityIndex] = dstRow;
 	}
 
+	/** @internal — cold tail of `addComponent`: the entity already holds `def`
+	 * (overwrite in place, no transition), or the (source, component) add edge
+	 * has not been cached yet (first time this pair is seen — resolve, which
+	 * plants the edge, then re-enter the hot body). Split out so the edge-hit
+	 * path above stays a straight line with one holey-array probe; this runs at
+	 * most once per (archetype, component) pair plus on in-place overwrites. */
+	private _addComponentCold(
+		entityId: EntityID,
+		entityIndex: number,
+		currentArch: Archetype,
+		currentArchetypeId: ArchetypeID,
+		def: ComponentDef,
+		values?: Record<string, number>
+	): void {
+		// Already has this component → overwrite in-place (no archetype transition)
+		if (currentArch.hasComponent(def.id)) {
+			currentArch.writeFields(
+				this.entityRow[entityIndex],
+				def.id,
+				values as Record<string, number>,
+				this._tick
+			);
+			return;
+		}
+		// Plant the add edge (and its transition map), then take the hot path.
+		// `resolveAdd` caches both directions and we've just ruled out
+		// `mask.has(cid)`, so `edge.add` is non-null on re-entry — the recursion
+		// is depth-1 by construction.
+		this.archResolveAdd(currentArchetypeId, def.id);
+		(this.addComponent as (e: EntityID, d: ComponentDef, v?: Record<string, number>) => void)(
+			entityId,
+			def,
+			values
+		);
+	}
+
 	/** Add multiple components in one transition (resolves final archetype, then moves once).
 	 *
 	 * Final-mask resolve, not graph walk. The previous implementation called
@@ -3226,20 +3300,19 @@ export class Store implements ObserverHost, QueryHost {
 	 * triggered a fresh `extendColumnStore` even though no entity ever lived
 	 * there. Computing the union mask up front and resolving once via
 	 * `archGetOrCreateFromMask` collapses N-1 intermediate-archetype
-	 * creations into zero for the batched case (#211 follow-up). The lazy
+	 * creations into zero for the batched case. The lazy
 	 * single-mask path remains the same; this just avoids feeding it
 	 * archetypes the entity never visits.
 	 *
-	 * #659 — composite-add edge cache. The final-mask resolve, unlike the
+	 * Composite-add edge cache. The final-mask resolve, unlike the
 	 * single-add `edges[]` walk, re-pays a per-call `mask.hash()`, `ArchetypeGraph.lookup`
 	 * (the Map-of-buckets + `equals` scan), and `getBatchTransitionMap` on
-	 * every call — a ~2× gap vs a cached edge walk that the decomposition probe
-	 * pinned on the two `Map.get`s, not the hash. So a repeated (source, added-
-	 * set) add now resolves through `currentArch`'s composite-add cache: one
+	 * every call. That is much slower than a cached edge walk, and a probe put the
+	 * cost on the two `Map.get` calls, and not on the hash. So a repeated (source,
+	 * added-set) add now resolves through `currentArch`'s composite-add cache: one
 	 * `Map.get` on an exact packed key yields the target + transition map, and we
 	 * skip the union-mask build entirely. First call per key still resolves via
-	 * the final-mask path below (no intermediate planting) and plants the edge.
-	 * See docs/reports/bench/regressions/add-components-composite-edge.md. */
+	 * the final-mask path below (no intermediate planting) and plants the edge. */
 	public addComponents(entityId: EntityID, entries: readonly TemplateEntryData[]): void {
 		if (!this.isAlive(entityId)) {
 			if (DEV) throw entityNotAliveError("addComponents", entityId);
@@ -3250,7 +3323,7 @@ export class Store implements ObserverHost, QueryHost {
 		const currentArchetypeId = this.entityArchetype[entityIndex] as ArchetypeID;
 		const currentArch = this.archGet(currentArchetypeId);
 
-		// Pack the entry def ids into an exact composite-add key (#659) and try
+		// Pack the entry def ids into an exact composite-add key and try
 		// the cache before touching a mask. The pack also serves as the loop
 		// that would otherwise begin the union build — on a hit it replaces it.
 		const n = entries.length;
@@ -3334,7 +3407,7 @@ export class Store implements ObserverHost, QueryHost {
 		);
 	}
 
-	/** Shared move+write tail of `addComponents` (#659): place the entity into
+	/** Shared move+write tail of `addComponents`: place the entity into
 	 * the already-resolved `targetArch` — a `moveEntityFrom` along the cached
 	 * `map` when it has a row, else a fresh append (the rowless empty-archetype
 	 * source ignores `map`) — then write every entry's fields. Both the
@@ -3397,12 +3470,20 @@ export class Store implements ObserverHost, QueryHost {
 		const currentArchetypeId = this.entityArchetype[entityIndex] as ArchetypeID;
 		const currentArch = this.archGet(currentArchetypeId);
 
-		if (!currentArch.hasComponent(def.id)) return;
-
-		const targetArchetypeId = this.archResolveRemove(currentArchetypeId, def.id);
+		// Single edge probe — the mirror of `addComponent`'s (see the note
+		// there). `cacheEdge` records the remove direction on the archetype that
+		// HOLDS the component, so a non-null `edge.remove` means exactly "this
+		// archetype holds cid and the destination is resolved", collapsing
+		// `hasComponent` + `archResolveRemove` + a second `getEdge` into one
+		// holey-array probe.
+		const edge = currentArch.getEdge(def.id);
+		if (edge === undefined || edge.remove === null) {
+			this._removeComponentCold(entityId, currentArch, currentArchetypeId, def);
+			return;
+		}
+		const targetArchetypeId = edge.remove;
 		const targetArch = this.archGet(targetArchetypeId);
 		const srcRow = this.entityRow[entityIndex];
-		const edge = currentArch.getEdge(def.id)!;
 		const tagOnly = !targetArch.hasColumns && !currentArch.hasColumns;
 		const srcPre = currentArch.length;
 		const tgtPre = targetArch.length;
@@ -3425,6 +3506,20 @@ export class Store implements ObserverHost, QueryHost {
 		this.entityRow[entityIndex] = _moveResult[0];
 		this._onArchLenChange(currentArch, srcPre);
 		this._onArchGrow(targetArch, tgtPre, tgtPreE);
+	}
+
+	/** @internal — cold tail of `removeComponent`: the entity doesn't hold `def`
+	 * (no-op), or the (source, component) remove edge has not been cached yet.
+	 * Mirror of `_addComponentCold`; same depth-1 re-entry argument. */
+	private _removeComponentCold(
+		entityId: EntityID,
+		currentArch: Archetype,
+		currentArchetypeId: ArchetypeID,
+		def: ComponentDef
+	): void {
+		if (!currentArch.hasComponent(def.id)) return;
+		this.archResolveRemove(currentArchetypeId, def.id);
+		this.removeComponent(entityId, def);
 	}
 
 	/** Remove multiple components in one transition (resolves final archetype, then moves once).
@@ -3486,14 +3581,12 @@ export class Store implements ObserverHost, QueryHost {
 		this._onArchGrow(targetArch, tgtPre, tgtPreE);
 	}
 
-	/** Total (POLISH_AUDIT #9): a dead/stale `entityId` returns `false` rather
+	/** Total: a dead/stale `entityId` returns `false` rather
 	 * than throwing — a "has" probe is exactly what callers reach for to avoid
 	 * touching dead entities, so it must be safe to ask. */
 	public hasComponent(entityId: EntityID, def: ComponentHandle): boolean {
-		if (!this.isAlive(entityId)) {
-			return false;
-		}
-		const entityIndex = getEntityIndex(entityId);
+		const entityIndex = this._liveIndex(entityId);
+		if (entityIndex < 0) return false;
 		return this.archGet(this.entityArchetype[entityIndex] as ArchetypeID).hasComponent(def.id);
 	}
 
@@ -3515,7 +3608,7 @@ export class Store implements ObserverHost, QueryHost {
 		const tgtId = this.archResolveAdd(srcArch.id, compId);
 		const tgt = this.archGet(tgtId);
 		// The bulk move maintains the enabled/disabled partition only when the
-		// destination has no disabled rows (#577). Disabled entities + whole-
+		// destination has no disabled rows. Disabled entities + whole-
 		// archetype batch ops is an exotic combination; reject it loudly rather
 		// than corrupt the partition. Enable first, or use per-entity addComponent.
 		if (srcArch.disabledCount > 0 || tgt.disabledCount > 0) {
@@ -3572,7 +3665,7 @@ export class Store implements ObserverHost, QueryHost {
 
 		const tgtId = this.archResolveRemove(srcArch.id, compId);
 		const tgt = this.archGet(tgtId);
-		// See `batchAddComponent`: batch ops don't support disabled rows (#577).
+		// See `batchAddComponent`: batch ops don't support disabled rows.
 		if (srcArch.disabledCount > 0 || tgt.disabledCount > 0) {
 			throw new ECSError(
 				ECS_ERROR.PARTITION_BULK_INTO_DISABLED,
@@ -3629,6 +3722,70 @@ export class Store implements ObserverHost, QueryHost {
 
 	public getEntityRow(entityId: EntityID): number {
 		return this.entityRow[getEntityIndex(entityId)];
+	}
+
+	/**
+	 * The row `resolveEntity` placed the entity at — the alloc-free second
+	 * return value of a resolve, read immediately after the call. Same out-param
+	 * pattern as `EntityAllocator.lastIndex` and `_moveResult`; returning a
+	 * `{ arch, row }` pair instead would allocate on every by-id read.
+	 */
+	public resolvedRow = 0;
+
+	/**
+	 * (archetype, row) for a by-id access, derived from ONE index computation.
+	 *
+	 * `getEntityArchetype` and `getEntityRow` are each one line, and every by-id
+	 * caller needs both — so the pair cost two derivations of the same packed
+	 * index and two call frames to read two elements of two parallel arrays
+	 * addressed identically. This is that pair, fused: index once, publish the
+	 * row on `resolvedRow`, return the archetype.
+	 *
+	 * The two single-purpose accessors stay above — tests reach for one half at a
+	 * time — but no runtime path uses them in a pair any more.
+	 */
+	public resolveEntity(entityId: EntityID): Archetype {
+		const index = (entityId as number) & INDEX_MASK;
+		this.resolvedRow = this.entityRow[index];
+		return this.archGet(this.entityArchetype[index] as ArchetypeID);
+	}
+
+	/**
+	 * Build the `at(entity)` binder a `ComponentCursor` repoints itself through
+	 * (ref.ts). Handing the cursor a closure rather than the Store keeps the
+	 * mutation surface out of a value that user code holds onto.
+	 *
+	 * `stampTick` distinguishes the two variants once, here, instead of per
+	 * `at()`: a mutable cursor bumps the component's change tick on every
+	 * repoint (matching `ctx.ref`), a read-only one never does.
+	 */
+	public cursorBinder(def: ComponentHandle, stampTick: boolean): CursorBinder {
+		const cid = def.id as number;
+		return (cursor, entity) => {
+			const index = (entity as number) & INDEX_MASK;
+			const arch = this.archGet(this.entityArchetype[index] as ArchetypeID);
+			if (DEV) {
+				if (!this.isAlive(entity as EntityID))
+					throw entityNotAliveError("cursor.at", entity as EntityID, this.componentLabel(cid));
+				if (arch.columnGroups[cid] === undefined)
+					throw new ECSError(
+						ECS_ERROR.COMPONENT_NOT_REGISTERED,
+						`cursor.at: ${this.componentLabel(cid)} has no columns in the archetype of entity ` +
+							`${String(entity)} — the entity doesn't hold it, or it is a tag (no fields to point at)`,
+						{ component: cid, entity: entity as number }
+					);
+			}
+			if (stampTick) arch._changedTick[cid] = this._tick;
+			cursor._bufs = arch._bufs;
+			cursor._off = arch._colOffset[cid];
+			cursor._row = this.entityRow[index];
+		};
+	}
+
+	/** A component's field names in schema order — the cursor prototype key and
+	 * ordinal source (ref.ts). One array per component, owned by its meta. */
+	public componentFieldNames(def: ComponentHandle): readonly string[] {
+		return this.componentMetas[def.id as number].fieldNames;
 	}
 
 	// =======================================================
@@ -3803,7 +3960,7 @@ export class Store implements ObserverHost, QueryHost {
 	}
 
 	/** Fails closed on a missing key; the present → absent → present
-	 * lifecycle (#798) — see `ResourceRegistry.remove`. */
+	 * lifecycle — see `ResourceRegistry.remove`. */
 	public removeResource(key: symbol): void {
 		this.resources.remove(key);
 	}

@@ -1,5 +1,5 @@
 /**
- * Relations — `OnDeleteTarget` cleanup policies (#473 / ADR-0011).
+ * Relations — `OnDeleteTarget` cleanup policies.
  *
  * When a relation **target** is destroyed, the per-relation cleanup policy
  * chosen at registration runs at destroy-flush (and the immediate-destroy
@@ -12,7 +12,7 @@
  * Covers the issue's acceptance criteria across both cardinalities, both
  * destroy paths (immediate + deferred flush), a multi-level `delete` cascade,
  * cycle termination, recycled-slot cleanliness, and the deep-chain stack-safety
- * guarantee both paths now share (#492 — the immediate path drains a work-list
+ * guarantee both paths now share (the immediate path drains a work-list
  * instead of recursing, so a pathologically deep chain cannot overflow the stack).
  */
 
@@ -23,7 +23,7 @@ import type { EntityID } from "../../entity";
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-describe("OnDeleteTarget = delete — cascade (#473)", () => {
+describe("OnDeleteTarget = delete — cascade", () => {
 	it("destroying a target destroys its sources (exclusive, immediate)", () => {
 		const store = new Store();
 		const ChildOf = store.registerRelation({ onDeleteTarget: "delete" });
@@ -92,9 +92,9 @@ describe("OnDeleteTarget = delete — cascade (#473)", () => {
 		expect(store.entityCount).toBe(0);
 	});
 
-	it("survives a pathologically deep chain without overflowing the stack (immediate, #492)", () => {
+	it("survives a pathologically deep chain without overflowing the stack (immediate)", () => {
 		// A long exclusive ancestry: chain[i+1] --ChildOf--> chain[i], so destroying
-		// the root (chain[0]) must cascade the entire chain. The pre-#492 immediate
+		// the root (chain[0]) must cascade the entire chain. The earlier immediate
 		// path recursed one `destroyEntity` frame per level and blew the call stack
 		// at this depth; the work-list drain is depth-independent, like the deferred
 		// path has always been.
@@ -176,7 +176,7 @@ describe("OnDeleteTarget = delete — cascade (#473)", () => {
 	});
 });
 
-describe("OnDeleteTarget = clear — sources survive, link dropped (#473)", () => {
+describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
 	it("removes the relation from every source (exclusive)", () => {
 		const store = new Store();
 		const Targets = store.registerRelation({ onDeleteTarget: "clear" });
@@ -244,7 +244,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped (#473)", () =
 	});
 });
 
-describe("OnDeleteTarget = orphan — default dangling behaviour (#473)", () => {
+describe("OnDeleteTarget = orphan — default dangling behaviour", () => {
 	it("leaves the source alive with a dangling, safe-to-read link", () => {
 		const store = new Store();
 		const Targets = store.registerRelation(); // default: orphan
@@ -277,7 +277,7 @@ describe("OnDeleteTarget = orphan — default dangling behaviour (#473)", () => 
 	});
 });
 
-describe("OnDeleteTarget — recycled slot cleanliness + mixed policies (#473)", () => {
+describe("OnDeleteTarget — recycled slot cleanliness + mixed policies", () => {
 	it("a slot freed by a delete cascade comes back clean", () => {
 		const store = new Store();
 		const ChildOf = store.registerRelation({ onDeleteTarget: "delete" });
@@ -318,7 +318,7 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies (#473)",
 	});
 });
 
-describe("OnDeleteTarget — ECS surface (#473)", () => {
+describe("OnDeleteTarget — ECS surface", () => {
 	it("registers a delete-policy relation and cascades through the ECS wrapper", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register({ onDeleteTarget: "delete" });
@@ -335,7 +335,7 @@ describe("OnDeleteTarget — ECS surface (#473)", () => {
 	});
 });
 
-describe("compact_relations — reverse-index reclaim under orphan churn (#491)", () => {
+describe("compact_relations — reverse-index reclaim under orphan churn", () => {
 	it("drops an exclusive orphan relation's dead-target reverse entry", () => {
 		const store = new Store();
 		const Targets = store.registerRelation(); // default: orphan
@@ -345,7 +345,7 @@ describe("compact_relations — reverse-index reclaim under orphan churn (#491)"
 
 		store.destroyEntity(tgt);
 
-		// Orphan leaves the reverse entry intact (the dangling-source leak #491).
+		// Orphan leaves the reverse entry intact (the dangling-source leak).
 		expect(sorted(store.sourcesOf(tgt, Targets))).toEqual([src as number]);
 
 		expect(store.compactRelations()).toBe(1);

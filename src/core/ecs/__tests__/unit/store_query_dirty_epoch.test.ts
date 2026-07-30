@@ -1,5 +1,5 @@
 /**
- * `Store._queryDirtyEpoch` — coalesced query-dirty signal (#327).
+ * `Store._queryDirtyEpoch` — coalesced query-dirty signal.
  *
  * Replaces the per-mutation walk over `registeredQueries` that wrote one
  * dirty bit per query. The epoch is a monotonic integer bumped by every
@@ -26,7 +26,7 @@ import { Store } from "../../store";
 const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
-describe("Store._query_dirty_epoch (#327)", () => {
+describe("Store._query_dirty_epoch", () => {
 	it("coalesces N immediate add_component calls into zero epoch bumps once the target archetype is non-empty", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -66,7 +66,7 @@ describe("Store._query_dirty_epoch (#327)", () => {
 		expect(q._nonEmpty()).toBe(cachedNonEmpty);
 
 		// Secondary internal probe: the dirty epoch is a semi-public
-		// optimisation contract (#327/#328). The 0-crossing rule suppresses a
+		// optimisation contract. The 0-crossing rule suppresses a
 		// bump on every non-zero-side add, so the epoch must be untouched.
 		expect(store._queryDirtyEpoch).toBe(epochBefore);
 	});

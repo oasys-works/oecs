@@ -1,5 +1,5 @@
 /**
- * `fixedTimestep` is validated at the configuration boundary (audit finding #4).
+ * `fixedTimestep` is validated at the configuration boundary.
  *
  * `update()` drives a `while (accumulator >= fixedTimestep)` catch-up loop. A
  * non-positive timestep makes that loop non-terminating (the accumulator never
@@ -13,7 +13,7 @@ import { ECS_ERROR, isEcsError } from "../../utils/error";
 
 const BAD = [0, -1, -1 / 60, NaN, Infinity, -Infinity];
 
-describe("ECS — fixed_timestep validation (finding #4)", () => {
+describe("ECS — fixed_timestep validation", () => {
 	for (const bad of BAD) {
 		it(`constructor rejects fixed_timestep = ${bad}`, () => {
 			expect(() => new ECS({ fixedTimestep: bad })).toThrow(/fixedTimestep must be/);
@@ -48,7 +48,7 @@ describe("ECS — fixed_timestep validation (finding #4)", () => {
 });
 
 // ============================================================================
-// #720 — `maxFixedSteps` is validated at the configuration boundary too.
+// `maxFixedSteps` is validated at the configuration boundary too.
 //
 // `update()` clamps the spiral-of-death with `maxAcc = maxFixedSteps *
 // fixedTimestep`. A non-integer / < 1 / non-finite `maxFixedSteps` either
@@ -62,7 +62,7 @@ describe("ECS — fixed_timestep validation (finding #4)", () => {
 // fixedTimestep set; `0`, `-1`, `NaN`, `-Infinity` are shared.
 const BAD_MAX_STEPS = [0, -1, 1.5, NaN, Infinity, -Infinity];
 
-describe("ECS — max_fixed_steps validation (#720)", () => {
+describe("ECS — max_fixed_steps validation", () => {
 	for (const bad of BAD_MAX_STEPS) {
 		it(`constructor rejects max_fixed_steps = ${bad}`, () => {
 			expect(() => new ECS({ maxFixedSteps: bad })).toThrow(/maxFixedSteps must be/);

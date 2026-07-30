@@ -1,20 +1,20 @@
 /**
- * `Store._queryDirtyEpoch` only bumps on 0-crossings (#328).
+ * `Store._queryDirtyEpoch` only bumps on 0-crossings.
  *
- * After #327, the epoch made the mark O(1). #328 narrows _what_ counts as a
+ * The epoch makes the mark O(1), and narrows _what_ counts as a
  * mark: only an archetype crossing the 0/non-zero boundary changes
  * `Query._nonEmptyArchetypes`. A mutation that takes an arch from 5 → 6
  * (or 6 → 5) leaves the non-empty set unchanged and must not invalidate
  * cached query results.
  *
- * Closes the latent #316 bug as a side-effect: immediate
+ * This closes a latent bug as a side-effect: immediate
  * `Store.destroyEntity` previously only flagged row counts, leaving
  * cached queries stale when the destroyed entity was the last in its
  * archetype. The shared `_onArchLenChange` helper now bumps the
  * query epoch on that 1→0 case.
  *
- * #812 widens the crossing test from `length` alone to `length` OR
- * `enabledCount` (#577 split the non-empty filter by partition). An enabled
+ * The crossing test covers `length` OR `enabledCount`, because the
+ * non-empty filter is split by partition. An enabled
  * row appended to an archetype that is non-empty but all-disabled
  * (`length > 0, enabledCount == 0`) crosses `enabledCount` 0→1 without
  * touching `length`, so the old length-only bump missed it and a cached
@@ -34,7 +34,7 @@ function getStore(world: ECS): Store {
 	return (world as unknown as { store: Store }).store;
 }
 
-describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
+describe("Store._query_dirty_epoch 0-crossings only", () => {
 	it("same-side mutations (e.g. 5→6, 6→5) do not bump the epoch", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -118,7 +118,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		// brand-new [Vel] archetype AND crosses its entity count 0→1. The
 		// observable contract is that the cached query now reports exactly this
 		// entity. (Whether the install itself bumps the dirty epoch is an
-		// internal optimisation — #328 — and is invisible here: bumps coalesce
+		// internal optimisation and is invisible here: bumps coalesce
 		// into a single cache rebuild on the next read regardless of count.)
 		const b = world.spawn();
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
@@ -136,7 +136,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		expect(foundB).toBe(true);
 	});
 
-	it("destroying the last entity in an archetype invalidates query caches (#316)", () => {
+	it("destroying the last entity in an archetype invalidates query caches", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const store = getStore(world);
@@ -152,7 +152,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		expect(count).toBe(1);
 
 		// Immediate destroy — previously left _nonEmptyArchetypes stale
-		// because the path only set _rowCountsDirty (#316). With the
+		// because the path only set _rowCountsDirty. With the
 		// epoch bumping on the 1→0 crossing, the query rebuilds.
 		store.destroyEntity(e);
 
@@ -163,7 +163,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		expect(count).toBe(0);
 	});
 
-	it("deferred destroy + flush bumps the epoch once when an archetype empties (#457)", () => {
+	it("deferred destroy + flush bumps the epoch once when an archetype empties", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const store = getStore(world);
@@ -181,7 +181,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		const epochBefore = store._queryDirtyEpoch;
 
 		// Defer-destroy ALL three, then flush. The [Pos] arch crosses 3→0, so
-		// `flushDestroyed`'s inline detector (#457) must bump the epoch exactly
+		// `flushDestroyed`'s inline detector must bump the epoch exactly
 		// once — replacing the old per-entity pre-length Map.
 		for (const e of ids) store.destroyEntityDeferred(e);
 		store.flushDestroyed();
@@ -195,7 +195,7 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 		expect(total).toBe(0);
 	});
 
-	it("deferred destroy + flush does NOT bump the epoch when no archetype empties (#457)", () => {
+	it("deferred destroy + flush does NOT bump the epoch when no archetype empties", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const store = getStore(world);
@@ -295,12 +295,12 @@ describe("Store._query_dirty_epoch 0-crossings only (#328)", () => {
 });
 
 /**
- * #812 — an enabled row added to an archetype that is non-empty but all-disabled
+ * An enabled row added to an archetype that is non-empty but all-disabled
  * (`length > 0, enabledCount == 0`) crosses `enabledCount` 0→1 without crossing
  * `length`. The old length-only `_onArchLenChange` bump missed it, so a cached
  * default query kept its stale `_nonEmpty` list and the new entity was invisible.
  */
-describe("enabled_count 0-crossings on row add (#812)", () => {
+describe("enabled_count 0-crossings on row add", () => {
 	const Tag = ["v"] as const;
 
 	it("cached query sees an enabled row added to an all-disabled archetype (the issue repro)", () => {

@@ -1,16 +1,16 @@
 /**
- * SAB snapshot / restore — #171 §6.1.6.
+ * SAB snapshot / restore.
  *
- * The plan calls for ECS snapshots to be a `Uint8Array` over the SAB region
- * up to `header.capacity` and restore to copy that buffer back. With every
- * column already living inside a single `SharedArrayBuffer` (§6.1.3),
+ * An ECS snapshot is a `Uint8Array` over the SAB region up to
+ * `header.capacity`, and restore copies that buffer back. With every
+ * column already living inside a single `SharedArrayBuffer`,
  * snapshot collapses to "take a view over the SAB" and restore collapses
  * to "allocate a SAB of the right size, copy bytes in, re-parse the
  * descriptors to rebuild views" — no per-archetype JSON traversal.
  *
  * Properties:
  *   - **Snapshot is zero-copy.** It's a TypedArray view, not an owned
- *     copy. Use it for hashing (FNV1a in §6.1.7) or pass it to
+ *     copy. Use it for hashing (FNV1a) or pass it to
  *     `restoreColumnStore` immediately. If you need a stable copy that
  *     survives subsequent writes to the SAB, slice the view first
  *     (`new Uint8Array(snapshot)` copies).
@@ -125,7 +125,7 @@ export function restoreColumnStore(
 	// column at the descriptor's `byte_off`/`row_capacity` — on a truncated / corrupt
 	// snapshot both run past the buffer end and throw a raw `RangeError`. Surface a
 	// typed `StoreRestoreError` instead so callers see one error class for all
-	// malformed input. (#724)
+	// malformed input.
 	if (header.layoutDescriptorOff < 0 || header.layoutDescriptorOff > buffer.byteLength) {
 		throw new StoreRestoreError(
 			`layout_descriptor_off ${header.layoutDescriptorOff} is outside the snapshot (${buffer.byteLength} bytes)`

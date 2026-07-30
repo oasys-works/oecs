@@ -1,5 +1,5 @@
 /**
- * Grouped ECS facades (H3 phase 2) — behavior of the four secondary surfaces.
+ * Grouped ECS facades — behavior of the four secondary surfaces.
  *
  * Each facade wraps the Store entry points the pre-0.5 flat forms used
  * (flat forms removed in 0.5.0), so these pin the facade surfaces directly:
@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS, eventKey, resourceKey, signalKey } from "../../index";
 
-describe("ECS grouped facades (H3 phase 2)", () => {
+describe("ECS grouped facades", () => {
 	it("relations: register/add/has/targetOf/traversal/compact", () => {
 		const ecs = new ECS();
 		const ChildOf = ecs.relations.register();

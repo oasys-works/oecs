@@ -26,7 +26,7 @@ const Velocity = { vx: "f64", vy: "f64", vz: "f64" } as const;
 const Health = { current: "f64", max: "f64" } as const;
 const Tag = {} as const; // empty (marker component)
 // Two FLOAT (f32) fields — the only column types whose "undefined" coerces to
-// NaN (Int* coerce to 0). Used to pin the omitted-field-is-0 contract (#716).
+// NaN (Int* coerce to 0). Used to pin the omitted-field-is-0 contract.
 const Float2 = { fx: "f32", fy: "f32" } as const;
 
 describe("Store", () => {
@@ -78,7 +78,7 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// Generation rollover / slot retirement (#376)
+	// Generation rollover / slot retirement
 	//=========================================================
 
 	// Drive slot 0 through every live generation (0..MAX_LIVE_GENERATION) so the
@@ -149,14 +149,14 @@ describe("Store", () => {
 			expect(store.isAlive(createEntityId(0, gen))).toBe(false);
 		}
 		// A forged handle carrying the RETIRED_GENERATION tombstone — the value
-		// parked in the retired slot — now reads DEAD (#778, fail-closed). It is
+		// parked in the retired slot — now reads DEAD (fail-closed). It is
 		// never issued to a live entity, so excluding it closes the ABA window from
 		// the other side: even a handle aliasing the retired slot's own generation
 		// can't read alive.
 		expect(store.isAlive(createEntityId(0, RETIRED_GENERATION))).toBe(false);
 	});
 
-	it("isAlive is fail-closed for forged / out-of-bounds handles (#778)", () => {
+	it("isAlive is fail-closed for forged / out-of-bounds handles", () => {
 		const store = new Store();
 		const live = store.createEntity();
 		expect(store.isAlive(live)).toBe(true); // sanity: a real handle still reads alive
@@ -559,7 +559,7 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// Float columns: an omitted field reads back 0, NOT NaN (#716)
+	// Float columns: an omitted field reads back 0, NOT NaN
 	//=========================================================
 
 	// Contract (mirrors the template zero-fill in `resolveTemplate`): a field
@@ -621,7 +621,7 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// spawnMany — count guard precedes the allocation (#730)
+	// spawnMany — count guard precedes the allocation
 	//=========================================================
 
 	// `spawnMany` allocates `new Array(count)` before doing work. A negative
@@ -694,7 +694,7 @@ describe("Store", () => {
 	// Event channel dirty-list invariant
 	//=========================================================
 
-	// Regression for #728: `emitEvent` / `emitSignal` mark a channel dirty
+	// Regression: `emitEvent` / `emitSignal` mark a channel dirty
 	// (push its id to `dirtyEventChannels`) only AFTER a successful emit.
 	// The old order sampled `reader.length === 0` and pushed the id BEFORE
 	// `channel.emit(...)`; if that emit threw the `__DEV__` missing-field check,
@@ -703,7 +703,7 @@ describe("Store", () => {
 	// duplicate inflates `_devBufferedEventCount` and makes `clearEvents`
 	// walk the channel twice, breaking the at-most-once-per-tick invariant.
 
-	it("a thrown emit does not double-register the channel in the dirty list (#728)", () => {
+	it("a thrown emit does not double-register the channel in the dirty list", () => {
 		const store = new Store();
 		const Pair = store.registerEvent<{ a: number; b: number }>(["a", "b"]);
 

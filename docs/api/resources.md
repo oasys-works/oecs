@@ -1,21 +1,26 @@
 # Resources
 
 > [!NOTE]
-> **0.5.0 — grouped surface.** Resource registration and access live on the **`ecs.resources`** facade — `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`, `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, `ecs.resources.has(Time)`. The pre-0.5 flat `ecs.*` forms were **removed** in 0.5.0.
+> **0.5.0 — a grouped surface.** Registration of a resource, and access to it, are on the
+> **`ecs.resources`** facade: `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`,
+> `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, and `ecs.resources.has(Time)`.
+> Version 0.5.0 **removed** the flat `ecs.*` forms of 0.4 and earlier.
 
-A **resource** is a typed global singleton — one value per `ECS`, keyed by a symbol. Use it for state that isn't per-entity: the input snapshot, the camera, the game clock, config flags, an RNG seed.
+A **resource** is a typed global value. There is one value for each `ECS`, and a symbol is its key.
+Use a resource for state that does not belong to an entity: the input state, the camera, the game
+clock, configuration flags, or the seed of a random number generator.
 
 ```ts
 import { resourceKey } from "@oasys/oecs";
 
-// 1. Mint a key at module scope — the type travels with the key.
+// 1. Make a key at module scope — the type travels with the key.
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 
 // 2. Register it with an initial value.
 ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 
-// 3. Read / write anywhere.
-const t = ecs.resources.get(Time);   // t.delta and t.elapsed are typed
+// 3. Read it or write it from anywhere.
+const t = ecs.resources.get(Time);   // t.delta and t.elapsed have types
 ecs.resources.set(Time, { delta: 1 / 60, elapsed: t.elapsed + 1 / 60 });
 ```
 
@@ -26,13 +31,20 @@ resourceKey<T>(name: string): ResourceKey<T>;
 type ResourceKey<T> = symbol & { readonly [__resourceValue]: (value: T) => T };
 ```
 
-The phantom slot is **function-typed on purpose** — it makes `T` invariant (a key authorizes both reads and writes, so keys with different `T` must be mutually unassignable).
+The phantom slot has a **function type on purpose**. That type makes `T` invariant. A key
+authorizes a read and a write, so you must not be able to assign a key with one `T` to a key with a
+different `T`.
 
-`resourceKey` mints a unique symbol carrying the value type `T`. The `name` is for diagnostics only — uniqueness comes from the symbol's identity, not the string, so two `resourceKey("Time")` calls are two different keys. Mint each key **once, at module scope**, and import it wherever you need the resource.
+`resourceKey` makes a unique symbol that carries the value type `T`. The `name` is for diagnostics
+only. The identity of the symbol gives uniqueness, and the string does not. So two
+`resourceKey("Time")` calls give two different keys. Make each key **one time, at module scope**,
+and import it wherever you need the resource.
 
 ## Methods
 
-On the host, everything lives on the **`ecs.resources`** facade. Inside a system, the four accessors exist as `ctx` methods — there is no `ctx` registration form (registration is a setup-time, host-only op):
+On the host, each function is on the **`ecs.resources`** facade. In a system, the four accessors
+are methods on `ctx`. There is no registration form on `ctx`, because registration is a host
+operation that you do at setup time.
 
 ```ts
 // Host — the ecs.resources facade:
@@ -42,18 +54,25 @@ set<T>(key: ResourceKey<T>, value: T): void;
 remove<T>(key: ResourceKey<T>): void;
 has<T>(key: ResourceKey<T>): boolean;
 
-// Inside a system — on ctx:
+// In a system — on ctx:
 getResource<T>(key: ResourceKey<T>): T;
 setResource<T>(key: ResourceKey<T>, value: T): void;
 removeResource<T>(key: ResourceKey<T>): void;
 hasResource<T>(key: ResourceKey<T>): boolean;
 ```
 
-The two surfaces follow two conventions on purpose. The **flat `ctx`** surface verbs every accessor — `getResource`/`setResource`/`removeResource`/`hasResource`, matching `getField`/`setField`/`hasComponent`. The **grouped `ecs.resources`** facade drops the noun to `get`/`set`/`remove`/`has` because the receiver already names it.
+The two surfaces follow two conventions on purpose. The **flat `ctx`** surface puts the noun in
+each accessor name: `getResource`, `setResource`, `removeResource`, and `hasResource`. This agrees
+with `getField`, `setField`, and `hasComponent`. The **grouped `ecs.resources`** facade removes the
+noun and uses `get`, `set`, `remove`, and `has`, because the receiver already gives the noun.
 
-On `ctx` the key parameter is additionally narrowed to the system's declared access — `ctx.getResource` accepts only keys listed in `resourceReads`, `ctx.setResource`/`ctx.removeResource` only keys in `resourceWrites` (undeclared keys are a compile error, backed by the dev-mode access check).
+On `ctx`, the type of the key parameter is also limited to the declared access of the system.
+`ctx.getResource` accepts only a key in `resourceReads`. `ctx.setResource` and
+`ctx.removeResource` accept only a key in `resourceWrites`. A key that you did not declare is a
+compile error, and the development-mode access check supports the same rule.
 
-Inside a system, resource access is **declared and checked**: list the key in `resourceReads` to read it, `resourceWrites` to write it.
+In a system, you must **declare** resource access, and the engine **checks** it. List the key in
+`resourceReads` to read it, and in `resourceWrites` to write it.
 
 ```ts
 ecs.registerSystem({
@@ -66,19 +85,28 @@ ecs.registerSystem({
 });
 ```
 
-## Caveats
+## Points to note
 
 > [!WARNING]
-> **Register-once.** Registering a key that's already live throws `RESOURCE_ALREADY_REGISTERED`. `ecs.resources.remove` frees the key so it can be registered again — resources model a present/absent axis, not just a value.
+> **Register one time.** If you register a key that is already live, it throws
+> `RESOURCE_ALREADY_REGISTERED`. `ecs.resources.remove` releases the key, so that you can register
+> it again. A resource has a present or absent state, and not only a value.
 
 > [!NOTE]
-> Removal (`ecs.resources.remove` / `ctx.removeResource`) is access-checked as a **write** (declare it in `resourceWrites`) and **fails closed on a missing key** — removing a key that isn't registered throws rather than silently no-op'ing.
+> The access check treats removal (`ecs.resources.remove` or `ctx.removeResource`) as a **write**,
+> so declare it in `resourceWrites`. Removal also **fails safely for a key that is absent**: it
+> throws, and it does not do nothing quietly.
 
 > [!IMPORTANT]
-> **Resources are excluded from `stateHash` and from snapshot/restore.** Mutating a resource never perturbs the [determinism](./determinism.md) digest, and resources do **not** survive `ecs.snapshots.capture()`/`restore()` (v1 scope). If a resource holds sim-affecting state you need to reproduce, fold it into a component or re-seed it after restore.
+> **`stateHash`, snapshot, and restore do not include resources.** A change to a resource never
+> changes the [determinism](./determinism.md) digest, and a resource does **not** survive
+> `ecs.snapshots.capture()` and `restore()` (this is the scope of v1). If a resource holds
+> simulation state that you must reproduce, move it into a component, or set it again after a
+> restore.
 
 ## See also
 
-- [events](./events.md) — the other non-entity communication channel (per-frame, not persistent)
-- [schedule](./schedule.md) — `runIfResourceEq` gates systems on a resource value
-- [determinism](./determinism.md) — why resources sit outside the state hash
+- [events](./events.md) — the other channel for data that is not on an entity (it is for one frame,
+  and it is not persistent)
+- [schedule](./schedule.md) — `runIfResourceEq` gates a system on the value of a resource
+- [determinism](./determinism.md) — why the state hash does not include resources

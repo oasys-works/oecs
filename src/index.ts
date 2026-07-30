@@ -23,12 +23,12 @@
 export { ECS, type ECSOptions } from "./core/ecs";
 export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
 
-// ECS memory sizing (#682) — the intent surface a consumer sizes an ECS
+// ECS memory sizing — the intent surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). The resolver + derivation constants are
 // tooling, at `@oasys/oecs/internal`.
 export type { ECSMemoryOptions, EntityBudget, WasmMemoryArm } from "./core/ecs";
 
-// Template / direct-create (#462) — opaque archetype template from `ECS.template`,
+// Template / direct-create — opaque archetype template from `ECS.template`,
 // consumed by `ECS.spawn` / `ECS.spawnMany`.
 export type { Template, TemplateOverrides } from "./core/ecs";
 
@@ -36,7 +36,7 @@ export type { Template, TemplateOverrides } from "./core/ecs";
 // backend) that needs to know when SAB layout changes.
 export type { StoreLayoutListener } from "./core/ecs";
 
-// Compute backend (#622) — the generic, opt-in plug point a consumer attaches
+// Compute backend — the generic, opt-in plug point a consumer attaches
 // via `ECS.attachBackend`.
 export type { ComputeBackend, BackendSystemHandle } from "./core/ecs";
 
@@ -46,13 +46,13 @@ export {
 	type SystemEntry,
 	type SystemOrdering,
 	type SystemOrderingTarget,
-	// System sets (#576) — a named group sharing a run condition + ordering.
+	// System sets — a named group sharing a run condition + ordering.
 	systemSet,
 	type SystemSet,
 	type SystemSetConfig
 } from "./core/ecs";
 
-// Run conditions (#576) — per-tick gates for scheduled systems / sets.
+// Run conditions — per-tick gates for scheduled systems / sets.
 export {
 	type RunCondition,
 	type ConditionContext,
@@ -103,7 +103,7 @@ export type {
 	ResourcesAccessDecl
 } from "./core/ecs";
 
-// Component observers (#517 §1 / ADR-0013) — registered via `ECS.observe`.
+// Component observers — registered via `ECS.observe`.
 export type {
 	ObserverConfig,
 	ObserverHandle,
@@ -114,7 +114,7 @@ export type {
 	ArchetypeSetObserverConfig
 } from "./core/ecs";
 
-// Host → ECS write seam (#681) — a host/UI/editor enqueues typed
+// Host → ECS write seam — a host/UI/editor enqueues typed
 // `HostCommand`s off-schedule into a `HostCommandQueue`; a blessed apply
 // system drains them at the schedule head through `applyHostCommand`.
 // The SAB command-ring transport (`HostCommandDispatcher`, `ring*Codec`,
@@ -135,7 +135,7 @@ export type {
 	HostCommandSink
 } from "./core/ecs";
 
-// Record / replay over the host command log (#702) — slice 5 of the write seam.
+// Record / replay over the host command log — part of the write seam.
 export {
 	HostCommandRecorder,
 	serializeCommandLog,
@@ -144,7 +144,7 @@ export {
 } from "./core/ecs";
 export type { CommandLog, RecordedTick, ReplayResult, ReplayOptions } from "./core/ecs";
 
-// Per-world frame-trace seam (ADR-0030) — attach a `FrameTraceSink` via
+// Per-world frame-trace seam — attach a `FrameTraceSink` via
 // `ECS.setTrace(sink)`. `DEV`-gated end to end (zero prod cost).
 export { FrameTraceRecorder } from "./core/ecs";
 export type {
@@ -161,15 +161,21 @@ export type {
 export { FrameStepper } from "./core/ecs";
 export type { FrameStepperOptions } from "./core/ecs";
 
-// World resume (#789) — `ECSRestoreError` is thrown by `ECS.restoreInto`;
+// World resume — `ECSRestoreError` is thrown by `ECS.restoreInto`;
 // `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
 // `StoreRestoreError` is the dense-half failure `restoreInto` can surface —
 // exported so the failure mode is nameable/catchable.
 export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./core/ecs";
 export { StoreRestoreError } from "./core/store";
 
-// Ref — advisory read-only views; see PATTERNS §10c.
-export type { ComponentRef, ReadonlyComponentRef } from "./core/ecs";
+// Ref — advisory read-only views. A deliberate cast can still write through.
+export type {
+	ComponentCursor,
+	ComponentRef,
+	CursorSeek,
+	ReadonlyComponentCursor,
+	ReadonlyComponentRef
+} from "./core/ecs";
 
 // Queries
 export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED } from "./core/ecs";
@@ -177,7 +183,7 @@ export type { HierarchyTerm } from "./core/ecs";
 // eachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
 export { ChunkColumns, Commands } from "./core/ecs";
 
-// Archetype — only the read-only view + opaque id are public (issue #378).
+// Archetype — only the read-only view + opaque id are public.
 export type { ArchetypeView, ArchetypeID } from "./core/ecs";
 
 // Entities. `getEntityIndex` decodes the dense 20-bit slot index out of a
@@ -213,16 +219,16 @@ export type {
 export { bundle } from "./core/ecs";
 export type { Bundle, BundleOrDef, StrictBundle, StrictBundles, DefsOf } from "./core/ecs";
 
-// Sparse storage class — out-of-identity components (#468 / ADR-0011).
+// Sparse storage class — out-of-identity components.
 export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./core/ecs";
 export { SparseRestoreError } from "./core/ecs";
 
-// Relations — (relation, target) pairs on the sparse storage class (#471 /
-// ADR-0011). `ANY_RELATION` is the `(*, T)` wildcard access sentinel (#579).
+// Relations — (relation, target) pairs on the sparse storage class.
+// `ANY_RELATION` is the `(*, T)` wildcard access sentinel.
 export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./core/ecs";
 export { ANY_RELATION } from "./core/ecs";
 
-// Built-in relations (#477 / #463) — named presets over `ECS.registerRelation`.
+// Built-in relations — named presets over `ECS.registerRelation`.
 export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./core/ecs";
 
 // Events

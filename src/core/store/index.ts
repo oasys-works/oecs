@@ -12,7 +12,7 @@ export {
 	isValidSab
 } from "./header";
 
-// Generic consumer-declared region registry (#623 — de-game the SAB
+// Generic consumer-declared region registry (it de-games the SAB
 // substrate). The engine ships only the mechanism regions; a game declares its
 // own regions as `StoreRegionSpec`s addressed by an opaque `region_id`.
 export {
@@ -122,7 +122,7 @@ export {
 	ringWriteHead
 } from "./command_ring";
 
-// Generic command-dispatch surface (#624). A consumer binds a payload codec +
+// Generic command-dispatch surface. A consumer binds a payload codec +
 // handler per opcode; the engine owns no opcode names. The game's opcode enum
 // (`COMMAND_OP`) and payload codecs (`SpawnUnitFields`, …) live in
 // `@internal/sim`'s `command_payloads.ts`.
@@ -145,7 +145,7 @@ export {
 	extendColumnStore
 } from "./extend";
 
-// Shared grow/extend layout/realloc building blocks (H5) — one home for the
+// Shared grow/extend layout/realloc building blocks — one home for the
 // tail-cursor layout rule, the realloc-and-republish choreography, and the
 // snapshot helpers both resize paths use.
 export { snapshotLiveColumns, restoreColumnSnapshots } from "./layout_ops";
@@ -193,7 +193,7 @@ export {
 } from "./action_ring";
 
 // terrain / spatial_grid / army_compositions / spawn_anchors / flow_field
-// region modules MOVED to `@internal/sim` (packages/sim/src/regions/) in #623 —
+// region modules MOVED to `@internal/sim` (packages/sim/src/regions/) —
 // they are GAME data structures, not engine substrate. The engine now exposes
 // only the generic region table above; consumers import the region builders +
 // view helpers from `@internal/sim`.

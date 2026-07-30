@@ -1,5 +1,5 @@
 /**
- * Sparse storage class — out-of-identity components (#468 / ADR-0011).
+ * Sparse storage class — out-of-identity components.
  *
  * Covers the substrate slice's acceptance criteria:
  *  - CRUD (register / add / has / get / set / remove) through the public `ECS`.
@@ -64,7 +64,7 @@ describe("SparseComponentStore (substrate)", () => {
 	});
 });
 
-describe("ECS sparse component API (#468)", () => {
+describe("ECS sparse component API", () => {
 	it("registers and does full CRUD through the public surface", () => {
 		const ecs = new ECS();
 		const Health = ecs.registerSparseComponent(Hp);
@@ -109,7 +109,7 @@ describe("ECS sparse component API (#468)", () => {
 	});
 });
 
-describe("sparse no-transition invariant (#468)", () => {
+describe("sparse no-transition invariant", () => {
 	it("add/remove churn leaves archetype_count and the entity's archetype_id stable", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);
@@ -135,7 +135,7 @@ describe("sparse no-transition invariant (#468)", () => {
 	});
 });
 
-describe("sparse independence from the bitmask identity (#468)", () => {
+describe("sparse independence from the bitmask identity", () => {
 	it("does not count against STORE_DESCRIPTOR_COMPONENT_LIMIT", () => {
 		const store = new Store();
 
@@ -157,7 +157,7 @@ describe("sparse independence from the bitmask identity (#468)", () => {
 	});
 });
 
-describe("sparse correctness under destroy + dense swap-remove (#468)", () => {
+describe("sparse correctness under destroy + dense swap-remove", () => {
 	it("survives swap-remove of a dense neighbour (data keyed by index, not row)", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);
@@ -213,7 +213,7 @@ describe("sparse correctness under destroy + dense swap-remove (#468)", () => {
 	});
 });
 
-describe("sparse interaction with dense add/remove on the same entity (#468)", () => {
+describe("sparse interaction with dense add/remove on the same entity", () => {
 	it("sparse data survives a dense archetype transition", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);

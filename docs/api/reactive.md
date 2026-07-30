@@ -1,75 +1,104 @@
-# Reactive UI seam
+# The reactive UI connection
 
-> **Optional.** The `ECS` is framework-agnostic and never pulls a UI library. This seam is three separate, opt-in entry points that bridge ECS state into a reactive UI **without** re-rendering everything each frame. Import only what you use.
+> **Optional.** The `ECS` does not depend on a framework, and it never imports a UI library. This
+> connection is three separate, optional entry points. Together they bring ECS state into a
+> reactive UI **without** a full render in each frame. Import only what you use.
 
 ```
 ECS ──observers──▶ @oasys/oecs/reactive-sync ──▶ @oasys/oecs/reactive ──▶ @oasys/oecs/solid ──▶ SolidJS
-     (publish only dirty)   (reactive collections)   (signals kernel)      (adapter)
+     (publish only the changed)  (reactive collections)   (signals kernel)      (adapter)
 ```
 
-The pieces compose but stand alone: use the kernel by itself, drive React through `toExternalStore`, or wire the full pipe into Solid.
+The parts compose, but each part also operates alone. You can use the kernel by itself, drive React
+through `toExternalStore`, or connect the full chain into Solid.
 
 ## `@oasys/oecs/reactive` — the signals kernel
 
-A zero-dependency, fine-grained, glitch-free reactive kernel — the same machine class as the ECS observer system, at finer granularity. Values are pulled lazily; a recompute that produces an equal value bumps nobody.
+This is a reactive kernel with no dependencies. It is fine-grained and glitch-free, and it is the
+same class of machine as the observer system of the ECS, at a finer level of detail. It pulls
+values when a reader needs them. A recompute that gives an equal value starts nothing.
 
 ```ts
 import { signal, computed, effect, batch } from "@oasys/oecs/reactive";
 
 const [count, setCount] = signal(0);
 const doubled = computed(() => count() * 2);
-const stop = effect(() => console.log("doubled =", doubled()));  // runs now, and on change
-setCount(5);                     // effect re-runs → "doubled = 10"
-batch(() => { setCount(6); setCount(7); });  // one flush → effect runs once
-stop();                          // dispose the effect
+const stop = effect(() => console.log("doubled =", doubled()));  // runs now, and on each change
+setCount(5);                     // the effect runs again → "doubled = 10"
+batch(() => { setCount(6); setCount(7); });  // one flush → the effect runs one time
+stop();                          // dispose of the effect
 ```
 
 ```ts
 signal<T>(initial: T, eq?: (a: T, b: T) => boolean): readonly [() => T, (v: T) => void];
 computed<T>(fn: () => T, eq?: (a: T, b: T) => boolean): () => T;
-effect(fn: () => void): () => void;      // returns a disposer
-batch(fn: () => void): void;             // coalesce writes into one flush
-untrack<T>(fn: () => T): T;              // read without subscribing
-root<T>(fn: (dispose: () => void) => T): T;   // manual ownership scope
+effect(fn: () => void): () => void;      // gives a function that disposes of it
+batch(fn: () => void): void;             // put the writes together into one flush
+untrack<T>(fn: () => T): T;              // read without a subscription
+root<T>(fn: (dispose: () => void) => T): T;   // a manual scope for ownership
 onCleanup(fn: () => void): void;         // register teardown with the owner in scope
 ```
 
-- **`signal`** — a writable atom. A same-value write (per `eq`, default `Object.is`) is a no-op that wakes nobody.
-- **`computed`** — a lazy derived value; recomputes on read only when a dependency actually changed. Diamonds resolve with one consistent recompute (glitch-free).
-- **`effect`** — runs once immediately to collect dependencies, then re-runs when any tracked dep changes.
-- **`batch`** — coalesce all writes inside `fn` into a single flush.
-- **`untrack`** / **`root`** / **`onCleanup`** — escape tracking, create a manual teardown scope, register cleanups. `root`/`onCleanup` are only needed outside a framework adapter that owns scope for you.
+- **`signal`** is a writable value. A write of the same value, by `eq`, which is `Object.is` by
+  default, does nothing and starts nothing.
+- **`computed`** is a derived value that the kernel calculates when a reader needs it. It
+  recalculates on a read only when a dependency truly changed. A diamond shape in the graph
+  resolves with one consistent recompute, which is what "glitch-free" means.
+- **`effect`** runs one time immediately, to collect its dependencies. It then runs again when a
+  tracked dependency changes.
+- **`batch`** puts each write inside `fn` together into one flush.
+- **`untrack`**, **`root`**, and **`onCleanup`** let you read and record no dependency, make a
+  manual scope for teardown, and register cleanup functions. You need `root` and `onCleanup` only
+  outside a
+  framework adapter that owns the scope for you.
 
 > [!WARNING]
-> An effect that writes a signal it reads cascades; past an internal cap the flush **throws** ("did not settle"). A throwing effect doesn't poison its siblings (each is isolated; the first error re-throws after the flush drains). A read inside a dependency cycle returns the *stale* value rather than throwing.
+> An effect that writes a signal that it reads causes a cascade. Past an internal limit, the flush
+> **throws** ("did not settle"). An effect that throws does not damage the other effects: the
+> kernel isolates each one, and it throws the first error again after the flush drains. A read
+> inside a cycle of dependencies gives the *old* value, and it does not throw.
 
 ### Reactive collections
 
-Per-key/per-slot channels, so a reader of one key subscribes to that key alone — `O(changed)`, not `O(all)`.
+These give a channel for each key or each slot. So a reader of one key subscribes to that key
+alone, which is `O(changed)`, and not `O(all)`.
 
 ```ts
 reactiveMap<K, V>(eq?): ReactiveMap<K, V>;        // get/set/delete/has/size/keys
-reactiveStruct<T>(initial, eq?): readonly [proxy: T, set: StructSetters<T>];  // fixed heterogeneous fields
+reactiveStruct<T>(initial, eq?): readonly [proxy: T, set: StructSetters<T>];  // fixed fields of different types
 reactiveArray<T>(initial?, eq?): ReactiveArray<T>;  // get/set/push/pop/splice/length/snapshot/reconcile
 ```
 
-- **`reactiveMap`** — keyed collection; a reader of key `K` wakes only when `K` changes. `reactiveArray.reconcile(next)` and `reactiveStruct`'s per-field signals give the same fine granularity for ordered and fixed-shape data.
+- **`reactiveMap`** is a collection with keys. A reader of key `K` starts again only when `K`
+  changes. `reactiveArray.reconcile(next)`, and the signal for each field in `reactiveStruct`, give
+  the same fine level of detail for ordered data and for data with a fixed shape.
 
 > [!WARNING]
-> **Pass a content `eq` for object values.** Under the default `Object.is`, a projection that returns a fresh object each tick compares unequal every time and wakes every subscriber every frame. Use `shallow` (from `reactive-sync`) or a hand-written comparator. For `reactiveMap`, note `undefined` is the absent sentinel — use `delete`, not `set(key, undefined)`. For `reactiveArray`, `set(i)` out of range is a no-op (dev warns) — grow with `push`/`splice`/`reconcile`.
+> **Give an `eq` function that compares content when the values are objects.** Under the default
+> `Object.is`, a projection that gives a new object in each tick compares as unequal each time, and
+> it starts each subscriber in each frame. Use `shallow` from `reactive-sync`, or write your own
+> comparator. For `reactiveMap`, note that `undefined` means "absent": use `delete`, and not
+> `set(key, undefined)`. For `reactiveArray`, a `set(i)` call that is out of range does nothing,
+> and it gives a warning in development. To make the array longer, use `push`, `splice`, or
+> `reconcile`.
 
-### Framework interop
+### Interoperation with a framework
 
 ```ts
 subscribe<T>(accessor: () => T, onChange: (value: T) => void): () => void;
 toExternalStore<T>(accessor: () => T): { subscribe(cb): () => void; getSnapshot(): T };
 ```
 
-`subscribe` fires `onChange` at most once per coalesced change (not on subscribe — read the initial value yourself). `toExternalStore` produces the exact `useSyncExternalStore` shape for React (its snapshot is referentially stable between changes, so React won't loop).
+`subscribe` calls `onChange` a maximum of one time for each set of changes that the kernel put
+together. It does not call it at the time of the subscription, so read the initial value yourself.
+`toExternalStore` gives the exact shape that `useSyncExternalStore` in React needs. Its snapshot
+keeps the same reference between two changes, so React does not loop.
 
-## `@oasys/oecs/reactive-sync` — ECS → reactive bridge
+## `@oasys/oecs/reactive-sync` — the bridge from the ECS to the kernel
 
-Drains ECS [observers](./observers.md) into reactive collections, publishing **only dirty** entities/columns each tick (`O(changed)`). Each `sync*` returns a `dispose()` and seeds synchronously on registration.
+This drains the ECS [observers](./observers.md) into reactive collections. In each tick it
+publishes **only the changed** entities and columns, which is `O(changed)`. Each `sync*` function
+gives you a `dispose()` function, and it sets the initial values synchronously at registration.
 
 ```ts
 import { syncComponentToMap, shallow, batchedUpdate } from "@oasys/oecs/reactive-sync";
@@ -77,53 +106,67 @@ import { syncComponentToMap, shallow, batchedUpdate } from "@oasys/oecs/reactive
 const positions = syncComponentToMap(ecs, Pos, (row) => ({ x: row.field("x"), y: row.field("y") }),
   { eq: shallow });               // → positions.map : ReactiveMap<EntityID, {x,y}>
 
-batchedUpdate(ecs, 1 / 60);        // = batch(() => ecs.update(dt)) — one tick, one coalesced UI flush
+batchedUpdate(ecs, 1 / 60);        // = batch(() => ecs.update(dt)) — one tick, one UI flush
 ```
 
 ```ts
-syncComponentToMap<S, V>(ecs, def, project, opts?): EcsMapSync<V>;         // one component → map
-syncFieldsToMap<S, F>(ecs, def, fields, opts?): EcsMapSync<{…}>;            // sugar: field list → {field: value}
-syncJoinToMap<V>(ecs, defs, project, opts?): EcsMapSync<V>;                 // multi-component join (never stale)
-syncSingletonToStruct<S, F>(ecs, def, eid, fields, opts?): SingletonStructSync;  // one entity → reactiveStruct
-syncSingletonToArray<S>(ecs, def, eid, fields, opts?): SingletonArraySync;       // one entity → reactiveArray
-shallow(a, b): boolean;            // the recommended eq for object projections
+syncComponentToMap<S, V>(ecs, def, project, opts?): EcsMapSync<V>;         // one component → a map
+syncFieldsToMap<S, F>(ecs, def, fields, opts?): EcsMapSync<{…}>;            // a shorter form: a field list → {field: value}
+syncJoinToMap<V>(ecs, defs, project, opts?): EcsMapSync<V>;                 // a join of several components (never out of date)
+syncSingletonToStruct<S, F>(ecs, def, eid, fields, opts?): SingletonStructSync;  // one entity → a reactiveStruct
+syncSingletonToArray<S>(ecs, def, eid, fields, opts?): SingletonArraySync;       // one entity → a reactiveArray
+shallow(a, b): boolean;            // the recommended eq for a projection that gives an object
 batchedUpdate(ecs, dt): void;
 ```
 
-- **`syncComponentToMap`** — the workhorse. `grain: "entity"` (default) drains per-entity dirty rows; `grain: "column"` sweeps the archetype SoA for high-churn components. Reading a *second* component in the projection goes stale — use `syncJoinToMap`, which subscribes all defs.
-- **`syncFieldsToMap`** — sugar with an automatic `shallow` eq; convenient, but builds a fresh object per dirty row, so for high churn prefer `syncComponentToMap` with a scalar/hand-`eq` projection.
-- **singleton syncs** — for one entity's component as UI state (net status, FPS, wave timer).
+- **`syncComponentToMap`** is the primary function. With `grain: "entity"`, the default, it drains
+  the dirty rows for each entity. With `grain: "column"`, it examines the archetype columns, which
+  is better for a component that changes frequently. If the projection reads a *second* component,
+  the result becomes out of date. Use `syncJoinToMap` instead, because it subscribes to each
+  definition.
+- **`syncFieldsToMap`** is a shorter form with an automatic `shallow` comparator. It is convenient,
+  but it builds a new object for each dirty row. So, when the changes are frequent, use
+  `syncComponentToMap` with a scalar projection, or with a comparator that you write.
+- **The singleton functions** put the component of one entity into UI state, for example network
+  status, frame rate, or a wave timer.
 
 > [!WARNING]
-> A projection returning a fresh object under default `Object.is` wakes every frame — pass `eq: shallow` (or a scalar projection). This is the single most common reactive-sync mistake.
+> A projection that gives a new object, under the default `Object.is`, starts each subscriber in
+> each frame. Give `eq: shallow`, or use a scalar projection. This is the most frequent error with
+> `reactive-sync`.
 
-## `@oasys/oecs/solid` — SolidJS adapter
+## `@oasys/oecs/solid` — the SolidJS adapter
 
-Bridges kernel values into SolidJS. **`solid-js` is an optional peer dependency** — only this entry pulls it.
+This brings the values of the kernel into SolidJS. **`solid-js` is an optional peer dependency**,
+and only this entry point imports it.
 
 ```text
 import { fromKernel, fromKernelMap } from "@oasys/oecs/solid";
 
-fromKernel<T>(accessor: () => T): Accessor<T>;                       // kernel value → Solid signal
-fromKernelMap<K, V>(map: ReactiveMap<K, V>): { keys; cell(key) };    // keyed collection → <For>
-fromKernelStruct<T>(struct: T): T;                                   // reactiveStruct → per-field Solid tracking
-fromKernelArray<T>(arr: ReactiveArray<T>): Accessor<readonly T[]>;   // reactiveArray → <Index each>
+fromKernel<T>(accessor: () => T): Accessor<T>;                       // a kernel value → a Solid signal
+fromKernelMap<K, V>(map: ReactiveMap<K, V>): { keys; cell(key) };    // a collection with keys → <For>
+fromKernelStruct<T>(struct: T): T;                                   // a reactiveStruct → Solid tracking for each field
+fromKernelArray<T>(arr: ReactiveArray<T>): Accessor<readonly T[]>;   // a reactiveArray → <Index each>
 ```
 
 ```tsx
 const view = fromKernelMap(positions.map);
 <For each={view.keys()}>{(id) => {
-  const p = view.cell(id);           // subscribes to this entity's row alone
+  const p = view.cell(id);           // subscribes to the row of this entity alone
   return <circle cx={p()?.x} cy={p()?.y} />;
 }}</For>
 ```
 
 > [!WARNING]
-> Key a Solid `<For>` on the stable `EntityID`, never on a per-tick value object; use `<For>` (keyed) for entity collections and `<Index>` only for positional arrays via `fromKernelArray`. Call `fromKernel*` inside a component or `root` so teardown has an owner.
+> Key a Solid `<For>` on the stable `EntityID`. Never key it on a value object that changes in each
+> tick. Use the keyed `<For>` for a collection of entities. Use `<Index>` only for a positional
+> array, through `fromKernelArray`. Call each `fromKernel*` function inside a component or inside
+> `root`, so that teardown has an owner.
 
 ## See also
 
-- [observers](./observers.md) — what reactive-sync drains
+- [observers](./observers.md) — what `reactive-sync` drains
 - [change detection](./change-detection.md) — the dirty tracking behind `O(changed)`
-- [host-write seam](./host-write-seam.md) — the write side (UI → ECS) that pairs with this read side
-- [editor](./editor.md) — undo/redo + field handles that combine both sides
+- [the host write path](./host-write-seam.md) — the write side (UI to ECS) that pairs with this
+  read side
+- [editor](./editor.md) — undo, redo, and field handles, which use both sides

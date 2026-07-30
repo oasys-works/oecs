@@ -1,5 +1,5 @@
 /***
- * RunCondition — per-tick gates for scheduled systems (#576, bucket B2 of #542).
+ * RunCondition — per-tick gates for scheduled systems.
  *
  * A run condition is a pure predicate evaluated by the Schedule *before* a
  * system (or every member of a SystemSet) runs in its phase. A `false` verdict
@@ -152,7 +152,7 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 	};
 }
 
-// ── Combinators (POLISH_AUDIT batch 4) ─────────────────────────────────────
+// ── Combinators ────────────────────────────────────────────────────────────
 // Compose conditions without hand-rolled closures. Each combinator merges the
 // operands' declared read surfaces (`reads` / `resourceReads`) so accessCheck
 // and the future parallel scheduler still see every edge, and derives its

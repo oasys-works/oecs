@@ -3,7 +3,7 @@
  *
  * The op-count-bounded soak (`entity_scale.test.ts`, "no corruption at moderate
  * scale") already covers correctness-at-scale, and the generation-exhaustion
- * slot-retirement path (`unit/store.test.ts`, #376) covers clean recycle vs.
+ * slot-retirement path (`unit/store.test.ts`) covers clean recycle vs.
  * retire at a slot's boundary. Those are intentionally NOT re-covered here.
  *
  * THIS file covers the remaining axis: a duration / lifecycle-bounded churn whose
@@ -15,8 +15,7 @@
  *   2. Total backing `byteLength` ratchets to peak concurrency and NEVER grows
  *      again — no per-cycle creep keyed to *cumulative* creates.
  *   3. `entityHighWater` stays flat under steady-state churn because freed slots
- *      recycle, and advances ONLY when a slot's generation legitimately retires
- *      (#376).
+ *      recycle, and advances ONLY when a slot's generation legitimately retires.
  *
  * `entityHighWater` is read through the store's entity-index region `length`
  * header — exactly the field `Store.createEntity` mirrors the private counter
@@ -41,7 +40,7 @@ function highWater(store: ECS | Store): number {
 	return entityIndexLength(cs.view, cs.header.entityIndexOff);
 }
 
-describe("Lifecycle / duration soak (#782)", () => {
+describe("Lifecycle / duration soak", () => {
 	it("bounded-live churn returns entityCount to baseline; survivors keep their data, dead handles stay dead", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -147,7 +146,7 @@ describe("Lifecycle / duration soak (#782)", () => {
 		}
 
 		// Slot 0 now holds MAX_LIVE_GENERATION; the next destroy exhausts its
-		// counter and RETIRES the slot (#376) instead of recycling it — so the
+		// counter and RETIRES the slot instead of recycling it — so the
 		// following allocation must take a fresh slot and bump the high-water.
 		store.destroyEntity(id);
 		const next = store.createEntity();

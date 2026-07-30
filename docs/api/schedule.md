@@ -1,62 +1,81 @@
 # Schedule
 
-The schedule decides **when** systems run. Systems live in one of seven **phases**; within a phase they're ordered topologically from `before`/`after` constraints. Startup phases run once; update phases run every frame; the fixed-update phase runs at a fixed timestep.
+The schedule decides **when** each system runs. A system belongs to one of seven **phases**. In each
+phase, the engine sorts the systems topologically from their `before` and `after` constraints. The
+startup phases run one time. The update phases run in each frame. The fixed-update phase runs at a
+fixed timestep.
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
 
 ecs.addSystems(SCHEDULE.UPDATE, move, collide);
-ecs.startup();          // runs the startup phases once
-ecs.update(1 / 60);     // runs fixed-update (as needed) + the update phases
+ecs.startup();          // runs the startup phases one time
+ecs.update(1 / 60);     // runs fixed-update (as necessary) and the update phases
 ```
 
 ## The seven phases
 
 ```ts
 enum SCHEDULE {
-  PRE_STARTUP, STARTUP, POST_STARTUP,   // once, via startup()
-  FIXED_UPDATE,                         // fixed timestep, inside update()
-  PRE_UPDATE, UPDATE, POST_UPDATE,      // once per frame, via update()
+  PRE_STARTUP, STARTUP, POST_STARTUP,   // one time, through startup()
+  FIXED_UPDATE,                         // a fixed timestep, inside update()
+  PRE_UPDATE, UPDATE, POST_UPDATE,      // one time in each frame, through update()
 }
 ```
 
-| Phase | Runs | Delta time |
+| Phase | When it runs | Delta time |
 | --- | --- | --- |
-| `PRE_STARTUP` → `STARTUP` → `POST_STARTUP` | once, in order, on `ecs.startup()` | `0` |
-| `FIXED_UPDATE` | 0…`maxFixedSteps` times per `update()`, *before* the variable phases | `fixedTimestep` |
-| `PRE_UPDATE` → `UPDATE` → `POST_UPDATE` | once per `ecs.update(dt)`, in order | the `dt` you passed |
+| `PRE_STARTUP` → `STARTUP` → `POST_STARTUP` | one time, in this order, on `ecs.startup()` | `0` |
+| `FIXED_UPDATE` | 0 to `maxFixedSteps` times in each `update()`, *before* the variable phases | `fixedTimestep` |
+| `PRE_UPDATE` → `UPDATE` → `POST_UPDATE` | one time in each `ecs.update(dt)`, in this order | the `dt` that you gave |
 
 > [!IMPORTANT]
-> After every phase, deferred structural changes are **flushed** before the next phase begins. So a component `ctx.commands.add`-ed in `PRE_UPDATE` is visible to queries in `UPDATE`. Within a *single* phase, deferred changes are not yet applied.
+> After each phase, the engine **flushes** the deferred structural changes before the next phase
+> starts. So a component that `ctx.commands.add` added in `PRE_UPDATE` is visible to the queries
+> in `UPDATE`. Inside one phase, the deferred changes are not yet applied.
 
 ## The frame loop
 
-**`ecs.startup()`** — call once after wiring systems and observers. It prewarms archetypes, runs every system's `onAdded` hook, runs the three startup phases, and drains any events they emitted (so frame 1 doesn't see stale startup events).
+**`ecs.startup()`** — Call this one time, after you connect the systems and the observers. It
+prepares the archetypes, runs the `onAdded` hook of each system, runs the three startup phases, and
+clears each event that they emitted. So frame 1 does not see an old startup event.
 
-**`ecs.update(dt)`** — one frame. It runs the fixed-update catch-up loop, then `PRE_UPDATE`/`UPDATE`/`POST_UPDATE`, then dispatches `onSet` observers, clears events, and bumps the tick.
+**`ecs.update(dt)`** — This is one frame. It runs the fixed-update catch-up loop, then
+`PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Then it dispatches the `onSet` observers, clears the
+events, and increases the tick.
 
-**`ecs.flush()`** — force-apply buffered deferred structural ops right now (rarely needed; phase boundaries and `update()` already flush).
+**`ecs.flush()`** — This applies the buffered deferred structural operations now. You rarely need
+it, because the phase boundaries and `update()` already flush.
 
-### Driving the loop: `FrameStepper`
+### How to drive the loop: `FrameStepper`
 
-`update(dt)` is the authoritative "run one frame" primitive; **`FrameStepper`** is an optional host-side driver over it, so you don't hand-roll the `requestAnimationFrame` loop:
+`update(dt)` is the authoritative "run one frame" primitive. **`FrameStepper`** is an optional
+driver above it, on the host side, so that you do not write the `requestAnimationFrame` loop
+yourself:
 
 ```ts
 const stepper = new FrameStepper(ecs, {
-  fixedDt: 1 / 60,   // dt used by step() when none is given (default 1/60)
-  maxDt: 0.25,       // clamp on raw browser-frame deltas (default 0.25 s)
+  fixedDt: 1 / 60,   // the dt that step() uses when you give none (default 1/60)
+  maxDt: 0.25,       // the limit on a raw browser-frame delta (default 0.25 s)
   autoStart: true,   // start the rAF loop immediately (default false)
 });
 stepper.play();               // tick on requestAnimationFrame
-stepper.pause();              // stop; manual step() still works
+stepper.pause();              // stop; a manual step() continues to operate
 stepper.toggle();
 stepper.step();               // advance exactly one frame (debuggers, tests, editors)
-stepper.stepFrames(10);       // replay a paused sim
+stepper.stepFrames(10);       // replay a paused simulation
 ```
 
-`maxDt` clamps each raw rAF delta **before** it reaches `update()` — a backgrounded tab suspends rAF, and without the clamp the first frame back would carry the whole suspension as one delta (still bounded by `maxFixedSteps`, but a burst). The first frame after `play()` uses `fixedDt`, since there is no previous timestamp. Explicit `step(dt)` deltas are trusted, not clamped. Non-browser hosts and tests inject `requestFrame`/`cancelFrame`; validation failures throw `INVALID_FRAME_STEP`. At runtime the stepper exposes `isRunning`, settable `fixedDt`/`maxDt`, and `dispose()`.
+`maxDt` limits each raw rAF delta **before** it reaches `update()`. A tab in the background stops
+rAF. Without the limit, the first frame after the tab returns would carry the full period of
+suspension as one delta. `maxFixedSteps` would still bound it, but the result would be a burst of
+steps. The first frame after `play()` uses `fixedDt`, because there is no earlier timestamp. The
+stepper trusts an explicit `step(dt)` delta, and does not limit it. A host that is not a browser,
+and a test, can supply `requestFrame` and `cancelFrame`. A validation failure throws
+`INVALID_FRAME_STEP`. At run time the stepper exposes `isRunning`, the settable properties
+`fixedDt` and `maxDt`, and `dispose()`.
 
-## Adding & ordering systems
+## How to add systems and set their order
 
 ```ts
 addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this;
@@ -64,7 +83,7 @@ addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): thi
 interface SystemEntry {
   system: SystemDescriptor;
   ordering?: { before?: SystemOrderingTarget[]; after?: SystemOrderingTarget[] };
-  runIf?: RunCondition | RunCondition[];   // ANDed with any set conditions
+  runIf?: RunCondition | RunCondition[];   // joined with AND to the conditions of each set
   set?: SystemSet | SystemSet[];
 }
 // SystemOrderingTarget = SystemDescriptor | SystemSet
@@ -72,30 +91,40 @@ interface SystemEntry {
 
 ```ts
 ecs.addSystems(SCHEDULE.UPDATE,
-  input,                                              // bare descriptor
-  { system: move, ordering: { after: [input] } },     // ordered
+  input,                                              // a descriptor alone
+  { system: move, ordering: { after: [input] } },     // with an order
   { system: render, ordering: { after: [move] }, runIf: notPaused },
 );
 ```
 
-`before: [X]` puts this system before `X`; `after: [X]` after it. A `SystemSet` target expands to all its members.
+`before: [X]` puts this system before `X`. `after: [X]` puts it after `X`. A `SystemSet` target
+expands to each of its members.
 
 > [!WARNING]
-> **Ordering is phase-local.** An ordering target scheduled in a *different* phase is silently ignored (phases are already ordered relative to each other). A target scheduled in **no** phase — a typo, or a system you forgot to `addSystems` — is dropped with a dev-only warning (routed through `ECSOptions.onWarn`, default `console.warn`), and the constraint just vanishes; the system falls back to insertion-order tiebreak.
+> **An order applies inside one phase only.** The engine ignores an order target that you scheduled
+> in a *different* phase, because the phases already have an order. If a target is in **no** phase,
+> because of a spelling error or because you did not call `addSystems`, the engine removes the
+> constraint and gives a warning in development. The warning goes through `ECSOptions.onWarn`,
+> which is `console.warn` by default. The system then uses the insertion order to break the tie.
 
 > [!WARNING]
-> Adding the same descriptor to two phases throws `DUPLICATE_SYSTEM` in dev. Register a second system if you need the same logic in two phases.
+> If you add the same descriptor to two phases, it throws `DUPLICATE_SYSTEM` in development.
+> Register a second system if you need the same logic in two phases.
 
-### Topological ordering & cycles
+### Topological order and cycles
 
-Within each phase, systems are sorted by Kahn's algorithm over the `before`/`after` edges, with **insertion order as the deterministic tiebreaker**. The result is cached per phase and invalidated on changes.
+In each phase, the engine sorts the systems with Kahn's algorithm over the `before` and `after`
+edges. **Insertion order breaks a tie, which keeps the result deterministic.** The engine caches
+the result for each phase, and it clears the cache on a change.
 
 > [!CAUTION]
-> A cycle in the ordering constraints throws `CIRCULAR_SYSTEM_DEPENDENCY`, naming the phase. It's raised lazily on the first run/sort of that phase, not at `addSystems` time. This check is **always active**, even in production.
+> A cycle in the order constraints throws `CIRCULAR_SYSTEM_DEPENDENCY`, and the message names the
+> phase. The engine raises it at the first run or sort of that phase, and not at the time of
+> `addSystems`. This check is **always active**, and it is present in production also.
 
 ## System sets
 
-A **system set** is a named group that shares a run condition and/or ordering, inherited by every member.
+A **system set** is a named group. Its members share a run condition, an order, or both.
 
 ```ts
 systemSet(name: string): SystemSet;
@@ -107,14 +136,18 @@ ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: collide,   set: physics });
 ecs.configureSet(physics, { runIf: notPaused, before: [render] });
 ```
 
-A member's effective gate is the **AND** of its own conditions and every set it belongs to. `configureSet` is additive and order-independent with respect to `addSystems` — configure the set before or after adding members, either works.
+The effective gate of a member is the **AND** of its own conditions and the conditions of each set
+that contains it. `configureSet` adds to the configuration, and its order against `addSystems` is
+not important. You can configure the set before you add its members, or after.
 
 > [!NOTE]
-> Sets are identified by **object identity, not name** — two `systemSet("x")` calls are two different sets. Hold the handle and reuse it; `name` is only for diagnostics.
+> A set has an identity of **object identity, and not of name**. Two `systemSet("x")` calls give two
+> different sets. Keep the handle and use it again. The `name` is for diagnostics only.
 
 ## Run conditions
 
-A **run condition** is a per-tick gate: return `true` to run the system/set this tick, `false` to skip it.
+A **run condition** is a gate for each tick. Give `true` to run the system or the set in this tick.
+Give `false` to skip it.
 
 ```ts
 interface RunCondition {
@@ -126,7 +159,7 @@ interface RunCondition {
 // ConditionContext exposes only { ecsTick, resource(key), hasResource(key) } — read-only.
 ```
 
-Shipped built-ins:
+The supplied conditions are:
 
 ```ts
 runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition;   // strict === (identity for objects)
@@ -134,58 +167,80 @@ runEveryNTicks(n: number, offset?: number): RunCondition;            // ticks of
 runIfAnyMatch(query: Query): RunCondition;                           // query.entityCount > 0
 ```
 
-Combinators — compose conditions without hand-rolled closures. Each merges the operands' declared `reads`/`resourceReads` (so `accessCheck` still sees every edge) and derives its `name` from the operands. Evaluation short-circuits in argument order, like `&&`/`||`:
+The combinators compose conditions, so that you do not write closures yourself. Each combinator
+joins the declared `reads` and `resourceReads` of its operands, so that `accessCheck` continues to
+see each edge. It also builds its `name` from the operands. Evaluation stops at the first decisive
+operand, in argument order, as `&&` and `||` do:
 
 ```ts
 not(cond: RunCondition): RunCondition;          // run exactly when `cond` would skip
-allOf(...conds: RunCondition[]): RunCondition;  // every condition passes (&&)
-anyOf(...conds: RunCondition[]): RunCondition;  // any condition passes (||)
+allOf(...conds: RunCondition[]): RunCondition;  // each condition passes (&&)
+anyOf(...conds: RunCondition[]): RunCondition;  // one condition or more passes (||)
 ```
 
-Empty argument lists follow vacuous truth: `allOf()` always runs the system, `anyOf()` never does.
+An empty argument list follows vacuous truth. `allOf()` always runs the system. `anyOf()` never
+runs it.
 
-(This `anyOf` gates *systems*; it's unrelated to the [`Query.anyOf`](./queries.md) filter verb.)
+This `anyOf` gates *systems*. It has no relation to the [`Query.anyOf`](./queries.md) filter verb.
 
 ```ts
 const notPaused = runIfResourceEq(PausedRes, false);
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
 ecs.configureSet(physics, { runIf: notPaused });
 
-// composed: throttle AI, but only while unpaused
+// composed: run the AI less frequently, but only while the game is not paused
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: allOf(notPaused, runEveryNTicks(10)) });
 ```
 
 > [!WARNING]
-> A run condition **must be deterministic and read-only** — a pure function of `ECS` state, no wall-clock, no RNG, no mutation. It's evaluated in a reads-only access span; touching an undeclared resource or mutating anything throws in dev. A non-deterministic condition diverges `stateHash` across [deterministic](./determinism.md) peers.
+> A run condition **must be deterministic and must only read**. It must be a pure function of the
+> `ECS` state, with no clock time, no random numbers, and no mutation. The engine evaluates it in
+> an access span that permits reads only. If it touches a resource that you did not declare, or if
+> it mutates anything, it throws in development. A condition that is not deterministic makes the
+> `stateHash` different between [deterministic](./determinism.md) peers.
 
 > [!NOTE]
-> When a condition returns `false`, the system's last-run tick does **not** advance — a skipped tick is indistinguishable from the system being absent that tick, which matters for [`changed()`](./change-detection.md) queries inside it.
+> When a condition gives `false`, the last-run tick of the system does **not** increase. So a tick
+> that the system skips is equivalent to a tick in which the system is absent. This is important for
+> the [`changed()`](./change-detection.md) queries inside it.
 
 > [!NOTE]
-> `runIfAnyMatch` needs a **dense-only** query (`entityCount` rejects sparse/relation/hierarchy terms). Gate on sparse membership with a custom `evaluate` instead.
+> `runIfAnyMatch` needs a query that is **dense only**, because `entityCount` rejects a sparse,
+> relation, or hierarchy term. To gate on sparse membership, write your own `evaluate` function
+> instead.
 
-A schedule that uses no sets and no conditions runs a byte-for-byte fast path — you pay nothing for the feature until you use it.
+A schedule with no set and no condition runs a byte-for-byte fast path. The feature has no cost
+until you use it.
 
-## Fixed timestep
+## The fixed timestep
 
-`FIXED_UPDATE` systems run on a fixed clock, decoupled from render frame rate — the standard setup for stable physics.
+`FIXED_UPDATE` systems run on a fixed clock, independent of the frame rate of the display. This is
+the usual configuration for stable physics.
 
 ```ts
 const ecs = new ECS({ fixedTimestep: 1 / 50, maxFixedSteps: 4 });
-get fixedTimestep(): number;   set fixedTimestep(value: number);   // revalidates
-get fixedAlpha(): number;      // accumulator / fixedTimestep — the render interpolation factor in [0, 1)
+get fixedTimestep(): number;   set fixedTimestep(value: number);   // validates again
+get fixedAlpha(): number;      // accumulator / fixedTimestep — the interpolation factor in [0, 1)
 ```
 
-Each `update(dt)` adds `dt` to an accumulator and runs `FIXED_UPDATE` once per whole `fixedTimestep` it contains — 0 times for a small `dt`, several for a large one. Fixed systems always see delta `= fixedTimestep`, never the frame `dt`.
+Each `update(dt)` call adds `dt` to an accumulator. It then runs `FIXED_UPDATE` one time for each
+full `fixedTimestep` in that accumulator: 0 times for a small `dt`, and several times for a large
+`dt`. A fixed system always sees a delta that is equal to `fixedTimestep`, and never the frame
+`dt`.
 
 > [!WARNING]
-> **`maxFixedSteps` is the spiral-of-death clamp** — it caps how many fixed steps one laggy frame runs, so a stall can't make each frame run ever-more catch-up steps and fall further behind. `fixedTimestep` must be finite and `> 0` (else `INVALID_FIXED_TIMESTEP`) and is revalidated by its setter. `maxFixedSteps` must be an integer `≥ 1` (else `INVALID_MAX_FIXED_STEPS`) and is set at construction.
+> **`maxFixedSteps` is the limit that prevents the spiral of death.** It limits the number of fixed
+> steps that one slow frame runs. So one stop cannot make each frame run more and more catch-up
+> steps and fall further behind. `fixedTimestep` must be finite and more than 0, or it throws
+> `INVALID_FIXED_TIMESTEP`, and its setter validates it again. `maxFixedSteps` must be an integer
+> of 1 or more, or it throws `INVALID_MAX_FIXED_STEPS`, and you set it at construction.
 
 > [!TIP]
-> Use `ecs.fixedAlpha` to interpolate rendering between fixed steps: `renderPos = lerp(prevPos, pos, ecs.fixedAlpha)`.
+> Use `ecs.fixedAlpha` to interpolate the display between two fixed steps:
+> `renderPos = lerp(prevPos, pos, ecs.fixedAlpha)`.
 
 ## See also
 
-- [systems](./systems.md) — declaring and writing the systems you schedule here
-- [resources](./resources.md) — the state `runIfResourceEq` gates on
-- [determinism](./determinism.md) — why run conditions must stay pure
+- [systems](./systems.md) — how to declare and write the systems that you schedule here
+- [resources](./resources.md) — the state that `runIfResourceEq` gates on
+- [determinism](./determinism.md) — why a run condition must stay pure

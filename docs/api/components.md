@@ -1,26 +1,30 @@
 # Components
 
-A **component** is a named bag of numeric fields attached to entities. `registerComponent` returns a **handle** you use everywhere afterward — to attach data, to query, to read columns.
+A **component** is a named group of numeric fields that you attach to an entity. `registerComponent`
+gives you a **handle**. You then use that handle everywhere: to attach data, to query, and to read
+columns.
 
-Under the hood a component is **struct-of-arrays**: each field is its own packed typed-array column, and every entity's value for that field sits at the entity's row. There are no per-entity component objects, which is what makes iteration a tight loop over contiguous memory.
+Internally, a component is a **struct-of-arrays**. Each field is its own packed typed-array column,
+and the value of an entity for that field is at the row of that entity. There is no component
+object for each entity. This is why iteration is a small loop over adjacent memory.
 
 ```ts
 import { ECS } from "@oasys/oecs";
 const ecs = new ECS();
 
-// Record form — one type per field.
+// Record form — one type for each field.
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 
-// Array shorthand — uniform type across fields (defaults to "f64").
+// Array shorthand — the same type in each field (the default is "f64").
 const Vel = ecs.registerComponent(["vx", "vy"] as const);
 
-// Tag — no fields, just a marker.
+// Tag — no fields, only a marker.
 const IsEnemy = ecs.registerTag();
 ```
 
 ## Field types
 
-Every field is a number stored in a typed-array column. The type tag picks the column type:
+Each field is a number in a typed-array column. The type tag selects the type of the column.
 
 | Tag | Column | Notes |
 | --- | --- | --- |
@@ -30,38 +34,56 @@ Every field is a number stored in a typed-array column. The type tag picks the c
 | `"u8"` `"u16"` `"u32"` | `Uint8/16/32Array` | unsigned integers |
 
 > [!NOTE]
-> There is **no boolean, string, or 64-bit-integer field type**. Every field is a JS `number`. Model a flag as a `u8` — or better, a [tag](#tags) or [sparse tag](./sparse-storage.md); model an enum as a small integer; keep strings in a [resource](./resources.md) or a side table keyed by `EntityID`.
+> There is **no field type for a boolean, a string, or a 64-bit integer**. Each field is a JS
+> `number`. Model a flag as a `u8`, or better, as a [tag](#tags) or a
+> [sparse tag](./sparse-storage.md). Model an enumeration as a small integer. Keep a string in a
+> [resource](./resources.md), or in a related table with an `EntityID` key.
 
 ## `registerComponent`
 
 ```ts
-// Record form — explicit per-field type.
+// Record form — an explicit type for each field.
 registerComponent<S extends Record<string, TypedArrayTag>>(
   schema: S, opts?: ComponentRegisterOptions
 ): ComponentDef<S>;
 
-// Array shorthand — same type for every field, defaults to "f64".
+// Array shorthand — the same type in each field, "f64" by default.
 registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
   fields: F, type?: T, opts?: ComponentRegisterOptions
 ): ComponentDef<{ readonly [K in F[number]]: T }>;
 
-interface ComponentRegisterOptions { readonly name?: string; }   // debug label
+interface ComponentRegisterOptions { readonly name?: string; }   // a label for diagnostics
 ```
 
-Use the record form when fields have different types (`{ hp: "i32", regen: "f32" }`); use the array shorthand when they share one (`["x", "y", "z"]`). Pass a second argument to change the shorthand's type: `ecs.registerComponent(["hp", "max"], "i32")`.
+Use the record form when the fields have different types (`{ hp: "i32", regen: "f32" }`). Use the
+array shorthand when the fields have one type (`["x", "y", "z"]`). To change the type of the
+shorthand, give a second argument: `ecs.registerComponent(["hp", "max"], "i32")`.
 
-The trailing `opts.name` attaches a **debug label**: dev diagnostics then read `'Pos' (component 5)` instead of `component 5`. It never affects behaviour, layout, or hashing. [`registerSparseComponent`](./sparse-storage.md) accepts the same trailing options; the tag registrars (`registerTag` / `registerSparseTag`) take no arguments.
+The last argument, `opts.name`, attaches a **label for diagnostics**. Development diagnostics then
+show `'Pos' (component 5)` instead of `component 5`. The label does not change behavior, layout, or
+the hash. [`registerSparseComponent`](./sparse-storage.md) accepts the same last argument. The tag
+functions (`registerTag` and `registerSparseTag`) take no arguments.
 
 > [!TIP]
-> Add `as const` to the array shorthand (`["vx", "vy"] as const`). Without it TypeScript widens the field names to `string[]` and you lose per-field typing on the resulting handle.
+> Add `as const` to the array shorthand (`["vx", "vy"] as const`). Without it, TypeScript makes the
+> field names as general as `string[]`, and the handle loses the type of each field.
 
-Registration order fixes each field's column index for the life of the `ECS` — stable enough to key WASM FFI against (see [`ecs.fieldId`](./memory.md)).
+The order of registration sets the column index of each field for the life of the `ECS`. The index
+is stable, and you can use it as a key for WASM FFI (see [`ecs.fieldId`](./memory.md)).
 
 > [!WARNING]
-> **Dense components consume a 128-slot identity budget.** Each `registerComponent`/`registerTag` claims one bit in the archetype signature, so you can register at most 128 dense components + tags. Data that is rarely present, churns constantly, or would blow the budget belongs in [sparse storage](./sparse-storage.md) — out-of-identity and uncapped.
+> **Dense components use a budget of 128 identity slots.** Each `registerComponent` or
+> `registerTag` call uses one bit in the archetype signature. So you can register a maximum of
+> 128 dense components and tags. Put data in [sparse storage](./sparse-storage.md) if it is rarely
+> present, if it changes constantly, or if it would exceed the budget. Sparse storage is outside
+> the identity, and it has no limit.
 
 > [!WARNING]
-> On a **deterministic** `ECS` (`new ECS({ deterministic: true })`), float columns are **rejected at registration** (`NON_DETERMINISTIC_COLUMN_TYPE`) because IEEE-754 rounding diverges across engines. Since the array shorthand defaults to `"f64"`, a deterministic `ECS` **must** pass an explicit integer type: `ecs.registerComponent(["x", "y"], "i32")`. Represent fractions as fixed-point. See [determinism](./determinism.md).
+> On a **deterministic** `ECS` (`new ECS({ deterministic: true })`), registration **rejects** float
+> columns (`NON_DETERMINISTIC_COLUMN_TYPE`), because IEEE-754 rounding is different in different
+> engines. The array shorthand uses `"f64"` by default. So a deterministic `ECS` **must** give an
+> explicit integer type: `ecs.registerComponent(["x", "y"], "i32")`. Use fixed-point numbers for
+> fractions. See [determinism](./determinism.md).
 
 ## Tags
 
@@ -69,19 +91,20 @@ Registration order fixes each field's column index for the life of the `ECS` —
 registerTag(): ComponentDef<Record<string, never>>;
 ```
 
-A tag is a component with no fields. It participates in archetype matching (so you can `query(IsEnemy)` or `.without(Dead)`) but stores nothing. Attaching it takes no values:
+A tag is a component with no fields. It is part of the archetype match, so you can write
+`query(IsEnemy)` or `.without(Dead)`, but it stores nothing. To attach it, give no values:
 
 ```ts
 const Frozen = ecs.registerTag();
 ecs.addComponent(e, Frozen);          // no values argument
-ecs.query(Pos).without(Frozen);       // exclude frozen entities
+ecs.query(Pos).without(Frozen);       // remove the frozen entities
 ```
 
 <a id="the-handle-is-callable--bundles"></a>
 
 ## The handle is callable — bundles
 
-`registerComponent` returns a `ComponentDef<S>`, which is a **callable handle**:
+`registerComponent` gives you a `ComponentDef<S>`, which is a **callable handle**:
 
 ```ts
 interface ComponentDef<S> {
@@ -90,38 +113,50 @@ interface ComponentDef<S> {
 }
 ```
 
-Calling it produces a **bundle** — a `(def, values)` pair — which the varargs spawn/add paths accept. This is the ergonomic way to build an entity from several components at once:
+A call gives you a **bundle**, which is a `(def, values)` pair. The spawn and add functions that
+take a variable number of arguments accept a bundle. This is the direct way to build an entity from
+several components at the same time:
 
 ```ts
 import { bundle } from "@oasys/oecs";
 
-// These two are equivalent bundle constructors:
+// These two bundle constructors are equivalent:
 Pos({ x: 10, y: 20 });          // call the def
-bundle(Pos, { x: 10, y: 20 });  // the free function (identical result)
+bundle(Pos, { x: 10, y: 20 });  // the free function (an identical result)
 
-// Varargs spawn — immediate, host-side:
+// Spawn with a variable number of arguments — immediate, on the host:
 const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 ```
 
-A **bare, uncalled** def (`IsEnemy` above, or `Pos`) doubles as an all-zero bundle / tag wherever a bundle is expected. The same shapes flow through `ctx.commands.spawn(...)` and `ctx.commands.add(...)` inside systems (see [systems](./systems.md)).
+A definition that you do **not** call (`IsEnemy` above, or `Pos`) is also a bundle of zeros, or a
+tag, at each position that accepts a bundle. The same shapes go through `ctx.commands.spawn(...)`
+and `ctx.commands.add(...)` in a system (see [systems](./systems.md)).
 
 > [!TIP]
-> **Partial values zero-fill.** When you build a bundle — `Pos({ x: 10 })` or `bundle(Pos, { x: 10 })` — omitted fields are written as `0`. This is the typed attach path for partial values. The typed `ecs.addComponent(e, Pos, values)` overload demands **complete** values (`CompleteFieldValues<S>` — every field). Provide `0` explicitly there, or use a bundle.
+> **Absent values become zero.** When you build a bundle — `Pos({ x: 10 })` or
+> `bundle(Pos, { x: 10 })` — the ECS writes `0` in each field that you did not give. This is the
+> typed path to attach a subset of the values. The typed overload
+> `ecs.addComponent(e, Pos, values)` demands **all** values (`CompleteFieldValues<S>`, which is
+> each field). There you must give `0` explicitly, or use a bundle.
 
 <a id="attach--detach"></a>
 
-## Attach & detach (host facade)
+## Attach and detach (the host facade)
 
-The immediate, host-side attach/detach surface. Inside a system, use the deferred `ctx.commands.add` / `ctx.commands.remove` instead — see [immediate vs deferred](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize).
+This is the immediate attach and detach surface on the host. In a system, use the deferred
+`ctx.commands.add` and `ctx.commands.remove` instead. See
+[immediate and deferred](./entities.md#immediate-vs-deferred--the-one-thing-to-internalize).
 
 ```ts
 addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;   // tag
-addComponent<S>(entityId: EntityID, bundle: Bundle<S>): this;                       // bundle — omitted fields zero-fill
-addComponent<S>(entityId: EntityID, def: ComponentDef<S>, values: CompleteFieldValues<S>): this;  // complete values
+addComponent<S>(entityId: EntityID, bundle: Bundle<S>): this;                       // bundle — absent fields become zero
+addComponent<S>(entityId: EntityID, def: ComponentDef<S>, values: CompleteFieldValues<S>): this;  // all values
 removeComponent(entityId: EntityID, def: ComponentDef): this;
 ```
 
-Three attach shapes: a bare def attaches a tag; a bundle (`Pos({ x: 1 })`) zero-fills omitted fields; the explicit `(e, def, values)` form demands every field, so a typo'd or missing field is a compile error.
+There are three attach shapes. A definition alone attaches a tag. A bundle (`Pos({ x: 1 })`) writes
+`0` in each field that you did not give. The explicit `(e, def, values)` form demands each field,
+so a field name that is absent or has a spelling error is a compile error.
 
 ### Several components, one transition
 
@@ -130,9 +165,18 @@ addComponents<Items extends readonly BundleOrDef[]>(entityId: EntityID, ...items
 removeComponents(entityId: EntityID, ...defs: ComponentDef[]): this;
 ```
 
-`addComponents` batch-attaches several components in **one archetype transition** (it resolves the final archetype once and moves once, instead of stepping through an intermediate archetype per component). It takes the same callable-bundle varargs as [`spawnBundle`](./entities.md) and [`ECS.template`](./entities.md#templates) — `ecs.addComponents(e, Pos({ x, y }), Vel({ vx }), Frozen)` — each item checked against its own def's schema (a misspelled or cross-component field is a compile error; tags refuse values), and omitted fields zero-fill. Unlike `spawnBundle` — which only ever creates a **new** entity — `addComponents` extends an existing one. `removeComponents` is the detach mirror: one transition for the whole set.
+`addComponents` attaches several components in **one archetype transition**. It finds the final
+archetype one time and moves the entity one time. It does not step through an intermediate
+archetype for each component. It takes the same callable bundles as
+[`spawnBundle`](./entities.md) and [`ECS.template`](./entities.md#templates), as in
+`ecs.addComponents(e, Pos({ x, y }), Vel({ vx }), Frozen)`. TypeScript checks each item against the
+schema of its own definition. A field name with a spelling error, or a field from a different
+component, is a compile error, and a tag rejects values. The ECS writes `0` in each field that you
+did not give. `spawnBundle` only creates a **new** entity, but `addComponents` extends an entity
+that exists. `removeComponents` is the equivalent function for detachment: one transition for the
+full set.
 
-### Whole-archetype batch ops
+### Batch operations on a full archetype
 
 ```ts
 batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): this;   // tag
@@ -140,24 +184,31 @@ batchAddComponent<S>(src: ArchetypeID, def: ComponentDef<S>, values: CompleteFie
 batchRemoveComponent(src: ArchetypeID, def: ComponentDef): this;
 ```
 
-Bulk add/remove one component on **all** entities of an archetype — `O(columns)` via `TypedArray.set()` instead of `O(entities × columns)`. They key on an `ArchetypeID` taken from `ArchetypeView.id` (the concrete archetype type is internal); get the view from [query iteration](./queries.md).
+These functions add or remove one component on **all** the entities of an archetype. The cost is
+`O(columns)`, through `TypedArray.set()`, and not `O(entities × columns)`. They take an
+`ArchetypeID` from `ArchetypeView.id`, because the concrete archetype type is internal. To get the
+view, use [query iteration](./queries.md).
 
-## Reading fields (host facade)
+## How to read fields (the host facade)
 
 ```ts
 getField<S>(entityId: EntityID, def: ComponentDef<S>, field: string & keyof S): number;
 tryGetField<S>(entityId: EntityID, def: ComponentDef<S>, field: string & keyof S): number | undefined;
 ```
 
-`getField` reads one field of one entity; in dev it throws on a dead entity. `tryGetField` is its **total** sibling: it returns `undefined` when the entity is dead *or* doesn't hold the component, instead of a dev throw / prod garbage read — the safe way to probe-and-read in one call:
+`getField` reads one field of one entity. In development it throws for an entity that is not alive.
+`tryGetField` is the **total** equivalent: it gives `undefined` when the entity is not alive, or
+when the entity does not hold the component. It does not throw in development, and it does not read
+incorrect data in production. So it is the safe way to test and read in one call:
 
 ```ts
 const hp = ecs.tryGetField(e, Health, "current") ?? 0;
 ```
 
-For whole-component access, `ecs.refRead(def, e)` returns a read-only view (see [refs](./refs.md)); inside a system, use `ctx.getField` / `ctx.tryGetField` / `ctx.ref`.
+To read a full component, `ecs.refRead(def, e)` gives you a read-only view (see [refs](./refs.md)).
+In a system, use `ctx.getField`, `ctx.tryGetField`, or `ctx.ref`.
 
-## Types you may reference
+## Types that you can refer to
 
 ```ts
 type ComponentSchema = Readonly<Record<string, TypedArrayTag>>;    // field → type map
@@ -166,18 +217,24 @@ type CompleteFieldValues<S> = S extends Record<string, never> ? Record<string, n
                                                                     // FieldValues, but a tag accepts only {}
 type Bundle<S>       = { readonly def: ComponentDef<S>; readonly values: Partial<FieldValues<S>> };
 type BundleOrDef<S>  = Bundle<S> | ComponentDef<S>;
-type ComponentHandle = { readonly id: ComponentID };                // schema-erased view
+type ComponentHandle = { readonly id: ComponentID };                // a view with the schema removed
 ```
 
 > [!NOTE]
-> **`ComponentDef<S>` is invariant in `S`.** A specific `ComponentDef<{ x: "f64" }>` is **not** assignable to the generic `ComponentDef`. Code that must accept any component regardless of schema should take a **`ComponentHandle`** (`{ id }`) — every `ComponentDef<S>` is assignable to it. This is why some engine signatures ask for `ComponentHandle`.
+> **`ComponentDef<S>` is invariant in `S`.** You **cannot** assign a specific
+> `ComponentDef<{ x: "f64" }>` to the general `ComponentDef`. Code that must accept a component of
+> any schema must take a **`ComponentHandle`** (`{ id }`), because you can assign each
+> `ComponentDef<S>` to it. This is why some engine signatures ask for a `ComponentHandle`.
 
 > [!NOTE]
-> `.id` is installed non-enumerable, so a `ComponentDef` is invisible to spreads and `JSON.stringify`. Never build a `ComponentDef` by hand — only `registerComponent`/`registerTag` mint valid ones.
+> `.id` is not enumerable. So a spread operation and `JSON.stringify` do not see a
+> `ComponentDef`. Never build a `ComponentDef` yourself. Only `registerComponent` and `registerTag`
+> make a valid one.
 
 ## See also
 
-- [entities](./entities.md) — attaching components, templates for bulk spawns
-- [queries](./queries.md) — matching on components, reading columns
-- [sparse storage](./sparse-storage.md) — out-of-identity components (uncapped, churn-friendly)
-- [determinism](./determinism.md) — why floats are banned on a deterministic `ECS`
+- [entities](./entities.md) — how to attach components, and templates for bulk spawns
+- [queries](./queries.md) — how to match on components and read columns
+- [sparse storage](./sparse-storage.md) — components outside the identity (no limit, and good for
+  data that changes frequently)
+- [determinism](./determinism.md) — why a deterministic `ECS` rejects floats

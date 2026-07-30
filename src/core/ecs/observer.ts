@@ -2,9 +2,7 @@
  * Observer — per-component reactive hooks (onAdd / onRemove / onDisable /
  * onEnable / onSet).
  *
- * Resolves #517 §1; design locked by [ADR-0013](../../../../../docs/adr/0013-component-observers.md).
- * onDisable / onEnable (#677, [ADR-0023](../../../../../docs/adr/0023-disable-enable-observers.md))
- * extend the structural model to the entity enable/disable transition (#577):
+ * onDisable / onEnable extend the structural model to the entity enable/disable transition:
  * the partition swap (`disableRow`/`enableRow`) fires no onAdd/onRemove, so a
  * consumer (the reactive bridge) was blind to it. onDisable / onEnable fire at
  * the *deferred* toggle drain in `flushStructural` — like onAdd/onRemove, an
@@ -19,22 +17,23 @@
  * `HexPos` set → mark spatial index") were hand-polled every tick. Observers
  * express them directly.
  *
- * The mechanism is fixed by the ADR — the two measured traps it avoids:
+ * The mechanism avoids two measured traps:
  *
  *   1. **onSet is not a per-write hook.** A per-element observable setter loses
- *      to change detection (`observer_onset_probe.ts`). So onSet is *derived*:
+ *      to change detection. So onSet is *derived*:
  *      archetype-granular onSet ≡ the existing per-archetype change tick (free),
- *      per-entity onSet ≡ the ADR-0012 opt-in per-row dirty list surfaced as a
+ *      per-entity onSet ≡ the opt-in per-row dirty list surfaced as a
  *      callback.
  *   2. **onAdd/onRemove ordering is a comparator sort.** `Array.sort` for the
- *      canonical firing order costs 2–4× the entire flush (`observer_dispatch_probe.ts`);
- *      an O(K) LSD radix on the bounded 20-bit entity index is the same order at
- *      <0.3×. Determinism is cheap *only* if you don't compare-sort.
+ *      canonical firing order costs more than the entire flush; an O(K) LSD
+ *      radix on the bounded 20-bit entity index gives the same order for a
+ *      small part of that cost. Determinism is cheap *only* if you do not
+ *      compare-sort.
  *
  * Firing order is two composed layers, both deterministic:
  *   - **across observers** — access-topological (writer-of-X before readers-of-X,
  *     from each observer's `SystemAccessDeclaration`): deterministic *and*
- *     glitch-free, the ECS analog of Solid's height order (`observer_ordering_sim.ts`).
+ *     glitch-free, the ECS analog of Solid's height order.
  *   - **within an observer** — entity-id order via the radix pass above.
  *
  * Structural observers (onAdd/onRemove) fire during `Store.flushStructural`,
@@ -47,7 +46,7 @@
  * This module owns the registry + ordering + dispatch; the hot-path event
  * collection and the deferred fixed-point loop live in `store.ts` (it owns the
  * flush). The access-topological order built here is the same write-disjointness
- * graph #517 §4 (multithreaded execution) will reuse.
+ * graph a later multithreaded execution can reuse.
  ***/
 
 import { unsafeCast } from "../../type_primitives";
@@ -69,7 +68,7 @@ import { ECS_ERROR, ECSError } from "./utils/error";
 import { DEV } from "../../dev_flag";
 
 /** What the observer registry needs from `Store` — the typed seam replacing
- * bare underscore-convention reach-through (M1). `Store` implements this; the
+ * bare underscore-convention reach-through. `Store` implements this; the
  * registry holds only this view, so the compiler bounds what observer dispatch
  * can touch. Underscore names are kept so `Store`'s members stay one
  * declaration (they read as "internal" at every other call site). */
@@ -112,12 +111,12 @@ export type ArchetypeObserverFn = (arch: ArchetypeView, ctx: SystemContext) => v
 interface ObserverConfigBase {
 	onAdd?: ObserverFn;
 	onRemove?: ObserverFn;
-	/** Fires when an entity carrying this component is *disabled* (#577) — at the
-	 * deferred toggle drain, once per net transition (ADR-0023). Mirrors `onRemove`:
+	/** Fires when an entity carrying this component is *disabled* — at the
+	 * deferred toggle drain, once per net transition. Mirrors `onRemove`:
 	 * a disable is a soft remove of the whole mask from default queries. An immediate
 	 * host-side `ecs.disable()` does not fire (like immediate `addComponent`). */
 	onDisable?: ObserverFn;
-	/** Fires when an entity carrying this component is *enabled* (#577), symmetric
+	/** Fires when an entity carrying this component is *enabled*, symmetric
 	 * with `onDisable` / `onAdd`. */
 	onEnable?: ObserverFn;
 	/** Access surface the callbacks touch (reads / writes / spawns / …). Partial:
@@ -128,7 +127,7 @@ interface ObserverConfigBase {
 	 * semantics), for order-independence of register-vs-spawn. */
 	yieldExisting?: boolean;
 	/** Diagnostic label for this observer, surfaced by the frame-trace seam
-	 * (ADR-0030) as the `observer_fired.observer` field — the same role a system's
+	 * as the `observer_fired.observer` field — the same role a system's
 	 * `name` plays. Optional and observe-only: it never touches `stateHash` or
 	 * dispatch. Defaults to `observer(<component debug name>)` when the component
 	 * was registered with a name, else `observer(<cid>)`. */
@@ -137,7 +136,7 @@ interface ObserverConfigBase {
 
 /** Per-entity onSet: `onSet(eid, ctx)` fires once per changed entity, drained
  * from the opt-in per-row dirty list (registering this enables dirty tracking
- * for the component — the ADR-0012 list + dedup bit). */
+ * for the component — the dirty list + dedup bit). */
 export interface EntitySetObserverConfig extends ObserverConfigBase {
 	onSet: ObserverFn;
 	granularity: "entity";
@@ -239,8 +238,7 @@ function idSet(defs: readonly ComponentDef[] | undefined): Set<number> {
  * component id then registration id. A write/read cycle (no valid topo order)
  * degrades gracefully: the remaining observers are appended in the same
  * deterministic tie-break order, so the result is still replay-stable (it just
- * can't promise glitch-freedom for the cyclic subset). Mirrors
- * `observer_ordering_sim.ts`'s `topoOrder`. */
+ * can't promise glitch-freedom for the cyclic subset). */
 function topoOrder(entries: readonly ObserverEntry[]): ObserverEntry[] {
 	const tie = (a: ObserverEntry, b: ObserverEntry): number => a.cid - b.cid || a.id - b.id;
 	const edges = new Map<ObserverEntry, ObserverEntry[]>();
@@ -304,7 +302,7 @@ export class ObserverRegistry {
 	// Per-component eid buckets for the current structural round, keyed by cid.
 	private readonly _addBuckets = new Map<number, number[]>();
 	private readonly _remBuckets = new Map<number, number[]>();
-	// Disable / enable buckets (#677) — populated only on a toggle-drain round
+	// Disable / enable buckets — populated only on a toggle-drain round
 	// (toggles drain once add/remove/destroy are quiescent, so a round carries
 	// either structural events or toggle events, never both).
 	private readonly _disBuckets = new Map<number, number[]>();
@@ -332,7 +330,7 @@ export class ObserverRegistry {
 	 * registration order (`dispose()` splices entries out, so none are stale).
 	 * Fed into the `startup()` archetype-prewarm closure so an observer's declared
 	 * `spawns` / `transitions` create their target archetypes eagerly, exactly as a
-	 * system's do (#768). Without this an observer-spawned/-transitioned archetype
+	 * system's do. Without this an observer-spawned/-transitioned archetype
 	 * first-touches lazily mid-tick — the one asymmetry left in the otherwise
 	 * uniform "no lazy archetypes" prewarm. */
 	descriptors(): SystemDescriptor[] {
@@ -492,7 +490,7 @@ export class ObserverRegistry {
 			// from a sibling observer's callback; `_dispose` flips `disposed` and
 			// splices the master arrays, but not this already-captured `order`
 			// snapshot — without this check the "disposed" observer still fires for
-			// components later in the topo order this same round. #726.
+			// components later in the topo order this same round.
 			if (obs.disposed) continue;
 			if (obs.onRemove !== undefined) {
 				const eids = this._remBuckets.get(obs.cid);
@@ -601,7 +599,7 @@ export class ObserverRegistry {
 				const eid = unsafeCast<EntityID>(eids[i]);
 				// A row written then destroyed (or losing the component) before the drain
 				// must not fire — verify liveness + membership. A *disabled* entity is
-				// also skipped (#677): it is excluded from default queries, so per-entity
+				// also skipped: it is excluded from default queries, so per-entity
 				// onSet must match the archetype-granular grain, whose `entityCount`
 				// sweep already skips the disabled tail. (The dirty entry is still drained
 				// here, so it doesn't accumulate; the value is republished by `onEnable`.)
@@ -643,7 +641,7 @@ export class ObserverRegistry {
 
 	private _yieldExisting(obs: ObserverEntry): void {
 		const fn = obs.onAdd!;
-		// Enabled members only (#677): a disabled entity is excluded from default
+		// Enabled members only: a disabled entity is excluded from default
 		// queries, so seeding it via onAdd would publish a row that an immediate
 		// onDisable should have removed. It is simply absent at seed, matching
 		// "delete on disable" — `_collectEntitiesWithComponent` bounds on
@@ -672,8 +670,8 @@ export class ObserverRegistry {
 /**
  * O(K) LSD radix sort of entity ids by their 20-bit dense index (two 10-bit
  * passes), in place. This is the canonical within-observer order — *never* a
- * comparator `Array.sort`, which the bench measured at 2–4× the entire flush
- * (`observer_dispatch_probe.ts`). Distinct live entities have distinct indices,
+ * comparator `Array.sort`, which the bench measured as much slower than the
+ * entire flush. Distinct live entities have distinct indices,
  * so index order is a total canonical order. `out` is scratch (grown to length);
  * `c0` / `c1` are 1024-entry histograms (reused).
  */

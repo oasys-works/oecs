@@ -3,11 +3,11 @@
  *
  * These exercise create / destroy / recycle correctness at 10k entities —
  * comfortably under every documented hard cap (1M `EntityID` index, 2046
- * live generations before slot retirement #376, 256 MiB SAB #380). They
+ * live generations before slot retirement, 256 MiB SAB). They
  * verify nothing aliases or corrupts at scale; they do NOT probe behavior
  * AT vs OVER a cap. The real cap boundaries live in `unit/entity.test.ts`
  * (index / generation overflow throws) and `unit/store.test.ts`
- * (generation-exhaustion slot retirement, #376).
+ * (generation-exhaustion slot retirement).
  */
 
 import { describe, expect, it } from "vitest";

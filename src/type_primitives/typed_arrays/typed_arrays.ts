@@ -46,7 +46,7 @@ export interface ColumnBacking<T extends AnyTypedArray> {
 	bulkAppendZeroes(count: number): void;
 	bulkAppendValue(value: number, count: number): void;
 	/** Set the logical length directly, declaring that `[0, len)` already holds
-	 * valid data. The snapshot-mount path (`Archetype.restoreHostRows`, #789)
+	 * valid data. The snapshot-mount path (`Archetype.restoreHostRows`)
 	 * uses this: a restored SAB carries the column bytes, but the column's logical
 	 * length is host state that must be re-synced with `Archetype.length`. Throws
 	 * if `len` exceeds capacity. NOT a hot-path method — push/pop track length. */
@@ -103,7 +103,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 		this._len = 0;
 	}
 
-	/** Set the logical length directly (snapshot-mount reconstruction, #789). The
+	/** Set the logical length directly (snapshot-mount reconstruction). The
 	 * caller guarantees `[0, len)` already holds valid data. Grows the backing if
 	 * needed so the length is always representable. */
 	public setLength(len: number): void {

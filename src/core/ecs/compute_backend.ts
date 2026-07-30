@@ -1,5 +1,5 @@
 /**
- * ComputeBackend — the engine's generic, opt-in compute-backend seam (#622).
+ * ComputeBackend — the engine's generic, opt-in compute-backend seam.
  *
  * A `ComputeBackend` is a pluggable implementation that can execute a
  * registered system's body *instead of* its TypeScript closure. The engine
@@ -26,9 +26,9 @@
  *     backend is a property of the system; the scheduler routes.
  *   - ONNX Runtime execution providers / PyTorch's dispatcher boxed fallback —
  *     the framework owns routing and a default guarantees completeness.
- * See `docs/reports/bench/` for the dispatch microbench that picked the explicit
- * `backend === null` fast-path branch over a Null-Object default (the latter
- * needlessly taxes the no-backend common case).
+ * A measurement of the dispatch selected the explicit `backend === null`
+ * fast-path branch, and not a Null-Object default. A Null-Object default makes
+ * the no-backend common case slower, and that case gives no advantage in return.
  */
 
 import { Brand } from "../../type_primitives";

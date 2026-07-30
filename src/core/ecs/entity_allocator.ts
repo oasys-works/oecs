@@ -1,5 +1,5 @@
 /***
- * EntityAllocator — generational entity-slot allocator (H1 step 3).
+ * EntityAllocator — generational entity-slot allocator.
  *
  * Owns the allocation half of the entity index: the SAB-backed generations
  * view, the high-water mark, the free-list, and the alive count. `Store`
@@ -11,10 +11,10 @@
  *   - `alloc()` pops the free-list (reusing the slot at its already-bumped
  *     generation) or bump-allocates a fresh index at INITIAL_GENERATION,
  *     mirroring the new high-water into the SAB region's `length` header so
- *     an external (WASM) reader knows the in-use range (#368).
+ *     an external (WASM) reader knows the in-use range.
  *   - `recycle(index, generation)` bumps the generation so stale handles die;
  *     once the counter would reach the RETIRED_GENERATION tombstone the slot
- *     is retired instead of recycled (#376) — the tombstone is never issued
+ *     is retired instead of recycled — the tombstone is never issued
  *     to a live handle, closing the ABA stale-handle window.
  *
  * SAB replant contract: `generations` and the length view are TypedArray
@@ -33,7 +33,7 @@ export class EntityAllocator {
 	/** SAB-backed per-slot generation counters — replanted on restore. */
 	private _generations: Int32Array;
 	/** Single-slot view over the entity-index region's `length` header field —
-	 * replanted on restore. Written on every high-water bump (#368). */
+	 * replanted on restore. Written on every high-water bump. */
 	private _lengthView: Uint32Array;
 	private _highWater = 0;
 	private readonly _freeIndices: number[] = [];
@@ -79,7 +79,7 @@ export class EntityAllocator {
 	/** Allocate a slot and return its packed id; the slot index is left in
 	 * `lastIndex`. This *commits* the slot (bumps counts, stamps the generation
 	 * so `isAliveIndex` is already true) — a caller placing the entity into an
-	 * archetype row must have reserved column capacity first (#775). */
+	 * archetype row must have reserved column capacity first. */
 	public alloc(): EntityID {
 		let index: number;
 		let generation: number;
@@ -88,7 +88,7 @@ export class EntityAllocator {
 			index = this._freeIndices.pop()!;
 			generation = this._generations[index];
 		} else {
-			// SAB entity-index capacity (#245 PR 4B) caps high-water. The
+			// SAB entity-index capacity caps high-water. The
 			// future capacity-grow path will lift this; for now, exceeding
 			// it surfaces as a clear `EID_MAX_INDEX_OVERFLOW` rather than a
 			// silent typed-array out-of-bounds write.
@@ -102,7 +102,7 @@ export class EntityAllocator {
 			this._generations[index] = INITIAL_GENERATION;
 			generation = INITIAL_GENERATION;
 			// Mirror the high-water index into the SAB region's `length`
-			// field so the Zig reader knows the in-use range (#368).
+			// field so the Zig reader knows the in-use range.
 			this._lengthView[0] = this._highWater;
 		}
 		this._aliveCount++;
@@ -111,7 +111,7 @@ export class EntityAllocator {
 	}
 
 	/** Pre-check that `count` fresh slots fit, so a bulk-spawn commits
-	 * all-or-nothing (#775): `alloc`'s own per-call guard would otherwise
+	 * all-or-nothing: `alloc`'s own per-call guard would otherwise
 	 * throw partway through the loop, leaving committed slots phantom-alive.
 	 * Free-list reuse covers the first `freeCount` slots; only the remainder
 	 * draws down the high-water headroom. */
@@ -129,7 +129,7 @@ export class EntityAllocator {
 
 	/** Recycle (or retire) a slot whose entity carried `generation`. Bumps the
 	 * generation so stale IDs read dead; once the counter would reach the
-	 * reserved tombstone the slot is RETIRED, not recycled (#376): stamp
+	 * reserved tombstone the slot is RETIRED, not recycled: stamp
 	 * RETIRED_GENERATION (never issued to a live handle) and skip the
 	 * free-list push, closing the ABA window. Burning one of 2^20 indices
 	 * after 2047 reuses is cheap; the branch is predicted not-taken on
@@ -147,7 +147,7 @@ export class EntityAllocator {
 
 	/** Allocation-side liveness: the slot is in the issued range and its
 	 * current generation matches the handle's. (`Store.isAlive` layers the
-	 * malformed-handle guards (#778) on top of this.) */
+	 * malformed-handle guards on top of this.) */
 	public isAliveIndex(index: number, generation: number): boolean {
 		return index < this._highWater && this._generations[index] === generation;
 	}
@@ -166,7 +166,7 @@ export class EntityAllocator {
 	}
 
 	/** Restore path, step 1: adopt the high-water recovered from the restored
-	 * region's length header BEFORE the replant republishes it (#789). */
+	 * region's length header BEFORE the replant republishes it. */
 	public setHighWater(value: number): void {
 		this._highWater = value;
 	}

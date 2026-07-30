@@ -1,9 +1,9 @@
 /**
- * SAB state hash — #171 §6.1.7.
+ * SAB state hash.
  *
  * One pass of FNV-1a (32-bit) over the SAB snapshot. Replaces the per-column
  * hash traversal: with every column already living inside a single
- * `SharedArrayBuffer` (§6.1.3), "the simulation state" is exactly the bytes
+ * `SharedArrayBuffer`, "the simulation state" is exactly the bytes
  * of the SAB, and the hash collapses to a single scan over that contiguous
  * region.
  *
@@ -41,7 +41,7 @@ export const FNV1A_PRIME = 0x01000193;
 
 /** One FNV-1a round folding a single **byte** (the low 8 bits of `b`) into the
  * running `hash`: `hash = imul((hash ^ (b & 0xff)) >>> 0, PRIME) >>> 0`. The
- * single canonical definition of the byte step (#498) — reused by `fnv1a32`
+ * single canonical definition of the byte step — reused by `fnv1a32`
  * here, by the sparse-store `schemaFingerprint`, and by the server determinism
  * byte/u32 folds, so the constants and the round live in exactly one place.
  *
@@ -56,7 +56,7 @@ export function fnv1aStep(hash: number, b: number): number {
 /** One FNV-1a round folding a full 32-bit **word** into `hash` — the whole word
  * xored at once, not four byte rounds. A coarser fold than per-byte FNV-1a, but
  * equally deterministic and ~4× cheaper, which is why `Store.stateHash` folds
- * its columns this way (#326). This is the canonical word-step definition its
+ * its columns this way. This is the canonical word-step definition its
  * cold sparse/relation folds call; its hot dense-column inner loop inlines this
  * exact step for speed and must stay in sync. Same `>>> 0` reasoning as
  * `fnv1aStep`. */
@@ -79,7 +79,7 @@ export function fnv1a32(bytes: Uint8Array): number {
 
 /** FNV-1a 32-bit hash of the entire SAB region — header + descriptors +
  * column bytes. The canonical state identifier for cross-replay determinism
- * checks (#171 plan exit criterion §6.1.7).
+ * checks.
  *
  * The snapshot view is zero-copy (`snapshotColumnStore` is a view, not a
  * copy), so this is one scan over the live SAB with no allocation. */

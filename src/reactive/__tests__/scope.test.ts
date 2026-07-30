@@ -1,7 +1,7 @@
 /**
  * Ownership-scope gate: cleanups fire before each re-run and on dispose; a `root`
  * tears down its whole subtree; a parent re-run disposes the children its previous
- * run created (the nested-effect leak guard). Ported from the workbench harness.
+ * run created (the nested-effect leak guard).
  */
 import { describe, expect, it } from "vitest";
 import { signal, computed, effect, root, onCleanup } from "../kernel";

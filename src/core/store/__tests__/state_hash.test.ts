@@ -196,7 +196,7 @@ describe("column_store_state_hash — round-trip", () => {
 	});
 });
 
-describe("column_store_state_hash — page-rounding allocators (#375)", () => {
+describe("column_store_state_hash — page-rounding allocators", () => {
 	const PAGE = 64 * 1024;
 
 	/** Mimics `wasmMemoryAllocator` / `growableSabAllocator`: rounds the

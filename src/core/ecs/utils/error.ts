@@ -30,6 +30,13 @@ export enum ECS_ERROR {
 	INVALID_RECORDER_SCHEDULE = "INVALID_RECORDER_SCHEDULE",
 	EMPTY_ARCHETYPE_MATERIALIZE = "EMPTY_ARCHETYPE_MATERIALIZE",
 	COMPONENT_INDEX_INVARIANT = "COMPONENT_INDEX_INVARIANT",
+	/** An Archetype's row bookkeeping is inconsistent with its backing columns:
+	 * a reserve that did not deliver the capacity it was asked for, a restore
+	 * handed an out-of-range partition boundary, or a cached row plane
+	 * (`_bufs`/`_eids`) left pointing at a stale buffer. Dev-only, and an
+	 * internal-invariant failure rather than a caller error — distinct from
+	 * `STORE_CAP_EXCEEDED`, which is the allocator refusing a legitimate grow. */
+	ARCHETYPE_ROW_INVARIANT = "ARCHETYPE_ROW_INVARIANT",
 	OPTIONAL_TERM_NOT_DECLARED = "OPTIONAL_TERM_NOT_DECLARED",
 	QUERY_ACCESS_UNDECLARED = "QUERY_ACCESS_UNDECLARED",
 	/** A system touched a component/sparse/relation/resource it didn't declare

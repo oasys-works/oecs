@@ -1,6 +1,9 @@
 # Sparse storage
 
-A **sparse component** stores data *outside* the archetype identity. Adding or removing one causes **no archetype transition** — the entity doesn't move, no row is copied, and no dense-identity bit is consumed. This makes sparse storage the right home for data that is **rarely present**, **churns constantly**, or would blow the 128-component dense budget.
+A **sparse component** stores data *outside* the archetype identity. An add or a remove causes **no
+archetype transition**: the entity does not move, the engine copies no row, and it uses no bit of
+the dense identity. So sparse storage is the correct place for data that is **rarely present**,
+that **changes constantly**, or that would exceed the dense budget of 128 components.
 
 ```ts
 const Cooldown = ecs.registerSparseComponent({ ready: "u32" });
@@ -11,18 +14,22 @@ ecs.getSparseField(e, Cooldown, "ready");     // 90
 ecs.removeSparse(e, Cooldown);                // immediate
 ```
 
-## Why sparse — the tradeoff
+## Why sparse — the compromise
 
-Every dense archetype transition (add/remove a normal component) copies the entity's **entire** payload row into the new archetype, so churning an in-identity component costs more the wider the entity's data is. A sparse add/remove is a flat sparse-set insert/delete regardless of payload width. So:
+Each dense archetype transition, which is an add or a remove of a usual component, copies the
+**full** payload row of the entity into the new archetype. So a component in the identity that
+changes frequently costs more as the data of the entity becomes wider. A sparse add or remove is a
+flat insert or delete in a sparse set, and its cost is the same for each payload width. So:
 
 | Use **sparse** for | Use **dense** for |
 | --- | --- |
-| data present on a small fraction of entities | data present on most matching entities |
-| flags/values that flip on and off constantly | stable structural identity |
-| relation targets, cooldowns, transient markers | anything you iterate in a hot column loop |
-| escaping the 128 dense-component cap | — |
+| data that is present on a small part of the entities | data that is present on most matching entities |
+| flags or values that change constantly | stable structural identity |
+| relation targets, cooldowns, temporary markers | anything that you iterate in a high-frequency column loop |
+| a way past the limit of 128 dense components | — |
 
-The cost: sparse membership isn't in the archetype mask, so it's **invisible to a plain dense query** and doesn't get an SoA column span to loop over.
+The cost: sparse membership is not in the archetype mask. So a plain dense query does **not see
+it**, and it has no column span to loop over.
 
 ## Registration
 
@@ -32,14 +39,22 @@ registerSparseComponent<const F, T = "f64">(fields: F, type?: T, opts?: Componen
 registerSparseTag(): SparseComponentDef<Record<string, never>>;                     // membership only
 ```
 
-Mirrors [`registerComponent`](./components.md) — record form for mixed types, array shorthand for uniform (defaults to `"f64"`), a tag variant with no data, and the same trailing [`ComponentRegisterOptions`](./components.md) debug-label bag (`{ name?: string }`).
+These functions are equivalent to [`registerComponent`](./components.md):
+
+- a record form, for mixed types;
+- an array shorthand, for one type (the default is `"f64"`);
+- a tag form, with no data;
+- the same last argument, [`ComponentRegisterOptions`](./components.md), for a debug label
+  (`{ name?: string }`).
 
 > [!WARNING]
-> The same [deterministic float ban](./determinism.md) applies: on a `{ deterministic: true }` `ECS`, the array shorthand's `"f64"` default is rejected — pass an explicit integer type.
+> The same [rule against floats for determinism](./determinism.md) applies. On an `ECS` with
+> `{ deterministic: true }`, the `"f64"` default of the array shorthand is not acceptable. Give an
+> explicit integer type.
 
-## Reading & writing
+## How to read and write
 
-All immediate, all safe mid-tick (no dense row ever moves):
+Each of these functions is immediate, and each is safe during a tick, because no dense row moves:
 
 ```ts
 addSparse(e, def): this;                        // tag form (no values)
@@ -50,18 +65,22 @@ getSparseField<S>(e, def, field): number;
 setSparseField<S>(e, def, field, value): void;
 ```
 
-The same set exists on `ctx` inside systems, access-checked there via `sparseReads`/`sparseWrites` — except `hasSparse`, which is unchecked, mirroring `hasComponent`.
+The same set is on `ctx` in a system. There, the engine checks the access through `sparseReads` and
+`sparseWrites`. The one exception is `hasSparse`, which the engine does not check, and which agrees
+with `hasComponent`.
 
 > [!WARNING]
-> `getSparseField` on a non-member **throws `COMPONENT_NOT_REGISTERED` in dev** (and returns `0` in production) — guard with `hasSparse` first if a component may be absent.
+> `getSparseField` on an entity that is not a member **throws `COMPONENT_NOT_REGISTERED` in
+> development**, and it gives `0` in production. Test with `hasSparse` first when the component can
+> be absent.
 
-## Querying sparse membership
+## How to query sparse membership
 
 Filter on a sparse component with the query terms, then iterate by entity:
 
 ```ts
 withSparse(...defs): Query<Defs>;      // require membership
-withoutSparse(...defs): Query<Defs>;   // exclude members
+withoutSparse(...defs): Query<Defs>;   // remove the members
 
 ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
   const ready = ecs.getSparseField(e, Cooldown, "ready");
@@ -70,30 +89,41 @@ ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
 ```
 
 > [!WARNING]
-> A sparse query **must** use `forEachEntity` — `forEach`/`eachChunk`/`count` reject it (`SPARSE_QUERY_DENSE_PATH` in dev) because there's no column span. And because sparse ops apply **immediately**, mutating the *driving* sparse component's membership during a `forEachEntity` walk shifts the live key array under you — buffer such edits and apply them after the loop.
+> A sparse query **must** use `forEachEntity`. `forEach`, `eachChunk`, and `count` reject it, and
+> they throw `SPARSE_QUERY_DENSE_PATH` in development, because there is no column span. Also,
+> sparse operations apply **immediately**. So, if you mutate the membership of the sparse
+> component that drives a `forEachEntity` walk, the live key array moves below you. Hold such
+> changes in a buffer and apply them after the loop.
 
-## Snapshot & restore
+## Snapshot and restore
 
-Sparse stores (and the [relations](./relations.md) built on them) participate in [determinism](./determinism.md):
+Sparse stores, and the [relations](./relations.md) that are built on them, are part of
+[determinism](./determinism.md):
 
 ```ts
-ecs.snapshots.captureSparse(): Uint8Array;         // canonical-order serialization
+ecs.snapshots.captureSparse(): Uint8Array;         // serialization in a canonical order
 ecs.snapshots.restoreSparse(bytes: Uint8Array): void;
 class SparseRestoreError extends Error {}
 ```
 
-Both require `{ deterministic: true }` (else `DETERMINISM_DISABLED`). `restoreSparse` requires the sparse components already registered in the **same order**, and throws `SparseRestoreError` on any shape / field-identity / index-bounds / trailing-byte mismatch. The full-world [`ecs.snapshots.capture()` / `restore()`](./determinism.md) bundle the sparse section automatically.
+Both need `{ deterministic: true }`, or they throw `DETERMINISM_DISABLED`. `restoreSparse` requires
+that you already registered the sparse components in the **same order**. It throws
+`SparseRestoreError` for a difference in the shape, in the identity of a field, in the bounds of an
+index, or in the bytes at the end. The full-world functions
+[`ecs.snapshots.capture()` and `restore()`](./determinism.md) include the sparse section
+automatically.
 
 ## Types
 
 ```ts
-type SparseComponentDef<S>;   // the handle; incompatible with the dense addComponent/getField surface
-type SparseComponentID;       // separate id space from ComponentID — does not touch the archetype mask
+type SparseComponentDef<S>;   // the handle; it is not compatible with the dense addComponent/getField surface
+type SparseComponentID;       // a separate id space from ComponentID — it does not touch the archetype mask
 ```
 
 ## See also
 
-- [relations](./relations.md) — `(relation, target)` pairs, built on sparse storage
-- [components](./components.md) — dense components and the 128-slot budget sparse escapes
+- [relations](./relations.md) — `(relation, target)` pairs, which are built on sparse storage
+- [components](./components.md) — dense components, and the budget of 128 slots that sparse storage
+  avoids
 - [queries](./queries.md) — `withSparse` and the `forEachEntity` terminal
-- [determinism](./determinism.md) — `captureSparse` and the float ban
+- [determinism](./determinism.md) — `captureSparse` and the rule against floats

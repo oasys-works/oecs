@@ -1,6 +1,6 @@
 /**
- * Host → ECS write seam (#681). The write-symmetric counterpart to the reactive
- * read bridge (`engine-extensions/reactive`, ADR-0022): a sanctioned path for
+ * Host → ECS write seam. The write-symmetric counterpart to the reactive
+ * read bridge (`engine-extensions/reactive`): a sanctioned path for
  * host / UI code — a level editor, a local sim's controls, dev tools, an
  * inspector, or (as one consumer among others) a server applying validated
  * commands — to mutate the world from OUTSIDE the system schedule.
@@ -14,16 +14,16 @@
  *     ONE dispatch (`applyHostCommand`), issuing `SystemContext` deferred ops
  *     so every change lands at the EXISTING phase-tail flush.
  *   - Observers then fire and the reactive read bridge publishes — one batched
- *     commit per tick (ADR-0024) closes the loop.
+ *     commit per tick closes the loop.
  *
  * Why a queue and not direct mutation: structural safety (the deferred-flush
  * apply point is the same one systems use), and a reified command stream that a
  * tools layer can stack for undo/redo or log for record/replay — all of which
- * hold with or without a server. See `docs/ideas/host-ecs-write-seam.md`.
+ * hold with or without a server. See `docs/api/host-write-seam.md`.
  *
  * `HostCommand` is plain data on purpose: it is the shared contract the SAB
  * `command_ring` codec (the second transport — `HostCommandDispatcher` +
- * `ring_*_codec`, #700) decodes into and an editor/undo layer reifies — one
+ * `ring_*_codec`) decodes into and an editor/undo layer reifies — one
  * vocabulary, one `applyHostCommand` dispatch, regardless of transport. The
  * typed queue is the default for in-process hosts; the ring is the cross-thread
  * / wire path (the sim worker, later the server).
@@ -46,7 +46,7 @@ import {
 import { DEV } from "../../dev_flag";
 
 /** One component to attach to a freshly spawned entity. `values` are required
- * and complete as a *strictness* choice, not a runtime need: since #716 every
+ * and complete as a *strictness* choice, not a runtime need: every
  * attach path (deferred included — `writeFields`'s `?? 0`) zero-fills omitted
  * fields, same as templates. A host command is a reified, replayable record,
  * so it carries explicit intent for every field rather than relying on the
@@ -61,7 +61,7 @@ type SchemaOf<D extends ComponentDef> = D extends ComponentDef<infer S> ? S : Co
 
 /** One schema-checked spawn entry: `values` is complete for its own def (see
  * the `SpawnEntry` doc — explicit intent per field, though the attach path
- * zero-fills since #716), and a tag takes exactly `{}`. */
+ * zero-fills), and a tag takes exactly `{}`. */
 export type SpawnEntryFor<D extends ComponentDef> = {
 	readonly def: D;
 	readonly values: CompleteFieldValues<SchemaOf<D>>;
@@ -72,7 +72,7 @@ export type SpawnEntryFor<D extends ComponentDef> = {
  * varargs (`StrictBundles` — `Partial`, a template/attach zero-fills omitted
  * fields), a host command demands complete values: it is a reified, replayable
  * record, so every field is explicit even though the attach path would
- * zero-fill (#716). This is the one attach surface that stays on entry-objects
+ * zero-fill. This is the one attach surface that stays on entry-objects
  * — it is transport (record/replay, editor undo), not authoring. */
 export type SpawnEntries<Defs extends readonly ComponentDef[]> = readonly [
 	...{ [K in keyof Defs]: SpawnEntryFor<Defs[K]> }
@@ -170,8 +170,8 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 					`host set_field on entity ${cmd.eid} targets a component it does not have. ` +
 						`If you added that component via a host command this same frame, the add is ` +
 						`deferred to the phase flush while set_field is immediate — carry the value in ` +
-						`add_component/spawn_entry instead of a separate set_field, or set it next frame. ` +
-						`(#681 host write seam)`
+						`add_component/spawnEntry instead of a separate set_field, or set it next frame. ` +
+						`(host write seam)`
 				);
 			}
 			ctx.setField(cmd.eid, cmd.def, cmd.field, cmd.value);
@@ -278,7 +278,7 @@ export class HostCommandQueue {
 		return this.queued.length;
 	}
 
-	/** Drop every buffered command without applying it (M15) — e.g. abandoning
+	/** Drop every buffered command without applying it — e.g. abandoning
 	 * queued edits on a scene unload. Returns how many were dropped. Does not
 	 * touch commands already drained into the world. */
 	clear(): number {
@@ -295,7 +295,7 @@ export class HostCommandQueue {
 	 * `tap`, when present, is invoked with each command in apply order just before
 	 * it is applied — the record/replay hook ({@link HostCommandRecorder}). It is
 	 * an OPT-IN observer: the tap-free path keeps the original tight loop, so an
-	 * un-recorded drain pays nothing (#702).
+	 * un-recorded drain pays nothing.
 	 */
 	drain(ctx: SystemContext, tap?: (cmd: HostCommand) => void): number {
 		const n = this.queued.length;
@@ -317,15 +317,14 @@ export class HostCommandQueue {
 }
 
 // ===========================================================================
-// SAB command_ring transport — the SECOND transport (#700).
+// SAB command_ring transport — the SECOND transport.
 //
 // The typed `HostCommandQueue` above is the in-process transport. This is its
 // cross-thread / wire counterpart: a producer on another thread (the sim
 // worker, later the server applying validated commands) pushes opaque 15-byte
 // slots into the SAB `command_ring`, and the apply system drains them through
 // the SAME `applyHostCommand`. ONE opcode registry + ONE apply path, two
-// serializations — do NOT fork the bus. See `docs/ideas/host-ecs-write-seam.md`
-// + PATTERNS §85.
+// serializations — do NOT fork the bus. See `docs/api/host-write-seam.md`.
 // ===========================================================================
 
 /** Bytes of the payload region inside one `command_ring` slot (15). The slot's
@@ -338,11 +337,11 @@ export const HOST_COMMAND_PAYLOAD_BYTES = COMMAND_RING_SLOT_BYTES - 1;
 function checkRingOpCode(opCode: number): void {
 	if (opCode === COMMAND_OP_EMPTY) {
 		throw new CommandRingError(
-			`cannot bind op_code 0 (reserved as the command-ring empty-slot marker)`
+			`cannot bind opCode 0 (reserved as the command-ring empty-slot marker)`
 		);
 	}
 	if (opCode < 0 || opCode > 0xff || !Number.isInteger(opCode)) {
-		throw new CommandRingError(`command op_code must be a u8 in [1, 255] (got ${opCode})`);
+		throw new CommandRingError(`command opCode must be a u8 in [1, 255] (got ${opCode})`);
 	}
 }
 
@@ -414,7 +413,7 @@ export function ringDespawnCodec(): PayloadCodec<HostCommand> {
 		encode(cmd) {
 			if (cmd.kind !== "despawn") {
 				throw new CommandRingError(
-					`ring_despawn_codec encodes a "despawn" command (got "${cmd.kind}")`
+					`ringDespawnCodec encodes a "despawn" command (got "${cmd.kind}")`
 				);
 			}
 			return encodeEid(cmd.eid);
@@ -429,7 +428,7 @@ export function ringDisableCodec(): PayloadCodec<HostCommand> {
 		encode(cmd) {
 			if (cmd.kind !== "disable") {
 				throw new CommandRingError(
-					`ring_disable_codec encodes a "disable" command (got "${cmd.kind}")`
+					`ringDisableCodec encodes a "disable" command (got "${cmd.kind}")`
 				);
 			}
 			return encodeEid(cmd.eid);
@@ -444,7 +443,7 @@ export function ringEnableCodec(): PayloadCodec<HostCommand> {
 		encode(cmd) {
 			if (cmd.kind !== "enable") {
 				throw new CommandRingError(
-					`ring_enable_codec encodes an "enable" command (got "${cmd.kind}")`
+					`ringEnableCodec encodes an "enable" command (got "${cmd.kind}")`
 				);
 			}
 			return encodeEid(cmd.eid);
@@ -476,7 +475,7 @@ export function ringRemoveComponentCodec(def: ComponentDef): PayloadCodec<HostCo
 
 /** A ctx-aware applier for one ring opcode: runs on the system `ctx` (which the
  * apply system holds) with the raw 15-byte payload. `tap`, when present, is the
- * record/replay hook (#702) — a generic, `onCommand`-bound applier decodes the
+ * record/replay hook — a generic, `onCommand`-bound applier decodes the
  * slot to a `HostCommand` and feeds it to `tap` before applying, so ring-sourced
  * commands land in the same log as typed-queue ones. A raw `on` applier (a
  * consumer's own non-`HostCommand` op, e.g. the game's `spawn_unit`) has no
@@ -517,7 +516,7 @@ export class HostCommandDispatcher {
 		return this;
 	}
 
-	/** Unbind `opCode` (M15). Returns whether a binding was removed; subsequent
+	/** Unbind `opCode`. Returns whether a binding was removed; subsequent
 	 * slots carrying it hit the unknown-opcode path. */
 	off(opCode: number): boolean {
 		return this.appliers.delete(opCode);
@@ -525,7 +524,7 @@ export class HostCommandDispatcher {
 
 	/** Bind a `HostCommand` codec to `opCode`: each matching slot is decoded and
 	 * run through `applyHostCommand` — the SAME dispatch the typed queue uses.
-	 * A drain-time `tap` (record/replay, #702) sees the decoded command before it
+	 * A drain-time `tap` (record/replay) sees the decoded command before it
 	 * applies, so ring-sourced commands share one log with the typed transport. */
 	onCommand(opCode: number, codec: PayloadCodec<HostCommand>): this {
 		return this.on(opCode, (ctx, payload, tap) => {
@@ -538,7 +537,7 @@ export class HostCommandDispatcher {
 	/** Drain every pending slot, dispatching each to its bound applier. Unbound
 	 * opcodes are skipped (the read head still advances — matching
 	 * `drainCommandRing` / `CommandDispatcher`). Returns slots drained. `tap`,
-	 * when present, is forwarded to each applier as the record/replay hook (#702);
+	 * when present, is forwarded to each applier as the record/replay hook;
 	 * only `onCommand`-bound (generic `HostCommand`) opcodes surface to it. */
 	drain(
 		ctx: SystemContext,
@@ -556,7 +555,7 @@ export class HostCommandDispatcher {
 
 /**
  * A per-tick sink the apply system feeds drained commands into — the record side
- * of record/replay (#702). Declared structurally HERE (not imported from
+ * of record/replay. Declared structurally HERE (not imported from
  * `command_log.ts`) so the seam needs no dependency on the recorder: the one-way
  * edge is `command_log` → `host_commands`, never back. {@link HostCommandRecorder}
  * is the in-tree implementation.
@@ -576,7 +575,7 @@ export interface HostCommandSink {
 }
 
 /** Startup-phase labels — a drain at one of these is a seed-time drain, recorded
- * into the sink's startup bucket rather than an update tick (#702). */
+ * into the sink's startup bucket rather than an update tick. */
 const STARTUP_SCHEDULES: ReadonlySet<SCHEDULE> = new Set([
 	SCHEDULE.PRE_STARTUP,
 	SCHEDULE.STARTUP,
@@ -599,7 +598,7 @@ export interface HostCommandSeamOptions {
 	readonly ring?: HostCommandDispatcher;
 	/** When provided, every command the apply system drains — from BOTH transports
 	 * (typed queue + `onCommand`-bound ring ops) — is logged into this sink,
-	 * tagged with the tick + `dt`, for record/replay (#702). Off by default: an
+	 * tagged with the tick + `dt`, for record/replay. Off by default: an
 	 * un-recorded seam keeps the original tap-free drain and pays nothing.
 	 * {@link HostCommandRecorder} is the in-tree sink; replay it with
 	 * `replayCommandLog`. */
@@ -625,7 +624,7 @@ export interface HostCommandSeamOptions {
 const seamSystems = new WeakMap<HostCommandQueue, SystemDescriptor[]>();
 
 /**
- * Tear down a seam installed by {@link installHostCommandSeam} (M15): removes
+ * Tear down a seam installed by {@link installHostCommandSeam}: removes
  * its apply systems from the world's schedule and clears any still-buffered
  * commands. The queue itself stays usable as a buffer, but nothing drains it
  * until a new seam is installed. No-op (returns `false`) if `queue` was not
@@ -659,7 +658,7 @@ export function installHostCommandSeam(
 	// variable update dt, so recording there would replay `update(fixedTimestep)`
 	// and diverge — a different fixed sub-step count plus any dt-integrating system,
 	// breaking the per-tick `stateHash` match that IS replay fidelity. Record only
-	// from variable-update phases (PRE_UPDATE / UPDATE / POST_UPDATE). #725
+	// from variable-update phases (PRE_UPDATE / UPDATE / POST_UPDATE).
 	if (recorder !== undefined && schedules.includes(SCHEDULE.FIXED_UPDATE)) {
 		throw new ECSError(
 			ECS_ERROR.INVALID_RECORDER_SCHEDULE,

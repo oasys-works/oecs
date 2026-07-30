@@ -1,9 +1,9 @@
 /**
- * Record / replay over the host command log (#702) — slice 5 (final) of the
- * host → ECS write seam (#681). The deterministic-sim payoff the write seam was
+ * Record / replay over the host command log — the final layer of the
+ * host → ECS write seam. The deterministic-sim payoff the write seam was
  * always pointing at: because every world mutation crosses ONE chokepoint
  * (`applyHostCommand`, drained by the blessed apply system at the schedule
- * head, §85), logging the `HostCommand`s applied each tick — alongside that
+ * head), logging the `HostCommand`s applied each tick — alongside that
  * tick's `dt` and the session `seed` — is enough to replay a whole session
  * deterministically. Record/replay, save/load, and deterministic debugging fall
  * out of the command stream, independent of any network.
@@ -19,7 +19,7 @@
  *     reproducing the original run tick-for-tick.
  *
  * **Correctness is verifiable, not asserted.** Under the determinism opt-in
- * (ADR-0020, `new ECS({ deterministic: true })`), `ecs.snapshots.stateHash()` is a
+ * (`new ECS({ deterministic: true })`), `ecs.snapshots.stateHash()` is a
  * canonical digest of world state. Record a session, replay it from the same
  * seed, and the per-tick `stateHash` sequences must be identical — the
  * round-trip test that proves replay fidelity. With determinism off the replay
@@ -35,7 +35,7 @@
  * a def is tagged by its numeric `.id` and reconstructed on parse (replay only
  * reads `def.id`, and the fresh world re-registers components in the same order).
  *
- * See `docs/ideas/host-ecs-write-seam.md` (slice 5) and PATTERNS §85.
+ * See `docs/api/host-write-seam.md`.
  */
 import { asComponentId, makeComponentDef, type ComponentDef } from "./component";
 import { ECS_ERROR, ECSError } from "./utils/error";
@@ -217,7 +217,7 @@ export interface ReplayResult {
 	readonly ticks: number;
 	/** Per-tick `stateHash` captured after each `update`, in tick order — empty
 	 * unless the world is deterministic (or `hash` was forced). Compare against
-	 * the original run's per-tick hashes to prove the replay matched (ADR-0020). */
+	 * the original run's per-tick hashes to prove the replay matched. */
 	readonly stateHashes: readonly number[];
 }
 
@@ -225,7 +225,7 @@ export interface ReplayResult {
 export interface ReplayOptions {
 	/** Capture `ecs.snapshots.stateHash()` after each tick. Defaults to the world's
 	 * `deterministic` flag — a deterministic world is hashed, a non-deterministic
-	 * one is not (its `stateHash` would throw, ADR-0020). Force `true` only on a
+	 * one is not (its `stateHash` would throw). Force `true` only on a
 	 * deterministic world. */
 	readonly hash?: boolean;
 }
@@ -240,9 +240,9 @@ export interface ReplayOptions {
  * (which drains them at PRE_STARTUP), then for each recorded tick enqueues that
  * tick's commands and calls `ecs.update(dt)` with the recorded `dt`.
  *
- * Determinism (ADR-0020): with `{ deterministic: true }` the per-tick
+ * Determinism: with `{ deterministic: true }` the per-tick
  * `stateHashes` this returns must equal the original run's — that equality is
- * replay fidelity. Identity caveat (§85): a despawned-then-respawned entity gets
+ * replay fidelity. Identity caveat: a despawned-then-respawned entity gets
  * a fresh id, but because spawn order is reproduced, every recorded id still
  * resolves to the same entity on replay.
  */

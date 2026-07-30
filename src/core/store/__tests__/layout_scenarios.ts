@@ -1,5 +1,5 @@
 /**
- * Layout-scenario runner for the H5 grow/extend consolidation.
+ * Layout-scenario runner for the grow/extend consolidation.
  *
  * Runs a fixed matrix of create → extend → grow sequences over every
  * allocator strategy and serializes the resulting store layouts (descriptor

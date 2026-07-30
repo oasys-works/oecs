@@ -1,8 +1,8 @@
 /**
- * #777 — the engine puts teeth on the determinism opt-in's float ban.
+ * The engine puts teeth on the determinism opt-in's float ban.
  *
  * A `{ deterministic: true }` world exists to keep per-tick `stateHash` in
- * agreement across hosts (ADR-0020). `f32`/`f64` columns break that — IEEE-754
+ * agreement across hosts. `f32`/`f64` columns break that — IEEE-754
  * rounds differently across V8 / Bun / Zig at the 1-ULP level — so registering
  * one on a deterministic world now throws `NON_DETERMINISTIC_COLUMN_TYPE` at
  * registration time, rather than surfacing as a silent cross-host divergence.
@@ -27,7 +27,7 @@ function expectRejected(fn: () => void, field: string): void {
 	}
 }
 
-describe("#777 determinism float-column guard", () => {
+describe("determinism float-column guard", () => {
 	it("rejects an f64 dense field on a deterministic world (record syntax), naming the field", () => {
 		const world = new ECS({ deterministic: true });
 		expectRejected(() => world.registerComponent({ x: "i32", heat: "f64" }), "heat");
@@ -40,7 +40,7 @@ describe("#777 determinism float-column guard", () => {
 
 	it("rejects the array-shorthand f64 default on a deterministic world", () => {
 		const world = new ECS({ deterministic: true });
-		// No explicit type ⇒ the shorthand defaults to "f64" — the footgun #777 closes.
+		// No explicit type ⇒ the shorthand defaults to "f64" — the footgun the guard closes.
 		expectRejected(() => world.registerComponent(["x", "y"]), "x");
 	});
 

@@ -1,10 +1,10 @@
 /**
- * ECS memory sizing (#682): the single `ECSOptions.memory` surface.
+ * ECS memory sizing: the single `ECSOptions.memory` surface.
  *
- * Covers: arm resolution + derivation arithmetic, the ADR-0008 in-place
+ * Covers: arm resolution + derivation arithmetic, the in-place
  * boundary (type-level brand + runtime backstop, Store constructor assert),
  * the loud migration guard for the removed knobs, and the intent-aware
- * STORE_CAP_EXCEEDED fatal (#380 semantics unchanged — still no fallback).
+ * STORE_CAP_EXCEEDED fatal (semantics unchanged — still no fallback).
  */
 import { describe, it, expect } from "vitest";
 import { ECS } from "../../ecs";
@@ -140,15 +140,18 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.capBytes).toBe(16 * MiB);
 	});
 
-	it("allocator: runtime backstop rejects a non-in-place allocator (ADR-0008)", () => {
+	it("allocator: runtime backstop rejects a non-in-place allocator", () => {
 		// boundary: deliberately defeating the InPlaceBufferAllocator brand — the
 		// whole point of this test is that the *runtime* backstop catches what
 		// an untyped JS caller could pass despite the compile-time boundary.
 		const defeated = DEFAULT_SAB_ALLOCATOR as InPlaceBufferAllocator;
-		expectInvalid(() => resolveECSMemory({ allocator: defeated }), "ADR-0008");
+		expectInvalid(
+			() => resolveECSMemory({ allocator: defeated }),
+			"must declare `isInPlace: true`"
+		);
 	});
 
-	it("heap: resolves a non-SAB ArrayBuffer backing with the default cap (ADR-0018 §1B)", () => {
+	it("heap: resolves a non-SAB ArrayBuffer backing with the default cap", () => {
 		const plan = resolveECSMemory({ heap: {} });
 		expect(plan.source).toBe("heap");
 		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
@@ -166,7 +169,7 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.source).toBe("heap");
 		expect(plan.capBytes).toBe(8 * MiB);
 		expect(plan.columnCapacity).toBe(128);
-		// #710: the entity-index reservation is clamped under the cap (same
+		// The entity-index reservation is clamped under the cap (same
 		// quarter-of-cap rule as the maxBytes arm). Without this the heap arm
 		// reserved the full ~12 MiB default, so an 8 MiB cap threw at Store
 		// construction. It must be at most a quarter of the cap and strictly
@@ -196,14 +199,14 @@ describe("resolve_ecs_memory", () => {
 	});
 });
 
-describe("ECS memory wiring (#682)", () => {
+describe("ECS memory wiring", () => {
 	it("exposes the resolved plan and the wasm Memory", () => {
 		const world = new ECS({ memory: { wasm: { maximumPages: 64 } } });
 		expect(world.memoryPlan.source).toBe("wasm");
 		expect(world.wasmMemory).toBeInstanceOf(WebAssembly.Memory);
 	});
 
-	it("throws loudly on the removed pre-#682 knobs", () => {
+	it("throws loudly on the removed pre-0.5 memory knobs", () => {
 		// boundary: the removed keys no longer typecheck; JSON-ingress shape
 		// mimics an unmigrated untyped caller.
 		const stale = JSON.parse('{ "initial_capacity": 64 }');
@@ -218,10 +221,13 @@ describe("ECS memory wiring (#682)", () => {
 });
 
 describe("Store in-place backstop + intent-aware cap fatal", () => {
-	it("Store rejects a non-in-place allocator at construction (ADR-0008)", () => {
+	it("Store rejects a non-in-place allocator at construction", () => {
 		// boundary: brand deliberately defeated to exercise the runtime assert.
 		const defeated = DEFAULT_SAB_ALLOCATOR as InPlaceBufferAllocator;
-		expectInvalid(() => new Store({ bufferAllocator: defeated }), "ADR-0008");
+		expectInvalid(
+			() => new Store({ bufferAllocator: defeated }),
+			"requires an in-place SAB allocator"
+		);
 	});
 
 	it("cap hit stays fatal and names the declared intent and budget ratio", () => {
@@ -254,15 +260,15 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 		expect(err.category).toBe(ECS_ERROR.STORE_CAP_EXCEEDED);
 		expect(err.message).toContain("budget of 1000 entities");
 		expect(err.message).toContain("× the budget");
-		expect(err.message).toContain("#380");
+		expect(err.message).toContain("hard ceiling");
 	});
 
-	// Spawn-path counterpart of the clean `addComponent` cap test above (#775).
+	// Spawn-path counterpart of the clean `addComponent` cap test above.
 	// `spawn`/`spawnMany` used to commit the entity slot before the column write
 	// that can throw, so a cap hit mid-spawn left a phantom-alive slot: counts
 	// over-counted by one, the id unreachable. The fix reserves column capacity
 	// before committing the slot, so the throw lands with the world untouched.
-	it("spawn cap hit leaves no phantom-alive slot (#775)", () => {
+	it("spawn cap hit leaves no phantom-alive slot", () => {
 		const cap = 1 * MiB;
 		const store = new Store({
 			initialCapacity: 4,
@@ -292,7 +298,7 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 		for (const id of ids) expect(store.isAlive(id)).toBe(true);
 	});
 
-	it("spawn_many cap hit is atomic — no partial / phantom batch (#775)", () => {
+	it("spawn_many cap hit is atomic — no partial / phantom batch", () => {
 		const cap = 1 * MiB;
 		// Same index sizing as the clean-path test: 1<<16 slots reserve ~0.75 MiB,
 		// which fits under the 1 MiB cap at construction and leaves the SAB *column*

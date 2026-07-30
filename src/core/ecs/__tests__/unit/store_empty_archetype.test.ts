@@ -1,6 +1,6 @@
 /**
  * The empty archetype is rowless — a component-less entity has ONE canonical
- * form (audit finding #2).
+ * form.
  *
  * An entity with no components is "alive but unplaced": it points at the empty
  * archetype via `entityArchetype` but carries `entityRow === UNASSIGNED` and
@@ -25,7 +25,7 @@ function emptyArchOf(s: Store, e: ReturnType<Store["createEntity"]>) {
 	return s.getEntityArchetype(e);
 }
 
-describe("empty archetype is rowless (finding #2)", () => {
+describe("empty archetype is rowless", () => {
 	it("a freshly created entity is unplaced and the empty archetype holds no rows", () => {
 		const s = new Store({ deterministic: true });
 		const e = s.createEntity();
@@ -143,7 +143,7 @@ describe("empty archetype is rowless (finding #2)", () => {
 	});
 });
 
-describe("state_hash is independent of add/remove history (finding #2)", () => {
+describe("state_hash is independent of add/remove history", () => {
 	it("losing the last component returns to the create-time hash", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);

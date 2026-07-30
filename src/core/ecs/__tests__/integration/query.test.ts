@@ -199,7 +199,7 @@ describe("ECS query (integration)", () => {
 		}
 	});
 
-	it("host mutators stay usable from a DIFFERENT world's system (#785 multi-world)", () => {
+	it("host mutators stay usable from a DIFFERENT world's system (multi-world)", () => {
 		// The guard is scoped by `_updating` to the world being mutated: a system
 		// of world A driving world B's host facade is a supported pattern — B is
 		// not mid-iteration, so B's guard must not fire.

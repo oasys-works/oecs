@@ -1,5 +1,5 @@
 /***
- * Component debug names (POLISH_AUDIT #4).
+ * Component debug names.
  *
  * `registerComponent(schema, { name: "Pos" })` records a human label for the
  * def so dev-mode diagnostics can say `'Pos' (component 5)` instead of leaving

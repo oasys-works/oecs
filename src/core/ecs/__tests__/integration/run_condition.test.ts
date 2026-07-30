@@ -1,5 +1,5 @@
 /**
- * Run conditions / system sets (#576, bucket B2 of #542).
+ * Run conditions / system sets.
  *
  * ECS-level behaviour: the determinism acceptance (a false gate is byte-for-byte
  * the system being absent that tick), the three shipped built-ins, set-level

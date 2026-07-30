@@ -6,7 +6,7 @@
  * remove / has / get / set touch no archetype graph: no transition, no row
  * copy, and no bitmask identity bit consumed — so sparse components do **not**
  * count against `STORE_DESCRIPTOR_COMPONENT_LIMIT`. This is the substrate of the
- * relations epic (#463); ADR-0011 records why membership must leave the
+ * relations work; membership must leave the
  * identity (not just the data): our `moveEntityFrom` copies the whole
  * payload row on every transition, so in-identity churn cost scales with
  * payload width while out-of-identity churn is flat.
@@ -19,11 +19,11 @@
  * `Store`'s purge hook.
  *
  * Field data is stored as plain JS numbers (f64) this slice. The typed-array
- * SAB column mirror the WASM sim reads is a later slice (#475). Deterministic
+ * SAB column mirror the WASM sim reads is a later slice. Deterministic
  * snapshot / state-hash coverage — hashing and serializing in canonical
- * entity-index order — landed in #470 (`canonicalIndices`,
+ * entity-index order — is in place (`canonicalIndices`,
  * `snapshotSparseStores` / `restoreSparseStores` below). `fieldTypes` is
- * retained now so the #475 column-mirror slice has the schema it needs.
+ * retained now so a later column mirror has the schema it needs.
  ***/
 
 import { Brand, SparseMap, type TypedArrayTag } from "../../type_primitives";
@@ -78,14 +78,14 @@ export class SparseComponentStore {
 
 	/** Live entity indices that hold this component (dense, iteration order is
 	 * SparseMap insertion/swap order — NOT canonical). Used by the hot query
-	 * integration path (#469); for the determinism surface use
+	 * integration path; for the determinism surface use
 	 * `canonicalIndices` instead. */
 	public get indices(): readonly number[] {
 		return this._data.keys;
 	}
 
 	/** Live entity indices in **canonical** (ascending) order — the determinism
-	 * ordering for `stateHash` + snapshot/restore (ADR-0011, #470). The native
+	 * ordering for `stateHash` + snapshot/restore. The native
 	 * `indices` getter is insertion/swap order and would make two worlds with
 	 * identical contents reached by different add/remove histories diverge, so
 	 * the cold determinism paths sort here. Allocates a sorted copy each call;
@@ -173,14 +173,14 @@ const F64_BYTES = 8;
  * exclusive relation's `{target:f64}` backing (byte-identical to any user
  * single-`f64` component) load into the wrong slot when relations and user
  * sparse components are registered in a different interleaving between the
- * snapshot and restore worlds (#494). Field count is already in the header, so
+ * snapshot and restore worlds. Field count is already in the header, so
  * the fingerprint exists purely to catch same-shape / different-identity. */
 function schemaFingerprint(
 	fieldNames: readonly string[],
 	fieldTypes: readonly TypedArrayTag[]
 ): number {
 	// Folds bytes (each `charCodeAt & 0xff`, handled by `fnv1aStep`) through the
-	// shared FNV-1a byte step (#498) — same constants and round as `fnv1a32` and
+	// shared FNV-1a byte step — same constants and round as `fnv1a32` and
 	// the server determinism folds, so there is one definition, not four copies.
 	let h = FNV1A_OFFSET_BASIS;
 	const fold = (s: string): void => {
@@ -200,7 +200,7 @@ function schemaFingerprint(
  * `snapshotColumnStore`). Members are emitted in canonical (ascending
  * entity-index) order so the bytes are independent of insertion / removal
  * history: two worlds with identical sparse contents reached by different
- * mutation orders serialize byte-for-byte the same (#470).
+ * mutation orders serialize byte-for-byte the same.
  *
  * Layout (all integers little-endian, to match the dense SAB snapshot and stay
  * architecture-independent):
@@ -218,7 +218,7 @@ function schemaFingerprint(
  * `restoreSparseStores` can reject a snapshot whose shape doesn't match the
  * stores it's restoring into; `schemaHash` (a `schemaFingerprint` over the
  * field names + types) goes further and rejects a buffer whose shape matches
- * field-for-field but whose field **identity** doesn't (#494). */
+ * field-for-field but whose field **identity** doesn't. */
 export function snapshotSparseStores(stores: readonly SparseComponentStore[]): Uint8Array {
 	let total = 4; // storeCount
 	for (let s = 0; s < stores.length; s++) {
@@ -272,7 +272,7 @@ export function snapshotSparseStores(stores: readonly SparseComponentStore[]): U
  * or a truncated / over-long buffer) rather than silently corrupting state.
  * The index bound matters because the index keys a `SparseMap` whose backing
  * array grows to `index` length — an unvalidated crafted u32 (up to ~4.29e9)
- * would allocate multi-GB (#494). */
+ * would allocate multi-GB. */
 export function restoreSparseStores(
 	stores: readonly SparseComponentStore[],
 	bytes: Uint8Array
@@ -345,7 +345,7 @@ export function restoreSparseStores(
 }
 
 /** Read-only validation of a `snapshotSparseStores` buffer against the live
- * registry, WITHOUT mutating any store (#789). Mirrors `restoreSparseStores`'s
+ * registry, WITHOUT mutating any store. Mirrors `restoreSparseStores`'s
  * shape/field-identity/index-bounds/frame checks so `Store.restoreInto` can fail
  * closed on a sparse-registration mismatch BEFORE the dense mount overwrites live
  * column data. Throws `SparseRestoreError` on any mismatch / malformed buffer. */

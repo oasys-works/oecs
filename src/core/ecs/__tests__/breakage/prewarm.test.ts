@@ -1,8 +1,8 @@
 /**
- * Phase C of issue #213 — archetype pre-warming at world.startup().
+ * Archetype pre-warming at world.startup().
  *
  * `ECS.startup()` walks every registered system's AND observer's `spawns` +
- * `transitions` (#768 — observers carry the same access shape) to compute the
+ * `transitions` (observers carry the same access shape) to compute the
  * archetype closure they can produce, then plants the whole set in a single
  * `extendColumnStore` call. The contract this file pins:
  *
@@ -37,7 +37,7 @@ function viewStamp(world: ECS): number {
 	return world.columnStore.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 }
 
-describe("archetype pre-warming (Phase C of issue #213)", () => {
+describe("archetype pre-warming", () => {
 	it("a single declared spawn becomes a live archetype before any on_added runs", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -231,7 +231,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 		expect(world.archetypeCount).toBe(1);
 	});
 
-	it("an observer's declared spawn is prewarmed at startup, like a system's (#768)", () => {
+	it("an observer's declared spawn is prewarmed at startup, like a system's", () => {
 		const world = new ECS();
 		const Trigger = world.registerTag();
 		const Mote = world.registerComponent(["v"] as const);
@@ -252,7 +252,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 		expect(world.archetypeCount).toBe(2);
 	});
 
-	it("an observer's transition is walked from a system's spawn seed (#768)", () => {
+	it("an observer's transition is walked from a system's spawn seed", () => {
 		// Cross-descriptor closure: a system seeds {A}, an observer transitions
 		// {A} → {A,B}. The reachable {A,B} archetype must be prewarmed even though
 		// no single descriptor declares it — the closure now mixes system seeds
@@ -273,7 +273,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 		expect(world.archetypeCount).toBe(3);
 	});
 
-	it("liberal `when_has` (subset of mask) admits the transition (design §6.6)", () => {
+	it("liberal `when_has` (subset of mask) admits the transition", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Owner = world.registerComponent(["owner"] as const);
@@ -285,7 +285,7 @@ describe("archetype pre-warming (Phase C of issue #213)", () => {
 			transitions: [
 				// whenHas is a proper subset of the spawn mask. A liberal
 				// over-approximation is acceptable: the closure walk just
-				// over-plants, which is cheap (#213 §6.6).
+				// over-plants, which is cheap.
 				{ whenHas: [Pos], add: [CombatTarget] }
 			],
 			fn: () => {}

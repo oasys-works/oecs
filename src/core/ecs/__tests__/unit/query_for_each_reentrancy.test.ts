@@ -1,5 +1,5 @@
 /**
- * `Query.forEach` re-entrancy must not corrupt the non-empty buffer (#431).
+ * `Query.forEach` re-entrancy must not corrupt the non-empty buffer.
  *
  * `forEach`/`count`/`ChangedQuery.forEach` bind the array returned by
  * `Query._nonEmpty()` once and walk it. Before the fix, `_nonEmpty()`
@@ -20,7 +20,7 @@
  * CURRENTLY visiting is a dev error since the host-iteration guard landed —
  * the row swap-remove skips/repeats entities under the per-row walk. These
  * tests therefore cross the 0↔non-zero boundary on archetypes the outer
- * callback is NOT standing in; the #431 fresh-array machinery still protects
+ * callback is NOT standing in; the fresh-array machinery still protects
  * prod (where the dev guard is compiled out) and every not-currently-visited
  * case.
  */
@@ -38,7 +38,7 @@ function getStore(world: ECS): Store {
 	return (world as unknown as { store: Store }).store;
 }
 
-describe("Query.for_each re-entrancy (#431)", () => {
+describe("Query.for_each re-entrancy", () => {
 	it("nested count() after a 1→0 crossing does not skip a still-non-empty archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);

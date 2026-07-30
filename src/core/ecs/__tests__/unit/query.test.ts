@@ -280,7 +280,7 @@ describe("ECS query", () => {
 	// `ArchetypeID[][]` (not a `Map<Set>`) on the premise that a
 	// (component, archetype) pair is registered AT MOST ONCE — so a shared
 	// component must never make a single-component query visit one of its
-	// archetypes twice, nor over-count its entities. See ADR-0015.
+	// archetypes twice, nor over-count its entities.
 	it("shared component across many archetypes is visited once per archetype, no duplicates", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);

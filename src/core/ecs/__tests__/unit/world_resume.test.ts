@@ -1,6 +1,6 @@
 /**
  * World snapshot / resume — mount a captured world onto a live, ticking ECS and
- * keep ticking identically (#789 / ADR-0031). Where `sparse_determinism.test.ts`
+ * keep ticking identically. Where `sparse_determinism.test.ts`
  * pins the *fidelity* round-trip (snapshot → restore reproduces the same bytes),
  * these pin the *resume* capability the engine previously lacked:
  *
@@ -10,9 +10,9 @@
  *     LIFO order, the load-bearing bit) are rebuilt correctly.
  *   - **resume == control** — a world snapshotted at tick N, restored, and
  *     advanced K ticks yields the SAME per-tick `stateHash` vector as the
- *     original advanced from N. On both heap and SAB. (AC#3)
+ *     original advanced from N. On both heap and SAB.
  *   - **fail closed** — a malformed frame or a registration mismatch throws
- *     `ECSRestoreError` before mutating live state. (AC#4)
+ *     `ECSRestoreError` before mutating live state.
  */
 
 import { describe, expect, it } from "vitest";
@@ -122,7 +122,7 @@ function step(w: World, i: number): void {
 	world.flush();
 }
 
-describe("resume framing + host-state serialization (#789)", () => {
+describe("resume framing + host-state serialization", () => {
 	it("round-trips host-state (free-list order preserved)", () => {
 		const hs: HostState = {
 			tick: 42,
@@ -167,7 +167,7 @@ describe("resume framing + host-state serialization (#789)", () => {
 	});
 });
 
-describe("restoreInto — mount + reconstruction (#789)", () => {
+describe("restoreInto — mount + reconstruction", () => {
 	it("mounts a snapshot onto a fresh world; it queries + ticks afterward", () => {
 		const src = build(SAB);
 		for (let i = 0; i < 8; i++) step(src, i);
@@ -223,7 +223,7 @@ describe("restoreInto — mount + reconstruction (#789)", () => {
 	});
 });
 
-describe("restoreInto — fails closed (#789 AC#4)", () => {
+describe("restoreInto — fails closed", () => {
 	/** The fail-closed contract is not just "it throws" — a rejected restore must
 	 * leave the TARGET world byte-identical and still tickable. (Regression: the
 	 * guard used to run after `restoreColumnStore` had already overwritten the live
@@ -311,7 +311,7 @@ describe("restoreInto — fails closed (#789 AC#4)", () => {
 	});
 });
 
-describe("resume == control: per-tick stateHash matches the original (#789 AC#3)", () => {
+describe("resume == control: per-tick stateHash matches the original", () => {
 	for (const [name, memory] of [
 		["heap", HEAP],
 		["SAB", SAB]
@@ -345,7 +345,7 @@ describe("resume == control: per-tick stateHash matches the original (#789 AC#3)
 	}
 });
 
-describe("restoreInto — works under a custom in-place heap allocator (ADR-0008)", () => {
+describe("restoreInto — works under a custom in-place heap allocator", () => {
 	it("keeps the live allocator (no DEFAULT_SAB_ALLOCATOR leak)", () => {
 		const memory: ECSOptions = {
 			deterministic: true,

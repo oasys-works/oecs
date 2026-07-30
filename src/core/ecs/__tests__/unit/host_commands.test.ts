@@ -1,5 +1,5 @@
 /**
- * Host → ECS write seam (#681) — core contract.
+ * Host → ECS write seam — core contract.
  *
  * Runs under vitest's `__DEV__ = true`, so the per-system access check is LIVE.
  * That makes the `exclusive` bypass load-bearing here: the apply system mutates
@@ -184,7 +184,7 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 });
 
 // ===========================================================================
-// SAB command_ring transport — the second transport (#700). The typed queue
+// SAB command_ring transport — the second transport. The typed queue
 // (above) and the ring resolve to the SAME `applyHostCommand`.
 // ===========================================================================
 
@@ -215,7 +215,7 @@ function pushRing(world: ECS, op: number, payload: Uint8Array): void {
 	pushCommand(buffer.view, buffer.header.commandRingOff, op, payload);
 }
 
-describe("host command ring codec — golden bytes (#700)", () => {
+describe("host command ring codec — golden bytes", () => {
 	it("ring_set_field packs id as u32 + value as f64 within the 15-byte payload", () => {
 		const world = new ECS({ deterministic: true });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
@@ -260,7 +260,7 @@ describe("host command ring codec — golden bytes (#700)", () => {
 	});
 });
 
-describe("host command seam — two transports, one apply dispatch (#700)", () => {
+describe("host command seam — two transports, one apply dispatch", () => {
 	it("a set_field via the ring and via the typed queue land identical world state", () => {
 		const { world, Cell, commands } = makeRingWorld();
 		world.startup();
@@ -341,7 +341,7 @@ describe("host command seam — two transports, one apply dispatch (#700)", () =
 	});
 });
 
-describe("host command dispatcher — opcode validation (#700)", () => {
+describe("host command dispatcher — opcode validation", () => {
 	it("rejects op_code 0 (reserved empty-slot marker) and out-of-u8 codes", () => {
 		const d = new HostCommandDispatcher();
 		expect(() => d.on(0, () => {})).toThrow();
@@ -381,7 +381,7 @@ describe("host command seam — set_field immediate/deferred ordering guard", ()
 	});
 });
 
-describe("host command seam — recorder cannot drain on FIXED_UPDATE (#725)", () => {
+describe("host command seam — recorder cannot drain on FIXED_UPDATE", () => {
 	// A recorder logs each tick's `world.update(dt)` so `replayCommandLog` can
 	// re-issue it. A FIXED_UPDATE drain receives the FIXED sub-step dt, not the
 	// host's variable `update(dt)`, so recording there would replay

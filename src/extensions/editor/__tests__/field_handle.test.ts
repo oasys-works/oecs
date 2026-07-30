@@ -1,5 +1,5 @@
 /**
- * Inspector field-handle (#701) × the REAL reactive read bridge — the two-way
+ * Inspector field-handle × the REAL reactive read bridge — the two-way
  * loop closes end-to-end.
  *
  * The handle reads `Cell.x` through `syncFieldsToMap`'s `reactiveMap` (the read
@@ -23,7 +23,7 @@ function setup() {
 	const world = new ECS({ deterministic: true });
 	const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 	const commands = installHostCommandSeam(world);
-	// The REAL read channel: ADR-0013 observers → reactiveMap, per-entity.
+	// The REAL read channel: component observers → reactiveMap, per-entity.
 	const sync = syncFieldsToMap(world, Cell, ["x", "heat"]);
 	const editor = new Editor(commands, (eid, def, field) =>
 		world.isAlive(eid) ? world.getField(eid, def, field) : undefined

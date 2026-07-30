@@ -86,7 +86,13 @@ import {
 import type { EntityID } from "./entity";
 import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";
-import { createRef, type ReadonlyComponentRef } from "./ref";
+import {
+	createCursor,
+	createRef,
+	type ComponentCursor,
+	type ReadonlyComponentCursor,
+	type ReadonlyComponentRef
+} from "./ref";
 import type {
 	ComponentDef,
 	ComponentHandle,
@@ -157,41 +163,41 @@ export interface ECSOptions {
 	 * dropped-ordering-edge warning). Defaults to `console.warn`. Mirrors the
 	 * `FrameTraceSink` seam's injectable style — no global logger. */
 	onWarn?: (message: string) => void;
-	/** How the world's memory is sized and backed (#682) — the single
+	/** How the world's memory is sized and backed — the single
 	 * sizing surface, replacing the pre-release `initialCapacity` +
 	 * `bufferAllocator` pair. Express intent through exactly one arm:
 	 * `{ budget: { entities } }` (derive everything), `{ maxBytes }`
 	 * (explicit cap), `{ wasm: { memory } | { maximumPages } }` (the SAB
 	 * IS a WebAssembly.Memory — zero-copy with a WASM `ComputeBackend`), or
-	 * `{ allocator }` (expert escape hatch, in-place-typed per ADR-0008).
+	 * `{ allocator }` (expert escape hatch, in-place-typed).
 	 * Omitted ⇒ growable backing with a 256 MiB cap and 1024-row columns.
 	 * The resolved plan is exposed as `ECS.memoryPlan`. */
 	memory?: ECSMemoryOptions;
-	/** Consumer-declared SAB regions (#623), forwarded to `Store`. Each
+	/** Consumer-declared SAB regions, forwarded to `Store`. Each
 	 * `StoreRegionSpec` carries an opaque `region_id`, a precomputed byte size,
 	 * and an `init` closure; the engine lays them out generically and exposes
 	 * them via `regionHandle(id)` / `regionOffset(id)`. A game (e.g.
 	 * `@internal/sim`'s region specs) supplies these — the engine ships no
 	 * game regions of its own. Replaces the eight game-named region options
 	 * (`terrain_map_radius`, `spatial_grid_*`, `army_*`, `flow_field_*`,
-	 * `actionRingCapacitySlots`) the ECS used to carry. (ADR-0018.) */
+	 * `actionRingCapacitySlots`) the ECS used to carry. */
 	regions?: readonly StoreRegionSpec[];
-	/** Byte size of the opt-in sim-bindings region (#625), forwarded to `Store`.
+	/** Byte size of the opt-in sim-bindings region, forwarded to `Store`.
 	 * A consumer that attaches a WASM `ComputeBackend` passes its own size — for
 	 * this game, `@internal/sim`'s `SIM_BINDINGS_BYTES` (computed from the binding
 	 * manifest) — so the host can publish the `(component_id, field_id)` IDs the
 	 * accelerated systems read. Omitted / 0 ⇒ no region: a pure-TS world pays
 	 * nothing for the WASM seam. The size is a runtime input, not an engine ABI
-	 * constant, since #625 de-welded it from the generated ABI. */
+	 * constant; it is de-welded from the generated ABI. */
 	bindingsRegionBytes?: number;
-	/** Opt into the **determinism surface** (#626 / ADR-0020), forwarded to
+	/** Opt into the **determinism surface**, forwarded to
 	 * `Store`. Default `false`. When `false`, the canonical-ordering methods
 	 * (`stateHash`, `snapshotSparse`, `restoreSparse`) throw
 	 * `DETERMINISM_DISABLED`; when `true`, today's replay/hash behavior is
 	 * reproduced bit-for-bit. Determinism is the implementer's choice — our
 	 * server match opts in (replay verification), the client stays off (it rolls
 	 * back via diffs, not re-sim). The flag gates ONLY that surface: memory-safety
-	 * invariants (the in-place SAB allocator, ADR-0008) and the `enabled_count`
+	 * invariants (the in-place SAB allocator) and the `enabled_count`
 	 * partition are always-on regardless. */
 	deterministic?: boolean;
 }
@@ -230,11 +236,11 @@ export class ECS implements QueryResolver {
 	private readonly store: Store;
 	private readonly schedule: Schedule;
 	private readonly ctx: SystemContext;
-	/** Component observers (#517 §1 / ADR-0013). Inert until `observe(...)` is
+	/** Component observers. Inert until `observe(...)` is
 	 * called — the structural-flush fast path is byte-for-byte unchanged. */
 	private readonly _observers: ObserverRegistry;
 
-	// --- Grouped facades (H3 phase 2) ---
+	// --- Grouped facades ---
 	// Cohesive secondary surfaces, each wrapping the same Store entry points
 	// the pre-0.5 flat methods used (flat forms removed in 0.5.0); hot-path
 	// API (component ops, queries, spawn/destroy, sparse ops) stays flat.
@@ -259,7 +265,7 @@ export class ECS implements QueryResolver {
 	// DEV-only: true while THIS world's schedule is executing (startup/update).
 	// Distinguishes "a system of this world is on the stack" from "some other
 	// world's system opened the process-global accessCheck span" — driving a
-	// second world from inside a system is a supported pattern (#785), and its
+	// second world from inside a system is a supported pattern, and its
 	// host-facade mutations must not trip this world's in-system guards.
 	private _updating = false;
 
@@ -273,7 +279,7 @@ export class ECS implements QueryResolver {
 
 	private _nextQueryIdCounter: number = 0;
 	// All query-resolution caches — dedup + the shared composition maps — in
-	// one owner (M2); see `QueryCache` in query.ts for keying/id-space notes.
+	// one owner; see `QueryCache` in query.ts for keying/id-space notes.
 	/** @internal Query-composition caches (QueryResolver seam) — not public API. */
 	public readonly _caches: QueryCache = new QueryCache();
 
@@ -284,14 +290,14 @@ export class ECS implements QueryResolver {
 	// consumer's own code.
 	private readonly _layoutSubscribers: StoreLayoutListener[] = [];
 
-	// The opt-in compute backend (#622), or null (the default — pure-TS). A
+	// The opt-in compute backend, or null (the default — pure-TS). A
 	// system carrying a `backendHandle` is routed here by the `Schedule` when
 	// this is set; otherwise its `fn` runs. Attached via `attachBackend`.
 	private _backend: ComputeBackend | null = null;
 
 	private readonly _memory: ResolvedECSMemory;
 
-	/** What `ECSOptions.memory` resolved to (#682): backing allocator kind,
+	/** What `ECSOptions.memory` resolved to: backing allocator kind,
 	 * column capacity, entity-index reservation, byte cap, and a
 	 * human-readable derivation trace. Diagnostics surface — log it when
 	 * sizing questions come up instead of reverse-engineering the SAB. */
@@ -308,7 +314,7 @@ export class ECS implements QueryResolver {
 	}
 
 	constructor(options?: ECSOptions) {
-		// Loud migration guard (#682): the pre-release sizing knobs were
+		// Loud migration guard: the pre-release sizing knobs were
 		// *replaced*, not aliased. An untyped JS caller still passing them
 		// would otherwise be silently ignored — and a silently-dropped
 		// `bufferAllocator` means a WASM consumer's sim would read a different
@@ -423,7 +429,7 @@ export class ECS implements QueryResolver {
 		};
 	}
 
-	/** Attach an opt-in compute backend (#622). Default is none: a bare `ECS`
+	/** Attach an opt-in compute backend. Default is none: a bare `ECS`
 	 * runs pure-TS systems and the schedule's dispatch is byte-for-byte the
 	 * no-backend path. Once attached, a scheduled system carrying a
 	 * `backendHandle` (its `SystemConfig`) is executed via `backend.run(handle)`
@@ -468,13 +474,13 @@ export class ECS implements QueryResolver {
 		return this._accumulator / this._fixedTimestep;
 	}
 
-	/** Attach (or detach with `null`) a per-world frame-trace sink (ADR-0030):
+	/** Attach (or detach with `null`) a per-world frame-trace sink:
 	 * the engine then fires structured `FrameTraceSink` events at each system,
 	 * flush, command, observer firing, and event during `update()`, so a consumer
 	 * can reconstruct exactly what travelled through the ECS each frame. The sink
 	 * also receives a `phaseBoundary(phase)` at each phase's post-flush settle
 	 * point — the safe seam to read `stateHash()` between phases of one frame and
-	 * bisect a divergence to the exact phase (#797 / ADR-0032). The seam is
+	 * bisect a divergence to the exact phase. The seam is
 	 * `DEV`-gated end to end — in a production build this setter keeps an empty
 	 * body and the world never retains a sink. The sink only observes; it does not
 	 * perturb `stateHash`, ordering, or any behaviour. */
@@ -485,8 +491,8 @@ export class ECS implements QueryResolver {
 	/**
 	 * Register a dense component and get back its typed handle. Record syntax
 	 * gives per-field type control; the array shorthand types every field the
-	 * same (default `"f64"` — rejected on a `{ deterministic: true }` world
-	 * (#777), pass an explicit integer type there). An empty schema `{}` is a
+	 * same (default `"f64"` — rejected on a `{ deterministic: true }` world,
+	 * pass an explicit integer type there). An empty schema `{}` is a
 	 * tag. `opts.name` labels dev-mode diagnostics (`'Pos' (component 5)`
 	 * instead of `component 5`) — diagnostic only, no behavioural effect.
 	 *
@@ -504,7 +510,7 @@ export class ECS implements QueryResolver {
 		opts?: ComponentRegisterOptions
 	): ComponentDef<S>;
 	// Overload 2: array shorthand (uniform type, defaults to "f64"). On a
-	// `{ deterministic: true }` world the "f64" default is REJECTED (#777) — pass
+	// `{ deterministic: true }` world the "f64" default is REJECTED — pass
 	// an explicit integer type, e.g. `registerComponent(["x","y"], "i32")`.
 	public registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
 		fields: F,
@@ -535,14 +541,14 @@ export class ECS implements QueryResolver {
 		schema: S,
 		opts?: ComponentRegisterOptions
 	): SparseComponentDef<S>;
-	// Overload 2: array shorthand (uniform type, defaults to "f64"). Same #777
+	// Overload 2: array shorthand (uniform type, defaults to "f64"). Same
 	// float ban as `registerComponent` on a `{ deterministic: true }` world.
 	public registerSparseComponent<
 		const F extends readonly string[],
 		T extends TypedArrayTag = "f64"
 	>(fields: F, type?: T, opts?: ComponentRegisterOptions): SparseComponentDef<{ readonly [K in F[number]]: T }>;
 	// Implementation
-	/** Register an out-of-identity sparse component (#468 / ADR-0011). Mirrors
+	/** Register an out-of-identity sparse component. Mirrors
 	 * `registerComponent`, but the result lives in an engine-managed sparse set
 	 * outside the archetype mask: add/remove cause **no** archetype transition
 	 * and consume **no** identity bit (it does not count against the 128-component
@@ -666,7 +672,7 @@ export class ECS implements QueryResolver {
 	 *
 	 * `_updating` scopes the guard to THIS world: the accessCheck slot is
 	 * process-global, so without it a system of world A mutating world B (a
-	 * supported #785 pattern — B is not mid-iteration) would false-throw. */
+	 * supported pattern — B is not mid-iteration) would false-throw. */
 	private _assertHostMutationOutsideSystem(op: string, alternative: string): void {
 		if (this._updating && accessCheck.current() !== null) {
 			const desc = accessCheck.current()!;
@@ -695,7 +701,7 @@ export class ECS implements QueryResolver {
 		return this;
 	}
 
-	// --- Entity enable/disable (#577) ---
+	// --- Entity enable/disable ---
 	// A disabled entity keeps its components, relations, sparse data, and stable
 	// `EntityID`, but is excluded from queries by default (it sits in the disabled
 	// tail of its archetype, so `arch.entityCount` skips it). No archetype
@@ -820,7 +826,7 @@ export class ECS implements QueryResolver {
 	 * O(columns) via TypedArray.set() instead of O(N×columns).
 	 *
 	 * Takes an `ArchetypeID` (from `ArchetypeView.id`) rather than a concrete
-	 * `Archetype` — the concrete type is internal (issue #378).
+	 * `Archetype` — the concrete type is internal.
 	 */
 	public batchAddComponent(src: ArchetypeID, def: ComponentDef<Record<string, never>>): this;
 	public batchAddComponent<S extends ComponentSchema>(
@@ -871,12 +877,11 @@ export class ECS implements QueryResolver {
 			accessCheck.checkRead(def);
 			if (!this.store.isAlive(entityId)) throw entityNotAliveError("getField", entityId, componentLabel(def));
 		}
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
-		return arch.readField(row, def.id, field);
+		const arch = this.store.resolveEntity(entityId);
+		return arch.readField(this.store.resolvedRow, def.id, field);
 	}
 
-	/** Host-side parity with `SystemContext.refRead` (POLISH_AUDIT M7): a
+	/** Host-side parity with `SystemContext.refRead`: a
 	 * read-only whole-component view for tooling/tests, instead of reading
 	 * field-by-field. Same advisory-`readonly` semantics as the ctx variant;
 	 * no `_changedTick` bump. Dev-throws on a dead entity, or when the entity
@@ -897,8 +902,8 @@ export class ECS implements QueryResolver {
 			if (!this.store.isAlive(entityId))
 				throw entityNotAliveError("refRead", entityId, componentLabel(def));
 		}
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
+		const arch = this.store.resolveEntity(entityId);
+		const row = this.store.resolvedRow;
 		if (DEV && arch.columnGroups[def.id] === undefined)
 			throw new ECSError(
 				ECS_ERROR.COMPONENT_NOT_REGISTERED,
@@ -909,7 +914,53 @@ export class ECS implements QueryResolver {
 		return createRef<S>(arch.columnGroups[def.id]!, row);
 	}
 
-	/** Total sibling of {@link getField} (POLISH_AUDIT #9): `undefined` when the
+	/**
+	 * A re-pointable single-entity cursor over `def` — the by-id sweep accessor.
+	 *
+	 * `refRead` resolves an entity one time, and each field after that is almost
+	 * free. But it allocates one accessor for each entity. That allocation is the
+	 * largest part of the cost of a read of one field by id, because to make an
+	 * accessor and to read through it costs much more than to move an accessor
+	 * that exists. In a loop over a list of entities, the allocation is not
+	 * necessary: the code discards each accessor, and it then makes an equal
+	 * accessor for the next entity. You make a cursor one time, and you then
+	 * point it again:
+	 *
+	 *   const p = ecs.cursor(Pos);
+	 *   for (let i = 0; i < ids.length; i++) {
+	 *     p.at(ids[i]);
+	 *     p.x += p.y;
+	 *   }
+	 *
+	 * Reach for it when you touch **many entities** by id; reach for `refRead` /
+	 * `ref` for a single entity, and for `eachChunk` whenever a query can express
+	 * the set. A column walk resolves nothing for each row, so it stays quicker
+	 * than a cursor — a cursor removes the allocation, not the resolution.
+	 *
+	 * Mutable — every `at()` stamps the component's change tick, like `ctx.ref`.
+	 * See `cursorRead` for the read-only variant.
+	 *
+	 * **Staleness:** safer than a held ref, because `at()` re-resolves the
+	 * archetype and row each time — a structural mutation between two `at()` calls
+	 * cannot make it read the wrong entity. Only the window between one `at()` and
+	 * the field accesses following it must be free of structural mutation.
+	 */
+	public cursor<S extends ComponentSchema>(def: ComponentDef<S>): ComponentCursor<S> {
+		if (DEV) accessCheck.checkWrite(def);
+		return createCursor<S>(this.store.componentFieldNames(def), this.store.cursorBinder(def, true));
+	}
+
+	/** Read-only {@link cursor}: no change-tick stamp on `at()`. Advisory only —
+	 * same caveat as `refRead` (the setters exist on the shared prototype). */
+	public cursorRead<S extends ComponentSchema>(def: ComponentDef<S>): ReadonlyComponentCursor<S> {
+		if (DEV) accessCheck.checkRead(def);
+		return createCursor<S>(
+			this.store.componentFieldNames(def),
+			this.store.cursorBinder(def, false)
+		) as ReadonlyComponentCursor<S>;
+	}
+
+	/** Total sibling of {@link getField}: `undefined` when the
 	 * entity is dead or doesn't hold the component, instead of a dev throw /
 	 * prod garbage read. The safe way to probe-and-read in one call:
 	 * `ecs.tryGetField(e, Health, "current") ?? 0`. */
@@ -920,9 +971,8 @@ export class ECS implements QueryResolver {
 	): number | undefined {
 		if (DEV) accessCheck.checkRead(def);
 		if (!this.store.hasComponent(entityId, def)) return undefined;
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
-		return arch.readField(row, def.id, field);
+		const arch = this.store.resolveEntity(entityId);
+		return arch.readField(this.store.resolvedRow, def.id, field);
 	}
 
 	public setField<S extends ComponentSchema>(
@@ -934,11 +984,11 @@ export class ECS implements QueryResolver {
 		if (DEV) {
 			if (!this.store.isAlive(entityId)) throw entityNotAliveError("setField", entityId, componentLabel(def));
 		}
-		const arch = this.store.getEntityArchetype(entityId);
-		const row = this.store.getEntityRow(entityId);
+		const arch = this.store.resolveEntity(entityId);
+		const row = this.store.resolvedRow;
 		const col = arch.getColumn(def, field, this.store._tick);
 		col[row] = value;
-		// Per-entity onSet observers drain the opt-in dirty list (#531); record
+		// Per-entity onSet observers drain the opt-in dirty list; record
 		// this host-side write so an entity-granular observer sees it, matching
 		// `SystemContext.setField`. Gated so the no-observer path pays nothing.
 		if (this.store._anyDirtyTracked) this.store._noteSet(def, entityId);
@@ -977,20 +1027,33 @@ export class ECS implements QueryResolver {
 	 */
 	public query<T extends ComponentDef[]>(...defs: T): Query<T> {
 		// Reuse scratchMask to avoid allocating a new BitSet per query call.
-		// Zero it out, set bits, then copy for the cache key.
+		// Zero it out, set bits, then hand the scratch straight to the resolver:
+		// `_resolveQuery` BORROWS its mask arguments (it copies on the mint path,
+		// twice, and `Store.registerQuery` copies again), so the caller-side
+		// `.copy()` this used to do was pure garbage on the cache-hit path —
+		// a BitSet + backing `number[]` per `ecs.query(...)` call.
 		const mask = this.scratchMask;
 		mask._words.fill(0);
 		for (let i = 0; i < defs.length; i++) {
 			mask.set(defs[i].id);
 		}
-		return this._resolveQuery(mask.copy(), null, null, defs);
+		return this._resolveQuery(mask, null, null, defs);
 	}
 
 	public _nextQueryId(): number {
 		return this._nextQueryIdCounter++;
 	}
 
-	/** QueryResolver implementation — creates or retrieves a cached Query. */
+	/** QueryResolver implementation — creates or retrieves a cached Query.
+	 *
+	 * **Mask ownership: borrowed.** The three mask arguments are read, never
+	 * retained — the mint path copies each one into the `Query`, into the dedup
+	 * entry, and (via `Store.registerQuery`) into the registered-query record.
+	 * So callers may pass a scratch mask they intend to reuse (`ecs.query`) or
+	 * a live mask they still own (`Query.and` / `.without` / `.anyOf` pass
+	 * `this._include` etc.). Do NOT add a caller-side `.copy()` "for safety":
+	 * on the cache-hit path that is a per-call BitSet + `number[]` allocation
+	 * for nothing. */
 	public _resolveQuery(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -1011,6 +1074,16 @@ export class ECS implements QueryResolver {
 		const cached = this._caches.findDedup(key, include, exclude, anyOf);
 		if (cached !== undefined) return cached.query;
 
+		// Mint path. The masks are copied THREE times below at three different
+		// moments (into `registerQuery`'s record, into the `Query`, and into the
+		// dedup entry), so the borrow contract documented above has to hold across
+		// all three: a callee that mutated `include` mid-mint would give the copies
+		// different contents and silently mis-key the cache. `ecs.query` passes a
+		// reusable scratch mask, and `Query.and`/`.without`/`.anyOf` pass another
+		// Query's LIVE mask — so a violation corrupts existing queries, not just a
+		// temporary. Everything reachable from here (`getMatchingArchetypes`,
+		// `bucketPush`) only reads them.
+		//
 		// Store.registerQuery returns a live Archetype[] that the Store will
 		// push new matching archetypes into as they are created
 		const result = this.store.registerQuery(include, exclude ?? undefined, anyOf ?? undefined);
@@ -1110,10 +1183,10 @@ export class ECS implements QueryResolver {
 				const fn = fnOrConfig as (q: Query<any>, ctx: SystemContext, dt: number) => void;
 				config = { ..._INTERNAL_EMPTY_ACCESS, fn: (_ctx, dt) => fn(q, ctx, dt) };
 			} else {
-				// Bare function overload — access surface unannotated; Phase B
-				// will require config-form to enforce per-system declarations.
+				// Bare function overload — access surface unannotated; the config
+				// form is how a system declares its per-system access.
 				//
-				// Footgun guard (#213 H4): a bare `SystemFn` is `(ctx, dt)` — arity
+				// Footgun guard: a bare `SystemFn` is `(ctx, dt)` — arity
 				// ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
 				// query form with its `queryFn` second arg forgotten, which would
 				// otherwise silently bind `q := SystemContext`, `ctx := dt`, and
@@ -1135,11 +1208,11 @@ export class ECS implements QueryResolver {
 			config = fnOrConfig as SystemConfig;
 		}
 
-		// Phase D lint (#213): catch a `queries` declaration that outruns
+		// Declared-access lint: catch a `queries` declaration that outruns
 		// `reads ∪ writes` at registration, before the system's first iteration.
 		if (DEV) _assertQueriesDeclared(config);
 
-		// `fn` is optional only for backend-executed systems (#622) — a config
+		// `fn` is optional only for backend-executed systems — a config
 		// with neither is a system that can never run anything.
 		if (DEV && config.fn === undefined && config.backendHandle === undefined) {
 			throw new ECSError(
@@ -1182,12 +1255,12 @@ export class ECS implements QueryResolver {
 	 * ecs.update(1 / 60); // now tick every frame
 	 */
 	public startup(): void {
-		// Phase C of issue #213 — walk every registered system's `spawns` +
+		// Archetype prewarm — walk every registered system's `spawns` +
 		// `transitions` to compute the archetype closure they can produce,
 		// and plant the whole set in a single `extendColumnStore` call. After
 		// this returns, every spawn / transition target hits the cached
 		// `archGetOrCreateFromMask` path — no per-add SAB extends, which
-		// was the O(N²) cost #211 surfaced. Dynamically-generated masks not
+		// was the O(N²) cost this avoids. Dynamically-generated masks not
 		// covered by the closure still hit the lazy single-mask fallback.
 		this.prewarmArchetypes();
 
@@ -1221,7 +1294,7 @@ export class ECS implements QueryResolver {
 	 * whole set in one `extendColumnStore` call. Observers carry the same
 	 * access shape systems do (a synthesized `SystemDescriptor`), so an
 	 * observer that spawns/transitions gets its target archetype prewarmed
-	 * too rather than first-touching lazily mid-tick (#768). Exposed as
+	 * too rather than first-touching lazily mid-tick. Exposed as
 	 * `private` because the only caller is `startup()`; visible to tests via
 	 * the `archetype_count` delta on the public ECS facade. */
 	private prewarmArchetypes(): void {
@@ -1247,7 +1320,7 @@ export class ECS implements QueryResolver {
 	 * requestAnimationFrame(frame);
 	 */
 	public update(dt: number): void {
-		// #785 multi-world re-entrancy: a system may drive a *second* world's
+		// Multi-world re-entrancy: a system may drive a *second* world's
 		// tick from inside its own open access span — e.g. a host running N
 		// worlds where world A's system calls `worldB.update()`. The schedule's
 		// per-system `enter`/`leave` writes the single process-global
@@ -1258,7 +1331,7 @@ export class ECS implements QueryResolver {
 		// observer dispatch already performs for nested spans (see observer.ts
 		// `dispatchStructural` / `dispatchSet`). Dev-only; `prevAccessSpan` is
 		// null on the normal host-driven (non-nested) path, so the restore is a
-		// no-op there. See `docs/PATTERNS.md` §97 (multi-world isolation).
+		// no-op there. This keeps each world isolated.
 		const prevAccessSpan = DEV ? accessCheck.current() : null;
 		try {
 			if (DEV) this._updating = true;
@@ -1286,7 +1359,7 @@ export class ECS implements QueryResolver {
 			}
 
 			this.schedule.runUpdate(this.ctx, dt, this._tick);
-			// Post-update detection point for onSet observers (#517 §1 / ADR-0013, #586):
+			// Post-update detection point for onSet observers:
 			// per-entity onSet drains the dirty list, archetype-granular onSet scans
 			// the change tick, both in canonical order. `store._tick` still equals
 			// this tick here (it tracks `this._tick`, bumped below), so the change-tick
@@ -1301,11 +1374,11 @@ export class ECS implements QueryResolver {
 			if (DEV && this.store._devBufferedEventCount() !== evBefore) {
 				// An onSet observer emitted: `clearEvents` below would wipe it before
 				// any reader, so it is silently dropped — and would break snapshot/
-				// restore determinism if it survived (#586). Bridge a detected change to
+				// restore determinism if it survived. Bridge a detected change to
 				// a next-tick event from a system reading the dirty list, not from onSet.
 				throw new ECSError(
 					ECS_ERROR.OBSERVER_ONSET_EMIT,
-					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clear_events. Emit from a system instead."
+					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clearEvents. Emit from a system instead."
 				);
 			}
 			this.store.clearEvents();
@@ -1327,7 +1400,7 @@ export class ECS implements QueryResolver {
 		this.schedule.clear();
 	}
 
-	/** Register an archetype template (#462). Resolves the component set +
+	/** Register an archetype template. Resolves the component set +
 	 * default field values to a target archetype once (creating it if absent —
 	 * fits the prewarm model), so later `spawn` / `spawnMany` calls land
 	 * entities directly in that archetype with **zero archetype transitions**.
@@ -1341,8 +1414,7 @@ export class ECS implements QueryResolver {
 	 * store's entry shape, so it lives here with the other real logic, not in the
 	 * delegation band. The big win is multi-component entities and bulk spawns; a
 	 * single-component spawn is no faster than `spawn` + `addComponent`, which
-	 * already bump-allocates a fresh entity into the target archetype. See
-	 * ADR-0010. */
+	 * already bump-allocates a fresh entity into the target archetype. */
 	public template<Items extends readonly BundleOrDef[]>(
 		...items: StrictBundles<Items>
 	): Template<DefsOf<Items>> {
@@ -1367,12 +1439,12 @@ export class ECS implements QueryResolver {
 	//
 	// Enforced by src/core/ecs/__tests__/unit/ecs_passthrough_guard.test.ts,
 	// which parses this file and asserts the shape of every member between
-	// the BEGIN/END markers. (plans/H3-ecs-facade-slimming.md, phase 1.)
+	// the BEGIN/END markers.
 	// ============================================================================
 
 
 	/** Resolve a consumer-declared SAB region's byte offset by `region_id`, or
-	 * 0 when absent. Generic, de-gamed replacement (#623) for the removed
+	 * 0 when absent. Generic, de-gamed replacement for the removed
 	 * game-named accessors; pair with the consumer's own region module to
 	 * materialise a typed view. Delegates to `Store.regionOffset`. */
 	public regionOffset(regionId: number): number {
@@ -1382,7 +1454,7 @@ export class ECS implements QueryResolver {
 	/** A handle (`{ buffer, view, offset, bytes }`) to a consumer-declared SAB
 	 * region resolved by `region_id`, or `null` when absent. A consumer's
 	 * region module builds a TypedArray view over the region's span from this.
-	 * Re-fetch after a SAB grow. Delegates to `Store.regionHandle`. (#623) */
+	 * Re-fetch after a SAB grow. Delegates to `Store.regionHandle`. */
 	public regionHandle(regionId: number): ColumnStoreRegionHandle | null {
 		return this.store.regionHandle(regionId);
 	}
@@ -1403,24 +1475,23 @@ export class ECS implements QueryResolver {
 	 * A WASM system that drains events from the event ring as
 	 * `(archId, row, …)` payloads uses this to convert the (archId, row)
 	 * pair into the `EntityID` the `ctx.emit(...)` API expects.
-	 * Throws if the (archId, row) pair is out of range. (#250 / Phase 4
-	 * PR 4D) */
+	 * Throws if the (archId, row) pair is out of range. */
 	public entityIdAtRow(archetypeId: number, row: number): EntityID {
 		return this.store.entityIdAtRow(archetypeId, row);
 	}
 
 	/** The single SAB backing every archetype's column views. Exposed for
 	 * snapshot/restore, `columnStoreStateHash`-based determinism checks, and
-	 * Phase 2+ WASM/worker hand-off paths. Mutation flows through the
+	 * WASM/worker hand-off paths. Mutation flows through the
 	 * usual `addComponent` / `removeComponent` / `flush` APIs; readers
 	 * that hold a column view across a grow must consult
-	 * `header.view_stamp` to detect a republish (#171 §8.1). */
+	 * `header.view_stamp` to detect a republish. */
 	public get columnStore(): ColumnStore {
 		return this.store.columnStore;
 	}
 
 	/** Count of live archetypes (including the empty one). Surfaces the
-	 * Store-side `archetype_count` so Phase C tests can assert the
+	 * Store-side `archetype_count` so tests can assert the
 	 * pre-warmed closure was materialised; equally useful for diagnostics. */
 	public get archetypeCount(): number {
 		return this.store.archetypeCount;
@@ -1453,7 +1524,7 @@ export class ECS implements QueryResolver {
 		return this.store.isDisabled(entityId);
 	}
 
-	// --- Sparse (out-of-identity) component operations (#468) ---
+	// --- Sparse (out-of-identity) component operations ---
 	// Mutating a sparse component causes no archetype transition, so these are
 	// immediate (no deferred buffer) and safe mid-tick — they never reallocate
 	// an archetype or move a dense row.
@@ -1512,7 +1583,7 @@ export class ECS implements QueryResolver {
 		return this.store._queryDirtyEpoch;
 	}
 
-	/** QueryResolver implementation — sparse-membership match path (#469). */
+	/** QueryResolver implementation — sparse-membership match path. */
 	public _forEachSparseMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -1536,12 +1607,12 @@ export class ECS implements QueryResolver {
 	}
 
 	/** QueryResolver implementation — backing sparse id of a relation, for the
-	 * `(R, *)` wildcard term (`Query.withRelation`, #579). */
+	 * `(R, *)` wildcard term (`Query.withRelation`). */
 	public _relationBackingSparseId(def: RelationDef): SparseComponentID {
 		return this.store.relationBackingSparseId(def);
 	}
 
-	/** QueryResolver implementation — `(*, T)` wildcard match path (#579). */
+	/** QueryResolver implementation — `(*, T)` wildcard match path. */
 	public _forEachRelationTargetMatch(
 		target: EntityID,
 		include: BitSet,
@@ -1564,7 +1635,7 @@ export class ECS implements QueryResolver {
 		);
 	}
 
-	/** QueryResolver implementation — depth-ordered hierarchy match path (#581). */
+	/** QueryResolver implementation — depth-ordered hierarchy match path. */
 	public _forEachHierarchyMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -1597,7 +1668,7 @@ export class ECS implements QueryResolver {
 	}
 
 	/**
-	 * Configure a `SystemSet` (#576) — the shared run condition and/or ordering
+	 * Configure a `SystemSet` — the shared run condition and/or ordering
 	 * every member inherits. Additive and order-independent with respect to
 	 * `addSystems`: see `Schedule.configureSet`. Returns `this` to chain.
 	 */
@@ -1607,7 +1678,7 @@ export class ECS implements QueryResolver {
 	}
 
 	/**
-	 * Register a per-component observer (#517 §1 / ADR-0013). Reactions that were
+	 * Register a per-component observer. Reactions that were
 	 * hand-polled every tick — "on `Death` added → spawn corpse", "on `HexPos`
 	 * set → mark the spatial index" — become declarative.
 	 *
@@ -1617,8 +1688,8 @@ export class ECS implements QueryResolver {
 	 *   cascades settle. Determinism: a `stateHash` replay reproduces regardless
 	 *   of the order ops were queued.
 	 * - **`onDisable` / `onEnable`** `(eid, ctx)` fire at the same flush boundary
-	 *   when an entity carrying the component is *disabled* / *enabled* (#577,
-	 *   ADR-0023), once per net transition, for every component the entity carries
+	 *   when an entity carrying the component is *disabled* / *enabled*, once
+	 *   per net transition, for every component the entity carries
 	 *   (a disable is a soft remove of the whole mask from default queries). Like
 	 *   `onAdd`/`onRemove`, an *immediate* `ecs.disable()` does not fire — only
 	 *   the deferred `ctx.commands.disable()` toggle does. `yieldExisting` seeds enabled
@@ -1675,10 +1746,10 @@ export class ECS implements QueryResolver {
 	// === END STORE PASS-THROUGH BAND ===
 }
 
-/** Phase C of issue #213 — archetype closure from a descriptor set.
+/** Archetype closure from a descriptor set.
  *
  * Each descriptor is a system or an observer's synthesized `SystemDescriptor`
- * (#768) — both carry `spawns` + `transitions`. Seeds the worklist with every
+ * — both carry `spawns` + `transitions`. Seeds the worklist with every
  * descriptor's `spawns`; iteratively applies every descriptor's `transitions`
  * to every discovered mask whose components cover the transition's `whenHas`.
  * Returns the union of seeds + reachable targets, deduplicated by hash-bucketed
@@ -1691,7 +1762,7 @@ export class ECS implements QueryResolver {
  * tiny — ~20 masks at most), the worklist is finite and we exit when it
  * empties.
  *
- * Liberal `whenHas` per design doc §6.6 — over-approximation is fine; an
+ * Liberal `whenHas` — over-approximation is fine; an
  * unreachable transition target costs one descriptor row at the SAB tail,
  * not column bytes. Empty `spawns` + `transitions` short-circuit to zero.
  */
@@ -1717,7 +1788,7 @@ function computeArchetypeClosure(descriptors: Iterable<SystemDescriptor>): BitSe
 		return m;
 	};
 
-	// Pre-compute every transition's `whenHas` BitSet once (#325). The
+	// Pre-compute every transition's `whenHas` BitSet once. The
 	// worklist below tests `mask.contains(whenHas)` per (popped mask ×
 	// system × transition), so building the BitSet inside that loop
 	// allocated O(W × S × T) throwaway sets per `startup()`. `whenHas`
@@ -1743,7 +1814,7 @@ function computeArchetypeClosure(descriptors: Iterable<SystemDescriptor>): BitSe
 	}
 
 	// Seed from spawns. Each spawn entry is the full component set a
-	// spawned entity carries at flush time (design doc §4 worked example).
+	// spawned entity carries at flush time.
 	for (const desc of descriptors) {
 		const spawns = desc.spawns;
 		for (let i = 0; i < spawns.length; i++) tryPush(maskFromDefs(spawns[i]));

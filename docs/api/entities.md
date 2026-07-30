@@ -1,6 +1,8 @@
 # Entities
 
-An **entity** is an integer id (`EntityID`) — nothing more. It has no fields of its own; it's a key that components hang off of. You create one, attach components, and later destroy it.
+An **entity** is an integer id (`EntityID`) and nothing more. It has no fields of its own. It is a
+key, and components attach to it. You create an entity, you attach components, and later you
+destroy it.
 
 ```ts
 const e = ecs.spawn();
@@ -12,89 +14,139 @@ ecs.despawn(e);   // immediate — isAlive(e) is false on the next line
 
 <a id="immediate-vs-deferred--the-one-thing-to-internalize"></a>
 
-## Immediate vs deferred — the one thing to internalize
+## Immediate and deferred — the most important rule
 
-The receiver implies the mode. Everything on the host facade (`ecs.*`) applies **immediately**; structural ops inside a system (`ctx.commands.*`) are **deferred** to the phase flush:
+The receiver tells you the timing. Each operation on the host facade (`ecs.*`) applies
+**immediately**. Each structural operation in a system (`ctx.commands.*`) is **deferred** to the
+flush at the end of the phase.
 
-| Operation | On `ecs` (host side) | On `ctx` / `ctx.commands` (inside a system) |
+| Operation | On `ecs` (the host) | On `ctx` or `ctx.commands` (in a system) |
 | --- | --- | --- |
-| `spawn` | immediate (id returned now) | immediate id; bundle attaches land at the flush |
-| `addComponent` / `removeComponent` | **immediate** | **deferred** to the phase flush |
-| `despawn` | **immediate** | **deferred** to the phase flush |
-| `disable` / `enable` | **immediate** | **deferred** to the phase flush |
-| sparse & relation ops | immediate | immediate |
+| `spawn` | immediate (you get the id now) | the id is immediate; the bundles attach at the flush |
+| `addComponent` / `removeComponent` | **immediate** | **deferred** to the flush at the end of the phase |
+| `despawn` | **immediate** | **deferred** to the flush at the end of the phase |
+| `disable` / `enable` | **immediate** | **deferred** to the flush at the end of the phase |
+| sparse and relation operations | immediate | immediate |
 
 > [!IMPORTANT]
-> Deferral inside systems is not a quirk — it's what keeps a live `forEach`/`eachChunk` loop from having entities move archetypes mid-iteration underneath it. Host-side mutations apply immediately (calling *any* immediate host structural mutator — `spawn`/`spawnBundle`/`spawnMany`, `despawn`, `addComponent(s)`, `removeComponent(s)`, `batchAdd/RemoveComponent`, `disable`/`enable` — from *inside* a system body throws in dev, pointing at the `ctx.commands` equivalent), which cuts the other way on the host: a host-side `forEach`/`eachChunk` is live iteration, and structurally mutating an entity of an archetype you are walking throws `STRUCTURAL_DURING_ITERATION` in dev — collect ids during the walk, mutate after. Inside systems, structural ops live on [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops), which is *always* deferred and reads that way at the call site.
+> Deferral in a system is not an accident. It is the mechanism that prevents an entity from moving
+> to a different archetype during a live `forEach` or `eachChunk` loop. In a system, the structural
+> operations are on [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops). They are
+> *always* deferred, and the call site reads that way.
+>
+> Two dev-mode guards protect the immediate host operations:
+>
+> - If you call an immediate host mutator from **inside** a system body, it throws, and the message
+>   names the `ctx.commands` equivalent. This covers `spawn`, `spawnBundle`, `spawnMany`,
+>   `despawn`, `addComponent`, `addComponents`, `removeComponent`, `removeComponents`,
+>   `batchAddComponent`, `batchRemoveComponent`, `disable`, and `enable`.
+> - A `forEach` or `eachChunk` walk on the host is also live iteration. If you structurally mutate
+>   an entity of an archetype that you walk, it throws `STRUCTURAL_DURING_ITERATION`. Collect the
+>   ids during the walk, then mutate after it.
 
-Deferred work lands at the next **phase boundary** flush, or when you call `ecs.flush()` explicitly. See [schedule](./schedule.md).
+Deferred work applies at the next **phase boundary** flush, or when you call `ecs.flush()`
+yourself. See [schedule](./schedule.md).
 
-Signatures for the host-side attach/detach surface — `addComponent`, `removeComponent`, the single-transition `addComponents`/`removeComponents`, and the whole-archetype `batchAddComponent`/`batchRemoveComponent` — live in [components → attach & detach](./components.md#attach--detach), along with `getField`/`tryGetField`.
+The signatures of the attach and detach surface on the host are in
+[components → attach and detach](./components.md#attach--detach), together with `getField` and
+`tryGetField`. They are `addComponent`, `removeComponent`, the single-transition `addComponents`
+and `removeComponents`, and the full-archetype `batchAddComponent` and `batchRemoveComponent`.
 
-## Creating entities
+## How to create entities
 
 ```ts
 spawn(): EntityID;                                                           // empty entity
 spawn<Defs>(template: Template<Defs>, overrides?: TemplateOverrides<Defs>): EntityID;
 spawnMany<Defs>(template: Template<Defs>, count: number, overrides?: TemplateOverrides<Defs>): EntityID[];  // bulk
-spawnBundle(...items: BundleOrDef[]): EntityID;                              // varargs bundles
+spawnBundle(...items: BundleOrDef[]): EntityID;                              // bundles as varargs
 ```
 
-- **`spawn()`** — an empty entity in the empty archetype. Add components afterward.
-- **`spawn(template, overrides?)`** — land directly in a template's archetype with **zero archetype transitions**, applying optional per-field overrides.
-- **`spawnMany(template, count, overrides?)`** — bulk-spawn `count` identical entities, with one optional shared `overrides` object applied to every row. Field writes are `O(columns)` (one `fill` per column), not `O(count × columns)`. Returns ids in spawn order.
-- **`spawnBundle(...)`** — immediate host-side spawn from [bundles](./components.md#the-handle-is-callable--bundles): `ecs.spawnBundle(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`. The host analog of `ctx.commands.spawn`; it currently applies each bundle through the normal immediate add path, so use templates when you need zero-transition spawns.
+- **`spawn()`** gives you an empty entity in the empty archetype. Add the components after it.
+- **`spawn(template, overrides?)`** puts the entity directly in the archetype of the template, with
+  **no archetype transition**. It applies the optional replacement values for each field.
+- **`spawnMany(template, count, overrides?)`** creates `count` identical entities. One optional
+  `overrides` object applies to each row. The cost of the field writes is `O(columns)`, which is
+  one `fill` for each column, and not `O(count × columns)`. It gives the ids in the order of
+  creation.
+- **`spawnBundle(...)`** is an immediate spawn on the host from
+  [bundles](./components.md#the-handle-is-callable--bundles):
+  `ecs.spawnBundle(Pos({ x, y }), Vel({ vx: 1 }), IsEnemy)`. It is the host equivalent of
+  `ctx.commands.spawn`. Today it applies each bundle through the usual immediate add path. So you
+  must use a template when you need a spawn with no transition.
 
 ## Templates
 
-A **template** resolves a component set + default values to a target archetype **once**, so every later spawn from it skips the per-component archetype transitions.
+A **template** resolves a set of components and their default values to one target archetype
+**one time**. Each later spawn from that template then does no archetype transition for each
+component.
 
 ```ts
 template<Items extends readonly BundleOrDef[]>(...items: StrictBundles<Items>): Template<DefsOf<Items>>;
 
 const Bullet = ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 0, vy: 0 }));
 
-const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // flat per-field overrides
+const b = ecs.spawn(Bullet, { x: 5, y: 10 });   // flat replacement values for each field
 const swarm = ecs.spawnMany(Bullet, 500);   // 500 bullets, O(columns) writes
 ```
 
 > [!TIP]
-> Templates pay off for **multi-component** entities and **bulk** spawns. A single-component template is no faster than `spawn()` + `addComponent()`, which already bump-allocates into the target archetype. Registering templates up front also *prewarms* their archetypes — required if you plan to restore a [snapshot](./determinism.md) with `ecs.snapshots.restore`.
+> Templates give a benefit for entities with **several components**, and for **bulk** spawns. A
+> template with one component gives no benefit, because `spawn()` with `addComponent()` already
+> allocates the row directly in the target archetype. Registration of your templates at the start
+> also *prepares* their archetypes. This preparation is necessary before you restore a
+> [snapshot](./determinism.md) with `ecs.snapshots.restore`.
 
-## Destroying entities
+## How to destroy entities
 
 ```ts
 despawn(id: EntityID): void;   // IMMEDIATE on the host facade
 isAlive(id: EntityID): boolean;
 ```
 
-`despawn` destroys the entity immediately — `isAlive(id)` is `false` on the next line, matching the immediacy of every other host facade mutation. Inside a system, use `ctx.commands.despawn`, which defers to the phase flush (calling `ecs.despawn` from a system body throws in dev). `isAlive` is a **generational** check: a stale handle to a recycled slot, a retired slot, or an out-of-range id all read dead.
+`despawn` destroys the entity immediately. `isAlive(id)` is `false` on the next line, which agrees
+with each other mutation on the host facade. In a system, use `ctx.commands.despawn`, which defers
+to the flush at the end of the phase. A call to `ecs.despawn` in a system body throws in
+development. `isAlive` is a check of the **generation**. It reads as not alive for a stale handle
+to a recycled slot, for a retired slot, and for an id that is out of range.
 
 <a id="enable--disable"></a>
 
-## Enable / disable
+## Enable and disable
 
-Disabling an entity hides it from queries **without** removing its data or changing its id.
+If you disable an entity, queries do not see it, but it keeps its data and its id.
 
 ```ts
-disable(id: EntityID): this;        // immediate on the host facade; idempotent
-enable(id: EntityID): this;         // immediate on the host facade; idempotent
+disable(id: EntityID): this;        // immediate on the host facade; you can call it again safely
+enable(id: EntityID): this;         // immediate on the host facade; you can call it again safely
 isDisabled(id: EntityID): boolean;
 ```
 
-A disabled entity keeps its components, relations, sparse data, and stable `EntityID`, but is skipped by default queries — it sits in the **disabled tail** of its archetype, so `arch.entityCount` excludes it. There's no archetype transition; toggling is a single row swap. Re-include disabled entities in a query with [`.includeDisabled()`](./queries.md).
+A disabled entity keeps its components, its relations, its sparse data, and its stable `EntityID`.
+Default queries skip it. It stays in the **disabled part** at the end of its archetype, so
+`arch.entityCount` does not count it. There is no archetype transition, because a change of state
+is one row swap. To include disabled entities in a query, use
+[`.includeDisabled()`](./queries.md).
 
 > [!NOTE]
-> A disabled entity must hold **at least one component** — a component-less entity has no archetype row to partition.
+> A disabled entity must hold **one component or more**. An entity with no component has no
+> archetype row to divide.
 
 > [!WARNING]
-> An **immediate** `ecs.disable()` / `ecs.enable()` fires **no** `onDisable`/`onEnable` [observer](./observers.md) — only the **deferred** `ctx.commands.disable()` / `ctx.commands.enable()` (which drain at the flush) do.
+> An **immediate** `ecs.disable()` or `ecs.enable()` runs **no** `onDisable` or `onEnable`
+> [observer](./observers.md). Only the **deferred** `ctx.commands.disable()` and
+> `ctx.commands.enable()` run them, because they apply at the flush.
 
 ## The `EntityID` codec
 
-An `EntityID` is a branded 31-bit number packing a **20-bit slot index** and an **11-bit generation**: `[generation:11][index:20]`. The generation is what makes stale handles detectable — recycling a slot bumps its generation, so an old id no longer matches.
+An `EntityID` is a 31-bit number with a brand. It contains a **20-bit slot index** and an **11-bit
+generation**, in the layout `[generation:11][index:20]`. The generation is what makes a stale
+handle detectable, because a recycled slot increases its generation. An old id then does not agree
+with the slot.
 
-You rarely touch the codec; it's exposed for snapshot/replication paths that decode handles from semi-trusted bytes. `getEntityIndex` is exported from the package root; the rest of the codec (`createEntityId`, `getEntityGeneration`, and the bounds constants) lives at **`@oasys/oecs/internal`** (unstable — no semver guarantees).
+You rarely use the codec. It is public for the snapshot and replication paths, which decode handles
+from bytes that they do not fully trust. The package root exports `getEntityIndex`. The remainder
+of the codec (`createEntityId`, `getEntityGeneration`, and the bounds constants) is at
+**`@oasys/oecs/internal`**, which is unstable and has no semver guarantees.
 
 ```ts
 getEntityIndex(id: EntityID): number;                     // low 20 bits (dense slot)
@@ -109,14 +161,20 @@ const MAX_ENTITY_ID = 0x7FFFFFFF;   // largest valid packed id
 ```
 
 > [!WARNING]
-> `createEntityId` and `getEntityIndex` do **no** aliveness check — the generational guard is the caller's job. `createEntityId` throws on out-of-range args **in dev only**; in production the checks are gone and it silently wraps. Use `MAX_ENTITY_ID` to bounds-check any handle you decoded from a snapshot or `postMessage` before it indexes a slot. For normal code, get ids from `spawn` and never touch the codec.
+> `createEntityId` and `getEntityIndex` do **no** liveness check. The generation check is your
+> task. `createEntityId` throws for an argument that is out of range **in development only**. In
+> production those checks are absent, and the value wraps quietly. Use `MAX_ENTITY_ID` to check the
+> bounds of each handle that you decoded from a snapshot or from `postMessage`, before it indexes a
+> slot. In normal code, get each id from `spawn` and never use the codec.
 
 > [!NOTE]
-> `RETIRED_GENERATION` (2047) is a reserved tombstone. A slot that exhausts its 11-bit generation counter is **retired**, not recycled, which closes the ABA stale-handle window. Live generations only ever range `0..2046`.
+> `RETIRED_GENERATION` (2047) is a reserved tombstone. A slot that uses all of its 11-bit
+> generation counter is **retired**, and not recycled. This closes the ABA problem for a stale
+> handle. A live generation is always in the range 0 to 2046.
 
 ## See also
 
-- [components](./components.md) — what you attach to entities
-- [systems](./systems.md) — the deferred `ctx.commands` write surface
+- [components](./components.md) — what you attach to an entity
+- [systems](./systems.md) — the deferred write surface, `ctx.commands`
 - [queries](./queries.md) — `.includeDisabled()` and iteration
-- [relations](./relations.md) — linking entities with `(relation, target)` pairs
+- [relations](./relations.md) — how to link entities with `(relation, target)` pairs

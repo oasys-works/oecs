@@ -2,8 +2,8 @@
  * System — Function-based system types.
  *
  * Systems are plain functions, not classes. A SystemConfig defines the
- * system's update function, optional lifecycle hooks, and (Phase A+B of
- * issue #213) its access-surface declarations.
+ * system's update function, optional lifecycle hooks, and its
+ * access-surface declarations.
  *
  * ECS.registerSystem() assigns a unique SystemID and returns a frozen
  * SystemDescriptor — the identity handle used for scheduling and ordering.
@@ -14,20 +14,20 @@
  *   onRemoved()     — called when the system is unregistered
  *   dispose()        — called during ecs.dispose()
  *
- * Access declarations (Phase B of issue #213): every SystemConfig declares
+ * Access declarations: every SystemConfig declares
  * `reads` / `writes` (mandatory — empty arrays are explicit "this system
  * touches nothing", the deliberate thinking prompt) plus the OPTIONAL
  * `spawns` / `despawns` / `transitions` / `resourceReads` /
- * `resourceWrites` and the sparse/relation terms (issue #496 — a separate
+ * `resourceWrites` and the sparse/relation terms (a separate
  * id space from the dense archetype mask). An absent optional field reads
- * as empty — the same precedent #496 set for the sparse terms — so the
+ * as empty — the same precedent as the sparse terms — so the
  * majority of systems needn't spell out five empty arrays. Safety is
  * unchanged: Schedule wraps each `fn` / `onAdded` call in
  * `accessCheck.enter / leave`; SystemContext + Archetype consult
  * `accessCheck` on every read/write, structural change, sparse/relation
  * mutation, and resource read/write. Undeclared access throws an `ECSError`
- * in `DEV` (design doc §5.1). The same declarations pre-warm the
- * archetype graph (#211; sparse/relations cause no archetype transition, so
+ * in `DEV`. The same declarations pre-warm the
+ * archetype graph (sparse/relations cause no archetype transition, so
  * they do not feed prewarm).
  *
  * `spawns` entries and `despawns` may reference a `Template` — registration
@@ -67,7 +67,7 @@ export type SystemFn = (ctx: SystemContext, deltaTime: number) => void;
 /** A pair describing a mid-tick archetype transition.
  * If an entity has every component in `whenHas`, the system may `add`
  * and/or `remove` the listed components, transitioning the entity to a
- * new archetype. Used by Phase C to pre-warm the archetype graph. */
+ * new archetype. Used to pre-warm the archetype graph. */
 export interface SystemTransition {
 	readonly whenHas: readonly ComponentDef[];
 	readonly add?: readonly ComponentDef[];
@@ -77,7 +77,7 @@ export interface SystemTransition {
 /** The access declaration as AUTHORED on a `SystemConfig`. `reads` /
  * `writes` are mandatory (empty arrays are explicit, not missing
  * annotations); the rarer structural and resource fields are optional with
- * absent = empty, mirroring the #496 sparse/relation precedent. `spawns`
+ * absent = empty, mirroring the sparse/relation precedent. `spawns`
  * entries and `despawns` accept a `Template` wherever a component list is
  * expected — registration expands it via `_normalizeAccess`. */
 export interface SystemAccessConfig {
@@ -102,7 +102,7 @@ export interface SystemAccessConfig {
 	/** Resources the system writes. */
 	readonly resourceWrites?: readonly ResourceKey<any>[];
 
-	// --- Sparse-component / relation access (issue #496) ---
+	// --- Sparse-component / relation access ---
 	// The dense fields above key the 128-bit archetype-mask id space
 	// (`ComponentID`). Sparse components (`SparseComponentID`) and relations
 	// (`RelationID`) are each a SEPARATE id space, so they get their own terms
@@ -157,7 +157,7 @@ export interface SystemConfig extends SystemAccessConfig {
 	/** Components the system queries (via a captured `ecs.query(...)`), one
 	 * group per query.
 	 * OPTIONAL — when provided, `registerSystem` validates `queries ⊆ reads ∪
-	 * writes` in `DEV` (#213 Phase D, `_assertQueriesDeclared`): a query term
+	 * writes` in `DEV` (`_assertQueriesDeclared`): a query term
 	 * reads each listed component, so this fails fast at registration instead of
 	 * at the first iteration's `accessCheck`. */
 	queries?: readonly (readonly ComponentDef[])[];
@@ -167,14 +167,14 @@ export interface SystemConfig extends SystemAccessConfig {
 	 * `DEV` access check is bypassed for its whole span (a no-op in
 	 * production, where the check is already compiled out). For trusted engine /
 	 * host machinery that mutates components not known at registration — the
-	 * host→ECS command-apply system (#681) is the canonical case; a save/load or
+	 * host→ECS command-apply system is the canonical case; a save/load or
 	 * debug system is another. Bevy's "exclusive system" in spirit: full access,
 	 * and — under any future parallel scheduler — it would run alone. The schedule
 	 * is sequential today, so here it is purely the access grant. Use sparingly;
 	 * a normal system should declare exactly what it touches. */
 	exclusive?: boolean;
 
-	/** Opt this system into pluggable-backend execution (#622). When set **and**
+	/** Opt this system into pluggable-backend execution. When set **and**
 	 * a `ComputeBackend` is attached to the ECS, the `Schedule` runs
 	 * `backend.run(backendHandle)` in place of `fn`; otherwise `fn` runs as the
 	 * TS fallback (a no-op `fn` ⇒ the system is effectively skipped when no
@@ -364,7 +364,7 @@ export type DeclaredAccess<
  * `SystemConfig`, but every declaration list is its own type parameter (one
  * inference site each — inferring a single config-object type parameter breaks
  * contextual typing of `fn`), `queries` is constrained to `reads ∪ writes`
- * (the compile-time Phase D lint), and `fn` / `onAdded` receive the narrowed
+ * (the compile-time declared-access lint), and `fn` / `onAdded` receive the narrowed
  * context. `fn` and `onAdded` use METHOD syntax deliberately: methods relate
  * bivariantly, which is what lets an explicitly-annotated permissive
  * `fn(ctx: SystemContext, dt)` (the escape hatch) keep compiling.
@@ -395,7 +395,7 @@ export interface TypedSystemConfig<
 	readonly sparseWrites?: SW;
 	readonly relationReads?: RR;
 	readonly relationWrites?: RW;
-	/** Compile-time mirror of the Phase D lint: every query term ∈ reads ∪ writes. */
+	/** Compile-time mirror of the declared-access lint: every query term ∈ reads ∪ writes. */
 	readonly queries?: readonly (readonly (R[number] | W[number])[])[];
 	name?: string;
 	fn?(ctx: SystemContext<A>, deltaTime: number): void;
@@ -464,7 +464,7 @@ export function _normalizeAccess(config: SystemAccessConfig): SystemAccessDeclar
 	};
 }
 
-/** @internal Phase D lint (issue #213): in `DEV`, validate that every
+/** @internal Declared-access lint: in `DEV`, validate that every
  * component a system lists in `queries` is covered by `reads ∪ writes`. A query
  * term reads each listed component's presence/columns, so querying one the
  * system never declared read access to would throw at the first iteration

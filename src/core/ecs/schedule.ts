@@ -16,7 +16,7 @@
  * The sort result is cached per phase and invalidated when systems are
  * added or removed.
  *
- * Run conditions / system sets (#576). A system (via `SystemEntry.runIf`) or a
+ * Run conditions / system sets. A system (via `SystemEntry.runIf`) or a
  * whole `SystemSet` (via `configureSet`) can carry a `RunCondition` evaluated
  * each tick in canonical order; a `false` verdict skips the body — and leaves
  * the system's last-run tick unadvanced, so a skipped tick is indistinguishable
@@ -60,7 +60,7 @@ const STARTUP_LABELS = [SCHEDULE.PRE_STARTUP, SCHEDULE.STARTUP, SCHEDULE.POST_ST
 const UPDATE_LABELS = [SCHEDULE.PRE_UPDATE, SCHEDULE.UPDATE, SCHEDULE.POST_UPDATE] as const;
 
 /**
- * An opaque handle for a named group of systems (#576). A set carries a shared
+ * An opaque handle for a named group of systems. A set carries a shared
  * run condition and shared ordering that every member inherits. Sets are
  * identified by **object identity**, not by name — create one with
  * `systemSet(name)`, hold the handle, and reuse it across `addSystems`
@@ -71,7 +71,7 @@ export interface SystemSet {
 	readonly name: string;
 }
 
-/** Create a `SystemSet` handle (#576). Two calls with the same name are two
+/** Create a `SystemSet` handle. Two calls with the same name are two
  * distinct sets — keep the returned handle and pass it around. */
 export function systemSet(name: string): SystemSet {
 	return Object.freeze({ name });
@@ -81,7 +81,7 @@ export function systemSet(name: string): SystemSet {
  * (expanded to its members within the same phase at sort time). */
 export type SystemOrderingTarget = SystemDescriptor | SystemSet;
 
-/** Shared configuration applied to a `SystemSet` via `configureSet` (#576).
+/** Shared configuration applied to a `SystemSet` via `configureSet`.
  * Accumulates across calls — conditions AND together, ordering targets union. */
 export interface SystemSetConfig {
 	/** Condition(s) every member is gated by (ANDed with each member's own). */
@@ -101,11 +101,18 @@ export interface SystemEntry {
 	system: SystemDescriptor;
 	ordering?: SystemOrdering;
 	/** Run condition(s) gating just this system — ANDed with any set conditions
-	 * it inherits (#576). A `false` verdict skips the body that tick. */
+	 * it inherits. A `false` verdict skips the body that tick. */
 	runIf?: RunCondition | readonly RunCondition[];
 	/** Set membership — the system inherits each set's shared condition and
-	 * ordering (#576). */
+	 * ordering. */
 	set?: SystemSet | readonly SystemSet[];
+}
+
+/** A phase's execution plan: its topologically sorted systems and, index-aligned,
+ * each one's `systemLastRun` slot. Cached as a unit and invalidated together. */
+interface PhasePlan {
+	readonly sorted: SystemDescriptor[];
+	readonly slots: Int32Array;
 }
 
 interface SystemNode {
@@ -138,12 +145,46 @@ function toArray<T>(value: T | readonly T[] | undefined): readonly T[] {
 
 export class Schedule {
 	private readonly labelSystems: Map<SCHEDULE, SystemNode[]> = new Map();
-	private readonly sortedCache: Map<SCHEDULE, SystemDescriptor[]> = new Map();
+	// Sorted descriptors for a phase, paired with the `systemLastRun` slot of each
+	// — cached together so `runLabel` resolves both with the one `Map.get` it
+	// already paid, and the per-system lookup inside the loop is array indexing.
+	private readonly sortedCache: Map<SCHEDULE, PhasePlan> = new Map();
 	private readonly systemIndex: Map<SystemDescriptor, SCHEDULE> = new Map();
-	private readonly systemLastRun: Map<SystemDescriptor, number> = new Map();
-	// Only systems carrying a run condition or set membership (#576). The hot
+	// Previous-run tick per scheduled system — a packed array, NOT a `Map` keyed
+	// on the descriptor. `runLabel` reads it and writes it back once per system
+	// per phase. A profile of a dispatch-bound schedule shows that those two `Map`
+	// operations, and not the system bodies, are where most of the phase loop goes
+	// — they hash an object identity twice for each system in each frame.
+	//
+	// Indexed by a SCHEDULE-LOCAL slot, not by `SystemDescriptor.id`. Ids come
+	// from a per-world counter, so two descriptors registered with two different
+	// worlds both get id 0 — scheduling them into a third world would alias them
+	// onto one slot and let the system that runs more often overwrite the other's
+	// last-run tick (silently widening its `changed()` window). Slots are handed
+	// out per Schedule, so identity comes from this schedule's own numbering.
+	private readonly systemLastRun: number[] = [];
+	// Descriptor → its `systemLastRun` slot. Consulted only by `addSystems` /
+	// `removeSystem`; the run loop never touches it (the slot travels in the
+	// phase plan).
+	//
+	// `removeSystem` MUST delete from this map. It is the only strong reference
+	// the Schedule keeps to a descriptor once its node is gone, and a descriptor
+	// closes over whatever its `fn` captured — leaving the entry behind pins that
+	// for the world's lifetime. (The `Map` this replaced was deleted on remove;
+	// forgetting to do the same here leaked every descriptor ever scheduled.)
+	private readonly lastRunSlots: Map<SystemDescriptor, number> = new Map();
+	// Slots freed by `removeSystem`, handed back out by `_assignLastRunSlot`.
+	// Without reuse the array would grow by one per `addSystems` call — unbounded
+	// under a workload that toggles systems on and off each frame.
+	private readonly freeLastRunSlots: number[] = [];
+	// Nesting depth of a drive (`runStartup` / `runUpdate` / `runFixedUpdate`).
+	// Non-zero means a phase plan is live and `runLabel`'s loop may still write
+	// `systemLastRun` through the `slots` array it captured, which is what makes
+	// recycling a freed slot unsafe right now — see `_assignLastRunSlot`.
+	private _driveDepth = 0;
+	// Only systems carrying a run condition or set membership. The hot
 	// loop skips the per-system gate probe entirely when this is empty, so a
-	// schedule that uses no conditions runs byte-for-byte the pre-#576 path.
+	// schedule that uses no conditions runs byte-for-byte the original path.
 	private readonly gatedSystems: Map<SystemDescriptor, SystemNode> = new Map();
 	// Live set configuration, read at sort time (ordering) and run time
 	// (conditions) so `configureSet` is order-independent w.r.t. `addSystems`.
@@ -153,9 +194,9 @@ export class Schedule {
 		{ before: Set<SystemOrderingTarget>; after: Set<SystemOrderingTarget> }
 	> = new Map();
 	private nextInsertionOrder = 0;
-	// The opt-in compute backend (#622), or null (the default — pure-TS). When
+	// The opt-in compute backend, or null (the default — pure-TS). When
 	// set, a scheduled system carrying a `backendHandle` runs `backend.run(...)`
-	// instead of its `fn`. `null` is the byte-for-byte pre-#622 path: `runLabel`
+	// instead of its `fn`. `null` is the byte-for-byte no-backend path: `runLabel`
 	// hoists this to a local and only reads `desc.backendHandle` when non-null,
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
@@ -164,12 +205,15 @@ export class Schedule {
 	 * The only schedule diagnostic today is `warnDroppedEdge`. */
 	private readonly onWarn: (message: string) => void;
 
+	/** The `FIXED_UPDATE` node list, held directly for `hasFixedSystems`. */
+	private readonly _fixedNodes: SystemNode[] = [];
+
 	constructor(onWarn?: (message: string) => void) {
 		this.onWarn = onWarn ?? ((message) => console.warn(message));
 		for (let i = 0; i < STARTUP_LABELS.length; i++) {
 			this.labelSystems.set(STARTUP_LABELS[i], []);
 		}
-		this.labelSystems.set(SCHEDULE.FIXED_UPDATE, []);
+		this.labelSystems.set(SCHEDULE.FIXED_UPDATE, this._fixedNodes);
 		for (let i = 0; i < UPDATE_LABELS.length; i++) {
 			this.labelSystems.set(UPDATE_LABELS[i], []);
 		}
@@ -204,7 +248,7 @@ export class Schedule {
 			// ! safe: constructor pre-populates all SCHEDULE enum keys
 			this.labelSystems.get(label)!.push(node);
 			this.systemIndex.set(descriptor, label);
-			this.systemLastRun.set(descriptor, 0);
+			this._assignLastRunSlot(descriptor);
 			// A system is "gated" if it carries its own condition OR belongs to a
 			// set (the set may be — or later become — conditioned). Ungated systems
 			// never enter `gatedSystems`, preserving the no-condition fast path.
@@ -216,7 +260,7 @@ export class Schedule {
 	}
 
 	/**
-	 * Configure a `SystemSet` (#576) — its shared run condition(s) and/or
+	 * Configure a `SystemSet` — its shared run condition(s) and/or
 	 * ordering, inherited by every member. Additive and order-independent w.r.t.
 	 * `addSystems`: conditions accumulate (ANDed), ordering targets union, and
 	 * a member added before or after this call picks the configuration up.
@@ -270,40 +314,95 @@ export class Schedule {
 		}
 
 		this.systemIndex.delete(system);
-		this.systemLastRun.delete(system);
+		const removedSlot = this.lastRunSlots.get(system);
+		if (removedSlot !== undefined) {
+			this.systemLastRun[removedSlot] = 0;
+			// Drop the descriptor reference (see `lastRunSlots`) and recycle the slot.
+			// Safe to offer it back unconditionally: `_assignLastRunSlot` decides
+			// whether taking it is safe *right now* (it isn't while a phase's captured
+			// plan is still writing through it — see the `_driveDepth` guard there).
+			this.lastRunSlots.delete(system);
+			this.freeLastRunSlots.push(removedSlot);
+		}
 		this.gatedSystems.delete(system);
 		// A dangling descriptor target left inside a `setOrdering` entry is
 		// harmless — `sortSystems` drops any ordering target not present in the
 		// phase — so it needs no per-remove sweep across every set.
-		this.sortedCache.delete(label);
+		//
+		// Clear EVERY phase plan, not just this label's: the slot just recycled is
+		// about to be handed to a different descriptor, and a *cached* plan still
+		// holding it would alias the two systems' last-run ticks. One label's plan is
+		// all that can hold it while a descriptor lives in exactly one label — but
+		// that invariant is only enforced under `DEV` (the duplicate-schedule throw
+		// in `addSystems`), and slot reuse is not something to leave resting on a
+		// check that is compiled out of production. `removeSystem` is cold and there
+		// are seven plans; re-sorting them is not worth reasoning about.
+		//
+		// This only reaches CACHED plans. The one a currently-running phase already
+		// hoisted into a local is unreachable from here, and that window is covered
+		// by `_driveDepth` in `_assignLastRunSlot` instead.
+		this.sortedCache.clear();
 	}
 
-	/** Attach (or, with `null`, detach) the opt-in compute backend (#622). Driven
+	/** Attach (or, with `null`, detach) the opt-in compute backend. Driven
 	 * by `ECS.attachBackend`; routes any scheduled system carrying a
 	 * `backendHandle` to `backend.run(handle)` in place of its `fn`. */
 	public setBackend(backend: ComputeBackend | null): void {
 		this._backend = backend;
 	}
 
+	// The three drive entry points each bracket their phases with `_driveDepth`,
+	// so `_assignLastRunSlot` will not recycle a `systemLastRun` slot that a phase
+	// plan captured by `runLabel`'s loop may still write to — see the guard there
+	// for the hazard it closes.
+	//
+	// Held across the WHOLE drive, not per phase: one `try`/`finally` per frame
+	// instead of one per phase (three, for an update). The difference is
+	// measurable on a dispatch-bound schedule, where the system bodies do almost
+	// no work. The wider window is also the more
+	// conservative one, and slots still recycle freely between frames — the only
+	// property `freeLastRunSlots` needs to stay bounded. Written out at each of
+	// the three sites rather than wrapped in a helper taking a callback, which
+	// would put a closure allocation and an indirect call on the per-frame path.
+
 	public runStartup(ctx: SystemContext, tick: number): void {
-		for (const label of STARTUP_LABELS) {
-			this.runLabel(label, ctx, STARTUP_DELTA_TIME, tick);
+		this._driveDepth++;
+		try {
+			for (const label of STARTUP_LABELS) {
+				this.runLabel(label, ctx, STARTUP_DELTA_TIME, tick);
+			}
+		} finally {
+			this._driveDepth--;
 		}
 	}
 
 	public runUpdate(ctx: SystemContext, deltaTime: number, tick: number): void {
-		for (const label of UPDATE_LABELS) {
-			this.runLabel(label, ctx, deltaTime, tick);
+		this._driveDepth++;
+		try {
+			for (const label of UPDATE_LABELS) {
+				this.runLabel(label, ctx, deltaTime, tick);
+			}
+		} finally {
+			this._driveDepth--;
 		}
 	}
 
 	public runFixedUpdate(ctx: SystemContext, fixedDt: number, tick: number): void {
-		this.runLabel(SCHEDULE.FIXED_UPDATE, ctx, fixedDt, tick);
+		this._driveDepth++;
+		try {
+			this.runLabel(SCHEDULE.FIXED_UPDATE, ctx, fixedDt, tick);
+		} finally {
+			this._driveDepth--;
+		}
 	}
 
 	public hasFixedSystems(): boolean {
-		// ! safe: constructor pre-populates all SCHEDULE enum keys
-		return this.labelSystems.get(SCHEDULE.FIXED_UPDATE)!.length > 0;
+		// Direct reference, not `labelSystems.get(FIXED_UPDATE)`: `ECS.update`
+		// asks this once per frame before any phase runs, and a string-keyed
+		// `Map.get` there is measurable on a dispatch-bound tick. The list object is
+		// created once in the constructor and never replaced (`clear` truncates
+		// it in place), so the cached reference can't go stale.
+		return this._fixedNodes.length > 0;
 	}
 
 	public getAllSystems(): SystemDescriptor[] {
@@ -320,30 +419,87 @@ export class Schedule {
 		return this.systemIndex.has(system);
 	}
 
+	/** Hand `descriptor` its `systemLastRun` slot, keeping the array packed (no
+	 * holes ⇒ no undefined-check on the read in `runLabel`, which is the whole
+	 * point of it not being a `Map`). Idempotent for a descriptor already in this
+	 * schedule — `getSorted` re-asks for every system it sorts. A descriptor that
+	 * was removed and re-added gets a *fresh* slot starting at tick 0, which is
+	 * what the previous `Map`-based bookkeeping did (`delete` on remove, `set(…, 0)`
+	 * on re-add). */
+	private _assignLastRunSlot(descriptor: SystemDescriptor): number {
+		let slot = this.lastRunSlots.get(descriptor);
+		if (slot === undefined) {
+			// Recycle only OUTSIDE a running drive. `runLabel` hoists its plan's
+			// `slots` into a local and writes `systemLastRun[slots[i]] = tick` after
+			// each system, so a phase already in its loop keeps writing through the
+			// slots it captured even after `removeSystem` clears `sortedCache`. Handing
+			// one of those to a system added during that same phase would let the
+			// removed system's tail write land on the NEW system's last-run tick and
+			// silently widen or shift its `changed()` window — cross-talk the `Map`
+			// this replaced could not produce (it just re-added a deleted entry).
+			// Reachable: an observer or a teardown helper like
+			// `uninstallHostCommandSeam` removes and re-adds systems from inside a
+			// phase. `_assignLastRunSlot` zeroing a reused slot only half-covers it —
+			// the removed system need merely run AFTER the re-add.
+			//
+			// The slot stays on the free list and is reused by the next add outside a
+			// drive, so this costs at most one extra `systemLastRun` entry per
+			// mid-drive add — bounded, and on a cold path.
+			const reused = this._driveDepth === 0 ? this.freeLastRunSlots.pop() : undefined;
+			if (reused !== undefined) {
+				slot = reused;
+				this.systemLastRun[slot] = 0;
+			} else {
+				slot = this.systemLastRun.length;
+				this.systemLastRun.push(0);
+			}
+			this.lastRunSlots.set(descriptor, slot);
+		}
+		return slot;
+	}
+
 	public clear(): void {
 		for (const nodes of this.labelSystems.values()) {
 			nodes.length = 0;
 		}
 		this.sortedCache.clear();
 		this.systemIndex.clear();
-		this.systemLastRun.clear();
+		// Truncating is right between drives, and it is what `clear` normally
+		// does. Inside one it is not: `ECS.dispose` reaches here from a system
+		// body, and the phase that called that system keeps running the plan it
+		// already captured — so `runLabel` still indexes `systemLastRun[slots[i]]`
+		// for every system after this point. A truncated array reads `undefined`
+		// there and publishes it as `ctx.lastRunTick`, which the `Map` this
+		// replaced could not do (it fell back to 0). Zeroing in place keeps every
+		// live slot a number and matches the tick a fresh slot would carry.
+		//
+		// The array then keeps its length, so the next `_assignLastRunSlot` starts
+		// numbering above the dead entries. That wastes at most one entry per
+		// system that existed before the clear, once, on a path that is tearing
+		// the world down anyway.
+		if (this._driveDepth === 0) this.systemLastRun.length = 0;
+		else this.systemLastRun.fill(0);
+		this.lastRunSlots.clear();
+		this.freeLastRunSlots.length = 0;
 		this.gatedSystems.clear();
 		this.setConditions.clear();
 		this.setOrdering.clear();
 	}
 
 	private runLabel(label: SCHEDULE, ctx: SystemContext, deltaTime: number, tick: number): void {
-		const sorted = this.getSorted(label);
+		const plan = this.getSorted(label);
+		const sorted = plan.sorted;
+		const slots = plan.slots;
 		// Probe the gate map only when something in the whole schedule is gated.
 		const hasGates = this.gatedSystems.size > 0;
 		// Hoist the backend once per phase (constant across the loop). `null` is the
 		// common case (no backend attached); then `backendHandle` is never read and
-		// the dispatch is byte-for-byte the pre-#622 `desc.fn(ctx, dt)` path. The
-		// `=== null` check is a perfectly-predicted branch (the dispatch microbench
-		// in docs/reports/bench/ measured it as free vs baseline — and a Null-Object
-		// default as a needless tax on this no-backend path). (#622)
+		// the dispatch is byte-for-byte the plain `desc.fn(ctx, dt)` path. The
+		// `=== null` check is a perfectly-predicted branch. A measurement of the
+		// dispatch shows that this branch is free against the baseline, and that a
+		// Null-Object default makes this no-backend path slower.
 		const backend = this._backend;
-		// #731: a SystemSet's run conditions gate the set as a unit. Evaluate each
+		// A SystemSet's run conditions gate the set as a unit. Evaluate each
 		// set's conditions at most once per phase and reuse the verdict for every
 		// member, instead of re-evaluating per member. Run conditions are pure reads
 		// and deferred changes aren't flushed until the phase ends, so the memo is
@@ -351,11 +507,17 @@ export class Schedule {
 		const setVerdicts: Map<SystemSet, boolean> | undefined = hasGates
 			? new Map()
 			: undefined;
+		// `slots` is a snapshot: a `removeSystem` from inside a system clears
+		// `sortedCache`, but this loop keeps running — and keeps writing back through
+		// — the plan it already captured. The caller (`runStartup` / `runUpdate` /
+		// `runFixedUpdate`) holds `_driveDepth` for the whole drive, which is what
+		// stops `_assignLastRunSlot` handing a slot this loop still writes to a
+		// system added mid-phase.
 		for (let i = 0; i < sorted.length; i++) {
 			const desc = sorted[i];
 			if (hasGates) {
 				const node = this.gatedSystems.get(desc);
-				// #576: a false run condition skips the body in canonical order, AND
+				// A false run condition skips the body in canonical order, AND
 				// leaves last_run unadvanced + enqueues nothing — so a skipped tick is
 				// indistinguishable from the system being absent that tick (the
 				// `stateHash` equality the acceptance requires).
@@ -363,8 +525,8 @@ export class Schedule {
 			}
 			// lastRunTick exposes the system's *previous* run tick to ChangedQuery,
 			// so q.changed(C) sees writes made since this system last ran (cross-tick).
-			ctx.lastRunTick = this.systemLastRun.get(desc) ?? 0;
-			// Route to the compute backend (#622) only when one is attached AND this
+			ctx.lastRunTick = this.systemLastRun[slots[i]];
+			// Route to the compute backend only when one is attached AND this
 			// system opted in via `backendHandle`; otherwise run the TS closure. The
 			// access span wraps either path identically, so the system's declared
 			// `writes` authorise whatever shared memory the backend touches.
@@ -378,7 +540,7 @@ export class Schedule {
 				if (DEV) ctx._trace?.systemEnd(desc);
 				if (DEV) accessCheck.leave();
 			}
-			this.systemLastRun.set(desc, tick);
+			this.systemLastRun[slots[i]] = tick;
 		}
 		// Flush deferred changes after each phase so the next phase sees a consistent state
 		if (DEV) ctx._trace?.flushBegin(label);
@@ -387,8 +549,8 @@ export class Schedule {
 		// The phase has fully settled — systems ran, deferred buffer + observer
 		// cascade flushed — so the live world is at a consistent, fingerprint-able
 		// point. Fire the per-phase boundary so a consumer can read `stateHash()`
-		// between the phases of one frame and bisect a divergence to this phase
-		// (#797 / ADR-0032). `DEV`-gated like the rest of the seam (zero prod
+		// between the phases of one frame and bisect a divergence to this phase.
+		// `DEV`-gated like the rest of the seam (zero prod
 		// cost) and read-only, so it never perturbs the hash or ordering.
 		if (DEV) ctx._trace?.phaseBoundary(label);
 	}
@@ -401,7 +563,7 @@ export class Schedule {
 	 * memo lives only for a single `runLabel` pass. Short-circuits on the first
 	 * `false`. The system's own conditions evaluate per system, in canonical order.
 	 *
-	 * #731 SEMANTIC NOTE: this evaluates a set's conditions once-per-set-per-phase
+	 * SEMANTIC NOTE: this evaluates a set's conditions once-per-set-per-phase
 	 * rather than once-per-member. Equivalent for pure RunConditions; observably
 	 * different only if a set condition reads state mutated earlier in the SAME
 	 * phase (resources write immediately). That is intentional — the set gates as a
@@ -449,15 +611,18 @@ export class Schedule {
 		return true;
 	}
 
-	private getSorted(label: SCHEDULE): SystemDescriptor[] {
+	private getSorted(label: SCHEDULE): PhasePlan {
 		const cached = this.sortedCache.get(label);
 		if (cached !== undefined) return cached;
 
 		// ! safe: constructor pre-populates all SCHEDULE enum keys
 		const nodes = this.labelSystems.get(label)!;
 		const sorted = this.sortSystems(nodes, label);
-		this.sortedCache.set(label, sorted);
-		return sorted;
+		const slots = new Int32Array(sorted.length);
+		for (let i = 0; i < sorted.length; i++) slots[i] = this._assignLastRunSlot(sorted[i]);
+		const plan: PhasePlan = { sorted, slots };
+		this.sortedCache.set(label, plan);
+		return plan;
 	}
 
 	/**
@@ -471,7 +636,7 @@ export class Schedule {
 		const descriptors: SystemDescriptor[] = [];
 		const insertionOrder = new Map<SystemDescriptor, number>();
 		const nodeSet = new Set<SystemDescriptor>();
-		// set → its member descriptors *within this phase* (#576). Cross-phase
+		// set → its member descriptors *within this phase*. Cross-phase
 		// members are absent, so set ordering stays phase-local like system
 		// ordering — a set referenced from another phase expands to nothing here.
 		const setMembers = new Map<SystemSet, SystemDescriptor[]>();
@@ -501,7 +666,7 @@ export class Schedule {
 		// nodeSet guards skip descriptors from other labels
 		for (const node of nodes) {
 			// Effective ordering = the system's own before/after PLUS the
-			// before/after of every set it belongs to (#576). Set conditions gate
+			// before/after of every set it belongs to. Set conditions gate
 			// at run time; set *ordering* expands here into per-member edges.
 			this.resolveEdges(
 				node.descriptor,
@@ -557,7 +722,7 @@ export class Schedule {
 	}
 
 	/**
-	 * Add the topo edges for one ordering list (#576). For `"before"` the source
+	 * Add the topo edges for one ordering list. For `"before"` the source
 	 * runs before each target (edge source→target); for `"after"` it runs after
 	 * each target (edge target→source). A `SystemSet` target expands to every
 	 * member within this phase (self-edges skipped, so a member ordered against

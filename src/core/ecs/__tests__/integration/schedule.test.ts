@@ -190,11 +190,11 @@ describe("Schedule (integration)", () => {
 	});
 
 	//=========================================================
-	// Dropped-edge dev warnings (issue #432)
+	// Dropped-edge dev warnings
 	//=========================================================
 
 	/** A schedule wired to a capturing `onWarn` (the `ECSOptions.onWarn` seam —
-	 * the global logger it replaced is gone, M5). */
+	 * the global logger it replaced is gone). */
 	function makeCapturingSchedule(): { schedule: Schedule; logs: string[] } {
 		const logs: string[] = [];
 		return { schedule: new Schedule((message) => logs.push(message)), logs };
@@ -383,7 +383,7 @@ describe("Schedule (integration)", () => {
 		const ctx = new SystemContext(store);
 
 		// Register a stand-in component so the destroyer system has something
-		// to list in `despawns` — Phase B's `checkDestroy()` requires that
+		// to list in `despawns` — the access check's `checkDestroy()` requires that
 		// destroyEntity callers declare a non-empty despawn set, even when
 		// the actual entity has no components attached.
 		const Anything = store.registerComponent({} as Record<string, never>);
