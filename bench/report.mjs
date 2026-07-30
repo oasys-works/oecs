@@ -404,7 +404,7 @@ const html = `<title>oecs — what the optimisation pass bought</title>
       <span><b>26</b> benchmarks</span>
       <span><b>11</b> paired rounds, process-isolated</span>
       <span>node 24 · darwin arm64</span>
-      <span>production build, <b>__DEV__=false</b></span>
+      <span>bundle of <code>src/</code>, <b>__DEV__=false</b> (the guards stay as branches)</span>
       <span>noise floor <b>±2.9%</b></span>
     </div>
   </header>

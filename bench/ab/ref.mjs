@@ -1,6 +1,11 @@
 /**
  * A comparison of the working tree with a git ref.
  *
+ * Both sides are the ARTIFACTS of the package. This tool builds each side with
+ * `scripts/build.mjs`, which is the build that makes the files for npm. Therefore
+ * the comparison shows the code of the released package. `dist.mjs` gives the
+ * reason that a bundle of `src/` is not sufficient.
+ *
  * Each measurement runs in its own child process, and `child.mjs` gives the
  * reason. The rounds change which variant starts first. Therefore the changes in
  * the CPU frequency and in the temperature are equal for both sides of a round.
@@ -45,10 +50,9 @@
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import url from "node:url";
-import { buildLib } from "../build.mjs";
+import { addWorktree, buildDist, removeWorktree } from "../dist.mjs";
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const benchDir = path.resolve(here, "..");
@@ -90,21 +94,29 @@ if (rounds % 2 !== 0) {
 }
 
 // ── build both variants once ───────────────────────────────────────────────
+// Each side is the ARTIFACT of the package, and it is not a bundle of `src/`.
+// `dist.mjs` gives the reason: a bundle from `build.mjs` keeps each development
+// guard as a branch that is always false, and the released package removes those
+// branches. The two builds go to different directories, because one build in a
+// checkout replaces the previous build in that checkout.
 const stamp = String(process.hrtime.bigint());
-const baseFile = path.join(outDir, `ab.base.${stamp}.mjs`);
-const workFile = path.join(outDir, `ab.work.${stamp}.mjs`);
+const baseDir = path.join(outDir, `ab.base.${stamp}`);
+const workDir = path.join(outDir, `ab.work.${stamp}`);
 
-await buildLib(workFile, { dev: false, from: root });
+const workFile = buildDist(root, workDir);
+let baseFile;
 if (nullRun) {
-	await buildLib(baseFile, { dev: false, from: root });
+	baseFile = buildDist(root, baseDir);
 } else {
-	const wt = path.join(os.tmpdir(), `oecs-ab-${ref.replace(/[^\w]/g, "_")}`);
-	if (fs.existsSync(wt)) {
-		execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: root, stdio: "ignore" });
+	// The worktree goes INSIDE this checkout, and thus the build finds
+	// `node_modules` in a parent directory. `dist.mjs` gives the full reason.
+	const wt = path.join(outDir, `ab.wt.${ref.replace(/[^\w]/g, "_")}`);
+	try {
+		addWorktree(ref, wt);
+		baseFile = buildDist(wt, baseDir);
+	} finally {
+		removeWorktree(wt);
 	}
-	execFileSync("git", ["worktree", "add", "--detach", wt, ref], { cwd: root, stdio: "inherit" });
-	await buildLib(baseFile, { dev: false, from: wt });
-	execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: root, stdio: "ignore" });
 }
 
 // ── run ────────────────────────────────────────────────────────────────────
@@ -137,8 +149,10 @@ for (let r = 0; r < rounds; r++) {
 	process.stderr.write(`round ${r + 1}/${rounds}\n`);
 }
 
-fs.rmSync(baseFile, { force: true });
-fs.rmSync(workFile, { force: true });
+// Each side is a directory with the artifacts, and thus the delete removes the
+// directory. A delete of the entry file alone keeps the chunks beside it.
+fs.rmSync(baseDir, { recursive: true, force: true });
+fs.rmSync(workDir, { recursive: true, force: true });
 
 function push(m, k, v) {
 	if (!m.has(k)) m.set(k, []);

@@ -22,7 +22,9 @@
  *
  *   node bench/vs/probe-refcursor.mjs [bundle]
  */
-const bundle = process.argv[2] ?? "./.out/oecs.b.mjs";
+// The default is the artifact that `vs.mjs` makes. Run `vs.mjs` first, or give the
+// path of a different build.
+const bundle = process.argv[2] ?? "./.out/oecs.prod/index.js";
 const { ECS } = await import(bundle);
 const N = 10_000;
 let sink = 0;

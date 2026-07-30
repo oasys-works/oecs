@@ -1,7 +1,12 @@
 /**
- * A deterministic oracle for a simulation. It reduces an interaction net in
- * lockstep against a reference reducer, and it checks the result at each tick. This
- * file is the command line. The oracles are in `driver.mjs`.
+ * A deterministic oracle for a simulation. It reduces an interaction net in lockstep
+ * against a reference reducer, and it compares the two nets. This file is the command
+ * line, and the oracles are in `driver.mjs`.
+ *
+ * Two groups of layers run at a different rate. The cheap layers run at EACH tick:
+ * the totals, the channel of the events, and the change detection. The full
+ * comparison of each live agent runs at each VERIFICATION tick, which `--verify=N`
+ * selects. Use `--verify=1` to compare at each tick.
  *
  * THE REASON FOR AN INTERACTION NET. This workload has a purpose: each rewrite is
  * difficult for an archetype ECS. Each rewrite despawns two entities, and it spawns
@@ -22,12 +27,16 @@
  *
  *   1. SELF-CONSISTENCY (the ECS alone) — each port connects to a live port that
  *      connects back. The reverse index of the relations agrees with the forward
- *      links. The relation graph and the `u8` slot columns are two independent
+ *      links, `pairsOf` gives the same set of pairs, a DEAD entity holds no key in
+ *      that index, and `sourcesOfAny` agrees with the reads of one relation at a
+ *      time. The relation graph and the `u8` slot columns are two independent
  *      records of one fact, and they must agree. This layer needs no reference.
- *   2. LOCKSTEP (the ECS against the reference) — at each tick, and through a
- *      bijection of the ids, the driver compares the type of each agent, the links,
- *      `Fresh`, `Age`, the census and the number of loops. It finds the first tick
- *      that differs. With `--batch=1`, it finds the first rewrite that differs.
+ *   2. LOCKSTEP (the ECS against the reference) — at each VERIFICATION tick, and
+ *      through a bijection of the ids, the driver compares the type of each agent,
+ *      the links, `Fresh`, `Age`, `Touch.seq`, `Quar.count`, `Tainted`, the census
+ *      and the number of loops. It finds the first tick that differs. With
+ *      `--verify=1` each tick is a verification tick, and with `--batch=1` the driver
+ *      finds the first rewrite that differs.
  *   3. CANONICAL FORM (the ECS against the reference, with no bijection) — the
  *      driver gives new numbers to both nets by a breadth-first search from ROOT,
  *      and it then compares them as strings. Therefore an error in the map of the
@@ -41,7 +50,9 @@
  *      uses the part of the relation API that the exclusive ports of the net do not
  *      use: sets of targets on a multi relation, the exact set of entities that the
  *      `"delete"` cascade destroys, `"orphan"` with an exactly predicted reclaim
- *      count from `relations.compact()`, and the helpers that do a traversal.
+ *      count from `relations.compact()`, and the helpers that do a traversal. A chain
+ *      of records that is hundreds of levels deep covers `ancestorsOf` past depth 1,
+ *      truncation by `maxDepth`, and the order of a parent before its children.
  *   6. A CLOSED FORM — you can calculate the number of rewrites of the generator for
  *      an erasure tree by hand (`2^(depth+1)`). Therefore the two implementations
  *      can be incorrect together, and the run still fails. This is the only layer
@@ -54,13 +65,48 @@
  *      What confluence adds is a check of the SPEC against itself, which finds a
  *      fault that `spec.mjs` and `ref.mjs` hold together. `driver.mjs::confluence`
  *      gives the complete reason.
+ *   8. CHANGE DETECTION — the reference counts `Touch.seq` in its own `setLink`, so
+ *      the set of agents that a tick wrote comes from the model. An `onSet` observer
+ *      with the granularity of an entity must report exactly that set. A second
+ *      observer with the granularity of an archetype, and a `changed()` query, must
+ *      report each archetype that holds one of those agents. `changed(Age)` is exact
+ *      in both directions. Refer to `driver.mjs::changeCheck`.
+ *   9. THE IDLE TAIL — after a net reaches its normal form, the driver runs a few
+ *      ticks with no rewrite. Those ticks write no column, so the `onSet` observers
+ *      and `changed(Touch)` must go QUIET, and `changed(Age)` must stay busy. This is
+ *      the only layer that bounds the change detection from ABOVE.
+ *  10. THE PARTITION OF THE ROWS — the quarantine disables and enables agents through
+ *      the HOST WRITE SEAM, so `onDisable` and `onEnable` fire. A default query must
+ *      not show a disabled row, and the exact comparison of `Age.ticks` in layer 2 is
+ *      the proof of it.
+ *  11. THE EVENTS, THE RESOURCES AND THE SPARSE COMPONENTS — one event for each
+ *      rewrite, drained and compared with the plan; a resource that gates a system
+ *      through `runIfResourceEq` on a set of ticks that the driver picks; and a sparse
+ *      component whose membership rule the reference also holds.
+ *  12. THE VERBS OF A QUERY — `withRelation` and `withoutRelation` against the arity
+ *      of the ports, `optional` against the agents that have no `Age` yet,
+ *      `singleEntity` against the one ROOT, `firstEntity` against the idle tail, and
+ *      `forEachUntil` against the count of the archetypes that `forEach` gives. Each
+ *      one reads a fact that the reference already holds.
+ *  13. `ctx.markChanged` — a mark records a row for the per-entity `onSet` observer,
+ *      and it makes no archetype changed. The idle tail is where that difference is
+ *      sharp: a mark is the only reason for a report there.
+ *  14. `ctx.removeRelation` AND `ctx.hasRelation` — one system removes one `Produced`
+ *      pair on each verification tick, and the model applies the same removal. A port
+ *      of the net is exclusive, so a rewrite replaces its target instead.
  *
- * `mutants.mjs` shows that this tool is necessary. It puts fourteen known ECS bugs
- * into a built bundle, and it requires the oracle to find each one. It also reports
- * how many of them an ORACLE layer found, and how many an engine error found first.
+ * `surface.mjs` holds 15 more probes, for the parts of the API that a net which must
+ * keep its meaning cannot reach: a cycle in a relation, a named error, a replay into a
+ * second world, the batch paths, the combinators for a run condition, the explicit
+ * removal of a relation, the cursors, the immediate toggle from the host, the refusal
+ * of a damaged snapshot, and the immediate component writes of the host.
+ *
+ * `mutants.mjs` shows that this tool is necessary. It puts 35 known ECS bugs into a
+ * built bundle, and it requires the oracle to find each one. It also reports how many
+ * of them an ORACLE layer found, and how many an engine error found first.
  *
  * Usage:
- *   node bench/net-oracle/run.mjs                      # curated suite (~15s)
+ *   node bench/net-oracle/run.mjs                      # the curated suite, a short run
  *   node bench/net-oracle/run.mjs --soak               # long runs, millions of rewrites
  *   node bench/net-oracle/run.mjs --net=erase:14 --batch=64
  *   node bench/net-oracle/run.mjs --net=random:1,30,18,20 --steps=2000000 --verify=200
@@ -79,8 +125,15 @@
  *   --epoch=N      ticks per epoch (default 8)
  *   --retain=N     epochs retained before pruning cascades (default 4)
  *   --compact=N    relations.compact() check every N ticks (default 16; 0 to disable)
+ *   --float        a world with NO determinism and an `f64` mirror column. That is the
+ *                  only arm that can hold a float column, and it gives up `stateHash`,
+ *                  `capture` and `restore`, which all need determinism.
+ *   --sab          put the column store on a `SharedArrayBuffer`. That is the opt-in
+ *                  profile that a worker or a WASM compute backend needs.
+ *   --record       log each host command, and check the log's round trip through JSON.
  *   --lib=PATH     use an already-built bundle (how `mutants.mjs` injects bugs)
  *   --prod         build with __DEV__=false (default is dev: guards on)
+ *   --surface      run the API-surface probes alone, and no simulation
  *   --quiet        less per-case detail
  *
  * THE DEFAULT BUILD IS A DEVELOPMENT BUILD, and the released package is not. A
@@ -95,6 +148,7 @@ import url from "node:url";
 import { buildLib } from "../build.mjs";
 import { netFromArg, assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
 import { Divergence, Pressure, confluence, fail, lockstep, report, runCase } from "./driver.mjs";
+import { runSurface } from "./surface.mjs";
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -117,6 +171,9 @@ const OPT = {
 	// Provenance layer: `--prov=0` omits it entirely (a leaner, faster net-only run).
 	prov: num("prov", 1) === 0 ? null : { epochEvery: num("epoch", 8), retain: num("retain", 4) },
 	compactEvery: num("compact", 16),
+	float: argv.includes("--float"),
+	sab: argv.includes("--sab"),
+	record: argv.includes("--record"),
 };
 // Soak cases carry their own step budgets; an explicit `--steps` overrides them
 // all, but the default must not silently cap a soak at the suite's 200k.
@@ -141,11 +198,20 @@ const t0 = process.hrtime.bigint();
 let cases = 0;
 
 try {
-	if (OPT.net !== null) {
+	if (argv.includes("--surface")) {
+		// The probes alone. `mutants.mjs` needs this arm. Each case of its battery names
+		// a `--net=`, which takes the branch below. Therefore the battery could not
+		// reach the probes, and no mutant could show that a probe catches a fault.
+		console.log(`net-oracle surface (${OPT.prod ? "prod" : "dev"} build)`);
+		const surface = runSurface(lib, { quiet: OPT.quiet });
+		console.log(`  ${surface.probes} probes, ${surface.checks} checks`);
+		cases = surface.probes;
+	} else if (OPT.net !== null) {
 		// ── single explicit case ────────────────────────────────────────────
 		const spec = netFromArg(OPT.net, OPT.seed);
 		console.log(`net-oracle: ${spec.name}  seed=${OPT.seed} batch=${OPT.batch} ` +
-			`steps=${OPT.steps} verify=${OPT.verify} snap=${OPT.snap} ${OPT.prod ? "prod" : "dev"}`);
+			`steps=${OPT.steps} verify=${OPT.verify} snap=${OPT.snap} ${OPT.prod ? "prod" : "dev"}` +
+			`${OPT.float ? " f64/no-determinism" : ""}${OPT.sab ? " sab" : ""}${OPT.record ? " record" : ""}`);
 		const stats = lockstep(lib, spec, {
 			seed: OPT.seed,
 			batch: OPT.batch,
@@ -155,6 +221,9 @@ try {
 			label: spec.name,
 			prov: OPT.prov,
 			compactEvery: OPT.compactEvery,
+			float: OPT.float,
+			sab: OPT.sab,
+			record: OPT.record,
 		});
 		stats.batch = OPT.batch;
 		report(spec.name, stats);
@@ -223,7 +292,10 @@ try {
 			pressure.absorb(spec, stats);
 			cases++;
 		}
-		pressure.assert().report();
+		// A soak measures DURATION, and it builds none of the arms of the suite.
+		// Therefore the floors for those arms do not apply to it. Refer to
+		// `Pressure.assert`.
+		pressure.assert("soak").report();
 	} else {
 		// ── curated suite ───────────────────────────────────────────────────
 		console.log(`net-oracle suite (${OPT.prod ? "prod" : "dev"} build)`);
@@ -330,6 +402,53 @@ try {
 			);
 			cases++;
 		}
+
+		// 5. The arms for the profile. Each one runs the SAME oracle over a different
+		//    world, so the layers above cover the profile and not one call of it.
+		console.log(`\n[5] profiles — the f64 arm, the SharedArrayBuffer arm, and the command log`);
+		for (const arm of [
+			// A world with no determinism, and an `f64` mirror column. A deterministic
+			// world rejects a float column, so this is the only arm that covers one. It
+			// gives up `stateHash`, `capture` and `restore`, which all need determinism,
+			// so `snapEvery` is 0 here.
+			{ label: "f64 / no determinism", spec: dupTree(6), float: true, snap: 0 },
+			{ label: "f64 / churn", spec: randomNet(21, 24, 14, 16), float: true, snap: 0, steps: 4000 },
+			// The opt-in `SharedArrayBuffer` backing, with every layer on.
+			{ label: "SharedArrayBuffer", spec: dupTree(6), sab: true, snap: 8 },
+			{ label: "SharedArrayBuffer / churn", spec: randomNet(22, 24, 14, 16), sab: true, snap: 16, steps: 4000 },
+			// The recorder for the host commands. It keeps the complete stream, so this
+			// arm is small, and `commandLogCheck` reads it at the end.
+			{ label: "host command log", spec: erasureTree(6), record: true, snap: 8 },
+		]) {
+			const spec = assertNetSpecValid(arm.spec);
+			const steps = Math.min(OPT.steps, arm.steps ?? OPT.steps);
+			const stats = runCase(lib, spec, {
+				seed: OPT.seed,
+				label: `${arm.label} ${spec.name}`,
+				maxBatch: OPT.batch,
+				verifyEvery: 2,
+				snapEvery: arm.snap,
+				steps,
+				prov: OPT.prov,
+				compactEvery: OPT.compactEvery,
+				float: arm.float === true,
+				sab: arm.sab === true,
+				record: arm.record === true,
+			});
+			report(arm.label, stats);
+			pressure.absorb(spec, stats);
+			cases++;
+		}
+
+		// 6. The probes for the API surface. Each one is small, and each one has an
+		//    exact expected value. They cover the parts of the API that a net which
+		//    must keep its meaning cannot reach: a cycle in a relation, a named error,
+		//    a replay into a second world, the batch paths, and the combinators for a
+		//    run condition. `surface.mjs` gives the complete reason.
+		console.log(`\n[6] the API surface — the parts that the simulation cannot reach`);
+		const surface = runSurface(lib, { quiet: OPT.quiet });
+		console.log(`  ${surface.probes} probes, ${surface.checks} checks`);
+		cases += surface.probes;
 
 		pressure.assert().report();
 	}

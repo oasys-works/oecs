@@ -161,10 +161,12 @@ export type {
 export { FrameStepper } from "./core/ecs";
 export type { FrameStepperOptions } from "./core/ecs";
 
-// World resume — `ECSRestoreError` is thrown by `ECS.restoreInto`;
-// `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
-// `StoreRestoreError` is the dense-half failure `restoreInto` can surface —
-// exported so the failure mode is nameable/catchable.
+// World resume — `ecs.snapshots.restore(bytes)` throws `ECSRestoreError`. That
+// call is `Store.restoreInto` behind the facade, and it mounts the combined
+// snapshot that `ecs.snapshots.capture()` makes: the dense columns, the sparse
+// stores with the relations, and the host bookkeeping. `ECS_SNAPSHOT_VERSION`
+// tags that framing. `StoreRestoreError` is the failure of the dense half, which
+// the same call can give. Both are exported, so a caller can name and catch them.
 export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./core/ecs";
 export { StoreRestoreError } from "./core/store";
 

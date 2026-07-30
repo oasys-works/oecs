@@ -31,6 +31,18 @@
  * model of the orphan policy possible. The orphan policy is *about* dead handles. A
  * model that recycled ids, as the ECS does, cannot find the difference between a dead
  * handle and a handle that it used again.
+ *
+ * The model also holds the CHAIN of the records inside each epoch. Each record points
+ * at the record before it in the same epoch, through the exclusive `PrevRec` relation.
+ * That chain has one level for each record of the epoch, so it is hundreds of levels
+ * deep. `InEpoch` is one level deep, and one level cannot test three things:
+ *
+ *   - `ancestorsOf` and `rootOf` over a chain with more than one edge;
+ *   - truncation of a walk by `maxDepth`;
+ *   - the promise that a walk gives a parent BEFORE its children. A parent in the
+ *     `InEpoch` tree is an `Epoch` entity, and the query selects `Record` entities.
+ *     Therefore no parent is in the result set, and there is nothing to order. In the
+ *     `PrevRec` chain a parent and a child are both records, so the order is checkable.
  */
 
 export class RefProv {
@@ -46,6 +58,10 @@ export class RefProv {
 		/** serial -> { rule, epoch, produced: Set<refAgentId> } */
 		this.records = new Map();
 		this.recordsByEpoch = new Map(); // epochIndex -> Set<serial>
+		/** epochIndex -> serial[], in the order that the epoch made them. This is the
+		 * chain that `PrevRec` makes in the ECS: element 0 is the root of the chain,
+		 * and element `d` is at depth `d`. */
+		this.chainByEpoch = new Map();
 		this.producedBy = new Map(); // refAgentId -> Set<serial>
 		this.nextRecord = 0;
 		/** Dead orphan targets whose reverse-index key has already been reclaimed.
@@ -59,6 +75,9 @@ export class RefProv {
 			compactReclaimed: 0,
 			maxLiveRecords: 0,
 			maxProducedSet: 0,
+			/** The deepest chain of records that a run made. A walk over one level
+			 * proves nothing about `maxDepth`, so the floor for non-vacuity reads this. */
+			maxChainDepth: 0,
 		};
 	}
 
@@ -87,6 +106,9 @@ export class RefProv {
 				for (const serial of [...victims]) this._dropRecord(serial);
 				this.recordsByEpoch.delete(old);
 			}
+			// The complete chain of that epoch dies with the epoch, because the cascade
+			// destroys each of its records.
+			this.chainByEpoch.delete(old);
 		}
 		return { created: idx, pruned };
 	}
@@ -127,6 +149,15 @@ export class RefProv {
 			this.recordsByEpoch.set(this.currentEpoch, byE);
 		}
 		byE.add(serial);
+		// Extend the chain of this epoch. The ECS makes the same chain with `PrevRec`,
+		// where the new record points at the record before it.
+		let chain = this.chainByEpoch.get(this.currentEpoch);
+		if (chain === undefined) {
+			chain = [];
+			this.chainByEpoch.set(this.currentEpoch, chain);
+		}
+		chain.push(serial);
+		if (chain.length > this.stats.maxChainDepth) this.stats.maxChainDepth = chain.length;
 		this.stats.recordsCreated++;
 		if (set.size > this.stats.maxProducedSet) this.stats.maxProducedSet = set.size;
 		if (this.records.size > this.stats.maxLiveRecords) {
@@ -141,6 +172,26 @@ export class RefProv {
 	 * *source* and survives; it is the ECS's job to shrink its set, and nothing the
 	 * record itself does causes it.
 	 */
+	/**
+	 * Remove one `(record, agent)` pair from a `Produced` set, because a SYSTEM
+	 * called `ctx.removeRelation` for it.
+	 *
+	 * Each other change to this set comes from the `"clear"` policy, which runs when
+	 * a produced agent dies. This one comes from the source side, and the target
+	 * stays alive. Therefore it is a different path, and `world.mjs` has no cover for
+	 * it in the net.
+	 */
+	unlinkProduced(serial, refId) {
+		const rec = this.records.get(serial);
+		if (rec === undefined) return;
+		rec.produced.delete(refId);
+		const by = this.producedBy.get(refId);
+		if (by !== undefined) {
+			by.delete(serial);
+			if (by.size === 0) this.producedBy.delete(refId);
+		}
+	}
+
 	onAgentDeath(refId) {
 		const by = this.producedBy.get(refId);
 		if (by === undefined) return;
@@ -200,9 +251,19 @@ export class RefProv {
 		this.compacted.clear();
 	}
 
-	/** `cascadeOf(epoch, InEpoch)` should be the epoch followed by its records —
-	 * breadth-first, parents before children. Chains here are depth 1. */
-	expectedCascade(epochIndex) {
-		return this.recordsIn(epochIndex);
+	/**
+	 * The chain of records of each LIVE epoch, in order from the root.
+	 *
+	 * Element 0 of a chain is the root, and element `d` is at depth `d` in the
+	 * `PrevRec` tree. A chain holds live records alone, and the cascade destroys a
+	 * complete chain at one time, so no chain has a hole in it.
+	 */
+	liveChains() {
+		const out = [];
+		for (const idx of this.liveEpochs) {
+			const chain = this.chainByEpoch.get(idx);
+			if (chain !== undefined && chain.length > 0) out.push(chain);
+		}
+		return out;
 	}
 }

@@ -22,6 +22,13 @@
  * only because of the field that this probe reads. The probe gives the limit that any
  * method from a name to an ordinal can reach.
  *
+ * This probe uses `../build.mjs`, and thus it does NOT measure the artifacts of the
+ * package. It must find a text in the compiled code and replace it, which only the
+ * form of `src/` makes possible. Therefore both sides keep the development guards as
+ * branches, and the difference between the two sides is still the cost of the
+ * lookup. But the absolute values are not the values of the released package. `vs/`
+ * and `ab/` measure the artifacts, and `../README.md` gives the table.
+ *
  *   node bench/vs/probe-lookupcost.mjs [repoRoot]
  */
 import fs from "node:fs";

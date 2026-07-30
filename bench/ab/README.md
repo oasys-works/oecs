@@ -7,21 +7,35 @@ this tool only for local work. It is not a part of the package.
 | file | function |
 | --- | --- |
 | `ref.mjs` | The old code is a git ref. The driver puts the ref into a temporary worktree. |
-| `bundles.mjs` | The old code is a bundle that you made before the change. |
-| `child.mjs` | Measures one bundle in a new process. Both drivers start this program. |
+| `bundles.mjs` | The old code is a build that you made before the change. |
+| `child.mjs` | Measures one build in a new process. Both drivers start this program. |
 
-The cases come from `../suite.mjs`. `../run.mjs` uses the same cases. But the two
-tools do not report the same STATISTIC, and you must not compare their `ns`
-columns directly:
+Both sides are the ARTIFACTS of the package. `ref.mjs` starts `scripts/build.mjs`
+for each side, and thus each side is the file that npm gives to a user. The
+worktree of the ref goes into `bench/.out/`, and not into the temporary directory
+of the system, because the build then finds `node_modules` in a parent directory.
+`../dist.mjs` gives the full reason.
 
-| tool | the `ns` column |
-| --- | --- |
-| `../run.mjs` | the BEST of 9 samples, in one process |
-| `ref.mjs`, `bundles.mjs` | the MEDIAN across the rounds of that best value |
+Give `bundles.mjs` the ENTRY file of a build, and not a single-file bundle from
+`../build.mjs`. The entry file imports the chunks beside it, and therefore each
+side must keep its own directory:
+
+```
+node bench/ab/bundles.mjs old/dist/index.js new/dist/index.js
+```
+
+The cases come from `../suite.mjs`. `../run.mjs` uses the same cases, but you must
+not compare the `ns` column of `run.mjs` with the `ns` column of this tool. There
+are two reasons, and each one is sufficient:
+
+| tool | the build | the `ns` column |
+| --- | --- | --- |
+| `../run.mjs` | a bundle of `src/`, which keeps the guards as branches | the BEST of 9 samples, in one process |
+| `ref.mjs`, `bundles.mjs` | the artifacts, which have no guards | the MEDIAN across the rounds of that best value |
 
 The best value has the least noise, because noise only adds time. A median across
-the rounds is higher than a best value, and it is more stable. Use `run.mjs` for
-the cost of one operation. Use this tool for the difference between two builds.
+the rounds is higher than a best value, and it is more stable. Use this tool for
+the difference between two builds, and for a claim about the package.
 
 ## How to make a comparison
 

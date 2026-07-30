@@ -35,10 +35,17 @@ a dependency of this directory, but it is not an entry in the table — refer to
 note about thyseus below.
 
 The tool uses each other library as its author released it, and it makes no
-changes. The libraries come from `bench/vs/node_modules`. The tool makes a bundle
-of oecs from `src/` in the worktree, with `__DEV__ = false`. Thus the development
-guards are not in the measured code, because the released package also removes
-them.
+changes. The libraries come from `bench/vs/node_modules`. For oecs, the tool starts
+`scripts/build.mjs`, which is the build of the package, and it measures the artifact
+that npm gives to a user. Thus the development guards are not in the measured code,
+and both sides of the comparison have the form of a released build.
+
+An earlier method made a bundle of `src/` with esbuild. That bundle gave `__DEV__`
+the value of the release, but it kept each guard as a branch that is always false.
+Therefore the guards were in the measured code, and they made each function larger.
+The table below comes from a run with the artifacts, and the position of oecs in
+each row is the same as the position that the earlier method gave. The guards
+changed the values, but they did not change the order.
 
 ## Results
 

@@ -14,6 +14,11 @@ export default defineConfig({
     // a second full copy of the suite, so an unscoped run reports roughly twice
     // the file count and validates another branch alongside this one. A release
     // gate has to count this tree and nothing else.
+    //
+    // `bench/` is DELIBERATELY out of this list. It is a local tool, and it is not
+    // a part of the package or of the gate. `bench/net-oracle/oracle.test.mjs` is a
+    // vitest file, so a person can run it by name, and this list keeps it out of
+    // `pnpm test`. `bench/net-oracle/README.md` gives the command.
     include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     alias: Object.fromEntries(
       fs

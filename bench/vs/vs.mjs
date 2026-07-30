@@ -63,7 +63,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
-import { buildLib } from "../build.mjs";
+import { buildDist } from "../dist.mjs";
 import { CASES, IMPLS } from "./cases.mjs";
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
@@ -104,18 +104,20 @@ if (ROUNDS % LIBS.length !== 0) {
 	);
 }
 
-// The oecs bundle is built once, with production semantics (__DEV__ = false) so
-// the dev-guard code the package ships DCE'd is not on the measured path. The
-// competitors are consumed as published — their npm builds, unmodified.
-// `--from <repoRoot>` builds oecs from another checkout's `src/` — how a dirty
-// working tree elsewhere gets measured without copying it in. Defaults to the
-// worktree this script lives in.
+// oecs is built once, and the tool measures the ARTIFACT of the package. Each
+// other library comes from `node_modules` as its author released it. Therefore
+// both sides of the comparison are a released build, and no library gets an
+// advantage from the form of its code. `dist.mjs` gives the reason that a bundle
+// of `src/` is not the same as the artifact.
+//
+// `--from <repoRoot>` builds oecs from a different checkout. Thus a dirty working
+// tree in another directory can be measured, and a copy into this directory is not
+// necessary. The default is the checkout that holds this program.
 const outDir = path.join(here, ".out");
 fs.mkdirSync(outDir, { recursive: true });
 const FROM = path.resolve(flag("from", path.resolve(here, "../..")));
 const tag = flag("tag", "prod");
-const bundle = path.join(outDir, `oecs.${tag}.mjs`);
-await buildLib(bundle, { dev: false, from: FROM });
+const bundle = buildDist(FROM, path.join(outDir, `oecs.${tag}`));
 {
 	const v = JSON.parse(fs.readFileSync(path.join(FROM, "package.json"), "utf8")).version;
 	console.error(`oecs built from ${FROM} (package version ${v})`);

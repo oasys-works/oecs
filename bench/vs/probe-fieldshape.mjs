@@ -29,7 +29,9 @@
  *
  *   node bench/vs/probe-fieldshape.mjs [bundle]
  */
-const bundle = process.argv[2] ?? "./.out/oecs.base.mjs";
+// The default is the artifact that `vs.mjs` makes. Run `vs.mjs` first, or give the
+// path of a different build.
+const bundle = process.argv[2] ?? "./.out/oecs.prod/index.js";
 const { ECS } = await import(bundle);
 const K = 24; // components
 const PER = 2_000; // entities per component

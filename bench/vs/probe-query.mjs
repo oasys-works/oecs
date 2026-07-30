@@ -102,7 +102,9 @@ function time(label, fn) {
 
 // ── oecs ────────────────────────────────────────────────────────────────────
 {
-	const { ECS } = await import(process.argv[2] ?? "./.out/oecs.prod.mjs");
+	// The default is the artifact that `vs.mjs` makes. Run `vs.mjs` first, or give
+	// the path of a different build.
+	const { ECS } = await import(process.argv[2] ?? "./.out/oecs.prod/index.js");
 	const ecs = new ECS({ memory: { columnCapacity: Math.round(N * 1.2) } });
 	const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 	const Vel = ecs.registerComponent({ vx: "f64", vy: "f64" });

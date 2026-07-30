@@ -1,9 +1,11 @@
 /**
  * The suite of benchmark cases for oecs. Use it only for local work.
  *
- * The suite runs against a bundle with the semantics of the released package
- * (__DEV__ = false). Therefore the values show the hot path of the released
- * package, and not the build with the development guards.
+ * `ab/` runs this suite against the ARTIFACTS of the package, and thus the values
+ * of `ab/` show the code of the released package. `run.mjs` runs the same suite
+ * against a bundle of `src/` from `build.mjs`, which keeps the development guards
+ * as branches. Therefore do not compare a value from `run.mjs` with a value from
+ * `ab/`. `bench/README.md` gives the full table.
  *
  *   node bench/run.mjs                 # all the cases
  *   node bench/run.mjs iter            # select the cases by a part of the name
