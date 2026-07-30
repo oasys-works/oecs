@@ -104,7 +104,8 @@ Read these pages in this order, to get a model that you can use.
    and the frame loop
 6. [resources](./resources.md) — typed global values
 7. [events](./events.md) — send-and-forget messages, which the ECS clears in each frame
-8. [refs](./refs.md) — cached field accessors for one entity (`ctx.ref` and `ctx.refRead`)
+8. [refs](./refs.md) — cached field accessors for one entity (`ctx.ref` and `ctx.refRead`), and
+   cursors, which you can use again for a different entity (`ctx.cursor` and `ctx.cursorRead`)
 9. [change detection](./change-detection.md) — the change ticks and the `changed()` queries
 10. [observers](./observers.md) — `onAdd`, `onRemove`, `onSet`, `onEnable`, and `onDisable`
 11. [relations](./relations.md) — `(relation, target)` pairs, `ChildOf` and `IsA`, wildcards, and

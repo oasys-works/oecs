@@ -168,6 +168,13 @@ ecs.getField(e, Pos, "x"); // about 1.667
 - **Cached refs** — `ctx.ref(def, e)` gives you a writable ref, and it sets the change tick.
   `ctx.refRead(def, e)` gives you a read-only ref. A ref finds the archetype, the row, and the
   columns one time. Then you can write `pos.x += vel.vx * dt`.
+- **Cursors** — `ctx.cursor(def)` gives you an accessor that you can use again for a different
+  entity. `ctx.cursorRead(def)` gives you the read-only form. The same two functions are on `ecs`.
+  You make a cursor one time. Then each `at(entity)` call moves it to a different entity. Use a
+  cursor when you read or write many entities from a list of ids. The loop then makes no ref for
+  each entity, and the cursor finds the position of each field one time. Each `at` call finds the
+  archetype and the row again. Thus a structural change between two `at` calls cannot make a
+  cursor read a different entity.
 
 **Determinism, storage of state, and integration**
 
