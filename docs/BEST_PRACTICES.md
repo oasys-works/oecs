@@ -959,6 +959,23 @@ new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (wor
 > capacity, the reservation of the entity index, the byte limit, and the words of a limit error in
 > your terms. A value of `entities` more than 2^20 throws.
 
+### Pin `columnCapacity` when you know your peak
+
+A column doubles when it is full. The old block stays in the buffer, and the engine touched those
+pages. So each growth leaves resident memory behind.
+
+Set `columnCapacity` to the peak number of rows in one archetype. Then no column doubles.
+
+```ts
+new ECS({
+  memory: { budget: { entities: 1_000_000 }, columnCapacity: 1_048_576 }
+});
+```
+
+The measurement uses 1,000,000 entities of 7 `f32` fields. Without the pin it is 86.5 bytes for
+each entity. With the pin it is 57.1 bytes. That is a saving of about one third. The speed did not
+change. Refer to [memory](./api/memory.md#set-the-initial-size-of-each-column) for the full table.
+
 The byte limit is an **absolute limit**. If you exceed it, it throws `STORE_CAP_EXCEEDED`, and
 there is no alternative that grows past it. Also, the engine reserves the region of the entity index
 immediately at construction, which is about 12 MiB at the default limit. So a limit that

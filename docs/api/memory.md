@@ -42,6 +42,58 @@ interface EntityBudget {
 > about a limit in your terms ("3× the declared budget — runaway entity creation upstream?"). A
 > value of `entities` more than 2^20 (about 1 million) throws `INVALID_MEMORY_OPTIONS`.
 
+## Set the initial size of each column
+
+A column starts at `columnCapacity` rows. It grows when it is full. To grow, the column doubles.
+
+A doubled column takes new space in the buffer. **The engine does not give the old space back.**
+The engine touched those pages. So they stay resident. The `memoryPlan` calls this
+"double+holes headroom".
+
+The result is simple. A column that grows many times holds more resident memory than the data
+needs. A column that never grows does not.
+
+So set `columnCapacity` to your peak number of rows in one archetype. Then no column doubles.
+
+```ts
+// A world that holds up to 1,000,000 entities in a few archetypes.
+new ECS({
+  memory: { budget: { entities: 1_000_000 }, columnCapacity: 1_048_576 }
+});
+```
+
+### What this saves
+
+The measurement uses 1,000,000 entities. Each entity has 7 `f32` fields. The computed layout is
+32 bytes for each entity. The numbers below are resident memory, on one machine.
+
+| Sizing | Resident | Bytes for each entity |
+| --- | --- | --- |
+| default | 82.5 MiB | 86.5 |
+| `{ budget: { entities: 1_000_000 } }` | 78.9 MiB | 82.8 |
+| the same budget, and a pinned `columnCapacity` | **54.4 MiB** | **57.1** |
+
+A pinned `columnCapacity` saves about one third of the resident memory. The speed does not change.
+The physics step measured the same in all three rows.
+
+The remainder above 32 bytes has two parts. The first part is the entity index. The second part is
+the spare rows in each column. The entity index reserves the full 2^20 slots of the id space. That
+cost is fixed. So it is small for each entity in a large world. It is large for each entity in a
+small world.
+
+> [!TIP]
+> Two costs pull in opposite directions. A large `columnCapacity` reserves rows that you may never
+> use. A small `columnCapacity` leaves an abandoned block after each growth. Set the value to your
+> peak, and you pay neither cost.
+
+> [!NOTE]
+> `bytesPerEntity` in `EntityBudget` is 64 by default. The budget uses it to derive the byte limit.
+> Add the widths of the fields of your components. If the total is much less than 64, give the true
+> value. The reservation then becomes smaller.
+
+Use `ecs.memoryPlan` to see what the engine derived, and why. Refer to
+[How to examine the plan](#how-to-examine-the-plan).
+
 ## Storage profiles
 
 There are three kinds of storage above one core. The archetypes are the same, and the

@@ -232,6 +232,51 @@ function validateMaxFixedSteps(value: number): number {
 	return value;
 }
 
+/**
+ * DEV-only: reject a value that is not a template.
+ *
+ * `spawn` and `spawnMany` take a template from `ECS.template(...)`. Two
+ * mistakes are usual. The caller gives a component definition (`ecs.spawn(Pos)`).
+ * Or the caller gives a bundle (`ecs.spawn(Pos({ x: 0 }))`). The types reject
+ * both. An untyped call site does not.
+ *
+ * Without this check the value goes to the store. The store then reads
+ * `template.archetypeId`, which is `undefined`. The failure is a `TypeError`
+ * about `materializesRows`, from a frame deep in the store. That error names
+ * the wrong place, and it does not tell the caller what to do.
+ *
+ * A template is a plain object with a numeric `archetypeId`. A component
+ * definition is a function. A bundle is an object with `values` and no
+ * `archetypeId`. The test below separates all three, and it names the
+ * alternative for each one.
+ */
+function assertTemplate(value: unknown, op: string): void {
+	if (typeof value === "object" && value !== null && typeof (value as Template).archetypeId === "number") {
+		return;
+	}
+	const isDef = typeof value === "function";
+	const isBundle =
+		typeof value === "object" && value !== null && "values" in (value as Record<string, unknown>);
+	const got = isDef
+		? "a component definition"
+		: isBundle
+			? "a bundle"
+			: Array.isArray(value)
+				? "an array"
+				: `a ${typeof value}`;
+	const fix =
+		isDef || isBundle
+			? `Use \`ecs.spawnBundle(...)\` for components with no template, or build a template first with \`ecs.template(Pos({ x: 0 }), Vel)\`.`
+			: Array.isArray(value)
+				? `\`ecs.template\` takes callable bundles, not an array of entries. Write \`ecs.template(Pos({ x: 0 }), Vel)\`.`
+				: `Build the template with \`ecs.template(...)\` first.`;
+	throw new ECSError(
+		ECS_ERROR.INVALID_TEMPLATE,
+		`${op}: expected a template from ecs.template(...), but got ${got}. ${fix}`,
+		{ op, got }
+	);
+}
+
 export class ECS implements QueryResolver {
 	private readonly store: Store;
 	private readonly schedule: Schedule;
@@ -579,12 +624,19 @@ export class ECS implements QueryResolver {
 	 * applying optional flat per-field overrides on top of the template
 	 * defaults. Inside a system use `ctx.commands.spawn(...)` instead.
 	 *
+	 * `spawn` takes a template. It does not take a component definition, and it
+	 * does not take a bundle. For components with no template, use `spawnBundle`.
+	 *
 	 * @example
 	 * const e = ecs.spawn();
 	 * ecs.addComponent(e, Pos, { x: 0, y: 0 });
 	 *
-	 * const Bullet = ecs.template([{ def: Pos, values: { x: 0, y: 0 } }]);
+	 * // Build a template from callable bundles.
+	 * const Bullet = ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 0 }));
 	 * const b = ecs.spawn(Bullet, { x: 5 }); // override a template default
+	 *
+	 * // One entity, components given directly, no template.
+	 * const c = ecs.spawnBundle(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 0 }));
 	 */
 	public spawn(): EntityID;
 	public spawn<Defs extends readonly ComponentDef[]>(
@@ -595,11 +647,13 @@ export class ECS implements QueryResolver {
 		template?: Template<Defs>,
 		overrides?: TemplateOverrides<Defs>
 	): EntityID {
-		if (DEV)
+		if (DEV) {
 			this._assertHostMutationOutsideSystem(
 				"spawn",
 				"ctx.commands.spawn (deferred to the phase flush)"
 			);
+			if (template !== undefined) assertTemplate(template, "spawn");
+		}
 		if (template === undefined) return this.store.createEntity();
 		return this.store.spawn(template, overrides);
 	}
@@ -649,11 +703,13 @@ export class ECS implements QueryResolver {
 		count: number,
 		overrides?: TemplateOverrides<Defs>
 	): EntityID[] {
-		if (DEV)
+		if (DEV) {
 			this._assertHostMutationOutsideSystem(
 				"spawnMany",
 				"ctx.commands.spawn (deferred to the phase flush)"
 			);
+			assertTemplate(template, "spawnMany");
+		}
 		return this.store.spawnMany(template, count, overrides);
 	}
 
@@ -1418,6 +1474,20 @@ export class ECS implements QueryResolver {
 	public template<Items extends readonly BundleOrDef[]>(
 		...items: StrictBundles<Items>
 	): Template<DefsOf<Items>> {
+		// DEV-only: reject the old array-of-entries call. Before the 0.5
+		// callable-bundle change the shape was `template([{ def, values }])`, and
+		// that shape stayed in one JSDoc example after the change. An array reaches
+		// `resolveTemplate`, which reads `entries[0].def.id` and fails with a
+		// `TypeError` about `id`. That error names the store, not the caller.
+		if (DEV && items.length === 1 && Array.isArray(items[0])) {
+			throw new ECSError(
+				ECS_ERROR.INVALID_TEMPLATE,
+				`template: got an array. This is the pre-0.5 shape ` +
+					`\`template([{ def: Pos, values: { x: 0 } }])\`, which no longer works. ` +
+					`Pass callable bundles instead: \`template(Pos({ x: 0 }), Vel)\`.`,
+				{ op: "template" }
+			);
+		}
 		const entries: { def: ComponentDef; values: Readonly<Record<string, number>> }[] = [];
 		for (let i = 0; i < items.length; i++) {
 			const item = items[i] as BundleOrDef;

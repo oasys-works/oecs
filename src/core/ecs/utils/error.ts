@@ -59,7 +59,12 @@ export enum ECS_ERROR {
 	STORE_CAP_EXCEEDED = "STORE_CAP_EXCEEDED",
 	REGION_NOT_DECLARED = "REGION_NOT_DECLARED",
 	COMMAND_LOG_TAG_COLLISION = "COMMAND_LOG_TAG_COLLISION",
-	INVALID_FRAME_STEP = "INVALID_FRAME_STEP"
+	INVALID_FRAME_STEP = "INVALID_FRAME_STEP",
+	/** `spawn` or `spawnMany` got a value that is not a template. A component
+	 * definition and a bundle are the two usual mistakes. Dev-only. Without this
+	 * check, the value goes to the store. Then the store fails with a `TypeError`
+	 * about an internal field. That error names the wrong place. */
+	INVALID_TEMPLATE = "INVALID_TEMPLATE"
 }
 
 export class ECSError extends AppError {
