@@ -1180,24 +1180,34 @@ lower-level generic surface on the side of the store, and the connection in the 
 
 Source: `src/core/ecs/ecs_memory.ts`.
 
-`ECSMemoryOptions` is a union that a key discriminates. Select exactly one arm, or none:
+`ECSMemoryOptions` holds two questions that do not depend on each other, in two fields. Answer one,
+the other, or both:
 
-- `budget` derives the size from a number of entities;
-- `maxBytes` is an explicit byte limit on the heap;
-- `heap`, `shared`, and `wasm` select a storage type;
-- `allocator` takes your own allocator that operates in place.
+- **how big** — `entities` (with `archetypes` and `bytesPerEntity` to shape what it derives), or
+  `maxBytes` as an explicit byte limit, or both together;
+- **what holds the bytes** — `backing`, which is `"heap"`, `"shared"`, `{ wasm }`, or
+  `{ allocator }` for your own allocator that operates in place.
 
-`columnCapacity` sets the number of rows for each archetype, on any arm. `resolveECSMemory` turns
+Before 0.6 this was one union of five arms, so a caller could answer only one of the two questions.
+The `budget` arm and the `maxBytes` arm both selected the heap allocator themselves, which made "a
+budget of 50,000 entities on a shared backing" impossible to say. Two fields make every pair legal.
+
+`columnCapacity` sets the number of rows for each archetype, with any pair. `resolveECSMemory` turns
 the intention that you selected into a `ResolvedECSMemory` plan. That plan has the allocator, the
 column capacity, the reservation of the entity index, the byte limit, and a `derivation` trace that
 a person can read. `ecs.memoryPlan` exposes it.
 
-The **`budget` arm** is the one to select. It derives:
+**Give `entities` if you know it.** It derives:
 
 - the column capacity;
 - a reservation of the entity index, with 2× of extra space;
-- a byte limit of 3× the live memory, with a floor of 4 MiB;
+- a byte limit of 3× the live memory, with a floor of 4 MiB (unless `maxBytes` gives one);
 - the words of a limit error, in the terms of the caller.
+
+One derivation serves every backing. The reservation of the entity index comes from `entities`
+first, from the byte limit second, and from the default last, and it does so for each backing
+equally. Before 0.6 the `allocator` arm reserved the full identity space and ignored its limit
+hint, so a custom allocator with a limit below about 12.6 MiB could not build a world at all.
 
 A value of `entities` more than 2^20 throws `INVALID_MEMORY_OPTIONS`. The default, with no `memory`
 option, is a heap `ArrayBuffer` reserved **fixed, and not resizable, at the full limit**, where

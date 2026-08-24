@@ -135,12 +135,16 @@ export function growBufferInPlace(
  * true tail is the header `capacity` (the logical high-water; new columns land
  * in still-zero fixed-buffer space just past the last live column).
  *
- * A plain (non-shared) `ArrayBuffer` is uniquely the heap profile's fixed
- * reservation — every other in-place backing is a `SharedArrayBuffer`. Keying
- * off the backing keeps the SAB/wasm layouts byte-for-byte unchanged.
+ * The question is whether the allocator reserved the cap, NOT which buffer
+ * class it returned: `fixedSabAllocator` reserves a fixed `SharedArrayBuffer`
+ * and needs the header rule, while `growableSabAllocator` grows a
+ * `SharedArrayBuffer` to the live extent and needs the `byteLength` rule. So
+ * the allocator's `reservedAtCap` marker decides. The plain-`ArrayBuffer` test
+ * stays as the fallback for a store whose allocator predates the marker, which
+ * keeps the SAB and wasm layouts byte-for-byte unchanged.
  */
 export function tailCursorBytes(old: ColumnStoreInternal): number {
-	if (old.buffer instanceof ArrayBuffer) {
+	if (old._allocator.reservedAtCap === true || old.buffer instanceof ArrayBuffer) {
 		return old.view.getUint32(STORE_HEADER_OFFSETS.capacity, true);
 	}
 	return old.buffer.byteLength;

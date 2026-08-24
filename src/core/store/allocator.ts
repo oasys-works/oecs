@@ -66,6 +66,21 @@ export interface BufferAllocator {
 	 * `SharedArrayBuffer`. */
 	(bytes: number): ArrayBufferLike;
 	readonly isInPlace?: boolean;
+	/**
+	 * The allocator reserves the whole cap in one buffer at the first call, and
+	 * the buffer never grows.
+	 *
+	 * `byteLength` then holds the cap and not the used size, so the tail cursor
+	 * for a new column region must come from the header `capacity` instead. See
+	 * `tailCursorBytes`. An allocator that grows its buffer to the live extent
+	 * omits this marker, because for it `byteLength` IS the tail.
+	 *
+	 * This is a property of the allocator and not of the buffer class. The heap
+	 * profile reserves a fixed `ArrayBuffer`, and `fixedSabAllocator` reserves a
+	 * fixed `SharedArrayBuffer` for the same reason. Both need the same tail
+	 * rule.
+	 */
+	readonly reservedAtCap?: boolean;
 }
 
 /**
@@ -111,7 +126,7 @@ export class StoreCapExceededError extends Error {
  * doesn't expose `SharedArrayBuffer`. The fix is environment-level (the host
  * must serve the page cross-origin isolated, or be a runtime like Bun that
  * exposes SAB unconditionally) — OR choose the pure-TS heap profile
- * (`memory: { heap: {} }` / `heapArraybufferAllocator`), which needs no SAB
+ * (`memory: { backing: "heap" }` / `heapArraybufferAllocator`), which needs no SAB
  * and no cross-origin isolation. Lives on the allocator (not the store)
  * because the allocator is the only thing that constructs a SAB. */
 export class SabUnavailableError extends Error {
@@ -122,7 +137,7 @@ export class SabUnavailableError extends Error {
 				"In browsers this requires cross-origin isolation: serve the page with " +
 				"`Cross-Origin-Opener-Policy: same-origin` and " +
 				"`Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). " +
-				"Alternatively choose the pure-TS heap profile (`memory: { heap: {} }`), " +
+				'Alternatively choose the pure-TS heap profile (`memory: { backing: "heap" }`), ' +
 				"which is backed by a plain ArrayBuffer and needs no SAB / no COOP+COEP. " +
 				"In Bun/Node SAB is available unconditionally — if you see this there, the " +
 				"runtime is older than expected or the global was shadowed."
@@ -166,7 +181,10 @@ interface BufferStrategy {
 function makeGrowableAllocator(
 	label: string,
 	strategy: BufferStrategy,
-	maxBytes: number
+	maxBytes: number,
+	/** True when `create` reserves the whole cap and `growTo` never fires. See
+	 * `BufferAllocator.reservedAtCap`. */
+	reservedAtCap = false
 ): InPlaceBufferAllocator {
 	if (maxBytes <= 0 || !Number.isInteger(maxBytes)) {
 		throw new Error(`${label}: maxBytes must be a positive integer (got ${maxBytes})`);
@@ -203,6 +221,10 @@ function makeGrowableAllocator(
 	};
 	// `isInPlace` lets `extendColumnStore` detect the growable path.
 	Object.defineProperty(alloc, "isInPlace", { value: true, enumerable: true });
+	// `reservedAtCap` tells the tail cursor where the live extent ends. A
+	// reserved buffer holds the cap in its `byteLength`, so the header
+	// `capacity` is the tail instead.
+	Object.defineProperty(alloc, "reservedAtCap", { value: reservedAtCap, enumerable: true });
 	return alloc as InPlaceBufferAllocator;
 }
 
@@ -210,6 +232,19 @@ function makeGrowableAllocator(
  * Allocator that backs the SAB by a single growable `SharedArrayBuffer`
  * (created with `{ maxByteLength: maxBytes }`). First call allocates;
  * subsequent calls `.grow(bytes)` the existing buffer and return it.
+ *
+ * WARNING — JAVASCRIPTCORE PAYS FOR THE GROWTH. JavaScriptCore has no fast
+ * store path for a TypedArray view over a GROWABLE `SharedArrayBuffer`. A
+ * column read costs what a fixed buffer costs, but every column WRITE costs
+ * several times more. A system that writes a column in a loop is thus much
+ * slower here than the same system on the heap profile. The cost is per access
+ * and not per byte, so a small world pays the same multiple as a large one. V8
+ * shows no such difference at the time of measurement. Safari and Bun are
+ * JavaScriptCore.
+ *
+ * Use `fixedSabAllocator` if you need a shared buffer and your code runs on
+ * JavaScriptCore. It reserves the cap at construction and keeps the fast store
+ * path on both engine families. It gives up the growth, and nothing else.
  *
  * The `isInPlace` marker is set so `extendColumnStore` knows it can
  * reuse the buffer rather than allocating fresh and copying data —
@@ -357,7 +392,60 @@ export function heapArraybufferAllocator(
 				);
 			}
 		},
-		maxBytes
+		maxBytes,
+		true
+	);
+}
+
+/**
+ * Allocator that backs the store by a single **fixed (non-growable)
+ * `SharedArrayBuffer`** reserved at the full `maxBytes` cap up front. This is
+ * the shared profile without the growth, and it exists for one measured
+ * reason.
+ *
+ * WHY FIXED, NOT GROWABLE: JavaScriptCore has no fast store path for a
+ * TypedArray view over a **growable** `SharedArrayBuffer`. A column read there
+ * costs what a fixed buffer costs, but every column WRITE costs several times
+ * more, so an iteration-bound system that updates a column is far slower on
+ * JavaScriptCore than the same system on the heap profile. Safari and Bun are
+ * JavaScriptCore. V8 shows no such difference at the time of measurement, so
+ * this is one engine family paying and the other not. A fixed buffer restores
+ * the fast store path on both.
+ *
+ * This is `heapArraybufferAllocator` with a `SharedArrayBuffer` in place of the
+ * `ArrayBuffer`, and it keeps every property the shared profile needs: the
+ * buffer is shared, so a worker or a WASM module reads the same bytes, and it
+ * never moves, so views built over it stay valid. Growth still works the way
+ * the heap profile's does — the store relocates columns to the tail *within*
+ * the reserved buffer, and the tail comes from the header `capacity` because
+ * `reservedAtCap` says `byteLength` is the cap.
+ *
+ * The trade: the cap is reserved at construction instead of growing into. That
+ * is address space and not resident memory, the same as the heap profile's
+ * reservation.
+ */
+export function fixedSabAllocator(
+	maxBytes: number = 256 * 1024 * 1024
+): InPlaceBufferAllocator {
+	if (typeof SharedArrayBuffer === "undefined") throw new SabUnavailableError();
+	return makeGrowableAllocator(
+		"fixedSabAllocator",
+		{
+			// Reserve the whole cap as ONE fixed buffer, as the heap allocator
+			// does. `byteLength` (the current need) is ignored: the buffer never
+			// grows, so it must be born at the ceiling.
+			create: (_byteLength, maxByteLength) => new SharedArrayBuffer(maxByteLength),
+			// Unreachable for the same reason as the heap allocator's: the buffer
+			// is created at the cap, and a request past the cap throws first.
+			growTo: () => {
+				throw new Error(
+					"fixed_sab_allocator: the buffer is fixed at maxBytes and must never grow — " +
+						"growth relocates columns within the buffer, not the buffer itself"
+				);
+			}
+		},
+		maxBytes,
+		true
 	);
 }
 
@@ -365,6 +453,13 @@ export function heapArraybufferAllocator(
  * Allocator that backs the SAB by `memory.buffer` — i.e. makes the engine's
  * live SAB *be* a WASM module's `WebAssembly.Memory`. Grows the memory in
  * 64 KiB page increments when `bytes` exceeds the current buffer.
+ *
+ * WARNING — THIS BACKING IS GROWABLE BY NATURE. A shared `WebAssembly.Memory`
+ * gives a growable `SharedArrayBuffer` and can give nothing else. A WASM-backed
+ * world on JavaScriptCore should thus pay the column-write cost that
+ * `growableSabAllocator` warns about above. `fixedSabAllocator` is not a remedy
+ * here, because the WASM module must own the memory. This is NOT measured: no
+ * WASM backend ships yet to measure it with.
  *
  * This is the **opt-in storage backing for the WASM path**. A consumer
  * that attaches a WASM `ComputeBackend` passes

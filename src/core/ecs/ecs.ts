@@ -163,14 +163,20 @@ export interface ECSOptions {
 	 * dropped-ordering-edge warning). Defaults to `console.warn`. Mirrors the
 	 * `FrameTraceSink` seam's injectable style — no global logger. */
 	onWarn?: (message: string) => void;
-	/** How the world's memory is sized and backed — the single
-	 * sizing surface, replacing the pre-release `initialCapacity` +
-	 * `bufferAllocator` pair. Express intent through exactly one arm:
-	 * `{ budget: { entities } }` (derive everything), `{ maxBytes }`
-	 * (explicit cap), `{ wasm: { memory } | { maximumPages } }` (the SAB
-	 * IS a WebAssembly.Memory — zero-copy with a WASM `ComputeBackend`), or
-	 * `{ allocator }` (expert escape hatch, in-place-typed).
-	 * Omitted ⇒ growable backing with a 256 MiB cap and 1024-row columns.
+	/** How the world's memory is sized and backed. Two independent axes, two
+	 * independent fields — every combination of them is legal.
+	 *
+	 * HOW BIG: `entities` (with optional `archetypes` / `bytesPerEntity` to
+	 * shape the derivation) or `maxBytes`, or both. Give both when you know
+	 * both: the count sizes the columns and the entity index, the cap is yours.
+	 *
+	 * WHAT BACKS IT: `backing` — `"heap"` (default, a plain fixed ArrayBuffer),
+	 * `"shared"` (a SharedArrayBuffer, for worker offload / a WASM backend),
+	 * `{ wasm }` (the buffer IS a WebAssembly.Memory) or `{ allocator }` (the
+	 * expert escape hatch, in-place-typed).
+	 *
+	 * `columnCapacity` pins the rows per archetype column on any combination.
+	 * Omitted ⇒ heap backing, a fixed 256 MiB reservation and 1024-row columns.
 	 * The resolved plan is exposed as `ECS.memoryPlan`. */
 	memory?: ECSMemoryOptions;
 	/** Consumer-declared SAB regions, forwarded to `Store`. Each

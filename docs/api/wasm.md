@@ -25,7 +25,7 @@ For a WASM simulation with no copy, make the store itself a shared `WebAssembly.
 import { ECS } from "@oasys/oecs";
 
 const ecs = new ECS({
-  memory: { wasm: { maximumPages: 4096 } }, // 4096 * 64 KiB = 256 MiB limit
+  memory: { backing: { wasm: { maximumPages: 4096 } } }, // 4096 * 64 KiB = 256 MiB limit
 });
 
 const memory = ecs.wasmMemory!; // a WebAssembly.Memory when you use memory.wasm
@@ -40,7 +40,7 @@ const memory = new WebAssembly.Memory({
   shared: true,
 });
 
-const ecs = new ECS({ memory: { wasm: { memory } } });
+const ecs = new ECS({ memory: { backing: { wasm: { memory } } } });
 ```
 
 > [!WARNING]
@@ -51,7 +51,7 @@ If your backend does not need the storage to be a `WebAssembly.Memory`, but does
 worker can see, use the shared profile instead:
 
 ```ts
-const ecs = new ECS({ memory: { shared: { maxBytes: 256 * 1024 * 1024 } } });
+const ecs = new ECS({ memory: { maxBytes: 256 * 1024 * 1024, backing: "shared" } });
 ```
 
 In a browser, both shared paths require cross-origin isolation:

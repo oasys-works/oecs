@@ -21,6 +21,7 @@ import { ECSError, ECS_ERROR } from "../../utils/error";
 import {
 	DEFAULT_SAB_ALLOCATOR,
 	growableSabAllocator,
+	heapArraybufferAllocator,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
 	ENTITY_INDEX_BYTES_PER_SLOT,
 	type InPlaceBufferAllocator
@@ -40,10 +41,11 @@ function expectInvalid(fn: () => unknown, fragment: string): void {
 	expect((thrown as ECSError).message).toContain(fragment);
 }
 
-describe("resolve_ecs_memory", () => {
-	it("defaults: growable 256 MiB cap, 1024 columns, full entity-index reservation", () => {
+describe("resolve_ecs_memory — axis A: how big", () => {
+	it("defaults: 256 MiB cap, 1024 columns, full entity-index reservation", () => {
 		const plan = resolveECSMemory();
-		expect(plan.source).toBe("default");
+		expect(plan.source).toBe("heap");
+		expect(plan.sizing).toBe("default");
 		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
 		expect(plan.columnCapacity).toBe(DEFAULT_COLUMN_CAPACITY);
 		expect(plan.entityIndexCapacity).toBe(ENTITY_INDEX_DEFAULT_CAPACITY);
@@ -51,21 +53,22 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.wasmMemory).toBeNull();
 	});
 
-	it("no-arm columnCapacity pin is the minimal initial_capacity migration", () => {
+	it("a columnCapacity pin alone leaves every other number at its default", () => {
 		const plan = resolveECSMemory({ columnCapacity: 64 });
-		expect(plan.source).toBe("default");
+		expect(plan.sizing).toBe("default");
 		expect(plan.columnCapacity).toBe(64);
 		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
 	});
 
-	it("budget: derives columns, entity index, and cap from declared entities", () => {
+	it("entities: derives columns, entity index, and cap", () => {
 		const entities = 10_000;
-		const plan = resolveECSMemory({ budget: { entities } });
+		const plan = resolveECSMemory({ entities });
+		expect(plan.sizing).toBe("entities");
 		// pow2(10_000 / 8 archetypes) = pow2(1250) = 2048
 		expect(plan.columnCapacity).toBe(2048);
 		// pow2(2 × 10_000) = 32768
 		expect(plan.entityIndexCapacity).toBe(32_768);
-		// index + columns lands under the 4 MiB floor for this budget
+		// index + columns lands under the 4 MiB floor for this count
 		const raw =
 			32_768 * ENTITY_INDEX_BYTES_PER_SLOT +
 			entities * BUDGET_DEFAULT_BYTES_PER_ENTITY * BUDGET_GROWTH_HEADROOM;
@@ -76,9 +79,9 @@ describe("resolve_ecs_memory", () => {
 		expect(plan.derivation.length).toBeGreaterThan(0);
 	});
 
-	it("budget: large budgets size the cap above the floor", () => {
+	it("entities: a large count sizes the cap above the floor", () => {
 		const entities = 500_000;
-		const plan = resolveECSMemory({ budget: { entities, bytesPerEntity: 64 } });
+		const plan = resolveECSMemory({ entities, bytesPerEntity: 64 });
 		const indexBytes = plan.entityIndexCapacity * ENTITY_INDEX_BYTES_PER_SLOT;
 		const columnBytes = entities * 64 * BUDGET_GROWTH_HEADROOM;
 		expect(plan.capBytes).toBeGreaterThanOrEqual(indexBytes + columnBytes);
@@ -86,15 +89,13 @@ describe("resolve_ecs_memory", () => {
 		expect((plan.capBytes as number) % (64 * 1024)).toBe(0);
 	});
 
-	it("budget: rejects entities beyond the EntityID index space", () => {
-		expectInvalid(
-			() => resolveECSMemory({ budget: { entities: (1 << 20) + 1 } }),
-			"EntityID index space"
-		);
+	it("entities: rejects a count beyond the EntityID index space", () => {
+		expectInvalid(() => resolveECSMemory({ entities: (1 << 20) + 1 }), "EntityID index space");
 	});
 
-	it("maxBytes: caller-declared cap with default and pinned columns", () => {
+	it("maxBytes: caller-declared cap, index clamped under it", () => {
 		const plan = resolveECSMemory({ maxBytes: 8 * MiB });
+		expect(plan.sizing).toBe("maxBytes");
 		expect(plan.capBytes).toBe(8 * MiB);
 		expect(plan.columnCapacity).toBe(DEFAULT_COLUMN_CAPACITY);
 		const pinned = resolveECSMemory({ maxBytes: 8 * MiB, columnCapacity: 256 });
@@ -105,8 +106,55 @@ describe("resolve_ecs_memory", () => {
 		);
 	});
 
+	// The combination the pre-0.6 union made a type error. It is the case where
+	// the old shape was most wrong: with no way to say both, the index was sized
+	// backwards from the cap and over-reserved by a wide margin.
+	it("entities + maxBytes: the count sizes the index, the cap is the caller's", () => {
+		const plan = resolveECSMemory({ entities: 50_000, archetypes: 4, maxBytes: 64 * MiB });
+		expect(plan.sizing).toBe("entities+maxBytes");
+		expect(plan.capBytes).toBe(64 * MiB);
+		// pow2(50_000 / 4) = 16384, and pow2(2 × 50_000) = 131072
+		expect(plan.columnCapacity).toBe(16_384);
+		expect(plan.entityIndexCapacity).toBe(131_072);
+		// Sized backwards from a 64 MiB cap the index would have taken the full
+		// EntityID space — eight times what the count needs.
+		expect(plan.entityIndexCapacity).toBeLessThan(ENTITY_INDEX_DEFAULT_CAPACITY);
+	});
+
+	it("rejects a shaping number given without an entity count", () => {
+		expectInvalid(() => resolveECSMemory({ archetypes: 4 }), "memory.entities");
+		expectInvalid(() => resolveECSMemory({ bytesPerEntity: 32 }), "memory.entities");
+	});
+
+	it("rejects a non-positive maxBytes", () => {
+		const malformed = JSON.parse('{ "maxBytes": 0 }');
+		expectInvalid(() => resolveECSMemory(malformed), "maxBytes");
+	});
+});
+
+describe("resolve_ecs_memory — axis B: what backs it", () => {
+	it("heap (the default): a plain ArrayBuffer, never a SharedArrayBuffer", () => {
+		const plan = resolveECSMemory({ backing: "heap" });
+		expect(plan.source).toBe("heap");
+		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
+		expect(plan.allocator.isInPlace).toBe(true);
+		expect(plan.wasmMemory).toBeNull();
+		const buf = plan.allocator(1024);
+		expect(buf).toBeInstanceOf(ArrayBuffer);
+		expect(buf instanceof SharedArrayBuffer).toBe(false);
+	});
+
+	it("shared: a SharedArrayBuffer backing", () => {
+		const plan = resolveECSMemory({ backing: "shared" });
+		expect(plan.source).toBe("shared");
+		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
+		expect(plan.allocator.isInPlace).toBe(true);
+		expect(plan.allocator(1024)).toBeInstanceOf(SharedArrayBuffer);
+	});
+
 	it("wasm (engine-constructed): cap from maximumPages, Memory exposed", () => {
-		const plan = resolveECSMemory({ wasm: { maximumPages: 256 } });
+		const plan = resolveECSMemory({ backing: { wasm: { maximumPages: 256 } } });
+		expect(plan.source).toBe("wasm");
 		expect(plan.capBytes).toBe(256 * 64 * 1024);
 		expect(plan.wasmMemory).toBeInstanceOf(WebAssembly.Memory);
 		expect(plan.allocator.isInPlace).toBe(true);
@@ -114,27 +162,42 @@ describe("resolve_ecs_memory", () => {
 
 	it("wasm (bring-your-own): accepts a shared Memory, cap unknowable", () => {
 		const memory = new WebAssembly.Memory({ initial: 2, maximum: 64, shared: true });
-		const plan = resolveECSMemory({ wasm: { memory } });
+		const plan = resolveECSMemory({ backing: { wasm: { memory } } });
 		expect(plan.wasmMemory).toBe(memory);
 		expect(plan.capBytes).toBeNull();
 	});
 
 	it("wasm (bring-your-own): rejects a non-shared Memory at construction", () => {
 		const memory = new WebAssembly.Memory({ initial: 2, maximum: 64 });
-		expectInvalid(() => resolveECSMemory({ wasm: { memory } }), "shared: true");
+		expectInvalid(() => resolveECSMemory({ backing: { wasm: { memory } } }), "shared: true");
 	});
 
 	it("wasm: rejects initialPages above maximumPages", () => {
 		expectInvalid(
-			() => resolveECSMemory({ wasm: { maximumPages: 4, initialPages: 8 } }),
+			() => resolveECSMemory({ backing: { wasm: { maximumPages: 4, initialPages: 8 } } }),
 			"exceeds maximumPages"
 		);
 	});
 
-	it("allocator: accepts an in-place allocator and honours the cap hint", () => {
+	// The one place the two axes really do collide: a WASM Memory's page maximum
+	// IS the ceiling, so a second ceiling beside it would be two answers to one
+	// question. Named as a conflict rather than silently ignored.
+	it("wasm: rejects a maxBytes beside the page maximum", () => {
+		expectInvalid(
+			() => resolveECSMemory({ maxBytes: 8 * MiB, backing: { wasm: { maximumPages: 256 } } }),
+			"Declare it once, in pages"
+		);
+		const memory = new WebAssembly.Memory({ initial: 2, maximum: 64, shared: true });
+		expectInvalid(
+			() => resolveECSMemory({ maxBytes: 8 * MiB, backing: { wasm: { memory } } }),
+			"declares its own ceiling"
+		);
+	});
+
+	it("allocator: accepts an in-place allocator and takes maxBytes as the declared cap", () => {
 		const plan = resolveECSMemory({
-			allocator: growableSabAllocator(16 * MiB),
-			capBytesHint: 16 * MiB
+			maxBytes: 16 * MiB,
+			backing: { allocator: growableSabAllocator(16 * MiB) }
 		});
 		expect(plan.source).toBe("allocator");
 		expect(plan.capBytes).toBe(16 * MiB);
@@ -142,66 +205,76 @@ describe("resolve_ecs_memory", () => {
 
 	it("allocator: runtime backstop rejects a non-in-place allocator", () => {
 		// boundary: deliberately defeating the InPlaceBufferAllocator brand — the
-		// whole point of this test is that the *runtime* backstop catches what
-		// an untyped JS caller could pass despite the compile-time boundary.
+		// whole point of this test is that the *runtime* backstop catches what an
+		// untyped JS caller could pass despite the compile-time boundary.
 		const defeated = DEFAULT_SAB_ALLOCATOR as InPlaceBufferAllocator;
 		expectInvalid(
-			() => resolveECSMemory({ allocator: defeated }),
+			() => resolveECSMemory({ backing: { allocator: defeated } }),
 			"must declare `isInPlace: true`"
 		);
 	});
 
-	it("heap: resolves a non-SAB ArrayBuffer backing with the default cap", () => {
-		const plan = resolveECSMemory({ heap: {} });
-		expect(plan.source).toBe("heap");
-		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
-		expect(plan.columnCapacity).toBe(DEFAULT_COLUMN_CAPACITY);
-		expect(plan.allocator.isInPlace).toBe(true);
-		expect(plan.wasmMemory).toBeNull();
-		// The allocator hands back a plain ArrayBuffer, never a SharedArrayBuffer.
-		const buf = plan.allocator(1024);
-		expect(buf).toBeInstanceOf(ArrayBuffer);
-		expect(buf instanceof SharedArrayBuffer).toBe(false);
-	});
-
-	it("heap: honours an explicit maxBytes and a column pin", () => {
-		const plan = resolveECSMemory({ heap: { maxBytes: 8 * MiB }, columnCapacity: 128 });
-		expect(plan.source).toBe("heap");
-		expect(plan.capBytes).toBe(8 * MiB);
-		expect(plan.columnCapacity).toBe(128);
-		// The entity-index reservation is clamped under the cap (same
-		// quarter-of-cap rule as the maxBytes arm). Without this the heap arm
-		// reserved the full ~12 MiB default, so an 8 MiB cap threw at Store
-		// construction. It must be at most a quarter of the cap and strictly
-		// smaller than the full default the `heap: {}` case keeps.
-		expect(plan.entityIndexCapacity * ENTITY_INDEX_BYTES_PER_SLOT).toBeLessThanOrEqual(
-			(8 * MiB) / 4
-		);
+	// Regression, found by the P11 grid probe. Before 0.6 this branch hardcoded
+	// the full EntityID reservation and ignored the declared cap, so the index
+	// alone (about 12.6 MiB) did not fit and the world could not be built at all.
+	// Every other backing already derived the index from the cap.
+	it("allocator: a small declared cap sizes the index to fit under it", () => {
+		const cap = 4 * MiB;
+		const plan = resolveECSMemory({
+			maxBytes: cap,
+			backing: { allocator: heapArraybufferAllocator(cap) }
+		});
 		expect(plan.entityIndexCapacity).toBeLessThan(ENTITY_INDEX_DEFAULT_CAPACITY);
+		expect(plan.entityIndexCapacity * ENTITY_INDEX_BYTES_PER_SLOT).toBeLessThanOrEqual(cap / 4);
+		// And the world actually builds, which is the part that used to throw.
+		const world = new ECS({
+			memory: { maxBytes: cap, backing: { allocator: heapArraybufferAllocator(cap) } }
+		});
+		const Pos = world.registerComponent({ x: "i32" });
+		world.startup();
+		const T = world.template(Pos({ x: 1 }));
+		for (let i = 0; i < 500; i++) world.spawn(T);
+		expect(world.entityCount).toBe(500);
 	});
 
-	it("heap: rejects a non-positive maxBytes", () => {
-		const malformed = JSON.parse('{ "heap": { "maxBytes": 0 } }');
-		expectInvalid(() => resolveECSMemory(malformed), "heap.maxBytes");
+	it("rejects a backing that is neither a known name nor a known shape", () => {
+		const malformed = JSON.parse('{ "backing": "gpu" }');
+		expectInvalid(() => resolveECSMemory(malformed), "memory.backing must be");
+	});
+});
+
+describe("resolve_ecs_memory — the axes are independent", () => {
+	// The claim the flattening rests on, and the reason the P11 probe ran first:
+	// one sizing intent must give one set of numbers on every backing.
+	it("one entity count gives the same sizing on every backing", () => {
+		const entities = 50_000;
+		const plans = [
+			resolveECSMemory({ entities, backing: "heap" }),
+			resolveECSMemory({ entities, backing: "shared" }),
+			resolveECSMemory({ entities, backing: { allocator: heapArraybufferAllocator(32 * MiB) } }),
+			resolveECSMemory({ entities, backing: { wasm: { maximumPages: 512 } } })
+		];
+		for (const plan of plans) {
+			expect(plan.columnCapacity).toBe(plans[0].columnCapacity);
+			expect(plan.entityIndexCapacity).toBe(plans[0].entityIndexCapacity);
+			expect(plan.budgetEntities).toBe(entities);
+		}
+		// And it is the count that decided it, not the default.
+		expect(plans[0].entityIndexCapacity).toBe(131_072);
 	});
 
-	it("rejects multiple sizing arms", () => {
-		// boundary: two-arm literals are a compile error (never-fields); build
-		// the malformed shape through the JSON-ingress style to test the
-		// runtime guard untyped callers hit.
-		const malformed = JSON.parse('{ "budget": { "entities": 10 }, "maxBytes": 1048576 }');
-		expectInvalid(() => resolveECSMemory(malformed), "at most one of");
-	});
-
-	it("rejects the heap arm combined with another sizing arm", () => {
-		const malformed = JSON.parse('{ "heap": {}, "maxBytes": 1048576 }');
-		expectInvalid(() => resolveECSMemory(malformed), "at most one of");
+	it("every backing accepts a column pin without disturbing the rest", () => {
+		for (const backing of ["heap", "shared"] as const) {
+			const plan = resolveECSMemory({ entities: 10_000, columnCapacity: 512, backing });
+			expect(plan.columnCapacity).toBe(512);
+			expect(plan.entityIndexCapacity).toBe(32_768);
+		}
 	});
 });
 
 describe("ECS memory wiring", () => {
 	it("exposes the resolved plan and the wasm Memory", () => {
-		const world = new ECS({ memory: { wasm: { maximumPages: 64 } } });
+		const world = new ECS({ memory: { backing: { wasm: { maximumPages: 64 } } } });
 		expect(world.memoryPlan.source).toBe("wasm");
 		expect(world.wasmMemory).toBeInstanceOf(WebAssembly.Memory);
 	});
@@ -213,8 +286,23 @@ describe("ECS memory wiring", () => {
 		expectInvalid(() => new ECS(stale), "replaced by ECSOptions.memory");
 	});
 
-	it("budget worlds enforce the entity-index reservation derived from the budget", () => {
-		const world = new ECS({ memory: { budget: { entities: 100 } } });
+	// The pre-0.6 arms are REMOVED, not aliased. A silently-ignored `budget`
+	// would size a world wrong and only surface as a cap failure much later.
+	it("throws loudly on each removed pre-0.6 arm and names the rewrite", () => {
+		const cases: readonly [string, string][] = [
+			['{ "budget": { "entities": 10 } }', "{ entities: N }"],
+			['{ "heap": { "maxBytes": 1048576 } }', 'backing: "heap"'],
+			['{ "shared": {} }', 'backing: "shared"'],
+			['{ "wasm": { "maximumPages": 4 } }', "backing: { wasm: W }"],
+			['{ "capBytesHint": 1048576 }', "{ maxBytes: X }"]
+		];
+		for (const [json, fragment] of cases) {
+			expectInvalid(() => resolveECSMemory(JSON.parse(json)), fragment);
+		}
+	});
+
+	it("an entity count enforces the entity-index reservation it derives", () => {
+		const world = new ECS({ memory: { entities: 100 } });
 		// pow2(2 × 100) = 256, floored at 4096 slots
 		expect(world.memoryPlan.entityIndexCapacity).toBe(4096);
 	});

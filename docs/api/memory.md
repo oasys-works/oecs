@@ -7,40 +7,56 @@ touch use no resident memory, and the columns grow inside that reservation when 
 need the `memory` option only to set the size deliberately, or to change to shared or WASM storage.
 
 ```ts
-new ECS();                                              // heap, a 256 MiB limit — the default
-new ECS({ memory: { budget: { entities: 50_000 } } }); // set the size from an entity budget
-new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });   // an explicit byte limit
-new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (workers / WASM)
+new ECS();                                                  // heap, a 256 MiB limit — the default
+new ECS({ memory: { entities: 50_000 } });                  // set the size from a number of entities
+new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });        // an explicit byte limit
+new ECS({ memory: { backing: "shared" } });                 // SharedArrayBuffer (workers / WASM)
+new ECS({ memory: { entities: 50_000, backing: "shared" } }); // both, together
 ```
 
-## The arms
+## Two questions, two fields
 
-`memory` is a discriminated union. Select **exactly one** arm, or none. You can set
-`columnCapacity`, which is the initial number of rows in each archetype column, on any arm.
+`memory` asks you two questions that do not depend on each other. **How big** is the world, and
+**what holds** its bytes. Each question has its own field, so you can answer one, the other, or
+both. There is no combination that the type refuses.
 
-| Arm | What it does | Select it when |
+```ts
+interface ECSMemoryOptions {
+  // how big
+  readonly entities?: number;        // the expected peak of live entities (a maximum of 2^20)
+  readonly archetypes?: number;      // default 8; shapes the derived column capacity
+  readonly bytesPerEntity?: number;  // default 64; shapes the derived byte limit
+  readonly maxBytes?: number;        // an explicit byte limit; it wins over a derived one
+  readonly columnCapacity?: number;  // the initial rows in each archetype column
+  // what holds the bytes
+  readonly backing?: MemoryBacking;  // default "heap"
+}
+
+type MemoryBacking =
+  | "heap"                              // a fixed ArrayBuffer — the default
+  | "shared"                            // a growable SharedArrayBuffer
+  | { wasm: { maximumPages } | { memory } }  // the buffer IS a WebAssembly.Memory
+  | { allocator: InPlaceBufferAllocator };   // your own, for experts
+```
+
+| Backing | What it does | Select it when |
 | --- | --- | --- |
-| *(absent)* | a fixed heap `ArrayBuffer`, with a 256 MiB limit | you have no requirement yet |
-| `{ heap: { maxBytes? } }` | a fixed heap `ArrayBuffer`, with an explicit limit | you want the default profile, with a size |
-| `{ budget: { entities, … } }` | derives the column capacity, the reservation of the entity index, the byte limit, **and** the words of a limit error from a number of entities | you know your approximate peak number of entities |
-| `{ maxBytes: N }` | a fixed heap with an explicit byte limit | you want a hard byte limit |
-| `{ shared: { maxBytes? } }` | a growable `SharedArrayBuffer` | you offload to a worker or use a WASM backend |
+| `"heap"` *(default)* | a fixed `ArrayBuffer`, reserved at the limit | you have no requirement yet |
+| `"shared"` | a growable `SharedArrayBuffer` | you offload to a worker or use a WASM backend |
 | `{ wasm: {…} }` | the storage **is** a `WebAssembly.Memory` | you share bytes with a WASM simulation, with no copy |
 | `{ allocator }` | your own in-place allocator | you are an expert and need an alternative |
 
-```ts
-interface EntityBudget {
-  readonly entities: number;         // the expected peak of live entities (a maximum of 2^20)
-  readonly archetypes?: number;      // default 8
-  readonly bytesPerEntity?: number;  // default 64
-}
-```
+> [!TIP]
+> **Give `entities` if you know it.** It derives a good column capacity, a good reservation of the
+> entity index, and a good byte limit. It also gives an error about a limit in your terms ("3× the
+> declared budget — runaway entity creation upstream?"). A value more than 2^20 (about 1 million)
+> throws `INVALID_MEMORY_OPTIONS`. It works with every backing.
 
 > [!TIP]
-> **`budget` is the arm to select.** Give it a number of entities. It then derives a good column
-> capacity, a good reservation of the entity index, and a good byte limit. It also gives an error
-> about a limit in your terms ("3× the declared budget — runaway entity creation upstream?"). A
-> value of `entities` more than 2^20 (about 1 million) throws `INVALID_MEMORY_OPTIONS`.
+> **Give both `entities` and `maxBytes` when you know both.** The number of entities then sizes the
+> columns and the entity index, and your byte limit is the ceiling. Without the count, the engine
+> must size the entity index backwards from the limit, and it reserves more than a small world
+> needs.
 
 ## Set the initial size of each column
 
@@ -58,7 +74,7 @@ So set `columnCapacity` to your peak number of rows in one archetype. Then no co
 ```ts
 // A world that holds up to 1,000,000 entities in a few archetypes.
 new ECS({
-  memory: { budget: { entities: 1_000_000 }, columnCapacity: 1_048_576 }
+  memory: { entities: 1_000_000, columnCapacity: 1_048_576 }
 });
 ```
 
@@ -70,8 +86,8 @@ The measurement uses 1,000,000 entities. Each entity has 7 `f32` fields. The com
 | Sizing | Resident | Bytes for each entity |
 | --- | --- | --- |
 | default | 82.5 MiB | 86.5 |
-| `{ budget: { entities: 1_000_000 } }` | 78.9 MiB | 82.8 |
-| the same budget, and a pinned `columnCapacity` | **54.4 MiB** | **57.1** |
+| `{ entities: 1_000_000 }` | 78.9 MiB | 82.8 |
+| the same count, and a pinned `columnCapacity` | **54.4 MiB** | **57.1** |
 
 A pinned `columnCapacity` saves about one third of the resident memory. The speed does not change.
 The physics step measured the same in all three rows.
@@ -87,7 +103,7 @@ small world.
 > peak, and you pay neither cost.
 
 > [!NOTE]
-> `bytesPerEntity` in `EntityBudget` is 64 by default. The budget uses it to derive the byte limit.
+> `bytesPerEntity` is 64 by default. The engine uses it with `entities` to derive the byte limit.
 > Add the widths of the fields of your components. If the total is much less than 64, give the true
 > value. The reservation then becomes smaller.
 
@@ -112,14 +128,30 @@ There are three kinds of storage above one core. The archetypes are the same, an
 - **WASM** — a `WebAssembly.Memory` whose buffer *is* the store. So a WASM simulation and the ECS
   columns share the same bytes, with no copy.
 
+> [!WARNING]
+> **JavaScriptCore pays for the growth of a shared buffer.** JavaScriptCore has no fast store path
+> for a TypedArray view over a *growable* `SharedArrayBuffer`. A column read costs what the heap
+> profile costs, but every column write costs several times more, so a system that writes a column
+> in a loop is much slower there. The cost is for each access and not for each byte, so a small
+> world pays the same multiple as a large one. V8 shows no such difference. Safari and Bun are
+> JavaScriptCore.
+>
+> Use `fixedSabAllocator` if you need a shared buffer and your code runs on JavaScriptCore. It
+> reserves the limit at construction, keeps the fast store path on both engine families, and gives
+> up only the growth. A WASM `Memory` gives a growable `SharedArrayBuffer` and can give nothing
+> else, so the WASM profile should pay the same cost there. That last point is reasoning, and not
+> measurement.
+
 ```ts
 // The optional shared and WASM allocators are behind a separate entry point:
-import { growableSabAllocator, wasmMemoryAllocator, DEFAULT_SAB_ALLOCATOR, SabUnavailableError } from "@oasys/oecs/shared";
+import { growableSabAllocator, fixedSabAllocator, wasmMemoryAllocator, DEFAULT_SAB_ALLOCATOR, SabUnavailableError } from "@oasys/oecs/shared";
 
-new ECS({ memory: { shared: {} } });
-new ECS({ memory: { allocator: growableSabAllocator() } });         // equivalent, and explicit
-new ECS({ memory: { wasm: { maximumPages: 4096 } } });              // the engine builds the Memory
-new ECS({ memory: { wasm: { memory: myWasmMemory } } });            // supply your own (it must have shared: true)
+new ECS({ memory: { backing: "shared" } });
+new ECS({ memory: { backing: { allocator: growableSabAllocator() } } });  // equivalent, and explicit
+new ECS({ memory: { maxBytes: 64 * 1024 * 1024,                          // a shared buffer that does not grow
+                    backing: { allocator: fixedSabAllocator(64 * 1024 * 1024) } } });
+new ECS({ memory: { backing: { wasm: { maximumPages: 4096 } } } });       // the engine builds the Memory
+new ECS({ memory: { backing: { wasm: { memory: myWasmMemory } } } });     // supply your own (it must have shared: true)
 ```
 
 > [!WARNING]
@@ -147,21 +179,38 @@ It is useful when an error about a limit surprises you.
 ## The limit is absolute
 
 The byte limit is an **absolute limit, and there is no alternative that grows past it**. If you
-exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `budget` or `intentLabel`, and not
+exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `entities` count or `intentLabel`, and not
 in raw bytes.
 
 > [!WARNING]
 > **A limit that is too small fails at construction, and not later.** The engine reserves the
 > region of the entity index immediately when it builds the store, which is about 12 MiB at
 > the default limit. So a `maxBytes`, `heap.maxBytes`, or `wasm.maximumPages` value that is too
-> small throws `STORE_CAP_EXCEEDED` *before the `ECS` exists*. Set the limit to your actual peak.
+> small throws `STORE_CAP_EXCEEDED` *before the `ECS` exists*. Set the limit to your actual peak.\n>\n> Give `entities` to avoid this. The engine then sizes the entity index from the count instead of\n> from the limit, and a small world reserves a small index.
 
 ## Protection during migration
 
 > [!NOTE]
 > The pre-release options `initial_capacity` and `buffer_allocator` are **removed**, and there is no
 > alias for them. If you give them, it throws `INVALID_MEMORY_OPTIONS` clearly. Replace them with
-> an arm of `memory`.
+> the fields of `memory`.
+
+> [!NOTE]
+> **The arms of 0.5 are removed in 0.6.** `memory` was one union of five arms, so it could hold only
+> one answer. Sizing and backing are now two fields, and every pair of them is legal. Each removed
+> arm throws `INVALID_MEMORY_OPTIONS` with its new spelling, because a sizing that the engine
+> ignored in silence would give you a world of the wrong size and show it much later.
+>
+> | 0.5 | 0.6 |
+> | --- | --- |
+> | `{ budget: { entities: N } }` | `{ entities: N }` |
+> | `{ heap: { maxBytes: X } }` | `{ maxBytes: X, backing: "heap" }` |
+> | `{ shared: { maxBytes: X } }` | `{ maxBytes: X, backing: "shared" }` |
+> | `{ wasm: W }` | `{ backing: { wasm: W } }` |
+> | `{ allocator: A, capBytesHint: X }` | `{ maxBytes: X, backing: { allocator: A } }` |
+>
+> `maxBytes` and `columnCapacity` keep their names and their meaning. The type `EntityBudget` is
+> gone, because its three fields are now fields of `memory` itself.
 
 ## WASM interoperation and the compute backend
 

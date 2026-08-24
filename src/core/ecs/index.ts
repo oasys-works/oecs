@@ -18,7 +18,7 @@ export {
 	type ECSMemoryOptions,
 	type ResolvedECSMemory,
 	type ECSMemoryCapContext,
-	type EntityBudget,
+	type MemoryBacking,
 	type WasmMemoryArm
 } from "./ecs_memory";
 

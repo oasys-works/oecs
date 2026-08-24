@@ -23,8 +23,8 @@ be a `WebAssembly.Memory`.
 ```ts
 import { ECS } from "@oasys/oecs";
 
-new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer storage
-new ECS({ memory: { wasm: { maximumPages: 4096 } } }); // a shared WebAssembly.Memory
+new ECS({ memory: { backing: "shared" } });                   // SharedArrayBuffer storage
+new ECS({ memory: { backing: { wasm: { maximumPages: 4096 } } } }); // a shared WebAssembly.Memory
 ```
 
 A browser build needs cross-origin isolation for both profiles. A heap world needs no isolation,

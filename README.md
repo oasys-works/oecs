@@ -100,8 +100,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
   types are `f32 f64 i8 i16 i32 u8 u16 u32`.
 - **Two storage profiles, one core** — The default is a pure-TS heap (`ArrayBuffer`). A
   `SharedArrayBuffer` for workers or WASM is optional. The code path is the same, the `stateHash`
-  is the same, and one `memory` option sets the size (an entity budget, a byte limit, or a fixed
-  capacity).
+  is the same, and one `memory` option sets the size (a number of entities, a byte limit, or a
+  fixed capacity). Size and storage are separate fields, so any pair of them is legal.
 
 **Queries**
 

@@ -26,7 +26,7 @@ export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core
 // ECS memory sizing — the intent surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). The resolver + derivation constants are
 // tooling, at `@oasys/oecs/internal`.
-export type { ECSMemoryOptions, EntityBudget, WasmMemoryArm } from "./core/ecs";
+export type { ECSMemoryOptions, MemoryBacking, WasmMemoryArm } from "./core/ecs";
 
 // Template / direct-create — opaque archetype template from `ECS.template`,
 // consumed by `ECS.spawn` / `ECS.spawnMany`.

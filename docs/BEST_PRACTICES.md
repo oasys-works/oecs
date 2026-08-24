@@ -948,16 +948,17 @@ and no cross-origin isolation. Use the `memory` option only to set the size deli
 change the storage.
 
 ```ts
-new ECS();                                              // the heap default
-new ECS({ memory: { budget: { entities: 50_000 } } }); // set the size from an entity budget
-new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });   // an explicit byte limit
-new ECS({ memory: { shared: {} } });                   // SharedArrayBuffer (workers / WASM)
+new ECS();                                                    // the heap default
+new ECS({ memory: { entities: 50_000 } });                    // set the size from a number of entities
+new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });          // an explicit byte limit
+new ECS({ memory: { backing: "shared" } });                   // SharedArrayBuffer (workers / WASM)
+new ECS({ memory: { entities: 50_000, backing: "shared" } }); // both, together
 ```
 
 > [!TIP]
-> **`budget` is the arm to select.** Give it a number of entities, and it derives the column
-> capacity, the reservation of the entity index, the byte limit, and the words of a limit error in
-> your terms. A value of `entities` more than 2^20 throws.
+> **Give `entities` if you know it.** It derives the column capacity, the reservation of the entity
+> index, the byte limit, and the words of a limit error in your terms. A value more than 2^20
+> throws. It works with every backing, so you never select between a size and a storage type.
 
 ### Pin `columnCapacity` when you know your peak
 
@@ -968,7 +969,7 @@ Set `columnCapacity` to the peak number of rows in one archetype. Then no column
 
 ```ts
 new ECS({
-  memory: { budget: { entities: 1_000_000 }, columnCapacity: 1_048_576 }
+  memory: { entities: 1_000_000, columnCapacity: 1_048_576 }
 });
 ```
 

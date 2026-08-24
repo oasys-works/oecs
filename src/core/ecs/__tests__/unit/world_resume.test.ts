@@ -32,7 +32,7 @@ import {
 } from "../../resume";
 import { heapArraybufferAllocator } from "../../../store";
 
-const HEAP: ECSOptions = { deterministic: true, memory: { heap: {} } };
+const HEAP: ECSOptions = { deterministic: true, memory: { backing: "heap" } };
 const SAB: ECSOptions = { deterministic: true };
 
 interface World {
@@ -276,8 +276,8 @@ describe("restoreInto — fails closed", () => {
 		// Identical registration + dense layout, but a larger entity budget → a
 		// larger entity-index capacity. The capacity guard reads it from the
 		// snapshot bytes before any mutation.
-		const small: ECSOptions = { deterministic: true, memory: { budget: { entities: 2000 } } };
-		const large: ECSOptions = { deterministic: true, memory: { budget: { entities: 50000 } } };
+		const small: ECSOptions = { deterministic: true, memory: { entities: 2000 } };
+		const large: ECSOptions = { deterministic: true, memory: { entities: 50000 } };
 		const src = build(large);
 		for (let i = 0; i < 4; i++) step(src, i);
 		const snap = src.world.snapshots.capture();
@@ -349,7 +349,7 @@ describe("restoreInto — works under a custom in-place heap allocator", () => {
 	it("keeps the live allocator (no DEFAULT_SAB_ALLOCATOR leak)", () => {
 		const memory: ECSOptions = {
 			deterministic: true,
-			memory: { allocator: heapArraybufferAllocator() }
+			memory: { backing: { allocator: heapArraybufferAllocator() } }
 		};
 		const src = build(memory);
 		for (let i = 0; i < 6; i++) step(src, i);

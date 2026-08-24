@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed — BREAKING: `memory` is two fields, and not one union of five arms
+
+`ECSOptions.memory` held two questions that do not depend on each other — how big the world is, and
+what holds its bytes — inside ONE key-discriminated union. A caller could answer only one of them.
+The `budget` arm and the `maxBytes` arm each selected the heap allocator themselves, so "a budget of
+50,000 entities on a shared backing" was not something you could say. `maxBytes` had to appear three
+times, once for each backing arm, because the size axis had nowhere else to live.
+
+Sizing and backing are now two fields, and every pair of them is legal:
+
+```ts
+new ECS({ memory: { entities: 50_000 } });                    // size only
+new ECS({ memory: { backing: "shared" } });                   // storage only
+new ECS({ memory: { entities: 50_000, backing: "shared" } }); // both — this was a type error before
+new ECS({ memory: { entities: 50_000, maxBytes: 64 * MiB } });// size from one, ceiling from the other
+```
+
+Each removed arm throws `INVALID_MEMORY_OPTIONS` and names its new spelling. They are removed and
+not aliased, because a sizing that the engine ignored in silence would build a world of the wrong
+size and show it much later, as a limit error far from its cause.
+
+| 0.5 | 0.6 |
+| --- | --- |
+| `{ budget: { entities: N } }` | `{ entities: N }` |
+| `{ heap: { maxBytes: X } }` | `{ maxBytes: X, backing: "heap" }` |
+| `{ shared: { maxBytes: X } }` | `{ maxBytes: X, backing: "shared" }` |
+| `{ wasm: W }` | `{ backing: { wasm: W } }` |
+| `{ allocator: A, capBytesHint: X }` | `{ maxBytes: X, backing: { allocator: A } }` |
+
+`maxBytes` and `columnCapacity` keep their names and their meaning. The types `EntityBudget` and
+`SharedMemoryArm` are removed: the three fields of a budget are now fields of `memory` itself, and
+the shared backing is the string `"shared"`. The new type `MemoryBacking` names the backing axis.
+`ResolvedECSMemory.source` now names the backing alone, and the new field `sizing` names the size
+axis.
+
+### Fixed — a custom allocator with a limit below about 12.6 MiB could not build a world
+
+The `allocator` arm reserved the full identity space for the entity index, always, and ignored the
+limit that `capBytesHint` declared. The reservation happens when the store is built, so the index
+alone did not fit under a small limit and the world threw `STORE_CAP_EXCEEDED` before it existed.
+The error then blamed the caller for runaway entity growth, in a world that held no entities. Every
+other arm already sized the index from the limit.
+
+The reservation of the entity index now comes from `entities` first, from the byte limit second, and
+from the default last — for each backing equally.
+
+### Fixed — a declared number of entities now sizes the entity index on every backing
+
+Only the `budget` arm derived the index from the entity count, and that arm forced the heap backing.
+On each other backing the index was sized backwards from the byte limit, which reserves much more
+than a small world needs. A count now reaches the index whichever backing holds the bytes.
+
+### Added — `fixedSabAllocator`, a shared buffer that does not grow
+
+`fixedSabAllocator(maxBytes)`, from `@oasys/oecs/shared`, reserves one fixed `SharedArrayBuffer` at
+the limit. It is `heapArraybufferAllocator` with a `SharedArrayBuffer`, so the bytes stay shareable
+with a worker or a WASM module and the buffer never moves.
+
+It exists for a measured reason. JavaScriptCore has no fast store path for a TypedArray view over a
+GROWABLE `SharedArrayBuffer`: a column read costs what a fixed buffer costs, but every column write
+costs several times more. The cost is for each access and not for each byte, so a small world pays
+the same multiple as a large one. V8 shows no such difference. Safari and Bun are JavaScriptCore. A
+fixed buffer restores the fast store path on both engine families and gives up only the growth.
+
+`growableSabAllocator` and `wasmMemoryAllocator` now carry that warning in their own documentation.
+A shared `WebAssembly.Memory` gives a growable `SharedArrayBuffer` and can give nothing else, so the
+WASM backing should pay the same cost on JavaScriptCore. That last point is reasoning and not
+measurement, and it is marked as such.
+
+The default backing for `{ backing: "shared" }` is unchanged: it is still `growableSabAllocator`.
+
+### Fixed — the fixed-length rule for a column view is now stated and locked
+
+Each column view is built with an explicit `(byteOffset, length)`. A TypedArray built with no length
+argument tracks the length of its buffer, and measurement puts that shape far behind a fixed-length
+view on every engine tested. `makeView` is the only place that builds a column view, but nothing
+said so and nothing tested a view's length. The rule is now in the `makeView` documentation, and two
+tests hold it: one walks every column of every archetype, and one proves that a view keeps its
+length when the buffer below it grows. The second matters most, because a length-tracking view
+survives the identity and data checks that were already there.
+
 ## [0.5.4] — 2026-07-31
 
 ### Added — `cursor` and `cursorRead`, the accessor for a sweep by id

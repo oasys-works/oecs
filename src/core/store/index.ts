@@ -158,7 +158,8 @@ export {
 	DEFAULT_SAB_ALLOCATOR,
 	wasmMemoryAllocator,
 	growableSabAllocator,
-	heapArraybufferAllocator
+	heapArraybufferAllocator,
+	fixedSabAllocator
 } from "./allocator";
 
 export { StoreRestoreError, snapshotColumnStore, restoreColumnStore } from "./snapshot";

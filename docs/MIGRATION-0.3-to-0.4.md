@@ -101,11 +101,17 @@ const world = new ECS({ memory: { maxBytes: 32 * 1024 * 1024 } });        // a b
 const world = new ECS({ memory: { columnCapacity: 4096 } });              // set the initial rows for each archetype
 ```
 
+> [!IMPORTANT]
+> **The shapes above are the shapes of 0.4.** In 0.6 the `memory` arms became two independent
+> fields: `{ budget: { entities: N } }` is now `{ entities: N }`, and `{ shared: {} }` is now
+> `{ backing: "shared" }`. Refer to [memory](./api/memory.md) for the table of each rewrite. Each
+> removed arm throws with its new spelling, so nothing fails in silence.
+
 The default profile is a **pure-TS heap**: a plain resizable `ArrayBuffer`. So it needs no
 `SharedArrayBuffer`, and no cross-origin isolation (COOP/COEP). To select the shared-memory profile,
-for worker offload or a WASM compute backend, use `new ECS({ memory: { shared: {} } })` with the
-`@oasys/oecs/shared` entry point. The `memory` field takes one of the arms `budget`, `maxBytes`,
-`columnCapacity`, `shared`, `wasm`, or `allocator`. The package also exports `resolveECSMemory(...)`,
+for worker offload or a WASM compute backend, use the `@oasys/oecs/shared` entry point. The `memory`
+field took one of the arms `budget`, `maxBytes`, `columnCapacity`, `shared`, `wasm`, or `allocator`.
+The package also exports `resolveECSMemory(...)`,
 if you want to examine the result of an intention. Since 0.5.0 it imports from
 `@oasys/oecs/internal`, and not from the package root.
 
