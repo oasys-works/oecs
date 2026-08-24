@@ -188,6 +188,21 @@ export function alignUp(off: number, align: number): number {
 	return (off + (align - 1)) & ~(align - 1);
 }
 
+/**
+ * Build the TypedArray view for one column.
+ *
+ * EVERY view gets an explicit `(byteOffset, length)`, and it must stay that
+ * way. A TypedArray built with no length argument TRACKS the length of its
+ * buffer. Measurement shows that a length-tracking view over a buffer that can
+ * grow is the worst of all the access shapes: each element access costs many
+ * times what the same access costs through a fixed-length view, on every engine
+ * tested. A fixed-length view over the same growable buffer does not pay that.
+ *
+ * The store never reaches the bad shape, because this function is the only
+ * place that makes a column view and it always gives the length. Keep it the
+ * only place. `extend.test.ts` locks the other half: a view keeps its length
+ * when the buffer below it grows.
+ */
 function makeView(
 	buffer: ArrayBufferLike,
 	typeTag: TypeTagValue,

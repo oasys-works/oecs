@@ -159,6 +159,34 @@ describe("create_column_store — SAB allocation + layout", () => {
 		for (let i = 0; i < f64.length; i++) expect(f64[i]).toBe(Math.PI);
 	});
 
+	it("every column view is fixed-length and never tracks the buffer", () => {
+		// A TypedArray built with no length argument TRACKS its buffer's length.
+		// Measurement puts that shape far behind a fixed-length view on every
+		// engine tested, so `makeView` always gives the length. This walks every
+		// column of every archetype and holds that line: a view spans its own rows
+		// and no more. See the `makeView` doc in `column_store.ts`.
+		const store = createColumnStore(SPEC_MULTI);
+		let checked = 0;
+		for (const s of SPEC_MULTI) {
+			const arch = store.archetypes.get(s.archetypeId);
+			expect(arch).toBeDefined();
+			if (!arch) continue;
+			for (const col of s.columns) {
+				const cv = arch.columns.get(columnKey(col.componentId, col.fieldId));
+				expect(cv).toBeDefined();
+				if (!cv) continue;
+				expect(cv.view.length).toBe(s.rowCapacity);
+				expect(cv.view.byteLength).toBe(s.rowCapacity * cv.stride);
+				// The store is larger than any one column, so a tracking view would
+				// fail both assertions above. This one names why.
+				expect(cv.view.byteLength).toBeLessThan(store.buffer.byteLength);
+				checked++;
+			}
+		}
+		// Guard the guard: a walk that found no columns would pass in silence.
+		expect(checked).toBe(SPEC_MULTI.reduce((n, sp) => n + sp.columns.length, 0));
+	});
+
 	it("f64 columns get 8-byte alignment", () => {
 		// f64's TypedArray ctor throws on a non-8-aligned byte offset. This
 		// pins that the alignment math in `planLayout` does what it claims.

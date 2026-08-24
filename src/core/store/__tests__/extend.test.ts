@@ -256,6 +256,37 @@ describe("extend_column_store — growable in-place fast path", () => {
 		expect(f64After[1]).toBe(3.14);
 	});
 
+	it("keeps column view lengths fixed when the buffer below them grows", () => {
+		// The other half of the rule the `makeView` doc states. The test above
+		// proves the view instance and its data survive an in-place extend, but a
+		// length-TRACKING view survives both of those too, and then silently spans
+		// the grown buffer. Only the length tells the two shapes apart, and the
+		// tracking one is the slowest access shape measured on every engine.
+		const alloc = growableSabAllocator(1024 * 1024);
+		const old = createColumnStore(
+			[spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
+			alloc,
+			{ reservedDescriptorBytes: 4096 }
+		);
+		const before = old.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		expect(before.length).toBe(4);
+		const bytesBefore = old.buffer.byteLength;
+
+		const { store: next } = extendColumnStore(
+			old,
+			{ newArchetypes: [spec(1, 64, [{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.i32 }])] },
+			alloc
+		);
+		// The extend must really have grown the buffer, or the length assertion
+		// below proves nothing.
+		expect(next.buffer.byteLength).toBeGreaterThan(bytesBefore);
+
+		const after = next.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		expect(after).toBe(before);
+		expect(after.length).toBe(4);
+		expect(after.byteLength).toBe(4 * 4);
+	});
+
 	it("new archetype column views land at the SAB tail with zeroed data", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
