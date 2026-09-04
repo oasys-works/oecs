@@ -182,7 +182,7 @@ describe("ECS system registration", () => {
 		const world = new ECS();
 		const threeArity = (_q: SystemContext, _ctx: SystemContext, _dt: number) => {};
 		try {
-			// stands in for an untyped JS caller — the only path a 3-arity fn reaches the bare overload
+			// stands in for an untyped JS caller, the only path a 3-arity fn reaches the bare overload
 			world.registerSystem(threeArity as unknown as SystemFn);
 			expect.unreachable("registration should have thrown");
 		} catch (e) {
@@ -241,11 +241,11 @@ describe("ECS fixed timestep", () => {
 		world.addSystems(SCHEDULE.FIXED_UPDATE, sys);
 		world.startup();
 
-		// Half a step — not enough to tick
+		// Half a step, not enough to tick
 		world.update(0.5 / 60);
 		expect(tickCount).toBe(0);
 
-		// Another half — now accumulated one full step
+		// Another half, now accumulated one full step
 		world.update(0.5 / 60);
 		expect(tickCount).toBe(1);
 	});
@@ -299,7 +299,7 @@ describe("ECS fixed timestep", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		// Should just run UPDATE, no fixed loop
+		// Should only run UPDATE, no fixed loop
 		world.update(1 / 60);
 		expect(order).toEqual(["update"]);
 	});
@@ -341,7 +341,7 @@ describe("ECS fixed timestep", () => {
 		expect(world.fixedAlpha).toBeCloseTo(0.5);
 	});
 
-	it("fixed_timestep getter/setter works", () => {
+	it("fixed_timestep getter and setter works", () => {
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		expect(world.fixedTimestep).toBeCloseTo(1 / 60);
 
@@ -377,7 +377,7 @@ describe("ECS fixed timestep", () => {
 // declare.
 // ============================================================================
 describe("SystemConfig access declarations", () => {
-	it("descriptor preserves declared reads/writes/spawns/despawns/transitions/resources", () => {
+	it("descriptor preserves declared reads, writes, spawns, despawns, transitions and resources", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["x"] as const);
 		const B = world.registerComponent(["y"] as const);
@@ -420,8 +420,8 @@ describe("SystemConfig access declarations", () => {
 
 // ============================================================================
 // Runtime validation of the declared access surface.
-// accessCheck.enter(desc) is called by Schedule before fn() runs; every
-// component read / write / structural change / resource access is checked
+// accessCheck.enter(desc) is called by Schedule before fn() runs. Every
+// component read, write and structural change and resource access is checked
 // against the descriptor's declarations and throws ECSError on a violation.
 // ============================================================================
 describe("Runtime access validation", () => {
@@ -440,8 +440,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			}
@@ -467,8 +467,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.setField(e, Pos, "x", 99);
 			}
@@ -495,8 +495,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.commands.add(e, Vel, { vx: 0, vy: 0 });
 			}
@@ -524,8 +524,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.commands.remove(e, Vel);
 			}
@@ -551,8 +551,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.commands.despawn(e);
 			}
@@ -577,8 +577,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.getResource(Res);
 			}
@@ -591,7 +591,7 @@ describe("Runtime access validation", () => {
 
 	it("throws when system writes an undeclared resource", () => {
 		const world = new ECS();
-		const Res = Symbol("RW") as unknown as import("../../resource").ResourceKey<{ v: number }>;
+		const Res = Symbol("rw") as unknown as import("../../resource").ResourceKey<{ v: number }>;
 		world.resources.register(Res, { v: 1 });
 
 		const sys = world.registerSystem({
@@ -603,8 +603,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [Res],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			fn(ctx: SystemContext) {
 				ctx.setResource(Res, { v: 2 });
 			}
@@ -615,7 +615,7 @@ describe("Runtime access validation", () => {
 		expect(() => world.update(0)).toThrow(/system 'res_writer'.*resource write/);
 	});
 
-	it("validation does not fire for accesses outside any system (setup / teardown)", () => {
+	it("validation does not fire for accesses outside any system (setup and teardown)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Res = Symbol("Outside") as unknown as import("../../resource").ResourceKey<{ v: number }>;
@@ -645,7 +645,7 @@ describe("Runtime access validation", () => {
 		const sys = world.registerSystem({
 			name: "rmw",
 			reads: [],
-			// Only declares writes — must still be allowed to read Pos because
+			// only declares writes, must still be allowed to read Pos because
 			// every write implies a read.
 			writes: [Pos],
 			spawns: [],
@@ -690,7 +690,7 @@ describe("Runtime access validation", () => {
 		expect(() => world.update(0)).not.toThrow();
 	});
 
-	it("transitions declare add/remove component allowances", () => {
+	it("transitions declare add and remove component allowances", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -731,8 +731,8 @@ describe("Runtime access validation", () => {
 			transitions: [],
 			resourceReads: [],
 			resourceWrites: [],
-			// ctx annotated permissive (§typestate escape hatch): this system
-			// DELIBERATELY violates its declaration to assert the runtime throw.
+			// ctx annotated permissive (the permissive escape hatch): this system
+			// deliberately violates its declaration to assert the runtime throw.
 			onAdded(ctx: SystemContext) {
 				ctx.getField(e, Pos, "x");
 			},

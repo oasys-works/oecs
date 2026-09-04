@@ -1,7 +1,7 @@
 # Resources
 
 > [!NOTE]
-> **0.5.0 — a grouped surface.** Registration of a resource, and access to it, are on the
+> **0.5.0, a grouped surface.** Registration of a resource, and access to it, are on the
 > **`ecs.resources`** facade: `ecs.resources.register(Time, {...})`, `ecs.resources.get(Time)`,
 > `ecs.resources.set(Time, v)`, `ecs.resources.remove(Time)`, and `ecs.resources.has(Time)`.
 > Version 0.5.0 **removed** the flat `ecs.*` forms of 0.4 and earlier.
@@ -13,7 +13,7 @@ clock, configuration flags, or the seed of a random number generator.
 ```ts
 import { resourceKey } from "@oasys/oecs";
 
-// 1. Make a key at module scope — the type travels with the key.
+// 1. Make a key at module scope, the type travels with the key.
 const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 
 // 2. Register it with an initial value.
@@ -47,14 +47,14 @@ are methods on `ctx`. There is no registration form on `ctx`, because registrati
 operation that you do at setup time.
 
 ```ts
-// Host — the ecs.resources facade:
+// Host, the ecs.resources facade:
 register<T>(key: ResourceKey<T>, value: T): void;
 get<T>(key: ResourceKey<T>): T;
 set<T>(key: ResourceKey<T>, value: T): void;
 remove<T>(key: ResourceKey<T>): void;
 has<T>(key: ResourceKey<T>): boolean;
 
-// In a system — on ctx:
+// In a system, on ctx:
 getResource<T>(key: ResourceKey<T>): T;
 setResource<T>(key: ResourceKey<T>, value: T): void;
 removeResource<T>(key: ResourceKey<T>): void;
@@ -106,7 +106,7 @@ ecs.registerSystem({
 
 ## See also
 
-- [events](./events.md) — the other channel for data that is not on an entity (it is for one frame,
+- [events](./events.md), the other channel for data that is not on an entity (it is for one frame,
   and it is not persistent)
-- [schedule](./schedule.md) — `runIfResourceEq` gates a system on the value of a resource
-- [determinism](./determinism.md) — why the state hash does not include resources
+- [schedule](./schedule.md), `runIfResourceEq` gates a system on the value of a resource
+- [determinism](./determinism.md), why the state hash does not include resources

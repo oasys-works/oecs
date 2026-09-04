@@ -15,7 +15,7 @@ describe("Tag components", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
-		// At runtime, a ComponentDef is just a branded number (ComponentID)
+		// At runtime, a ComponentDef is only a branded number (ComponentID)
 		expect(typeof Tag.id).toBe("number");
 	});
 
@@ -159,9 +159,9 @@ describe("Tag components", () => {
 		world.addComponent(e, Tag);
 
 		// White-box: `hasColumns` is an internal detail, not on the public
-		// view — iterate the concrete archetype list.
+		// view, iterate the concrete archetype list.
 		let checked = false;
-		for (const arch of world.query(Tag)._nonEmpty()) {
+		for (const arch of world.query(Tag).nonEmptyArchs()) {
 			expect(arch.entityCount).toBe(1);
 			expect(arch.hasColumns).toBe(false);
 			checked = true;

@@ -1,17 +1,17 @@
 /**
  * Entity-index SAB region tests.
  *
- * Covers the standalone region primitive in `entity_index.ts` —
+ * Covers the standalone region primitive in `entity_index.ts`,
  * sizing, header field offsets, init, and the typed-array view
  * factory. Integration with `createColumnStore` is exercised by
- * `column_store.test.ts`; integration with the engine's `Store` (entity
+ * `column_store.test.ts`. Integration with the engine's `Store` (entity
  * placements round-tripping through the region) is covered by the ECS
  * test suite.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-	buildEntityIndexViews,
+	createEntityIndexViews,
 	entityIndexCapacity,
 	entityIndexLength,
 	entityIndexRegionBytes,
@@ -24,7 +24,7 @@ import {
 	setEntityIndexLength
 } from "../entity_index";
 
-describe("entity_index — constants", () => {
+describe("entity_index, constants", () => {
 	it("header is 16 bytes (length + capacity + 8 B pad)", () => {
 		expect(ENTITY_INDEX_HEADER_BYTES).toBe(16);
 	});
@@ -43,7 +43,7 @@ describe("entity_index — constants", () => {
 	});
 });
 
-describe("entity_index — sizing", () => {
+describe("entity_index, sizing", () => {
 	it("region_bytes = header + capacity * 12", () => {
 		expect(entityIndexRegionBytes(0)).toBe(16);
 		expect(entityIndexRegionBytes(1)).toBe(16 + 12);
@@ -57,7 +57,7 @@ describe("entity_index — sizing", () => {
 	});
 });
 
-describe("entity_index — init + readers", () => {
+describe("entity_index, init + readers", () => {
 	function freshRegion(capacity: number) {
 		const buffer = new SharedArrayBuffer(entityIndexRegionBytes(capacity));
 		const view = new DataView(buffer);
@@ -94,19 +94,19 @@ describe("entity_index — init + readers", () => {
 	});
 });
 
-describe("entity_index — typed-array views", () => {
+describe("entity_index, typed-array views", () => {
 	it("views have correct length and shared byte ordering", () => {
 		const cap = 4;
 		const buffer = new SharedArrayBuffer(entityIndexRegionBytes(cap));
 		const view = new DataView(buffer);
 		initEntityIndexRegion(view, 0, cap);
 
-		const v = buildEntityIndexViews(buffer, 0, cap);
+		const v = createEntityIndexViews(buffer, 0, cap);
 		expect(v.generations.length).toBe(cap);
 		expect(v.archetypes.length).toBe(cap);
 		expect(v.rows.length).toBe(cap);
 
-		// All three should be Int32Array — UNASSIGNED (-1) round-trips.
+		// All three should be Int32Array. UNASSIGNED (-1) round-trips.
 		expect(v.generations).toBeInstanceOf(Int32Array);
 		expect(v.archetypes).toBeInstanceOf(Int32Array);
 		expect(v.rows).toBeInstanceOf(Int32Array);
@@ -118,7 +118,7 @@ describe("entity_index — typed-array views", () => {
 		const view = new DataView(buffer);
 		initEntityIndexRegion(view, 0, cap);
 
-		const v = buildEntityIndexViews(buffer, 0, cap);
+		const v = createEntityIndexViews(buffer, 0, cap);
 		expect(v.generations.byteOffset).toBe(ENTITY_INDEX_HEADER_BYTES);
 		expect(v.archetypes.byteOffset).toBe(ENTITY_INDEX_HEADER_BYTES + cap * 4);
 		expect(v.rows.byteOffset).toBe(ENTITY_INDEX_HEADER_BYTES + 2 * cap * 4);
@@ -129,17 +129,17 @@ describe("entity_index — typed-array views", () => {
 		const buffer = new SharedArrayBuffer(entityIndexRegionBytes(cap));
 		const view = new DataView(buffer);
 		initEntityIndexRegion(view, 0, cap);
-		const v = buildEntityIndexViews(buffer, 0, cap);
+		const v = createEntityIndexViews(buffer, 0, cap);
 
 		v.archetypes[0] = -1;
 		v.rows[0] = -1;
 		expect(v.archetypes[0]).toBe(-1);
 		expect(v.rows[0]).toBe(-1);
 
-		// Raw bytes are 0xFF * 4 — what the Zig side reads as i32 == -1
+		// Raw bytes are 0xFF * 4, what the Zig side reads as i32 == -1
 		// (signed) and what a Uint32Array view would read as 4294967295.
 		const u8 = new Uint8Array(buffer);
-		// arch col for cap=2 starts at header (16) + cap*4 (8) = 24; slot 0
+		// arch col for cap=2 starts at header (16) + cap*4 (8) = 24. Slot 0
 		// is bytes 24..27.
 		const archSlot0 = ENTITY_INDEX_HEADER_BYTES + cap * 4;
 		for (let i = archSlot0; i < archSlot0 + 4; i++) {
@@ -152,10 +152,10 @@ describe("entity_index — typed-array views", () => {
 		const buffer = new SharedArrayBuffer(entityIndexRegionBytes(cap));
 		const view = new DataView(buffer);
 		initEntityIndexRegion(view, 0, cap);
-		const v = buildEntityIndexViews(buffer, 0, cap);
+		const v = createEntityIndexViews(buffer, 0, cap);
 
 		v.generations[2] = 0x11_22_33_44;
-		v.archetypes[2] = 0x55_66_77_78; // positive — sign bit clear
+		v.archetypes[2] = 0x55_66_77_78; // positive, sign bit clear
 		v.rows[2] = 0x12_34_56_78;
 
 		expect(v.generations[2]).toBe(0x11_22_33_44);

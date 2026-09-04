@@ -18,11 +18,11 @@ function moveWorld(n: number) {
 	return { world, Pos, Vel, q: world.query(Pos, Vel) };
 }
 
-describe("Query.eachChunk", () => {
+describe("Query.forEachChunk", () => {
 	it("moves entities correctly (Pos += Vel*dt) via cols.mut / cols.read", () => {
 		const N = 64;
 		const { Pos, Vel, q } = moveWorld(N);
-		q.eachChunk((cols, count) => {
+		q.forEachChunk((cols, count) => {
 			const { x, y } = cols.mut(Pos);
 			const { vx, vy } = cols.read(Vel);
 			for (let i = 0; i < count; i++) {
@@ -51,7 +51,7 @@ describe("Query.eachChunk", () => {
 		const { q } = moveWorld(50);
 		let total = 0;
 		let chunks = 0;
-		q.eachChunk((_cols, count) => {
+		q.forEachChunk((_cols, count) => {
 			total += count;
 			chunks++;
 		});
@@ -62,18 +62,18 @@ describe("Query.eachChunk", () => {
 	it("cols.mut stamps the change tick; cols.read does not", () => {
 		const { world, Pos, Vel, q } = moveWorld(4);
 		// store._tick re-syncs at update() start, so two ticks push the visible
-		// current tick to 1 — distinguishable from the setup stamp (0).
+		// current tick to 1, distinguishable from the setup stamp (0).
 		world.update(0);
 		world.update(0);
-		const cur = world._getCurrentTick();
+		const cur = world.getChangeTick();
 		expect(cur).toBeGreaterThanOrEqual(1);
-		q.eachChunk((cols) => {
+		q.forEachChunk((cols) => {
 			cols.mut(Pos);
 			cols.read(Vel);
 		});
-		for (const arch of q._nonEmpty()) {
-			expect(arch._changedTick[Pos.id]).toBe(cur);
-			expect(arch._changedTick[Vel.id]).not.toBe(cur);
+		for (const arch of q.nonEmptyArchs()) {
+			expect(arch.changedTick[Pos.id]).toBe(cur);
+			expect(arch.changedTick[Vel.id]).not.toBe(cur);
 		}
 	});
 
@@ -92,7 +92,7 @@ describe("Query.eachChunk", () => {
 		const q = world.query(Pos, Vel);
 		let chunks = 0;
 		let total = 0;
-		q.eachChunk((cols, count) => {
+		q.forEachChunk((cols, count) => {
 			chunks++;
 			total += count;
 			const { x } = cols.mut(Pos);
@@ -125,9 +125,9 @@ describe("Query.eachChunk", () => {
 		world.disable(ids[4]);
 		const q = world.query(Pos);
 
-		// Default eachChunk visits only the enabled rows.
+		// Default forEachChunk visits only the enabled rows.
 		let enabledSeen = 0;
-		q.eachChunk((cols, count) => {
+		q.forEachChunk((cols, count) => {
 			enabledSeen += count;
 			const { x } = cols.mut(Pos);
 			for (let i = 0; i < count; i++) x[i] += 1;
@@ -136,7 +136,7 @@ describe("Query.eachChunk", () => {
 
 		// includeDisabled() widens the bound to all rows and reaches the disabled tail.
 		let allSeen = 0;
-		q.includeDisabled().eachChunk((cols, count) => {
+		q.includeDisabled().forEachChunk((cols, count) => {
 			allSeen += count;
 			const { x } = cols.mut(Pos);
 			for (let i = 0; i < count; i++) x[i] += 10;
@@ -149,11 +149,11 @@ describe("Query.eachChunk", () => {
 			for (let i = 0; i < arch.entityCount; i++) vals.push(x[i]);
 		});
 		vals.sort((a, b) => a - b);
-		// 2 disabled rows got +10 only → 10; 4 enabled rows got +1 then +10 → 11.
+		// 2 disabled rows got +10 only → 10. 4 enabled rows got +1 then +10 → 11.
 		expect(vals).toEqual([10, 10, 11, 11, 11, 11]);
 	});
 
-	it("is re-entrancy-safe: a nested eachChunk on the same query keeps the outer cursor", () => {
+	it("is re-entrancy-safe: a nested forEachChunk on the same query keeps the outer cursor", () => {
 		const world = new ECS({ memory: { columnCapacity: 16 } });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Tag = world.registerTag();
@@ -171,12 +171,12 @@ describe("Query.eachChunk", () => {
 		let innerPasses = 0;
 		let didNest = false;
 		const outerFirsts: number[] = [];
-		q.eachChunk((cols) => {
+		q.forEachChunk((cols) => {
 			const before = cols.read(Pos).x[0];
 			if (!didNest) {
 				didNest = true; // nest exactly once (and stops the inner pass recursing)
-				// Nested pass over the SAME query — must not re-point the outer cursor.
-				q.eachChunk((inner) => {
+				// Nested pass over the same query, must not re-point the outer cursor.
+				q.forEachChunk((inner) => {
 					innerPasses++;
 					void inner.read(Pos).x[0];
 				});
@@ -195,7 +195,7 @@ describe("Query.eachChunk", () => {
 		const bad = world.registerSystem({
 			...openAccess([Vel]), // Pos intentionally undeclared
 			fn: () => {
-				q.eachChunk((cols) => {
+				q.forEachChunk((cols) => {
 					cols.mut(Pos);
 				});
 			}
@@ -210,7 +210,7 @@ describe("Query.eachChunk", () => {
 		const good = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn: () => {
-				q.eachChunk((cols, count) => {
+				q.forEachChunk((cols, count) => {
 					const { x, y } = cols.mut(Pos);
 					const { vx, vy } = cols.read(Vel);
 					for (let i = 0; i < count; i++) {

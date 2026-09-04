@@ -10,10 +10,10 @@
  * This closes a latent bug as a side-effect: immediate
  * `Store.destroyEntity` previously only flagged row counts, leaving
  * cached queries stale when the destroyed entity was the last in its
- * archetype. The shared `_onArchLenChange` helper now bumps the
+ * archetype. The shared `_onArchShrink` helper now bumps the
  * query epoch on that 1→0 case.
  *
- * The crossing test covers `length` OR `enabledCount`, because the
+ * The crossing test covers `length` or `enabledCount`, because the
  * non-empty filter is split by partition. An enabled
  * row appended to an archetype that is non-empty but all-disabled
  * (`length > 0, enabledCount == 0`) crosses `enabledCount` 0→1 without
@@ -31,7 +31,7 @@ const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
 function getStore(world: ECS): Store {
-	return (world as unknown as { store: Store }).store;
+	return (world as unknown as { _store: Store })._store;
 }
 
 describe("Store._query_dirty_epoch 0-crossings only", () => {
@@ -49,16 +49,16 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 			ids.push(e);
 		}
 
-		const epochAfterPrime = store._queryDirtyEpoch;
+		const epochAfterPrime = store.queryDirtyEpoch;
 
-		// Add a 6th entity to the SAME archetype — 5→6, not a 0-crossing.
+		// Add a 6th entity to the same archetype, 5→6, not a 0-crossing.
 		const e6 = world.spawn();
 		world.addComponent(e6, Pos, { x: 99, y: 99 });
-		expect(store._queryDirtyEpoch).toBe(epochAfterPrime);
+		expect(store.queryDirtyEpoch).toBe(epochAfterPrime);
 
-		// Remove one entity — 6→5, not a 0-crossing.
+		// Remove one entity, 6→5, not a 0-crossing.
 		store.destroyEntity(ids[0]);
-		expect(store._queryDirtyEpoch).toBe(epochAfterPrime);
+		expect(store.queryDirtyEpoch).toBe(epochAfterPrime);
 
 		// Sanity: query still returns the right count after the no-bump path.
 		const q = world.query(Pos);
@@ -82,17 +82,17 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(q.archetypeCount).toBe(1);
 		q.forEach(() => {});
 
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 
-		// New archetype [Pos, Vel]. ArchetypeGraph.install does NOT bump (still empty),
+		// New archetype [Pos, Vel]. ArchetypeGraph.install does not bump (still empty),
 		// but the move into it crosses 0→1 and bumps once on the tgt side.
-		// (The src side — the previously [Pos] arch — drops from 1→0, that's
+		// (The src side, the previously [Pos] arch, drops from 1→0, that's
 		//  another 0-crossing, so two bumps total are expected.)
 		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 
-		expect(store._queryDirtyEpoch).toBeGreaterThan(epochBefore);
+		expect(store.queryDirtyEpoch).toBeGreaterThan(epochBefore);
 		expect(q.archetypeCount).toBe(2);
 	});
 
@@ -102,20 +102,20 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		const Vel = world.registerComponent(Velocity);
 
 		// Establish + cache the [Pos] archetype so a query is already live
-		// before the move below. (The empty/UNASSIGNED archetype is created
+		// before the move below. (The empty and UNASSIGNED archetype is created
 		// lazily at the first createEntity.)
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.query(Pos).forEach(() => {});
 
-		// Cache a query over the NOT-YET-EXISTING [Vel] shape. No [Vel]
+		// Cache a query over the [Vel] shape that does not exist yet. No [Vel]
 		// archetype has been installed, so it currently matches nothing.
 		const qVel = world.query(Vel);
 		expect(qVel.archetypeCount).toBe(0);
 		qVel.forEach(() => {});
 
 		// A component-less (UNASSIGNED) entity gains Vel. This installs the
-		// brand-new [Vel] archetype AND crosses its entity count 0→1. The
+		// brand-new [Vel] archetype and crosses its entity count 0→1. The
 		// observable contract is that the cached query now reports exactly this
 		// entity. (Whether the install itself bumps the dirty epoch is an
 		// internal optimisation and is invisible here: bumps coalesce
@@ -151,7 +151,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		});
 		expect(count).toBe(1);
 
-		// Immediate destroy — previously left _nonEmptyArchetypes stale
+		// Immediate destroy, previously left _nonEmptyArchetypes stale
 		// because the path only set _rowCountsDirty. With the
 		// epoch bumping on the 1→0 crossing, the query rebuilds.
 		store.destroyEntity(e);
@@ -178,14 +178,14 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		const q = world.query(Pos);
 		q.forEach(() => {});
 
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 
-		// Defer-destroy ALL three, then flush. The [Pos] arch crosses 3→0, so
-		// `flushDestroyed`'s inline detector must bump the epoch exactly
-		// once — replacing the old per-entity pre-length Map.
+		// Defer-destroy all three, then flush. The [Pos] arch crosses 3→0, so
+		// `flushDestroys`'s inline detector must bump the epoch exactly
+		// once, replacing the old per-entity pre-length Map.
 		for (const e of ids) store.destroyEntityDeferred(e);
-		store.flushDestroyed();
-		expect(store._queryDirtyEpoch - epochBefore).toBe(1);
+		store.flushDestroys();
+		expect(store.queryDirtyEpoch - epochBefore).toBe(1);
 
 		// And the cached query rebuilds: the emptied archetype is gone.
 		let total = 0;
@@ -195,7 +195,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(total).toBe(0);
 	});
 
-	it("deferred destroy + flush does NOT bump the epoch when no archetype empties", () => {
+	it("deferred destroy + flush does not bump the epoch when no archetype empties", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const store = getStore(world);
@@ -208,14 +208,14 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		}
 		world.query(Pos).forEach(() => {});
 
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 
-		// Destroy 2 of 5 — the [Pos] arch goes 5→3, never reaching 0. No
+		// Destroy 2 of 5, the [Pos] arch goes 5→3, never reaching 0. No
 		// 0-crossing, so the epoch must stay put (queries remain valid).
 		store.destroyEntityDeferred(ids[0]);
 		store.destroyEntityDeferred(ids[1]);
-		store.flushDestroyed();
-		expect(store._queryDirtyEpoch).toBe(epochBefore);
+		store.flushDestroys();
+		expect(store.queryDirtyEpoch).toBe(epochBefore);
 
 		let total = 0;
 		world.query(Pos).forEach((a) => {
@@ -230,7 +230,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		const Vel = world.registerComponent(Velocity);
 		const store = getStore(world);
 
-		// 3 entities in [Pos], 1 entity in [Pos, Vel] — establishes both
+		// 3 entities in [Pos], 1 entity in [Pos, Vel], establishes both
 		// archetypes with non-zero counts.
 		const posOnly: EntityID[] = [];
 		for (let i = 0; i < 3; i++) {
@@ -245,14 +245,14 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		const posArch = store.getEntityArchetype(posOnly[0]);
 		expect(posArch.length).toBe(3);
 
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 
-		// Bulk add Vel to ALL of [Pos] arch:
+		// Bulk add Vel to all of [Pos] arch:
 		//  - src [Pos] crosses 3→0 (bump)
 		//  - tgt [Pos, Vel] is currently 1 (non-zero), goes to 4. No cross.
 		// Total: exactly 1 bump.
 		store.batchAddComponent(posArch.id, Vel, { vx: 0, vy: 0 });
-		expect(store._queryDirtyEpoch - epochBefore).toBe(1);
+		expect(store.queryDirtyEpoch - epochBefore).toBe(1);
 	});
 
 	it("preserves correctness over a stress sequence of mixed mutations", () => {
@@ -270,10 +270,10 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 			world.addComponent(e, Pos, { x: i, y: i });
 			ids.push(e);
 		}
-		// Add Vel to half. Many will share the [Pos, Vel] arch — only the first
+		// Add Vel to half. Many will share the [Pos, Vel] arch, only the first
 		// is a 0-crossing on the tgt side, but each src→tgt move also moves the
 		// src count (the [Pos]-only arch shrinks). Only the 100→99 transition
-		// is a "no-cross" — fine.
+		// is a "no-cross", fine.
 		for (let i = 0; i < 50; i++) {
 			world.addComponent(ids[i], Vel, { vx: 0, vy: 0 });
 		}
@@ -297,8 +297,8 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 /**
  * An enabled row added to an archetype that is non-empty but all-disabled
  * (`length > 0, enabledCount == 0`) crosses `enabledCount` 0→1 without crossing
- * `length`. The old length-only `_onArchLenChange` bump missed it, so a cached
- * default query kept its stale `_nonEmpty` list and the new entity was invisible.
+ * `length`. The old length-only `_onArchShrink` bump missed it, so a cached
+ * default query kept its stale `nonEmptyArchs` list and the new entity was invisible.
  */
 describe("enabled_count 0-crossings on row add", () => {
 	const Tag = ["v"] as const;
@@ -311,15 +311,15 @@ describe("enabled_count 0-crossings on row add", () => {
 		const a = world.spawn();
 		world.addComponent(a, T, { v: 1 });
 
-		// Prime the cached query's _nonEmpty list with the [Tag] archetype.
+		// Prime the cached query's nonEmptyArchs list with the [Tag] archetype.
 		const q = world.query(T);
 		expect(q.entityCount).toBe(1);
 
-		// All of [Tag] goes disabled — enabledCount 1→0, epoch bumps, cache drops it.
+		// All of [Tag] goes disabled, enabledCount 1→0, epoch bumps, cache drops it.
 		world.disable(a);
 		expect(q.entityCount).toBe(0);
 
-		// A fresh enabled entity joins the SAME archetype: length 1→2 (no cross),
+		// A fresh enabled entity joins the same archetype: length 1→2 (no cross),
 		// enabledCount 0→1 (the missed cross). The new row must be visible.
 		const b = world.spawn();
 		world.addComponent(b, T, { v: 2 });
@@ -346,21 +346,21 @@ describe("enabled_count 0-crossings on row add", () => {
 		world.query(T).forEach(() => {});
 		world.disable(a);
 
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 		const b = world.spawn();
 		world.addComponent(b, T, { v: 2 }); // enabledCount 0→1, length 1→2
-		expect(store._queryDirtyEpoch).toBeGreaterThan(epochBefore);
+		expect(store.queryDirtyEpoch).toBeGreaterThan(epochBefore);
 	});
 
-	it("cached query sees an entity transitioned INTO an all-disabled target archetype", () => {
+	it("cached query sees an entity transitioned into an all-disabled target archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 		world.startup();
 
-		// A persistent [Pos]-only entity keeps the SOURCE archetype non-empty
+		// A persistent [Pos]-only entity keeps the source archetype non-empty
 		// across the transition below, so the source side never crosses `length`
-		// 0 — isolating the bug to the TARGET side's enabledCount crossing (else
+		// 0, isolating the bug to the target side's enabledCount crossing (else
 		// the incidental source-side bump would rebuild the cache and mask it).
 		const keep = world.spawn();
 		world.addComponent(keep, Pos, { x: 7, y: 7 });
@@ -405,11 +405,11 @@ describe("enabled_count 0-crossings on row add", () => {
 		// Deferred add into the all-disabled [Tag] archetype, settled by
 		// flushStructural via `_flushAdds` → `_settleFlushDirty`.
 		const b = world.spawn();
-		const epochBefore = store._queryDirtyEpoch;
+		const epochBefore = store.queryDirtyEpoch;
 		store.addComponentDeferred(b, T, { v: 2 });
 		store.flushStructural();
 
-		expect(store._queryDirtyEpoch).toBeGreaterThan(epochBefore);
+		expect(store.queryDirtyEpoch).toBeGreaterThan(epochBefore);
 		expect(q.entityCount).toBe(1);
 		const seen: number[] = [];
 		q.forEachEntity((e) => seen.push(Number(e)));

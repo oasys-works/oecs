@@ -10,7 +10,7 @@ function makeWorld(n: number): { ecs: ECS; ents: EntityID[] } {
 	return { ecs, ents };
 }
 
-describe("relations wildcard — (R, *) over an exclusive relation", () => {
+describe("relations wildcard, (R, *) over an exclusive relation", () => {
 	it("enumerates no pairs for an empty relation", () => {
 		const ecs = new ECS();
 		const targets = ecs.relations.register();
@@ -33,7 +33,7 @@ describe("relations wildcard — (R, *) over an exclusive relation", () => {
 	it("orders sources canonically regardless of insertion order", () => {
 		const { ecs, ents } = makeWorld(3);
 		const targets = ecs.relations.register();
-		// Add out of order; canonical (entity-index ascending) order must win.
+		// Add out of order. Canonical (entity-index ascending) order must win.
 		ecs.relations.add(ents[2], targets, ents[0]);
 		ecs.relations.add(ents[0], targets, ents[1]);
 		expect(ecs.relations.pairsOf(targets)).toEqual([
@@ -60,7 +60,7 @@ describe("relations wildcard — (R, *) over an exclusive relation", () => {
 	});
 });
 
-describe("relations wildcard — (R, *) over a multi relation", () => {
+describe("relations wildcard, (R, *) over a multi relation", () => {
 	it("enumerates no pairs for an empty relation", () => {
 		const ecs = new ECS();
 		const likes = ecs.relations.register({ multi: true });
@@ -83,7 +83,7 @@ describe("relations wildcard — (R, *) over a multi relation", () => {
 	it("enumerates pairs across multiple multi-target sources, canonically", () => {
 		const { ecs, ents } = makeWorld(4);
 		const likes = ecs.relations.register({ multi: true });
-		// Source ents[2] added first; sources must still come out index-ascending.
+		// Source ents[2] added first. Sources must still come out index-ascending.
 		ecs.relations.add(ents[2], likes, ents[0]);
 		ecs.relations.add(ents[2], likes, ents[3]);
 		ecs.relations.add(ents[0], likes, ents[1]);
@@ -104,7 +104,7 @@ describe("relations wildcard — (R, *) over a multi relation", () => {
 	});
 });
 
-describe("relations wildcard — (*, T) across all relation kinds", () => {
+describe("relations wildcard, (*, T) across all relation kinds", () => {
 	it("returns no sources when nothing targets T", () => {
 		const { ecs, ents } = makeWorld(2);
 		ecs.relations.register();
@@ -141,12 +141,12 @@ describe("relations wildcard — (*, T) across all relation kinds", () => {
 	});
 });
 
-describe("relations wildcard — determinism", () => {
+describe("relations wildcard, determinism", () => {
 	// Insertion-order independence is asserted directly: edges go into a
-	// SINGLE world in scrambled order, then `pairsOf` must return the
-	// spec-canonical order (sources ascending by entity index; each source's
+	// single world in scrambled order, then `pairsOf` must return the
+	// spec-canonical order (sources ascending by entity index, each source's
 	// targets ascending by id). Comparing against an explicit sorted
-	// expectation — rather than a second world built in a different order —
+	// expectation, rather than a second world built in a different order,
 	// is what keeps this non-tautological: a `pairsOf` that leaked
 	// insertion order would fail the expectation, whereas two
 	// identically-created worlds (same EntityIDs) would still match each
@@ -179,7 +179,7 @@ describe("relations wildcard — determinism", () => {
 		ecs.relations.add(ents[3], r, ents[1]);
 		ecs.relations.add(ents[0], r, ents[1]);
 		ecs.relations.add(ents[0], r, ents[2]);
-		// Spec: sources ascending; within a source, targets ascending by id.
+		// Spec: sources ascending. Within a source, targets ascending by id.
 		expect(ecs.relations.pairsOf(r)).toEqual([
 			[ents[0], ents[1]],
 			[ents[0], ents[2]],

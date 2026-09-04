@@ -1,13 +1,13 @@
 /**
- * Relations — `OnDeleteTarget` cleanup policies.
+ * Relations, `OnDeleteTarget` cleanup policies.
  *
  * When a relation **target** is destroyed, the per-relation cleanup policy
  * chosen at registration runs at destroy-flush (and the immediate-destroy
  * path), driven off the reverse index:
  *
- *   - `delete` — cascade-destroy every source (iteratively for chains/trees);
- *   - `clear`  — drop the relation from every source; sources survive;
- *   - `orphan` — leave it dangling (the default; reads stay safe).
+ *   - `delete`, cascade-destroy every source (iteratively for chains and trees)
+ *   - `clear` , drop the relation from every source. Sources survive
+ *   - `orphan`, leave it dangling (the default, reads stay safe).
  *
  * Covers the issue's acceptance criteria across both cardinalities, both
  * destroy paths (immediate + deferred flush), a multi-level `delete` cascade,
@@ -23,7 +23,7 @@ import type { EntityID } from "../../entity";
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-describe("OnDeleteTarget = delete — cascade", () => {
+describe("OnDeleteTarget = delete, cascade", () => {
 	it("destroying a target destroys its sources (exclusive, immediate)", () => {
 		const store = new Store();
 		const ChildOf = store.registerRelation({ onDeleteTarget: "delete" });
@@ -49,7 +49,7 @@ describe("OnDeleteTarget = delete — cascade", () => {
 		store.addRelation(child, ChildOf, parent);
 
 		store.destroyEntityDeferred(parent);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(parent)).toBe(false);
 		expect(store.isAlive(child)).toBe(false);
@@ -67,7 +67,7 @@ describe("OnDeleteTarget = delete — cascade", () => {
 		store.addRelation(c, ChildOf, p);
 
 		store.destroyEntityDeferred(gp);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(gp)).toBe(false);
 		expect(store.isAlive(p)).toBe(false);
@@ -96,7 +96,7 @@ describe("OnDeleteTarget = delete — cascade", () => {
 		// A long exclusive ancestry: chain[i+1] --ChildOf--> chain[i], so destroying
 		// the root (chain[0]) must cascade the entire chain. The earlier immediate
 		// path recursed one `destroyEntity` frame per level and blew the call stack
-		// at this depth; the work-list drain is depth-independent, like the deferred
+		// at this depth. The work-list drain is depth-independent, like the deferred
 		// path has always been.
 		const store = new Store();
 		const ChildOf = store.registerRelation({ onDeleteTarget: "delete" });
@@ -126,7 +126,7 @@ describe("OnDeleteTarget = delete — cascade", () => {
 		store.addRelation(grandkids[1], ChildOf, kids[0]);
 
 		store.destroyEntityDeferred(root);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		for (const k of kids) expect(store.isAlive(k)).toBe(false);
 		for (const g of grandkids) expect(store.isAlive(g)).toBe(false);
@@ -158,25 +158,25 @@ describe("OnDeleteTarget = delete — cascade", () => {
 		const other = store.createEntity();
 		const s1 = store.createEntity();
 		const s2 = store.createEntity();
-		// s1 and s2 both like tgt; s1 also likes `other` (which is NOT destroyed).
+		// s1 and s2 both like tgt. S1 also likes `other` (which is not destroyed).
 		store.addRelation(s1, Likes, tgt);
 		store.addRelation(s1, Likes, other);
 		store.addRelation(s2, Likes, tgt);
 
 		store.destroyEntityDeferred(tgt);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(tgt)).toBe(false);
 		expect(store.isAlive(s1)).toBe(false);
 		expect(store.isAlive(s2)).toBe(false);
-		// `other` had no relation TO the dead target, so it survives — and its
+		// `other` had no relation to the dead target, so it survives, and its
 		// reverse set no longer lists the (now destroyed) s1.
 		expect(store.isAlive(other)).toBe(true);
 		expect(sorted(store.sourcesOf(other, Likes))).toEqual([]);
 	});
 });
 
-describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
+describe("OnDeleteTarget = clear, sources survive, link dropped", () => {
 	it("removes the relation from every source (exclusive)", () => {
 		const store = new Store();
 		const Targets = store.registerRelation({ onDeleteTarget: "clear" });
@@ -187,7 +187,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
 		store.addRelation(s2, Targets, tgt);
 
 		store.destroyEntityDeferred(tgt);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(s1)).toBe(true);
 		expect(store.isAlive(s2)).toBe(true);
@@ -207,7 +207,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
 		store.addRelation(src, Likes, keep);
 
 		store.destroyEntityDeferred(dead);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(src)).toBe(true);
 		expect(sorted(store.targetsOf(src, Likes))).toEqual([keep as number]);
@@ -223,7 +223,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
 		store.addRelation(src, Likes, dead);
 
 		store.destroyEntityDeferred(dead);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(src)).toBe(true);
 		expect(store.hasRelation(src, Likes)).toBe(false);
@@ -244,7 +244,7 @@ describe("OnDeleteTarget = clear — sources survive, link dropped", () => {
 	});
 });
 
-describe("OnDeleteTarget = orphan — default dangling behaviour", () => {
+describe("OnDeleteTarget = orphan, default dangling behaviour", () => {
 	it("leaves the source alive with a dangling, safe-to-read link", () => {
 		const store = new Store();
 		const Targets = store.registerRelation(); // default: orphan
@@ -253,10 +253,10 @@ describe("OnDeleteTarget = orphan — default dangling behaviour", () => {
 		store.addRelation(src, Targets, tgt);
 
 		store.destroyEntityDeferred(tgt);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(src)).toBe(true);
-		// The forward link still resolves to the dead handle — reading it doesn't
+		// The forward link still resolves to the dead handle, reading it doesn't
 		// crash, and `isAlive` detects it as dead (no aliasing).
 		const dangling = store.targetOf(src, Targets);
 		expect(dangling).toBe(tgt);
@@ -277,7 +277,7 @@ describe("OnDeleteTarget = orphan — default dangling behaviour", () => {
 	});
 });
 
-describe("OnDeleteTarget — recycled slot cleanliness + mixed policies", () => {
+describe("OnDeleteTarget, recycled slot cleanliness + mixed policies", () => {
 	it("a slot freed by a delete cascade comes back clean", () => {
 		const store = new Store();
 		const ChildOf = store.registerRelation({ onDeleteTarget: "delete" });
@@ -288,7 +288,7 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies", () => 
 		store.destroyEntity(parent);
 		expect(store.isAlive(child)).toBe(false);
 
-		// Recycle a slot — it must not inherit any relation state.
+		// Recycle a slot. It must not inherit any relation state.
 		const reused = store.createEntity();
 		expect(store.hasRelation(reused, ChildOf)).toBe(false);
 		expect(store.targetOf(reused, ChildOf)).toBeUndefined();
@@ -308,7 +308,7 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies", () => 
 		store.addRelation(sOrf, Orf, tgt);
 
 		store.destroyEntityDeferred(tgt);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(sDel)).toBe(false); // delete → gone
 		expect(store.isAlive(sClr)).toBe(true); // clear → survives, link dropped
@@ -318,7 +318,7 @@ describe("OnDeleteTarget — recycled slot cleanliness + mixed policies", () => 
 	});
 });
 
-describe("OnDeleteTarget — ECS surface", () => {
+describe("OnDeleteTarget. ECS surface", () => {
 	it("registers a delete-policy relation and cascades through the ECS wrapper", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register({ onDeleteTarget: "delete" });
@@ -326,7 +326,7 @@ describe("OnDeleteTarget — ECS surface", () => {
 		const child = world.spawn();
 		world.relations.add(child, ChildOf, parent);
 
-		// `ECS.destroyEntity` is the deferred surface — the cascade runs at flush.
+		// `ECS.destroyEntity` is the deferred surface, the cascade runs at flush.
 		world.despawn(parent);
 		world.flush();
 
@@ -335,7 +335,7 @@ describe("OnDeleteTarget — ECS surface", () => {
 	});
 });
 
-describe("compact_relations — reverse-index reclaim under orphan churn", () => {
+describe("compact_relations, reverse-index reclaim under orphan churn", () => {
 	it("drops an exclusive orphan relation's dead-target reverse entry", () => {
 		const store = new Store();
 		const Targets = store.registerRelation(); // default: orphan
@@ -390,7 +390,7 @@ describe("compact_relations — reverse-index reclaim under orphan churn", () =>
 		expect(sorted(store.sourcesOf(live, Targets))).toEqual([src as number]);
 	});
 
-	it("is generation-precise — reclaims the dead key, keeps a recycled slot's live key", () => {
+	it("is generation-precise, reclaims the dead key, keeps a recycled slot's live key", () => {
 		const store = new Store();
 		const Targets = store.registerRelation();
 		const tgt = store.createEntity();
@@ -399,7 +399,7 @@ describe("compact_relations — reverse-index reclaim under orphan churn", () =>
 
 		store.destroyEntity(tgt); // frees tgt's slot; src dangles at the dead handle
 
-		// A fresh entity may recycle tgt's index with a bumped generation — the
+		// A fresh entity may recycle tgt's index with a bumped generation, the
 		// reverse key carries the generation, so the two never alias.
 		const reused = store.createEntity();
 		const src2 = store.createEntity();
@@ -441,7 +441,7 @@ describe("compact_relations — reverse-index reclaim under orphan churn", () =>
 		const src = world.spawn();
 		world.relations.add(src, Targets, tgt);
 
-		// `ECS.destroyEntity` is deferred — flush so the orphan link goes dangling.
+		// `ECS.destroyEntity` is deferred, flush so the orphan link goes dangling.
 		world.despawn(tgt);
 		world.flush();
 		expect(sorted(world.relations.sourcesOf(tgt, Targets))).toEqual([src as number]);

@@ -1,20 +1,20 @@
 /**
- * Event ring — SPSC ring buffer for ECS signal/event payloads shared
+ * Event ring. SPSC ring buffer for ECS signal and event payloads shared
  * between TS and the Zig sim.
  *
  * Same byte layout as the command ring (`command_ring.ts`); the two
  * could share a primitive but keeping them separate makes the
  * direction of flow explicit: command ring is WASM→TS (structural
  * intents to drain post-tick); event ring is bidirectional during
- * `tick()` — Zig systems push events, TS readers (or other Zig
+ * `tick()`. Zig systems push events, TS readers (or other Zig
  * systems) drain.
  *
  * Layout (identical to command ring):
  *
- *   [ write_head:    u32 ]   slot 0..N-1, monotonic (NOT slot-modulo)
+ *   [ write_head:    u32 ]   slot 0..N-1, monotonic (not slot-modulo)
  *   [ read_head:     u32 ]   slot 0..N-1, monotonic
  *   [ capacity:      u32 ]   slot count, power-of-two
- *   [ overflow_flag: u32 ]   0 = OK; 1 = sticky overflow witness
+ *   [ overflow_flag: u32 ]   0 = OK, 1 = sticky overflow witness
  *   [ slot 0:        16 B ]  opCode: u8, payload: [15]u8
  *   [ slot 1:        16 B ]  ...
  *
@@ -22,33 +22,33 @@
  * registration time). The 0 op-code is
  * reserved as the empty-slot marker so a zero-initialised SAB does not
  * appear to hold a valid event. Event-def registration starts numbering
- * from 1 to honour this; the engine integration in 4D+ enforces it.
+ * from 1 to honour this. The engine integration in 4D+ enforces it.
  *
  * SPSC contract (single host thread):
- *   - Producer: Zig sim `tick()` (post-4D) OR TS host (test producers /
+ *   - Producer: Zig sim `tick()` (post-4D) or TS host (test producers /
  *     existing JS-side emitters bridged into the ring).
- *   - Consumer: TS host drain (post-4D) OR Zig system that reads
+ *   - Consumer: TS host drain (post-4D) or Zig system that reads
  *     queued events from a sibling system.
  *   - The two never run concurrently (one host thread orchestrates
  *     both). A later worker offload promotes the head
- *     bumps to `Atomics.store`; that's an additive change without
+ *     bumps to `Atomics.store`. That's an additive change without
  *     altering the layout.
  *
  * Payload size: fixed 15 bytes per slot. Today's events all fit
  * (e.g. a 12-byte 3-field event, a 4-byte 1-field event, a 0-field
  * signal). Larger payloads require a separate variable-size ring
- * design — out of scope here.
+ * design, out of scope here.
  *
  * Region placement: between the entity-index region and the descriptor
- * region so its offset is stable across descriptor / column growth.
+ * region so its offset is stable across descriptor and column growth.
  * `header.event_ring_off` (the field promoted out of `_reserved0`)
- * carries the offset; 0 means absent.
+ * carries the offset, 0 means absent.
  */
 
 /** Total bytes for the ring header. Matches command ring exactly. */
 export const EVENT_RING_HEADER_BYTES = 16;
 
-/** Fixed slot size — 1-byte opCode + 15-byte payload. Matches
+/** Fixed slot size, 1-byte opCode + 15-byte payload. Matches
  * command ring exactly. */
 export const EVENT_RING_SLOT_BYTES = 16;
 
@@ -57,7 +57,7 @@ export const EVENT_RING_SLOT_BYTES = 16;
 export const EVENT_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
 /** Byte offsets within the ring header. Mirrored on the Zig side in
- * `packages/sim/src/event_ring.zig` — keep in sync. */
+ * `packages/sim/src/event_ring.zig`, keep in sync. */
 export const EVENT_RING_HEADER_OFFSETS = {
 	write_head: 0,
 	read_head: 4,
@@ -66,7 +66,7 @@ export const EVENT_RING_HEADER_OFFSETS = {
 } as const;
 
 /** Op-code = `0` is reserved across the SAB layer as "empty slot"
- * (see file header). Event-def IDs start at 1; `ECS.registerEvent`
+ * (see file header). Event-def IDs start at 1. `ECS.registerEvent`
  * shifts to honour this when wiring SAB-backed channels in 4D+. */
 export const EVENT_OP_EMPTY = 0;
 
@@ -87,7 +87,7 @@ export class EventRingError extends Error {
 }
 
 /** Initialise the ring header at `ringOff` in the SAB. Zeroes
- * `write_head`, `read_head`, and `overflow_flag`; sets `capacity_slots`.
+ * `write_head`, `read_head`, and `overflow_flag`. Sets `capacity_slots`.
  * Slot bytes are left as-is (callers normally allocate the ring on a
  * fresh, zero-initialised SAB). */
 export function initEventRing(view: DataView, ringOff: number, capacitySlots: number): void {
@@ -102,26 +102,26 @@ export function initEventRing(view: DataView, ringOff: number, capacitySlots: nu
 	view.setUint32(ringOff + EVENT_RING_HEADER_OFFSETS.overflow_flag, 0, true);
 }
 
-export function ringWriteHead(view: DataView, ringOff: number): number {
+export function eventRingWriteHead(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + EVENT_RING_HEADER_OFFSETS.write_head, true);
 }
-export function ringReadHead(view: DataView, ringOff: number): number {
+export function eventRingReadHead(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + EVENT_RING_HEADER_OFFSETS.read_head, true);
 }
-export function ringCapacitySlots(view: DataView, ringOff: number): number {
+export function eventRingCapacitySlots(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + EVENT_RING_HEADER_OFFSETS.capacity_slots, true);
 }
-export function ringOverflow(view: DataView, ringOff: number): boolean {
+export function eventRingOverflow(view: DataView, ringOff: number): boolean {
 	return view.getUint32(ringOff + EVENT_RING_HEADER_OFFSETS.overflow_flag, true) !== 0;
 }
 
 /** Pending event count = `(write_head - read_head) mod 2^32`. */
 export function pendingEventCount(view: DataView, ringOff: number): number {
-	return (ringWriteHead(view, ringOff) - ringReadHead(view, ringOff)) >>> 0;
+	return (eventRingWriteHead(view, ringOff) - eventRingReadHead(view, ringOff)) >>> 0;
 }
 
 /** Push an event into the ring. Returns `false` on overflow and sets
- * the (sticky) overflow flag. `opCode` must be > 0 — 0 is reserved as
+ * the (sticky) overflow flag. `opCode` must be > 0, 0 is reserved as
  * the empty-slot marker. Payload must be exactly 15 bytes. */
 export function pushEvent(
 	view: DataView,
@@ -140,9 +140,9 @@ export function pushEvent(
 			`event payload must be ${EVENT_RING_SLOT_BYTES - 1} bytes (got ${payload.byteLength})`
 		);
 	}
-	const writeHead = ringWriteHead(view, ringOff);
-	const readHead = ringReadHead(view, ringOff);
-	const capacity = ringCapacitySlots(view, ringOff);
+	const writeHead = eventRingWriteHead(view, ringOff);
+	const readHead = eventRingReadHead(view, ringOff);
+	const capacity = eventRingCapacitySlots(view, ringOff);
 	if ((writeHead - readHead) >>> 0 >= capacity) {
 		view.setUint32(ringOff + EVENT_RING_HEADER_OFFSETS.overflow_flag, 1, true);
 		return false;
@@ -158,7 +158,7 @@ export function pushEvent(
 	return true;
 }
 
-/** Read one event from the ring. Returns opCode (0 = empty/no event)
+/** Read one event from the ring. Returns opCode (0 = empty, no event)
  * and fills `outPayload` with 15 bytes. When 0 is returned,
  * `outPayload` is untouched. */
 export function popEvent(view: DataView, ringOff: number, outPayload: Uint8Array): number {
@@ -167,10 +167,10 @@ export function popEvent(view: DataView, ringOff: number, outPayload: Uint8Array
 			`outPayload must be ${EVENT_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
 		);
 	}
-	const writeHead = ringWriteHead(view, ringOff);
-	const readHead = ringReadHead(view, ringOff);
+	const writeHead = eventRingWriteHead(view, ringOff);
+	const readHead = eventRingReadHead(view, ringOff);
 	if (writeHead === readHead) return EVENT_OP_EMPTY;
-	const capacity = ringCapacitySlots(view, ringOff);
+	const capacity = eventRingCapacitySlots(view, ringOff);
 	const slotIdx = readHead & (capacity - 1);
 	const slotOff = ringOff + EVENT_RING_HEADER_BYTES + slotIdx * EVENT_RING_SLOT_BYTES;
 	const opCode = view.getUint8(slotOff);

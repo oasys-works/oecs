@@ -3,7 +3,7 @@ import {
   assert,
   assertNonNull,
   isNonNegativeInteger,
-  isNonNull,
+  isNotNull,
   unsafeCast,
   validateAndCast,
 } from "../assertions";
@@ -37,23 +37,23 @@ describe("assertions", () => {
   });
 
   //=========================================================
-  // isNonNull
+  // isNotNull
   //=========================================================
 
   it("is_non_null returns false for null", () => {
-    expect(isNonNull(null)).toBe(false);
+    expect(isNotNull(null)).toBe(false);
   });
 
   it("is_non_null returns true for undefined", () => {
-    // isNonNull only checks !== null, not == null
-    expect(isNonNull(undefined)).toBe(true);
+    // isNotNull only checks !== null, not == null
+    expect(isNotNull(undefined)).toBe(true);
   });
 
   it("is_non_null returns true for non-null values", () => {
-    expect(isNonNull(0)).toBe(true);
-    expect(isNonNull("")).toBe(true);
-    expect(isNonNull(false)).toBe(true);
-    expect(isNonNull({})).toBe(true);
+    expect(isNotNull(0)).toBe(true);
+    expect(isNotNull("")).toBe(true);
+    expect(isNotNull(false)).toBe(true);
+    expect(isNotNull({})).toBe(true);
   });
 
   //=========================================================

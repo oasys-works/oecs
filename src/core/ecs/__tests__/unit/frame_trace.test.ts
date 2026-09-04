@@ -2,10 +2,10 @@
  * The per-world frame-trace seam. Asserts that a `FrameTraceRecorder`
  * attached via `ECS.setTrace` captures one frame per `update()`, with the causal
  * nesting the seam promises: `ctx.commands.*` events land inside the issuing
- * system's `systemStart`/`systemEnd` span, and observer firings land between a
- * `flushBegin`/`flushEnd` pair (after the system that triggered them). The
+ * system's `systemBegin` and `systemEnd` span, and observer firings land between a
+ * `flushBegin` and `flushEnd` pair (after the system that triggered them). The
  * separate guarantee that the seam is *inert* (never perturbs `stateHash`) is
- * pinned by the gordian-knot golden vectors; here we assert it locally too.
+ * asserted here as well, so this file stands on its own.
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
@@ -20,7 +20,7 @@ function find(events: readonly FrameTraceEvent[], pred: (e: FrameTraceEvent) => 
 }
 
 describe("frame-trace seam", () => {
-	it("captures one frame per update, bracketed by tick_begin/tick_end", () => {
+	it("captures one frame per update, bracketed by tick_begin and tick_end", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
 		const sys = world.registerSystem({
@@ -44,8 +44,8 @@ describe("frame-trace seam", () => {
 		expect(frames.length).toBe(2);
 		expect(frames[0]!.tick).toBe(0);
 		expect(frames[1]!.tick).toBe(1);
-		// tick_begin/tick_end bracket the frame (they are not in the event list —
-		// they open/close it), and the dt is recorded.
+		// tick_begin and tick_end bracket the frame (they are not in the event list.
+		// They open and close it), and the dt is recorded.
 		expect(frames[0]!.dt).toBeCloseTo(1 / 60);
 		// Each frame saw the system run.
 		for (const f of frames) {
@@ -83,7 +83,7 @@ describe("frame-trace seam", () => {
 		expect(end).toBeGreaterThan(spawn);
 	});
 
-	it("records every deferred op as command_queued — spawn's bundle attaches included", () => {
+	it("records every deferred op as command_queued, spawn's bundle attaches included", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent({ x: "i32" });
 		const Vel = world.registerComponent({ vx: "i32" });
@@ -94,7 +94,7 @@ describe("frame-trace seam", () => {
 			reads: [],
 			writes: [],
 			fn: (ctx) => {
-				// One of each deferred op; every one must surface in the trace.
+				// One of each deferred op. Every one must surface in the trace.
 				const e = ctx.commands.spawn(Pos({ x: 1 }), Vel({ vx: 2 }));
 				if (victim === -1) victim = e as number;
 				else {
@@ -114,7 +114,7 @@ describe("frame-trace seam", () => {
 		world.update(1 / 60); // frame 0: spawn only (sets victim)
 		world.update(1 / 60); // frame 1: the full op set
 
-		// Frame 0: the spawn AND its two bundle attaches are each traced.
+		// Frame 0: the spawn and its two bundle attaches are each traced.
 		const f0 = rec.frames()[0]!.events;
 		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "spawn").length).toBe(1);
 		expect(f0.filter((e) => e.kind === "command_queued" && e.op === "add").length).toBe(2);
@@ -157,7 +157,7 @@ describe("frame-trace seam", () => {
 		const obs = find(ev, (e) => e.kind === "observer_fired" && e.op === "add");
 		expect(end).toBeGreaterThanOrEqual(0);
 		expect(obs).toBeGreaterThan(end); // observer fires after the system returns
-		// The observer firing is bracketed by a flushBegin … flushEnd pair.
+		// the observer firing is bracketed by a flushBegin … flushEnd pair.
 		expect(fb).toBeGreaterThanOrEqual(0);
 		const fe = ev.findIndex((e, i) => i > obs && e.kind === "flush_end");
 		expect(fe).toBeGreaterThan(obs);
@@ -195,7 +195,7 @@ describe("frame-trace seam", () => {
 		expect(labels).toContain(`observer(${Vel.id})`); // bare-cid fallback
 	});
 
-	it("records event emit/read", () => {
+	it("records event emit and read", () => {
 		const world = new ECS({ deterministic: true });
 		const Ping = eventKey<{ n: number }>("Ping");
 		world.events.register(Ping, ["n"]);
@@ -211,7 +211,7 @@ describe("frame-trace seam", () => {
 			exclusive: true,
 			reads: [],
 			writes: [],
-			fn: (ctx) => void ctx.read(Ping)
+			fn: (ctx) => void ctx.readEvents(Ping)
 		});
 		world.addSystems(SCHEDULE.UPDATE, emitter, { system: reader, ordering: { after: [emitter] } });
 		world.startup();
@@ -246,13 +246,13 @@ describe("frame-trace seam", () => {
 		world.setTrace(rec);
 		world.update(1 / 60);
 		world.setTrace(null);
-		world.update(1 / 60); // no sink — must not throw, must not grow the capture
+		world.update(1 / 60); // no sink, must not throw, must not grow the capture
 		expect(rec.frames().length).toBe(1);
 	});
 
 	it("fires phase_boundary at each phase's post-flush settle point, in order", () => {
 		// A sink that records flushEnd and phaseBoundary into one stream, so we can
-		// pin that phaseBoundary fires immediately AFTER its phase's flushEnd — the
+		// pin that phaseBoundary fires immediately after its phase's flushEnd, the
 		// consistent, fingerprint-able point.
 		class PhaseProbe extends FrameTraceRecorder {
 			readonly marks: string[] = [];
@@ -287,7 +287,7 @@ describe("frame-trace seam", () => {
 
 	it("the POST_UPDATE phase_boundary hash reconciles with the per-tick state_hash", () => {
 		// stateHash() read at the POST_UPDATE boundary equals the post-update per-tick
-		// hash, for a world with no onSet observers — proving the seam fires at the
+		// hash, for a world with no onSet observers, proving the seam fires at the
 		// settled point and the in-frame read sees the same state the tick-end hash does.
 		class HashAtPost extends FrameTraceRecorder {
 			postHash = 0;
@@ -321,15 +321,15 @@ describe("frame-trace seam", () => {
 		}
 	});
 
-	it("does NOT reconcile when an onSet observer mutates at the tail (the documented limitation, fenced)", () => {
+	it("does not reconcile when an onSet observer mutates at the tail (the documented limitation, fenced)", () => {
 		// The complement of the reconciliation test above, fencing the stated
-		// limitation: the POST_UPDATE phaseBoundary fires BEFORE the tick-tail onSet
+		// limitation: the POST_UPDATE phaseBoundary fires before the tick-tail onSet
 		// dispatch (ecs.ts), so a world whose onSet observer mutates hash-relevant state
-		// at the tail reads a boundary hash that PRECEDES that mutation — it must diverge
+		// at the tail reads a boundary hash that precedes that mutation. It must diverge
 		// from the final per-tick hash. Without this, a refactor that moved the boundary
 		// to after dispatchSet would silently break the documented semantics (and
 		// soundness for any consumer that registers onSet observers) yet keep every
-		// existing assertion green; here that move would flip this `.not.toBe` to fail.
+		// existing assertion green. Here that move would flip this `.not.toBe` to fail.
 		class HashAtPost extends FrameTraceRecorder {
 			postHash = 0;
 			constructor(private readonly world: ECS) {
@@ -346,8 +346,8 @@ describe("frame-trace seam", () => {
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
 		world.addComponent(e, Mark, { m: 0 });
-		// Per-entity onSet records via ctx.setField (an immediate column write — CONTEXT.md),
-		// so writing Mark here lands AFTER the POST_UPDATE boundary. Mark is unobserved, so
+		// Per-entity onSet records via ctx.setField (an immediate column write),
+		// so writing Mark here lands after the POST_UPDATE boundary. Mark is unobserved, so
 		// the write doesn't re-trigger onSet.
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => ctx.setField(e, Mark, "m", (ctx.ecsTick + 1) | 0),

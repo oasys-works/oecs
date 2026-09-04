@@ -1,7 +1,7 @@
 /**
  * The suite of benchmark cases for oecs. Use it only for local work.
  *
- * `ab/` runs this suite against the ARTIFACTS of the package, and thus the values
+ * `ab/` runs this suite against the artifacts of the package, and thus the values
  * of `ab/` show the code of the released package. `run.mjs` runs the same suite
  * against a bundle of `src/` from `build.mjs`, which keeps the development guards
  * as branches. Therefore do not compare a value from `run.mjs` with a value from
@@ -14,7 +14,7 @@ import { bench } from "./harness.mjs";
 
 const N = 10_000;
 
-// You cannot measure a world if the TIMED part makes an archetype larger. The
+// You cannot measure a world if the timed part makes an archetype larger. The
 // store makes a new allocation during the timed part, and the cost of that
 // allocation has two very different values, because it depends on the condition of
 // the heap. A null comparison uses equal code on both sides, and it showed
@@ -37,7 +37,7 @@ export function makeSuite(lib, filter = "") {
 	};
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 1. SoA iteration — the core promise. eachChunk over N entities.
+	// 1. SoA iteration, the core promise. forEachChunk over N entities.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -50,7 +50,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/eachChunk_2comp",
 			() => {
 				for (let r = 0; r < 100; r++) {
-					q.eachChunk((cols, count) => {
+					q.forEachChunk((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						const { vx, vy } = cols.read(Vel);
 						for (let i = 0; i < count; i++) {
@@ -100,7 +100,7 @@ export function makeSuite(lib, filter = "") {
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 2. Fragmented iteration — 64 archetypes, same total entity count.
+	// 2. Fragmented iteration, 64 archetypes, same total entity count.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -120,7 +120,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/frag_64arch",
 			() => {
 				for (let r = 0; r < 300; r++) {
-					q.eachChunk((cols, count) => {
+					q.forEachChunk((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += y[i];
 					});
@@ -131,7 +131,7 @@ export function makeSuite(lib, filter = "") {
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 3. forEachEntity — the entity-id walk.
+	// 3. forEachEntity, the entity-id walk.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -157,7 +157,7 @@ export function makeSuite(lib, filter = "") {
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 4. Random access — getField / setField / hasComponent.
+	// 4. Random access, getField and setField / hasComponent.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -172,7 +172,7 @@ export function makeSuite(lib, filter = "") {
 			},
 			{ iters: 20 * N }
 		);
-		// Two fields through `getField`. NOT simply twice the row above: the entity
+		// Two fields through `getField`. This is not twice the row above, because the entity
 		// resolution is repeated, but the second call hits a warm cache line, so the
 		// real figure lands below double. The docs table quotes this row rather than
 		// doubling, which is why it exists.
@@ -214,14 +214,14 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 20 * N }
 		);
 		// The cursor rows sit beside `getField` deliberately: they are the same work
-		// through the accessor built for a by-id SWEEP, so a regression that moved
+		// through the accessor built for a by-id sweep, so a regression that moved
 		// one path and not the other is visible as the pair drifting apart. The
 		// cursor is hoisted out of the timed region because that is the whole point
-		// of it — timing `ecs.cursorRead(...)` inside the loop would measure the
+		// of it, timing `ecs.cursorRead(...)` inside the loop would measure the
 		// allocation a cursor exists to remove.
 		// `refRead` sits between the two: it resolves once per entity like a cursor,
 		// but allocates an accessor per entity like `getField` does not. Both arities
-		// are here because that allocation amortises over fields — the 1-field row is
+		// are here because that allocation amortises over fields, the 1-field row is
 		// close to `getField`, the 2-field row is not.
 		add(
 			"access/refRead_1field",
@@ -261,7 +261,7 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 20 * N }
 		);
 		// Two fields per repoint. `at()` is the resolution, and it is paid once for
-		// both — so this row against the one above prices a single field access,
+		// both, so this row against the one above prices a single field access,
 		// which is what tells a reader when a cursor beats `getField` per call.
 		add(
 			"access/cursor_read_2fields",
@@ -292,7 +292,7 @@ export function makeSuite(lib, filter = "") {
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 5. Structural churn — spawn / despawn / add / remove.
+	// 5. Structural churn, spawn, despawn and add / remove.
 	// ────────────────────────────────────────────────────────────────────────
 	add(
 		"struct/spawn_empty",
@@ -365,17 +365,17 @@ export function makeSuite(lib, filter = "") {
 		{
 			iters: 10 * N,
 			setup: () => {
-				// PRESIZED, and not a bare `new ECS()`. Planting the archetype below
-				// makes it, but at the DEFAULT column capacity, which is far below N.
+				// Presized, and not a bare `new ECS()`. Planting the archetype below
+				// makes it, but at the default column capacity, which is far below N.
 				// The timed loop then moved all N rows into it and paid four column
-				// grows inside the measurement — the exact cost this setup exists to
-				// keep out. A counter on `growColumnStore` found it; the null run did
-				// not, because four grows across 10·N operations stay below the noise.
+				// grows inside the measurement, the exact cost this setup exists to
+				// keep out. A counter on `growColumnStore` found it. The null run did
+				// not, because four grows across 10 × N operations stay below the noise.
 				const ecs = new ECS(PRESIZED);
 				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 				const Tag = ecs.registerTag();
 				const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), N);
-				// Plant the [Pos, Tag] archetype (and its store columns) here —
+				// Plant the [Pos, Tag] archetype (and its store columns) here,
 				// minting one inside the timed loop drags an `extendColumnStore`
 				// realloc into the measurement, which is bimodal on heap state.
 				ecs.addComponent(ids[0], Tag);
@@ -433,7 +433,7 @@ export function makeSuite(lib, filter = "") {
 		}
 	);
 
-	// Archetype registration ramp-up — the O(N²) extend cascade, where creating a
+	// Archetype registration ramp-up, the O(N²) extend cascade, where creating a
 	// new archetype re-publishes column views to every existing one. `refreshViews`
 	// is tuned to be allocation-free there, and the row plane adds work to it, so
 	// it needs its own case.
@@ -461,7 +461,7 @@ export function makeSuite(lib, filter = "") {
 	);
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 6. Schedule dispatch — per-frame fixed cost.
+	// 6. Schedule dispatch, per-frame fixed cost.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -474,7 +474,7 @@ export function makeSuite(lib, filter = "") {
 				ecs.registerSystem({
 					writes: [Pos],
 					fn: () => {
-						q.eachChunk((cols, count) => {
+						q.forEachChunk((cols, count) => {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});
@@ -605,10 +605,39 @@ export function makeSuite(lib, filter = "") {
 			},
 			{ iters: 20 * (N / 2) }
 		);
+		// The sparse cursor is the read by id that the docs recommend: the columns
+		// are indexed by entity, so `at` writes one field and a read is one load.
+		// It sits beside `getSparseField` so the two paths are visible as a pair.
+		const spark = ecs.sparseCursorRead(Spark);
+		add(
+			"sparse/cursor_read",
+			() => {
+				let s = 0;
+				for (let r = 0; r < 20; r++)
+					for (let i = 0; i < N; i += 2) {
+						spark.at(ids[i]);
+						s += spark.v;
+					}
+				sink = s;
+			},
+			{ iters: 20 * (N / 2) }
+		);
+		// Membership churn on a sparse tag: a bit flip and no archetype move.
+		const SparkTag = ecs.registerSparseTag();
+		add(
+			"sparse/add_remove_tag",
+			() => {
+				for (let r = 0; r < 5; r++) {
+					for (let i = 0; i < N; i++) ecs.addSparse(ids[i], SparkTag);
+					for (let i = 0; i < N; i++) ecs.removeSparse(ids[i], SparkTag);
+				}
+			},
+			{ iters: 10 * N }
+		);
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 10. Query resolution / composition (cache-hit cost).
+	// 10. Query resolution and composition (cache-hit cost).
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();

@@ -18,7 +18,7 @@ function makeCtx(): SystemContext {
 
 let _scheduleIntegNextId = 0;
 function makeSystem(overrides?: Partial<SystemConfig>): SystemDescriptor {
-	// Hand-built descriptor (no ECS here) — run the authored fields through the
+	// Hand-built descriptor (no ECS here), run the authored fields through the
 	// same normalization registerSystem applies (Template expansion + absent =
 	// frozen empty), so the descriptor shape matches production.
 	return Object.freeze({
@@ -57,7 +57,7 @@ describe("Schedule (integration)", () => {
 		schedule.addSystems(SCHEDULE.STARTUP, main);
 		schedule.addSystems(SCHEDULE.POST_STARTUP, post);
 
-		schedule.runStartup(ctx, 0);
+		schedule.runStartup(ctx);
 
 		expect(order).toEqual(["pre", "main", "post"]);
 	});
@@ -75,7 +75,7 @@ describe("Schedule (integration)", () => {
 		schedule.addSystems(SCHEDULE.UPDATE, main);
 		schedule.addSystems(SCHEDULE.POST_UPDATE, post);
 
-		schedule.runUpdate(ctx, 0.016, 0);
+		schedule.runUpdate(ctx, 0.016);
 
 		expect(order).toEqual(["pre", "main", "post"]);
 	});
@@ -92,7 +92,7 @@ describe("Schedule (integration)", () => {
 		});
 
 		schedule.addSystems(SCHEDULE.UPDATE, sys);
-		schedule.runUpdate(ctx, 0.016, 0);
+		schedule.runUpdate(ctx, 0.016);
 
 		expect(receivedDt).toBeCloseTo(0.016);
 	});
@@ -112,7 +112,7 @@ describe("Schedule (integration)", () => {
 		// a runs before b
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { before: [b] } }, b);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b"]);
 	});
 
@@ -130,7 +130,7 @@ describe("Schedule (integration)", () => {
 			ordering: { after: [a] }
 		});
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b"]);
 	});
 
@@ -145,7 +145,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, a, b, c);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b", "c"]);
 	});
 
@@ -166,11 +166,11 @@ describe("Schedule (integration)", () => {
 			a
 		);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b", "c"]);
 	});
 
-	it("constraints referencing systems in different labels are ignored", () => {
+	it("constraints referencing systems in different phases are ignored", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -178,14 +178,14 @@ describe("Schedule (integration)", () => {
 		const a = makeSystem({ fn: () => order.push("a") });
 		const b = makeSystem({ fn: () => order.push("b") });
 
-		// b is in a different label, so "after b" constraint is ignored
+		// b is in a different phase, so "after b" constraint is ignored
 		schedule.addSystems(SCHEDULE.PRE_UPDATE, b);
 		schedule.addSystems(SCHEDULE.UPDATE, {
 			system: a,
 			ordering: { after: [b] }
 		});
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["b", "a"]);
 	});
 
@@ -193,7 +193,7 @@ describe("Schedule (integration)", () => {
 	// Dropped-edge dev warnings
 	//=========================================================
 
-	/** A schedule wired to a capturing `onWarn` (the `ECSOptions.onWarn` seam —
+	/** A schedule wired to a capturing `onWarn` (the `ECSOptions.onWarn` seam,
 	 * the global logger it replaced is gone). */
 	function makeCapturingSchedule(): { schedule: Schedule; logs: string[] } {
 		const logs: string[] = [];
@@ -206,11 +206,11 @@ describe("Schedule (integration)", () => {
 		const order: string[] = [];
 
 		const a = makeSystem({ fn: () => order.push("a") });
-		const ghost = makeSystem(); // never added to any label — a typo stand-in
+		const ghost = makeSystem(); // never added to any phase, a typo stand-in
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { before: [ghost] } });
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		// Constraint dropped, sort still succeeds.
 		expect(order).toEqual(["a"]);
@@ -229,13 +229,13 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { after: [ghost] } });
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		expect(logs).toHaveLength(1);
 		expect(logs[0]).toContain("after");
 	});
 
-	it("does NOT warn when the target is registered in a different phase", () => {
+	it("does not warn when the target is registered in a different phase", () => {
 		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -243,17 +243,17 @@ describe("Schedule (integration)", () => {
 		const a = makeSystem({ fn: () => order.push("a") });
 		const b = makeSystem({ fn: () => order.push("b") });
 
-		// b lives in another label → quiet cross-label skip, no warning.
+		// b lives in another phase → quiet cross-phase skip, no warning.
 		schedule.addSystems(SCHEDULE.PRE_UPDATE, b);
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { after: [b] } });
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		expect(order).toEqual(["b", "a"]);
 		expect(logs).toHaveLength(0);
 	});
 
-	it("does NOT warn for a valid within-label ordering edge", () => {
+	it("does not warn for a valid within-phase ordering edge", () => {
 		const { schedule, logs } = makeCapturingSchedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -263,7 +263,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.UPDATE, { system: a, ordering: { before: [b] } }, b);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		expect(order).toEqual(["a", "b"]);
 		expect(logs).toHaveLength(0);
@@ -286,7 +286,7 @@ describe("Schedule (integration)", () => {
 			{ system: b, ordering: { before: [a] } }
 		);
 
-		expect(() => schedule.runUpdate(ctx, 0, 0)).toThrow(/Circular/);
+		expect(() => schedule.runUpdate(ctx, 0)).toThrow(/Circular/);
 	});
 
 	it("throws on 3-way circular dependency", () => {
@@ -304,7 +304,7 @@ describe("Schedule (integration)", () => {
 			{ system: c, ordering: { before: [a] } }
 		);
 
-		expect(() => schedule.runUpdate(ctx, 0, 0)).toThrow(/Circular/);
+		expect(() => schedule.runUpdate(ctx, 0)).toThrow(/Circular/);
 	});
 
 	//=========================================================
@@ -319,7 +319,7 @@ describe("Schedule (integration)", () => {
 		const a = makeSystem({ fn: () => order.push("a") });
 		schedule.addSystems(SCHEDULE.UPDATE, a);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a"]);
 
 		order.length = 0;
@@ -327,7 +327,7 @@ describe("Schedule (integration)", () => {
 		const b = makeSystem({ fn: () => order.push("b") });
 		schedule.addSystems(SCHEDULE.UPDATE, b);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b"]);
 	});
 
@@ -340,13 +340,13 @@ describe("Schedule (integration)", () => {
 		const b = makeSystem({ fn: () => order.push("b") });
 		schedule.addSystems(SCHEDULE.UPDATE, a, b);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["a", "b"]);
 
 		order.length = 0;
 		schedule.removeSystem(a);
 
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 		expect(order).toEqual(["b"]);
 	});
 
@@ -368,7 +368,7 @@ describe("Schedule (integration)", () => {
 		});
 
 		schedule.addSystems(SCHEDULE.UPDATE, sys);
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		expect(createdEntity).toBe(true);
 	});
@@ -383,7 +383,7 @@ describe("Schedule (integration)", () => {
 		const ctx = new SystemContext(store);
 
 		// Register a stand-in component so the destroyer system has something
-		// to list in `despawns` — the access check's `checkDestroy()` requires that
+		// to list in `despawns`, the access check's `assertDespawn()` requires that
 		// destroyEntity callers declare a non-empty despawn set, even when
 		// the actual entity has no components attached.
 		const Anything = store.registerComponent({} as Record<string, never>);
@@ -407,7 +407,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.PRE_UPDATE, destroyer);
 		schedule.addSystems(SCHEDULE.UPDATE, checker);
-		schedule.runUpdate(ctx, 0, 0);
+		schedule.runUpdate(ctx, 0);
 
 		expect(aliveInUpdate).toBe(false);
 	});
@@ -428,7 +428,7 @@ describe("Schedule (integration)", () => {
 		});
 
 		schedule.addSystems(SCHEDULE.FIXED_UPDATE, sys);
-		schedule.runFixedUpdate(ctx, 1 / 50, 0);
+		schedule.runFixedUpdate(ctx, 1 / 50);
 
 		expect(receivedDt).toBeCloseTo(1 / 50);
 	});
@@ -443,7 +443,7 @@ describe("Schedule (integration)", () => {
 
 		schedule.addSystems(SCHEDULE.FIXED_UPDATE, { system: b, ordering: { after: [a] } }, a);
 
-		schedule.runFixedUpdate(ctx, 1 / 60, 0);
+		schedule.runFixedUpdate(ctx, 1 / 60);
 		expect(order).toEqual(["a", "b"]);
 	});
 });

@@ -1,16 +1,16 @@
 /**
- * World snapshot/resume framing + host-state (de)serialization.
+ * World snapshot and resume framing + host-state (de)serialization.
  *
- * `Store.snapshot()` / `Store.restoreInto()` mount a captured world back onto a
+ * `Store.snapshot()` / `Store.restore()` mount a captured world back onto a
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
  * snapshot is three sections:
  *
- *   1. **dense** — the SAB column bytes (`snapshotColumnStore`): every component
- *      column, the entity-index region (generations / archetype / row per slot,
+ *   1. **dense**, the SAB column bytes (`columnStoreBytesView`): every component
+ *      column, the entity-index region (generations, archetype and row per slot,
  *      plus the high-water `length` header), and the layout descriptors.
- *   2. **sparse** — out-of-identity components + relations (`snapshotSparse`).
- *   3. **host-state** — the host-side bookkeeping the SAB does NOT carry: the
- *      world tick, the entity recycle free-list (in live LIFO order — there is no
+ *   2. **sparse**, out-of-identity components + relations (`snapshotSparse`).
+ *   3. **host-state**, the host-side bookkeeping the SAB does not carry: the
+ *      world tick, the entity recycle free-list (in live LIFO order. There is no
  *      byte source for it, and its order is load-bearing for byte-identical
  *      resume, see below), the alive count, and per-archetype `length` /
  *      `enabledCount` (the SAB descriptor omits these for tag-only archetypes,
@@ -18,7 +18,7 @@
  *
  * **Why serialize the free-list rather than rescan it.** A scan of the restored
  * entity-index region recovers the *set* of recycled slots but not the *order*
- * they sit on the recycle stack — that order is pure destroy history with no byte
+ * they sit on the recycle stack, that order is pure destroy history with no byte
  * source. The order is load-bearing: a post-resume `spawn` reuses the stack top,
  * and the index it draws feeds the canonical-ordered sparse `stateHash` fold (and
  * the whole-SAB `columnStoreStateHash` via the entity-index region). A different
@@ -26,8 +26,8 @@
  * sparse store / relation. Serializing the list (a few hundred bytes off the tick
  * path) keeps the runtime LIFO allocator untouched while making resume exact.
  *
- * This module holds only the *pure* framing/serialization + the registration
- * guard; the mount itself (swap the SAB, republish views, reconstruct host state)
+ * This module holds only the *pure* framing and serialization + the registration
+ * guard. The mount itself (swap the SAB, republish views, reconstruct host state)
  * lives on `Store` where the live state is.
  */
 
@@ -45,7 +45,7 @@ import {
 } from "../store";
 
 /** Magic for the combined world-snapshot frame (`"WRS0"` little-endian). Distinct
- * from the SAB `STORE_MAGIC` so a bare dense snapshot fed to `restoreInto` is
+ * from the SAB `STORE_MAGIC` so a bare dense snapshot fed to `restore` is
  * rejected with a clear error instead of being mis-parsed as a combined frame. */
 export const WORLD_SNAPSHOT_MAGIC = 0x30535257;
 
@@ -53,9 +53,9 @@ export const WORLD_SNAPSHOT_MAGIC = 0x30535257;
  * layout changes. Independent of `SIM_ABI_VERSION` (which gates the dense bytes). */
 export const ECS_SNAPSHOT_VERSION = 1;
 
-/** Thrown by `Store.restoreInto` (and the helpers here) when a combined snapshot
- * is malformed, carries the wrong magic/version, or targets a world whose
- * archetype/component registration doesn't match the snapshot. Mirrors
+/** Thrown by `Store.restore` (and the helpers here) when a combined snapshot
+ * is malformed, carries the wrong magic and version, or targets a world whose
+ * archetype and component registration doesn't match the snapshot. Mirrors
  * `StoreRestoreError` / `SparseRestoreError` so callers see one error class per
  * restore failure mode. */
 export class ECSRestoreError extends Error {
@@ -76,10 +76,10 @@ export interface ArchetypeRowState {
 
 /** The host-side state a snapshot captures alongside the dense + sparse bytes. */
 export interface HostState {
-	/** World tick at snapshot time (`Store._tick`). */
+	/** World tick at snapshot time (`Store.tick`). */
 	readonly tick: number;
 	/** Entity-index high-water (count of slots ever issued). Also mirrored in the
-	 * SAB region's `length` header; carried here for a cross-check on restore. */
+	 * SAB region's `length` header. Carried here for a cross-check on restore. */
 	readonly entityHighWater: number;
 	/** Live entity count. */
 	readonly entityAliveCount: number;
@@ -197,7 +197,7 @@ export interface WorldSnapshotSections {
 }
 
 /** Split a combined frame back into its sections. Validates magic, version, and
- * an exact (no trailing bytes) frame; throws `ECSRestoreError` otherwise. */
+ * an exact (no trailing bytes) frame. Throws `ECSRestoreError` otherwise. */
 export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 	const header = U32 * 5;
 	if (bytes.byteLength < header) {
@@ -211,8 +211,8 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 		throw new ECSRestoreError(
 			`bad world-snapshot magic: 0x${magic.toString(16).padStart(8, "0")} ` +
 				`(expected 0x${WORLD_SNAPSHOT_MAGIC.toString(16).padStart(8, "0")}). ` +
-				`A bare dense (SAB) snapshot is not a combined world snapshot — pass the ` +
-				`bytes from ECS.snapshot(), not snapshotColumnStore().`
+				`A bare dense (SAB) snapshot is not a combined world snapshot, pass the ` +
+				`bytes from ECS.snapshot(), not columnStoreBytesView().`
 		);
 	}
 	const version = view.getUint32(4, true);
@@ -241,9 +241,9 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 
 /**
  * Fail-closed registration guard, read **directly from the snapshot's dense
- * bytes** so it can run BEFORE the dense backing is touched. `restoreInto`
+ * bytes** so it can run before the dense backing is touched. `restore`
  * builds the restored store through the live world's in-place allocator,
- * which reuses the live backing buffer — so validating a
+ * which reuses the live backing buffer, so validating a
  * *materialised* `ColumnStore` would already have overwritten live column data
  * (the buffer is overwritten inside `restoreColumnStore`, before any post-build
  * check could run). Parsing the descriptors off the raw `dense` `Uint8Array`
@@ -256,9 +256,9 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
  * capacity matches (the region is sized once at construction). The archetype
  * graph is rebuilt from registration code, not the snapshot (mirroring
  * `restoreSparse`'s "registered in the same order" contract). Throws
- * `ECSRestoreError` on any mismatch / malformed section.
+ * `ECSRestoreError` on any mismatch and malformed section.
  */
-export function assertDenseLayoutMatchesLive(
+export function assertDenseMatchesLive(
 	dense: Uint8Array,
 	live: ReadonlyMap<number, ArchetypeViews>,
 	liveEntityIndexCapacity: number
@@ -323,7 +323,7 @@ export function assertDenseLayoutMatchesLive(
 	if (live.size !== descriptors.length) {
 		throw new ECSRestoreError(
 			`archetype-set mismatch: the live world has ${live.size} SAB archetypes, the ` +
-				`snapshot has ${descriptors.length}. restoreInto requires an identical archetype set ` +
+				`snapshot has ${descriptors.length}. restore requires an identical archetype set ` +
 				`(prewarm the world so its archetype set is stable, per ADR on no-lazy archetypes).`
 		);
 	}

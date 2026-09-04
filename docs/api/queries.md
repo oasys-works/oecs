@@ -5,14 +5,14 @@ query one time and use it again in each frame. The store continues to add newly 
 to it, so it never becomes out of date.
 
 ```ts
-const movers = ecs.query(Pos, Vel);   // each archetype that has (a minimum of) Pos AND Vel
+const movers = ecs.query(Pos, Vel);   // each archetype that has (a minimum of) Pos and Vel
 ```
 
 `ecs.query(A, B, C)` agrees with each entity that has **all** of `A`, `B`, and `C`, and possibly
 more components. The order is not important. Repeated calls with the same set give you the **same
 cached instance**.
 
-## Read or write — select the terminal function
+## Read or write, select the terminal function
 
 The most important decision in a query is how you iterate it, because that decision controls
 whether you can mutate.
@@ -20,7 +20,7 @@ whether you can mutate.
 | Terminal | The callback receives | Can it mutate? | Use it for |
 | --- | --- | --- | --- |
 | [`forEach`](#foreach--read-only) | a read-only `ArchetypeView` | no | how to read columns |
-| [`eachChunk`](#eachchunk--mutable-hot-path) | a mutable `cols` and a `count` | **yes** | the high-frequency loop that writes |
+| [`forEachChunk`](#foreachchunk--mutable-hot-path) | a mutable `cols` and a `count` | **yes** | the high-frequency loop that writes |
 | [`forEachEntity`](#foreachentity--non-dense-terms) | one `EntityID` at a time | through `ctx` | a query with a sparse, relation, or hierarchy term |
 
 ```ts
@@ -30,10 +30,10 @@ movers.forEach((arch) => {
   for (let i = 0; i < arch.entityCount; i++) sum += x[i];
 });
 
-// A pass that mutates — the recommended default when you write:
-movers.eachChunk((cols, count) => {
-  const { x, y } = cols.mut(Pos);                   // mutable columns; sets the change tick of Pos
-  const { vx, vy } = cols.read(Vel);                // read-only columns; no change to the tick
+// A pass that mutates, the recommended default when you write:
+movers.forEachChunk((cols, count) => {
+  const { x, y } = cols.mut(Pos);                   // mutable columns. Sets the change tick of Pos
+  const { vx, vy } = cols.read(Vel);                // read-only columns. No change to the tick
   for (let i = 0; i < count; i++) {
     x[i] += vx[i] * dt;
     y[i] += vy[i] * dt;
@@ -43,7 +43,7 @@ movers.eachChunk((cols, count) => {
 
 The terms of the query give the types of the cursor and of the `forEach` view. In the
 `query(Pos, Vel)` example above, `cols.mut(Health)` is a **compile error**
-(`"component is not a term of this query — add it with .and(...)"`). `arch.getColumnRead(Health, "hp")`
+(`"component is not a term of this query, add it with .and(...)"`). `arch.getColumnRead(Health, "hp")`
 is also a compile error. To get more components, add them to the set of terms with `.and(...)`. A
 fetch after `.optional(T)` stays permissive at compile time, because the development check on the
 optional scope controls those fetches.
@@ -59,8 +59,8 @@ const movers = ecs.query(Pos, Vel);
 
 // In a system, through the query-builder form of registerSystem:
 const move = ecs.registerSystem(
-  (q, ctx, dt) => { q.eachChunk(/* ... */); },
-  (qb) => qb.with(Pos, Vel),   // resolved ONE time, at registration
+  (q, ctx, dt) => { q.forEachChunk(/* ... */); },
+  (qb) => qb.with(Pos, Vel),   // resolved one time, at registration
 );
 ```
 
@@ -75,9 +75,9 @@ each composition, so `q.and(A).and(B)` and `q.and(A, B)` are the same instance.
 
 ```ts
 and<D>(...comps: D): Query<[...Defs, ...D]>;   // also require these  (makes the set smaller)
-without(...comps): Query<Defs>;                 // remove archetypes that hold ANY of these
-anyOf(...comps): Query<Defs>;                   // require A MINIMUM OF ONE of these
-optional(...defs): Query<Defs>;                 // fetch if present (does NOT make the set smaller)
+without(...comps): Query<Defs>;                 // remove archetypes that hold any of these
+anyOf(...comps): Query<Defs>;                   // require A minimum of one of these
+optional(...defs): Query<Defs>;                 // fetch if present (does not make the set smaller)
 changed(...defs): ChangedQuery<Defs>;           // only archetypes changed since the last run
 includeDisabled(): Query<Defs>;                 // include the disabled entities again
 ```
@@ -86,7 +86,7 @@ includeDisabled(): Query<Defs>;                 // include the disabled entities
 ecs.query(Pos)
   .and(Vel)              // require Vel also
   .without(Frozen)       // remove the frozen entities
-  .anyOf(Player, NPC);   // and be a Player OR an NPC
+  .anyOf(Player, NPC);   // and be a Player or an NPC
 ```
 
 - **`without`** removes an archetype if it holds *any* component in the list. **`anyOf`** requires
@@ -96,18 +96,18 @@ ecs.query(Pos)
   column, use `arch.getOptionalColumnRead(T, field)`, which gives the column when `T` is present
   and `undefined` when `T` is absent. `.optional(T)` is also the **authorization** for an optional
   fetch of `T`. You must still list `T` in the `reads` of the system, because both checks apply.
-- **`changed(...)`** gives you a [`ChangedQuery`](./change-detection.md). Read that page. Note that
-  the level of detail is the archetype, and not the row.
+- **`changed(...)`** gives you a [`ChangedQuery`](./change-detection.md). Read that page. The
+  level of detail is the archetype, and not the row.
 - **`includeDisabled()`** makes iteration cover the [disabled](./entities.md#enable--disable)
   entities, which the query removes by default.
 
 <a id="foreach--read-only"></a>
 
-## `forEach` — read only
+## `forEach`, read only
 
 ```ts
 forEach(cb: (arch: ArchetypeView) => void): void;
-forEachUntil(cb: (arch: ArchetypeView) => boolean): boolean;   // stop when cb gives true
+some(cb: (arch: ArchetypeView) => boolean): boolean;   // stop when cb gives true
 ```
 
 `forEach` calls the callback one time for each matching archetype that is **not empty**, and gives
@@ -132,21 +132,21 @@ interface ArchetypeView {
 > a column includes the free capacity and the disabled rows after the live count. A loop to
 > `.length` reads incorrect data. `entityCount` is the number of enabled rows, or all the rows
 > under `includeDisabled`. The `count` parameter of
-> [`eachChunk`](#eachchunk--mutable-hot-path) exists to remove this risk.
+> [`forEachChunk`](#foreachchunk--mutable-hot-path) exists to remove this risk.
 
 > [!NOTE]
 > The `ArchetypeView` **has no accessor for a mutable column**, by design. You cannot write through
-> `forEach`. To mutate, use [`eachChunk`](#eachchunk--mutable-hot-path), or write one entity at a
+> `forEach`. To mutate, use [`forEachChunk`](#foreachchunk--mutable-hot-path), or write one entity at a
 > time with [`ctx.ref`](./refs.md) or `ctx.setField`. Both of those set the change tick.
 > `ReadonlyColumn` is a compile-time limit only. A type cast can write through it, but a write of
 > that type stops change detection from working correctly. Do not do it.
 
-<a id="eachchunk--mutable-hot-path"></a>
+<a id="foreachchunk--mutable-hot-path"></a>
 
-## `eachChunk` — the high-frequency loop that writes
+## `forEachChunk`, the high-frequency loop that writes
 
 ```ts
-eachChunk(cb: (cols: ChunkColumns, count: number) => void): void;
+forEachChunk(cb: (cols: ChunkColumns, count: number) => void): void;
 ```
 
 This is the recommended default for a system that **mutates**. `cols` resolves a full component
@@ -154,11 +154,15 @@ into a group of columns that you can destructure. `count` is the number of enabl
 
 ```ts
 interface ChunkColumns {
-  mut<S>(def: ComponentDef<S>): MutableColumnsForSchema<S>;   // writable; sets the change tick
-  read<S>(def: ComponentDef<S>): ColumnsForSchema<S>;         // read-only; no change to the tick
+  mut<S>(def: ComponentDef<S>): MutableColumnsForSchema<S>;   // writable. Sets the change tick
+  read<S>(def: ComponentDef<S>): ColumnsForSchema<S>;         // read-only. No change to the tick
+  ticks<S>(def: ComponentDef<S>): Uint32Array;                // the row ticks, writable: the record a raw loop makes
+  ticksRead<S>(def: ComponentDef<S>): Readonly<Uint32Array>;  // the row ticks, read-only: the row grain of changed()
+  readonly tick: number;                                      // the change tick this pass stamps
+  readonly since: number;                                     // the change tick of the previous run of this system
 }
 
-movers.eachChunk((cols, count) => {
+movers.forEachChunk((cols, count) => {
   const { x, y } = cols.mut(Pos);     // { x: Float64Array, y: Float64Array }, writable
   const { vx, vy } = cols.read(Vel);
   for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
@@ -169,13 +173,36 @@ movers.eachChunk((cols, count) => {
 > `cols.mut(def)` sets the change tick of `def` for this archetype **one time, when you call it**.
 > It does this before you write anything. This is what makes a [`changed(def)`](./change-detection.md)
 > query see this archetype in the next tick. If you only read, call `cols.read(def)`, so that you do
-> not cause an incorrect result. The engine reads the tick value one time for each `eachChunk` pass
+> not cause an incorrect result. The engine reads the tick value one time for each `forEachChunk` pass
 > and uses it for each archetype.
 
 > [!WARNING]
 > **Destructure the group immediately. Do not keep it.** The object from `cols.mut(Pos)` is cached
 > for each `(archetype, component)` pair, and the next call refreshes it **in place**. Take
 > `{ x, y }` and use the arrays. Do not keep the group object between iterations.
+
+`cols.ticks(def)` is the row record. A raw column write is invisible to the engine, so the loop
+records each row it changes with one store: `t[i] = cols.tick`. That store costs about what the
+write itself costs, where `ctx.markChanged` is a call and a list push for each row. The record
+reaches an [`onSet` observer](./observers.md) with entity granularity and a
+[`changed()`](./change-detection.md) reader at the row grain. The column exists only for a
+component with row ticks, which `ecs.trackRows(def)` or an entity-level `onSet` observer turns
+on, and the call throws `ROW_TICKS_NOT_TRACKED` otherwise. Taking it marks the archetype changed and
+asks the drain of this frame to scan every archetype of `def` that a writer stamped, so take it
+only in a loop that stores into it. `cols.ticksRead(def)` is the same column read-only, with no
+stamp and no scan request, for a reader that compares each row with `cols.since`.
+
+```ts
+movers.forEachChunk((cols, count) => {
+  const { x } = cols.mut(Pos);
+  const t = cols.ticks(Pos);
+  for (let i = 0; i < count; i++) {
+    if (vx[i] === 0) continue;
+    x[i] += vx[i] * dt;
+    t[i] = cols.tick;                 // this row reaches the entity-level onSet
+  }
+});
+```
 
 > [!NOTE]
 > `cols.mut`, `cols.read`, [`ctx.ref`, and `ctx.refRead`](./refs.md) are one family. The convention
@@ -186,7 +213,7 @@ movers.eachChunk((cols, count) => {
 
 <a id="foreachentity--non-dense-terms"></a>
 
-## `forEachEntity` — terms that are not dense
+## `forEachEntity`, terms that are not dense
 
 ```ts
 forEachEntity(cb: (entityId: EntityID) => void): void;
@@ -204,7 +231,7 @@ fields of an entity that you receive, use `ctx.getField` (dense) or `ctx.getSpar
 
 ## The limit to dense queries
 
-`forEach`, `eachChunk`, `entityCount`, and `archetypeCount` operate on the column layout of the
+`forEach`, `forEachChunk`, `entityCount`, and `archetypeCount` operate on the column layout of the
 archetype. So they **reject** a query that carries a sparse, relation, or hierarchy term, and
 they throw `SPARSE_QUERY_DENSE_PATH` in development. For those queries, use `forEachEntity` or
 [`forEachRelatedTo`](./relations.md).
@@ -217,7 +244,7 @@ get archetypeCount(): number;               // matching archetypes, including th
 get archetypes(): readonly ArchetypeView[]; // the raw list (not filtered to the non-empty ones)
 
 firstEntity(): EntityID | undefined;        // the first match, or undefined when there is none
-singleEntity(): EntityID;                   // THE match — in development it throws QUERY_NOT_SINGLETON on 0 or more than 1
+singleEntity(): EntityID;                   // the one match, and in development it throws QUERY_NOT_SINGLETON on 0 or more than 1
 ```
 
 `firstEntity` reads a single entity (`player` or `camera`) without a `forEach` and a closure that
@@ -251,7 +278,7 @@ hierarchy(relation, maxDepth?): Query<Defs>;                                    
 
 ## See also
 
-- [systems](./systems.md) — how to run queries, the `ctx` object, and the write surface
-- [change detection](./change-detection.md) — `changed()` and how the tick operates
-- [relations](./relations.md) · [sparse storage](./sparse-storage.md) — the terms that are not dense
-- [entities](./entities.md) — enable, disable, and `includeDisabled`
+- [systems](./systems.md), how to run queries, the `ctx` object, and the write surface
+- [change detection](./change-detection.md), `changed()` and how the tick operates
+- [relations](./relations.md), [sparse storage](./sparse-storage.md), the terms that are not dense
+- [entities](./entities.md), enable, disable, and `includeDisabled`

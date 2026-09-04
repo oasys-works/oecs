@@ -34,8 +34,8 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e2, Pos, { x: 0, y: 0 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
 
-		// Same reference — live array was updated in-place by the registry.
-		// Grows by exactly one: {Pos} + {Pos,Vel}. An over-count (stale/duplicate
+		// Same reference, live array was updated in-place by the registry.
+		// Grows by exactly one: {Pos} + {Pos,Vel}. An over-count (stale or duplicate
 		// archetype in the live array) would push this past 2.
 		const after = world.query(Pos);
 		expect(after).toBe(result);
@@ -46,7 +46,7 @@ describe("ECS query (integration)", () => {
 	// Live .not() rejection
 	//=========================================================
 
-	it("not() live — newly created excluded archetype does not appear", () => {
+	it("not() live, newly created excluded archetype does not appear", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -65,15 +65,15 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 		world.addComponent(e2, Stat, {});
 
-		// Live array should NOT have grown — excluded archetype rejected
+		// Live array should not have grown, excluded archetype rejected
 		expect(q.archetypeCount).toBe(beforeLen);
 	});
 
 	//=========================================================
-	// Live .anyOf() acceptance/rejection
+	// Live .anyOf() acceptance and rejection
 	//=========================================================
 
-	it("any_of() live — new matching archetype gets added to live array", () => {
+	it("any_of() live, new matching archetype gets added to live array", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -99,7 +99,7 @@ describe("ECS query (integration)", () => {
 		expect(entityIds).toContain(e2);
 	});
 
-	it("any_of() live — archetype with none of the any_of-components is not added", () => {
+	it("any_of() live, archetype with none of the any_of-components is not added", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -112,7 +112,7 @@ describe("ECS query (integration)", () => {
 		const q = world.query(Pos).anyOf(Vel);
 		const beforeLen = q.archetypeCount;
 
-		// New archetype with Pos + Hp — Hp is NOT in the or-mask
+		// New archetype with Pos + Hp. Hp is not in the or-mask
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 50 });
@@ -124,7 +124,7 @@ describe("ECS query (integration)", () => {
 	// Immediate destruction via the host facade
 	//=========================================================
 
-	it("despawn is immediate — entity is dead on the next line, no flush needed", () => {
+	it("despawn is immediate, entity is dead on the next line, no flush needed", () => {
 		const world = new ECS();
 
 		const id = world.spawn();
@@ -158,13 +158,14 @@ describe("ECS query (integration)", () => {
 
 	it("every immediate host structural mutator throws from inside a system in DEV", () => {
 		// The despawn guard, extended to the whole immediate host mutation
-		// surface: mid-system these ops can move/swap rows a running query is
-		// walking (or, for the spawn family, append-and-realloc under it) AND are
-		// invisible to observers, so the receiver rule ("inside a system, use
-		// ctx.commands") is enforced wholesale, not just where the archetype-level
-		// iteration guard happens to catch it. The spawn family (spawn/spawnBundle/
-		// spawnMany) redirects to ctx.commands.spawn — its append paths (addEntity*)
-		// skip even the _iterDepth guard, so this throw is the only backstop.
+		// surface. Mid-system these ops can move and swap rows a running query is
+		// walking, or, for the spawn family, append and realloc under it. They are
+		// invisible to observers. So the receiver rule ("inside a system, use
+		// ctx.commands") is enforced wholesale, not only where the archetype-level
+		// iteration guard happens to catch it. The spawn family (spawn,
+		// spawnBundle and spawnMany) redirects to ctx.commands.spawn. Its append
+		// paths (addEntity*) skip even the _iterDepth guard, so this throw is the
+		// only backstop.
 		const ops: [string, (world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void, RegExp][] = [
 			["spawn", (w) => void w.spawn(), /host spawn is immediate.*ctx\.commands\.spawn/],
 			["spawnBundle", (w, _e, d) => void w.spawnBundle(d({ x: 1 })), /host spawnBundle is immediate.*ctx\.commands\.spawn/],
@@ -185,7 +186,7 @@ describe("ECS query (integration)", () => {
 
 			const rogue = world.registerSystem({
 				name: `rogue_host_${name}`,
-				exclusive: true, // full declared access — the guard fires anyway
+				exclusive: true, // full declared access, the guard fires anyway
 				reads: [],
 				writes: [],
 				fn() {
@@ -199,9 +200,9 @@ describe("ECS query (integration)", () => {
 		}
 	});
 
-	it("host mutators stay usable from a DIFFERENT world's system (multi-world)", () => {
+	it("host mutators stay usable from a different world's system (multi-world)", () => {
 		// The guard is scoped by `_updating` to the world being mutated: a system
-		// of world A driving world B's host facade is a supported pattern — B is
+		// of world A driving world B's host facade is a supported pattern. B is
 		// not mid-iteration, so B's guard must not fire.
 		const a = new ECS();
 		const b = new ECS();
@@ -268,7 +269,7 @@ describe("ECS query (integration)", () => {
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 
-		// Cache a query for [Pos, Vel] — currently empty
+		// Cache a query for [Pos, Vel], currently empty
 		const before = world.query(Pos, Vel);
 		expect(before.archetypeCount).toBe(0);
 
@@ -292,7 +293,7 @@ describe("ECS query (integration)", () => {
 		// After update (which flushes), the live array has grown
 		const after = world.query(Pos, Vel);
 		expect(after.archetypeCount).toBe(1);
-		expect(after._nonEmpty()[0].entityList).toContain(e1);
+		expect(after.nonEmptyArchs()[0].rowEntityIds).toContain(e1);
 	});
 
 	it("deferred remove_component does not change query result until flush", () => {
@@ -304,7 +305,7 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		// Cache a query for [Pos, Vel] — entity e1 is in it
+		// Cache a query for [Pos, Vel], entity e1 is in it
 		const before = world.query(Pos, Vel);
 		expect(before.archetypeCount).toBe(1);
 		expect(before.archetypes[0].entityCount).toBe(1);
@@ -357,7 +358,7 @@ describe("ECS query (integration)", () => {
 			}
 		});
 
-		// System 2 observes Pos+Vel query — should still see old state
+		// System 2 observes Pos+Vel query, should still see old state
 		const s2 = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn() {
@@ -375,7 +376,7 @@ describe("ECS query (integration)", () => {
 		// After update flush, re-query sees the change
 		const after = world.query(Pos, Vel);
 		expect(after.archetypeCount).toBe(1);
-		expect(after._nonEmpty()[0].entityList).toContain(e1);
+		expect(after.nonEmptyArchs()[0].rowEntityIds).toContain(e1);
 	});
 
 	it("flush processes structural changes before destructions", () => {
@@ -471,10 +472,10 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Vel, { vx: 2, vy: 3 });
 
 		// White-box: column mutation goes through the concrete archetype
-		// (the mutable `getColumn` is not on the public read-only view).
-		for (const arch of world.query(Pos, Vel)._nonEmpty()) {
-			const px = arch.getColumn(Pos, "x", 0);
-			const py = arch.getColumn(Pos, "y", 0);
+		// (the mutable `getColumnMut` is not on the public read-only view).
+		for (const arch of world.query(Pos, Vel).nonEmptyArchs()) {
+			const px = arch.getColumnMut(Pos, "x", 0);
+			const py = arch.getColumnMut(Pos, "y", 0);
 			const vx = arch.getColumnRead(Vel, "vx");
 			const vy = arch.getColumnRead(Vel, "vy");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -483,7 +484,7 @@ describe("ECS query (integration)", () => {
 			}
 		}
 
-		// Verify mutation via getColumn
+		// Verify mutation via getColumnMut
 		world.query(Pos, Vel).forEach((arch) => {
 			const x = arch.getColumnRead(Pos, "x");
 			const y = arch.getColumnRead(Pos, "y");

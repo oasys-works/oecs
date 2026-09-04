@@ -1,15 +1,15 @@
 /**
- * The empty archetype is rowless — a component-less entity has ONE canonical
+ * The empty archetype is rowless, a component-less entity has one canonical
  * form.
  *
  * An entity with no components is "alive but unplaced": it points at the empty
- * archetype via `entityArchetype` but carries `entityRow === UNASSIGNED` and
+ * archetype via `_entityArchetypes` but carries `_entityRows === UNASSIGNED` and
  * occupies no row, exactly like a freshly `createEntity`'d one. Before the fix,
  * an entity that *reached* the empty archetype by losing its last component was
- * instead given a real row there, so the empty archetype's live row count — and
- * therefore `stateHash` and zero-require query iteration — depended on add/
+ * instead given a real row there, so the empty archetype's live row count, and
+ * therefore `stateHash` and zero-require query iteration, depended on add/
  * remove history rather than logical state. These tests pin every path into the
- * empty archetype (bare create, single/multi/tag remove, batch remove, empty
+ * empty archetype (bare create, single, multi and tag remove, batch remove, empty
  * template spawn) to the same rowless form, plus the destroy / re-add lifecycle.
  */
 
@@ -50,7 +50,7 @@ describe("empty archetype is rowless", () => {
 		expect(emptyArchOf(s, e).length).toBe(0);
 	});
 
-	it("dropping the last TAG component uses the rowless tag-move path", () => {
+	it("dropping the last tag component uses the rowless tag-move path", () => {
 		const s = new Store({ deterministic: true });
 		const Tag = s.registerComponent({});
 		const e = s.createEntity();
@@ -60,7 +60,7 @@ describe("empty archetype is rowless", () => {
 		expect(emptyArchOf(s, e).length).toBe(0);
 	});
 
-	it("remove_components dropping ALL components lands in the rowless empty archetype", () => {
+	it("remove_components dropping all components lands in the rowless empty archetype", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
 		const Vel = s.registerComponent(Velocity);
@@ -96,7 +96,7 @@ describe("empty archetype is rowless", () => {
 
 	it("spawning from an empty template yields an unplaced entity", () => {
 		const s = new Store({ deterministic: true });
-		const p = s.resolveTemplate([]);
+		const p = s.createTemplate([]);
 		const e = s.spawn(p);
 		expect(s.isAlive(e)).toBe(true);
 		expect(s.entityCount).toBe(1);
@@ -106,7 +106,7 @@ describe("empty archetype is rowless", () => {
 
 	it("spawn_many from an empty template yields unplaced entities", () => {
 		const s = new Store({ deterministic: true });
-		const p = s.resolveTemplate([]);
+		const p = s.createTemplate([]);
 		const es = s.spawnMany(p, 4);
 		expect(s.entityCount).toBe(4);
 		for (const e of es) {
@@ -143,12 +143,12 @@ describe("empty archetype is rowless", () => {
 	});
 });
 
-describe("state_hash is independent of add/remove history", () => {
+describe("state_hash is independent of add and remove history", () => {
 	it("losing the last component returns to the create-time hash", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
 		// A filler keeps the [Pos] archetype materialised, so the archetype
-		// graph is identical before and after the round-trip below — the only
+		// graph is identical before and after the round-trip below, the only
 		// thing that could move the hash is `e`'s representation.
 		const filler = s.createEntity();
 		s.addComponent(filler, Pos, { x: 1, y: 2 });

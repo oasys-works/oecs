@@ -1,5 +1,5 @@
 /**
- * # oecs/internal — unstable tooling surface
+ * # oecs/internal, unstable tooling surface
  *
  * Codecs, ABI constants, memory inspectors, and dev-mode singletons, exported
  * for tests, tooling, and advanced integrations (replication decode,
@@ -11,8 +11,8 @@
  * @module oecs/internal
  */
 
-// ECS memory sizing internals — `resolveECSMemory` inspects what an
-// `ECSOptions.memory` intent resolves to without constructing an ECS; the
+// ECS memory sizing internals, `resolveECSMemory` inspects what an
+// `ECSOptions.memory` intent resolves to without constructing an ECS. The
 // constants document the budget arm's derivation inputs.
 export {
 	resolveECSMemory,
@@ -23,14 +23,14 @@ export {
 } from "./core/ecs";
 export type { ResolvedECSMemory, ECSMemoryCapContext } from "./core/ecs";
 
-// Access check — dev-mode validation singleton.
+// Access check, dev-mode validation singleton.
 export { accessCheck } from "./core/ecs";
 
-// Dispatch trace (dev-mode only — gated by DEV + VISUAL_INTEL_TRACE).
+// Dispatch trace (dev-mode only, gated by DEV + VISUAL_INTEL_TRACE).
 // The per-world causal tracer (`FrameTraceRecorder`) is public, at the root.
 export { dispatchTrace, type DispatchTraceSnapshot, type DispatchTraceEntry } from "./core/ecs";
 
-// SAB command-ring transport — the wire/ABI half of the host→ECS write
+// SAB command-ring transport, the wire and ABI half of the host→ECS write
 // seam: a `HostCommandDispatcher` + `ring*Codec` decode cross-thread bytes
 // into the same `applyHostCommand` the in-process queue uses. Byte layouts
 // are engine ABI, not consumer contract.
@@ -45,11 +45,11 @@ export {
 } from "./core/ecs";
 export type { RingCommandApplier } from "./core/ecs";
 
-// Packed-EntityID codec + bounds — for consumers that
+// Packed-EntityID codec + bounds, for consumers that
 // mint or bounds-check handles outside the normal `spawn` paths:
-// snapshot / replication decode (paired with the root's `getEntityIndex`) and
-// adversarial harnesses forging out-of-range / retired / stale handles.
-// `createEntityId` does no aliveness check — the generational guard stays the
+// snapshot and replication decode (paired with the root's `getEntityIndex`) and
+// adversarial harnesses forging out-of-range / retired and stale handles.
+// `createEntityId` does no aliveness check, the generational guard stays the
 // caller's job.
 export {
 	createEntityId,

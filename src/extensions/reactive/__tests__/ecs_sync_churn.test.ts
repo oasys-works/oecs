@@ -1,35 +1,38 @@
 /**
- * ecs_sync CHURN ORACLE (a torture suite) — the property
+ * ecs_sync churn oracle (a torture suite), the property
  * test the ~40 scripted single-tick gates in `ecs_sync.test.ts` can't reach.
  *
- * `ecs_sync` maintains its projection INCREMENTALLY: component observers drain only
+ * `ecs_sync` maintains its projection incrementally: component observers drain only
  * the entities the ECS flagged dirty this tick (O(changed) publish work, the whole
  * point of the in-house kernel). Incremental state is where membership drift, missed
- * deletes, and staleness hide — and a scripted "set x, assert one wake" test never
+ * deletes, and staleness hide, and a scripted "set x, assert one wake" test never
  * runs the bridge long enough or randomly enough to surface them.
  *
- * So this drives a SEEDED RANDOM CHURN PROGRAM (spawn / despawn / add / remove / set
- * / disable / enable across an entity pool over many ticks) at the real bridge and,
- * after every tick, asserts the incrementally-built projection EQUALS AN ORACLE
- * RECOMPUTED FROM SCRATCH via `world.query(...)`. The bridge does it the hard way
- * (observers); the oracle does it the obvious way (a full requery). Any divergence
- * is a bridge bug. This is the gordian-knot generator's stance (`packages/gordian-
- * knot/src/generator/`: an independent oracle for a sequence that has no "rule"),
- * scoped to the projection layer and using `world.query` itself as the oracle
- * instead of a hand-written `RefWorld` — the engine's own query is the ground truth
- * for "who is a member, with what value", which is exactly what the bridge mirrors.
+ * So this drives a seeded random churn program at the real bridge. The program
+ * spawns, despawns, adds, removes, sets, disables and enables across an entity
+ * pool over many ticks. After every tick it asserts that the incrementally-built
+ * projection equals an oracle recomputed from scratch through
+ * `world.query(...)`. The bridge does it the hard way, with observers. The
+ * oracle does it the obvious way, with a full requery. Any divergence is a
+ * bridge bug.
+ *
+ * The stance is an independent oracle for a sequence that has no rule, scoped
+ * here to the projection layer. It uses `world.query` itself as the oracle,
+ * instead of a hand-written `RefWorld`. The engine's own query is the ground
+ * truth for "who is a member, with what value", which is exactly what the bridge
+ * mirrors.
  *
  * Four properties, one generator:
  *   - `syncComponentToMap` (both grains) == `query(Pos)` after every churn tick.
  *   - `syncJoinToMap([Pos, Health])` == `query(Pos, Health)` after every churn tick.
  *   - `syncSingletonToStruct` == the singleton's live fields (enabled) / declared
  *     defaults (disabled) after every churn tick.
- *   - batched-tick coalescing (one flush per tick) holds under churn — with the
+ *   - batched-tick coalescing (one flush per tick) holds under churn, with the
  *     unbatched counter-case that shows why `Engine._tick`'s `batch()` is load-bearing.
  *
- * Plus a SHRINKER (`ddmin`-style single-op fixpoint) proven against a FAULT-INJECTED
- * subject — a deliberately broken mini-bridge that drops `onRemove`/`onDisable`, so
- * a despawn/disable LEAKS a stale row. A seeded program diverges from the oracle; the
+ * Plus a shrinker (`ddmin`-style single-op fixpoint) proven against a fault-injected
+ * subject, a deliberately broken mini-bridge that drops `onRemove` and `onDisable`, so
+ * a despawn or disable leaks a stale row. A seeded program diverges from the oracle. The
  * shrinker reduces it to a 1-minimal reproducing op sequence. This is what gives the
  * oracle teeth: it demonstrably catches the exact bug class the issue names (missed
  * deletes, membership drift) and localises it to a minimal repro.
@@ -53,7 +56,7 @@ import {
 } from "../ecs_sync";
 
 // ---------------------------------------------------------------------------
-// Seeded PRNG — mulberry32. Deterministic per seed, so every replay (and every
+// Seeded prng, mulberry32. Deterministic per seed, so every replay (and every
 // shrink step) is reproducible: a failure pins to a seed, not a wall-clock roll.
 // ---------------------------------------------------------------------------
 function mulberry32(seed: number): () => number {
@@ -69,10 +72,10 @@ function mulberry32(seed: number): () => number {
 const int = (rng: () => number, n: number): number => Math.floor(rng() * n);
 
 // ---------------------------------------------------------------------------
-// Op model — a flat program over BIRTH-ORDINAL handles (0, 1, 2, …), the same
-// handle-not-EntityID scheme the gordian-knot generator uses so the program is
-// independent of how the engine assigns ids. The applier resolves a handle to its
-// live `EntityID` and NO-OPS any op on a dead/unborn handle (the engine throws on a
+// Op model, a flat program over birth-ordinal handles (0, 1, 2, …). A handle is
+// not an `EntityID`, so the program is independent of how the engine assigns
+// ids. The applier resolves a handle to its
+// live `EntityID` and no-ops any op on a dead or unborn handle (the engine throws on a
 // dead-entity op under `__DEV__`, so the applier gates exactly as the generator
 // must). `step` is the per-tick checkpoint: ops between two `step`s are one batch.
 // ---------------------------------------------------------------------------
@@ -91,10 +94,10 @@ const VAL = 8; // small value range → frequent equal-writes (exercises the eq 
 
 /**
  * Generate a churn program: `ticks` ticks, each a random handful of ops then a
- * `step`. Non-spawn ops target a handle born in a PRIOR tick (`bornBefore`) — never
- * one spawned this same tick — so a freshly-spawned entity is never mutated before it
+ * `step`. Non-spawn ops target a handle born in a prior tick (`bornBefore`), never
+ * one spawned this same tick, so a freshly-spawned entity is never mutated before it
  * commits, sidestepping the deferred-attach corner (covered by the scripted gates)
- * and keeping the churn focused on cross-tick membership/value drift. `born` is
+ * and keeping the churn focused on cross-tick membership and value drift. `born` is
  * counted identically here and in the applier (every `spawn` op runs), so handle
  * numbering stays in lockstep across the two.
  */
@@ -140,10 +143,10 @@ function generate(seed: number, ticks: number): Op[] {
 	return ops;
 }
 
-/** Split a program into per-`step` batches. Trailing ops after the last `step` are
- * dropped — never checkpointed, so they can't affect any compared state (mirrors the
- * gordian-knot driver's `splitBatches`; it is what makes a trailing `step` load-
- * bearing and so keeps the shrinker honest). */
+/** Split a program into per-`step` batches. Trailing ops after the last `step`
+ * are dropped and never checkpointed, so they cannot affect any compared state.
+ * That is what makes a trailing `step` load-bearing, and so keeps the shrinker
+ * honest. */
 function splitBatches<T extends { kind: string }>(ops: readonly T[]): T[][] {
 	const batches: T[][] = [];
 	let cur: T[] = [];
@@ -159,7 +162,7 @@ function splitBatches<T extends { kind: string }>(ops: readonly T[]): T[][] {
 // ---------------------------------------------------------------------------
 // The churn engine: Pos{x,y} + Health{hp}, one generic op-applier draining a
 // per-tick buffer. Holds handle↔EntityID + the live set, maintained by the applier.
-// Built but NOT started — a replay attaches its subject (the bridge under test),
+// Built but not started, a replay attaches its subject (the bridge under test),
 // then calls `start()`, so `seedExisting` and the observers see the same world.
 // ---------------------------------------------------------------------------
 interface ChurnEngine {
@@ -178,15 +181,15 @@ function buildEngine(): ChurnEngine {
 
 	const eidOf = new Map<number, EntityID>(); // handle → EntityID (kept for dead handles too)
 	const live = new Set<number>(); // currently-live handles (immediate view)
-	let born = 0; // next birth ordinal — matches the generator's counter
+	let born = 0; // next birth ordinal, matches the generator's counter
 	let buffer: readonly Op[] = []; // the current tick's ops, drained by the applier
 
 	const applier = world.registerSystem({
 		name: "churn_applier",
 		reads: [Pos, Health],
 		writes: [Pos, Health],
-		// `writes` already authorises addComponent(Pos/Health) + setField; `despawns`
-		// authorises removeComponent(Health) + destroyEntity; `spawns` authorises the
+		// `writes` already authorises addComponent(Pos and Health) + setField. `despawns`
+		// authorises removeComponent(Health) + destroyEntity. `spawns` authorises the
 		// createEntity + add. Declared as a superset so every generated op is legal.
 		spawns: [[Pos], [Pos, Health]],
 		despawns: [Pos, Health],
@@ -221,7 +224,7 @@ function buildEngine(): ChurnEngine {
 						if (!live.has(op.h)) break;
 						const e = eidOf.get(op.h)!;
 						// Re-adding a present component would be ambiguous (throw vs overwrite),
-						// so settle the field via set when it's already there — the post-tick
+						// so settle the field via set when it's already there, the post-tick
 						// query is identical either way, which is all the oracle compares.
 						if (ctx.hasComponent(e, Health)) ctx.setField(e, Health, "hp", op.hp);
 						else ctx.commands.add(e, Health, { hp: op.hp });
@@ -236,7 +239,7 @@ function buildEngine(): ChurnEngine {
 					case "set": {
 						if (!live.has(op.h)) break;
 						const e = eidOf.get(op.h)!;
-						// The engine throws on setField of an absent component in __DEV__ —
+						// The engine throws on setField of an absent component in __DEV__,
 						// gate on presence (a `set` on a Health the entity lacks is a no-op).
 						// Branch on `comp` so the field name narrows to the component's schema.
 						if (op.comp === "Pos") {
@@ -266,7 +269,7 @@ function buildEngine(): ChurnEngine {
 		runBatch: (batch) => {
 			buffer = batch;
 			batchedUpdate(world, 1 / 60);
-			// No relations here, so a destroy never cascades — `live` is already exact.
+			// No relations here, so a destroy never cascades, `live` is already exact.
 			// Reconcile anyway as cheap insurance against any deferred-destroy surprise.
 			for (const h of [...live]) if (!world.isAlive(eidOf.get(h)!)) live.delete(h);
 		}
@@ -274,17 +277,17 @@ function buildEngine(): ChurnEngine {
 }
 
 // ---------------------------------------------------------------------------
-// Oracle — recompute the projection from scratch via `world.query(...)` and compare
-// it to the bridge's incrementally-built map. The channel mirrors the DEFAULT query
+// Oracle, recompute the projection from scratch via `world.query(...)` and compare
+// it to the bridge's incrementally-built map. The channel mirrors the default query
 // (enabled members of the mask), which is the bridge's disable=soft-remove contract,
 // so the two agree on membership without special-casing.
 //
 // We recompute via `query(...).includeDisabled()` + an `isDisabled` filter rather
-// than the bare default query: the two describe the SAME set (enabled members), but
-// the default-query `_nonEmpty` cache filters on `enabledCount` and goes stale when
-// an enabled row is added to an all-disabled archetype — the engine query bug
+// than the bare default query: the two describe the same set (enabled members), but
+// the default-query `nonEmptyArchs` cache filters on `enabledCount` and goes stale when
+// an enabled row is added to an all-disabled archetype, the engine query bug
 // this torture surfaced. `includeDisabled` filters on `totalCount`, so its cache is
-// robust to it; the explicit `isDisabled` filter restores default-query semantics.
+// robust to it. The explicit `isDisabled` filter restores default-query semantics.
 // Values are read with `getField`, exactly as a default-query projection would.
 // ---------------------------------------------------------------------------
 type V2 = { x: number; y: number };
@@ -306,7 +309,7 @@ function queryOracle<V>(
 
 /** Compare a reactive map against an oracle map of the same value shape. Returns a
  * human-readable reason on divergence (key-set mismatch or a value mismatch), or
- * `null` when they agree — the `null`/reason contract the harness diffs use. */
+ * `null` when they agree, the `null`/reason contract the harness diffs use. */
 function diffMap<V extends object>(
 	label: string,
 	actual: ReactiveMap<EntityID, V>,
@@ -315,13 +318,13 @@ function diffMap<V extends object>(
 	const aKeys = actual.keys().sort((p, q) => p - q);
 	const oKeys = [...oracle.keys()].sort((p, q) => p - q);
 	if (aKeys.length !== oKeys.length || !aKeys.every((k, i) => k === oKeys[i])) {
-		return `${label}: key sets differ — bridge [${aKeys}] vs oracle [${oKeys}]`;
+		return `${label}: key sets differ, bridge [${aKeys}] vs oracle [${oKeys}]`;
 	}
 	for (const k of oKeys) {
 		const av = actual.get(k);
 		const ov = oracle.get(k)!;
 		if (av === undefined || !shallow(av, ov)) {
-			return `${label}: value at ${k} differs — bridge ${JSON.stringify(av)} vs oracle ${JSON.stringify(ov)}`;
+			return `${label}: value at ${k} differs, bridge ${JSON.stringify(av)} vs oracle ${JSON.stringify(ov)}`;
 		}
 	}
 	return null;
@@ -355,7 +358,7 @@ function replay(ops: readonly Op[], make: MakeSubject): Failure | null {
 	return null;
 }
 
-/** The REAL subject: the production bridges, compared to the from-scratch oracle.
+/** The real subject: the production bridges, compared to the from-scratch oracle.
  * `grain` exercises both the per-entity dirty drain and the column sweep. */
 const makeReal =
 	(grain: "entity" | "column"): MakeSubject =>
@@ -394,11 +397,11 @@ const makeReal =
 		};
 	};
 
-/** The FAULT-INJECTED subject: a hand-rolled Pos→map bridge that DROPS
- * `onRemove`/`onDisable`, so a despawned or disabled entity leaks a stale row the
+/** The fault-injected subject: a hand-rolled Pos→map bridge that drops
+ * `onRemove` and `onDisable`, so a despawned or disabled entity leaks a stale row the
  * `query(Pos)` oracle no longer has. This is the bug class the issue calls out
  * (missed deletes, membership drift); it exists to prove the oracle catches it and
- * the shrinker localises it — NOT a variant of the real bridge. */
+ * the shrinker localises it. Not a variant of the real bridge. */
 const makeFaulty: MakeSubject = (eng) => {
 	const { world, Pos } = eng;
 	const map = reactiveMap<EntityID, V2>(shallow);
@@ -409,7 +412,7 @@ const makeFaulty: MakeSubject = (eng) => {
 		onSet: publish,
 		onAdd: publish,
 		onEnable: publish,
-		// BUG: no onRemove, no onDisable — a leaving entity is never dropped.
+		// bug: no onRemove, no onDisable, a leaving entity is never dropped.
 		access: { reads: [Pos] },
 		yieldExisting: true
 	});
@@ -426,12 +429,12 @@ const makeFaulty: MakeSubject = (eng) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. The property — the real bridge mirrors the query oracle under random churn.
+// 1. The property, the real bridge mirrors the query oracle under random churn.
 // ---------------------------------------------------------------------------
 const SEEDS = 40;
 const TICKS = 30;
 
-describe("ecs_sync churn oracle — bridge == query(...) after every tick", () => {
+describe("ecs_sync churn oracle, bridge == query(...) after every tick", () => {
 	it.each(["entity", "column"] as const)(
 		`[grain=%s] syncComponentToMap & syncJoinToMap match the oracle across ${SEEDS} seeds`,
 		(grain) => {
@@ -448,10 +451,10 @@ describe("ecs_sync churn oracle — bridge == query(...) after every tick", () =
 });
 
 // ---------------------------------------------------------------------------
-// 2. Singleton variant — syncSingletonToStruct mirrors the live fields (enabled)
-//    or its declared defaults (disabled) under field-set + disable/enable churn.
+// 2. Singleton variant, syncSingletonToStruct mirrors the live fields (enabled)
+//    or its declared defaults (disabled) under field-set + disable and enable churn.
 // ---------------------------------------------------------------------------
-describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle churn", () => {
+describe("ecs_sync churn oracle, syncSingletonToStruct under field and toggle churn", () => {
 	type SOp =
 		| { kind: "set"; field: "a" | "b" | "c"; value: number }
 		| { kind: "disable" }
@@ -517,7 +520,7 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 			for (let s = 0; s < batches.length; s++) {
 				buffer = batches[s];
 				batchedUpdate(world, 1 / 60);
-				// Oracle: enabled → the singleton's live column values; disabled → the
+				// Oracle: enabled → the singleton's live column values. Disabled → the
 				// channel's declared initials (zeros for a fresh struct). The column
 				// persists while disabled, so `getField` always reads the latest write.
 				const disabled = world.isDisabled(singleton);
@@ -535,12 +538,12 @@ describe("ecs_sync churn oracle — syncSingletonToStruct under field/toggle chu
 });
 
 // ---------------------------------------------------------------------------
-// 3. Batched-tick coalescing under churn — one flush per tick, no matter how many
+// 3. Batched-tick coalescing under churn, one flush per tick, no matter how many
 //    entities a tick touched. The single-channel "one batched tick → 1 commit"
-//    gates in ecs_sync.test.ts assert this for a scripted tick; this asserts it
+//    gates in ecs_sync.test.ts assert this for a scripted tick. This asserts it
 //    survives heavy random churn (the case where K entities change at once).
 // ---------------------------------------------------------------------------
-describe("ecs_sync churn — batched-tick coalescing (one flush per tick)", () => {
+describe("ecs_sync churn, batched-tick coalescing (one flush per tick)", () => {
 	it("a reader of the whole projection wakes at most once per batched churn tick", () => {
 		const eng = buildEngine();
 		const { world, Pos } = eng;
@@ -554,9 +557,9 @@ describe("ecs_sync churn — batched-tick coalescing (one flush per tick)", () =
 		);
 		eng.start();
 
-		// One effect over the ENTIRE projection: structure (key set) + every key's
-		// value. Under `batch()`, all of a tick's set/delete coalesce, so this wakes
-		// at most once — even when the tick spawned, despawned, and mutated many rows.
+		// One effect over the entire projection: structure (key set) + every key's
+		// value. Under `batch()`, all of a tick's set and delete coalesce, so this wakes
+		// at most once, even when the tick spawned, despawned, and mutated many rows.
 		let flushes = 0;
 		root(() => {
 			effect(() => {
@@ -573,11 +576,11 @@ describe("ecs_sync churn — batched-tick coalescing (one flush per tick)", () =
 		}
 	});
 
-	it("an UNBATCHED tick wakes the reader once per changed row (why _tick batches)", () => {
+	it("an unbatched tick wakes the reader once per changed row (why _tick batches)", () => {
 		// The counter-case the batched property leans on: drive the same two writes
 		// with a bare `world.update`, where each publish flushes synchronously, so a
 		// reader of both rows wakes twice in one tick. This is the torn behaviour
-		// `batchedUpdate`/`Engine._tick`'s `batch()` collapses.
+		// `batchedUpdate` and `Engine._tick`'s `batch()` collapses.
 		const eng = buildEngine();
 		const { world, Pos } = eng;
 		const sync = syncComponentToMap(
@@ -605,8 +608,8 @@ describe("ecs_sync churn — batched-tick coalescing (one flush per tick)", () =
 		});
 		flushes = 0;
 
-		// Two existing rows change in one BARE update. Host-side `setField` marks both
-		// dirty between ticks; the bare `world.update` drains them at the tick tail with
+		// Two existing rows change in one bare update. Host-side `setField` marks both
+		// dirty between ticks. The bare `world.update` drains them at the tick tail with
 		// no surrounding batch, so each onSet publish flushes synchronously and the
 		// whole-projection reader wakes once per changed row.
 		world.setField(keys[0], Pos, "x", 1);
@@ -617,12 +620,12 @@ describe("ecs_sync churn — batched-tick coalescing (one flush per tick)", () =
 });
 
 // ---------------------------------------------------------------------------
-// 4. The shrinker — a seeded failure (against the fault-injected subject) reduces
+// 4. The shrinker, a seeded failure (against the fault-injected subject) reduces
 //    to a 1-minimal reproducing op sequence. `ddmin`-style single-op fixpoint:
 //    repeatedly drop any one op whose removal still reproduces, to convergence.
-//    At convergence no single op is removable while still failing — the textbook
+//    At convergence no single op is removable while still failing, the textbook
 //    1-minimality guarantee (Zeller & Hildebrandt, "Simplifying and Isolating
-//    Failure-Inducing Input", IEEE TSE 28(2), 2002).
+//    Failure-Inducing Input", IEEE tse 28(2), 2002).
 // ---------------------------------------------------------------------------
 function shrink(ops: readonly Op[], fails: (ops: readonly Op[]) => boolean): Op[] {
 	let cur = ops.slice();
@@ -640,7 +643,7 @@ function shrink(ops: readonly Op[], fails: (ops: readonly Op[]) => boolean): Op[
 	return cur;
 }
 
-describe("ecs_sync churn — shrinker reduces a seeded failure to a minimal repro", () => {
+describe("ecs_sync churn, shrinker reduces a seeded failure to a minimal repro", () => {
 	const fails = (ops: readonly Op[]): boolean => replay(ops, makeFaulty) !== null;
 
 	it("the fault-injected bridge diverges, and shrinking yields a 1-minimal sequence", () => {
@@ -655,7 +658,7 @@ describe("ecs_sync churn — shrinker reduces a seeded failure to a minimal repr
 				failingSeed = seed;
 			}
 		}
-		expect(failing, "no seed produced a divergence — the fault injection is inert").not.toBeNull();
+		expect(failing, "no seed produced a divergence, the fault injection is inert").not.toBeNull();
 
 		const shrunk = shrink(failing!, fails);
 
@@ -663,7 +666,7 @@ describe("ecs_sync churn — shrinker reduces a seeded failure to a minimal repr
 		expect(fails(shrunk), `seed ${failingSeed}: shrunk sequence no longer fails`).toBe(true);
 		// (b) Actually shrank.
 		expect(shrunk.length).toBeLessThan(failing!.length);
-		// (c) 1-minimal: removing ANY single op makes the failure disappear.
+		// (c) 1-minimal: removing any single op makes the failure disappear.
 		for (let i = 0; i < shrunk.length; i++) {
 			const minusOne = shrunk.slice(0, i).concat(shrunk.slice(i + 1));
 			expect(fails(minusOne), `op ${i} (${shrunk[i].kind}) is removable but still fails`).toBe(
@@ -671,8 +674,8 @@ describe("ecs_sync churn — shrinker reduces a seeded failure to a minimal repr
 			);
 		}
 		// (d) Tiny, and carries the missed-delete signature: a member appears (spawn)
-		//     then leaves (despawn or disable) — the only way the Pos map can diverge
-		//     from query(Pos) when onRemove/onDisable are dropped.
+		//     then leaves (despawn or disable), the only way the Pos map can diverge
+		//     from query(Pos) when onRemove and onDisable are dropped.
 		expect(shrunk.length).toBeLessThanOrEqual(8);
 		expect(shrunk.some((o) => o.kind === "spawn")).toBe(true);
 		expect(shrunk.some((o) => o.kind === "despawn" || o.kind === "disable")).toBe(true);

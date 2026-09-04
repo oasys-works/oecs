@@ -1,5 +1,5 @@
 /***
- * Assertions — Dev-only runtime validation and branded casting.
+ * Assertions. Dev-only runtime validation and branded casting.
  *
  * All checks are guarded by DEV and tree-shaken in production builds.
  * validateAndCast is the primary tool for creating branded IDs:
@@ -13,7 +13,7 @@ import { DEV } from "../dev_flag";
 
 export const isNonNegativeInteger = (v: number): boolean => Number.isInteger(v) && v >= 0;
 
-export const isNonNull = (v: unknown): boolean => v !== null;
+export const isNotNull = (v: unknown): boolean => v !== null;
 
 /**
  * Dev-only assertion that value is not null/undefined.
@@ -64,13 +64,13 @@ export function unsafeCast<T>(value: unknown): T {
 
 /**
  * Exhaustiveness backstop for tagged-union dispatches. Put it in the
- * `default` arm (or after the final `case`) of a switch over a closed union:
- * the `never` parameter makes "a union gained a variant but this dispatch
- * didn't" a COMPILE error at the call site, and the throw catches runtime
- * values that bypassed the type layer (deserialized/foreign data).
+ * `default` arm (or after the final `case`) of a switch over a closed union.
+ * The `never` parameter makes "a union gained a variant but this dispatch
+ * didn't" a compile error at the call site. The throw catches runtime values
+ * that bypassed the type layer, such as deserialized and foreign data.
  *
- * Deliberately NOT `DEV`-gated, unlike the rest of this file: it marks a
- * can't-happen branch, so it costs nothing until the day it fires — and that
+ * Deliberately not `DEV`-gated, unlike the rest of this file: it marks a
+ * can't-happen branch, so it costs nothing until the day it fires, and that
  * day it must fire in production too, not silently fall through.
  */
 export function assertNever(value: never, label: string): never {

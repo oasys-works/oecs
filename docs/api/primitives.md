@@ -60,10 +60,10 @@ GrowableUint8Array     GrowableUint16Array   GrowableUint32Array
 ```
 
 ```ts
-get length: number;   push(value): void;   pop(): number;   get(i): number;   setAt(i, value): void;
+get length: number;   push(value): void;   pop(): number;   getAt(i): number;   setAt(i, value): void;
 swapRemove(i): number;   clear(): void;   setLength(len): void;
 get buf: T;   view(): T;                       // the typed array below
-ensureCapacity(n): void;
+reserve(n): void;
 bulkAppend(src, srcOffset, count): void;   bulkAppendZeroes(count): void;   bulkAppendValue(value, count): void;
 [Symbol.iterator]();
 ```
@@ -92,7 +92,7 @@ that puts the systems in order.
 ```ts
 topologicalSort<T>(
   nodes: readonly T[],
-  edges: Map<T, T[]>,               // edges.get(a) = the nodes that must come AFTER a
+  edges: Map<T, T[]>,               // edges.get(a) = the nodes that must come after a
   tiebreaker: (a: T, b: T) => number,  // puts the nodes that are ready at the same time in order (a lower value is a higher priority)
   nodeName?: (node: T) => string,
 ): T[];
@@ -105,5 +105,5 @@ topologicalSort<T>(
 
 ## See also
 
-- [schedule](./schedule.md) — `topologicalSort` in use, to put the systems of a phase in order
-- [components](./components.md) — the typed-array columns that `GrowableTypedArray` supports
+- [schedule](./schedule.md), `topologicalSort` in use, to put the systems of a phase in order
+- [components](./components.md), the typed-array columns that `GrowableTypedArray` supports

@@ -3,7 +3,7 @@ import { SparseMap } from "../sparse_map";
 
 describe("SparseMap", () => {
   //=========================================================
-  // has / get / set
+  // has, get and set
   //=========================================================
 
   it("empty map has nothing", () => {
@@ -45,7 +45,7 @@ describe("SparseMap", () => {
     expect(m.size).toBe(1);
     m.set(1, 2);
     expect(m.size).toBe(2);
-    m.set(0, 99); // overwrite — no size change
+    m.set(0, 99); // overwrite, no size change
     expect(m.size).toBe(2);
   });
 
@@ -117,7 +117,7 @@ describe("SparseMap", () => {
     m.set(10, "a");
     m.set(20, "b");
     m.set(30, "c");
-    // Delete first — 30 swaps into slot 0
+    // Delete first, 30 swaps into slot 0
     m.delete(10);
     // Now delete 30 (now at slot 0)
     m.delete(30);
@@ -174,7 +174,7 @@ describe("SparseMap", () => {
   });
 
   //=========================================================
-  // keys / iteration
+  // keys and iteration
   //=========================================================
 
   it("keys exposes the dense key array", () => {

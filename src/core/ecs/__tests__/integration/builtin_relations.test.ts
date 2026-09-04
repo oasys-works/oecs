@@ -1,13 +1,13 @@
 /**
- * Built-in relations — `registerIsA` / `registerChildOf`.
+ * Built-in relations, `registerIsA` / `registerChildOf`.
  *
- * Thin presets over `registerRelation`; these tests prove the IsA/ChildOf
+ * Thin presets over `registerRelation`. These tests prove the IsA and ChildOf
  * acceptance criteria ride the generic relation surface:
- *  - instance-of / parent queries (`sourcesOf` / `targetOf`);
- *  - IsA-chain + hierarchy traversal (`ancestorsOf` / `rootOf` / `cascadeOf`);
- *  - teardown via the default + overridden `onDeleteTarget` policy;
- *  - exclusivity (one direct exemplar / parent);
- *  - NO live component inheritance (IsA records the link only).
+ *  - instance-of and parent queries (`sourcesOf`, `targetOf`)
+ *  - IsA-chain + hierarchy traversal (`ancestorsOf`, `rootOf`, `cascadeOf`)
+ *  - teardown via the default + overridden `onDeleteTarget` policy
+ *  - exclusivity (one direct exemplar and parent)
+ *  - No live component inheritance (IsA records the link only).
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
@@ -31,7 +31,7 @@ describe("register_is_a", () => {
 		expect(world.relations.has(i1, IsA)).toBe(true);
 	});
 
-	it("is exclusive — re-adding replaces the exemplar", () => {
+	it("is exclusive, re-adding replaces the exemplar", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
 		const e1 = world.spawn();
@@ -93,7 +93,7 @@ describe("register_is_a", () => {
 		expect(world.isAlive(i2)).toBe(false);
 	});
 
-	it("records the link only — NO live component inheritance", () => {
+	it("records the link only. no live component inheritance", () => {
 		const world = new ECS();
 		const IsA = registerIsA(world);
 		const Pos = world.registerComponent(["x"] as const);
@@ -103,7 +103,7 @@ describe("register_is_a", () => {
 		world.addComponent(inst, Pos, { x: 1 });
 		world.relations.add(inst, IsA, exemplar);
 
-		// The instance keeps its OWN value; nothing is inherited/shared.
+		// The instance keeps its own value. Nothing is inherited/shared.
 		expect(world.getField(inst, Pos, "x")).toBe(1);
 		world.setField(exemplar, Pos, "x", 99);
 		expect(world.getField(inst, Pos, "x")).toBe(1); // exemplar's change does not leak in

@@ -1,14 +1,14 @@
 /**
- * Entity enable/disable — the row-partition feature.
+ * Entity enable and disable, the row-partition feature.
  *
  * A disabled entity keeps its components, relations, sparse data, and stable
  * `EntityID`, but is moved to the disabled tail of its archetype so default
  * queries skip it (the iteration bound `arch.entityCount` is the enabled-row
  * count). `.includeDisabled()` opts a query back in. Covers:
- *  - default query exclusion (forEach / count) + `includeDisabled` opt-in;
- *  - round-trip preservation of components, sparse data, relations, EntityID;
- *  - the partition invariant under disable/enable/destroy/spawn/add_component;
- *  - `stateHash` reflecting the disabled set + snapshot round-trip;
+ *  - default query exclusion (forEach and count) + `includeDisabled` opt-in
+ *  - round-trip preservation of components, sparse data, relations, EntityID
+ *  - the partition invariant under disable/enable/destroy/spawn/add_component
+ *  - `stateHash` reflecting the disabled set + snapshot round-trip
  *  - deferred (system-side) toggling being safe mid-`forEach`.
  */
 
@@ -31,7 +31,7 @@ function spawnPos(world: ECS, PosDef: ReturnType<ECS["registerComponent"]>, n: n
 	return ids;
 }
 
-describe("entity enable/disable", () => {
+describe("entity enable and disable", () => {
 	it("disable excludes from default queries; enable restores", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
@@ -142,7 +142,7 @@ describe("entity enable/disable", () => {
 			const y = arch.getColumnRead(P, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
 				xs.push(col[i]);
-				// y is always 10× x — proves no column got scrambled by the swaps.
+				// y is always 10× x, proves no column got scrambled by the swaps.
 				expect(y[i]).toBe(col[i] * 10);
 			}
 		});
@@ -183,7 +183,7 @@ describe("entity enable/disable", () => {
 		world.disable(ids[3]); // disabled tail holds x=3
 		world.disable(ids[4]); // and x=4
 
-		// Destroy a MIDDLE enabled entity (x=1) — the swap-remove must not pull a
+		// Destroy a middle enabled entity (x=1), the swap-remove must not pull a
 		// disabled row into the enabled region.
 		world.despawn(ids[1]);
 		world.flush();
@@ -230,7 +230,7 @@ describe("entity enable/disable", () => {
 		world.addComponent(e, P, { x: 5, y: 50 });
 
 		world.disable(e);
-		// Add a component → archetype transition; disabled state must follow.
+		// Add a component → archetype transition. Disabled state must follow.
 		world.addComponent(e, V, { vx: 1, vy: 2 });
 
 		expect(world.isDisabled(e)).toBe(true);
@@ -307,7 +307,7 @@ describe("entity enable/disable", () => {
 						const eids = arch.entityIds;
 						for (let i = 0; i < arch.entityCount; i++) {
 							visited++;
-							// Disable an entity mid-iteration — must be safe (deferred).
+							// Disable an entity mid-iteration, must be safe (deferred).
 							if (xs[i] === 0) ctx.commands.disable(eids[i] as (typeof ids)[number]);
 						}
 					});

@@ -1,14 +1,14 @@
 /**
- * kernel_solid adapter gate — the kernel→Solid bridge's value contract: a kernel
+ * kernel_solid adapter gate, the kernel→Solid bridge's value contract: a kernel
  * change is reflected in the bridged accessor, an equal write doesn't move it,
  * batches coalesce, and disposal (the surrounding Solid owner tearing down) stops
  * updates so nothing leaks.
  *
  * Scope note: the root vitest runs under the `node` condition, where solid-js
- * resolves to its SSR build and *effect* scheduling no-ops — so these assert the
- * VALUE contract (kernel change → accessor value), which flows through our kernel's
- * `subscribe` (fully functional) into solid's signal get/set (value storage works
- * regardless of build). That a real Solid `<For>` / component RE-RENDERS off these
+ * resolves to its ssr build and *effect* scheduling no-ops, so these assert the
+ * value contract (kernel change → accessor value), which flows through our kernel's
+ * `subscribe` (fully functional) into solid's signal get and set (value storage works
+ * regardless of build). That a real Solid `<For>` / component re-renders off these
  * accessors is proven under browser conditions.
  */
 import { describe, expect, it } from "vitest";
@@ -79,8 +79,8 @@ describe("fromKernelMap", () => {
 			map.set(7, { hp: 100 });
 			map.set(8, { hp: 100 });
 			const view = fromKernelMap(map);
-			const c7 = view.cell(7);
-			const c8 = view.cell(8);
+			const c7 = view.bindCell(7);
+			const c8 = view.bindCell(8);
 			expect(c7()?.hp).toBe(100);
 			map.set(7, { hp: 40 }); // change entity 7
 			expect(c7()?.hp).toBe(40);
@@ -94,7 +94,7 @@ describe("fromKernelMap", () => {
 			const map = reactiveMap<number, number>();
 			map.set(3, 30);
 			const view = fromKernelMap(map);
-			const c3 = view.cell(3);
+			const c3 = view.bindCell(3);
 			expect(c3()).toBe(30);
 			map.delete(3);
 			expect(c3()).toBeUndefined();
@@ -168,7 +168,7 @@ describe("fromKernelStruct", () => {
 			createRoot((dispose) => {
 				const [s] = reactiveStruct({ status: 2 });
 				const view = fromKernelStruct(s);
-				// Solid reconcile + `await` probe `.then`; `for..of` probes `Symbol.iterator`.
+				// Solid reconcile + `await` probe `.then`. `for..of` probes `Symbol.iterator`.
 				expect(() => (view as { then?: unknown }).then).not.toThrow();
 				expect((view as { then?: unknown }).then).toBeUndefined();
 				expect((view as { [Symbol.iterator]?: unknown })[Symbol.iterator]).toBeUndefined();

@@ -1,21 +1,21 @@
 /**
  * Archetype pre-warming at world.startup().
  *
- * `ECS.startup()` walks every registered system's AND observer's `spawns` +
+ * `ECS.startup()` walks every registered system's and observer's `spawns` +
  * `transitions` (observers carry the same access shape) to compute the
  * archetype closure they can produce, then plants the whole set in a single
  * `extendColumnStore` call. The contract this file pins:
  *
  *   1. Every spawn becomes a live archetype by the time `startup()` returns
  *      (before any onAdded callback runs).
- *   2. Transitions are walked transitively from the spawn-seeded worklist;
+ *   2. Transitions are walked transitively from the spawn-seeded worklist
  *      every reachable mask becomes a live archetype too.
- *   3. The whole closure goes through ONE `extendColumnStore` call —
+ *   3. The whole closure goes through one `extendColumnStore` call,
  *      asserted via `columnStore.header.view_stamp`, which bumps once per
  *      extend.
- *   4. No archetype is created twice; duplicate masks across systems
+ *   4. No archetype is created twice. Duplicate masks across systems
  *      collapse.
- *   5. Empty closure (no spawns, no transitions) is a no-op — view_stamp
+ *   5. Empty closure (no spawns, no transitions) is a no-op, view_stamp
  *      doesn't move.
  *   6. Subsequent in-system `addComponent` calls hit the cached archetype
  *      path: no further view_stamp bumps.
@@ -30,7 +30,7 @@ import { _ecsInternals } from "../../ecs";
 import { STORE_HEADER_OFFSETS } from "../../../store/header";
 import { openAccess } from "../test_helpers";
 import { BitSet } from "../../../../type_primitives";
-import { asComponentId, makeComponentDef } from "../../component";
+import { asComponentId, createComponentDef } from "../../component";
 import type { ComponentDef, SystemDescriptor } from "../..";
 
 function viewStamp(world: ECS): number {
@@ -48,7 +48,7 @@ describe("archetype pre-warming", () => {
 			...openAccess([Pos, Vel]),
 			spawns: [[Pos, Vel]],
 			onAdded: () => {
-				// onAdded fires AFTER prewarm — the [Pos, Vel] archetype must
+				// onAdded fires after prewarm, the [Pos, Vel] archetype must
 				// already exist (the empty archetype + [Pos, Vel] = 2).
 				onAddedArchetypeCount = world.archetypeCount;
 			},
@@ -110,7 +110,7 @@ describe("archetype pre-warming", () => {
 		const D = world.registerComponent(["v"] as const);
 
 		// view_stamp is bumped once per extend. After the constructor (which
-		// plants the empty archetype) it's already non-zero; baseline that
+		// plants the empty archetype) it's already non-zero. Baseline that
 		// here, then assert the prewarm-driven extend bumps it by exactly 1
 		// even though four distinct archetypes get planted.
 		const baseline = viewStamp(world);
@@ -130,13 +130,13 @@ describe("archetype pre-warming", () => {
 
 		world.startup();
 
-		// Four new archetypes ([A,B], [A,C], [B,D], [A,B,D]) — one extend.
+		// Four new archetypes ([A,B], [A,C], [B,D], [A,B,D]), one extend.
 		expect(viewStamp(world) - baseline).toBe(1);
 		// empty + 4 prewarmed
 		expect(world.archetypeCount).toBe(5);
 	});
 
-	it("startup with no spawns / transitions is a no-op (view_stamp unchanged)", () => {
+	it("startup with no spawns or transitions is a no-op (view_stamp unchanged)", () => {
 		const world = new ECS();
 		const baseline = viewStamp(world);
 
@@ -148,7 +148,7 @@ describe("archetype pre-warming", () => {
 		world.startup();
 
 		expect(viewStamp(world)).toBe(baseline);
-		expect(world.archetypeCount).toBe(1); // just the empty archetype
+		expect(world.archetypeCount).toBe(1); // only the empty archetype
 	});
 
 	it("duplicate masks across systems collapse to a single archetype", () => {
@@ -169,7 +169,7 @@ describe("archetype pre-warming", () => {
 
 		world.startup();
 
-		// empty + [Pos, Vel] — not two copies of [Pos, Vel]
+		// empty + [Pos, Vel], not two copies of [Pos, Vel]
 		expect(world.archetypeCount).toBe(2);
 	});
 
@@ -195,7 +195,7 @@ describe("archetype pre-warming", () => {
 		world.startup();
 		const afterStartup = viewStamp(world);
 
-		// Run a few ticks — every iteration spawns an entity into one of
+		// Run a few ticks, every iteration spawns an entity into one of
 		// the prewarmed archetypes. No new archetypes should appear, so
 		// view_stamp should be frozen.
 		world.update(0);
@@ -206,7 +206,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("a system with transitions but no spawns contributes nothing to the closure", () => {
-		// The closure walk seeds from `spawns`; a transition with nothing
+		// The closure walk seeds from `spawns`. A transition with nothing
 		// to fire on can't materialise an archetype on its own.
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
@@ -237,9 +237,9 @@ describe("archetype pre-warming", () => {
 		const Mote = world.registerComponent(["v"] as const);
 
 		// An observer that spawns a Mote when Trigger is added, declaring the spawn
-		// in its access. Prewarm must fold the observer's `spawns` into the closure;
+		// in its access. Prewarm must fold the observer's `spawns` into the closure
 		// previously it walked systems only, so the [Mote] archetype first-touched
-		// lazily on the first observer-spawn mid-tick. The observer need not fire —
+		// lazily on the first observer-spawn mid-tick. The observer need not fire,
 		// prewarm acts on the declaration, exactly as it does for a system.
 		world.observe(Trigger, {
 			onAdd: (_e, ctx) => ctx.commands.spawn(Mote({ v: 0 })),
@@ -255,7 +255,7 @@ describe("archetype pre-warming", () => {
 	it("an observer's transition is walked from a system's spawn seed", () => {
 		// Cross-descriptor closure: a system seeds {A}, an observer transitions
 		// {A} → {A,B}. The reachable {A,B} archetype must be prewarmed even though
-		// no single descriptor declares it — the closure now mixes system seeds
+		// no single descriptor declares it, the closure now mixes system seeds
 		// with observer transitions.
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
@@ -284,7 +284,7 @@ describe("archetype pre-warming", () => {
 			spawns: [[Pos, Owner]],
 			transitions: [
 				// whenHas is a proper subset of the spawn mask. A liberal
-				// over-approximation is acceptable: the closure walk just
+				// over-approximation is acceptable: the closure walk only
 				// over-plants, which is cheap.
 				{ whenHas: [Pos], add: [CombatTarget] }
 			],
@@ -302,7 +302,7 @@ describe("compute_archetype_closure (Phase C internals)", () => {
 	const { computeArchetypeClosure } = _ecsInternals;
 
 	function mkDef(id: number): ComponentDef {
-		return makeComponentDef(asComponentId(id));
+		return createComponentDef(asComponentId(id));
 	}
 
 	function maskOf(...ids: number[]): BitSet {

@@ -1,10 +1,10 @@
 /**
- * Writes an HTML page with the results of ONE comparison from the past. The page
+ * Writes an HTML page with the results of one comparison from the past. The page
  * needs no other file. The values are constants in this file, and this program
  * calculates the dimensions of each bar from them. To make a page for a new
  * comparison, you must put the new values into this file.
  *
- * THIS FILE IS A RECORD, AND IT IS NOT A TOOL. Every number below belongs to the
+ * This file is a record, and it is not a tool. Every number below belongs to the
  * run that its footer names: the working tree against HEAD 6f47ff8, over the 26
  * cases that `suite.mjs` held at that time. `suite.mjs` has 33 cases now, and the
  * seven that this page does not show are the `access/` rows for `getField_2fields`,
@@ -20,7 +20,7 @@ const SECTIONS = [
 	{
 		id: "dispatch",
 		title: "Frame dispatch",
-		lede: "Fixed per-frame cost: what a tick charges before any of your system bodies run. This was the single largest win — two thirds of the phase loop was a Map lookup keyed on the system object.",
+		lede: "Fixed per-frame cost: what a tick charges before any of your system bodies run. This was the single largest win, two thirds of the phase loop was a Map lookup keyed on the system object.",
 		rows: [
 			["sched/update_20noop", 504.1, 279.3, -45.3, -46, -43, "faster"],
 			["sched/update_20systems", 2058.1, 1737.8, -15.6, -16, -15, "faster"],
@@ -29,7 +29,7 @@ const SECTIONS = [
 	{
 		id: "structural",
 		title: "Structural churn",
-		lede: "Spawn, despawn, and archetype transitions — the classic ECS bottleneck. Rows are now placed straight into cached typed-array views instead of through a per-column push/pop API.",
+		lede: "Spawn, despawn, and archetype transitions, the classic ECS bottleneck. Rows are now placed straight into cached typed-array views instead of through a per-column push and pop API.",
 		rows: [
 			["struct/add_remove_cycle", 55.8, 42.3, -24.4, -25, -23, "faster"],
 			["struct/add_remove_valued", 64.6, 51.7, -20.0, -23, -19, "faster"],
@@ -54,7 +54,7 @@ const SECTIONS = [
 	{
 		id: "iteration",
 		title: "Iteration",
-		lede: "Untouched by design. It was already at parity with a hand-written loop over raw typed arrays — that reference row is measured here as a control, and both it and the ECS path moved by less than a quarter of a percent.",
+		lede: "Untouched by design. It was already at parity with a hand-written loop over raw typed arrays, that reference row is measured here as a control, and both it and the ECS path moved by less than a quarter of a percent.",
 		rows: [
 			["iter/eachChunk_2comp", 1.3, 1.3, -0.2, -1, 0, "flat"],
 			["iter/raw_typedarray_baseline", 1.3, 1.3, 0.0, 0, 2, "control"],
@@ -81,7 +81,7 @@ const SECTIONS = [
 ];
 
 // ── bar geometry ───────────────────────────────────────────────────────────
-// Axis is "% faster", so gains grow right from a zero line inset from the left;
+// Axis is "% faster", so gains grow right from a zero line inset from the left
 // the two sub-2% regressions render as a short nub on the other side of it.
 const ZERO = 7; // % of track width
 const MAX = 48; // % faster at full width
@@ -96,7 +96,7 @@ function bar(delta, lo, hi, kind) {
 	const wh = -lo;
 	const px = (v) => ZERO + v * UNIT;
 	// A "not measurable" row has no verdict to express, so it gets a short hatched
-	// stub anchored AT the zero line — never a bar whose length could be read as a
+	// stub anchored at the zero line, never a bar whose length could be read as a
 	// result. (Drawn from its signed value it would have straddled zero and looked
 	// like a small gain.)
 	const left = kind === "noisy" ? ZERO : g >= 0 ? ZERO : Math.max(0, px(g));
@@ -105,7 +105,7 @@ function bar(delta, lo, hi, kind) {
 	parts.push(
 		`<span class="fill ${kind}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"></span>`
 	);
-	// IQR whisker — only where it spans something visible and the row claims a result
+	// IQR whisker, only where it spans something visible and the row claims a result
 	if (kind === "faster" && Math.abs(wh - wl) > 0.2) {
 		const a = Math.min(px(wl), px(wh));
 		const b = Math.max(px(wl), px(wh));
@@ -113,7 +113,7 @@ function bar(delta, lo, hi, kind) {
 			`<span class="iqr" style="left:${a.toFixed(2)}%;width:${(b - a).toFixed(2)}%"></span>`
 		);
 	}
-	parts.push(`<span class="zero" style="left:${ZERO}%"></span>`);
+	parts.push(`<span class="zero" style="left:${zero}%"></span>`);
 	return parts.join("");
 }
 
@@ -127,8 +127,8 @@ function rowHTML([name, head, work, delta, lo, hi, kind]) {
 	const speedup = head / work;
 	const tip =
 		kind === "noisy"
-			? `Rounds disagreed too widely to call — middle half spanned ${lo}%…${hi}%.`
-			: `${head.toFixed(1)} ns → ${work.toFixed(1)} ns per op · ${speedup.toFixed(2)}× · middle half of rounds ${Math.abs(hi).toFixed(0)}…${Math.abs(lo).toFixed(0)}% faster`;
+			? `Rounds disagreed too widely to call, middle half spanned ${lo}%…${hi}%.`
+			: `${head.toFixed(1)} ns → ${work.toFixed(1)} ns per op, ${speedup.toFixed(2)}×, middle half of rounds ${Math.abs(hi).toFixed(0)}…${Math.abs(lo).toFixed(0)}% faster`;
 	return `        <tr class="row ${kind}" tabindex="0" data-tip="${esc(tip)}">
           <th scope="row" class="cname">${esc(name)}</th>
           <td class="ctrack"><span class="track">${bar(delta, lo, hi, kind)}</span></td>
@@ -142,7 +142,7 @@ const sections = SECTIONS.map(
         <h2><span class="eyebrow">${esc(s.title)}</span></h2>
         <p class="lede">${esc(s.lede)}</p>
         <table class="bars">
-          <caption class="sr-only">${esc(s.title)} — percent faster, working tree vs HEAD</caption>
+          <caption class="sr-only">${esc(s.title)}, percent faster, working tree vs HEAD</caption>
           <thead class="sr-only"><tr><th>Benchmark</th><th>Percent faster</th><th>Delta</th><th>Nanoseconds per op, before and after</th></tr></thead>
           <tbody>
 ${s.rows.map(rowHTML).join("\n")}
@@ -159,7 +159,7 @@ const tableRows = allRows
 	)
 	.join("\n");
 
-const html = `<title>oecs — what the optimisation pass bought</title>
+const html = `<title>oecs, what the optimisation pass bought</title>
 <style>
   :root {
     color-scheme: light;
@@ -393,17 +393,17 @@ const html = `<title>oecs — what the optimisation pass bought</title>
 
 <div class="wrap">
   <header>
-    <div class="kicker">oecs · local performance investigation</div>
+    <div class="kicker">oecs, local performance investigation</div>
     <h1>Where the time went, and what it cost to prove it</h1>
     <p class="standfirst">
       Four changes to the engine's per-frame and structural paths. The hot iteration loop
-      was already at parity with hand-written typed-array code, so it was left alone —
+      was already at parity with hand-written typed-array code, so it was left alone,
       everything gained here came from overhead around it.
     </p>
     <div class="meta">
       <span><b>26</b> benchmarks</span>
       <span><b>11</b> paired rounds, process-isolated</span>
-      <span>node 24 · darwin arm64</span>
+      <span>node 24, darwin arm64</span>
       <span>bundle of <code>src/</code>, <b>__DEV__=false</b> (the guards stay as branches)</span>
       <span>noise floor <b>±2.9%</b></span>
     </div>
@@ -413,17 +413,17 @@ const html = `<title>oecs — what the optimisation pass bought</title>
     <div class="tile">
       <div class="t-label">Frame dispatch overhead</div>
       <div class="t-num">1.80<span class="t-unit">× faster</span></div>
-      <div class="t-sub">504 → 279 ns · 20 systems</div>
+      <div class="t-sub">504 → 279 ns, 20 systems</div>
     </div>
     <div class="tile">
-      <div class="t-label">Add / remove a component</div>
+      <div class="t-label">Add and remove a component</div>
       <div class="t-num">1.32<span class="t-unit">× faster</span></div>
       <div class="t-sub">55.8 → 42.3 ns per op</div>
     </div>
     <div class="tile">
       <div class="t-label">Iteration over 10k entities</div>
       <div class="t-num plain">1.3<span class="t-unit">ns / entity</span></div>
-      <div class="t-sub">unchanged · raw-array parity</div>
+      <div class="t-sub">unchanged, raw-array parity</div>
     </div>
   </div>
 
@@ -443,20 +443,20 @@ ${sections}
     </p>
     <div class="fixes">
       <div class="fix">
-        <div class="tag">sched/update_20noop · −45.3%</div>
+        <div class="tag">sched/update_20noop, −45.3%</div>
         <h3>Last-run tick moved off a Map</h3>
         <p>
-          The phase loop read and wrote <code>Map&lt;SystemDescriptor, number&gt;</code> twice per
-          system per frame — hashing an object identity. Line-level profiling put
+          the phase loop read and wrote <code>Map&lt;SystemDescriptor, number&gt;</code> twice per
+          system per frame, hashing an object identity. Line-level profiling put
           <strong>63%</strong> of the whole loop in those two operations. System ids come from a dense
           per-world counter, so an id-indexed packed array replaces it.
         </p>
       </div>
       <div class="fix">
-        <div class="tag">struct/* · −12% to −24%</div>
+        <div class="tag">struct/*, −12% to −24%</div>
         <h3>Archetype row plane</h3>
         <p>
-          Rows were placed through a column API — an accessor call, a capacity compare and a
+          Rows were placed through a column API, an accessor call, a capacity compare and a
           length load/store <em>per column per row</em>, around one typed-array move of actual work.
           But <code>Archetype.length</code> already is the row count for every column, so all of it was
           redundant. Columns are now indexed directly through cached views, with the row count
@@ -464,7 +464,7 @@ ${sections}
         </p>
       </div>
       <div class="fix">
-        <div class="tag">struct/addComponent_valued · −11.8%</div>
+        <div class="tag">struct/addComponent_valued, −11.8%</div>
         <h3>One edge probe instead of four lookups</h3>
         <p>
           A component add re-checked the component mask, then re-read the same holey edge slot, then
@@ -474,10 +474,10 @@ ${sections}
         </p>
       </div>
       <div class="fix">
-        <div class="tag">query/resolve_cached · −14.6%</div>
+        <div class="tag">query/resolve_cached, −14.6%</div>
         <h3>No allocation on a cache hit</h3>
         <p>
-          <code>ecs.query(…)</code> allocated a BitSet and its backing array on every call — the
+          <code>ecs.query(…)</code> allocated a BitSet and its backing array on every call, the
           resolver already copies its arguments three times internally, so the caller-side copy was
           pure garbage on the hit path.
         </p>
@@ -488,14 +488,14 @@ ${sections}
   <div class="block prose">
     <h2>Why these numbers can be believed</h2>
     <p>
-      The first version of this harness was worthless. Running both builds in one process made every
+      the first version of this harness was worthless. Running both builds in one process made every
       measured call site megamorphic, and three benchmarks were quietly timing the memory allocator
-      rather than the operation. A <strong>null run</strong> — identical code compiled on both sides,
-      where every row must read zero — exposed it: swings from −17% to +40%, including a
+      rather than the operation. A <strong>null run</strong>, identical code compiled on both sides,
+      where every row must read zero, exposed it: swings from −17% to +40%, including a
       phantom 33% regression that does not exist.
     </p>
     <p>
-      Each measurement now runs in its own child process, growth happens during setup rather than
+      each measurement now runs in its own child process, growth happens during setup rather than
       inside the timed region, and rows whose rounds disagree flag themselves rather than guess.
       The same null run today:
     </p>
@@ -504,16 +504,16 @@ ${sections}
 
 <span class="hl">25 of 26 rows</span> read "~"  (23 of them within ±1%, worst 2.9%)
  1 row self-flags NOISY
- <span class="hl">0 faster, 0 slower</span>  — no false verdicts</pre>
+ <span class="hl">0 faster, 0 slower</span> , no false verdicts</pre>
     </div>
     <p>
-      That worst non-noisy row — ±2.9% — is the noise floor the gains above have to clear, and every
+      that worst non-noisy row, ±2.9%, is the noise floor the gains above have to clear, and every
       one of them clears it several times over. One row self-flagged in that null run; in the
       comparison itself, two rows refuse to produce a verdict, and they are shown as unmeasurable
       rather than dressed up as results.
     </p>
     <p>
-      One caveat this page did not record at the time: a single summary figure understates how noisy
+      one caveat this page did not record at the time: a single summary figure understates how noisy
       an individual row can be. A row whose middle half is wide under identical code cannot support a
       small delta under changed code, however small the summary number is. The harness now prints the
       widest middle half alongside the largest delta, so a later run of this null does not need the
@@ -521,13 +521,13 @@ ${sections}
     </p>
     <p>
       Correctness was checked separately: the full suite (1613 tests) passes, and a randomized
-      structural-op fuzzer — checking component values, query membership and snapshot round-trips
-      against an independent model — passes across 280 seeds.
+      structural-op fuzzer, checking component values, query membership and snapshot round-trips
+      against an independent model, passes across 280 seeds.
     </p>
   </div>
 
   <details>
-    <summary>All 26 benchmarks — table view</summary>
+    <summary>All 26 benchmarks, table view</summary>
     <div class="scroll">
       <table class="data">
         <thead>
@@ -541,8 +541,8 @@ ${tableRows}
   </details>
 
   <footer>
-    Working tree vs HEAD 6f47ff8 · median of 11 paired rounds, each the best of 9 in-process samples ·
-    lower is better · nothing committed
+    Working tree vs HEAD 6f47ff8, median of 11 paired rounds, each the best of 9 in-process samples
+    lower is better, nothing committed
   </footer>
 </div>
 

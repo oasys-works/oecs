@@ -1,30 +1,30 @@
 /***
- * accessCheck — runtime enforcement of a system's declared access.
+ * accessCheck, runtime enforcement of a system's declared access.
  *
  * Module-level singleton that enforces a system's declared access surface
  * (`reads` / `writes` / `spawns` / `despawns` / `transitions` /
- * `resourceReads` / `resourceWrites`, plus the optional sparse/relation
+ * `resourceReads` / `resourceWrites`, plus the optional sparse and relation
  * terms) at runtime in `DEV`. Schedule calls
  * `accessCheck.enter(desc)` before invoking the system's `fn` (or
- * `onAdded`) and `accessCheck.leave()` after; SystemContext + Archetype
+ * `onAdded`) and `accessCheck.leave()` after. SystemContext + Archetype
  * call the per-op `check_*` methods which throw `ECSError` if the running
  * system touches something it didn't declare.
  *
  * Lookups are O(1): per-descriptor `Set<number>` (component ids) and
  * `Set<symbol>` (resource keys) are computed on first `enter()` and cached
  * on the descriptor via a non-enumerable property bag (see `_access_sets`).
- * The cost in dev is a single Set.has per access; in prod the entire module
+ * The cost in dev is a single Set.has per access. In prod the entire module
  * is dead-code-eliminated by `DEV` guards at every call site.
  *
  * Sparse components (`SparseComponentID`) and relations (`RelationID`) are
- * each a SEPARATE id space from the dense archetype-mask `ComponentID`.
+ * each a separate id space from the dense archetype-mask `ComponentID`.
  * Each gets its own `Set<number>` so a sparse id and a dense id sharing the
- * same numeric value never collide; a sparse/relation write implies a read,
+ * same numeric value never collide. A sparse or relation write implies a read,
  * exactly as for dense components.
  *
  * Outside-of-system calls (e.g. `ecs.addComponent(...)` from setup
  * code, or accesses inside `onAdded` callbacks before `enter()` is called
- * by Schedule for that descriptor) are intentionally not checked — there's
+ * by Schedule for that descriptor) are intentionally not checked. There's
  * no active system to attribute the violation to.
  ***/
 
@@ -44,7 +44,7 @@ interface AccessSets {
 	hasDespawns: boolean;
 	resourceReads: Set<symbol>;
 	resourceWrites: Set<symbol>;
-	// Separate id spaces from the dense sets above — see file header.
+	// Separate id spaces from the dense sets above, see file header.
 	sparseReads: Set<number>;
 	sparseWrites: Set<number>;
 	relationReads: Set<number>;
@@ -53,10 +53,10 @@ interface AccessSets {
 
 // WeakMap keyed on the frozen descriptor. The descriptor object is frozen and
 // non-extensible (Object.freeze in registerSystem), so a symbol-keyed slot
-// via defineProperty would fail; a WeakMap doesn't require mutating the
+// via defineProperty would fail. A WeakMap doesn't require mutating the
 // descriptor and lets GC collect the cached sets when the descriptor goes
 // away.
-const _setsCache = new WeakMap<SystemDescriptor, AccessSets>();
+const accessSetsCache = new WeakMap<SystemDescriptor, AccessSets>();
 
 function computeSets(desc: SystemDescriptor): AccessSets {
 	const reads = new Set<number>();
@@ -73,7 +73,7 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	for (let i = 0; i < desc.writes.length; i++) {
 		const cid = desc.writes[i].id;
 		writes.add(cid);
-		// A write implies a read — reading the same field
+		// A write implies a read, reading the same field
 		// you write is normal (e.g. decrementing a counter you also read).
 		reads.add(cid);
 		// A declared write is also an authorised target of addComponent
@@ -105,8 +105,8 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	}
 	for (let i = 0; i < desc.despawns.length; i++) {
 		// despawns is "components this system removes via removeComponent
-		// OR destroys via despawn". Both paths consult removeAllowed
-		// for per-component checks; despawn also checks `hasDespawns`
+		// or destroys via despawn". Both paths consult removeAllowed
+		// for per-component checks. Despawn also checks `hasDespawns`
 		// to permit the call at all.
 		removeAllowed.add(desc.despawns[i].id);
 	}
@@ -119,10 +119,10 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 		// A write implies a read, same as for components.
 		resourceReads.add(key);
 	}
-	// Sparse / relation terms are OPTIONAL — a dense-only system omits
+	// Sparse and relation terms are optional, a dense-only system omits
 	// them entirely, so coalesce undefined to a no-op. Write implies read, same
-	// as dense; add/remove/set_field all consult the `*_writes` set (sparse and
-	// relation mutations are not split into add/remove/write like the dense
+	// as dense. Add, remove and set_field all consult the `*_writes` set (sparse and
+	// relation mutations are not split into add, remove and write like the dense
 	// archetype path, because they trigger no archetype transition).
 	const sparseW = desc.sparseWrites;
 	if (sparseW !== undefined) {
@@ -166,27 +166,27 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 }
 
 function setsFor(desc: SystemDescriptor): AccessSets {
-	const cached = _setsCache.get(desc);
+	const cached = accessSetsCache.get(desc);
 	if (cached !== undefined) return cached;
 	const computed = computeSets(desc);
-	_setsCache.set(desc, computed);
+	accessSetsCache.set(desc, computed);
 	return computed;
 }
 
 /** The reads-only access surface a run condition declares. A condition
- * can only `reads` components (via a captured query) and `resourceReads`; every
+ * can only `reads` components (via a captured query) and `resourceReads`. Every
  * mutation set is empty by construction, so the same `check_*` machinery rejects
- * any write/structural/resource-write a misbehaving predicate attempts. */
+ * any write, structural or resource-write a misbehaving predicate attempts. */
 interface ConditionAccess {
 	readonly name: string;
 	readonly reads?: readonly ComponentDef[];
 	readonly resourceReads?: readonly ResourceKey<any>[];
 }
 
-// Cached per condition object — built-ins and custom conditions are stable
+// Cached per condition object, built-ins and custom conditions are stable
 // singletons, so the reads-only sets compute once. A WeakMap (not a descriptor
 // property) because conditions are plain frozen-ish objects we don't mutate.
-const _condSetsCache = new WeakMap<ConditionAccess, AccessSets>();
+const conditionSetsCache = new WeakMap<ConditionAccess, AccessSets>();
 
 function computeConditionSets(cond: ConditionAccess): AccessSets {
 	const reads = new Set<number>();
@@ -199,7 +199,7 @@ function computeConditionSets(cond: ConditionAccess): AccessSets {
 			resourceReads.add(cond.resourceReads[i] as unknown as symbol);
 		}
 	}
-	// Every mutation/structural set is empty: a condition that writes, adds,
+	// Every mutation and structural set is empty: a condition that writes, adds,
 	// removes, destroys, or writes a resource fails the corresponding check.
 	// (Computed once per condition, so the fresh empty Sets are negligible.)
 	return {
@@ -218,154 +218,154 @@ function computeConditionSets(cond: ConditionAccess): AccessSets {
 }
 
 function conditionSetsFor(cond: ConditionAccess): AccessSets {
-	const cached = _condSetsCache.get(cond);
+	const cached = conditionSetsCache.get(cond);
 	if (cached !== undefined) return cached;
 	const computed = computeConditionSets(cond);
-	_condSetsCache.set(cond, computed);
+	conditionSetsCache.set(cond, computed);
 	return computed;
 }
 
 class AccessCheck {
-	private active: SystemDescriptor | null = null;
-	private sets: AccessSets | null = null;
-	// The label used in violation messages. Tracks `active` for a system span,
-	// but a run-condition span has no descriptor — only this name — so the
-	// failure helpers read the label here rather than off `active`.
-	private activeName: string | null = null;
-	// An `exclusive` system has full world access: every check_* below
+	private _activeSystem: SystemDescriptor | null = null;
+	private _activeSets: AccessSets | null = null;
+	// The label used in violation messages. Tracks `_activeSystem` for a system span,
+	// but a run-condition span has no descriptor, only this name, so the
+	// failure helpers read the label here rather than off `_activeSystem`.
+	private _activeName: string | null = null;
+	// An `_exclusive` system has full world access: every check_* below
 	// passes for the whole span. Kept as an explicit flag (rather than leaving
-	// `sets` null) so `isActive()` stays truthful inside the span.
-	private exclusive = false;
+	// `_activeSets` null) so `isActive()` stays truthful inside the span.
+	private _exclusive = false;
 
 	enter(desc: SystemDescriptor): void {
-		this.active = desc;
-		this.activeName = desc.name ?? `system_${desc.id}`;
-		this.exclusive = desc.exclusive === true;
-		// Exclusive systems get full access: leaving `sets` null makes every
-		// check_* below pass (they all early-return on `sets === null`). No need
-		// to enumerate every component — the bypass is the whole point.
-		this.sets = this.exclusive ? null : setsFor(desc);
+		this._activeSystem = desc;
+		this._activeName = desc.name ?? `system_${desc.id}`;
+		this._exclusive = desc.exclusive === true;
+		// Exclusive systems get full access: leaving `_activeSets` null makes every
+		// check_* below pass (they all early-return on `_activeSets === null`). No need
+		// to enumerate every component, the bypass is the whole point.
+		this._activeSets = this._exclusive ? null : setsFor(desc);
 	}
 
-	/** Open a reads-only span for a run condition. No descriptor — a
+	/** Open a reads-only span for a run condition. No descriptor, a
 	 * condition can gate a whole SystemSet, so it isn't attributable to one
-	 * system — just its declared reads/resource_reads and a name for diagnostics.
+	 * system, only its declared reads and resource_reads and a name for diagnostics.
 	 * Paired with `leave()`. */
 	enterCondition(cond: ConditionAccess): void {
-		this.active = null;
-		this.activeName = cond.name;
-		this.sets = conditionSetsFor(cond);
+		this._activeSystem = null;
+		this._activeName = cond.name;
+		this._activeSets = conditionSetsFor(cond);
 	}
 
 	leave(): void {
-		this.active = null;
-		this.activeName = null;
-		this.sets = null;
-		this.exclusive = false;
+		this._activeSystem = null;
+		this._activeName = null;
+		this._activeSets = null;
+		this._exclusive = false;
 	}
 
 	isActive(): boolean {
-		return this.sets !== null || this.exclusive;
+		return this._activeSets !== null || this._exclusive;
 	}
 
 	/** Current system descriptor, if any. Null during a run-condition span. */
 	current(): SystemDescriptor | null {
-		return this.active;
+		return this._activeSystem;
 	}
 
-	checkRead(def: ComponentHandle): void {
-		if (this.sets === null) return;
-		if (this.sets.reads.has(def.id)) return;
-		this.failComponent("read", def, "reads");
+	assertRead(def: ComponentHandle): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.reads.has(def.id)) return;
+		this._failComponent("read", def, "reads");
 	}
 
-	checkWrite(def: ComponentHandle): void {
-		if (this.sets === null) return;
-		if (this.sets.writes.has(def.id)) return;
-		this.failComponent("write", def, "writes");
+	assertWrite(def: ComponentHandle): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.writes.has(def.id)) return;
+		this._failComponent("write", def, "writes");
 	}
 
-	checkAdd(def: ComponentHandle): void {
-		if (this.sets === null) return;
-		if (this.sets.addAllowed.has(def.id)) return;
-		this.failComponent("addComponent", def, "spawns / transitions.add / writes");
+	assertAdd(def: ComponentHandle): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.addAllowed.has(def.id)) return;
+		this._failComponent("addComponent", def, "spawns / transitions.add / writes");
 	}
 
-	checkRemove(def: ComponentHandle): void {
-		if (this.sets === null) return;
-		if (this.sets.removeAllowed.has(def.id)) return;
-		this.failComponent("removeComponent", def, "despawns / transitions.remove");
+	assertRemove(def: ComponentHandle): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.removeAllowed.has(def.id)) return;
+		this._failComponent("removeComponent", def, "despawns / transitions.remove");
 	}
 
-	checkDestroy(): void {
-		if (this.sets === null) return;
-		if (this.sets.hasDespawns) return;
+	assertDespawn(): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.hasDespawns) return;
 		// ! safe: this.sets !== null implies this.activeName !== null
-		const name = this.activeName!;
+		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' called despawn but didn't declare any despawns — declare the components this system removes via despawn in its 'despawns'`,
+			`system '${name}' called despawn but didn't declare any despawns, declare the components this system removes via despawn in its 'despawns'`,
 			{ system: name, op: "despawn" }
 		);
 	}
 
-	checkResourceRead(key: ResourceKey<any>): void {
-		if (this.sets === null) return;
+	assertResourceRead(key: ResourceKey<any>): void {
+		if (this._activeSets === null) return;
 		const sym = key as unknown as symbol;
-		if (this.sets.resourceReads.has(sym)) return;
-		this.failResource("read", key, "resourceReads");
+		if (this._activeSets.resourceReads.has(sym)) return;
+		this._failResource("read", key, "resourceReads");
 	}
 
-	checkResourceWrite(key: ResourceKey<any>): void {
-		if (this.sets === null) return;
+	assertResourceWrite(key: ResourceKey<any>): void {
+		if (this._activeSets === null) return;
 		const sym = key as unknown as symbol;
-		if (this.sets.resourceWrites.has(sym)) return;
-		this.failResource("write", key, "resourceWrites");
+		if (this._activeSets.resourceWrites.has(sym)) return;
+		this._failResource("write", key, "resourceWrites");
 	}
 
-	// --- Sparse component / relation checks ---
-	// Keyed against the dedicated sparse/relation sets, NOT the dense
-	// `reads`/`writes` sets — the id spaces are disjoint by construction (see
+	// --- Sparse component and relation checks ---
+	// Keyed against the dedicated sparse and relation sets, not the dense
+	// `reads` and `writes` sets, the id spaces are disjoint by construction (see
 	// file header). `def as unknown as number` recovers the SparseComponentID /
 	// RelationID the branded handle erases to at runtime.
 
-	checkSparseRead(def: SparseComponentDef): void {
-		if (this.sets === null) return;
+	assertSparseRead(def: SparseComponentDef): void {
+		if (this._activeSets === null) return;
 		const sid = def as unknown as number;
-		if (this.sets.sparseReads.has(sid)) return;
-		this.failSparse("read", sid, "sparseReads");
+		if (this._activeSets.sparseReads.has(sid)) return;
+		this._failSparse("read", sid, "sparseReads");
 	}
 
-	checkSparseWrite(def: SparseComponentDef): void {
-		if (this.sets === null) return;
+	assertSparseWrite(def: SparseComponentDef): void {
+		if (this._activeSets === null) return;
 		const sid = def as unknown as number;
-		if (this.sets.sparseWrites.has(sid)) return;
-		this.failSparse("write", sid, "sparseWrites");
+		if (this._activeSets.sparseWrites.has(sid)) return;
+		this._failSparse("write", sid, "sparseWrites");
 	}
 
-	checkRelationRead(def: RelationDef): void {
-		if (this.sets === null) return;
+	assertRelationRead(def: RelationDef): void {
+		if (this._activeSets === null) return;
 		const rid = def as unknown as number;
-		if (this.sets.relationReads.has(rid)) return;
-		this.failRelation("read", rid, "relationReads");
+		if (this._activeSets.relationReads.has(rid)) return;
+		this._failRelation("read", rid, "relationReads");
 	}
 
-	checkRelationWrite(def: RelationDef): void {
-		if (this.sets === null) return;
+	assertRelationWrite(def: RelationDef): void {
+		if (this._activeSets === null) return;
 		const rid = def as unknown as number;
-		if (this.sets.relationWrites.has(rid)) return;
-		this.failRelation("write", rid, "relationWrites");
+		if (this._activeSets.relationWrites.has(rid)) return;
+		this._failRelation("write", rid, "relationWrites");
 	}
 
 	/** A `(*, T)` wildcard (`Query.forEachRelatedTo`) reads every
-	 * relation's reverse index, so it can't name a specific relation — it is
+	 * relation's reverse index, so it can't name a specific relation. It is
 	 * authorised by the `ANY_RELATION` sentinel in `relationReads`. Honoured here
-	 * exactly like a per-relation read, just keyed on the reserved sentinel id
+	 * exactly like a per-relation read, only keyed on the reserved sentinel id
 	 * (which computeSets folds into `relationReads` like any other entry). */
-	checkRelationReadAny(): void {
-		if (this.sets === null) return;
-		if (this.sets.relationReads.has(ANY_RELATION as unknown as number)) return;
-		this.failRelation(
+	assertRelationReadAny(): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.relationReads.has(ANY_RELATION as unknown as number)) return;
+		this._failRelation(
 			"(*, T) wildcard read",
 			ANY_RELATION as unknown as number,
 			"relationReads (as ANY_RELATION)"
@@ -374,87 +374,87 @@ class AccessCheck {
 
 	// --- Optional query-term scope ---
 	// `Query.forEach` and `ChangedQuery.forEach` push the iterating query's
-	// `_optional` term list for the span of the callback;
+	// `_optional` term list for the span of the callback
 	// `Archetype.getOptionalColumnRead` then verifies the fetched component was
-	// declared via `.optional(T)` — the term that authorizes the optional fetch.
+	// declared via `.optional(T)`, the term that authorizes the optional fetch.
 	// This is what makes the optional term *consumed* rather than decorative: like
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
 	// checked here in `DEV`. A stack (not a single slot) handles re-entrant /
 	// nested `forEach`. The optional scope is independent of the per-system
-	// `enter`/`leave` above — a host-side `ecs.query(...).forEach` outside any
+	// `enter` and `leave` above, a host-side `ecs.query(...).forEach` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual
 	// `query.archetypes` walk can't be attributed to an optional declaration, so it
-	// isn't checked — mirroring the unchecked outside-of-system calls in the header.
+	// isn't checked, mirroring the unchecked outside-of-system calls in the header.
 	//
-	// CAVEAT: the gate always attributes to the INNERMOST active
+	// Caveat: the gate always attributes to the innermost active
 	// `forEach`. If you nest `forEach` and call `getOptionalColumnRead` on an
-	// OUTER query's archetype inside the inner loop, it is checked against the inner
+	// outer query's archetype inside the inner loop, it is checked against the inner
 	// query's terms (a false throw or false pass). Per-query attribution isn't worth
-	// the complexity for a dev-only assertion; iterate one query at a time, or read
+	// the complexity for a dev-only assertion. Iterate one query at a time, or read
 	// the outer span before entering the inner loop.
-	private optionalScopes: (readonly number[])[] = [];
+	private _optionalScopes: (readonly number[])[] = [];
 
 	enterOptionalScope(optional: readonly number[]): void {
-		this.optionalScopes.push(optional);
+		this._optionalScopes.push(optional);
 	}
 
 	leaveOptionalScope(): void {
-		this.optionalScopes.pop();
+		this._optionalScopes.pop();
 	}
 
-	checkOptionalFetch(def: ComponentHandle): void {
-		const depth = this.optionalScopes.length;
-		if (depth === 0) return; // no active forEach scope — lenient (see above)
-		const scope = this.optionalScopes[depth - 1];
+	assertOptionalFetch(def: ComponentHandle): void {
+		const depth = this._optionalScopes.length;
+		if (depth === 0) return; // no active forEach scope, lenient (see above)
+		const scope = this._optionalScopes[depth - 1];
 		const cid = def.id;
 		for (let i = 0; i < scope.length; i++) {
 			if (scope[i] === cid) return;
 		}
 		throw new ECSError(
 			ECS_ERROR.OPTIONAL_TERM_NOT_DECLARED,
-			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it — add .optional(component) to the query before fetching it`
+			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it, add .optional(component) to the query before fetching it`
 		);
 	}
 
-	private failComponent(op: string, def: ComponentHandle, missingField: string): never {
+	private _failComponent(op: string, def: ComponentHandle, missingField: string): never {
 		// ! safe: every caller bails when this.sets is null, and both `enter` and
 		// `enterCondition` set activeName alongside sets, so it is non-null here.
-		const name = this.activeName!;
+		const name = this._activeName!;
 		const label = componentLabel(def);
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on ${label} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on ${label} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
 			{ system: name, op, component: def.id }
 		);
 	}
 
-	private failSparse(op: string, sid: number, missingField: string): never {
+	private _failSparse(op: string, sid: number, missingField: string): never {
 		// ! safe: same as failComponent.
-		const name = this.activeName!;
+		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
 			{ system: name, op, sparse: sid }
 		);
 	}
 
-	private failRelation(op: string, rid: number, missingField: string): never {
+	private _failRelation(op: string, rid: number, missingField: string): never {
 		// ! safe: same as failComponent.
-		const name = this.activeName!;
+		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on relation ${rid} but didn't declare it — add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on relation ${rid} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
 			{ system: name, op, relation: rid }
 		);
 	}
 
-	private failResource(op: string, key: ResourceKey<any>, missingField: string): never {
+	private _failResource(op: string, key: ResourceKey<any>, missingField: string): never {
 		// ! safe: same as failComponent.
-		const name = this.activeName!;
+		const name = this._activeName!;
 		const label = (key as unknown as symbol).description ?? "<unnamed>";
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed resource ${op} on '${label}' but didn't declare it — add the resource key to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed resource ${op} on '${label}' but didn't declare it, add the resource key to '${missingField}' (see docs/api/systems.md)`,
 			{ system: name, op, resource: label }
 		);
 	}
@@ -462,7 +462,7 @@ class AccessCheck {
 
 export const accessCheck: AccessCheck = new AccessCheck();
 
-/** @internal — test seam for unit tests that need a fresh tracker. */
+/** @internal, test seam for unit tests that need a fresh tracker. */
 export const _accessCheckInternals = {
 	create: () => new AccessCheck(),
 	setsFor

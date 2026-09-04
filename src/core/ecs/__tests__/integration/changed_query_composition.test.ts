@@ -1,14 +1,14 @@
 // ChangedQuery is composable.
 //
 // `q.changed(...)` used to return a terminal `ChangedQuery` exposing only
-// `forEach`, so refining AFTER it (`q.changed(Pos).without(Dead)`) was
-// impossible — you had to remember to refine BEFORE
+// `forEach`, so refining after it (`q.changed(Pos).without(Dead)`) was
+// impossible. You had to remember to refine before
 // (`q.without(Dead).changed(Pos)`). ChangedQuery now mirrors the dense query
 // verbs (`and` / `without` / `anyOf` / `optional`); each refines the underlying
 // query and re-wraps, so the order no longer matters and the result set is
 // identical either way.
 //
-// Each test puts its entities in DISTINCT archetypes and counts archetype visits,
+// Each test puts its entities in distinct archetypes and counts archetype visits,
 // so a visit count directly reflects which archetypes the composed filter kept.
 // A `Pos`-writer runs first (ordered before the detector) and bumps `Pos`'s
 // changed-tick on every Pos archetype, so `changed(Pos)` sees them all.
@@ -26,8 +26,8 @@ function posWriter(world: ECS, Pos: ComponentDef): SystemDescriptor {
 	const wq = world.query(Pos);
 	return world.registerSystem({
 		...openAccess([Pos]),
-		fn(ctx) {
-			for (const arch of wq._nonEmpty()) arch.getColumn(Pos, "x", ctx.ecsTick);
+		fn() {
+			for (const arch of wq.nonEmptyArchs()) arch.getColumnMut(Pos, "x", world.getChangeTick());
 		}
 	});
 }
@@ -147,7 +147,7 @@ describe("ChangedQuery composition", () => {
 		const Tag = world.registerComponent(["t"] as const);
 
 		const bare = world.spawn();
-		world.addComponent(bare, Pos, { x: 0 }); // {Pos} — neither Vel nor Tag
+		world.addComponent(bare, Pos, { x: 0 }); // {Pos}, neither Vel nor Tag
 		const moving = world.spawn();
 		world.addComponent(moving, Pos, { x: 0 });
 		world.addComponent(moving, Vel, { vx: 0 }); // {Pos,Vel}
@@ -193,7 +193,7 @@ describe("ChangedQuery composition", () => {
 			...openAccess([Pos, Vel]),
 			fn() {
 				// `getOptionalColumnRead` throws in __DEV__ unless `.optional(Vel)`
-				// declared it — so reaching it without throwing proves the optional
+				// declared it, so reaching it without throwing proves the optional
 				// scope carried through the composed ChangedQuery's forEach.
 				dq.changed(Pos)
 					.optional(Vel)

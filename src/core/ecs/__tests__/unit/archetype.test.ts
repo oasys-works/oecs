@@ -6,14 +6,14 @@ import {
 	type ArchetypeEdge,
 	type ColumnFactory
 } from "../../archetype";
-import { asComponentId, makeComponentDef } from "../../component";
+import { asComponentId, createComponentDef } from "../../component";
 import { createEntityId } from "../../entity";
 import { BitSet, TypedArrayFor } from "../../../../type_primitives";
 
 // Heap-backed column factory for unit tests that exercise the Archetype
 // column surface directly without standing up a ColumnStore. The production
 // path (`archGetOrCreateFromMask`) always goes through
-// `Archetype.fromColumnStore` — these tests intentionally bypass that to
+// `Archetype.fromColumnStore`, these tests intentionally bypass that to
 // pin per-method semantics in isolation.
 function makeHeapFactory(initialCapacity = 16): ColumnFactory {
 	return (_cid, _fidx, tag) => new TypedArrayFor[tag](initialCapacity);
@@ -103,17 +103,17 @@ describe("Archetype", () => {
 		a.addEntity(e0);
 		a.addEntity(e1);
 
-		expect(a.entityList).toContain(e0);
-		expect(a.entityList).toContain(e1);
-		// Exactly the two added — no ghost/duplicate entry.
-		expect(a.entityList.length).toBe(2);
+		expect(a.rowEntityIds).toContain(e0);
+		expect(a.rowEntityIds).toContain(e1);
+		// Exactly the two added, no ghost or duplicate entry.
+		expect(a.rowEntityIds.length).toBe(2);
 	});
 
 	it("entity_list reflects presence of entities", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(5));
-		expect(a.entityList.includes(entity(5))).toBe(true);
-		expect(a.entityList.includes(entity(6))).toBe(false);
+		expect(a.rowEntityIds.includes(entity(5))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(6))).toBe(false);
 	});
 
 	//=========================================================
@@ -124,7 +124,7 @@ describe("Archetype", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
 		a.addEntity(entity(1));
-		a.removeEntity(0);
+		a.swapRemoveRow(0);
 		expect(a.entityCount).toBe(1);
 	});
 
@@ -134,20 +134,20 @@ describe("Archetype", () => {
 		a.addEntity(entity(20)); // row 1
 		a.addEntity(entity(30)); // row 2
 
-		// Remove row 0 — entity(30) (row 2) swaps in
-		const swapped = a.removeEntity(0);
+		// Remove row 0, entity(30) (row 2) swaps in
+		const swapped = a.swapRemoveRow(0);
 		expect(swapped).toBe(30);
 		expect(a.entityCount).toBe(2);
-		expect(a.entityList.includes(entity(10))).toBe(false);
-		expect(a.entityList.includes(entity(20))).toBe(true);
-		expect(a.entityList.includes(entity(30))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(10))).toBe(false);
+		expect(a.rowEntityIds.includes(entity(20))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(30))).toBe(true);
 	});
 
 	it("remove_entity returns -1 when removing last element", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
 
-		const swapped = a.removeEntity(0);
+		const swapped = a.swapRemoveRow(0);
 		expect(swapped).toBe(-1);
 		expect(a.entityCount).toBe(0);
 	});
@@ -157,26 +157,26 @@ describe("Archetype", () => {
 		a.addEntity(entity(0)); // row 0
 		a.addEntity(entity(1)); // row 1
 
-		// Remove last row — no swap needed
-		const swapped = a.removeEntity(1);
+		// Remove last row, no swap needed
+		const swapped = a.swapRemoveRow(1);
 		expect(swapped).toBe(-1);
 		expect(a.entityCount).toBe(1);
-		expect(a.entityList.includes(entity(0))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(0))).toBe(true);
 	});
 
 	it("can add after remove", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
-		a.removeEntity(0);
+		a.swapRemoveRow(0);
 		expect(a.entityCount).toBe(0);
 
 		a.addEntity(entity(1));
 		expect(a.entityCount).toBe(1);
-		expect(a.entityList.includes(entity(1))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(1))).toBe(true);
 	});
 
 	//=========================================================
-	// Bulk add (addEntities / addEntitiesTag)
+	// Bulk add (addEntities and addEntitiesTag)
 	//=========================================================
 
 	it("add_entities_tag bulk-adds entities and returns starting row", () => {
@@ -187,9 +187,9 @@ describe("Archetype", () => {
 
 		expect(start).toBe(0);
 		expect(a.entityCount).toBe(3);
-		expect(a.entityList.includes(entity(10))).toBe(true);
-		expect(a.entityList.includes(entity(20))).toBe(true);
-		expect(a.entityList.includes(entity(30))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(10))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(20))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(30))).toBe(true);
 	});
 
 	it("add_entities_tag appends after existing entities", () => {
@@ -257,7 +257,7 @@ describe("Archetype", () => {
 
 		expect(start).toBe(0);
 		expect(a.entityCount).toBe(2);
-		expect(a.entityList.includes(entity(1))).toBe(true);
+		expect(a.rowEntityIds.includes(entity(1))).toBe(true);
 	});
 
 	it("add_entities triggers grow_handler when batch exceeds capacity", () => {
@@ -387,7 +387,7 @@ describe("Archetype", () => {
 		a.writeFields(1, compId(1), { x: 200 }, 0);
 		a.writeFields(2, compId(1), { x: 300 }, 0);
 
-		const def = makeComponentDef<{ x: "f64" }>(compId(1));
+		const def = createComponentDef<{ x: "f64" }>(compId(1));
 		const col = a.getColumnRead(def, "x");
 		expect(col[0]).toBe(100);
 		expect(col[1]).toBe(200);
@@ -408,8 +408,8 @@ describe("Archetype", () => {
 		a.addEntity(entity(2)); // row 2
 		a.writeFields(2, compId(1), { x: 30, y: 31 }, 0);
 
-		// Remove row 0 — entity(2) (row 2) swaps into row 0
-		a.removeEntity(0);
+		// Remove row 0, entity(2) (row 2) swaps into row 0
+		a.swapRemoveRow(0);
 
 		expect(a.entityCount).toBe(2);
 
@@ -440,8 +440,8 @@ describe("Archetype", () => {
 		a.writeFields(1, compId(1), { a: 200 }, 0);
 		a.writeFields(1, compId(2), { b: -2 }, 0);
 
-		// Remove row 0 — entity(1) swaps into row 0
-		a.removeEntity(0);
+		// Remove row 0, entity(1) swaps into row 0
+		a.swapRemoveRow(0);
 
 		expect(a.readField(0, compId(1), "a")).toBe(200);
 		expect(a.readField(0, compId(2), "b")).toBe(-2);
@@ -464,7 +464,7 @@ describe("Archetype", () => {
 	it("columns grow when capacity is exceeded", () => {
 		const layout = makeLayout(1, ["v"]);
 		// `makeHeapFactory(16)` produces GrowableTypedArrays that double
-		// on overflow; pushing 50 entities crosses 16 → 32 → 64.
+		// on overflow. Pushing 50 entities crosses 16 → 32 → 64.
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory(16));
 
 		// Add more entities than initial capacity

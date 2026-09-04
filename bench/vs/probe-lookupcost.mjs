@@ -3,17 +3,17 @@
  * removes the lookup.
  *
  * Each indirect method to find this cost was not successful. A synthetic test with 24
- * shapes gave approximately 7 ns (Fix 1 in INVESTIGATION.md). A test on the real code
+ * shapes gave approximately 7 ns (the earlier proposal). A test on the real code
  * that changed the number of shapes, and that kept each other variable constant, gave
  * approximately 0 ns (`probe-fieldshape.mjs`). But that second test did not change the
  * number of shapes at all, because all the tables from `Object.create(null)` share one
  * dictionary map, and their keys make no difference. A synthetic test measures the
  * code around the lookup, and not the lookup.
  *
- * Therefore this probe measures the cost by DIFFERENCE, on the real code path. It
+ * Therefore this probe measures the cost by difference, on the real code path. It
  * builds the library. It then changes the compiled lookups of
  * `_fieldIndex[cid][field]` to the constant `0`, and it builds a second bundle.
- * `getField(id, P3, "x")` reads field `"x"`, and `"x"` IS ordinal 0. Therefore the
+ * `getField(id, P3, "x")` reads field `"x"`, and `"x"` is ordinal 0. Therefore the
  * second bundle returns equal values for this workload, and its only difference is the
  * lookup that the probe removed. The difference between the two bundles is the cost of
  * the lookup. No other part of the code changed, and no model is necessary.
@@ -22,7 +22,7 @@
  * only because of the field that this probe reads. The probe gives the limit that any
  * method from a name to an ordinal can reach.
  *
- * This probe uses `../build.mjs`, and thus it does NOT measure the artifacts of the
+ * This probe uses `../build.mjs`, and thus it does not measure the artifacts of the
  * package. It must find a text in the compiled code and replace it, which only the
  * form of `src/` makes possible. Therefore both sides keep the development guards as
  * branches, and the difference between the two sides is still the cost of the
@@ -48,7 +48,7 @@ await buildLib(full, { dev: false, from: FROM });
 const src = fs.readFileSync(full, "utf8");
 const LOOKUP = /const fi = this\._fieldIndex\[cid\]\[field\];/g;
 const hits = src.match(LOOKUP);
-if (!hits) throw new Error("could not find the compiled _fieldIndex lookups — did the source change shape?");
+if (!hits) throw new Error("could not find the compiled _fieldIndex lookups, did the source change shape?");
 const patched = src.replace(LOOKUP, "const fi = 0;");
 const nolookup = path.join(outDir, "lookup.none.mjs");
 fs.writeFileSync(nolookup, patched);
@@ -100,5 +100,5 @@ const f = median(runs.full);
 const n = median(runs.none);
 console.log(`  getField, field-index lookup present          ${f.toFixed(2).padStart(7)} ns/op`);
 console.log(`  getField, lookup replaced by a constant       ${n.toFixed(2).padStart(7)} ns/op`);
-console.log(`\n  the lookup costs ${(f - n).toFixed(2)} ns  (INVESTIGATION.md fix 1 projects −7.00)`);
-console.log(`  checksums identical across both bundles (${refChecksum}) — same data read\n`);
+console.log(`\n  the lookup costs ${(f - n).toFixed(2)} ns  (the earlier proposal projects −7.00)`);
+console.log(`  checksums identical across both bundles (${refChecksum}), same data read\n`);

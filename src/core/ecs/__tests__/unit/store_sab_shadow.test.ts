@@ -2,10 +2,10 @@
  * Store SAB shadow.
  *
  * The Store now maintains a parallel ColumnStore alongside its heap-backed
- * archetype columns. The shadow is built incrementally — every new
+ * archetype columns. The shadow is built incrementally, every new
  * archetype discovered via `archGetOrCreateFromMask` plants a
  * matching region in the SAB via `extendColumnStore`. Heap columns remain
- * the source of truth; the shadow is not read yet.
+ * the source of truth. The shadow is not read yet.
  *
  * These tests pin the discovery path so a later flip to
  * `Archetype.fromColumnStore` lands on top of a shadow whose archetype
@@ -17,7 +17,7 @@ import { Store } from "../../store";
 import { TYPE_TAG, columnKey, readStoreHeader } from "../../../store";
 import type { ColumnStore } from "../../../store";
 
-// `ColumnStore.header` is the cached snapshot captured at create-time;
+// `ColumnStore.header` is the cached snapshot captured at create-time
 // `extendColumnStore` writes the canonical view_stamp into the DataView and
 // leaves the cached header alone. Read via the DataView for the truth.
 function liveViewStamp(s: ColumnStore): number {
@@ -29,7 +29,7 @@ const Velocity = { vx: "f32", vy: "f32" } as const;
 const Health = { current: "i32", max: "i32" } as const;
 const Tag = {} as const;
 
-describe("Store — SAB shadow", () => {
+describe("Store. SAB shadow", () => {
 	it("seeds the SAB shadow with the empty archetype at construction", () => {
 		const store = new Store();
 		// The constructor plants the empty (zero-component) archetype.
@@ -126,7 +126,7 @@ describe("Store — SAB shadow", () => {
 		store.addComponent(a, Pos, { x: 1, y: 2 });
 		const stampAfterFirst = liveViewStamp(store.columnStore);
 
-		// Reusing the same archetype mask must not extend the SAB —
+		// Reusing the same archetype mask must not extend the SAB,
 		// the heap-side dedup at arch_map.get(hash) short-circuits before
 		// the extend call.
 		store.addComponent(b, Pos, { x: 5, y: 6 });

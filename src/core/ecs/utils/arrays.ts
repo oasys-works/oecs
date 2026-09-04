@@ -1,5 +1,5 @@
 /***
- * Array utilities — helpers for hash-bucketed maps.
+ * Array utilities, helpers for hash-bucketed maps.
  *
  ***/
 

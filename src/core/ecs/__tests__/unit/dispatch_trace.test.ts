@@ -61,7 +61,7 @@ describe("dispatch_trace.resolve_callsite_from_stack", () => {
 		expect(resolveCallsiteFromStack(stack, "/repo")).toBeNull();
 	});
 
-	it("returns null for an empty / missing stack", () => {
+	it("returns null for an empty or missing stack", () => {
 		expect(resolveCallsiteFromStack(null, "/repo")).toBeNull();
 		expect(resolveCallsiteFromStack("Error", "/repo")).toBeNull();
 	});
@@ -107,12 +107,12 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 
 	it("counts repeated dispatches from the same site", () => {
 		const t = create();
-		// record() is unconditional — the isActive() gate lives at the call
-		// sites (ecs.ts / query.ts), not here — so a fresh tracer records with
+		// record() is unconditional, the isActive() gate lives at the call
+		// sites (ecs.ts / query.ts), not here, so a fresh tracer records with
 		// no env setup. All three calls share one callsite → two distinct keys.
-		t.recordEmit("Death");
-		t.recordEmit("Death");
-		t.recordEmit("Damage");
+		t.recordEventEmit("Death");
+		t.recordEventEmit("Death");
+		t.recordEventEmit("Damage");
 		const snap = t.snapshot();
 		const emits = snap.channels["ecs-events"].emit;
 		const keys = emits.map((e) => e.key).sort();
@@ -139,8 +139,36 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 		const snap = t.snapshot();
 		expect(snap.channels.resources.remove.length).toBe(1);
 		expect(snap.channels.resources.remove[0]!.key).toBe("Mode");
-		// A remove is its own op — it does not leak into register/write.
+		// A remove is its own op. It does not leak into register/write.
 		expect(snap.channels.resources.register.length).toBe(0);
 		expect(snap.channels.resources.write.length).toBe(0);
+	});
+
+	it("separates an event read from an event emit of the same key", () => {
+		const t = create();
+		t.recordEventEmit("Death");
+		t.recordEventRead("Death");
+		t.recordEventRead("Death");
+		const snap = t.snapshot();
+		expect(snap.channels["ecs-events"].emit.length).toBe(1);
+		expect(snap.channels["ecs-events"].emit[0]!.count).toBe(1);
+		expect(snap.channels["ecs-events"].read.length).toBe(1);
+		expect(snap.channels["ecs-events"].read[0]!.key).toBe("Death");
+		expect(snap.channels["ecs-events"].read[0]!.count).toBe(2);
+	});
+
+	it("keeps an action key numeric, and separates send from handle", () => {
+		const t = create();
+		t.recordSendAction(7);
+		t.recordHandleAction(7);
+		t.recordHandleAction(9);
+		const snap = t.snapshot();
+		const send = snap.channels.actions.send_action;
+		const handle = snap.channels.actions.handle_action;
+		expect(send.length).toBe(1);
+		// The actions channel is the one that reads its key back as a number.
+		// Every other channel carries a label.
+		expect(send[0]!.key).toBe(7);
+		expect(handle.map((e) => e.key).sort()).toEqual([7, 9]);
 	});
 });

@@ -1,5 +1,5 @@
 /**
- * # oecs — archetype Entity Component System for TypeScript
+ * # oecs, archetype Entity Component System for TypeScript
  *
  * Re-derived from the oasys engine ECS. A determinism-capable archetype ECS
  * with a topo-sorted scheduler, system sets + run conditions, per-component
@@ -7,8 +7,8 @@
  * typed host→ECS write seam.
  *
  * Storage runs over a backing-neutral column store (`ColumnStore`). The default
- * profile is **pure-TS heap** — a plain fixed `ArrayBuffer`, so no
- * `SharedArrayBuffer` and no cross-origin isolation (COOP/COEP) are required.
+ * profile is **pure-TS heap**, a plain fixed `ArrayBuffer`, so no
+ * `SharedArrayBuffer` and no cross-origin isolation (COOP and COEP) are required.
  * The opt-in `SharedArrayBuffer` + WASM profile lives at `@oasys/oecs/shared`.
  *
  * This entry is the **stable public API**: every name below is an explicit
@@ -23,20 +23,20 @@
 export { ECS, type ECSOptions } from "./core/ecs";
 export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
 
-// ECS memory sizing — the intent surface a consumer sizes an ECS
+// ECS memory sizing, the intent surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). The resolver + derivation constants are
 // tooling, at `@oasys/oecs/internal`.
 export type { ECSMemoryOptions, MemoryBacking, WasmMemoryArm } from "./core/ecs";
 
-// Template / direct-create — opaque archetype template from `ECS.template`,
+// Template / direct-create, opaque archetype template from `ECS.template`,
 // consumed by `ECS.spawn` / `ECS.spawnMany`.
 export type { Template, TemplateOverrides } from "./core/ecs";
 
-// SAB layout subscription — generic hook for any consumer (e.g. a compute
+// SAB layout subscription, generic hook for any consumer (e.g. a compute
 // backend) that needs to know when SAB layout changes.
 export type { StoreLayoutListener } from "./core/ecs";
 
-// Compute backend — the generic, opt-in plug point a consumer attaches
+// Compute backend, the generic, opt-in plug point a consumer attaches
 // via `ECS.attachBackend`.
 export type { ComputeBackend, BackendSystemHandle } from "./core/ecs";
 
@@ -46,13 +46,13 @@ export {
 	type SystemEntry,
 	type SystemOrdering,
 	type SystemOrderingTarget,
-	// System sets — a named group sharing a run condition + ordering.
+	// System sets, a named group sharing a run condition + ordering.
 	systemSet,
 	type SystemSet,
 	type SystemSetConfig
 } from "./core/ecs";
 
-// Run conditions — per-tick gates for scheduled systems / sets.
+// Run conditions, per-tick gates for scheduled systems / sets.
 export {
 	type RunCondition,
 	type ConditionContext,
@@ -74,9 +74,9 @@ export type {
 	SystemAccessDeclaration,
 	SystemTransition
 } from "./core/ecs";
-// Compile-time access typing (§typestate): the config-form `registerSystem`
+// Compile-time access typing (system.ts): the config-form `registerSystem`
 // narrows `ctx` to the declared access surface. `SystemAccess` + the
-// `Declared*` guards are what helper signatures reference; `DeclaredAccess` /
+// `Declared*` guards are what helper signatures reference. `DeclaredAccess` /
 // `TypedSystemConfig` are the computed shapes behind the inference.
 export type {
 	SystemAccess,
@@ -103,7 +103,7 @@ export type {
 	ResourcesAccessDecl
 } from "./core/ecs";
 
-// Component observers — registered via `ECS.observe`.
+// Component observers, registered via `ECS.observe`.
 export type {
 	ObserverConfig,
 	ObserverHandle,
@@ -114,11 +114,11 @@ export type {
 	ArchetypeSetObserverConfig
 } from "./core/ecs";
 
-// Host → ECS write seam — a host/UI/editor enqueues typed
-// `HostCommand`s off-schedule into a `HostCommandQueue`; a blessed apply
+// Host → ECS write seam, a host, UI or editor enqueues typed
+// `HostCommand`s off-schedule into a `HostCommandQueue`. A blessed apply
 // system drains them at the schedule head through `applyHostCommand`.
 // The SAB command-ring transport (`HostCommandDispatcher`, `ring*Codec`,
-// `HOST_COMMAND_PAYLOAD_BYTES`) is wire/ABI surface — `@oasys/oecs/internal`.
+// `HOST_COMMAND_PAYLOAD_BYTES`) is wire and ABI surface, `@oasys/oecs/internal`.
 export {
 	installHostCommandSeam,
 	uninstallHostCommandSeam,
@@ -135,7 +135,7 @@ export type {
 	HostCommandSink
 } from "./core/ecs";
 
-// Record / replay over the host command log — part of the write seam.
+// Record and replay over the host command log, part of the write seam.
 export {
 	HostCommandRecorder,
 	serializeCommandLog,
@@ -144,7 +144,7 @@ export {
 } from "./core/ecs";
 export type { CommandLog, RecordedTick, ReplayResult, ReplayOptions } from "./core/ecs";
 
-// Per-world frame-trace seam — attach a `FrameTraceSink` via
+// Per-world frame-trace seam, attach a `FrameTraceSink` via
 // `ECS.setTrace(sink)`. `DEV`-gated end to end (zero prod cost).
 export { FrameTraceRecorder } from "./core/ecs";
 export type {
@@ -155,14 +155,14 @@ export type {
 	ObserverOp
 } from "./core/ecs";
 
-// Host-side frame driver — optional convenience over `ECS.update(dt)`:
-// play/pause on rAF, explicit `step()`/`stepFrames()`, `maxDt` clamp on raw
+// Host-side frame driver, optional convenience over `ECS.update(dt)`:
+// play and pause on rAF, explicit `step()` and `stepFrames()`, `maxDt` clamp on raw
 // browser-frame deltas.
 export { FrameStepper } from "./core/ecs";
 export type { FrameStepperOptions } from "./core/ecs";
 
-// World resume — `ecs.snapshots.restore(bytes)` throws `ECSRestoreError`. That
-// call is `Store.restoreInto` behind the facade, and it mounts the combined
+// World resume, `ecs.snapshots.restore(bytes)` throws `ECSRestoreError`. That
+// call is `Store.restore` behind the facade, and it mounts the combined
 // snapshot that `ecs.snapshots.capture()` makes: the dense columns, the sparse
 // stores with the relations, and the host bookkeeping. `ECS_SNAPSHOT_VERSION`
 // tags that framing. `StoreRestoreError` is the failure of the dense half, which
@@ -170,7 +170,7 @@ export type { FrameStepperOptions } from "./core/ecs";
 export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./core/ecs";
 export { StoreRestoreError } from "./core/store";
 
-// Ref — advisory read-only views. A deliberate cast can still write through.
+// Ref, advisory read-only views. A deliberate cast can still write through.
 export type {
 	ComponentCursor,
 	ComponentRef,
@@ -182,14 +182,14 @@ export type {
 // Queries
 export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED } from "./core/ecs";
 export type { HierarchyTerm } from "./core/ecs";
-// eachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
+// forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
 export { ChunkColumns, Commands } from "./core/ecs";
 
-// Archetype — only the read-only view + opaque id are public.
+// Archetype, only the read-only view + opaque id are public.
 export type { ArchetypeView, ArchetypeID } from "./core/ecs";
 
 // Entities. `getEntityIndex` decodes the dense 20-bit slot index out of a
-// packed EntityID — needed by replication-style consumers; the generational
+// packed EntityID, needed by replication-style consumers. The generational
 // guard stays the caller's job. The rest of the packed-ID codec
 // (`createEntityId`, the bounds constants) is `@oasys/oecs/internal`.
 export type { EntityID, ReadonlyEntityIDArray } from "./core/ecs";
@@ -197,7 +197,7 @@ export { getEntityIndex } from "./core/ecs";
 
 // Components
 // `TypedArrayTag` is the column-type vocabulary `registerComponent` constrains
-// on ("f64" | "i32" | ...) — exported so consumers can type schema literals.
+// on ("f64" | "i32" | ...), exported so consumers can type schema literals.
 export type { TypedArrayTag } from "./type_primitives";
 export type {
 	ComponentDef,
@@ -216,21 +216,21 @@ export type {
 	ReadonlyColumn,
 	ReadonlyUint32Array
 } from "./core/ecs";
-// Callable bundles — `bundle(Pos, {x,y})` pairs a def with values for the
-// unified varargs spawn/add path.
+// Callable bundles, `bundle(Pos, {x,y})` pairs a def with values for the
+// unified varargs spawn and add path.
 export { bundle } from "./core/ecs";
 export type { Bundle, BundleOrDef, StrictBundle, StrictBundles, DefsOf } from "./core/ecs";
 
-// Sparse storage class — out-of-identity components.
+// Sparse storage class, out-of-identity components.
 export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./core/ecs";
 export { SparseRestoreError } from "./core/ecs";
 
-// Relations — (relation, target) pairs on the sparse storage class.
+// Relations, (relation, target) pairs on the sparse storage class.
 // `ANY_RELATION` is the `(*, T)` wildcard access sentinel.
 export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./core/ecs";
 export { ANY_RELATION } from "./core/ecs";
 
-// Built-in relations — named presets over `ECS.registerRelation`.
+// Built-in relations, named presets over `ECS.registerRelation`.
 export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./core/ecs";
 
 // Events
@@ -249,11 +249,11 @@ export { eventKey, signalKey } from "./core/ecs";
 export type { ResourceKey, ResourceValueOf } from "./core/ecs";
 export { resourceKey } from "./core/ecs";
 
-// Error taxonomy — every ECS-thrown error is an `ECSError` tagged with an
+// Error taxonomy, every ECS-thrown error is an `ECSError` tagged with an
 // `ECS_ERROR` category, so a consumer can catch and branch on the category.
 export { ECSError, ECS_ERROR, isEcsError } from "./core/ecs";
 // Thrown from main-entry construction when a `memory.shared` profile runs in
-// an environment without SharedArrayBuffer — re-exported here so root-entry
+// an environment without SharedArrayBuffer, re-exported here so root-entry
 // consumers can name it without importing `/shared`.
 export { SabUnavailableError } from "./core/store";
 

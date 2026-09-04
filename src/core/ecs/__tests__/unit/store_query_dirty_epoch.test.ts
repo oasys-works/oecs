@@ -1,9 +1,9 @@
 /**
- * `Store._queryDirtyEpoch` — coalesced query-dirty signal.
+ * `Store._queryDirtyEpoch`, coalesced query-dirty signal.
  *
  * Replaces the per-mutation walk over `registeredQueries` that wrote one
  * dirty bit per query. The epoch is a monotonic integer bumped by every
- * membership-changing path and read lazily by `Query._nonEmpty()`. Two
+ * membership-changing path and read lazily by `Query.nonEmptyArchs()`. Two
  * properties to lock in:
  *
  *   1. **Coalescing.** N back-to-back immediate-mode operations between
@@ -16,7 +16,7 @@
  *   2. **Correctness.** Membership changes between reads still invalidate
  *      the cache. A query that observed an archetype going non-empty,
  *      then saw it drained, then saw it refilled, must report the correct
- *      `_nonEmpty()` set every time.
+ *      `nonEmptyArchs()` set every time.
  */
 
 import { describe, expect, it } from "vitest";
@@ -31,7 +31,7 @@ describe("Store._query_dirty_epoch", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		// Seed one entity so the [Pos] archetype exists and is non-empty;
+		// Seed one entity so the [Pos] archetype exists and is non-empty
 		// query and cache.
 		const seed = world.spawn();
 		world.addComponent(seed, Pos, { x: 0, y: 0 });
@@ -41,13 +41,13 @@ describe("Store._query_dirty_epoch", () => {
 		// Snapshot the cached non-empty list so we can prove coalescing
 		// behaviourally below: a rebuild allocates a fresh array, so an
 		// unchanged reference == no rebuild happened.
-		const cachedNonEmpty = q._nonEmpty();
+		const cachedNonEmpty = q.nonEmptyArchs();
 
-		const store = (world as unknown as { store: Store }).store;
-		const epochBefore = store._queryDirtyEpoch;
+		const store = (world as unknown as { _store: Store })._store;
+		const epochBefore = store.queryDirtyEpoch;
 
-		// All 1000 adds go into the existing [Pos] archetype (1→2, 2→3, …)
-		// — every add stays on the non-zero side, so the non-empty membership
+		// All 1000 adds go into the existing [Pos] archetype (1→2, 2→3, …).
+		// Every add stays on the non-zero side, so the non-empty membership
 		// set never changes.
 		const N = 1000;
 		for (let i = 0; i < N; i++) {
@@ -56,19 +56,19 @@ describe("Store._query_dirty_epoch", () => {
 		}
 
 		// Behaviour: the query still sees every new row + the seed, and it
-		// served them WITHOUT rebuilding the non-empty list (same reference) —
+		// served them without rebuilding the non-empty list (same reference),
 		// the N adds coalesced into zero rebuilds.
 		let seen = 0;
 		q.forEach((a) => {
 			seen += a.entityCount;
 		});
 		expect(seen).toBe(N + 1);
-		expect(q._nonEmpty()).toBe(cachedNonEmpty);
+		expect(q.nonEmptyArchs()).toBe(cachedNonEmpty);
 
 		// Secondary internal probe: the dirty epoch is a semi-public
 		// optimisation contract. The 0-crossing rule suppresses a
 		// bump on every non-zero-side add, so the epoch must be untouched.
-		expect(store._queryDirtyEpoch).toBe(epochBefore);
+		expect(store.queryDirtyEpoch).toBe(epochBefore);
 	});
 
 	it("Query._non_empty cache survives reads when no mutation happened", () => {
@@ -83,7 +83,7 @@ describe("Store._query_dirty_epoch", () => {
 		q.forEach((a) => first.push(a));
 
 		// Re-read without any mutation: the archetype list returned must be
-		// the same reference as before — proves the epoch-equality fast path
+		// the same reference as before, proves the epoch-equality fast path
 		// returned the cached array instead of rebuilding it.
 		const second: unknown[] = [];
 		q.forEach((a) => second.push(a));
@@ -105,10 +105,10 @@ describe("Store._query_dirty_epoch", () => {
 		});
 		expect(count).toBe(1);
 
-		// Drain the archetype — _mark_queries_dirty fires via destroyEntity's
+		// Drain the archetype, _mark_queries_dirty fires via destroyEntity's
 		// _rowCountsDirty path? It does (immediate destroyEntity sets the
 		// flag and bumps the epoch through that path).
-		const store = (world as unknown as { store: Store }).store;
+		const store = (world as unknown as { _store: Store })._store;
 		store.destroyEntity(e);
 
 		count = 0;
@@ -118,7 +118,7 @@ describe("Store._query_dirty_epoch", () => {
 		// Drained: nothing matches.
 		expect(count).toBe(0);
 
-		// Refill — same archetype, new entity.
+		// Refill, same archetype, new entity.
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 
@@ -142,18 +142,18 @@ describe("Store._query_dirty_epoch", () => {
 		expect(q.archetypeCount).toBe(1);
 		q.forEach(() => {});
 
-		const store = (world as unknown as { store: Store }).store;
-		const epochBefore = store._queryDirtyEpoch;
+		const store = (world as unknown as { _store: Store })._store;
+		const epochBefore = store.queryDirtyEpoch;
 
 		// Force creation of a second matching archetype [Pos, Vel].
-		// ArchetypeGraph.install runs once for the new archetype; the epoch
+		// ArchetypeGraph.install runs once for the new archetype. The epoch
 		// must bump so the cached
 		// `_nonEmptyArchetypes` list rebuilds on next read.
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 		world.addComponent(e2, Vel, { vx: 0, vy: 0 });
 
-		expect(store._queryDirtyEpoch).toBeGreaterThan(epochBefore);
+		expect(store.queryDirtyEpoch).toBeGreaterThan(epochBefore);
 		expect(q.archetypeCount).toBe(2);
 		let total = 0;
 		q.forEach((a) => {

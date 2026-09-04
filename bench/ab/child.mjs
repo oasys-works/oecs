@@ -1,5 +1,5 @@
 /**
- * One sample: run the suite against ONE bundle of the library, and write the best
+ * One sample: run the suite against one bundle of the library, and write the best
  * time of each case to stdout as JSON. `ref.mjs` and `bundles.mjs` start this
  * program.
  *

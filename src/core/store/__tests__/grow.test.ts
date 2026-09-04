@@ -49,7 +49,7 @@ describe("grow_column_store", () => {
 		expect(newViewStamp).toBe(1);
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 		// The realloc path patches the returned header so its cached
-		// `view_stamp` matches the SAB bytes — consistent with the in-place
+		// `view_stamp` matches the SAB bytes, consistent with the in-place
 		// path, no stale 0.
 		expect(next.header.viewStamp).toBe(1);
 		// `capacity` on the cached header must likewise match the SAB.
@@ -140,7 +140,7 @@ describe("grow_column_store", () => {
 			archetypes: [{ archetypeId: 0, newRowCapacity: 16, rowCount: 0 }]
 		});
 
-		// Archetype 0 grew; archetype 1 carried forward unchanged.
+		// Archetype 0 grew. Archetype 1 carried forward unchanged.
 		expect(next.archetypes.get(0)!.rowCapacity).toBe(16);
 		expect(next.archetypes.get(1)!.rowCapacity).toBe(8);
 	});
@@ -191,7 +191,7 @@ describe("grow_column_store", () => {
 
 		// Different SAB instance
 		expect(next.buffer).not.toBe(old.buffer);
-		// Mutating the new SAB does NOT affect the old one
+		// Mutating the new SAB does not affect the old one
 		const newX = next.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		newX[0] = 99;
 		expect(oldX[0]).toBe(42);
@@ -233,8 +233,8 @@ describe("grow_column_store", () => {
 
 describe("grow_column_store in-place fast path (growable allocator)", () => {
 	// Two-archetype world built on a growable (isInPlace) allocator. Growing
-	// archetype 0 must NOT relayout archetype 1 — that whole-store relayout is
-	// exactly the O(all-archetypes) cost that tanked frame_loop (0.29x vs oecs).
+	// archetype 0 must not relayout archetype 1, that whole-store relayout is
+	// exactly the O(all-archetypes) cost that tanked frame_loop.
 	function twoArchWorld(alloc: ReturnType<typeof growableSabAllocator>) {
 		return createColumnStore(
 			[
@@ -264,7 +264,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 		expect(res.store.archetypes.get(1)!.rowCapacity).toBe(4);
 	});
 
-	it("does NOT move non-grown archetypes' column byte_offs (regression guard)", () => {
+	it("does not move non-grown archetypes' column byte_offs (regression guard)", () => {
 		const alloc = growableSabAllocator();
 		const old = twoArchWorld(alloc);
 		const before = old.archetypes.get(1)!.columns.get(columnKey(2, 0))!.byteOff;
@@ -278,7 +278,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 			},
 			alloc
 		);
-		// Whole-store realloc would have repacked archetype 1 to a new offset;
+		// Whole-store realloc would have repacked archetype 1 to a new offset
 		// the in-place path leaves it exactly where it was.
 		expect(next.archetypes.get(1)!.columns.get(columnKey(2, 0))!.byteOff).toBe(before);
 	});
@@ -344,7 +344,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 	});
 
 	it("takes the in-place branch under wasm_memory_allocator and preserves data across the new SAB ref", () => {
-		// wasmMemoryAllocator returns a NEW SAB ref after memory.grow() — the
+		// wasmMemoryAllocator returns a new SAB ref after memory.grow(), the
 		// only path that exercises the `bufferRefChanged` branch (growable
 		// returns the same ref). Verify live data survives across the ref swap.
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 64, shared: true });
@@ -409,7 +409,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 	});
 });
 
-describe("grow_column_store — descriptor headroom policy survives", () => {
+describe("grow_column_store, descriptor headroom policy survives", () => {
 	it("an in-place grow carries the reserved-descriptor-bytes policy forward", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const reserved = archetypeDescriptorBytes(1) * 2;
@@ -431,7 +431,7 @@ describe("grow_column_store — descriptor headroom policy survives", () => {
 		);
 		expect(grown.viewsPreserved).toBe(true); // in-place grow
 
-		// The headroom policy must survive the in-place grow so a LATER extend
+		// The headroom policy must survive the in-place grow so a later extend
 		// realloc still re-reserves it. Without the carry, an extend→grow→extend
 		// sequence would drop to zero slack on the final realloc.
 		expect((grown.store as ColumnStoreInternal)._reservedDescriptorBytes).toBe(reserved);

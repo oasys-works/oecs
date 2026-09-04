@@ -1,16 +1,16 @@
 import { DEV } from "../dev_flag";
 /**
- * In-house fine-grained reactive kernel — signal / computed / effect / batch,
+ * In-house fine-grained reactive kernel, signal, computed, effect and batch,
  * plus ownership scopes (`root` / `onCleanup`). Zero dependencies.
  *
  * This is the engine UI seam's propagation core. It is the same class of machine
- * as the ECS observer system — fine-grained, glitch-free, cascades to
- * a fixed point — at a different granularity, which is exactly why we own
- * it rather than adopt solid-js / @preact/signals-core / alien-signals.
+ * as the ECS observer system, fine-grained, glitch-free, cascades to
+ * a fixed point, at a different granularity, which is exactly why we own
+ * it rather than adopt solid-js, @preact/signals-core or alien-signals.
  *
  * The dependency graph is an intrusive doubly-linked structure. One pooled `Link`
- * per edge is threaded into BOTH the source's subscriber list and the target's
- * dependency list at once, so link/unlink is O(1) pointer surgery with no hashing,
+ * per edge is threaded into both the source's subscriber list and the target's
+ * dependency list at once, so link and unlink is O(1) pointer surgery with no hashing,
  * and a stable-dependency re-run reuses its edges via a tail cursor (zero graph
  * mutation). That is the entire performance story: it ties the throughput leaders
  * on the hot paths and avoids the Set-based prototype's fan-in collapse.
@@ -20,21 +20,21 @@ import { DEV } from "../dev_flag";
  *
  *   - Every source carries a `version` that bumps only when its value actually
  *     changes. Each edge (`Link`) remembers the source version it last saw.
- *   - A write does NOT eagerly recompute anything. It propagates a "maybe-dirty"
+ *   - A write does not eagerly recompute anything. It propagates a "maybe-dirty"
  *     mark (`OUTDATED`) down through computeds to effects, and queues the effects.
  *     Computeds stay lazy.
  *   - Work happens on the pull: when an effect flushes (or a computed is read),
  *     `needsRecompute` walks its deps, refreshes each, and recomputes only if a
  *     dep's version actually advanced. A recompute that produces an equal value
- *     does NOT bump the node's own version, so its subscribers are skipped.
+ *     does not bump the node's own version, so its subscribers are skipped.
  *
  * That gives glitch-freedom (a diamond resolves with one consistent recompute of
  * the join) and minimal work (unchanged values cut propagation) at once.
  *
- * Known, deliberate scope (refinements, not correctness gaps): computeds ALWAYS
- * track their sources (no auto-unsubscribe of unobserved computeds — the TRACKING
+ * Known, deliberate scope (refinements, not correctness gaps): computeds always
+ * track their sources (no auto-unsubscribe of unobserved computeds, the tracking
  * optimization) and there is no global-version fast path. The two help only a
- * workload heavy in *unobserved* computeds and are low-value without each other;
+ * workload heavy in *unobserved* computeds and are low-value without each other
  * Cycle reads return the stale value rather than throwing.
  */
 
@@ -49,8 +49,8 @@ const QUEUED = 1 << 4; // effect is in the flush queue
 // Backstop for a non-settling flush: an effect that writes a signal it depends on
 // re-queues itself every run, so the flush never drains. Re-running the same effect
 // within one flush is a legitimate cascade (effect A writes a signal effect B reads,
-// etc.) up to a point; past this many cascading re-runs it's a runaway cycle and we
-// throw instead of hanging forever. Set far above any real cascade — width (fan-in /
+// etc.) up to a point. Past this many cascading re-runs it's a runaway cycle and we
+// throw instead of hanging forever. Set far above any real cascade, width (fan-in /
 // fan-out) never counts toward it, only re-runs do, so a large graph can't trip it.
 const MAX_CASCADE = 100_000;
 
@@ -72,8 +72,8 @@ interface LinkTarget {
 
 /**
  * One edge. Lives in two doubly-linked lists at once: the source's subscriber
- * list (prevSub/nextSub) and the target's dependency list (prevDep/nextDep).
- * `version` is the source's version captured when the target last read it —
+ * list (prevSub and nextSub) and the target's dependency list (prevDep and nextDep).
+ * `version` is the source's version captured when the target last read it,
  * comparing it against the source's current version is the dirty check.
  */
 interface Link {
@@ -86,18 +86,18 @@ interface Link {
 	nextDep: Link | undefined;
 }
 
-let active: LinkTarget | null = null;
+let activeTarget: LinkTarget | null = null;
 let batchDepth = 0;
 let flushing = false;
 let flushGen = 0; // bumped once per outermost flush; effects stamp `lastFlush` to detect re-runs
-const queue: Effect[] = [];
+const effectQueue: Effect[] = [];
 let linkPool: Link | undefined; // freelist; `nextDep` doubles as the pool pointer
 
 // --- ownership ------------------------------------------------------------
 // Effects and computeds are also Owners: they collect onCleanup callbacks and
-// any child effects/computeds created during their run, and dispose them before
+// any child effects and computeds created during their run, and dispose them before
 // re-running (so a re-run doesn't leak the previous run's children) and on final
-// dispose. A `root` is a bare owner with a manual disposer — the unit a consumer
+// dispose. A `root` is a bare owner with a manual disposer, the unit a consumer
 // tears down to drop a whole subtree.
 
 interface Disposable {
@@ -235,7 +235,7 @@ class Signal<T> implements LinkSource {
 	}
 	refresh(): void {}
 	get(): T {
-		if (active !== null) link(this, active);
+		if (activeTarget !== null) link(this, activeTarget);
 		return this.value;
 	}
 	set(v: T): void {
@@ -274,9 +274,9 @@ class Computed<T> implements LinkSource, LinkTarget, Owner, Disposable {
 		this.flags |= RUNNING;
 		disposeOwner(this); // tear down the previous recompute's cleanups/children
 		startTracking(this);
-		const prevActive = active;
+		const prevActive = activeTarget;
 		const prevOwner = currentOwner;
-		active = this;
+		activeTarget = this;
 		currentOwner = this;
 		try {
 			const nv = this.fn();
@@ -285,7 +285,7 @@ class Computed<T> implements LinkSource, LinkTarget, Owner, Disposable {
 				this.version++;
 			}
 		} finally {
-			active = prevActive;
+			activeTarget = prevActive;
 			currentOwner = prevOwner;
 			endTracking(this);
 			this.flags &= ~RUNNING;
@@ -294,7 +294,7 @@ class Computed<T> implements LinkSource, LinkTarget, Owner, Disposable {
 	get(): T {
 		if (this.flags & RUNNING) return this.value; // cycle read
 		this.refresh();
-		if (active !== null) link(this, active);
+		if (activeTarget !== null) link(this, activeTarget);
 		return this.value;
 	}
 	notify(): void {
@@ -326,20 +326,20 @@ class Effect implements LinkTarget, Owner, Disposable {
 	notify(): void {
 		if (this.flags & NOTIFIED) return;
 		this.flags |= NOTIFIED | QUEUED;
-		queue.push(this);
+		effectQueue.push(this);
 	}
 	run(): void {
 		if (this.flags & DISPOSED) return;
 		disposeOwner(this); // run the previous run's cleanups + dispose its children first
 		startTracking(this);
-		const prevActive = active;
+		const prevActive = activeTarget;
 		const prevOwner = currentOwner;
-		active = this;
+		activeTarget = this;
 		currentOwner = this;
 		try {
 			this.fn();
 		} finally {
-			active = prevActive;
+			activeTarget = prevActive;
 			currentOwner = prevOwner;
 			endTracking(this);
 		}
@@ -359,25 +359,25 @@ function flush(): void {
 	flushing = true;
 	const gen = ++flushGen;
 	let cascades = 0;
-	// A throwing effect must not poison its siblings. Each effect's QUEUED|NOTIFIED
+	// A throwing effect must not poison its siblings. Each effect's queued|notified
 	// is cleared as we reach it, so if a throw aborted the loop the un-reached
-	// effects would keep NOTIFIED set forever and notify() would never re-queue them
+	// effects would keep notified set forever and notify() would never re-queue them
 	// (they go permanently dead). So isolate each run: one effect throwing still lets
 	// every other queued effect run, and the first error is re-thrown after the flush
 	// drains so it still surfaces to the caller.
 	let error: unknown;
 	let errored = false;
 	try {
-		for (let i = 0; i < queue.length; i++) {
-			const e = queue[i];
+		for (let i = 0; i < effectQueue.length; i++) {
+			const e = effectQueue[i];
 			e.flags &= ~(QUEUED | NOTIFIED);
 			if (!(e.flags & DISPOSED) && needsRecompute(e)) {
-				// Stamp the flush generation; a second visit this flush is a cascade
-				// re-run. Bounded cascades are fine — an unbounded count is a cycle.
+				// Stamp the flush generation. A second visit this flush is a cascade
+				// re-run. Bounded cascades are fine, an unbounded count is a cycle.
 				if (e.lastFlush === gen && ++cascades > MAX_CASCADE) {
 					throw new Error(
 						`reactive flush did not settle after ${MAX_CASCADE} cascading re-runs ` +
-							`(an effect likely writes a signal it depends on — a cycle)`
+							`(an effect likely writes a signal it depends on, a cycle)`
 					);
 				}
 				e.lastFlush = gen;
@@ -392,7 +392,7 @@ function flush(): void {
 			}
 		}
 	} finally {
-		queue.length = 0;
+		effectQueue.length = 0;
 		flushing = false;
 	}
 	if (errored) throw error;
@@ -400,12 +400,12 @@ function flush(): void {
 
 // --- public API -----------------------------------------------------------
 
-/** A read accessor; calling it inside an effect/computed subscribes to the source. */
+/** A read accessor. Calling it inside an effect and computed subscribes to the source. */
 export type Accessor<T> = () => T;
-/** A write setter; a same-value write (per `eq`) is a no-op and wakes nobody. */
+/** A write setter. A same-value write (per `eq`) is a no-op and wakes nobody. */
 export type Setter<T> = (v: T) => void;
 
-/** Create a writable signal. Returns `[read, write]`; `eq` defaults to `Object.is`.
+/** Create a writable signal. Returns `[read, write]`. `eq` defaults to `Object.is`.
  * The zero-arg form (Solid parity) starts at `undefined` for late-initialized
  * values: `const [user, setUser] = signal<User>();` reads `User | undefined`. */
 export function signal<T>(): readonly [Accessor<T | undefined>, Setter<T | undefined>];
@@ -422,7 +422,7 @@ export function signal<T>(
 export function computed<T>(fn: () => T, eq: Eq<T> = Object.is): Accessor<T> {
 	if (DEV && currentOwner === null) {
 		warnOnce(
-			"computed() created outside an ownership scope is permanently subscribed and can never be disposed — create it under root() or inside an effect."
+			"computed() created outside an ownership scope is permanently subscribed and can never be disposed, create it under root() or inside an effect."
 		);
 	}
 	const c = new Computed(fn, eq);
@@ -449,25 +449,25 @@ export function batch(fn: () => void): void {
 }
 
 /**
- * Read inside `fn` without subscribing the enclosing effect/computed to anything it
+ * Read inside `fn` without subscribing the enclosing effect or computed to anything it
  * touches (Solid's `untrack`). Use it when a callback that runs during a tracked run
- * must NOT become a dependency — e.g. an interop subscriber whose `onChange` reads
+ * must not become a dependency, e.g. an interop subscriber whose `onChange` reads
  * other accessors. Returns `fn`'s result.
  */
 export function untrack<T>(fn: () => T): T {
-	const prev = active;
-	active = null;
+	const prev = activeTarget;
+	activeTarget = null;
 	try {
 		return fn();
 	} finally {
-		active = prev;
+		activeTarget = prev;
 	}
 }
 
 /**
  * Create an ownership scope. `fn` receives a disposer that tears down every
- * effect/computed (and their onCleanups) created under the scope. Detached from
- * any enclosing owner — you hold the disposer (Solid's `createRoot` contract).
+ * effect and computed (and their onCleanups) created under the scope. Detached from
+ * any enclosing owner. You hold the disposer (Solid's `createRoot` contract).
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
 	const owner: Owner = { cleanups: null, owned: null };
@@ -481,23 +481,23 @@ export function root<T>(fn: (dispose: () => void) => T): T {
 }
 
 /**
- * Register a cleanup with the owner in scope. Inside an effect/computed it runs
- * before each re-run and on dispose; inside a `root` it runs on root disposal.
+ * Register a cleanup with the owner in scope. Inside an effect and computed it runs
+ * before each re-run and on dispose. Inside a `root` it runs on root disposal.
  */
 export function onCleanup(fn: () => void): void {
 	if (currentOwner === null) {
-		// Silently dropping the callback hides real teardown bugs — warn
+		// Silently dropping the callback hides real teardown bugs, warn
 		// in dev, matching Solid's "cleanups created outside a createRoot" warn.
 		if (DEV)
 			warnOnce(
-				"onCleanup() called outside an ownership scope — the callback is dropped. Call it inside root(), an effect, or a computed."
+				"onCleanup() called outside an ownership scope, the callback is dropped. Call it inside root(), an effect, or a computed."
 			);
 		return;
 	}
 	(currentOwner.cleanups ??= []).push(fn);
 }
 
-// One warn per message per session — dev diagnostics, not log spam.
+// One warn per message per session, dev diagnostics, not log spam.
 const warned = new Set<string>();
 function warnOnce(msg: string): void {
 	if (warned.has(msg)) return;

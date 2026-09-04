@@ -1,5 +1,5 @@
 /***
- * Type errors — Validation and assertion failure errors.
+ * Type errors. Validation and assertion failure errors.
  *
  * Separate from ECSError so type-primitive assertions don't depend
  * on the ECS error hierarchy.

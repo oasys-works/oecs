@@ -1,18 +1,18 @@
 /**
  * A diagnostic for the two rows where oecs is slower. It lets the comparison give
- * the REASON, and not a ratio only.
+ * the reason, and not a ratio only.
  *
- *   1. A RANDOM READ BY ENTITY ID. Each other library here uses the entity id as the
+ *   1. A random read by entity ID. Each other library here uses the entity id as the
  *      index of its component storage. Therefore "read one field of entity e" is
  *      `x[e]`, which is the same instruction as the raw baseline. oecs puts the rows
  *      together in each archetype. Therefore the same read must first resolve the
  *      entity to an archetype and a row. This probe measures the cost of each
- *      documented alternative: `getField`, `refRead`, and a walk with `eachChunk`
+ *      documented alternative: `getField`, `refRead`, and a walk with `forEachChunk`
  *      outside the loop. Thus the difference has a cause in the layout, and it does
  *      not look like a missing optimization.
  *
- *   2. THE COST FOR EACH CHUNK. `iter_frag` puts 9,984 entities in 64 archetypes.
- *      Therefore `eachChunk` runs 64 times in each pass, with approximately 156 rows
+ *   2. The cost for each chunk. `iter_frag` puts 9,984 entities in 64 archetypes.
+ *      Therefore `forEachChunk` runs 64 times in each pass, with approximately 156 rows
  *      each time. This probe measures the dispatch alone, with an empty body, for 1
  *      archetype and for 64 archetypes. That cost is the difference between oecs and
  *      a library that gives the caller an array of tuples for each archetype, and
@@ -72,10 +72,10 @@ function time(label, iters, fn) {
 		sink = s;
 	});
 
-	time("eachChunk column walk (not by id)", 20 * N, () => {
+	time("forEachChunk column walk (not by id)", 20 * N, () => {
 		let s = 0;
 		for (let r = 0; r < 20; r++) {
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x } = cols.read(Pos);
 				for (let i = 0; i < count; i++) s += x[i];
 			});
@@ -101,20 +101,20 @@ function time(label, iters, fn) {
 		return { ecs, Pos, q: ecs.query(Pos), rows: per * archetypes };
 	};
 
-	console.log("\neachChunk dispatch, EMPTY body (pure per-chunk overhead)");
+	console.log("\nforEachChunk dispatch, empty body (pure per-chunk overhead)");
 	for (const n of [1, 8, 64]) {
 		const { q, rows } = mk(n);
 		time(`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`, 300 * rows, () => {
-			for (let r = 0; r < 300; r++) q.eachChunk((_c, count) => (sink = count));
+			for (let r = 0; r < 300; r++) q.forEachChunk((_c, count) => (sink = count));
 		});
 	}
 
-	console.log("\neachChunk with x[i] += 2 body");
+	console.log("\nforEachChunk with x[i] += 2 body");
 	for (const n of [1, 8, 64]) {
 		const { q, Pos, rows } = mk(n);
 		time(`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`, 300 * rows, () => {
 			for (let r = 0; r < 300; r++) {
-				q.eachChunk((cols, count) => {
+				q.forEachChunk((cols, count) => {
 					const { x } = cols.mut(Pos);
 					for (let i = 0; i < count; i++) x[i] += 2;
 				});

@@ -16,6 +16,8 @@ import { applyRewrite, assertRulesLinear, rng, PORTS, ROOT, RULE_ID, TYPE_NAME }
 import { RefNet } from "./ref.mjs";
 import { RefProv } from "./prov.mjs";
 import { EcsNet } from "./world.mjs";
+import { fingerprintRef } from "./fingerprint.mjs";
+import { BORN, BORN_F32, BORN_INT_FIELDS, MIRROR_INT_FIELDS, mirrorF32Of, mirrorOf } from "./mirror.mjs";
 
 /** Default provenance-layer shape: an epoch every 8 ticks, 4 retained. At the
  * suite's batch of 32 that bounds the live record population to ~1k while pruning
@@ -29,7 +31,7 @@ export const PROV_DEFAULT = { epochEvery: 8, retain: 4 };
  * instead of growing until it holds the complete net.
  *
  * `churnFrac` selects the part of the picks that go the "disable, enable, disable in
- * ONE drain" way. An observer fires one time for each NET transition, so the ECS
+ * one drain" way. An observer fires one time for each net transition, so the ECS
  * must collapse that sequence to a single `onDisable` call. Without this path the
  * collapse has no test.
  */
@@ -37,10 +39,11 @@ export const QUAR_DEFAULT = { every: 1, frac: 0.06, churnFrac: 0.25 };
 
 /** How many ticks with no rewrite to run after the net reaches its normal form.
  * The change detection must go quiet, and the layer must not be quiet before that.
- * Refer to `changeCheck`. A write at tick T stays visible to a system whose previous
- * run was at T-1 or at T, so a write leaves the window two ticks later. The first
- * idle tick releases the quarantine and the second promotes `Fresh`, and each of
- * those moves rows. Therefore the last two ticks of five are the quiet ones. */
+ * Refer to `changeCheck`. The change tick advances before each system run, so a
+ * write at tick T is visible to a reader one time, on tick T or on tick T+1 by
+ * the order of the two systems. The first idle tick releases the quarantine and
+ * the second promotes `Fresh`, and each of those moves rows. Therefore the last
+ * two ticks of five are the quiet ones, with a tick to spare. */
 const IDLE_TAIL = 5;
 
 assertRulesLinear();
@@ -60,7 +63,7 @@ export function fail(where, msg) {
  *
  * The reference does the picking on purpose: if the ECS chose, a discovery bug
  * would silently change the reduction sequence and the two nets would be
- * incomparable step-by-step. The ECS's own discovery is still fully checked —
+ * incomparable step-by-step. The ECS's own discovery is still fully checked,
  * that is what the observer-queue oracle is for.
  */
 export function lockstep(
@@ -79,16 +82,23 @@ export function lockstep(
 		float = false,
 		record = false,
 		sab = false,
+		// the fingerprint of the agents runs at each `fpEvery` ticks (`0` is never).
+		// `phaseEvery` adds the three checkpoints inside a tick, at each `phaseEvery`
+		// ticks (`0` is never), when the build has the trace seam. Each checkpoint
+		// is one more scan, so a large case gives the checkpoints a cadence of their
+		// own. Refer to `fingerprintCheck`.
+		fpEvery = 1,
+		phaseEvery = 1,
 	}
 ) {
 	const rand = rng(seed);
-	// The quarantine has its OWN generator. It must not take a number from `rand`,
+	// The quarantine has its own generator. It must not take a number from `rand`,
 	// because `rand` selects the reduction order and `runCase` compares this run
 	// against a run of the reference alone at the same seed. A shared stream makes the
-	// two orders different, and two different orders of a BOUNDED prefix give two
-	// different nets — which is correct behaviour that looks like a fault.
+	// two orders different, and two different orders of a bounded prefix give two
+	// different nets, which is correct behaviour that looks like a fault.
 	const quarRand = rng((seed ^ 0x5bf03635) >>> 0);
-	// The marks for the change detection have their OWN generator, for the same
+	// The marks for the change detection have their own generator, for the same
 	// reason. Refer to `makeMarks`.
 	const markRand = rng((seed ^ 0x1d872b41) >>> 0);
 	const ref = RefNet.load(spec);
@@ -130,30 +140,30 @@ export function lockstep(
 		enableCalls: 0,
 		peakDisabled: 0,
 		peakChainDepth: 0,
-		// The ticks that held a row which was both `Fresh` and disabled. The promotion
+		// the ticks that held a row which was both `Fresh` and disabled. The promotion
 		// runs in UPDATE, one phase after the flush where a deferred `disable` lands.
 		// Therefore the state occurs, and `promoteFresh` must keep `Fresh` on the row.
 		freshDisabledTicks: 0,
 		peakFreshDisabled: 0,
-		// The spans of the `optional(Age)` query. The layer compares both, so both must
+		// the spans of the `optional(Age)` query. The layer compares both, so both must
 		// occur. A run that reached the span with no `Age` zero times tested `optional`
 		// against a query where each archetype held the column, and there the verb
 		// makes no difference. The span with no `Age` is the `Fresh` agents.
 		optionalSpansWithAge: 0,
 		optionalSpansWithoutAge: 0,
-		// The ticks on which `forEachUntil` stopped early. A run whose query never gave
+		// the ticks on which `some` stopped early. A run whose query never gave
 		// two archetypes would only ever walk to the end, and the early-out would have
 		// no cover.
 		untilStops: 0,
-		// The calls of `ctx.markChanged`. A run with none of them makes the per-entity
+		// the calls of `ctx.markChanged`. A run with none of them makes the per-entity
 		// layer and the archetype layer agree, and the difference between them is what
 		// this mechanism tests.
 		markCalls: 0,
-		// The calls of `ctx.removeRelation`. Each other change to a `Produced` set comes
+		// the calls of `ctx.removeRelation`. Each other change to a `Produced` set comes
 		// from the `"clear"` policy, so a run with none of these leaves the explicit
 		// unlink from a system with no cover.
 		unlinkCalls: 0,
-		// The snapshot round trips that wrote one byte into the SPARSE store. The write
+		// the snapshot round trips that wrote one byte into the sparse store. The write
 		// needs one agent in an active pair. Therefore a snapshot on the tick that used
 		// the last active pair skips the write. Without this count, that skip is
 		// silent.
@@ -163,30 +173,44 @@ export function lockstep(
 		events: 0,
 		hashable: world.hashable,
 		sab,
+		// the fingerprint at the end of a tick, and the checkpoints inside a tick.
+		// `phaseSink` says if the build gave the trace seam at all: a production
+		// build has none, and a run on it cannot count a checkpoint.
+		fpChecks: 0,
+		phaseChecks: 0,
+		phaseSink: false,
 	};
 
 	while (stats.rewrites < steps) {
-		// Decide whether a tick happens at all BEFORE mirroring any of its phases.
+		// Decide whether a tick happens at all before mirroring any of its phases.
 		// `promoteFresh` is the reference's stand-in for the ECS's PRE_UPDATE system,
 		// so running it on an iteration that then breaks out would advance the
-		// reference by half a tick that the ECS never ran — a one-tick `Fresh` skew
+		// reference by half a tick that the ECS never ran, a one-tick `Fresh` skew
 		// reported as a divergence. Normalisation is knowable up front because
-		// `Fresh`/`Age` have no influence on which pairs are active.
+		// `Fresh` and `Age` have no influence on which pairs are active.
 		ref.settleRedex();
 		if (ref.redexCount === 0) {
 			stats.normalised = true;
 			break;
 		}
 
-		// The quarantine. The ORDER of the two calls is a requirement. The apply system
-		// of the HOST WRITE SEAM is at the HEAD of PRE_UPDATE. A `disable` command is
-		// DEFERRED, so it lands at the flush at the END of that phase. `freshPromote`
+		// The quarantine. The order of the two calls is a requirement. The apply system
+		// of the host write seam is at the HEAD of PRE_UPDATE. A `disable` command is
+		// deferred, so it lands at the flush at the end of that phase. `freshPromote`
 		// is in UPDATE, which is one phase later. Therefore it reads the quarantine
-		// AFTER the toggles of this tick. This model must apply the plan first, and
+		// after the toggles of this tick. This model must apply the plan first, and
 		// promote after. That order makes a row that is both `Fresh` and disabled
 		// possible. `promoteFresh` must then keep `Fresh` on that row.
 		const quarPlan = makeQuarantine(quarRand, ref, quar, stats.ticks);
 		ref.applyQuarantine(quarPlan);
+
+		// The fingerprint of this tick, and its checkpoints. The reference fingerprint
+		// of the state after PRE_UPDATE is taken here: the quarantine is applied, and
+		// the promotion is not, which is the state that the ECS holds at the end of
+		// that phase. Refer to `fingerprintCheck`.
+		const fpTick = fpEvery > 0 && (stats.ticks + 1) % fpEvery === 0;
+		world.phaseFpOn = fpTick && phaseEvery > 0 && (stats.ticks + 1) % phaseEvery === 0;
+		const refPre = world.phaseFpOn ? fingerprintRef(ref, { redex: false, float }) : null;
 
 		// The state that the promotion must keep, read before the promotion changes it.
 		const freshDisabled = ref.freshDisabledCount();
@@ -199,7 +223,7 @@ export function lockstep(
 		ref.promoteFresh();
 
 		// Mirrors the ECS's PRE_UPDATE epoch roll, which also runs before the
-		// rewrites — so a record logged below lands in the epoch the ECS just opened,
+		// rewrites, so a record logged below lands in the epoch the ECS only opened,
 		// and a pruned epoch's records are already gone on both sides.
 		let roll = null;
 		if (provRef !== null) {
@@ -244,14 +268,17 @@ export function lockstep(
 			break;
 		}
 		ref.settleRedex();
+		// The reference after the plan: the state that the ECS holds at the end of
+		// UPDATE, before the age bump of POST_UPDATE.
+		const refUpd = world.phaseFpOn ? fingerprintRef(ref, { float }) : null;
 
 		// ── replay on the ECS, then advance both sides' tick bookkeeping ─────
 		// The phase number gates a system through `runIfResourceEq`. The driver picks
 		// the number, so the driver knows the exact set of ticks that the gate permits.
 		const phase = stats.ticks % 3;
 		if (phase === 0) stats.expectedGated++;
-		// The verification cadence, decided BEFORE the tick. `net-verify-read` runs
-		// INSIDE the tick, and its sets over each agent are O(live), so it has to know
+		// The verification cadence, decided before the tick. `net-verify-read` runs
+		// inside the tick, and its sets over each agent are O(live), so it has to know
 		// there whether the driver will read them.
 		const deep = (stats.ticks + 1) % verifyEvery === 0;
 		// The marks follow the same cadence. `makeMarks` reads the live set, which is
@@ -273,8 +300,8 @@ export function lockstep(
 
 		const where = `${label} tick ${stats.ticks} (rewrite ${stats.rewrites})`;
 
-		// The set of agents that THIS tick wrote, from the reference. It must be taken
-		// every tick; a tick that left it in place would give the union of two ticks.
+		// The set of agents that this tick wrote, from the reference. It must be taken
+		// every tick. A tick that left it in place would give the union of two ticks.
 		const touched = ref.takeTouched();
 		if (ref.disabled.size > stats.peakDisabled) stats.peakDisabled = ref.disabled.size;
 
@@ -296,7 +323,7 @@ export function lockstep(
 		// that a channel clears itself at the end of each update.
 		eventCheck(where, world, plan, roll, fail);
 		stats.events += plan.length;
-		// The change detection, every tick. A set of the ECS holds ONE tick, so this
+		// The change detection, every tick. A set of the ECS holds one tick, so this
 		// cannot wait for the cadence of the deep verification. The `deep` part is the
 		// comparison over each live agent, and that part follows the cadence.
 		changeCheck(where, ref, world, fail, touched, { deep, quiesce: false, marked: marks });
@@ -305,7 +332,7 @@ export function lockstep(
 		queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef });
 		if (world.untilStopped) stats.untilStops++;
 		// `ctx.hasRelation` around the explicit unlink. It asks whether the source holds
-		// ANY target, so the value after the call is "the set still holds something",
+		// any target, so the value after the call is "the set still holds something",
 		// and the model gives that number.
 		if (unlink !== null) {
 			if (world.unlinkBefore !== true) {
@@ -318,6 +345,10 @@ export function lockstep(
 					`after the unlink, want ${wantAfter} (${unlink.remaining} targets left)`);
 			}
 		}
+		// the fingerprint of every agent, at the end of the tick and at each phase of
+		// it. One linear scan on each side, so it runs at each tick where the deep
+		// comparison below runs on a cadence.
+		if (fpTick) fingerprintCheck(where, ref, world, fail, stats, { refPre, refUpd });
 
 		// ── tier 2: full structure, every `verifyEvery` ticks ────────────────
 		if (deep) {
@@ -336,7 +367,7 @@ export function lockstep(
 		// `stateHash` all need determinism. Therefore this tier is absent from the
 		// float arm, and the report says so.
 		if (world.hashable && snapEvery > 0 && stats.ticks % snapEvery === 0) {
-			// The result says if the round trip reached the SPARSE store. That write
+			// The result says if the round trip reached the sparse store. That write
 			// needs one agent in an active pair. A snapshot on the tick that used the
 			// last active pair finds none. The floor for non-vacuity counts the rest.
 			if (snapshotRoundTrip(where, world)) stats.sparseScribbles++;
@@ -344,13 +375,13 @@ export function lockstep(
 			// sparse store. Both are part of the state, and neither is a dense column.
 			quarantineCheck(`${where} [post-restore]`, ref, world, fail);
 			sparseCheck(`${where} [post-restore]`, ref, world, fail);
-			// A snapshot captures sparse relations — including multi forward target
-			// sets, which `stateHash` folds in — so the provenance layer has to survive
-			// the round-trip too, not just the dense agent columns.
+			// A snapshot captures sparse relations, including multi forward target
+			// sets, which `stateHash` folds in, so the provenance layer has to survive
+			// the round-trip too, not only the dense agent columns.
 			if (provRef !== null) {
 				world.assertProvenance(`${where} [prov post-restore]`, provRef, fail);
 				// The restore rebuilt the reverse index from the forward links, which
-				// under `"orphan"` still name dead targets — so every key a previous
+				// under `"orphan"` still name dead targets, so every key a previous
 				// `compact()` reclaimed is back. See `RefProv.noteRestored`.
 				provRef.noteRestored();
 			}
@@ -365,8 +396,8 @@ export function lockstep(
 
 	// ── the idle tail: the change detection must go quiet ───────────────────
 	// Each check above asks "did the ECS report the change". None of them asks "did
-	// the ECS report a change that did not happen". A layer that reported EVERY
-	// archetype at EVERY tick would pass each of them. These ticks close that hole.
+	// the ECS report a change that did not happen". A layer that reported every
+	// archetype at every tick would pass each of them. These ticks close that hole.
 	// They apply no rewrite, so they write no column. Therefore the `onSet`
 	// observers and the `changed(Touch)` query must go quiet, and `changed(Age)` must
 	// stay busy, because `ageTick` keeps asking for its mutable accessor.
@@ -385,9 +416,14 @@ export function lockstep(
 					? { disable: [], enable: [...ref.disabled], churn: [], count: new Map() }
 					: null;
 			ref.applyQuarantine(release);
+			// The fingerprint and its checkpoints, as in the tick loop above.
+			const idleFp = fpEvery > 0;
+			world.phaseFpOn = idleFp && phaseEvery > 0;
+			const idleRefPre = world.phaseFpOn ? fingerprintRef(ref, { redex: false, float }) : null;
 			// After the release, for the reason that the tick loop above gives: the
 			// promotion is in UPDATE, so it sees the toggles of this tick.
 			ref.promoteFresh();
+			const idleRefUpd = world.phaseFpOn ? fingerprintRef(ref, { float }) : null;
 			// The tail marks agents on each of its ticks. This tick writes no column, so
 			// a mark is the only reason for a report, and the pair of assertions in
 			// `changeCheck` is then exact: the per-entity layer must give exactly these
@@ -416,6 +452,7 @@ export function lockstep(
 			// normal form, so no active pair is left. A query that always gave its first
 			// row passes each tick above and fails here.
 			queryVerbCheck(iw, ref, world, fail, { deep: true, phase: -1, rootRef });
+			if (idleFp) fingerprintCheck(iw, ref, world, fail, stats, { refPre: idleRefPre, refUpd: idleRefUpd });
 			compare(iw, ref, world);
 			quarantineCheck(iw, ref, world, fail);
 		}
@@ -460,7 +497,7 @@ export function lockstep(
 	stats.peakChainDepth = provRef === null ? 0 : provRef.stats.maxChainDepth;
 	// Release the world's backing before returning. The suite builds ~30 of these in
 	// one process and the growth soak cases each hold hundreds of thousands of
-	// agents; without this they all stay resident at once.
+	// agents. Without this they all stay resident at once.
 	world.redexObserver.dispose();
 	world.toggleObserver.dispose();
 	world.touchEntityObserver.dispose();
@@ -474,17 +511,17 @@ export function lockstep(
 /**
  * Make one quarantine plan from the seed.
  *
- * The driver makes the plan, and it gives the SAME plan to the reference and to the
+ * The driver makes the plan, and it gives the same plan to the reference and to the
  * host queue of the ECS. Therefore the plan is an input to both sides, and it is not
  * a derivation of either one.
  *
  * Three lists come out:
- *   - `enable` — about half of the agents that are disabled now. Without this list
+ *   - `enable`, about half of the agents that are disabled now. Without this list
  *     the disabled population grows until it holds the complete net, and the enable
  *     path gets no test.
- *   - `disable` — agents that are enabled now.
- *   - `churn` — agents that are enabled now, and that the host disables, enables and
- *     disables again in ONE drain. An observer fires one time for each NET
+ *   - `disable`, agents that are enabled now.
+ *   - `churn`, agents that are enabled now, and that the host disables, enables and
+ *     disables again in one drain. An observer fires one time for each net
  *     transition, so the ECS must collapse that sequence to one `onDisable` call.
  *
  * The lists do not intersect, and `count` carries the new value of the `Quar.count`
@@ -553,21 +590,21 @@ function coversSet(where, fail, what, got, want) {
  * The reference counts `Touch.seq` in its own `setLink`. Therefore the set of agents
  * that a tick wrote comes from the model. Five things get a check:
  *
- *  1. `onSet` WITH THE GRANULARITY OF AN ENTITY — exact, in both directions. The
+ *  1. `onSet` with the granularity of an entity, exact, in both directions. The
  *     observer drains the dirty list of each row, and its dispatch drops a dead
- *     entity, an entity that lost the component, and a DISABLED entity. The model
+ *     entity, an entity that lost the component, and a disabled entity. The model
  *     applies the same three rules, so equality is the assertion.
- *  2. `onSet` WITH THE GRANULARITY OF AN ARCHETYPE — each archetype that holds an
+ *  2. `onSet` with the granularity of an archetype, each archetype that holds an
  *     agent that the tick wrote must be present. The set may hold more, because a
- *     row that MOVES INTO an archetype also makes its columns changed, and the
+ *     row that moves into an archetype also makes its columns changed, and the
  *     documentation says that the detection is conservative on purpose. The idle
  *     tail is what bounds the report from above.
- *  3. `changed(Touch)` — the same completeness rule. The window is "at or after the
+ *  3. `changed(Touch)`, the same completeness rule. The window is "at or after the
  *     last run of the system", so a write stays visible for two ticks.
- *  4. `changed(Touch).without(Fresh)` — a `ChangedQuery` composes, and the
+ *  4. `changed(Touch).without(Fresh)`, a `ChangedQuery` composes, and the
  *     documentation says that the two orders of the verbs give one set. Both
  *     spellings must agree, and no signature in the result may hold `Fresh`.
- *  5. `changed(Age)` and the `onSet` observer on `Age` — exact, in both directions.
+ *  5. `changed(Age)` and the `onSet` observer on `Age`, exact, in both directions.
  *     `ageTick` asks for the mutable accessor of each archetype that its query gives,
  *     and that call sets the tick even when no write follows. `changeRead` lists the
  *     same archetypes through `forEach`. Therefore this one has an exact expected
@@ -575,7 +612,7 @@ function coversSet(where, fail, what, got, want) {
  *     archetype.
  *
  * `opts.quiesce` turns the idle-tail assertions on: no write happened, so items 1, 2
- * and 3 must all be EMPTY, and item 5 must not be. Without that, a layer that
+ * and 3 must all be empty, and item 5 must not be. Without that, a layer that
  * reported everything at every tick would pass items 1 to 4.
  */
 /**
@@ -589,7 +626,7 @@ function coversSet(where, fail, what, got, want) {
  * reference alone at the same seed. A shared stream would give the two runs different
  * orders.
  *
- * The pick reads the live set AFTER the reference applied this tick's rewrites.
+ * The pick reads the live set after the reference applied this tick's rewrites.
  * Therefore each agent in the result is alive at the end of the tick, as it is in the
  * ECS. A pick from before the rewrites could name an agent that a rewrite destroyed,
  * and the dispatch drops a dead row.
@@ -633,7 +670,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	const wantEnts = new Set();
 	// Every archetype that holds an agent that the tick wrote.
 	const wantSigs = new Set();
-	// The part of that set which holds at least one ENABLED agent. A DEFAULT query
+	// The part of that set which holds at least one enabled agent. A default query
 	// gives the non-empty archetypes, and an archetype whose rows are all disabled is
 	// empty for it. Therefore a default `changed()` query cannot report such an
 	// archetype, and this smaller set is the correct expected value for it.
@@ -653,9 +690,16 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 		}
 	}
 
-	// `ctx.markChanged` records a row for the per-entity observer, and it makes NO
+	// The row-tick layer. `redexMaintain` records each touched agent through
+	// `cols.ticks(Seen)` in a chunk loop, and nothing records `Seen` by id, so the
+	// `onSet` observer on `Seen` gets its set from the scan of the tick plane alone.
+	// A mark does not reach it, so the expected set is the touched set before the
+	// marks join below.
+	const wantSeen = new Set(wantEnts);
+
+	// `ctx.markChanged` records a row for the per-entity observer, and it makes no
 	// change to the tick for the change on the archetype. Therefore a marked agent
-	// joins the set with the granularity of an entity, and it does NOT join `wantSigs`.
+	// joins the set with the granularity of an entity, and it does not join `wantSigs`.
 	// Each archetype layer below reads `wantSigs`, so a mark cannot make one larger.
 	// The dispatch drops a disabled row, and the model applies the same rule here.
 	for (const a of marked) {
@@ -667,6 +711,11 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 
 	// ── 1. the granularity of an entity: exact ──────────────────────────────
 	sameSet(where, fail, "onSet(Touch) with the granularity of an entity", world.setEntities, wantEnts);
+	sameSet(where, fail, "onSet(Seen) with the granularity of an entity, from the row ticks", world.seenEntities, wantSeen);
+	// The sparse row grain. The harness recorded each member the mutable sparse
+	// cursor wrote, so this compares two reads of the ECS, and the model does not
+	// give the expected value.
+	sameSet(where, fail, "onSet(Watch) with the granularity of an entity, from the sparse row ticks", world.watchSetEntities, world.watchStayed);
 
 	// ── 2 and 3. the granularity of an archetype: complete ──────────────────
 	// The observer reads the tick for the change on the archetype, and not a query.
@@ -700,17 +749,17 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	}
 
 	// ── 5. changed(Age): exact, in both directions ──────────────────────────
-	// `ageTick` asks for the mutable accessor of each archetype that its DEFAULT query
+	// `ageTick` asks for the mutable accessor of each archetype that its default query
 	// gives, and that call sets the tick even when no write follows. `changeRead` lists
 	// the same archetypes through `forEach` on the same query. Therefore this is an
 	// exact expected value, and it is the sharp check on the path with the granularity
 	// of an archetype.
 	sameSet(where, fail, "changed(Age) against the archetypes that ageTick visited",
 		world.changedAgeArchIds, world.ageArchIdsNow);
-	// The observer takes a different path. It does not read a query; it visits each
-	// archetype that has one or more ROWS and a tick at or after its own baseline.
+	// The observer takes a different path. It does not read a query. It visits each
+	// archetype that has one or more rows and a tick at or after its own baseline.
 	// Therefore it also reaches an archetype whose rows are all disabled, and an
-	// archetype that a row MOVED INTO, which `ageTick` may not have visited. So it is
+	// archetype that a row moved into, which `ageTick` may not have visited. So it is
 	// bounded on both sides and not pinned to one value: it must hold every archetype
 	// that `ageTick` visited, and it must hold nothing outside the archetypes that
 	// carry `Age` and have a row now.
@@ -727,7 +776,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	}
 
 	if (deep) {
-		// The rows behind item 5, against the model. `ageTick` uses a DEFAULT query, so
+		// The rows behind item 5, against the model. `ageTick` uses a default query, so
 		// the rows are the agents that carry `Age` and that are not disabled.
 		const wantAged = new Set();
 		for (const a of ref.liveAgents()) {
@@ -739,7 +788,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	}
 
 	if (quiesce) {
-		// This tick wrote no column, so the marks are the ONLY reason for a report. Item
+		// This tick wrote no column, so the marks are the only reason for a report. Item
 		// 1 above pins the per-entity set to exactly those agents. The three checks
 		// below then require each archetype layer to stay quiet. Together they are the
 		// assertion about `ctx.markChanged`: it records a row for the per-entity
@@ -749,7 +798,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 		// layer must report nothing, and the difference between the two paths has no
 		// test.
 		if (marked.length === 0) {
-			fail(where, `an idle tick marked no agent — the checks below would then pass ` +
+			fail(where, `an idle tick marked no agent, the checks below would then pass ` +
 				`against a world that reports nothing at all`);
 		}
 		if (world.setArchSigs.size !== 0) {
@@ -758,13 +807,13 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 		}
 		if (world.changedTouchSigs.size !== 0) {
 			fail(where, `changed(Touch) reported ${brief(world.changedTouchSigs)} on a tick that ` +
-				`wrote no column — the layer over-reports, and every other check would pass`);
+				`wrote no column, the layer over-reports, and every other check would pass`);
 		}
 		if (world.changedTouchAllSigs.size !== 0) {
 			fail(where, `includeDisabled().changed(Touch) reported ` +
 				`${brief(world.changedTouchAllSigs)} on a tick that wrote no column`);
 		}
-		// The layer must be BUSY while the checks above require it to be quiet. Without
+		// The layer must be busy while the checks above require it to be quiet. Without
 		// this, a `changed()` implementation that always reported nothing would pass
 		// every assertion in this function. The condition reads the model: if no enabled
 		// agent carries `Age`, then an empty report is the correct one.
@@ -776,7 +825,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 			}
 		}
 		if (wantBusy && world.changedAgeArchIds.size === 0) {
-			fail(where, `changed(Age) reported nothing, and ageTick still visits rows — the quiet ` +
+			fail(where, `changed(Age) reported nothing, and ageTick still visits rows, the quiet ` +
 				`result above would then prove nothing`);
 		}
 	}
@@ -786,17 +835,17 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 /**
  * The partition of the enabled and the disabled rows, against the model.
  *
- * The harness toggles the rows through the HOST WRITE SEAM, because an immediate
+ * The harness toggles the rows through the host write seam, because an immediate
  * `ecs.disable()` fires no observer. Five things get a check:
  *
  *  1. `isDisabled` for each live agent.
- *  2. A DEFAULT query gives exactly the enabled agents. This is the primary
+ *  2. A default query gives exactly the enabled agents. This is the primary
  *     assertion about the partition, and `compare()` adds the strongest one: it
- *     compares `Age.ticks` exactly, and a disabled row that `eachChunk` still visits
+ *     compares `Age.ticks` exactly, and a disabled row that `forEachChunk` still visits
  *     therefore gives a divergence at the next tick.
  *  3. `includeDisabled()` gives every agent.
  *  4. The set that `onDisable` and `onEnable` maintain alone.
- *  5. The `Tainted` tag, which the HOST adds and removes with the same command that
+ *  5. The `Tainted` tag, which the host adds and removes with the same command that
  *     toggles the row. It is present if and only if the agent is disabled.
  */
 export function quarantineCheck(where, ref, world, fail) {
@@ -842,7 +891,7 @@ export function quarantineCheck(where, ref, world, fail) {
  *
  * `redexMaintain` adds and removes `Watch` by the same rule that it uses for the
  * `Redex` tag: present if and only if the agent is in an active pair. A sparse add is
- * IMMEDIATE and a dense add is deferred, so one system covers two paths and the
+ * immediate and a dense add is deferred, so one system covers two paths and the
  * reference gives one expected set for both.
  *
  * `withSparse` on a default query does not show a disabled row, and on
@@ -868,10 +917,27 @@ export function sparseCheck(where, ref, world, fail) {
 	sameSet(where, fail, "includeDisabled().withSparse(Watch)", got.all, wantAll);
 	sameSet(where, fail, "withSparse(Watch)", got.enabled, wantEnabled);
 	sameSet(where, fail, "withoutSparse(Watch)", got.none, wantNone);
-	// The direct probe, for each agent of an active pair.
-	for (const e of wantAll) {
-		if (!world.ecs.hasSparse(e, world.Watch)) {
-			fail(where, `hasSparse(${e}, Watch) is false, and the agent is in an active pair`);
+	// The direct probe, for each agent of an active pair, and the value: `hits`
+	// is the low byte of `Touch.seq` (world.mjs gives the rule). Two readers, so
+	// a divergence names the path: `getSparseField` finds the column by name at
+	// each call, and the read cursor holds the column and masks the id.
+	const cur = world.watchRead;
+	for (const [a, b] of ref.redexes()) {
+		for (const agent of [a, b]) {
+			const e = world.byRef.get(agent);
+			if (!world.ecs.hasSparse(e, world.Watch)) {
+				fail(where, `hasSparse(${e}, Watch) is false, and the agent is in an active pair`);
+				continue;
+			}
+			const want = ref._touch.get(agent) & 0xff;
+			const byName = world.ecs.getSparseField(e, world.Watch, "hits");
+			if (byName !== want) {
+				fail(where, `getSparseField(${e}, Watch, "hits") is ${byName}, the model has ${want} (seq ${ref._touch.get(agent)})`);
+			}
+			const byCursor = cur.at(e).hits;
+			if (byCursor !== want) {
+				fail(where, `sparseCursorRead(Watch).at(${e}).hits is ${byCursor}, the model has ${want}`);
+			}
 		}
 	}
 }
@@ -883,26 +949,26 @@ export function sparseCheck(where, ref, world, fail) {
  * Each item below reads a fact that the reference already holds. Therefore this
  * layer adds no model, and it cannot go out of step with the rest of the harness.
  *
- *  1. `withRelation` and `withoutRelation` — `PORTS` is [3, 3, 1, 1], so a CON and a
+ *  1. `withRelation` and `withoutRelation`, `PORTS` is [3, 3, 1, 1], so a CON and a
  *     DUP hold port 1 and an ERA and the ROOT do not. The relation of port 1
- *     therefore partitions the agents BY TYPE, and the reference holds the type of
+ *     therefore partitions the agents by type, and the reference holds the type of
  *     each agent. The enabled arm is the same set without the disabled agents, so
  *     the pair also reads the row partition through a relation term.
- *  2. `optional(Age)` — the query spans the archetypes that hold `Age` and the
+ *  2. `optional(Age)`, the query spans the archetypes that hold `Age` and the
  *     archetypes that do not. The absent span must be exactly the `Fresh` agents.
  *     The present span must carry the numbers that the reference holds, which
  *     `compare` reads by a different route. Both spans must occur, or the check is
  *     half a check, and the floors count them.
- *  3. `singleEntity` — exactly one ROOT exists for the whole run. A production build
+ *  3. `singleEntity`, exactly one ROOT exists for the whole run. A production build
  *     skips the count and gives the first match, so the identity of the agent is the
  *     assertion in both builds.
- *  4. `firstEntity` — a member of an active pair while the net reduces, and
+ *  4. `firstEntity`, a member of an active pair while the net reduces, and
  *     `undefined` in the idle tail. The idle tail is what makes the second half
  *     reachable: a query that always gave its first row would pass the first half.
- *  5. `forEachUntil` — it must stop at the archetype that the predicate accepts, and
+ *  5. `some`. It must stop at the archetype that the predicate accepts, and
  *     it must report that it stopped. `forEach` over the same query gives the count
  *     of the archetypes, so this needs no model of the archetype graph.
- *  6. `ctx.getResource` and `ctx.hasResource` — the driver picks the phase number,
+ *  6. `ctx.getResource` and `ctx.hasResource`, the driver picks the phase number,
  *     so the driver knows the value. `surface.mjs` reads the host facade instead.
  */
 export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }) {
@@ -927,17 +993,17 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		fail(where, `firstEntity() over Redex gave ${world.redexFirst}, and the reference holds no active pair`);
 	}
 
-	// ── forEachUntil ────────────────────────────────────────────────────────
+	// ── query.some ────────────────────────────────────────────────────────
 	// The predicate accepts the second archetype. Therefore the walk stops there when
 	// the query gives two or more, and it runs to the end when it gives fewer.
 	const wantVisited = Math.min(2, world.untilArchTotal);
 	if (world.untilVisited !== wantVisited) {
-		fail(where, `forEachUntil visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
+		fail(where, `query.some visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
 			`(forEach gives ${world.untilArchTotal})`);
 	}
 	const wantStopped = world.untilArchTotal >= 2;
 	if (world.untilStopped !== wantStopped) {
-		fail(where, `forEachUntil reported ${world.untilStopped}, want ${wantStopped} ` +
+		fail(where, `query.some reported ${world.untilStopped}, want ${wantStopped} ` +
 			`(forEach gives ${world.untilArchTotal} archetypes)`);
 	}
 
@@ -985,13 +1051,13 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
  * The rewrite system emits one event for each rewrite, in the order of the plan. A
  * reader in POST_UPDATE drains the channel. Therefore:
  *
- *   - the count of the rows must be the count of the rewrites of THIS tick. A
+ *   - the count of the rows must be the count of the rewrites of this tick. A
  *     channel that keeps its rows for a second tick gives a larger count, so this is
- *     the check on the automatic clear;
- *   - the rule of each row must be the rule that the plan names, in order;
- *   - both entity ids of a row must be DEAD, because each rule destroys both members
+ *     the check on the automatic clear
+ *   - the rule of each row must be the rule that the plan names, in order
+ *   - both entity ids of a row must be dead, because each rule destroys both members
  *     of the active pair. A recycled id carries a new generation, so an id that comes
- *     back is still not alive under the old handle;
+ *     back is still not alive under the old handle
  *   - the count of the signals must be 1 on a tick that rolled an epoch, and 0 on
  *     every other tick. A signal is an event with no field, and it has its own count.
  */
@@ -1001,7 +1067,7 @@ export function eventCheck(where, world, plan, roll, fail) {
 		fail(
 			where,
 			`the event channel gave ${got.length} rows, the tick applied ${plan.length} rewrites ` +
-				`— a channel must clear itself at the end of each update`
+				`. A channel must clear itself at the end of each update`
 		);
 	}
 	for (let i = 0; i < plan.length && i < got.length; i++) {
@@ -1012,7 +1078,7 @@ export function eventCheck(where, world, plan, roll, fail) {
 			fail(
 				where,
 				`event ${i} names ${got[i][1]} and ${got[i][2]}, and one of them is still alive ` +
-					`— every rule destroys both members of the pair`
+					`. Every rule destroys both members of the pair`
 			);
 		}
 	}
@@ -1075,12 +1141,12 @@ export function commandLogCheck(where, world, fail) {
  * Reduce with the reference alone, no ECS. Two jobs:
  *
  *   1. It sizes the batch. A batch that swallows the entire reduction produces a
- *      one-tick run, and a one-tick run is nearly vacuous — the `Redex` tag never
+ *      one-tick run, and a one-tick run is nearly vacuous, the `Redex` tag never
  *      gets a chance to exist, so no observer ever fires, and the tick-boundary
  *      comparison happens exactly once. Knowing the rewrite count up front lets
  *      the driver pick a batch that guarantees a useful number of ticks.
  *   2. It is a free extra oracle. Same seed means the same reduction order, so the
- *      count must match the lockstep run's exactly — which catches any way the
+ *      count must match the lockstep run's exactly, which catches any way the
  *      tick structure could perturb the reference itself.
  *
  * Cheap: no relations, no archetypes, no verification. Millions of rewrites/sec.
@@ -1113,7 +1179,7 @@ export function compare(where, ref, world) {
 		fail(where, `live agents: ecs ${ecsLive.length}, ref ${refLive.length}`);
 	}
 
-	// The bijection must be total and injective over the live set — checked, since
+	// The bijection must be total and injective over the live set, checked, since
 	// everything below reads through it.
 	const seen = new Set();
 	for (const r of refLive) {
@@ -1147,7 +1213,7 @@ export function compare(where, ref, world) {
 				);
 			}
 		}
-		// Fresh / Age — the pure archetype-churn components, mirrored exactly.
+		// Fresh and Age, the pure archetype-churn components, mirrored exactly.
 		const refFresh = ref.isFresh(r);
 		const ecsFresh = world.ecs.hasComponent(e, world.Fresh);
 		if (refFresh !== ecsFresh) {
@@ -1174,7 +1240,7 @@ export function compare(where, ref, world) {
 				}
 			}
 		}
-		// `Touch.seq` — the counter that the reference keeps in its own `setLink`, and
+		// `Touch.seq`, the counter that the reference keeps in its own `setLink`, and
 		// that the ECS keeps through `ctx.updateField`. It is the read-modify-write path
 		// on a hot `i32` column, and the model of the change detection reads the same
 		// counter.
@@ -1183,19 +1249,47 @@ export function compare(where, ref, world) {
 		if (ecsTouch !== refTouch) {
 			fail(where, `agent ref ${r}/ecs ${e}: Touch.seq ecs ${ecsTouch}, ref ${refTouch}`);
 		}
-		// `Quar.count` — a column that the HOST writes, through `queue.setField` on the
+		// `Quar.count`, a column that the host writes, through `queue.setField` on the
 		// write seam. Therefore this comparison is the check on the `set_field` command.
 		const ecsQuar = world.ecs.getField(e, world.Quar, "count");
 		const refQuar = ref.quarOf(r);
 		if (ecsQuar !== refQuar) {
 			fail(where, `agent ref ${r}/ecs ${e}: Quar.count ecs ${ecsQuar}, ref ${refQuar}`);
 		}
-		// `Tainted` — a tag that the HOST adds and removes, with the same command that
+		// `Tainted`, a tag that the host adds and removes, with the same command that
 		// toggles the row. Therefore it is present if and only if the agent is disabled.
 		const ecsTaint = world.ecs.hasComponent(e, world.Tainted);
 		const refTaint = ref.isDisabled(r);
 		if (ecsTaint !== refTaint) {
 			fail(where, `agent ref ${r}/ecs ${e}: Tainted ecs ${ecsTaint}, ref ${refTaint}`);
+		}
+		// `Mix`, one column of each integer kind, and of `f32` in the float arm. The
+		// mirrors follow `Touch.seq`, so the model is a function of the counter above.
+		// The constants keep the value that the template gave at the spawn. Refer to
+		// `mirror.mjs`.
+		const wantMix = mirrorOf(refTouch);
+		for (const f of MIRROR_INT_FIELDS) {
+			const got = world.ecs.getField(e, world.Mix, f);
+			if (got !== wantMix[f]) {
+				fail(where, `agent ref ${r}/ecs ${e}: Mix.${f} ecs ${got}, model ${wantMix[f]} (seq ${refTouch})`);
+			}
+		}
+		for (const f of BORN_INT_FIELDS) {
+			const got = world.ecs.getField(e, world.Mix, f);
+			if (got !== BORN[f]) {
+				fail(where, `agent ref ${r}/ecs ${e}: Mix.${f} ecs ${got}, the template gave ${BORN[f]}`);
+			}
+		}
+		if (world.float) {
+			const gotM = world.ecs.getField(e, world.Mix, "mf32");
+			const wantM = mirrorF32Of(refTouch);
+			if (gotM !== wantM) {
+				fail(where, `agent ref ${r}/ecs ${e}: Mix.mf32 ecs ${gotM}, model ${wantM} (seq ${refTouch})`);
+			}
+			const gotB = world.ecs.getField(e, world.Mix, "bf32");
+			if (gotB !== BORN_F32) {
+				fail(where, `agent ref ${r}/ecs ${e}: Mix.bf32 ecs ${gotB}, the template gave ${BORN_F32}`);
+			}
 		}
 	}
 
@@ -1252,24 +1346,99 @@ export function compare(where, ref, world) {
 	}
 }
 
+// ── the fingerprint, at each tick and at each phase ─────────────────────────
+/**
+ * The fingerprint of every agent, against the reference. Refer to
+ * `fingerprint.mjs` for what one fingerprint holds.
+ *
+ * Two comparisons:
+ *
+ *   1. At the end of the tick, on each side. This runs at each tick that
+ *      `fpEvery` selects, and the default is each tick. Therefore a fault in a
+ *      dense column, in the row partition, in the sparse store or in a port link
+ *      gets the tick at which it appeared, where the deep comparison alone gives
+ *      the verification tick after it.
+ *   2. At each phase of the tick, in a build with the trace seam. `world.mjs`
+ *      takes the ECS fingerprint at each `phaseBoundary`, and the driver takes
+ *      the reference fingerprint at the matching point of its own sequence. A
+ *      fault then names the phase: the write seam and the epoch roll (PRE_UPDATE),
+ *      the promotion and the rewrites (UPDATE), or the age bump (POST_UPDATE). The
+ *      checkpoint after POST_UPDATE must be equal to the end of the tick, which
+ *      is the assertion that the onSet dispatch and the clear of the events change
+ *      no state.
+ *
+ * A fingerprint names no agent. Therefore a mismatch at the end of the tick runs
+ * the deep comparison and the checks over the same facts, and one of those gives
+ * the message with the agent and the values. A mismatch inside the tick cannot do
+ * that, because that state is gone. It names the phase and says whether the end
+ * of the tick agrees.
+ */
+export function fingerprintCheck(where, ref, world, fail, stats, { refPre, refUpd }) {
+	const float = world.float;
+	const ecsPost = world.fingerprint();
+	const refPost = fingerprintRef(ref, { float });
+	stats.fpChecks++;
+	if (ecsPost !== refPost) {
+		const w = `${where} [fingerprint]`;
+		// The deep comparison names the agent. One of these fails with the exact
+		// message, or the fingerprint folds a fact that none of them reads.
+		compare(w, ref, world);
+		quarantineCheck(w, ref, world, fail);
+		sparseCheck(w, ref, world, fail);
+		world.assertSelfConsistent(w);
+		fail(
+			w,
+			`the fingerprints differ at the end of the tick: ecs ${ecsPost}, model ${refPost}, and the ` +
+				`deep comparison agrees on each fact that it reads (unmapped agents ${world.fpUnmapped}, ` +
+				`links to no agent ${world.fpBrokenLinks})`
+		);
+	}
+	if (!world.phaseFpOn) return;
+	// A production build keeps an empty `setTrace`, so the sink never fires. A run
+	// on that build has no checkpoint to compare, and this is not a fault.
+	if (!world.phaseSinkFired) return;
+	stats.phaseSink = true;
+	const { SCHEDULE } = world._lib;
+	const checks = [
+		[SCHEDULE.PRE_UPDATE, refPre, "after PRE_UPDATE (the write seam and the epoch roll are applied, the promotion is not)"],
+		[SCHEDULE.UPDATE, refUpd, "after UPDATE (the promotion and the rewrites are applied, the age bump is not)"],
+		[SCHEDULE.POST_UPDATE, refPost, "after POST_UPDATE (the age bump is applied; the onSet dispatch must change nothing)"],
+	];
+	for (const [phase, want, what] of checks) {
+		const got = world.phaseFp.get(phase);
+		if (got === undefined) {
+			fail(where, `the trace seam gave no ${phase} checkpoint on a tick that asked for one`);
+		}
+		stats.phaseChecks++;
+		if (got !== want) {
+			fail(
+				`${where} [fingerprint ${phase}]`,
+				`the fingerprint ${what} is ${got}, the model says ${want}; the end of the tick ` +
+					`${ecsPost === refPost ? "agrees" : "differs as well"}`
+			);
+		}
+	}
+	world.phaseFp.clear();
+}
+
 // ── orphan reclaim ──────────────────────────────────────────────────────────
 /**
  * `relations.compact()` against an exactly-predicted reclaim count.
  *
  * The prediction is possible because only the `EpochAncestors` relation can leak:
  * it is the only `"orphan"` one. Under `"clear"` a dying target unlinks every
- * source, which empties and deletes its reverse key; under `"delete"` the sources
- * die with it; and a dying *source* is purged from every reverse set. So the
+ * source, which empties and deletes its reverse key. Under `"delete"` the sources
+ * die with it, and a dying *source* is purged from every reverse set. So the
  * expected count is exactly "dead epochs that a live epoch still lists as an
- * ancestor, not already reclaimed" — which `RefProv` tracks by monotonic epoch
+ * ancestor, not already reclaimed", which `RefProv` tracks by monotonic epoch
  * index, the one id space that never recycles.
  *
  * Three things are asserted, and the second and third are the documented promises
  * that a naive implementation would break:
- *   - the count matches;
- *   - compaction is **idempotent** — an immediate second call reclaims nothing;
+ *   - the count matches
+ *   - compaction is **idempotent**, an immediate second call reclaims nothing
  *   - compaction changes **nothing observable**: same `stateHash`, and the whole
- *     provenance layer (including the dangling forward links it just orphaned the
+ *     provenance layer (including the dangling forward links it only orphaned the
  *     reverse entries of) still verifies.
  */
 export function compactCheck(where, world, provRef, stats) {
@@ -1287,7 +1456,7 @@ export function compactCheck(where, world, provRef, stats) {
 	}
 	provRef.noteCompacted(pending);
 	const again = world.ecs.relations.compact();
-	if (again !== 0) fail(where, `compact() is not idempotent — a second call reclaimed ${again}`);
+	if (again !== 0) fail(where, `compact() is not idempotent, a second call reclaimed ${again}`);
 	if (world.hashable) {
 		const after = world.ecs.snapshots.stateHash();
 		if (before !== after) {
@@ -1307,9 +1476,9 @@ export function compactCheck(where, world, provRef, stats) {
  * no-opped, or if `stateHash` were blind to the columns the net lives in, the
  * round-trip would "pass" without having tested anything.
  *
- * The scribble is ONE DETERMINISTIC BYTE into one slot of one agent, and it is not
+ * The scribble is one deterministic byte into one slot of one agent, and it is not
  * random data. That is enough, and the check between the write and the restore says
- * why: `stateHash` must MOVE for that one byte. A hash that does not move makes the
+ * why: `stateHash` must move for that one byte. A hash that does not move makes the
  * run fail immediately, and thus the check cannot become vacuous without a report.
  * A deterministic scribble also keeps the harness reproducible from its seed alone.
  * Do not describe this layer as a write of random bytes.
@@ -1318,7 +1487,7 @@ export function snapshotRoundTrip(where, world) {
 	const ecs = world.ecs;
 	const h0 = ecs.snapshots.stateHash();
 	const bytes = ecs.snapshots.capture();
-	// The sparse store has its own pair of calls, and this pair is the NARROW path.
+	// The sparse store has its own pair of calls, and this pair is the narrow path.
 	// `capture` holds three sections: the dense columns, the sparse stores with the
 	// relations, and the host bookkeeping. Therefore `restore` alone also returns the
 	// sparse half. `captureSparse` and `restoreSparse` are the second, smaller path
@@ -1331,11 +1500,11 @@ export function snapshotRoundTrip(where, world) {
 		const before = ecs.getField(victim, world.Slot, "s0");
 		ecs.setField(victim, world.Slot, "s0", (before + 7) % 251);
 		if (ecs.snapshots.stateHash() === h0) {
-			fail(where, `stateHash is blind to a Slot write — the snapshot oracle would be vacuous`);
+			fail(where, `stateHash is blind to a Slot write, the snapshot oracle would be vacuous`);
 		}
 	}
-	// The same idea for the sparse half: write ONE deterministic byte into one entry,
-	// and require the hash to MOVE for it. A restore that did nothing would otherwise
+	// The same idea for the sparse half: write one deterministic byte into one entry,
+	// and require the hash to move for it. A restore that did nothing would otherwise
 	// pass, and it would give no error.
 	const watched = [...world.watchSets().all];
 	let scribbledSparse = false;
@@ -1346,13 +1515,13 @@ export function snapshotRoundTrip(where, world) {
 		const before = ecs.getSparseField(victim, world.Watch, "hits");
 		ecs.setSparseField(victim, world.Watch, "hits", (before + 11) % 251);
 		if (ecs.snapshots.stateHash() === hDense) {
-			fail(where, `stateHash is blind to a sparse write — the sparse round trip would be vacuous`);
+			fail(where, `stateHash is blind to a sparse write, the sparse round trip would be vacuous`);
 		}
 	}
 	ecs.snapshots.restore(bytes);
 	ecs.snapshots.restoreSparse(sparseBytes);
 	const h1 = ecs.snapshots.stateHash();
-	if (h0 !== h1) fail(where, `stateHash ${h0} -> ${h1} across capture/restore`);
+	if (h0 !== h1) fail(where, `stateHash ${h0} -> ${h1} across capture and restore`);
 	world.assertSelfConsistent(`${where} [post-restore]`);
 	// The caller counts this result. A run that never wrote the sparse half shows
 	// nothing about `restoreSparse`. Refer to `stats.sparseScribbles`.
@@ -1364,33 +1533,33 @@ export function snapshotRoundTrip(where, world) {
  * Reduce one net to normal form under `orders` different reduction orders and
  * require identical rewrite counts and identical canonical normal forms.
  *
- * WHAT THIS LAYER ORACLES, EXACTLY. It needs no known answer: strong confluence
+ * What this layer oracles, exactly. It needs no known answer: strong confluence
  * says the count and the form are the same for every reduction order. But it is a
- * SPEC-level oracle, and it is not an ECS-level one. `lockstep` ends each order
- * with an UNCONDITIONAL `compare(...)`, and that comparison is a complete
+ * spec-level oracle, and it is not an ECS-level one. `lockstep` ends each order
+ * with an unconditional `compare(...)`, and that comparison is a complete
  * structural isomorphism: a total bijection over the live agents, then the type of
  * each agent, each port link, `Fresh`, `Age` and the census. Each tick also asserts
  * `world.rewritesApplied === stats.rewrites`. Therefore each order already pins its
  * ECS result to its own reference, in the same run. An ECS that loses a link,
- * mis-migrates a row or drops an entity fails `lockstep` FIRST, before this
+ * mis-migrates a row or drops an entity fails `lockstep` First, before this
  * function compares anything, and it fails there whether the fault depends on the
  * order or not.
  *
- * What remains is the comparison of the two REFERENCE results with each other,
+ * What remains is the comparison of the two reference results with each other,
  * through the isomorphism. That is a real oracle, and it is the only layer that can
- * see a fault that `spec.mjs` and `ref.mjs` share — the failure mode that a
+ * see a fault that `spec.mjs` and `ref.mjs` share, the failure mode that a
  * comparison of two implementations cannot see, because both sides agree. Refer to
  * `README.md`. Do not bill this layer as the deepest check of the ECS: the closed
  * form is the layer that is external to both implementations.
  *
- * Only meaningful for nets that normalise inside the step cap; non-normalising
+ * Only meaningful for nets that normalise inside the step cap. Non-normalising
  * runs are reported and skipped rather than compared mid-flight (a bounded prefix
  * of two different orders is legitimately different).
  */
 export function confluence(
 	lib,
 	spec,
-	{ orders, batch, steps, verifyEvery, snapEvery, label, prov, compactEvery, quar, float, record, sab }
+	{ orders, batch, steps, verifyEvery, snapEvery, label, prov, compactEvery, quar, float, record, sab, fpEvery, phaseEvery }
 ) {
 	const results = [];
 	for (let k = 0; k < orders; k++) {
@@ -1407,6 +1576,8 @@ export function confluence(
 			float,
 			record,
 			sab,
+			fpEvery,
+			phaseEvery,
 		});
 		results.push(s);
 	}
@@ -1420,7 +1591,7 @@ export function confluence(
 			fail(
 				`${label} confluence`,
 				`rewrite counts differ across reduction orders: ${base.rewrites} vs ${r.rewrites} ` +
-					`— strong confluence says they cannot`
+					`. Strong confluence says they cannot`
 			);
 		}
 		if (r.canonical.form !== base.canonical.form) {
@@ -1441,12 +1612,12 @@ export function confluence(
  * Suite-wide pressure accumulator.
  *
  * Every oracle above answers "is the ECS wrong?". None of them answers "did we
- * actually push on it?" — a harness that silently degenerated to one tick of one
+ * actually push on it?", a harness that silently degenerated to one tick of one
  * archetype with no observer traffic would pass all of them and prove nothing.
  *
  * The floors are asserted across the whole suite rather than per case on purpose.
  * Per-case floors have to be tuned to each case's size, which makes them either
- * toothless or self-fulfilling; a small case legitimately cannot exercise six
+ * toothless or self-fulfilling. A small case legitimately cannot exercise six
  * archetypes. What matters is that the suite *as a whole* fired every rule, moved
  * rows through a wide archetype set, drove real observer traffic, and grew a net.
  */
@@ -1489,6 +1660,10 @@ export class Pressure {
 		this.untilStops = 0;
 		this.markCalls = 0;
 		this.unlinkCalls = 0;
+		// the fingerprint
+		this.fpChecks = 0;
+		this.phaseChecks = 0;
+		this.phaseSinkCases = 0;
 	}
 	absorb(spec, stats) {
 		for (const s of stats.archetypes) this.archetypes.add(s);
@@ -1515,6 +1690,9 @@ export class Pressure {
 		this.optionalSpansWithoutAge += stats.optionalSpansWithoutAge;
 		this.untilStops += stats.untilStops;
 		this.markCalls += stats.markCalls;
+		this.fpChecks += stats.fpChecks;
+		this.phaseChecks += stats.phaseChecks;
+		if (stats.phaseSink) this.phaseSinkCases++;
 		if (stats.hashable === false) this.floatCases++;
 		if (stats.sab === true) this.sabCases++;
 		const p = stats.provStats;
@@ -1535,10 +1713,10 @@ export class Pressure {
 	 *
 	 * `mode` selects the set. A floor comes in one of two kinds:
 	 *
-	 *   - a floor on the PRESSURE, such as the count of the rewrites or the calls of
+	 *   - a floor on the pressure, such as the count of the rewrites or the calls of
 	 *     the observers. Each run must meet these.
-	 *   - a floor on the ARMS of the suite, such as "one case used an `f64` column".
-	 *     The CURATED SUITE builds those arms; the SOAK builds none of them, because
+	 *   - a floor on the arms of the suite, such as "one case used an `f64` column".
+	 *     The curated suite builds those arms. The soak builds none of them, because
 	 *     its purpose is duration and not coverage. A soak must therefore not measure
 	 *     them, and `mode = "soak"` leaves them out.
 	 *
@@ -1546,7 +1724,7 @@ export class Pressure {
 	 * never reach a normal form, and a tick with no rewrite would put the two sides
 	 * out of step.
 	 */
-	assert(mode = "suite") {
+	assert(mode = "suite", { dev = true } = {}) {
 		const suite = mode === "suite";
 		const ALL_RULES = ["CON~CON", "CON~DUP", "CON~ERA", "DUP~DUP", "DUP~ERA", "ERA~ERA"];
 		const bad = [];
@@ -1582,15 +1760,21 @@ export class Pressure {
 		// archetype holds the column, `optional` and a required term agree.
 		floor("optional(Age) spans that hold the column", this.optionalSpansWithAge, 100);
 		floor("optional(Age) spans with no column", this.optionalSpansWithoutAge, 100);
-		// The early-out of `forEachUntil`. A query that never gave two archetypes would
+		// The early-out of `some`. A query that never gave two archetypes would
 		// always walk to the end, and the early-out would have no cover.
-		floor("ticks on which forEachUntil stopped early", this.untilStops, 500);
+		floor("ticks on which query.some stopped early", this.untilStops, 500);
 		// The calls of `ctx.markChanged`. A mark puts a row into the per-entity layer
 		// and leaves each archetype layer quiet. With no mark, the two layers agree, and
 		// the difference between them has no test.
 		floor("calls of ctx.markChanged", this.markCalls, 2000);
+		// The fingerprint at the end of a tick. A run with none of them checks the
+		// agents on the cadence of the deep comparison alone.
+		floor("fingerprints at the end of a tick", this.fpChecks, 1000);
+		// The checkpoints inside a tick need the trace seam, which a development
+		// build alone has. Therefore this floor applies to a development build.
+		if (dev) floor("checkpoints inside a tick", this.phaseChecks, 3000);
 		if (suite) {
-			// The idle tail is what bounds the change detection from ABOVE. A suite with
+			// The idle tail is what bounds the change detection from above. A suite with
 			// none of it proves only that a change gets reported, and not that a
 			// non-change does not.
 			floor("idle ticks that must report no change", this.idleTicks, 20);
@@ -1610,11 +1794,11 @@ export class Pressure {
 		if (this.maxGrowth < 2) {
 			bad.push(`no case grew past ${this.maxGrowth.toFixed(2)}x its initial size (want >= 2x)`);
 		}
-		// Provenance floors. Without these the layer could be present but inert —
+		// Provenance floors. Without these the layer could be present but inert,
 		// records created and never cascaded, or multi sets never wider than one.
 		if (this.provCases > 0) {
 			floor("records logged", this.records, 20000);
-			floor("records destroyed BY CASCADE", this.cascaded, 10000);
+			floor("records destroyed by cascade", this.cascaded, 10000);
 			floor("epochs pruned", this.epochsPruned, 100);
 			floor("record onRemove calls (all cascade victims)", this.recordRemoves, 10000);
 			floor("orphan keys reclaimed by compact()", this.compactReclaimed, 50);
@@ -1654,10 +1838,14 @@ export class Pressure {
 		console.log(`  gated system        ${this.gatedRuns} runs under a run condition`);
 		console.log(
 			`  query verbs         optional(Age) spans ${this.optionalSpansWithAge} with / ` +
-				`${this.optionalSpansWithoutAge} without, ${this.untilStops} forEachUntil early stops`
+				`${this.optionalSpansWithoutAge} without, ${this.untilStops} query.some early stops`
 		);
 		console.log(`  markChanged         ${this.markCalls} marks that no archetype layer may report`);
 		console.log(`  ctx.removeRelation  ${this.unlinkCalls} explicit unlinks of a Produced pair`);
+		console.log(
+			`  fingerprint         ${this.fpChecks} ticks, ${this.phaseChecks} checkpoints inside a tick ` +
+				`(${this.phaseSinkCases} cases with the trace seam)`
+		);
 		console.log(`  idle tail           ${this.idleTicks} ticks that must report no change`);
 		console.log(`  Fresh + disabled    ${this.freshDisabledTicks} ticks, peak ${this.peakFreshDisabled} rows`);
 		console.log(`  sparse scribbles    ${this.sparseScribbles} snapshot round trips wrote the sparse store`);
@@ -1670,7 +1858,7 @@ export class Pressure {
 			console.log(`    record observer   -${this.recordRemoves} removes (every one a cascade victim)`);
 			console.log(`    compact()         ${this.compactReclaimed} orphan keys reclaimed`);
 			console.log(`    widest multi set  ${this.maxProducedSet} targets`);
-			console.log(`    deepest chain     ${this.maxChainDepth} levels (hierarchy / maxDepth)`);
+			console.log(`    deepest chain     ${this.maxChainDepth} levels (hierarchy and maxDepth)`);
 		}
 	}
 }
@@ -1703,6 +1891,8 @@ export function runCase(
 		float,
 		record,
 		sab,
+		fpEvery,
+		phaseEvery,
 	}
 ) {
 	const pre = refOnly(spec, seed, steps);
@@ -1720,6 +1910,8 @@ export function runCase(
 		float,
 		record,
 		sab,
+		fpEvery,
+		phaseEvery,
 	});
 	if (pre.normalised !== stats.normalised) {
 		fail(label, `reference-only run ${pre.normalised ? "normalised" : "capped"}, lockstep did not`);
@@ -1748,7 +1940,8 @@ export function report(label, stats, extra = "") {
 			`peak ${String(stats.peakAgents).padStart(6)}  ` +
 			`${String(stats.archetypes.size).padStart(2)} arch  ` +
 			`obs +${String(stats.observerAdds).padStart(6)}/-${String(stats.observerRemoves).padStart(6)}  ` +
-			`${String(stats.snapshots).padStart(3)} snap  ${stats.normalised ? "norm" : "capped"}${extra}`
+			`${String(stats.snapshots).padStart(3)} snap  ${stats.normalised ? "norm" : "capped"}  ` +
+			`fp ${stats.fpChecks}/${stats.phaseChecks}${extra}`
 	);
 	const p = stats.provStats;
 	if (p !== null && p !== undefined) {

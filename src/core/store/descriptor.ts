@@ -1,5 +1,5 @@
 /**
- * SAB layout descriptor — the "where is each column in memory" lookup table
+ * SAB layout descriptor, the "where is each column in memory" lookup table
  * that both the WASM sim and the TS host read from. Lives in the SAB region
  * at `header.layout_descriptor_off`.
  *
@@ -16,24 +16,24 @@
  * Each `ArchetypeDescriptor` is variable-sized: a fixed
  * `ARCHETYPE_DESCRIPTOR_HEADER_BYTES` header + N × 16-byte
  * `ColumnDescriptor`. Walk the region sequentially using `column_count` to
- * skip to the next archetype; no offset table — `archetype_count` (in the
+ * skip to the next archetype. No offset table, `archetype_count` (in the
  * SAB header) and the per-archetype `column_count` are sufficient to scan
  * deterministically.
  *
  * All fields little-endian, same rationale as `header.ts`.
  */
 
-// Byte-layout constants GENERATED from the Zig `extern struct`s in
+// Byte-layout constants generated from the Zig `extern struct`s in
 // `packages/sim/src/abi.zig` via `bun run gen:abi` (in-house Zig
-// bindgen). `@offsetOf` reads the real layout (explicit `_pad`/`_pad2` included),
-// so the TS offsets always match the bytes the wasm dereferences — a
+// bindgen). `@offsetOf` reads the real layout (explicit `_pad` and `_pad2` included),
+// so the TS offsets always match the bytes the wasm dereferences, a
 // transposed field is impossible. Re-exported here so `./descriptor` importers
-// and the `core/buffer` barrel keep the same surface; golden bytes in
+// and the `core/buffer` barrel keep the same surface. Golden bytes in
 // `__tests__/descriptor.test.ts` pin the values.
 //
-//   - COLUMN_DESCRIPTOR_BYTES / _OFFSETS         — 16-byte per-column record
-//   - ARCHETYPE_DESCRIPTOR_HEADER_BYTES / _OFFSETS — fixed archetype header
-//   - COMPONENT_MASK_WORDS                        — u32 words in the mask; the
+//   - COLUMN_DESCRIPTOR_BYTES / _OFFSETS            16-byte per-column record
+//   - ARCHETYPE_DESCRIPTOR_HEADER_BYTES / _OFFSETS  fixed archetype header
+//   - COMPONENT_MASK_WORDS                          u32 words in the mask, and the
 //                                                   one knob the component
 //                                                   limit derives from
 import {
@@ -82,9 +82,9 @@ export const TYPE_TAG_STRIDE: Readonly<Record<TypeTagValue, number>> = Object.fr
 });
 
 /** String-tag → numeric-tag bridge. `TypedArrayTag` ("u8", "f32", …) is the
- * vocabulary the TS-side component registry speaks; `TypeTagValue` is the
+ * vocabulary the TS-side component registry speaks. `TypeTagValue` is the
  * numeric enum the SAB descriptors carry on the wire. Bridging happens at
- * the ECS↔SAB seam — Archetype layouts come in as strings, ColumnSpecs go
+ * the ECS↔SAB seam. Archetype layouts come in as strings, ColumnSpecs go
  * out as integers. */
 export const TYPED_ARRAY_TAG_TO_TYPE_TAG = {
 	u8: TYPE_TAG.u8,
@@ -100,7 +100,7 @@ export const TYPED_ARRAY_TAG_TO_TYPE_TAG = {
 // ───────────────────────── ColumnDescriptor ─────────────────────────────
 //
 // 16 bytes total, matches the Zig `extern struct` in `abi.zig`. Padding is
-// EXPLICIT there (`_pad`/`_pad2`) — alignment-friendly layout means a Zig
+// explicit there (`_pad` and `_pad2`), alignment-friendly layout means a Zig
 // `*ColumnDescriptor` and the TS `DataView` see the same byte sequence on every
 // host. `COLUMN_DESCRIPTOR_BYTES` and `COLUMN_DESCRIPTOR_OFFSETS` are generated
 // (see the import block above); the pad bytes are skipped in the offset table.
@@ -111,7 +111,7 @@ export interface ColumnDescriptor {
 	readonly typeTag: TypeTagValue;
 	/** Byte offset of the column's first row, measured from SAB byte 0. */
 	readonly byteOff: number;
-	/** Element width in bytes; should always equal `TYPE_TAG_STRIDE[type_tag]`. */
+	/** Element width in bytes. Should always equal `TYPE_TAG_STRIDE[type_tag]`. */
 	readonly stride: number;
 }
 
@@ -121,7 +121,7 @@ export function writeColumnDescriptor(view: DataView, off: number, c: ColumnDesc
 	view.setUint8(off + COLUMN_DESCRIPTOR_OFFSETS.type_tag, c.typeTag);
 	// Pad bytes [off+5..off+8) are not touched. Buffers must be zeroed at
 	// allocation (SAB and ArrayBuffer both zero-initialise), so the pad
-	// region stays at 0x00 — matching the fixture and the Zig _pad fields.
+	// region stays at 0x00, matching the fixture and the Zig _pad fields.
 	view.setUint32(off + COLUMN_DESCRIPTOR_OFFSETS.byte_off, c.byteOff, true);
 	view.setUint16(off + COLUMN_DESCRIPTOR_OFFSETS.stride, c.stride, true);
 }
@@ -139,7 +139,7 @@ export function readColumnDescriptor(view: DataView, off: number): ColumnDescrip
 // ───────────────────────── ArchetypeDescriptor ─────────────────────────────
 //
 // ARCHETYPE_DESCRIPTOR_HEADER_BYTES header + column_count × ColumnDescriptor
-// (16 bytes). The header alone is fixed-size; the descriptor as a whole is
+// (16 bytes). The header alone is fixed-size. The descriptor as a whole is
 // variable.
 
 // `COMPONENT_MASK_WORDS` (the single knob the whole cross-language component
@@ -147,13 +147,13 @@ export function readColumnDescriptor(view: DataView, off: number): ColumnDescrip
 // from `abi.zig` (`ArchetypeDescriptorHeader.component_mask:
 // [COMPONENT_MASK_WORDS]u32`); see the import block above. The heap-side
 // `BitSet` is sized to match (`INITIAL_WORD_COUNT`). Bumping the word count
-// widens the descriptor on the wire — a `SIM_ABI_VERSION` bump.
+// widens the descriptor on the wire, a `SIM_ABI_VERSION` bump.
 
 /** Number of distinct components the cross-language ECS supports:
  * `COMPONENT_MASK_WORDS × 32` bits in the SAB archetype descriptor mask. The
  * Zig side matches archetypes purely on this mask, so a component whose ID is
  * ≥ this limit would be invisible there while the heap-side `BitSet` stayed
- * correct — silently conflating archetypes that differ only in such a
+ * correct, silently conflating archetypes that differ only in such a
  * component. `Store.registerComponent` enforces this as a hard registration
  * ceiling so the overflow fails loudly instead. The mask is sized to
  * the `BitSet`'s `INITIAL_WORD_COUNT`, so a registry within the limit never
@@ -169,7 +169,7 @@ export interface ArchetypeDescriptor {
 	readonly rowCapacity: number;
 	/** Enabled-row count `≤ row_count`. Per-row entity-scan loops in
 	 * the WASM sim bound on this so disabled entities (swapped to the tail
-	 * `[enabled_count, row_count)`) are not simulated; row-indexed cross-entity
+	 * `[enabled_count, row_count)`) are not simulated. Row-indexed cross-entity
 	 * reads still use `row_count`. */
 	readonly enabledCount: number;
 	readonly columns: readonly ColumnDescriptor[];
@@ -233,7 +233,7 @@ export function readArchetypeDescriptor(view: DataView, off: number): ArchetypeD
 }
 
 // Component-mask matching (build a mask from component IDs, superset test)
-// is `BitSet`'s job (`../../type_primitives`) — the same structure the
+// is `BitSet`'s job (`../../type_primitives`), the same structure the
 // heap-side archetype signature uses. The descriptor's `component_mask` is the
 // raw wire form (a `COMPONENT_MASK_WORDS`-word array mirroring the SAB bytes);
 // consumers that need to match wrap it in a `BitSet` and call `.contains(...)`.
@@ -242,7 +242,7 @@ export function readArchetypeDescriptor(view: DataView, off: number): ArchetypeD
 //
 // Sequential walk over `archetype_count` ArchetypeDescriptors starting at
 // `header.layout_descriptor_off`. Returned by `readLayoutDescriptorRegion`
-// in order; the order is also the order they were written.
+// in order. The order is also the order they were written.
 
 export function writeLayoutDescriptorRegion(
 	view: DataView,

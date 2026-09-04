@@ -1,10 +1,10 @@
 /**
- * Column scale — "no corruption at moderate scale", NOT a cap boundary.
+ * Column scale, "no corruption at moderate scale", not a cap boundary.
  *
- * SoA column growth, swap-and-pop, and batch ops over up to 10k entities —
+ * SoA column growth, swap-and-pop, and batch ops over up to 10k entities,
  * well under the 256 MiB SAB cap and the 1M `EntityID` index. The
  * point is that column data stays intact through growth and dense
- * swap-removes, not that anything is tested AT a documented limit. The real
+ * swap-removes, not that anything is tested at a documented limit. The real
  * cap boundaries live in `limits/component_count_cap.test.ts` (SAB
  * descriptor mask width) and `unit/store.test.ts` (slot retirement).
  */
@@ -107,7 +107,7 @@ describe("Column scale", () => {
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
-		// Create 1,000 entities with just Position
+		// Create 1,000 entities with only Position
 		const entities = [];
 		for (let i = 0; i < 1_000; i++) {
 			const e = world.spawn();

@@ -1,5 +1,5 @@
 /***
- * Event — Typed event channels with SoA storage.
+ * Event. Typed event channels with SoA storage.
  *
  * Events are fire-and-forget messages that systems emit within a frame
  * and other systems can read during the same frame. They are auto-cleared
@@ -9,11 +9,11 @@
  * pattern: each field is a separate number[] column, and a shared reader
  * object exposes named field arrays plus a length property.
  *
- * Signals are zero-field events — they carry no payload, just a count
+ * Signals are zero-field events. They carry no payload, only a count
  * of how many times they were emitted.
  *
  * Events are identified by module-scope EventKey symbols, analogous
- * to ResourceKey. The schema is a field → value-type record; a field's
+ * to ResourceKey. The schema is a field → value-type record. A field's
  * value type may be a branded number (e.g. `EntityID`), so emitters and
  * readers round-trip the brand without casts. Register once, import the
  * key anywhere:
@@ -21,12 +21,12 @@
  *   // definition (module scope)
  *   export const ContactEvent = eventKey<{ a: EntityID; b: EntityID }>("Contact");
  *
- *   // registration (plugin/setup)
+ *   // registration (plugin and setup)
  *   ecs.events.register(ContactEvent, ["a", "b"]);
  *
  *   // usage (system)
  *   ctx.emit(ContactEvent, { a: entityId, b: otherId });
- *   const hits = ctx.read(ContactEvent);
+ *   const hits = ctx.readEvents(ContactEvent);
  *   for (let i = 0; i < hits.length; i++) { ... }  // hits.a[i] is an EntityID
  *
  ***/
@@ -49,31 +49,31 @@ export const asEventId = (value: number) =>
 	);
 
 /** Event schema: field name → value type. Every value is a number at
- * runtime; the declared type may be a branded number (e.g. `EntityID`)
+ * runtime. The declared type may be a branded number (e.g. `EntityID`)
  * so the brand survives the emit → read round trip at the type layer.
- * This is the erased/default schema type; the public surfaces constrain
+ * This is the erased and default schema type. The public surfaces constrain
  * on `EventShape<S>` (below) instead, so schemas may be declared as type
- * literals OR interfaces — an interface lacks the implicit index
+ * literals or interfaces, an interface lacks the implicit index
  * signature literals get (and so isn't assignable to this `Record`
  * alias), but satisfies the homomorphic `EventShape` check. */
 export type EventSchema = Readonly<Record<string, number>>;
 
 /**
  * Homomorphic constraint for event-schema type params:
- * `S extends EventShape<S>` checks every property of `S` is a number WITHOUT
+ * `S extends EventShape<S>` checks every property of `S` is a number without
  * requiring an index signature, so `interface`-declared schemas (which lack
  * the implicit index signature type literals get) are accepted too.
  */
 export type EventShape<S> = { readonly [K in keyof S]: number };
 
-/** Schema of a signal — a zero-field event. */
+/** Schema of a signal, a zero-field event. */
 export type EmptyEventSchema = Readonly<Record<never, number>>;
 
-// Phantom symbol for the field schema — never exists at runtime. The
-// function-typed slot makes `S` INVARIANT (mirroring `ResourceKey`,
+// Phantom symbol for the field schema, never exists at runtime. The
+// function-typed slot makes `S` invariant (mirroring `ResourceKey`,
 // resource.ts): a def is used for both emits (contravariant in the payload)
-// and reads (covariant), so covariant erasure — `EventDef<{a; b}>` widening
-// to `EventDef<{a}>` — would let `emit` under-fill the channel's columns.
+// and reads (covariant), so covariant erasure, `EventDef<{a; b}>` widening
+// to `EventDef<{a}>`, would let `emit` under-fill the channel's columns.
 // Erased positions must spell `EventDef<any>`.
 declare const __eventSchema: unique symbol;
 
@@ -85,12 +85,12 @@ export type EventDef<S extends EventShape<S> = EventSchema> = EventID & {
  * Reader view over an event channel's SoA columns. Columns are read-only
  * arrays typed per the event schema: consumers index them and read
  * `.length`. A field declared as a branded number (e.g. `EntityID`) reads
- * back branded — no cast at the consumer.
+ * back branded, no cast at the consumer.
  *
  * The "cannot mutate the live channel through the reader" property is
- * **advisory** — the columns are the same live `number[]` objects the channel
+ * **advisory**, the columns are the same live `number[]` objects the channel
  * mutates (see `EventChannel` below), so the `readonly` typing blocks writes
- * at the type layer only; a deliberate cast can still write through.
+ * at the type layer only. A deliberate cast can still write through.
  */
 export type EventReader<S extends EventShape<S>> = {
 	readonly length: number;
@@ -99,13 +99,13 @@ export type EventReader<S extends EventShape<S>> = {
 export class EventChannel {
 	public readonly fieldNames: string[];
 	public readonly columns: number[][];
-	// any: type-erased storage — channel is stored in Map<number, EventChannel>, S is lost
+	// any: type-erased storage, channel is stored in Map<number, EventChannel>, S is lost
 	public readonly reader: EventReader<any>;
-	// The ONE mutable view of the reader's `length`. The public `EventReader`
+	// The one mutable view of the reader's `length`. The public `EventReader`
 	// type declares it readonly (a consumer writing `reader.length = 0` on the
 	// live shared object would permanently desync every other system's view),
 	// so the channel keeps this private alias to the same
-	// object for emit/clear bookkeeping.
+	// object for emit and clear bookkeeping.
 	private readonly _readerLen: { length: number };
 
 	constructor(fieldNames: string[]) {
@@ -117,9 +117,9 @@ export class EventChannel {
 
 		// Build the reader: a mutable length plus one column per field. The
 		// columns are the same `number[]` objects the channel mutates internally
-		// (emit/clear); the reader's type (EventReader) exposes them as read-only
+		// (emit and clear); the reader's type (EventReader) exposes them as read-only
 		// arrays so consumers don't mutate the channel. That barrier is advisory
-		// (compile-time only) — see EventReader.
+		// (compile-time only), see EventReader.
 		const columnsByField: Record<string, ReadonlyArray<number>> = {};
 		for (let i = 0; i < fieldNames.length; i++) {
 			columnsByField[fieldNames[i]] = this.columns[i];
@@ -134,9 +134,9 @@ export class EventChannel {
 		const names = this.fieldNames;
 		const cols = this.columns;
 		if (DEV) {
-			// Validate ALL fields before mutating any column. Pushing per-field and
+			// Validate all fields before mutating any column. Pushing per-field and
 			// throwing mid-loop would leave earlier columns one row ahead of
-			// `reader.length` and the un-pushed columns — a permanent desync if the
+			// `reader.length` and the un-pushed columns, a permanent desync if the
 			// throw is caught. Validate-then-push leaves the production path (no
 			// DEV) a single tight push loop.
 			for (let i = 0; i < names.length; i++) {
@@ -167,10 +167,10 @@ export class EventChannel {
 }
 
 // =======================================================
-// Event keys — module-scope symbol handles for events
+// Event keys, module-scope symbol handles for events
 // =======================================================
 
-// Function-typed slot ⇒ `S` is INVARIANT — same rationale as `EventDef`
+// Function-typed slot ⇒ `S` is invariant, same rationale as `EventDef`
 // above: a key authorises both `emit` (contravariant) and `read` (covariant),
 // so one-sided variance is a payload-shape hole. Erased positions must spell
 // `EventKey<any>`.
@@ -182,7 +182,7 @@ export type EventKey<S extends EventShape<S> = EventSchema> = symbol & {
 
 // Distinguishes a signal key from a payload event key at the type layer, so
 // the no-payload `emit(key)` overload accepts only keys minted by
-// `signalKey`. The empty-record schema alone wouldn't be enough — every
+// `signalKey`. The empty-record schema alone wouldn't be enough, every
 // payload schema is structurally assignable to `{}`, so without the extra
 // phantom a payload event would match the signal overload and emit with no
 // column pushes, desyncing `reader.length` from the columns.
@@ -194,14 +194,14 @@ export type SignalKey = EventKey<EmptyEventSchema> & {
 
 /**
  * Compile-time exact-cover check for `registerEvent`'s `fields` list. The
- * element type (`keyof S & string`) already rejects foreign fields; this
- * catches the inverse mistake — an UNDER-registered channel. Registering
+ * element type (`keyof S & string`) already rejects foreign fields. This
+ * catches the inverse mistake, an under-registered channel. Registering
  * `eventKey<{a; b}>` with `["a"]` used to compile, but `emit` requires the
  * full payload while the channel only has an `a` column, so `b` was silently
  * dropped and `reader.b` (typed as an array) was `undefined` at runtime.
  * Resolves to `unknown` (intersection no-op) when `F` covers every key, and
  * to an impossible tuple naming the missing fields otherwise. A schema with a
- * string index signature (erased/untyped keys) skips the check — there is no
+ * string index signature (erased or untyped keys) skips the check. There is no
  * finite key set to cover.
  */
 export type EventFieldsCover<
@@ -211,7 +211,7 @@ export type EventFieldsCover<
 	? unknown
 	: Exclude<keyof S & string, F[number]> extends never
 		? unknown
-		: readonly [`ERROR — missing event field: ${Exclude<keyof S & string, F[number]>}`];
+		: readonly [`ERROR, missing event field: ${Exclude<keyof S & string, F[number]>}`];
 
 export function eventKey<S extends EventShape<S>>(name: string): EventKey<S> {
 	return unsafeCast<EventKey<S>>(Symbol(name));

@@ -1,11 +1,11 @@
 /**
  * Tests for the consumer-ergonomics surfaces added in the ECS ergonomics
  * pass: optional access-declaration fields + Template expansion
- * (`_normalizeAccess`), `Query.forEachUntil`, `getColumnsRead`,
+ * (`_normalizeAccess`), `Query.some`, `getColumnsRead`,
  * `regionHandles`, `updateField`, and the explicit-undefined spawn
  * override skip. The typed event schema is covered by
- * `integration/event.test.ts`; the compile-time halves (branded event
- * fields, schema-typed template values/overrides) are exercised implicitly
+ * `integration/event.test.ts`. The compile-time halves (branded event
+ * fields, schema-typed template values and overrides) are exercised implicitly
  * by every typed call in this file and across the game package.
  */
 
@@ -32,7 +32,7 @@ describe("optional access-declaration fields", () => {
 		expect(Object.isFrozen(sys.spawns)).toBe(true);
 	});
 
-	it("a system with only reads/writes still passes the runtime access check", () => {
+	it("a system with only reads and writes still passes the runtime access check", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const e = world.spawn();
@@ -53,7 +53,7 @@ describe("optional access-declaration fields", () => {
 	});
 });
 
-describe("Template in spawns/despawns declarations", () => {
+describe("Template in spawns and despawns declarations", () => {
 	it("expands a Template to its component list on the descriptor", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
@@ -71,7 +71,7 @@ describe("Template in spawns/despawns declarations", () => {
 		expect(sys.despawns).toEqual([Pos, Vel]);
 	});
 
-	it("mixes Template and explicit lists / defs", () => {
+	it("mixes Template and explicit lists and defs", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const Vel = world.registerComponent({ vx: "f64" } as const);
@@ -125,7 +125,7 @@ describe("Query.for_each_until", () => {
 		world.addComponent(b, TagB);
 
 		let visited = 0;
-		const hit = world.query(Pos).forEachUntil(() => {
+		const hit = world.query(Pos).some(() => {
 			visited++;
 			return true; // stop immediately
 		});
@@ -139,7 +139,7 @@ describe("Query.for_each_until", () => {
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
 		let visited = 0;
-		const hit = world.query(Pos).forEachUntil((arch) => {
+		const hit = world.query(Pos).some((arch) => {
 			visited++;
 			const col = arch.getColumnRead(Pos, "x");
 			for (let i = 0; i < arch.entityCount; i++) if (col[i] === 999) return true;
@@ -156,7 +156,7 @@ describe("Query.for_each_until", () => {
 		world.addComponent(e, Pos, { x: 7 });
 		world.disable(e);
 
-		const defaultHit = world.query(Pos).forEachUntil((arch) => {
+		const defaultHit = world.query(Pos).some((arch) => {
 			const col = arch.getColumnRead(Pos, "x");
 			for (let i = 0; i < arch.entityCount; i++) if (col[i] === 7) return true;
 			return false;
@@ -166,7 +166,7 @@ describe("Query.for_each_until", () => {
 		const widenedHit = world
 			.query(Pos)
 			.includeDisabled()
-			.forEachUntil((arch) => {
+			.some((arch) => {
 				const col = arch.getColumnRead(Pos, "x");
 				for (let i = 0; i < arch.entityCount; i++) if (col[i] === 7) return true;
 				return false;

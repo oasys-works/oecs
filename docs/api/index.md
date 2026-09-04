@@ -2,9 +2,9 @@
 
 `@oasys/oecs` is an **archetype-based Entity Component System for TypeScript that can be
 deterministic**. It is pure TypeScript, it has no dependencies, and by default it runs over one
-plain `ArrayBuffer`. It needs no `SharedArrayBuffer`, and no COOP/COEP headers.
+plain `ArrayBuffer`. It needs no `SharedArrayBuffer`, and no COOP and COEP headers.
 
-This reference documents the full public surface of **0.5**. Each signature here is checked against
+This reference documents the full public surface of **0.6**. Each signature here is checked against
 the source. If oecs is new to you, read the pages in the order below. If you know other ECS
 libraries, go directly to the page that you need.
 
@@ -43,7 +43,7 @@ const move = ecs.registerSystem({
   writes: [Pos],
   queries: [[Pos, Vel]],
   fn: (ctx, dt) => {
-    movers.eachChunk((cols, count) => {                    // the high-frequency loop that writes
+    movers.forEachChunk((cols, count) => {                    // the high-frequency loop that writes
       const { x, y } = cols.mut(Pos);                      // sets the change tick of Pos
       const { vx, vy } = cols.read(Vel);
       for (let i = 0; i < count; i++) {
@@ -72,14 +72,14 @@ nothing until you import it.
 
 | Import | What it is |
 | --- | --- |
-| `@oasys/oecs` | the ECS — the pure-TS heap profile by default |
-| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP/COEP) |
+| `@oasys/oecs` | the ECS, the pure-TS heap profile by default |
+| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP and COEP) |
 | `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies (`signal`, `computed`, `effect`, and reactive collections) |
-| `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel — it publishes only the changed entities and columns |
+| `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel, it publishes only the changed entities and columns |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
 | `@oasys/oecs/solid` | the SolidJS adapter (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from (`BitSet`, `SparseSet`, and others) |
-| `@oasys/oecs/internal` | an **unstable** surface for tools — codecs, ABI constants, memory inspectors, and development singletons; there are no semver guarantees |
+| `@oasys/oecs/internal` | an **unstable** surface for tools, codecs, ABI constants, memory inspectors, and development singletons. There are no semver guarantees |
 
 The root also exports **`VERSION`**, which is the package version as a string constant that you can
 read at run time (`import { VERSION } from "@oasys/oecs"`). It is a literal in the source, and not
@@ -92,62 +92,65 @@ consumer of the npm bundle.
 
 Read these pages in this order, to get a model that you can use.
 
-1. [components](./components.md) — `registerComponent`, the field types, tags, callable
+1. [components](./components.md), `registerComponent`, the field types, tags, callable
    definitions, and bundles
-2. [entities](./entities.md) — create, destroy, enable, and disable; templates; and the `EntityID`
+2. [entities](./entities.md), create, destroy, enable, and disable. Templates, and the `EntityID`
    codec
-3. [queries](./queries.md) — `query`, the verbs that make a query more exact, `forEach` compared to
-   `eachChunk`, and the archetype view
-4. [systems](./systems.md) — `registerSystem`, `reads` and `writes`, the system context, and
+3. [queries](./queries.md), `query`, the verbs that make a query more exact, `forEach` compared to
+   `forEachChunk`, and the archetype view
+4. [systems](./systems.md), `registerSystem`, `reads` and `writes`, the system context, and
    `ctx.commands`
-5. [schedule](./schedule.md) — the seven phases, the order of systems, system sets, run conditions,
+5. [schedule](./schedule.md), the seven phases, the order of systems, system sets, run conditions,
    and the frame loop
-6. [resources](./resources.md) — typed global values
-7. [events](./events.md) — send-and-forget messages, which the ECS clears in each frame
-8. [refs](./refs.md) — cached field accessors for one entity (`ctx.ref` and `ctx.refRead`), and
+6. [resources](./resources.md), typed global values
+7. [events](./events.md), send-and-forget messages, which the ECS clears in each frame
+8. [refs](./refs.md), cached field accessors for one entity (`ctx.ref` and `ctx.refRead`), and
    cursors, which you can use again for a different entity (`ctx.cursor` and `ctx.cursorRead`)
-9. [change detection](./change-detection.md) — the change ticks and the `changed()` queries
-10. [observers](./observers.md) — `onAdd`, `onRemove`, `onSet`, `onEnable`, and `onDisable`
-11. [relations](./relations.md) — `(relation, target)` pairs, `ChildOf` and `IsA`, wildcards, and
+9. [change detection](./change-detection.md), the change tick and the `changed()` queries at the
+   archetype grain. `ecs.trackRows`, `cols.ticks` and `cols.ticksRead`, `cols.since`, and
+   `changed(def).forEachChunk` at the row grain
+10. [observers](./observers.md), `onAdd`, `onRemove`, `onSet`, `onEnable`, and `onDisable`
+11. [relations](./relations.md), `(relation, target)` pairs, `ChildOf` and `IsA`, wildcards, and
     cleanup policies
-12. [sparse storage](./sparse-storage.md) — components outside the identity, for rare data or data
-    that changes frequently
+12. [sparse storage](./sparse-storage.md), components outside the identity, in id-indexed columns:
+    for data read by id, rare data, or data that changes frequently. `sparseCursor` and
+    `sparseCursorRead` for the fastest read by id, and `ctx.sparseChanged` for its change detection
 
 ### Determinism and stored state
 
-13. [determinism](./determinism.md) — `deterministic: true`, `stateHash`, snapshot and restore, and
+13. [determinism](./determinism.md), `deterministic: true`, `stateHash`, snapshot and restore, and
     replay of a command log
-14. [memory](./memory.md) — the `memory` option that sets the size, and the storage profiles
-15. [WASM backends](./wasm.md) — a shared `WebAssembly.Memory`, `ComputeBackend`, and the FFI ids
-16. [parallel execution](./parallel.md) — the connections for shared memory and workers, and the
+14. [memory](./memory.md), the `memory` option that sets the size, and the storage profiles
+15. [WASM backends](./wasm.md), a shared `WebAssembly.Memory`, `ComputeBackend`, and the FFI ids
+16. [parallel execution](./parallel.md), the connections for shared memory and workers, and the
     contract of the sequential scheduler
 
 ### Integration with a host and a UI
 
-17. [extensions overview](../EXTENSIONS.md) — how the optional entry points fit together in a real
+17. [extensions overview](../EXTENSIONS.md), how the optional entry points fit together in a real
     application
-18. [the host write path](./host-write-seam.md) — how to queue typed writes from a host, a UI, or
+18. [the host write path](./host-write-seam.md), how to queue typed writes from a host, a UI, or
     an editor
-19. [reactive](./reactive.md) — the optional reactive UI connection (`reactive`, `reactive-sync`,
+19. [reactive](./reactive.md), the optional reactive UI connection (`reactive`, `reactive-sync`,
     and `solid`)
-20. [editor](./editor.md) — undo, redo, and field handles
-21. [traces](./tracing.md) — the frame trace and the dispatch trace (development builds only)
+20. [editor](./editor.md), undo, redo, and field handles
+21. [traces](./tracing.md), the frame trace and the dispatch trace (development builds only)
 
 ### Reference
 
-22. [primitives](./primitives.md) — the data structures under `@oasys/oecs/primitives` that you can
+22. [primitives](./primitives.md), the data structures under `@oasys/oecs/primitives` that you can
     use again
-23. [errors](./errors.md) — the `ECSError` taxonomy
+23. [errors](./errors.md), the `ECSError` taxonomy
 
 <a id="dev-vs-prod--read-this-once"></a>
 
-## Development and production — read this one time
+## Development and production, read this one time
 
 A compile-time flag, `__DEV__`, controls each run-time check:
 
-- the bounds and liveness checks;
-- the detection of a system that you added two times;
-- the validation at registration;
+- the bounds and liveness checks
+- the detection of a system that you added two times
+- the validation at registration
 - the **system access checker**, which holds you to `reads` and `writes`.
 
 The build tool **removes these checks from a production build**.

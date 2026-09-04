@@ -1,7 +1,7 @@
 /**
- * Golden-layout differential gate for the grow/extend consolidation.
+ * Golden-layout differential gate for the grow and extend consolidation.
  *
- * `layout_golden.json` was captured from the PRE-consolidation grow/extend
+ * `layout_golden.json` was captured from the pre-consolidation grow and extend
  * implementation over the full allocator matrix (growable SAB, resizable
  * heap ArrayBuffer, fresh-SAB default, shared WebAssembly.Memory). This test
  * re-runs the identical scenario matrix and requires byte-identical layouts:
@@ -9,14 +9,14 @@
  * selection, buffer identity, and live-data survival.
  *
  * If this fails after an intentional layout change, re-capture the fixture
- * (see layout_scenarios.ts's header) and justify the diff in review — a
+ * (see layout_scenarios.ts's header) and justify the diff in review, a
  * silent relocation of a column is exactly the bug class this pins down.
  */
 import { describe, expect, it } from "vitest";
 import { runAllScenarios } from "./layout_scenarios";
 import golden from "./layout_golden.json";
 
-describe("grow/extend golden layouts", () => {
+describe("grow and extend golden layouts", () => {
 	const actual = runAllScenarios();
 
 	for (const strategy of Object.keys(golden)) {

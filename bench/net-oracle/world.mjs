@@ -5,12 +5,12 @@
  * run must use. We did not select it because it is the fastest method to hold a
  * graph.
  *
- *   ARCHETYPE MIGRATION — the type of an agent is a tag (CON, DUP, ERA or ROOT).
+ *   Archetype migration, the type of an agent is a tag (CON, DUP, ERA or ROOT).
  *     Each agent also holds `Redex`, `Fresh`, `Age` and `Tainted` as components, and
  *     the ECS adds and removes them. Each of these operations moves a row between
  *     archetypes.
  *
- *   RELATION MUTATION — the *agent at the end* of a port is an exclusive relation
+ *   Relation mutation, the *agent at the end* of a port is an exclusive relation
  *     (`P0`, `P1` or `P2`). Therefore each rewrite changes the target of several of
  *     them. An `add` to an exclusive relation replaces the old target, and it gives
  *     no message. This operation uses the path that maintains the reverse index more
@@ -19,30 +19,30 @@
  *     agree. They are two independent records of one fact, and the oracle compares
  *     them.
  *
- *   OBSERVERS — the ECS does not calculate the redex queue when a caller asks for
+ *   Observers, the ECS does not calculate the redex queue when a caller asks for
  *     it. The queue is a `Set`, and `onAdd` and `onRemove` observers on the `Redex`
  *     tag maintain it alone. The oracle compares the queue against a new scan, and
  *     against the reference. A structural observer runs only for a deferred
  *     operation in the schedule. Therefore each change below uses `ctx.commands`.
  *
- *   CHANGE DETECTION — `Touch.seq` counts the times a `setLink` used an agent as an
+ *   Change detection, `Touch.seq` counts the times a `setLink` used an agent as an
  *     endpoint. The reference counts the same number in its own `setLink`. Therefore
  *     the set of agents that a tick writes has an independent model. An `onSet`
  *     observer with the granularity of an entity must give exactly that set. A second
  *     `onSet` observer with the granularity of an archetype, and a `changed()` query,
  *     must give each archetype that holds one of those agents.
  *
- *   THE ENABLED AND DISABLED PARTITION — the harness disables and enables agents
- *     through the HOST WRITE SEAM. A default query must not show a disabled row.
+ *   The enabled and disabled partition, the harness disables and enables agents
+ *     through the host write seam. A default query must not show a disabled row.
  *     Therefore a disabled agent must not age and must keep `Fresh`, and the exact
  *     comparison of `Age.ticks` is the proof. `onDisable` and `onEnable` observers
  *     alone maintain a second set, as the redex queue does.
  *
- *   SPARSE COMPONENTS — the `Watch` sparse component is present on an agent if and
+ *   Sparse components, the `Watch` sparse component is present on an agent if and
  *     only if the agent is in an active pair. `withSparse` and `withoutSparse` must
  *     agree with that rule.
  *
- *   EVENTS AND RESOURCES — the rewrite system emits one event for each rewrite, and
+ *   Events and resources, the rewrite system emits one event for each rewrite, and
  *     a reader in POST_UPDATE drains the channel. The driver compares the drained
  *     rows against the plan, row by row. A resource holds a phase number, and it
  *     gates a system through `runIfResourceEq`.
@@ -53,6 +53,8 @@
  * them, and it does not ignore them.
  */
 import { ROOT, MAX_PORTS, NO_SLOT, PORTS, TYPE_NAME, applyRewrite, reduces } from "./spec.mjs";
+import { mirrorF32Of, mirrorOf, mixDefaults, mixSchema } from "./mirror.mjs";
+import { fingerprintEcs } from "./fingerprint.mjs";
 
 const SLOT_F = ["s0", "s1", "s2"];
 
@@ -88,6 +90,7 @@ export class EcsNet {
 		const {
 			ECS,
 			SCHEDULE,
+			getEntityIndex,
 			eventKey,
 			signalKey,
 			resourceKey,
@@ -105,18 +108,18 @@ export class EcsNet {
 		// A deterministic world gives `stateHash`, `capture` and `restore`. A world
 		// with a float column cannot be deterministic, so it gives up those three.
 		this.hashable = !float;
-		// `memory: { shared: {} }` selects the `SharedArrayBuffer` backing. The root
+		// `memory: { backing: "shared" }` selects the `SharedArrayBuffer` backing. The root
 		// entry carries the option, and `@oasys/oecs/shared` carries the allocators for
 		// a caller that wants to pass one. Every line below this point is the same for
 		// both backings, which is the point: the oracle then tests the whole engine over
 		// the opt-in profile and not one allocator alone.
 		const options = float ? {} : { deterministic: true };
-		if (sab) options.memory = { shared: {} };
+		if (sab) options.memory = { backing: "shared" };
 		this.ecs = new ECS(options);
 		const ecs = this.ecs;
 
 		// ── the host write seam ─────────────────────────────────────────────
-		// Installed FIRST, and before `startup()`, so its apply system sits at the
+		// Installed first, and before `startup()`, so its apply system sits at the
 		// head of PRE_UPDATE. The harness enqueues the quarantine between ticks, and
 		// the apply system drains it there. That is the only path in this harness
 		// that mutates the world from outside the schedule, and it is the path a
@@ -135,12 +138,12 @@ export class EcsNet {
 
 		// ── components ──────────────────────────────────────────────────────
 		// `registerTag()` takes no options, so tags that want a debug label go
-		// through `registerComponent({}, { name })` — the same empty schema, but
+		// through `registerComponent({}, { name })`, the same empty schema, but
 		// errors and frame traces then name the agent type instead of a bare id.
 		const tag = (name) => ecs.registerComponent({}, { name });
-		// Indexed BY the type constants, derived from the same table that defines
-		// them — a hand-written array here would silently depend on its literal order
-		// matching `CON`/`DUP`/`ERA`/`ROOT`.
+		// Indexed by the type constants, derived from the same table that defines
+		// them, a hand-written array here would silently depend on its literal order
+		// matching `CON`, `DUP`, `ERA` and `ROOT`.
 		this.TAG = TYPE_NAME.map(tag);
 		// Deterministic worlds reject float columns, so every field here is integral.
 		this.Slot = ecs.registerComponent({ s0: "u8", s1: "u8", s2: "u8" }, { name: "Slot" });
@@ -155,14 +158,37 @@ export class EcsNet {
 		// The column for the change detection. `setLink` increases it through
 		// `ctx.updateField`, for both endpoints.
 		this.Touch = ecs.registerComponent({ seq: "i32" }, { name: "Touch" });
-		// A column that the HOST writes, through `queue.setField`. It counts the times
+		// The column for the row grain of the change detection. `redexMaintain`
+		// copies `Touch.seq` into it for each touched agent through a chunk loop, and
+		// records the row through `cols.ticks(Seen)`, so its `onSet` observer reads the
+		// scan of the tick plane and never the dirty list. Nothing writes it by id.
+		this.Seen = ecs.registerComponent({ n: "i32" }, { name: "Seen" });
+		// A column that the host writes, through `queue.setField`. It counts the times
 		// the quarantine disabled this agent.
 		this.Quar = ecs.registerComponent({ count: "u8" }, { name: "Quar" });
-		// A tag that the HOST adds and removes, through `queue.add` and
+		// One column of each integer kind, and of `f32` in the float arm. The net
+		// alone holds `u8` and `i32`, so the row plane and the value paths of the
+		// other kinds had no cover here. `mirror.mjs` gives the model: the mirrors
+		// follow `Touch.seq`, and the constants keep the value that the template gave.
+		this.Mix = ecs.registerComponent(mixSchema(float), { name: "Mix" });
+		this._mixDefaults = mixDefaults(float);
+		// A tag that the host adds and removes, through `queue.add` and
 		// `queue.remove`. An agent holds it if and only if the agent is disabled.
 		this.Tainted = tag("Tainted");
 		// A sparse component, present if and only if the agent is in an active pair.
+		// Its one field, `hits`, mirrors `Touch.seq` for each member: `redexMaintain`
+		// writes the raw `seq` into it, and the `u8` column keeps the low byte. So the
+		// model is `seq & 0xff`, the reference keeps no new state, and a store that
+		// converts through the wrong type, or reads the wrong slot, shows on each
+		// member at each comparison. The write goes through a sparse cursor for a
+		// member that stays, and through the values of `addSparse` for a member that
+		// joins, so both value paths of the sparse store run under the churn.
 		this.Watch = ecs.registerSparseComponent({ hits: "u8" }, { name: "Watch" });
+		// The cursors over `Watch`. A cursor made at host level is checked on each
+		// `at()` against the system that runs, so `redexMaintain` must declare the
+		// component in `sparseWrites`, which it does.
+		this.watchWrite = ecs.sparseCursor(this.Watch);
+		this.watchRead = ecs.sparseCursorRead(this.Watch);
 
 		// ── the template for a new agent ────────────────────────────────────
 		// `ecs.template` makes an opaque archetype template, and `spawn` and
@@ -174,22 +200,24 @@ export class EcsNet {
 				t,
 				bundle(this.Slot, { s0: NO_SLOT, s1: NO_SLOT, s2: NO_SLOT }),
 				bundle(this.Touch, { seq: 0 }),
-				bundle(this.Quar, { count: 0 })
+				bundle(this.Seen, { n: 0 }),
+				bundle(this.Quar, { count: 0 }),
+				bundle(this.Mix, this._mixDefaults)
 			)
 		);
 
 		// ── relations ───────────────────────────────────────────────────────
 		// "clear" is the right cleanup policy here: a rewrite always relinks every
 		// port it disturbs, so a dangling reverse entry would be a bug rather than a
-		// state to tolerate — and "delete" would cascade-destroy the redex's
+		// state to tolerate, and "delete" would cascade-destroy the redex's
 		// innocent neighbours.
 		this.P = [0, 1, 2].map(() =>
 			ecs.relations.register({ exclusive: true, onDeleteTarget: "clear" })
 		);
 
 		// ── the provenance layer ────────────────────────────────────────────
-		// A second entity population — an audit log of rewrites with epoch-based
-		// retention — whose only purpose is to reach the relation surface the net's
+		// A second entity population, an audit log of rewrites with epoch-based
+		// retention, whose only purpose is to reach the relation surface the net's
 		// own ports do not: multi target sets, the "delete" cascade, "orphan" plus
 		// `compact()`, and the traversal helpers. See `prov.mjs` for the reasoning.
 		if (prov !== null) {
@@ -197,13 +225,13 @@ export class EcsNet {
 			this.Epoch = ecs.registerComponent({ index: "i32" }, { name: "Epoch" });
 			// exclusive + "delete": despawning an epoch cascade-destroys its records.
 			this.InEpoch = ecs.relations.register({ exclusive: true, onDeleteTarget: "delete" });
-			// multi + "clear": a record's target set shrinks when a produced agent DIES,
+			// multi + "clear": a record's target set shrinks when a produced agent dies,
 			// which is the reverse-index path no source-side edit exercises.
 			this.Produced = ecs.relations.register({ multi: true, onDeleteTarget: "clear" });
 			// multi + "orphan": pruned epochs stay referenced as dangling handles, which
 			// is the documented reverse-index leak `compact()` reclaims.
 			this.EpochAncestors = ecs.relations.register({ multi: true, onDeleteTarget: "orphan" });
-			// exclusive + "clear": each record points at the record before it IN THE SAME
+			// exclusive + "clear": each record points at the record before it in the same
 			// EPOCH. That makes a chain with hundreds of levels. `InEpoch` is one level
 			// deep, so it cannot test `hierarchy` past depth 1, `maxDepth`, or the order
 			// of a parent before its children. This chain can, because a parent and a
@@ -214,7 +242,7 @@ export class EcsNet {
 		}
 
 		// ── queries ─────────────────────────────────────────────────────────
-		// `qAgents` is a DEFAULT query, so it does not show a disabled row.
+		// `qAgents` is a default query, so it does not show a disabled row.
 		// `qAgentsAll` shows every row. The structural checks use `qAgentsAll`,
 		// because the net contains its disabled agents. The difference between the
 		// two is the assertion about the row partition.
@@ -223,9 +251,9 @@ export class EcsNet {
 		this.qRedex = ecs.query(this.Redex);
 		this.qFresh = ecs.query(this.Fresh);
 		this.qAge = ecs.query(this.Age);
-		// The same mask over the disabled rows as well. `_forEachChangedArchetype` — the
-		// path behind an `onSet` observer with the granularity of an archetype — visits
-		// each archetype with one or more ROWS, and an all-disabled archetype has rows.
+		// The same mask over the disabled rows as well. `forEachChangedArchetype`, the
+		// path behind an `onSet` observer with the granularity of an archetype, visits
+		// each archetype with one or more rows, and an all-disabled archetype has rows.
 		// A query with `includeDisabled()` keeps exactly those archetypes. Therefore this
 		// query gives the upper bound for that observer.
 		this.qAgeAll = ecs.query(this.Age).includeDisabled();
@@ -238,8 +266,11 @@ export class EcsNet {
 		// alone. A `ChangedQuery` also composes, and the two spellings below must give
 		// the same set.
 		this.qTouchChanged = ecs.query(this.Touch).changed(this.Touch);
-		// The same query over the disabled rows as well. A DEFAULT query gives the
-		// non-empty archetypes, and an archetype whose rows are ALL disabled is empty
+		// The chunk loop of `redexMaintain` walks this one. A default query, so a
+		// disabled agent gets no record, which is the rule the dispatch applies.
+		this.qSeen = ecs.query(this.Seen, this.Touch);
+		// The same query over the disabled rows as well. A default query gives the
+		// non-empty archetypes, and an archetype whose rows are all disabled is empty
 		// for it. Therefore the default arm above cannot report such an archetype, and
 		// this arm must. The pair is the check on `includeDisabled()` under `changed()`.
 		this.qTouchChangedAll = ecs.query(this.Touch).includeDisabled().changed(this.Touch);
@@ -251,15 +282,15 @@ export class EcsNet {
 		// `PORTS` is [3, 3, 1, 1]. Therefore a CON and a DUP hold ports 0, 1 and 2, and
 		// an ERA and the ROOT hold port 0 alone. The relation of port 1 is present if and
 		// only if the agent is a CON or a DUP. The reference already holds the type of
-		// each agent. Therefore these queries need NO new model, and their answer moves
+		// each agent. Therefore these queries need no new model, and their answer moves
 		// with each rewrite.
 		this.qWithP1 = ecs.query(this.Slot).includeDisabled().withRelation(this.P[1]);
 		this.qWithoutP1 = ecs.query(this.Slot).includeDisabled().withoutRelation(this.P[1]);
-		// The same question over the ENABLED rows alone. The two arms differ by exactly
+		// The same question over the enabled rows alone. The two arms differ by exactly
 		// the disabled agents. Therefore the pair also reads the row partition, through
 		// a term that is neither a component nor a sparse component.
 		this.qWithP1Enabled = ecs.query(this.Slot).withRelation(this.P[1]);
-		// `optional` spans the archetypes that hold `Age` AND the archetypes that do
+		// `optional` spans the archetypes that hold `Age` and the archetypes that do
 		// not. A `Fresh` agent has no `Age` yet, so both spans occur in each run. The
 		// absent span must be exactly the `Fresh` agents, and the present span must
 		// carry the numbers that `compare` reads through `getField`. Therefore this is a
@@ -267,7 +298,7 @@ export class EcsNet {
 		this.qOptionalAge = ecs.query(this.Slot).includeDisabled().optional(this.Age);
 		// Exactly one ROOT exists. `nets.mjs` rejects a specification with any other
 		// number, no rule makes a ROOT, and a pair that holds the ROOT is inert. The
-		// quarantine CAN disable it, so this query must show the disabled rows.
+		// quarantine can disable it, so this query must show the disabled rows.
 		this.qRoot = ecs.query(this.TAG[ROOT]).includeDisabled();
 		// The members of the active pairs, over the disabled rows as well. `firstEntity`
 		// must give a member while the net reduces, and `undefined` in the idle tail.
@@ -277,7 +308,7 @@ export class EcsNet {
 		// The whole point: this Set is never recomputed, only pushed to by the two
 		// callbacks. If a structural observer misses a transition, fires twice, or
 		// fires for the wrong entity, this Set drifts from the rescan and the
-		// reference — and nothing else in the harness would notice.
+		// reference, and nothing else in the harness would notice.
 		this.observedRedex = new Set();
 		this.observerAdds = 0;
 		this.observerRemoves = 0;
@@ -303,7 +334,7 @@ export class EcsNet {
 		// Same discipline as the redex queue, but pointed at the cascade: records are
 		// destroyed only *transitively*, by despawning their epoch parent. So this Set
 		// staying correct is the assertion that a `"delete"` cascade fires `onRemove`
-		// for every victim it destroys — a thing nothing else here would detect.
+		// for every victim it destroys, a thing nothing else here would detect.
 		this.observedRecords = new Set();
 		this.recordAdds = 0;
 		this.recordRemoves = 0;
@@ -330,7 +361,7 @@ export class EcsNet {
 		// ── the observer-maintained set of the changed entities ─────────────
 		// An `onSet` observer with the granularity of an entity drains the dirty list
 		// for each row. The registration of this observer is what turns that list on.
-		// The driver compares this set against the set that the REFERENCE wrote, and
+		// The driver compares this set against the set that the reference wrote, and
 		// the comparison is exact in both directions. Refer to `driver.changeCheck`.
 		this.setEntities = new Set();
 		this.setEntityCalls = 0;
@@ -343,10 +374,36 @@ export class EcsNet {
 				this.setEntityCalls++;
 			},
 		});
+		// The same observer on `Seen`. Its records come from `cols.ticks` in a chunk
+		// loop alone, so this set is the exact test of the scan of the tick plane.
+		this.seenEntities = new Set();
+		this.seenEntityObserver = ecs.observe(this.Seen, {
+			name: "seen-entity",
+			granularity: "entity",
+			access: { reads: [], writes: [] },
+			onSet: (e) => {
+				this.seenEntities.add(e);
+			},
+		});
+		// The same observer on the sparse `Watch`. `redexMaintain` writes `hits`
+		// through the mutable sparse cursor for a member that stays, and records
+		// each such agent in `watchStayed` itself, while a joiner takes its value
+		// through `addSparse`, which is structural and records nothing. So this
+		// set must equal `watchStayed`, and the comparison is exact both ways.
+		this.watchSetEntities = new Set();
+		this.watchStayed = new Set();
+		this.watchEntityObserver = ecs.observe(this.Watch, {
+			name: "watch-entity",
+			granularity: "entity",
+			access: { reads: [], writes: [] },
+			onSet: (e) => {
+				this.watchSetEntities.add(e);
+			},
+		});
 		// An `onSet` observer with the granularity of an archetype fires one time for
 		// each archetype column that changed. It costs nothing, because it reads the
 		// tick for the change that the write path already keeps. This set holds the
-		// SIGNATURE of each archetype, and not its id, so the reference can predict it.
+		// signature of each archetype, and not its id, so the reference can predict it.
 		this.setArchSigs = new Set();
 		this.setArchCalls = 0;
 		this.touchArchObserver = ecs.observe(this.Touch, {
@@ -375,11 +432,11 @@ export class EcsNet {
 
 		// ── the observer-maintained set of the disabled entities ────────────
 		// `onDisable` and `onEnable` fire at the drain of the deferred toggle, one time
-		// for each NET transition. An immediate `ecs.disable()` from the host fires
+		// for each net transition. An immediate `ecs.disable()` from the host fires
 		// nothing, so every toggle in this harness goes through the write seam. This
 		// Set is never recomputed. Therefore it drifts if the ECS misses a transition,
 		// or if it fails to collapse a disable, enable, disable sequence to one call.
-		// `onRemove` is here for one reason: a despawn of a DISABLED agent gives no
+		// `onRemove` is here for one reason: a despawn of a disabled agent gives no
 		// `onEnable` call, because a destroy is not an enable. A despawn does fan
 		// `onRemove` over the complete mask of the entity, so that callback is the
 		// correct place to drop the dead entity. The set therefore stays under the
@@ -459,8 +516,27 @@ export class EcsNet {
 				// reads the value and writes it back, so it covers the read-modify-write
 				// path as well as the plain `setField` above. The reference counts the
 				// same number in its own `setLink`.
-				ctx.updateField(a, self.Touch, "seq", inc);
-				ctx.updateField(b, self.Touch, "seq", inc);
+				const sa = ctx.updateField(a, self.Touch, "seq", inc);
+				const sb = ctx.updateField(b, self.Touch, "seq", inc);
+				// The mirrors of the new counter, in each integer kind. One endpoint
+				// writes through `ctx.ref`, and the other through `ctx.cursor`. Both
+				// accessors share one prototype, and the two are different paths.
+				const wa = ctx.ref(self.Mix, a);
+				const ma = mirrorOf(sa);
+				wa.m8 = ma.m8;
+				wa.m16 = ma.m16;
+				wa.mu16 = ma.mu16;
+				wa.mu32 = ma.mu32;
+				const wb = self._mixCursor.at(b);
+				const mb = mirrorOf(sb);
+				wb.m8 = mb.m8;
+				wb.m16 = mb.m16;
+				wb.mu16 = mb.mu16;
+				wb.mu32 = mb.mu32;
+				if (self.float) {
+					wa.mf32 = mirrorF32Of(sa);
+					wb.mf32 = mirrorF32Of(sb);
+				}
 				// Either endpoint's principal may have changed, so both need their
 				// `Redex` tag re-derived at the end of the tick.
 				self._touched.add(a);
@@ -471,7 +547,9 @@ export class EcsNet {
 					self.TAG[type],
 					self.Slot({ s0: NO_SLOT, s1: NO_SLOT, s2: NO_SLOT }),
 					self.Touch({ seq: 0 }),
+					self.Seen({ n: 0 }),
 					self.Quar({ count: 0 }),
+					self.Mix(self._mixDefaults),
 					self.Fresh
 				);
 				self._created.push(e);
@@ -500,7 +578,12 @@ export class EcsNet {
 		this._phase = -1;
 		this.byRef = new Map(); // reference agent id -> entity id
 		this.byEcs = new Map(); // entity id -> reference agent id
-		// Provenance bijections. Epoch entries are deliberately NEVER pruned: the
+		// the same map as `byEcs`, by the index of the entity and in a typed array.
+		// The fingerprint reads it for each agent and for each link target, and a
+		// typed-array read costs a fraction of a `Map` lookup. `-1` is "no agent".
+		this._getEntityIndex = getEntityIndex;
+		this.refOfIndex = new Int32Array(1 << 16).fill(-1);
+		// Provenance bijections. Epoch entries are deliberately never pruned: the
 		// orphan policy is about dangling handles, so verifying it needs the entity id
 		// of an epoch that is already dead.
 		this.recByRef = new Map(); // reference record serial -> entity id
@@ -517,18 +600,20 @@ export class EcsNet {
 		const rewrite = ecs.registerSystem({
 			name: "net-rewrite",
 			reads: [],
-			writes: [this.Slot, this.Touch, this.Fresh, ...allTags, ...provComps],
+			writes: [this.Slot, this.Touch, this.Mix, this.Fresh, ...allTags, ...provComps],
 			spawns: [
-				...allTags.map((t) => [t, this.Slot, this.Touch, this.Quar, this.Fresh]),
+				...allTags.map((t) => [t, this.Slot, this.Touch, this.Seen, this.Quar, this.Mix, this.Fresh]),
 				...provComps.map((c) => [c]),
 			],
 			// A despawn removes every component that the entity carries. Therefore this
-			// list must name each one, and that includes the components that the HOST
+			// list must name each one, and that includes the components that the host
 			// adds through the write seam.
 			despawns: [
 				this.Slot,
 				this.Touch,
+				this.Seen,
 				this.Quar,
+				this.Mix,
 				this.Tainted,
 				this.Fresh,
 				this.Age,
@@ -540,6 +625,9 @@ export class EcsNet {
 			relationWrites: [...this.P, ...provRels],
 			fn: (ctx) => {
 				this._ctx = ctx;
+				// The cursor for the mirrors of the second endpoint of each link. A cursor
+				// checks its access at `at()`, so one made here serves the whole plan.
+				this._mixCursor = ctx.cursor(this.Mix);
 				for (let i = 0; i < this._plan.length; i++) {
 					const step = this._plan[i];
 					const ea = this.byRef.get(step.a);
@@ -572,7 +660,7 @@ export class EcsNet {
 					// `Produced` set), so this record only ever sees live targets.
 					if (prov !== null && step.rec !== null && this.currentEpochEntity !== -1) {
 						const rec = ctx.commands.spawn(this.Record({ rule: step.rule }));
-						// Relations are immediate and legal on a not-yet-flushed entity — the
+						// Relations are immediate and legal on a not-yet-flushed entity, the
 						// create half of `commands.spawn` is not deferred, only the components.
 						ctx.addRelation(rec, this.InEpoch, this.currentEpochEntity);
 						for (let k = 0; k < made.length; k++) {
@@ -587,25 +675,46 @@ export class EcsNet {
 				}
 				this._plan = [];
 				this._ctx = null;
+				this._mixCursor = null;
 			},
 		});
 
 		// Re-derive `Redex` for every agent a rewrite disturbed. Runs after the
-		// rewrites in the same phase; its adds/removes are deferred, so the observer
+		// rewrites in the same phase. Its adds and removes are deferred, so the observer
 		// sees them at this system's flush.
 		//
-		// It also maintains the `Watch` SPARSE component by the same rule. A sparse
-		// add and a sparse remove are IMMEDIATE, and a dense add and remove here are
+		// It also maintains the `Watch` Sparse component by the same rule. A sparse
+		// add and a sparse remove are immediate, and a dense add and remove here are
 		// deferred. Therefore this one system covers both paths, and the driver
 		// compares the two results against one model.
 		const redexMaintain = ecs.registerSystem({
 			name: "net-redex-maintain",
-			reads: [this.Slot, ...allTags],
-			writes: [],
+			reads: [this.Slot, this.Touch, this.Seen, ...allTags],
+			writes: [this.Seen],
 			transitions: [{ whenHas: [this.Slot], add: [this.Redex], remove: [this.Redex] }],
 			relationReads: this.P,
 			sparseWrites: [this.Watch],
 			fn: (ctx) => {
+				const watch = this.watchWrite;
+				// The row grain. One chunk loop over every agent copies `seq` into `Seen`
+				// for each touched agent and records the row with one store into the
+				// tick column. The deferred `Redex` add or remove below then moves some
+				// of these rows in the flush of this phase, so the record must travel.
+				const touched = this._touched;
+				if (touched.size > 0) {
+					this.qSeen.forEachChunk((cols, count) => {
+						const seen = cols.mut(this.Seen).n;
+						const seq = cols.read(this.Touch).seq;
+						const t = cols.ticks(this.Seen);
+						const eids = cols.arch.entityIds;
+						const now = cols.tick;
+						for (let i = 0; i < count; i++) {
+							if (!touched.has(eids[i])) continue;
+							seen[i] = seq[i];
+							t[i] = now;
+						}
+					});
+				}
 				for (const e of this._touched) {
 					if (!ctx.isAlive(e)) continue;
 					const want = this._isActive(ctx, e);
@@ -613,21 +722,34 @@ export class EcsNet {
 					if (want && !has) ctx.commands.add(e, this.Redex);
 					else if (!want && has) ctx.commands.remove(e, this.Redex);
 					// The sparse half. It is immediate, so it lands now and not at the flush.
+					// `hits` mirrors `Touch.seq`: every agent whose `seq` changed this tick
+					// is in `_touched`, because the same `setLink` adds both endpoints, so
+					// a write here keeps the mirror exact for every member. The raw `seq`
+					// goes in, and the `u8` column keeps the low byte.
 					const hasW = ctx.hasSparse(e, this.Watch);
-					if (want && !hasW) ctx.addSparse(e, this.Watch, { hits: 0 });
-					else if (!want && hasW) ctx.removeSparse(e, this.Watch);
+					if (want && !hasW) {
+						ctx.addSparse(e, this.Watch, { hits: ctx.getField(e, this.Touch, "seq") });
+					} else if (!want && hasW) {
+						ctx.removeSparse(e, this.Watch);
+					} else if (want) {
+						watch.at(e);
+						watch.hits = ctx.getField(e, this.Touch, "seq");
+						// The sparse row grain reports this write, unless the agent is
+						// disabled, which the dispatch hides as a default query does.
+						if (!this.ecs.isDisabled(e)) this.watchStayed.add(e);
+					}
 				}
 				this._touched.clear();
 			},
 		});
 
-		// The promotion of `Fresh` to `Age(0)`. It runs one tick AFTER the ECS makes
+		// The promotion of `Fresh` to `Age(0)`. It runs one tick after the ECS makes
 		// the agent. A promotion in the same tick removes `Fresh` before the
 		// comparison at the tick boundary reads it. Then that component, and its edge
 		// in the archetype graph, has no test. Each promoted agent makes two
 		// archetype transitions: `Fresh` off, and `Age` on.
 		//
-		// `qFresh` is a DEFAULT query. Therefore it does not show a disabled row, and
+		// `qFresh` is a default query. Therefore it does not show a disabled row, and
 		// a disabled agent keeps `Fresh`. That is not a rule of this harness. It is
 		// the behaviour that the row partition must give. `ref.promoteFresh` copies
 		// it. The system runs in UPDATE, and the schedule below gives the reason: a
@@ -649,7 +771,7 @@ export class EcsNet {
 		// Epoch roll + retention prune, in PRE_UPDATE so the current epoch exists
 		// before the rewrites that log into it. The prune is one `commands.despawn`
 		// per retired epoch, and the `"delete"` cascade on `InEpoch` turns each of
-		// those into a transitive destroy of every record that epoch holds — applied
+		// those into a transitive destroy of every record that epoch holds, applied
 		// at the PRE_UPDATE flush, where the record observer sees the victims.
 		const provRoll =
 			prov === null
@@ -690,10 +812,10 @@ export class EcsNet {
 						},
 					});
 
-		// The per-tick age bump — one hot `i32` column write per live aged agent,
-		// through the `eachChunk` mutable path.
+		// The per-tick age bump, one hot `i32` column write per live aged agent,
+		// through the `forEachChunk` mutable path.
 		//
-		// `cols.mut(def)` sets the tick for the change AT THE MOMENT OF THE CALL, and
+		// `cols.mut(def)` sets the tick for the change at the moment of the call, and
 		// it does that even if no write follows. This loop asks for that accessor for
 		// each archetype that the query gives. Therefore each of those archetypes must
 		// appear in a `changed(Age)` query and in the `onSet` observer on `Age`.
@@ -705,7 +827,7 @@ export class EcsNet {
 			reads: [],
 			writes: [this.Age],
 			fn: () => {
-				this.qAge.eachChunk((cols, count) => {
+				this.qAge.forEachChunk((cols, count) => {
 					const c = cols.mut(this.Age);
 					const ticks = c.ticks;
 					for (let i = 0; i < count; i++) ticks[i] += 1;
@@ -719,7 +841,7 @@ export class EcsNet {
 
 		// The reader for the change detection, in POST_UPDATE and last. It captures
 		// what the two `changed()` queries report. The driver compares the capture
-		// against the model. It must run AFTER `ageTick`, because `ageTick` is what
+		// against the model. It must run after `ageTick`, because `ageTick` is what
 		// sets the tick for `Age`.
 		this.changedTouchSigs = new Set();
 		this.changedTouchAllSigs = new Set();
@@ -769,7 +891,7 @@ export class EcsNet {
 				// The expected value for the two lines above, and for the `onSet` observer
 				// on `Age`. `ageTick` ran a moment ago in this same phase, and it asked for
 				// the mutable accessor of each archetype that this query gives. `forEach`
-				// and `eachChunk` walk the same list. Therefore this set is exactly the set
+				// and `forEachChunk` walk the same list. Therefore this set is exactly the set
 				// of archetypes whose `Age` column the tick wrote.
 				this.ageArchIdsNow.clear();
 				this.ageEntsNow.clear();
@@ -784,14 +906,14 @@ export class EcsNet {
 		});
 
 		// ── the reader for the query verbs ──────────────────────────────────
-		// These verbs need a SYSTEM, and not a call of the harness between the ticks.
+		// These verbs need a system, and not a call of the harness between the ticks.
 		// `getOptionalColumnRead` runs two checks in a development build: the read needs
 		// the cover of a `reads:` declaration, and the query must have named the same
 		// component in `optional`. A relation term needs the cover of `relationReads`.
 		// Therefore this system is where the declaration and the read meet.
 		//
 		// The sets over each agent are O(live). A soak case holds hundreds of thousands
-		// of agents, so the driver asks for them at a VERIFICATION tick alone, through
+		// of agents, so the driver asks for them at a verification tick alone, through
 		// `_deep`. The three cheap reads below it run at each tick.
 		this.withP1 = new Set();
 		this.withoutP1 = new Set();
@@ -815,7 +937,7 @@ export class EcsNet {
 			relationReads: [this.P[1]],
 			resourceReads: [this.PhaseRes],
 			fn: (ctx) => {
-				// `hasResource` and `getResource` from INSIDE a system. The facade
+				// `hasResource` and `getResource` from inside a system. The facade
 				// `ecs.resources` is the host route, and `surface.mjs` reads that one. The
 				// driver picks the phase number, so the expected value comes from the driver.
 				this.resourceHas = ctx.hasResource(this.PhaseRes);
@@ -828,13 +950,13 @@ export class EcsNet {
 				// The first member of an active pair, or `undefined` when none is left.
 				this.redexFirst = this.qRedexAll.firstEntity();
 
-				// `forEachUntil` must stop at the archetype that the predicate accepts, and
+				// `some` must stop at the archetype that the predicate accepts, and
 				// it must report that it stopped. The count of the archetypes that `forEach`
 				// gives is the expected value, so this needs no model of the graph.
 				this.untilArchTotal = 0;
 				this.qAgentsAll.forEach(() => this.untilArchTotal++);
 				this.untilVisited = 0;
-				this.untilStopped = this.qAgentsAll.forEachUntil(() => {
+				this.untilStopped = this.qAgentsAll.some(() => {
 					this.untilVisited++;
 					// Stop at the second archetype, when there is one.
 					return this.untilVisited >= 2;
@@ -870,20 +992,20 @@ export class EcsNet {
 
 		// ── the marks for the change detection ──────────────────────────────
 		// `ctx.markChanged` records a row for the per-entity `onSet` observer, and it
-		// makes NO change to the tick for the change on the archetype. The engine gives
-		// it for the hot loop that writes a column through `getColumn`, where the engine
+		// makes no change to the tick for the change on the archetype. The engine gives
+		// it for the hot loop that writes a column through `getColumnMut`, where the engine
 		// sees no single write.
 		//
 		// Therefore a marked agent must appear in the set with the granularity of an
-		// entity, and it must NOT put its archetype into `changed(Touch)`. The driver
+		// entity, and it must not put its archetype into `changed(Touch)`. The driver
 		// picks the agents, so the model holds them.
 		//
 		// The idle tail is where the difference is sharp. No write happens there. So each
 		// archetype layer must stay quiet, and the per-entity layer must report exactly
 		// these agents.
-		// The driver gives REFERENCE ids, and this system maps them. The map must happen
+		// The driver gives reference ids, and this system maps them. The map must happen
 		// here, and not in the driver before the tick: the driver picks the agents after
-		// the REFERENCE applied the rewrites, and the ECS binds the agents that the same
+		// the reference applied the rewrites, and the ECS binds the agents that the same
 		// rewrites make during this tick. A map before the tick therefore gives
 		// `undefined` for each new agent.
 		this._marks = [];
@@ -907,11 +1029,11 @@ export class EcsNet {
 		});
 
 		// ── the explicit unlink of a relation, from a system ────────────────
-		// A port of the net is exclusive, and a rewrite REPLACES its target with an
+		// A port of the net is exclusive, and a rewrite replaces its target with an
 		// `add`. Each other unlink in the net comes from `onDeleteTarget`. Therefore
 		// the explicit unlink has no cover in the net itself.
 		//
-		// `surface.mjs` covers `ecs.relations.remove`, which is the HOST route. This
+		// `surface.mjs` covers `ecs.relations.remove`, which is the host route. This
 		// system covers `ctx.removeRelation`, which is the route of a system, and which
 		// the access check reads against `relationWrites`. The two are different paths.
 		//
@@ -920,7 +1042,7 @@ export class EcsNet {
 		// holds the answer before and after the call. The net's own ports must keep the
 		// symmetry of their links, so an unlink there would break layer 1.
 		//
-		// `ctx.hasRelation` asks whether the source holds ANY target. Therefore its
+		// `ctx.hasRelation` asks whether the source holds any target. Therefore its
 		// value after the removal is "the set still holds something", and the model
 		// gives that number.
 		this._unlink = null;
@@ -962,12 +1084,12 @@ export class EcsNet {
 			reads: [],
 			writes: [],
 			fn: (ctx) => {
-				const r = ctx.read(this.RewriteEvent);
+				const r = ctx.readEvents(this.RewriteEvent);
 				this.drainedEvents.length = 0;
 				for (let i = 0; i < r.length; i++) {
 					this.drainedEvents.push([r.rule[i], r.a[i], r.b[i]]);
 				}
-				this.drainedSignals = ctx.read(this.EpochSignal).length;
+				this.drainedSignals = ctx.readEvents(this.EpochSignal).length;
 			},
 		});
 
@@ -996,7 +1118,7 @@ export class EcsNet {
 		this._pendingRoll = null;
 		// PRE_UPDATE holds the apply system of the write seam at its head, because
 		// `installHostCommandSeam` ran first. The two systems below therefore read the
-		// state of the quarantine FROM BEFORE this tick's toggles, because a deferred
+		// state of the quarantine from before this tick's toggles, because a deferred
 		// disable lands at the flush at the end of the phase. `ref.promoteFresh` runs
 		// before `ref.applyQuarantine` for that reason.
 		ecs.addSystems(SCHEDULE.PRE_UPDATE, phaseWrite);
@@ -1005,11 +1127,11 @@ export class EcsNet {
 		// finished wiring. Insertion order would tiebreak the same way, but the
 		// constraint is the actual requirement, so it is stated.
 		//
-		// `freshPromote` is in UPDATE, and it is BEFORE the rewrites. The PHASE is the
-		// reason. A `disable` command from the write seam is DEFERRED, so it lands at
-		// the flush at the END of PRE_UPDATE. A system in PRE_UPDATE therefore reads
-		// the quarantine from BEFORE the toggles of this tick. Then it promotes a row
-		// that this tick disabled. This system must SKIP such a row, because `qFresh`
+		// `freshPromote` is in UPDATE, and it is before the rewrites. The phase is the
+		// reason. A `disable` command from the write seam is deferred, so it lands at
+		// the flush at the end of PRE_UPDATE. A system in PRE_UPDATE therefore reads
+		// the quarantine from before the toggles of this tick. Then it promotes a row
+		// that this tick disabled. This system must skip such a row, because `qFresh`
 		// is a default query. UPDATE is the first phase that shows the toggle.
 		// Therefore this phase makes that behaviour possible to check.
 		ecs.addSystems(
@@ -1022,35 +1144,90 @@ export class EcsNet {
 			SCHEDULE.POST_UPDATE,
 			ageTick,
 			eventRead,
-			// The gate. `runIfResourceEq` compares the value of the resource with 0.
+			// the gate. `runIfResourceEq` compares the value of the resource with 0.
 			{ system: phaseGated, runIf: runIfResourceEq(this.PhaseRes, 0) },
-			// The marks go in before the reader. The engine dispatches the `onSet`
+			// the marks go in before the reader. The engine dispatches the `onSet`
 			// observers after each phase of the tick, so the phase is not important for
 			// the marks. The order is here because it is the requirement, and not because
 			// the insertion order gives it.
 			{ system: markWrite, ordering: { after: [ageTick] } },
-			// The unlink runs before the reader of the provenance layer sees the state at
+			// the unlink runs before the reader of the provenance layer sees the state at
 			// the end of the tick. The driver applies the same change to the model.
 			...(unlinkWrite === null ? [] : [unlinkWrite]),
 			// Last, because it must see the tick that `ageTick` set.
 			{ system: changeRead, ordering: { after: [ageTick, markWrite] } },
-			// After `ageTick` as well, so the `Age` values that the optional column gives
-			// are the values of THIS tick, which is what `compare` reads.
+			// after `ageTick` as well, so the `Age` values that the optional column gives
+			// are the values of this tick, which is what `compare` reads.
 			{ system: verifyRead, ordering: { after: [ageTick] } }
 		);
+
+		// ── the checkpoints inside a tick ───────────────────────────────────
+		// the engine fires `phaseBoundary(phase)` at the point where a phase has run
+		// and its flush has settled. That is the documented seam for a read of the
+		// state between the phases of one frame. This sink takes the fingerprint of
+		// the agents there (`fingerprint.mjs`), and the driver compares each one with
+		// the reference at the matching point of its own sequence. Therefore a
+		// divergence gets the phase that made it, and not only the tick.
+		//
+		// The seam is a development-build seam. In a production build `setTrace`
+		// keeps an empty body, so the sink never fires, and `phaseSinkFired` stays
+		// false. The driver reads that flag, and it does not expect a checkpoint
+		// from a build that cannot give one.
+		//
+		// The `Redex` and `Watch` flags are absent from the PRE_UPDATE checkpoint. The
+		// ECS derives both one tick after the load, through the maintenance system, and
+		// the reference holds them from the start. Each later checkpoint holds them.
+		this.phaseFp = new Map();
+		this.phaseFpOn = false;
+		this.phaseSinkFired = false;
+		this.phaseSinkCalls = 0;
+		const noop = () => {};
+		ecs.setTrace({
+			tickBegin: noop,
+			tickEnd: noop,
+			systemBegin: noop,
+			systemEnd: noop,
+			commandQueued: noop,
+			flushBegin: noop,
+			flushEnd: noop,
+			observerFired: noop,
+			eventEmitted: noop,
+			eventRead: noop,
+			phaseBoundary: (phase) => {
+				this.phaseSinkFired = true;
+				if (!this.phaseFpOn) return;
+				this.phaseSinkCalls++;
+				this.phaseFp.set(phase, fingerprintEcs(this, { redex: phase !== SCHEDULE.PRE_UPDATE }));
+			},
+		});
 		ecs.startup();
+	}
+
+	/** The fingerprint of the agents now. Refer to `fingerprint.mjs`. */
+	fingerprint(opts) {
+		return fingerprintEcs(this, opts);
 	}
 
 	// ── binding ─────────────────────────────────────────────────────────────
 	_bind(refId, e) {
 		this.byRef.set(refId, e);
 		this.byEcs.set(e, refId);
+		const i = this._getEntityIndex(e);
+		if (i >= this.refOfIndex.length) {
+			let n = this.refOfIndex.length;
+			while (n <= i) n *= 2;
+			const grown = new Int32Array(n).fill(-1);
+			grown.set(this.refOfIndex);
+			this.refOfIndex = grown;
+		}
+		this.refOfIndex[i] = refId;
 	}
 	_unbind(refId) {
 		const e = this.byRef.get(refId);
 		if (e !== undefined) {
 			this.byRef.delete(refId);
 			this.byEcs.delete(e);
+			this.refOfIndex[this._getEntityIndex(e)] = -1;
 		}
 	}
 
@@ -1077,13 +1254,17 @@ export class EcsNet {
 	// ── loading ─────────────────────────────────────────────────────────────
 	/**
 	 * Build the initial net host-side (immediate ops), then mark every agent as
-	 * touched so the FIRST tick's maintenance system derives the initial `Redex`
-	 * tags through `ctx.commands` — which means the observer-maintained queue is
+	 * touched so the first tick's maintenance system derives the initial `Redex`
+	 * tags through `ctx.commands`, which means the observer-maintained queue is
 	 * populated by the observer, never seeded behind its back.
 	 *
-	 * The spawn goes through `ecs.spawnMany` with a `Template`, so the direct create
-	 * into a prepared archetype has cover here. The reference makes the same agents
-	 * one at a time; only the ECS has a batched path to test.
+	 * The spawn goes through a `Template`, by two paths. `ecs.spawn` appends one row
+	 * and copies the bits that the template resolved one time (`widthBits`). Then
+	 * `ecs.spawnMany` appends the rest of the group in one fill for each column,
+	 * which converts through the true view. The constants of `Mix` come from the
+	 * template alone, so each comparison reads what each path stored, and a fault in
+	 * either one is visible on the agents that it made. The reference makes the same
+	 * agents one at a time. Only the ECS has these two paths to test.
 	 */
 	load(spec) {
 		const ecs = this.ecs;
@@ -1092,8 +1273,19 @@ export class EcsNet {
 		const byType = [[], [], [], []];
 		for (let i = 0; i < spec.types.length; i++) byType[spec.types[i]].push(i);
 		for (let t = 0; t < 4; t++) {
-			if (byType[t].length === 0) continue;
-			const made = ecs.spawnMany(this.agentTemplates[t], byType[t].length);
+			const n = byType[t].length;
+			if (n === 0) continue;
+			// The first half of the group one at a time, and the rest in one call. A
+			// group of one takes the single path.
+			const single = Math.max(1, n >> 1);
+			const made = [];
+			for (let k = 0; k < single; k++) made.push(ecs.spawn(this.agentTemplates[t]));
+			if (n > single) {
+				// A loop, and not a spread: a large net gives this call more arguments
+				// than the engine of JavaScript accepts in one call.
+				const rest = ecs.spawnMany(this.agentTemplates[t], n - single);
+				for (let k = 0; k < rest.length; k++) made.push(rest[k]);
+			}
 			for (let k = 0; k < made.length; k++) {
 				const e = made[k];
 				ecs.addComponent(e, this.Age, this.float ? { ticks: 0, fticks: 0 } : { ticks: 0 });
@@ -1113,28 +1305,46 @@ export class EcsNet {
 			// the same `setLink`. These host writes mark the dirty list for the row.
 			// Therefore the first tick reports every agent of the initial net, and
 			// `driver.changeCheck` expects that.
-			ecs.updateField(ea, this.Touch, "seq", inc);
-			ecs.updateField(eb, this.Touch, "seq", inc);
+			const sa = ecs.updateField(ea, this.Touch, "seq", inc);
+			const sb = ecs.updateField(eb, this.Touch, "seq", inc);
+			// The mirrors, through the host cursor. The systems use `ctx.ref` and
+			// `ctx.cursor`, so this is the third accessor path to the same columns.
+			this._hostMirror(ea, sa);
+			this._hostMirror(eb, sb);
 		}
 		return this;
 	}
 
+	/** Write the mirrors of `seq` into `Mix` of `e`, from the host. */
+	_hostMirror(e, seq) {
+		const w = this.ecs.cursor(this.Mix).at(e);
+		const m = mirrorOf(seq);
+		w.m8 = m.m8;
+		w.m16 = m.m16;
+		w.mu16 = m.mu16;
+		w.mu32 = m.mu32;
+		if (this.float) w.mf32 = mirrorF32Of(seq);
+	}
+
 	// ── driving ─────────────────────────────────────────────────────────────
 	/**
-	 * Run one tick over `plan` — a list of `{ a, b, made, rule, rec }` in reference
+	 * Run one tick over `plan`, a list of `{ a, b, made, rule, rec }` in reference
 	 * ids. `roll` is the epoch transition the reference already applied (or `null`),
 	 * replayed here by the PRE_UPDATE system so both sides roll at the same point.
 	 * `phase` is the number that the gated system's run condition tests.
 	 *
-	 * `quar` is the quarantine plan. It goes into the HOST WRITE SEAM here, between
+	 * `quar` is the quarantine plan. It goes into the host write seam here, between
 	 * ticks, which is the seam's intended use: a host buffers commands off-schedule,
 	 * and the blessed apply system drains them at the head of PRE_UPDATE.
 	 */
 	runTick(plan, roll = null, quar = null, phase = -1, deep = false, marks = [], unlink = null) {
-		// The three sets below hold ONE tick. Clear them here, so a set that the driver
+		// The three sets below hold one tick. Clear them here, so a set that the driver
 		// reads after the tick holds that tick alone. The counters stay cumulative,
 		// because the floors for non-vacuity read them.
 		this.setEntities.clear();
+		this.seenEntities.clear();
+		this.watchSetEntities.clear();
+		this.watchStayed.clear();
 		this.setArchSigs.clear();
 		this.setAgeArchIds.clear();
 		this._plan = plan;
@@ -1162,8 +1372,8 @@ export class EcsNet {
 	 * host command: `disable`, `enable`, `add_component` and `remove_component`, plus
 	 * `set_field`. `spawn` and `despawn` are in `surface.mjs`.
 	 *
-	 * `plan.churn` names agents that go disable, enable, disable in ONE drain. An
-	 * observer fires one time for each NET transition, so the ECS must collapse that
+	 * `plan.churn` names agents that go disable, enable, disable in one drain. An
+	 * observer fires one time for each net transition, so the ECS must collapse that
 	 * sequence to a single `onDisable` call.
 	 */
 	_enqueueQuarantine(plan) {
@@ -1195,8 +1405,8 @@ export class EcsNet {
 			n += 5;
 		}
 		this.enqueuedCommands += n;
-		if (q.pending !== n) {
-			throw new Error(`host queue holds ${q.pending} commands after enqueueing ${n}`);
+		if (q.pendingCount !== n) {
+			throw new Error(`host queue holds ${q.pendingCount} commands after enqueueing ${n}`);
 		}
 	}
 
@@ -1246,7 +1456,7 @@ export class EcsNet {
 		if (la !== eb || sa !== 0) {
 			throw new Error(
 				`plan step ${i}: ECS pair (${ea},${eb}) [ref ${step.a},${step.b}] is not principal-linked ` +
-					`— ${ea}.P0 -> ${la}:${sa}`
+					`. ${ea}.P0 -> ${la}:${sa}`
 			);
 		}
 		if (!reduces(ta, tb)) {
@@ -1262,7 +1472,7 @@ export class EcsNet {
 		return [t === undefined ? -1 : t, this.ecs.getField(e, this.Slot, SLOT_F[p])];
 	}
 
-	/** Every live agent entity, ascending, the DISABLED ONES INCLUDED. The net holds
+	/** Every live agent entity, ascending, the disabled ones included. The net holds
 	 * its disabled agents, so every structural check reads this. */
 	liveAgents() {
 		const out = [];
@@ -1271,7 +1481,7 @@ export class EcsNet {
 		return out;
 	}
 
-	/** The agents that a DEFAULT query shows. The difference between this and
+	/** The agents that a default query shows. The difference between this and
 	 * `liveAgents()` must be exactly the quarantine. */
 	enabledAgents() {
 		const out = [];
@@ -1284,7 +1494,7 @@ export class EcsNet {
 	 * The three readings of the `Watch` sparse component.
 	 *
 	 * `redexMaintain` adds and removes `Watch` by the same rule that it uses for the
-	 * `Redex` tag. A sparse add is IMMEDIATE and a dense add is deferred, so the two
+	 * `Redex` tag. A sparse add is immediate and a dense add is deferred, so the two
 	 * halves take different paths to one result. The reference gives one expected set
 	 * for both.
 	 *
@@ -1301,7 +1511,7 @@ export class EcsNet {
 		return { all, enabled, none };
 	}
 
-	/** The entities that carry the `Tainted` tag, which the HOST adds. It must be
+	/** The entities that carry the `Tainted` tag, which the host adds. It must be
 	 * exactly the quarantine. */
 	taintedEntities() {
 		const out = new Set();
@@ -1309,7 +1519,7 @@ export class EcsNet {
 		return out;
 	}
 
-	/** The redex set recomputed from scratch — the independent check on the
+	/** The redex set recomputed from scratch, the independent check on the
 	 * observer-maintained one. */
 	rescanRedex() {
 		const set = new Set();
@@ -1333,7 +1543,7 @@ export class EcsNet {
 		return c;
 	}
 
-	/** Distinct archetypes the agent population currently occupies — the
+	/** Distinct archetypes the agent population currently occupies, the
 	 * non-vacuity signal for "this really is exercising migration". The string is
 	 * the same one `_archSignature` and `ref.refSignature` make. */
 	archetypeSignatures() {
@@ -1407,7 +1617,7 @@ export class EcsNet {
 	 * Covers, in order: the cascade's exact victim set, multi target sets shrinking
 	 * because a *target* died, `targetsOf` ordering, the reverse index on both
 	 * relations, the observer-maintained record set (the proof that cascade victims
-	 * fire `onRemove`), the traversal helpers over a DEEP chain, and the orphan
+	 * fire `onRemove`), the traversal helpers over a deep chain, and the orphan
 	 * policy's dangling handles.
 	 *
 	 * `fail` is injected so this reports through the driver's `Divergence` channel.
@@ -1426,7 +1636,7 @@ export class EcsNet {
 			const got = ecs.getField(e, this.Epoch, "index");
 			if (got !== idx) fail(where, `epoch entity ${e} carries index ${got}, want ${idx}`);
 		}
-		// Every pruned epoch must be dead — the cascade's other half.
+		// Every pruned epoch must be dead, the cascade's other half.
 		for (const [idx, e] of this.epochByIndex) {
 			const alive = prov.epochs.get(idx)?.alive === true;
 			if (ecs.isAlive(e) !== alive) {
@@ -1447,13 +1657,13 @@ export class EcsNet {
 		}
 
 		// ── the observer-maintained record set ──────────────────────────────
-		// Records are only ever destroyed transitively, so this equality IS the
+		// Records are only ever destroyed transitively, so this equality is the
 		// assertion that a `"delete"` cascade fires `onRemove` for every victim.
 		if (this.observedRecords.size !== gotRecEnts.length) {
 			fail(
 				where,
 				`observer-maintained record set has ${this.observedRecords.size} entries, ` +
-					`query rescan finds ${gotRecEnts.length} — a cascade victim's onRemove did not fire`
+					`query rescan finds ${gotRecEnts.length}, a cascade victim's onRemove did not fire`
 			);
 		}
 		for (const e of gotRecEnts) {
@@ -1475,7 +1685,7 @@ export class EcsNet {
 				fail(where, `record ${serial} InEpoch -> ${parent}, want ${wantParent} (epoch ${rec.epoch})`);
 			}
 
-			// The multi target set. It shrinks only because produced agents DIED, so a
+			// The multi target set. It shrinks only because produced agents died, so a
 			// mismatch here is a reverse-index-on-target-death bug, not a source edit.
 			const gotProduced = ecs.relations.targetsOf(e, this.Produced);
 			const wantProduced = [...rec.produced]
@@ -1544,17 +1754,17 @@ export class EcsNet {
 			if (ecs.relations.rootOf(e, this.InEpoch) !== epochEnt) {
 				fail(where, `rootOf(record ${serial}) != its epoch ${epochEnt}`);
 			}
-			// The walk over the one-level `InEpoch` tree. It checks the COUNT, and it
+			// The walk over the one-level `InEpoch` tree. It checks the count, and it
 			// cannot check the sequence: the query selects `Record` entities, and a
 			// parent in the `InEpoch` hierarchy is an `Epoch` entity. Therefore no
-			// parent is in the result set. `PrevRec` below is the DEEP tree, and it does
+			// parent is in the result set. `PrevRec` below is the deep tree, and it does
 			// check the sequence.
 			const order = [];
 			ecs.query(this.Record).hierarchy(this.InEpoch).forEachEntity((x) => order.push(x));
 			if (order.length !== wantRecs.length) {
 				fail(where, `hierarchy(Record, InEpoch) yielded ${order.length}, want ${wantRecs.length}`);
 			}
-			// Every entity that the walk yields must be a record of THIS epoch — a walk
+			// Every entity that the walk yields must be a record of this epoch, a walk
 			// that yielded the correct number of the wrong entities passed before.
 			for (const x of order) {
 				if (ecs.relations.rootOf(x, this.InEpoch) === undefined) {
@@ -1563,7 +1773,7 @@ export class EcsNet {
 			}
 		}
 
-		// ── the DEEP chain: ancestorsOf past depth 1, and hierarchy order ────
+		// ── the deep chain: ancestorsOf past depth 1, and hierarchy order ────
 		this._assertRecordChain(where, prov, fail);
 
 		// ── the orphan policy: dangling handles survive, and are the only leak ─
@@ -1578,7 +1788,7 @@ export class EcsNet {
 				fail(
 					where,
 					`epoch ${idx} EpochAncestors = [${gotAnc}], want [${wantAnc}] ` +
-						`— orphan must keep dead targets as dangling handles`
+						`. Orphan must keep dead targets as dangling handles`
 				);
 			}
 		}
@@ -1594,12 +1804,12 @@ export class EcsNet {
 	 * Therefore both properties have an exact expected value here.
 	 *
 	 * Four things get a check:
-	 *   - `ancestorsOf` — the complete chain from a record back to the first record of
-	 *     its epoch, in order, with the record itself first;
-	 *   - `rootOf` — the first record of the epoch;
-	 *   - `hierarchy` with no limit — every live record, and each parent BEFORE each
-	 *     of its children;
-	 *   - `hierarchy` with `maxDepth = k` — exactly the records at depth 0 to k.
+	 *   - `ancestorsOf`, the complete chain from a record back to the first record of
+	 *     its epoch, in order, with the record itself first
+	 *   - `rootOf`, the first record of the epoch
+	 *   - `hierarchy` with no limit, every live record, and each parent before each
+	 *     of its children
+	 *   - `hierarchy` with `maxDepth = k`, exactly the records at depth 0 to k.
 	 */
 	_assertRecordChain(where, prov, fail) {
 		const ecs = this.ecs;
@@ -1655,12 +1865,12 @@ export class EcsNet {
 			seen.add(x);
 			const parent = ecs.relations.targetOf(x, this.PrevRec);
 			// The order that the documentation promises: a parent comes before its
-			// children. `InEpoch` cannot check this; this chain can.
+			// children. `InEpoch` cannot check this. This chain can.
 			if (parent !== undefined && !seen.has(parent)) {
 				fail(
 					where,
 					`hierarchy(Record, PrevRec) yielded ${x} before its parent ${parent} ` +
-						`— a walk must give a parent before its children`
+						`. A walk must give a parent before its children`
 				);
 			}
 		}
@@ -1764,10 +1974,10 @@ export class EcsNet {
 			}
 		}
 
-		// ── the reverse index, read as a WHOLE ──────────────────────────────
+		// ── the reverse index, read as a whole ──────────────────────────────
 		// `pairsOf` gives every (source, target) pair of one relation. The loop above
 		// asks one question for each live agent, so an entry under a key that names a
-		// DEAD entity is out of its reach. This comparison has no such blind spot,
+		// dead entity is out of its reach. This comparison has no such blind spot,
 		// because it reads the complete relation and compares it with the complete set
 		// of the forward links.
 		for (let p = 0; p < MAX_PORTS; p++) {
@@ -1799,7 +2009,7 @@ export class EcsNet {
 				if (left.length !== 0) {
 					throw new Error(
 						`${where}: dead entity ${dead} still keys P${p} in the reverse index, with sources ` +
-							`[${left}] — "clear" must delete the key when its target dies`
+							`[${left}], "clear" must delete the key when its target dies`
 					);
 				}
 			}

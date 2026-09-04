@@ -1,44 +1,44 @@
 /***
- * System — Function-based system types.
+ * System. Function-based system types.
  *
  * Systems are plain functions, not classes. A SystemConfig defines the
  * system's update function, optional lifecycle hooks, and its
  * access-surface declarations.
  *
  * ECS.registerSystem() assigns a unique SystemID and returns a frozen
- * SystemDescriptor — the identity handle used for scheduling and ordering.
+ * SystemDescriptor, the identity handle used for scheduling and ordering.
  *
  * Lifecycle:
- *   onAdded(ctx)    — called once during ecs.startup()
- *   fn(ctx, dt)      — called every frame by the schedule
- *   onRemoved()     — called when the system is unregistered
- *   dispose()        — called during ecs.dispose()
+ *   onAdded(ctx)     called once during ecs.startup()
+ *   fn(ctx, dt)       called every frame by the schedule
+ *   onRemoved()      called when the system is unregistered
+ *   dispose()         called during ecs.dispose()
  *
  * Access declarations: every SystemConfig declares
- * `reads` / `writes` (mandatory — empty arrays are explicit "this system
- * touches nothing", the deliberate thinking prompt) plus the OPTIONAL
+ * `reads` / `writes` (mandatory, empty arrays are explicit "this system
+ * touches nothing", the deliberate thinking prompt) plus the optional
  * `spawns` / `despawns` / `transitions` / `resourceReads` /
- * `resourceWrites` and the sparse/relation terms (a separate
+ * `resourceWrites` and the sparse and relation terms (a separate
  * id space from the dense archetype mask). An absent optional field reads
- * as empty — the same precedent as the sparse terms — so the
+ * as empty, the same precedent as the sparse terms, so the
  * majority of systems needn't spell out five empty arrays. Safety is
  * unchanged: Schedule wraps each `fn` / `onAdded` call in
- * `accessCheck.enter / leave`; SystemContext + Archetype consult
- * `accessCheck` on every read/write, structural change, sparse/relation
+ * `accessCheck.enter / leave`. SystemContext + Archetype consult
+ * `accessCheck` on every read and write, structural change, sparse and relation
  * mutation, and resource read/write. Undeclared access throws an `ECSError`
  * in `DEV`. The same declarations pre-warm the
- * archetype graph (sparse/relations cause no archetype transition, so
+ * archetype graph (sparse and relations cause no archetype transition, so
  * they do not feed prewarm).
  *
- * `spawns` entries and `despawns` may reference a `Template` — registration
+ * `spawns` entries and `despawns` may reference a `Template`, registration
  * expands it to its component list, so an archetype declared once (template
  * + spawner + destroyer) stays declared once.
  *
  * Bare-fn (`registerSystem(fn)`) and 2-arg (`registerSystem(fn, qb)`)
  * overloads internally fill empty declarations. Such systems are subject
- * to the same runtime checks — any read/write/etc. they perform will
+ * to the same runtime checks, any read/write/etc. they perform will
  * throw, so they remain useful only for trivial no-access systems (e.g.
- * "just bump a counter"). Production work uses the config form.
+ * "only bump a counter"). Production work uses the config form.
  *
  ***/
 
@@ -66,7 +66,7 @@ export type SystemFn = (ctx: SystemContext, deltaTime: number) => void;
 
 /** A pair describing a mid-tick archetype transition.
  * If an entity has every component in `whenHas`, the system may `add`
- * and/or `remove` the listed components, transitioning the entity to a
+ * or `remove` the listed components, transitioning the entity to a
  * new archetype. Used to pre-warm the archetype graph. */
 export interface SystemTransition {
 	readonly whenHas: readonly ComponentDef[];
@@ -74,28 +74,28 @@ export interface SystemTransition {
 	readonly remove?: readonly ComponentDef[];
 }
 
-/** The access declaration as AUTHORED on a `SystemConfig`. `reads` /
+/** The access declaration as authored on a `SystemConfig`. `reads` /
  * `writes` are mandatory (empty arrays are explicit, not missing
  * annotations); the rarer structural and resource fields are optional with
- * absent = empty, mirroring the sparse/relation precedent. `spawns`
+ * absent = empty, mirroring the sparse and relation precedent. `spawns`
  * entries and `despawns` accept a `Template` wherever a component list is
- * expected — registration expands it via `_normalizeAccess`. */
+ * expected, registration expands it via `_normalizeAccess`. */
 export interface SystemAccessConfig {
-	/** Components the system READS but does not write. */
+	/** Components the system reads but does not write. */
 	readonly reads: readonly ComponentDef[];
-	/** Components the system WRITES. A write is implicitly also a read. */
+	/** Components the system writes. A write is implicitly also a read. */
 	readonly writes: readonly ComponentDef[];
 	/** Archetype masks the system spawns entities into. Each entry is the
-	 * union of components a spawned entity carries at flush time — an
+	 * union of components a spawned entity carries at flush time, an
 	 * explicit def list, or a `Template` (expanded at registration). */
 	readonly spawns?: readonly (readonly ComponentDef[] | Template)[];
 	/** Components removed via `removeComponent` / `despawn`.
-	 * `despawn` counts as removing every component on the entity —
+	 * `despawn` counts as removing every component on the entity,
 	 * declare the superset. A `Template` entry expands to its component
 	 * list, so a "destroys what the spawner spawns" system references the
 	 * same declaration. */
 	readonly despawns?: readonly (ComponentDef | Template)[];
-	/** Mid-tick archetype transitions; see SystemTransition. */
+	/** Mid-tick archetype transitions. See SystemTransition. */
 	readonly transitions?: readonly SystemTransition[];
 	/** Resources the system reads. */
 	readonly resourceReads?: readonly ResourceKey<any>[];
@@ -103,31 +103,31 @@ export interface SystemAccessConfig {
 	readonly resourceWrites?: readonly ResourceKey<any>[];
 
 	// --- Sparse-component / relation access ---
-	// The dense fields above key the 128-bit archetype-mask id space
+	// the dense fields above key the 128-bit archetype-mask id space
 	// (`ComponentID`). Sparse components (`SparseComponentID`) and relations
-	// (`RelationID`) are each a SEPARATE id space, so they get their own terms
+	// (`RelationID`) are each a separate id space, so they get their own terms
 	// rather than mis-keying through the dense sets. Safety for every optional
-	// term is unchanged — a system that DOES mutate/read undeclared state still
+	// term is unchanged, a system that does mutate or read undeclared state still
 	// throws in `DEV` (the accessCheck set is empty, so the check fails).
-	// addSparse / removeSparse / setSparseField and addRelation /
-	// removeRelation are WRITES; a write implies a read (mirroring the dense
+	// addSparse, removeSparse and setSparseField and addRelation /
+	// removeRelation are WRITES. A write implies a read (mirroring the dense
 	// rule), so a `*_writes` term also authorises reads of that handle.
 
-	/** Sparse components the system READS via `getSparseField`
+	/** Sparse components the system reads via `getSparseField`
 	 * (membership probes `hasSparse` are unchecked, mirroring `hasComponent`). */
 	readonly sparseReads?: readonly SparseComponentDef[];
-	/** Sparse components the system MUTATES via `addSparse` / `removeSparse` /
+	/** Sparse components the system mutates via `addSparse` / `removeSparse` /
 	 * `setSparseField`. A write implies a read. */
 	readonly sparseWrites?: readonly SparseComponentDef[];
-	/** Relations the system READS via `targetOf` / `targetsOf` / `sourcesOf`
+	/** Relations the system reads via `targetOf` / `targetsOf` / `sourcesOf`
 	 * (`hasRelation` is unchecked, mirroring `hasComponent`). */
 	readonly relationReads?: readonly RelationDef[];
-	/** Relations the system MUTATES via `addRelation` / `removeRelation`.
+	/** Relations the system mutates via `addRelation` / `removeRelation`.
 	 * A write implies a read. */
 	readonly relationWrites?: readonly RelationDef[];
 }
 
-/** The NORMALIZED access declaration a registered system carries — what
+/** The normalized access declaration a registered system carries, what
  * `SystemDescriptor` exposes and `accessCheck` / prewarm consume. Produced
  * from the authored `SystemAccessConfig` by `_normalizeAccess`: absent
  * optional fields are the shared frozen empties, and every `Template` in
@@ -141,13 +141,13 @@ export interface SystemAccessDeclaration extends SystemAccessConfig {
 }
 
 export interface SystemConfig extends SystemAccessConfig {
-	// METHOD syntax (not `fn: SystemFn`), deliberately: methods relate
+	// Method syntax (not `fn: SystemFn`), deliberately: methods relate
 	// bivariantly under strictFunctionTypes, which is what lets a config whose
-	// `fn` was typed against a NARROWED `SystemContext<A>` (§typestate) — or a
-	// dynamically-built config typed against the permissive default — flow
+	// `fn` was typed against a narrowed `SystemContext<A>`, or a
+	// dynamically-built config typed against the permissive default, flow
 	// through every `SystemConfig`-shaped seam without casts.
 	// Optional when `backendHandle` is set (a backend-executed system needs no
-	// TS body — registerSystem validates one of the two is present in DEV).
+	// TS body, registerSystem validates one of the two is present in DEV).
 	fn?(ctx: SystemContext, deltaTime: number): void;
 	name?: string;
 	onAdded?(ctx: SystemContext): void;
@@ -156,76 +156,76 @@ export interface SystemConfig extends SystemAccessConfig {
 
 	/** Components the system queries (via a captured `ecs.query(...)`), one
 	 * group per query.
-	 * OPTIONAL — when provided, `registerSystem` validates `queries ⊆ reads ∪
+	 * Optional, when provided, `registerSystem` validates `queries ⊆ reads ∪
 	 * writes` in `DEV` (`_assertQueriesDeclared`): a query term
 	 * reads each listed component, so this fails fast at registration instead of
 	 * at the first iteration's `accessCheck`. */
 	queries?: readonly (readonly ComponentDef[])[];
 
-	/** Grant this system FULL world access — it may read/write/add/remove/destroy
-	 * ANY component, sparse, relation, or resource without declaring them. The
+	/** Grant this system full world access. It may read, write, add, remove and destroy
+	 * any component, sparse, relation, or resource without declaring them. The
 	 * `DEV` access check is bypassed for its whole span (a no-op in
 	 * production, where the check is already compiled out). For trusted engine /
-	 * host machinery that mutates components not known at registration — the
-	 * host→ECS command-apply system is the canonical case; a save/load or
+	 * host machinery that mutates components not known at registration, the
+	 * host→ECS command-apply system is the canonical case. A save and load or
 	 * debug system is another. Bevy's "exclusive system" in spirit: full access,
-	 * and — under any future parallel scheduler — it would run alone. The schedule
-	 * is sequential today, so here it is purely the access grant. Use sparingly;
+	 * and, under any future parallel scheduler. It would run alone. The schedule
+	 * is sequential today, so here it is purely the access grant. Use sparingly
 	 * a normal system should declare exactly what it touches. */
 	exclusive?: boolean;
 
 	/** Opt this system into pluggable-backend execution. When set **and**
 	 * a `ComputeBackend` is attached to the ECS, the `Schedule` runs
-	 * `backend.run(backendHandle)` in place of `fn`; otherwise `fn` runs as the
+	 * `backend.run(backendHandle)` in place of `fn`. Otherwise `fn` runs as the
 	 * TS fallback (a no-op `fn` ⇒ the system is effectively skipped when no
-	 * backend is attached). The handle is opaque to the engine — minted by the
-	 * backend. The system still declares its `reads`/`writes` so the access span
+	 * backend is attached). The handle is opaque to the engine, minted by the
+	 * backend. The system still declares its `reads` and `writes` so the access span
 	 * around the backend call authorises the shared-memory it touches, and so the
 	 * scheduler can order it. See `ComputeBackend`. */
 	backendHandle?: BackendSystemHandle;
 }
 
-// ═══ Compile-time access typing (§typestate) ═══════════════════════════════
+// ═══ Compile-time access typing ═══════════════════════════════
 //
-// The runtime access check (access_check.ts) mirrored at the type layer: the
+// The runtime access check (access_check.ts) mirrored at the type layer. The
 // config-form `registerSystem` infers the declared access lists as literal
-// tuples, computes a `DeclaredAccess` record from them with exactly the runtime
-// rules (write ⊆ read, add = writes ∪ spawns ∪ transitions.add, remove =
-// despawns ∪ transitions.remove, destroy ⇔ despawns non-empty, write-implies-
-// read for sparse/relation/resource), and types the system's `ctx` as
-// `SystemContext<DeclaredAccess<…>>`. Undeclared access then fails at COMPILE
+// tuples. It computes a `DeclaredAccess` record from them with exactly the
+// runtime rules: write ⊆ read, add = writes ∪ spawns ∪ transitions.add,
+// remove = despawns ∪ transitions.remove, destroy ⇔ despawns non-empty, and
+// write-implies-read for sparse, relation and resource. It then types the
+// system's `ctx` as `SystemContext<DeclaredAccess<…>>`. Undeclared access fails at compile
 // time with the same taxonomy the runtime check throws with in `DEV`.
 //
-// Encoding notes (each choice is load-bearing; validated empirically):
-//   - The guarded `SystemContext` methods keep a STABLE type-param constraint
+// Encoding notes (each choice is load-bearing, validated empirically):
+//   - The guarded `SystemContext` methods keep a stable type-param constraint
 //     (`D extends ComponentDef<any>`) across all `A` instantiations and express
-//     the access check as `def: D & DeclaredRead<A, D>` — a resolvable
+//     the access check as `def: D & DeclaredRead<A, D>`, a resolvable
 //     conditional intersected into the parameter. Constraints that mention `A`
-//     directly break assignability BETWEEN instantiations (a typed ctx would no
+//     directly break assignability between instantiations (a typed ctx would no
 //     longer flow into a helper taking a bare `SystemContext`).
 //   - The asserts resolve to `unknown` (intersection no-op) when declared, and
-//     to a tuple carrying a human-readable message when not — the tuple shows
+//     to a tuple carrying a human-readable message when not, the tuple shows
 //     up verbatim in the compiler error.
-//   - An intersection of two `ComponentDef` instantiations is NOT used
+//   - An intersection of two `ComponentDef` instantiations is not used
 //     anywhere: TS relates multi-call-signature intersections leniently, which
 //     silently disables the check.
 //   - `SystemAccess` (all-`any`, `destroy: boolean`) doubles as the constraint
 //     and the permissive default, so a bare `SystemContext` stays what it was
-//     before — fully permissive — and `SystemContext<Narrow>` is assignable TO
-//     it (measured covariance; `destroy` must be `boolean`, not `true`, for
+//     before, fully permissive, and `SystemContext<Narrow>` is assignable to
+//     it (measured covariance, `destroy` must be `boolean`, not `true`, for
 //     that direction to hold).
 //
 // Known compile-time-only gaps (the runtime check still catches all of these):
-// two components with IDENTICAL schemas are interchangeable (structural
+// two components with identical schemas are interchangeable (structural
 // typing); two resource keys with the same `T` are interchangeable; relations
-// are a single nominal type, so declaring ONE relation admits all of them.
+// are a single nominal type, so declaring one relation admits all of them.
 // Escape hatch: annotate the config's `fn(ctx: SystemContext, dt)` explicitly
 // to opt a system back into permissive typing (e.g. tests that deliberately
 // violate access to assert the runtime throw).
 
 /**
  * The type-level access record a `SystemContext` is parameterized by. Each
- * field is the UNION of handle types the system declared for that operation
+ * field is the union of handle types the system declared for that operation
  * (`never` = declared nothing). The interface itself is the permissive
  * default: every field `any`-typed, `destroy` undetermined.
  */
@@ -246,7 +246,7 @@ export interface SystemAccess {
 /** `unknown` if `D` is in the system's declared read surface, else an error tuple. */
 export type DeclaredRead<A extends SystemAccess, D> = [D] extends [A["read"]]
 	? unknown
-	: ["component is not declared in this system's reads/writes", D];
+	: ["component is not declared in this system's reads or writes", D];
 
 /** `unknown` if `D` is in the system's declared write surface, else an error tuple. */
 export type DeclaredWrite<A extends SystemAccess, D> = [D] extends [A["write"]]
@@ -256,30 +256,30 @@ export type DeclaredWrite<A extends SystemAccess, D> = [D] extends [A["write"]]
 /** `unknown` if `D` is an authorised addComponent target, else an error tuple. */
 export type DeclaredAdd<A extends SystemAccess, D> = [D] extends [A["add"]]
 	? unknown
-	: ["component is not declared in this system's writes/spawns/transitions.add", D];
+	: ["component is not declared in this system's writes, spawns or transitions.add", D];
 
 /** `unknown` if `D` is an authorised removeComponent target, else an error tuple. */
 export type DeclaredRemove<A extends SystemAccess, D> = [D] extends [A["remove"]]
 	? unknown
-	: ["component is not declared in this system's despawns/transitions.remove", D];
+	: ["component is not declared in this system's despawns or transitions.remove", D];
 
 export type DeclaredSparseRead<A extends SystemAccess, D> = [D] extends [A["sparseRead"]]
 	? unknown
-	: ["sparse component is not declared in this system's sparseReads/sparseWrites", D];
+	: ["sparse component is not declared in this system's sparseReads or sparseWrites", D];
 
 export type DeclaredSparseWrite<A extends SystemAccess, D> = [D] extends [A["sparseWrite"]]
 	? unknown
 	: ["sparse component is not declared in this system's sparseWrites", D];
 
 /** Relations are one nominal type, so this only distinguishes "declared some
- * relation access" from "declared none" — the runtime check owns the rest.
+ * relation access" from "declared none", the runtime check owns the rest.
  * Keyed on the call site's inferred `D` (like the component asserts) rather
  * than on `RelationDef` directly: a conditional whose check type is not a
  * signature type parameter resolves under the compiler's variance-annotation
  * validation markers and falsely flags the `out A` declaration (TS2636). */
 export type DeclaredRelationRead<A extends SystemAccess, D> = [D] extends [A["relationRead"]]
 	? unknown
-	: ["no relation is declared in this system's relationReads/relationWrites"];
+	: ["no relation is declared in this system's relationReads or relationWrites"];
 
 export type DeclaredRelationWrite<A extends SystemAccess, D> = [D] extends [A["relationWrite"]]
 	? unknown
@@ -287,16 +287,16 @@ export type DeclaredRelationWrite<A extends SystemAccess, D> = [D] extends [A["r
 
 export type DeclaredResourceRead<A extends SystemAccess, K> = [K] extends [A["resourceRead"]]
 	? unknown
-	: ["resource key is not declared in this system's resourceReads/resourceWrites", K];
+	: ["resource key is not declared in this system's resourceReads or resourceWrites", K];
 
 export type DeclaredResourceWrite<A extends SystemAccess, K> = [K] extends [A["resourceWrite"]]
 	? unknown
 	: ["resource key is not declared in this system's resourceWrites", K];
 
 /** `commands.despawn` argument: blocked (with a readable error) only when
- * the access record PROVES no despawns were declared. */
+ * the access record proves no despawns were declared. */
 export type DespawnArg<A extends SystemAccess> = [A["destroy"]] extends [false]
-	? { "this system declares no despawns — despawn is not permitted": never }
+	? { "this system declares no despawns, so despawn is not permitted": never }
 	: EntityID;
 
 // Declaration-list shapes the typed config infers against. `any`-parameterized
@@ -311,7 +311,7 @@ export type RelationsAccessDecl = readonly RelationDef[];
 export type ResourcesAccessDecl = readonly ResourceKey<any>[];
 
 // Element-type extractors, written as conditionals (not indexed accesses) so
-// literal entries that OMIT an optional field resolve to `never` instead of
+// literal entries that omit an optional field resolve to `never` instead of
 // erroring. A `Template` entry contributes its def-list union, mirroring
 // `_normalizeAccess`'s runtime expansion.
 type SpawnEntryDefs<E> = E extends Template<infer TDefs>
@@ -330,7 +330,7 @@ type TransitionRemoveDefs<T> = T extends {
 	: never;
 
 /**
- * Compute the `SystemAccess` record for a set of declared access lists —
+ * Compute the `SystemAccess` record for a set of declared access lists,
  * the type-level `computeSets` (access_check.ts).
  */
 export type DeclaredAccess<
@@ -362,10 +362,10 @@ export type DeclaredAccess<
 /**
  * The config shape the typed `registerSystem` overload infers. Structurally a
  * `SystemConfig`, but every declaration list is its own type parameter (one
- * inference site each — inferring a single config-object type parameter breaks
+ * inference site each, inferring a single config-object type parameter breaks
  * contextual typing of `fn`), `queries` is constrained to `reads ∪ writes`
  * (the compile-time declared-access lint), and `fn` / `onAdded` receive the narrowed
- * context. `fn` and `onAdded` use METHOD syntax deliberately: methods relate
+ * context. `fn` and `onAdded` use method syntax deliberately: methods relate
  * bivariantly, which is what lets an explicitly-annotated permissive
  * `fn(ctx: SystemContext, dt)` (the escape hatch) keep compiling.
  * `exclusive: true` configs take the dedicated permissive overload instead.
@@ -402,8 +402,8 @@ export interface TypedSystemConfig<
 	onAdded?(ctx: SystemContext<A>): void;
 	onRemoved?(): void;
 	dispose?(): void;
-	/** `boolean`, not `false`, so a config VALUE typed `SystemConfig` (whose
-	 * `exclusive` is `boolean | undefined`) still matches this overload; a
+	/** `boolean`, not `false`, so a config value typed `SystemConfig` (whose
+	 * `exclusive` is `boolean | undefined`) still matches this overload. A
 	 * literal `exclusive: true` config matches the dedicated permissive
 	 * overload first by declaration order. */
 	exclusive?: boolean;
@@ -424,15 +424,15 @@ export interface SystemDescriptor extends Readonly<SystemConfig> {
 const FROZEN_EMPTY: readonly never[] = Object.freeze([]);
 
 /** A `spawns` entry / `despawns` element is a `Template` iff it's an object
- * (a `ComponentDef` is a branded number; a def list is an array). */
+ * (a `ComponentDef` is a branded number, a def list is an array). */
 function isTemplate(v: readonly ComponentDef[] | ComponentDef | Template): v is Template {
 	return typeof v === "object" && !Array.isArray(v);
 }
 
 /** @internal Normalize an authored access config into the declaration shape
  * a `SystemDescriptor` carries: absent optional fields become shared frozen
- * empties; `Template` references in `spawns` / `despawns` expand to their
- * component lists. Pure — does not mutate `config`. */
+ * empties. `Template` references in `spawns` / `despawns` expand to their
+ * component lists. Pure, does not mutate `config`. */
 export function _normalizeAccess(config: SystemAccessConfig): SystemAccessDeclaration {
 	let spawns: readonly (readonly ComponentDef[])[] = FROZEN_EMPTY;
 	if (config.spawns !== undefined && config.spawns.length > 0) {
@@ -466,11 +466,11 @@ export function _normalizeAccess(config: SystemAccessConfig): SystemAccessDeclar
 
 /** @internal Declared-access lint: in `DEV`, validate that every
  * component a system lists in `queries` is covered by `reads ∪ writes`. A query
- * term reads each listed component's presence/columns, so querying one the
+ * term reads each listed component's presence and columns, so querying one the
  * system never declared read access to would throw at the first iteration
  * (`accessCheck`); this surfaces the drift between the two declarations at
- * registration instead. `exclusive` systems (full access, empty reads/writes)
- * are skipped, as are the bare-fn / 2-arg overloads (no `queries`). Pure —
+ * registration instead. `exclusive` systems (full access, empty reads and writes)
+ * are skipped, as are the bare-fn / 2-arg overloads (no `queries`). Pure,
  * throws `QUERY_ACCESS_UNDECLARED` on a violation, naming the offending ids. */
 export function _assertQueriesDeclared(config: SystemConfig): void {
 	const groups = config.queries;
@@ -497,11 +497,11 @@ export function _assertQueriesDeclared(config: SystemConfig): void {
 	);
 }
 
-/** @internal — empty access declaration shared by the bare-fn and 2-arg
+/** @internal, empty access declaration shared by the bare-fn and 2-arg
  * `registerSystem` overloads. Systems registered via those overloads
- * have no declared access and therefore fail any runtime check; use the
- * config form when the system performs any ECS access. NOT exported from
- * the package barrel — call sites should never spread this directly. */
+ * have no declared access and therefore fail any runtime check. Use the
+ * config form when the system performs any ECS access. Not exported from
+ * the package barrel, call sites should never spread this directly. */
 export const _INTERNAL_EMPTY_ACCESS: SystemAccessDeclaration = Object.freeze({
 	reads: Object.freeze<ComponentDef[]>([]),
 	writes: Object.freeze<ComponentDef[]>([]),

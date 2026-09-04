@@ -3,7 +3,7 @@ import { ECS } from "../../ecs";
 import { Archetype } from "../../archetype";
 
 // Component schemas. AttackRange + EngageRange deliberately share the field
-// name `range` — the skirmisher template shape that motivated the ambiguous-
+// name `range`, the skirmisher template shape that motivated the ambiguous-
 // override guard.
 function setup() {
 	const ecs = new ECS({ memory: { columnCapacity: 64 } });
@@ -81,7 +81,7 @@ describe("template / direct-spawn", () => {
 	it("throws (dev) when overriding an unknown field name", () => {
 		const { ecs, Position } = setup();
 		const p = ecs.template(Position({ x: 0, y: 0 }));
-		// The typed surface rejects `z` at compile time; widen to the untyped
+		// The typed surface rejects `z` at compile time. Widen to the untyped
 		// map to prove the runtime guard still catches untyped call sites.
 		const overrides: Record<string, number> = { z: 1 };
 		expect(() => ecs.spawn(p, overrides)).toThrow(/no field/);
@@ -128,7 +128,7 @@ describe("template / direct-spawn", () => {
 		}
 	});
 
-	it("spawn_many throws (dev) on ambiguous / unknown override field names", () => {
+	it("spawn_many throws (dev) on ambiguous or unknown override field names", () => {
 		const { ecs, Position, AttackRange, EngageRange } = setup();
 		const dup = ecs.template(AttackRange({ range: 5 }), EngageRange({ range: 7 }));
 		expect(() => ecs.spawnMany(dup, 3, { range: 9 })).toThrow(/ambiguous/);
@@ -152,7 +152,7 @@ describe("template / direct-spawn", () => {
 		expect(ecs.hasComponent(e, Tag)).toBe(true);
 	});
 
-	it("performs ZERO archetype transitions (no move_entity_from)", () => {
+	it("performs zero archetype transitions (no move_entity_from)", () => {
 		const { ecs, Position, Velocity, Health } = setup();
 		const p = ecs.template(Position, Velocity, Health);
 

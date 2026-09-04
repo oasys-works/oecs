@@ -26,12 +26,12 @@ fs.rmSync(outfile, { force: true });
 const results = runSuite(lib, filter);
 report(results);
 
-// The saved baseline records the FILTER as well as the values. `makeSuite` builds
+// The saved baseline records the filter as well as the values. `makeSuite` builds
 // every world whatever the filter is, but it runs only the cases that match, and
 // a case leaves the heap in a different condition from the one it found. Therefore
 // a baseline from `--save x iter` and a comparison over all the cases did not
 // measure the same conditions, and nothing said so. The `__meta` key holds the
-// filter; a case can never collide with it, because every case name has a "/".
+// filter. A case can never collide with it, because every case name has a "/".
 if (saveName) {
 	const file = path.join(outDir, `${saveName}.json`);
 	fs.writeFileSync(
@@ -56,7 +56,7 @@ if (cmpName) {
 		const base = JSON.parse(fs.readFileSync(file, "utf8"));
 		const meta = base.__meta;
 		if (meta === undefined) {
-			console.error(`\nwarning: baseline ${cmpName} has no filter record — it is from an older run`);
+			console.error(`\nwarning: baseline ${cmpName} has no filter record. It is from an older run`);
 		} else if (meta.filter !== filter) {
 			console.error(
 				`\nwarning: baseline ${cmpName} used filter ${JSON.stringify(meta.filter)}, this run uses ` +
@@ -75,7 +75,7 @@ if (cmpName) {
 			const b = base[r.name];
 			if (b === undefined) continue;
 			const delta = ((r.nsPerOp - b) / b) * 100;
-			const mark = delta < -3 ? "FASTER" : delta > 3 ? "SLOWER" : "  ~   ";
+			const mark = delta < -3 ? "faster" : delta > 3 ? "slower" : "  ~   ";
 			console.log(
 				`${r.name.padEnd(w)}  ${b.toFixed(1).padStart(9)} → ${r.nsPerOp
 					.toFixed(1)

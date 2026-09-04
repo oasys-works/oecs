@@ -3,8 +3,8 @@
  *
  * Tag-only archetypes (mask is all tags, no data fields) have an empty
  * `Archetype._flatColumns` array. Their `addEntity` / `moveEntityFromTag`
- * paths bypass the SAB column bound check by design — there are no SAB
- * columns to overflow; the row count lives on the heap-backed
+ * paths bypass the SAB column bound check by design. There are no SAB
+ * columns to overflow. The row count lives on the heap-backed
  * `_entityIds` instead. The SAB descriptor records `row_capacity =
  * initialCapacity` for them as metadata only.
  *
@@ -34,7 +34,7 @@ describe("Tag-only archetype growth", () => {
 			world.addComponent(e, T2);
 		}
 
-		// Registering a NEW archetype calls `extendColumnStore` with every
+		// Registering a new archetype calls `extendColumnStore` with every
 		// existing archetype's row_count carried forward. Pre-fix this
 		// threw `StoreExtendError: archetype N: row_count 10 > old
 		// row_capacity 4`.
@@ -82,8 +82,8 @@ describe("Tag-only archetype growth", () => {
 		const ITERS = 10_000;
 		const PER_ITER = 8;
 
-		// Only the rowless empty archetype exists before the churn; registering
-		// components/tags creates no archetypes. So the post-loop count minus
+		// Only the rowless empty archetype exists before the churn. Registering
+		// components or tags creates no archetypes. So the post-loop count minus
 		// this baseline is exactly the number of distinct masks produced.
 		const baselineArchetypes = world.archetypeCount;
 
@@ -106,7 +106,7 @@ describe("Tag-only archetype growth", () => {
 				i < 8 ? components[i]({ v: a }) : tags[i - 8]
 			);
 			// addComponents is a single transition (empty → target), so each
-			// distinct mask is exactly one archetype — no intermediates.
+			// distinct mask is exactly one archetype, no intermediates.
 			distinctMasks.add(
 				pickList
 					.slice()
@@ -126,7 +126,7 @@ describe("Tag-only archetype growth", () => {
 			}
 		}
 
-		// No entity is ever destroyed — every spawned row must still be live.
+		// No entity is ever destroyed, every spawned row must still be live.
 		expect(world.entityCount).toBe(ITERS * PER_ITER);
 
 		// One archetype per distinct mask, nothing lost or spuriously created.

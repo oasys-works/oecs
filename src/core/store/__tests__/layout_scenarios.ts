@@ -1,12 +1,12 @@
 /**
- * Layout-scenario runner for the grow/extend consolidation.
+ * Layout-scenario runner for the grow and extend consolidation.
  *
  * Runs a fixed matrix of create → extend → grow sequences over every
  * allocator strategy and serializes the resulting store layouts (descriptor
  * placement, header fields, buffer sizes, view stamps, fast-path flags, and
  * live data read-back) into a plain JSON structure. The golden fixture
  * (`layout_golden.json`) was captured from the pre-consolidation
- * implementation; `layout_golden.test.ts` asserts the current implementation
+ * implementation. `layout_golden.test.ts` asserts the current implementation
  * reproduces it byte-for-byte, so any layout drift in the shared helpers is
  * a loud failure rather than a silently relocated column.
  */
@@ -14,7 +14,7 @@
 import {
 	DEFAULT_SAB_ALLOCATOR,
 	growableSabAllocator,
-	heapArraybufferAllocator,
+	heapArrayBufferAllocator,
 	wasmMemoryAllocator,
 	type BufferAllocator
 } from "../allocator";
@@ -52,7 +52,7 @@ export interface ScenarioStep {
 	oldViewStamp?: number;
 	newViewStamp?: number;
 	bufferIdentityKept?: boolean;
-	/** Read-back of the seeded rows after the op — proves data survived. */
+	/** Read-back of the seeded rows after the op, proves data survived. */
 	dataProbe?: number[];
 }
 
@@ -87,7 +87,7 @@ function spec(archetypeId: number, rowCapacity: number, columnCount: number): Ar
 	const columns = [];
 	for (let i = 0; i < columnCount; i++) {
 		// Alternate f32 (tag 0-ish) and f64 strides via typeTag values the
-		// descriptor layer understands: 6 = f32, 7 = f64 in TYPE_TAG order —
+		// descriptor layer understands: 6 = f32, 7 = f64 in TYPE_TAG order,
 		// resolved through TYPE_TAG_STRIDE at layout time, so mixing tags
 		// exercises alignUp with heterogeneous strides.
 		columns.push({ componentId: archetypeId * 10 + i, fieldId: i, typeTag: (i % 2 === 0 ? 6 : 7) as TypeTagValue });
@@ -182,7 +182,7 @@ function runMatrixFor(
 		});
 		store = ext.store;
 
-		// Extend again carrying live rows via `existing` — realloc path must
+		// Extend again carrying live rows via `existing`, realloc path must
 		// copy them into the republished store.
 		const ext2 = extendColumnStore(
 			store,
@@ -201,7 +201,7 @@ function runMatrixFor(
 		});
 	}
 
-	// --- Scenario C: grow with no capacity change (no grow targets) — must
+	// --- Scenario C: grow with no capacity change (no grow targets), must
 	// take the realloc path even under an in-place allocator.
 	{
 		const allocator = makeAllocator();
@@ -228,7 +228,7 @@ export function runAllScenarios(): Record<string, ScenarioStep[]> {
 	const out: Record<string, ScenarioStep[]> = {};
 	out.growable_sab = runMatrixFor("growable_sab", () => growableSabAllocator(4 * 1024 * 1024));
 	out.heap_arraybuffer = runMatrixFor("heap_arraybuffer", () =>
-		heapArraybufferAllocator(4 * 1024 * 1024)
+		heapArrayBufferAllocator(4 * 1024 * 1024)
 	);
 	out.default_fresh_sab = runMatrixFor("default_fresh_sab", () => DEFAULT_SAB_ALLOCATOR);
 	out.wasm_memory = runMatrixFor("wasm_memory", () =>

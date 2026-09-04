@@ -1,8 +1,8 @@
 /**
- * FrameStepper — the optional host-side driver over `ECS.update(dt)`. Asserts
- * the stepping contract (explicit `step`/`stepFrames` deltas, validation via
+ * FrameStepper, the optional host-side driver over `ECS.update(dt)`. Asserts
+ * the stepping contract (explicit `step` and `stepFrames` deltas, validation via
  * `INVALID_FRAME_STEP`), and the rAF loop contract through injected
- * `requestFrame`/`cancelFrame`: first frame after `play()` uses `fixedDt`
+ * `requestFrame` and `cancelFrame`: first frame after `play()` uses `fixedDt`
  * (no previous timestamp), subsequent frames forward the real delta, and raw
  * browser deltas are clamped to `maxDt` (a resumed background tab must not
  * feed the whole suspension into the accumulator as one update).

@@ -11,7 +11,7 @@ import {
 
 describe("GrowableTypedArray", () => {
   //=========================================================
-  // push / pop / length
+  // push, pop and length
   //=========================================================
 
   it("starts empty", () => {
@@ -25,9 +25,9 @@ describe("GrowableTypedArray", () => {
     a.push(2.0);
     a.push(3.0);
     expect(a.length).toBe(3);
-    expect(a.get(0)).toBeCloseTo(1.0);
-    expect(a.get(1)).toBeCloseTo(2.0);
-    expect(a.get(2)).toBeCloseTo(3.0);
+    expect(a.getAt(0)).toBeCloseTo(1.0);
+    expect(a.getAt(1)).toBeCloseTo(2.0);
+    expect(a.getAt(2)).toBeCloseTo(3.0);
   });
 
   it("pop removes and returns last value", () => {
@@ -37,11 +37,11 @@ describe("GrowableTypedArray", () => {
     const v = a.pop();
     expect(v).toBeCloseTo(20.0);
     expect(a.length).toBe(1);
-    expect(a.get(0)).toBeCloseTo(10.0);
+    expect(a.getAt(0)).toBeCloseTo(10.0);
   });
 
   //=========================================================
-  // get / setAt
+  // get and setAt
   //=========================================================
 
   it("set_at overwrites value at index", () => {
@@ -49,15 +49,15 @@ describe("GrowableTypedArray", () => {
     a.push(1.0);
     a.push(2.0);
     a.setAt(0, 99.0);
-    expect(a.get(0)).toBeCloseTo(99.0);
-    expect(a.get(1)).toBeCloseTo(2.0);
+    expect(a.getAt(0)).toBeCloseTo(99.0);
+    expect(a.getAt(1)).toBeCloseTo(2.0);
   });
 
   //=========================================================
   // swapRemove
   //=========================================================
 
-  it("swap_remove on last element just decrements length", () => {
+  it("swap_remove on the last element only decrements length", () => {
     const a = new GrowableFloat32Array();
     a.push(1.0);
     a.push(2.0);
@@ -65,8 +65,8 @@ describe("GrowableTypedArray", () => {
     const removed = a.swapRemove(2);
     expect(removed).toBeCloseTo(3.0);
     expect(a.length).toBe(2);
-    expect(a.get(0)).toBeCloseTo(1.0);
-    expect(a.get(1)).toBeCloseTo(2.0);
+    expect(a.getAt(0)).toBeCloseTo(1.0);
+    expect(a.getAt(1)).toBeCloseTo(2.0);
   });
 
   it("swap_remove on middle element moves last to that slot", () => {
@@ -78,8 +78,8 @@ describe("GrowableTypedArray", () => {
     expect(removed).toBeCloseTo(10.0);
     expect(a.length).toBe(2);
     // 30 moved to slot 0
-    expect(a.get(0)).toBeCloseTo(30.0);
-    expect(a.get(1)).toBeCloseTo(20.0);
+    expect(a.getAt(0)).toBeCloseTo(30.0);
+    expect(a.getAt(1)).toBeCloseTo(20.0);
   });
 
   it("swap_remove on sole element leaves array empty", () => {
@@ -107,7 +107,7 @@ describe("GrowableTypedArray", () => {
     a.clear();
     a.push(42.0);
     expect(a.length).toBe(1);
-    expect(a.get(0)).toBeCloseTo(42.0);
+    expect(a.getAt(0)).toBeCloseTo(42.0);
   });
 
   //=========================================================
@@ -119,7 +119,7 @@ describe("GrowableTypedArray", () => {
     for (let i = 0; i < 20; i++) a.push(i);
     expect(a.length).toBe(20);
     for (let i = 0; i < 20; i++) {
-      expect(a.get(i)).toBeCloseTo(i);
+      expect(a.getAt(i)).toBeCloseTo(i);
     }
   });
 
@@ -129,9 +129,9 @@ describe("GrowableTypedArray", () => {
     a.push(2.0);
     // This push triggers a growth
     a.push(3.0);
-    expect(a.get(0)).toBeCloseTo(1.0);
-    expect(a.get(1)).toBeCloseTo(2.0);
-    expect(a.get(2)).toBeCloseTo(3.0);
+    expect(a.getAt(0)).toBeCloseTo(1.0);
+    expect(a.getAt(1)).toBeCloseTo(2.0);
+    expect(a.getAt(2)).toBeCloseTo(3.0);
   });
 
   //=========================================================
@@ -173,7 +173,7 @@ describe("GrowableTypedArray", () => {
   });
 
   //=========================================================
-  // Int32 / Uint32 — integer precision
+  // Int32 / Uint32, integer precision
   //=========================================================
 
   it("GrowableInt32Array stores signed integers exactly", () => {
@@ -181,29 +181,29 @@ describe("GrowableTypedArray", () => {
     a.push(-1);
     a.push(0);
     a.push(2147483647); // INT32_MAX
-    expect(a.get(0)).toBe(-1);
-    expect(a.get(1)).toBe(0);
-    expect(a.get(2)).toBe(2147483647);
+    expect(a.getAt(0)).toBe(-1);
+    expect(a.getAt(1)).toBe(0);
+    expect(a.getAt(2)).toBe(2147483647);
   });
 
   it("GrowableUint32Array stores unsigned integers exactly", () => {
     const a = new GrowableUint32Array();
     a.push(0);
     a.push(4294967295); // UINT32_MAX
-    expect(a.get(0)).toBe(0);
-    expect(a.get(1)).toBe(4294967295);
+    expect(a.getAt(0)).toBe(0);
+    expect(a.getAt(1)).toBe(4294967295);
   });
 
   it("GrowableFloat64Array preserves double precision", () => {
     const a = new GrowableFloat64Array();
     const v = 1.23456789012345678;
     a.push(v);
-    expect(a.get(0)).toBe(v);
+    expect(a.getAt(0)).toBe(v);
   });
 });
 
 //=========================================================
-// TypedArrayFor — tag → class mapping
+// TypedArrayFor, tag → class mapping
 //=========================================================
 
 describe("TypedArrayFor", () => {
@@ -216,8 +216,8 @@ describe("TypedArrayFor", () => {
       col.push(2);
       col.push(3);
       expect(col.length).toBe(3);
-      expect(col.get(0)).toBe(1);
-      expect(col.get(2)).toBe(3);
+      expect(col.getAt(0)).toBe(1);
+      expect(col.getAt(2)).toBe(3);
     });
   }
 

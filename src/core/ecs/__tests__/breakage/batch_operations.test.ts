@@ -3,7 +3,7 @@ import { ECS } from "../../ecs";
 import type { EntityID } from "../../entity";
 
 describe("Batch operation edge cases", () => {
-	it("batch_add to empty archetype — no crash", () => {
+	it("batch_add to empty archetype, no crash", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -32,7 +32,7 @@ describe("Batch operation edge cases", () => {
 		expect(arch.entityCount).toBe(0);
 	});
 
-	it("batch_add when component already present — no-op / correct behavior", () => {
+	it("batch_add when component already present, no-op / correct behavior", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -44,7 +44,7 @@ describe("Batch operation edge cases", () => {
 		const q = world.query(Pos);
 		const arch = q.archetypes[0];
 
-		// batch_add Pos when entities already have Pos — should be a no-op
+		// batch_add Pos when entities already have Pos, should be a no-op
 		expect(() => {
 			world.batchAddComponent(arch.id, Pos, { x: 99, y: 99 });
 		}).not.toThrow();
@@ -56,7 +56,7 @@ describe("Batch operation edge cases", () => {
 		expect(world.getField(e2, Pos, "y")).toBe(40);
 	});
 
-	it("batch_add then query — target archetype appears in query", () => {
+	it("batch_add then query, target archetype appears in query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -96,7 +96,7 @@ describe("Batch operation edge cases", () => {
 		}
 	});
 
-	it("batch_remove from archetype with 1 entity — entity moves correctly", () => {
+	it("batch_remove from archetype with 1 entity, entity moves correctly", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -125,7 +125,7 @@ describe("Batch operation edge cases", () => {
 		expect(world.getField(e, Pos, "y")).toBe(10);
 	});
 
-	it("batch_add then destroy one entity from target — remaining data correct (swap-and-pop)", () => {
+	it("batch_add then destroy one entity from target, remaining data correct (swap-and-pop)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -167,7 +167,7 @@ describe("Batch operation edge cases", () => {
 		}
 	});
 
-	it("interleave batch_add and individual add_component — final state correct", () => {
+	it("interleave batch_add and individual add_component, final state correct", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);

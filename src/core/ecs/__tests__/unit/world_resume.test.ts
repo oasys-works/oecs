@@ -1,17 +1,17 @@
 /**
- * World snapshot / resume — mount a captured world onto a live, ticking ECS and
+ * World snapshot and resume, mount a captured world onto a live, ticking ECS and
  * keep ticking identically. Where `sparse_determinism.test.ts`
  * pins the *fidelity* round-trip (snapshot → restore reproduces the same bytes),
  * these pin the *resume* capability the engine previously lacked:
  *
- *   - **mount + tick** — restore a snapshot onto a live world; it queries + ticks.
- *   - **host-state reconstruction** — `Archetype.length` / `enabledCount`, the
+ *   - **mount + tick**, restore a snapshot onto a live world. It queries + ticks.
+ *   - **host-state reconstruction**, `Archetype.length` / `enabledCount`, the
  *     per-row `_entityIds` back-reference, and the entity recycle free-list (in
  *     LIFO order, the load-bearing bit) are rebuilt correctly.
- *   - **resume == control** — a world snapshotted at tick N, restored, and
- *     advanced K ticks yields the SAME per-tick `stateHash` vector as the
+ *   - **resume == control**, a world snapshotted at tick N, restored, and
+ *     advanced K ticks yields the same per-tick `stateHash` vector as the
  *     original advanced from N. On both heap and SAB.
- *   - **fail closed** — a malformed frame or a registration mismatch throws
+ *   - **fail closed**, a malformed frame or a registration mismatch throws
  *     `ECSRestoreError` before mutating live state.
  */
 
@@ -30,7 +30,7 @@ import {
 	ECSRestoreError,
 	type HostState
 } from "../../resume";
-import { heapArraybufferAllocator } from "../../../store";
+import { heapArrayBufferAllocator } from "../../../store";
 
 const HEAP: ECSOptions = { deterministic: true, memory: { backing: "heap" } };
 const SAB: ECSOptions = { deterministic: true };
@@ -42,12 +42,12 @@ interface World {
 	Mark: SparseComponentDef;
 }
 
-/** A deterministic, integer-only churn world. A move/age system advances every
- * enabled (Pos, Life) entity each tick; the driver (`step`) spawns, destroys, and
- * disables entities keyed purely off the absolute step index + current data — no
- * external mutable state (RNG / resources), so it stays inside the v1 resume
+/** A deterministic, integer-only churn world. A move and age system advances every
+ * enabled (Pos, Life) entity each tick. The driver (`step`) spawns, destroys, and
+ * disables entities keyed purely off the absolute step index + current data, no
+ * external mutable state (RNG and resources), so it stays inside the v1 resume
  * scope. The archetype graph ({}, {Pos}, {Pos, Life}) is prewarmed so the set is
- * stable, which `restoreInto` requires. */
+ * stable, which `restore` requires. */
 function build(memory: ECSOptions): World {
 	const world = new ECS(memory);
 	const Pos = world.registerComponent({ x: "i32" });
@@ -86,14 +86,14 @@ function build(memory: ECSOptions): World {
 }
 
 /** Apply one logical step `i` (absolute, so control + resumed apply identical
- * inputs at the same step). Returns nothing; mutates `w`. */
+ * inputs at the same step). Returns nothing. Mutates `w`. */
 function step(w: World, i: number): void {
 	const { world, Pos, Life, Mark } = w;
 	world.update(1);
 
 	// Reap entities whose age reached ttl. Collected in archetype-row order then
-	// REVERSED before destroy, so the recycle free-list ends up in a non-monotonic
-	// order — a scan-only (ascending) reconstruction would reuse different slots
+	// reversed before destroy, so the recycle free-list ends up in a non-monotonic
+	// order, a scan-only (ascending) reconstruction would reuse different slots
 	// and diverge on the first post-resume spawn that takes a sparse Mark.
 	const dead: EntityID[] = [];
 	world
@@ -107,8 +107,8 @@ function step(w: World, i: number): void {
 	world.flush();
 
 	// Spawn two entities, deterministically keyed by the step index. Every spawn
-	// takes a sparse Mark (so its entity index enters the canonical sparse fold —
-	// this is what makes free-list reuse ORDER observable in stateHash), and
+	// takes a sparse Mark (so its entity index enters the canonical sparse fold.
+	// This is what makes free-list reuse order observable in stateHash), and
 	// every third is disabled (so enabledCount partitions non-trivially).
 	for (let k = 0; k < 2; k++) {
 		const id = i * 2 + k;
@@ -167,7 +167,7 @@ describe("resume framing + host-state serialization", () => {
 	});
 });
 
-describe("restoreInto — mount + reconstruction", () => {
+describe("restore, mount + reconstruction", () => {
 	it("mounts a snapshot onto a fresh world; it queries + ticks afterward", () => {
 		const src = build(SAB);
 		for (let i = 0; i < 8; i++) step(src, i);
@@ -201,8 +201,8 @@ describe("restoreInto — mount + reconstruction", () => {
 		const dst = build(SAB);
 		dst.world.snapshots.restore(snap);
 
-		// The next several createEntity() calls must hand out IDENTICAL ids
-		// (index + generation) on both worlds — proving the free-list set AND
+		// The next several createEntity() calls must hand out identical ids
+		// (index + generation) on both worlds, proving the free-list set and
 		// order (and the per-slot generation, which rides the SAB) round-tripped.
 		for (let n = 0; n < 6; n++) {
 			expect(dst.world.spawn()).toBe(src.world.spawn());
@@ -214,7 +214,7 @@ describe("restoreInto — mount + reconstruction", () => {
 		for (let i = 0; i < 6; i++) step(src, i);
 		const snap = src.world.snapshots.capture();
 
-		// dst is driven on a DIFFERENT trajectory first, then restored.
+		// dst is driven on a different trajectory first, then restored.
 		const dst = build(SAB);
 		for (let i = 0; i < 10; i++) step(dst, i + 100);
 		dst.world.snapshots.restore(snap);
@@ -223,11 +223,11 @@ describe("restoreInto — mount + reconstruction", () => {
 	});
 });
 
-describe("restoreInto — fails closed", () => {
-	/** The fail-closed contract is not just "it throws" — a rejected restore must
-	 * leave the TARGET world byte-identical and still tickable. (Regression: the
+describe("restore, fails closed", () => {
+	/** The fail-closed contract is not only "it throws", a rejected restore must
+	 * leave the target world byte-identical and still tickable. (Regression: the
 	 * guard used to run after `restoreColumnStore` had already overwritten the live
-	 * in-place backing, so a rejected restore corrupted the target — the throw
+	 * in-place backing, so a rejected restore corrupted the target, the throw
 	 * passed but `stateHash` had already changed.) */
 	function expectRejectedLeavesIntact(
 		world: ECS,
@@ -256,8 +256,8 @@ describe("restoreInto — fails closed", () => {
 
 		// Same archetype graph shape, but Pos carries an extra field → the
 		// {Pos,Life} archetype's column layout differs from the snapshot's. The
-		// guard reads the snapshot's descriptors directly, so it throws BEFORE the
-		// dense backing is overwritten — the target survives.
+		// guard reads the snapshot's descriptors directly, so it throws before the
+		// dense backing is overwritten, the target survives.
 		const other = new ECS(SAB);
 		const Pos2 = other.registerComponent({ x: "i32", y: "i32" });
 		const Life2 = other.registerComponent({ age: "i32", ttl: "i32" });
@@ -293,7 +293,7 @@ describe("restoreInto — fails closed", () => {
 		const snap = src.world.snapshots.capture();
 
 		// Same dense graph (so the dense guard passes), but an extra sparse store
-		// → the sparse-section shape check rejects the store-count mismatch BEFORE
+		// → the sparse-section shape check rejects the store-count mismatch before
 		// the dense mount commits (so the target's dense half isn't left clobbered).
 		const other = new ECS(SAB);
 		const Pos2 = other.registerComponent({ x: "i32" });
@@ -345,11 +345,11 @@ describe("resume == control: per-tick stateHash matches the original", () => {
 	}
 });
 
-describe("restoreInto — works under a custom in-place heap allocator", () => {
+describe("restore, works under a custom in-place heap allocator", () => {
 	it("keeps the live allocator (no DEFAULT_SAB_ALLOCATOR leak)", () => {
 		const memory: ECSOptions = {
 			deterministic: true,
-			memory: { backing: { allocator: heapArraybufferAllocator() } }
+			memory: { backing: { allocator: heapArrayBufferAllocator() } }
 		};
 		const src = build(memory);
 		for (let i = 0; i < 6; i++) step(src, i);

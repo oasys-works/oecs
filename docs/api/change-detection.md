@@ -1,9 +1,10 @@
 # Change detection
 
-Change detection lets a system process only what changed since its last run, and not everything. It
-uses a **tick** that the `ECS` increases in each frame. When you write a component, the engine sets
-the slot of that component on its archetype to the current tick. A `changed()` query then agrees
-with each archetype that has a tick at or after the previous run of the system that queries.
+Change detection lets a system process only what changed since its last run, and not everything.
+The engine keeps a **change tick**, a counter that advances before each system run. When you write
+a component, the engine sets the slot of that component on its archetype to the current change
+tick. A `changed()` query then gives each archetype whose slot is above the change tick of the
+previous run of the system that queries.
 
 ```ts
 const moved = ecs.query(Pos).changed(Pos);   // archetypes whose Pos changed since the last run
@@ -25,14 +26,22 @@ A write sets the change tick of the component. A read does not.
 
 | Sets the tick | Does **not** set the tick |
 | --- | --- |
-| `cols.mut(def)` (in `eachChunk`) | `cols.read(def)` |
+| `cols.mut(def)` (in `forEachChunk`) | `cols.read(def)` |
 | `ctx.ref(def, e)` | `ctx.refRead(def, e)` |
+| `ctx.cursor(def).at(e)` | `ctx.cursorRead(def).at(e)` |
 | `ctx.setField` / `ctx.updateField` | `ctx.getField` |
 
-Note that `cols.mut` and `ctx.ref` set the tick **immediately**. They set it at the moment that you
-get the mutable accessor, before an actual write, and also if you never write. This keeps change
-detection conservative: it never misses a change. The cost is an occasional incorrect report of a
-change.
+`cols.mut`, `ctx.ref` and a mutable cursor set the tick **immediately**. They set it at the moment
+that you get the mutable accessor, before an actual write, and also if you never write. This keeps
+change detection conservative: it never misses a change. The cost is an occasional incorrect
+report of a change.
+
+The change tick is not `ctx.ecsTick`. `ctx.ecsTick` counts frames. The change tick advances before
+each system run, so the engine can order a write against the last run of each reader inside one
+frame. One write is reported one time: on the frame it happens when the reader runs after the
+writer, and on the next frame when the reader runs first. A system sees its own writes inside the
+run that made them, and not again on its next run. A write on the host between two frames is
+reported on the next frame.
 
 ## `changed()`
 
@@ -41,7 +50,7 @@ changed(...defs: ComponentDef[]): ChangedQuery<Defs>;
 ```
 
 This gives you a `ChangedQuery`. The query gives each non-empty archetype in which **one or more**
-of the listed components has a tick at or after the last-run tick of the system. Each `def` must
+of the listed components has a stamp above the last-run tick of the system. Each `def` must
 already be in the include mask of the query.
 
 > [!WARNING]
@@ -61,7 +70,7 @@ and<D>(...comps): ChangedQuery<[...Defs, ...D]>;
 without(...comps): ChangedQuery<Defs>;
 anyOf(...comps): ChangedQuery<Defs>;
 optional(...defs): ChangedQuery<Defs>;
-forEach(cb: (arch: ArchetypeView) => void): void;   // the terminal — read-only, as Query.forEach is
+forEach(cb: (arch: ArchetypeView) => void): void;   // the terminal, read-only like Query.forEach
 ```
 
 ```ts
@@ -69,13 +78,47 @@ ecs.query(Pos).changed(Pos).without(Dead);   // Pos changed, and the dead entiti
 ```
 
 The order is not important. `q.changed(Pos).without(Dead)` and `q.without(Dead).changed(Pos)` give
-the same set. A `ChangedQuery` has no `eachChunk`, no `count`, and no second `changed`. It has only
-the five verbs above. Iterate it with `forEach`.
+the same set. A `ChangedQuery` has no `count` and no second `changed`. Iterate it with `forEach`,
+or with `forEachChunk` for the row grain below.
+
+## The row grain
+
+The archetype grain tells you which archetypes to examine. The row grain tells you which rows. Turn
+it on for a component with `ecs.trackRows(def)`. From then on every archetype that holds `def` keeps
+one change tick for each row, and every write path stamps it: `setField`, `updateField`, `ref`, a
+mutable cursor, `markChanged`, and a store into `cols.ticks(def)` in a chunk loop. An
+[`onSet` observer](./observers.md) with entity granularity turns it on as well. It costs one word
+for each row, and one store on each by-id write. It is never turned off.
+
+```ts
+ecs.trackRows(Pos);
+const moved = ecs.query(Pos).changed(Pos);
+
+const syncTransforms = ecs.registerSystem({
+  reads: [Pos], writes: [],
+  fn: () => {
+    moved.forEachChunk((cols, count) => {
+      const { x } = cols.read(Pos);
+      const t = cols.ticksRead(Pos);
+      const ids = cols.arch.entityIds;
+      for (let i = 0; i < count; i++) if (t[i] > cols.since) pushToRenderer(ids[i], x[i]);
+    });
+  },
+});
+```
+
+`cols.since` is the change tick of the previous run of the system, and 0 on its first run. A row
+whose tick is above it changed since that run. `changed(def).forEachChunk` visits the archetypes
+that `forEach` visits, so the loop runs over the rows of the archetypes a writer stamped, and the
+compare picks the rows out. A raw column write in a chunk loop records nothing on its own, so a
+writer that wants its rows seen at this grain stores `cols.tick` into `cols.ticks(def)` beside
+each write. `cols.ticksRead` and `cols.ticks` throw `ROW_TICKS_NOT_TRACKED` for a component with no
+row ticks.
 
 ## `lastRunTick` and the ticks that a system skips
 
-The comparison uses the last-run tick of *that system*. So each system sees the changes since
-*it* last ran.
+The comparison uses the last-run tick of *that system*, which is the change tick of its previous
+run. So each system sees the changes since *it* last ran.
 
 > [!NOTE]
 > When a [run condition](./schedule.md#run-conditions) gives `false` and the system does not run,
@@ -83,7 +126,7 @@ The comparison uses the last-run tick of *that system*. So each system sees the 
 > each change that happened while it did not run. It misses nothing across a period in which a gate
 > stopped it.
 
-## `onSet` — change detection as a callback
+## `onSet`, change detection as a callback
 
 Instead of a `changed()` query, the ECS can **call** you when a component changes. Use an
 [`onSet` observer](./observers.md):
@@ -96,13 +139,16 @@ Instead of a `changed()` query, the ECS can **call** you when a component change
   and that list has a cost on the write path. Select the granularity by the density of the changes.
 
 > [!TIP]
-> If you write a component through the **raw** mutable column, and not through `setField` or `ref`,
-> an `onSet` observer with entity granularity does not see the write. To make it visible, call
-> `ctx.markChanged(entity, def)` in the loop. `setField` and `updateField` record it
-> automatically.
+> If you write a component through the **raw** mutable column from `cols.mut`, an `onSet` observer
+> with entity granularity does not see the write. To make it visible, store the change tick into
+> the row of `cols.ticks(def)`: `t[i] = cols.tick`. That is one store per row. `ctx.markChanged`
+> does the same by entity id, at the cost of a call and a list push. `setField` and `updateField`
+> record the entity. `ref` records it when you create the ref, and a mutable cursor records it on
+> each `at`, whether or not you write. A sparse component has the row grain alone, through
+> `ctx.sparseChanged` and the entity-level `onSet`. See [sparse storage](./sparse-storage.md).
 
 ## See also
 
-- [queries](./queries.md) — `changed()` in the list of verbs, and `forEach` and `eachChunk`
-- [observers](./observers.md) — `onSet` and the compromise between the two granularities
-- [refs](./refs.md) — why `ref` sets the tick and `refRead` does not
+- [queries](./queries.md), `changed()` in the list of verbs, and `forEach` and `forEachChunk`
+- [observers](./observers.md), `onSet` and the compromise between the two granularities
+- [refs](./refs.md), why `ref` sets the tick and `refRead` does not

@@ -1,7 +1,7 @@
 /**
  * Is the load of `_fieldIndex[cid][field]` truly megamorphic in the real code?
  *
- * §3a of INVESTIGATION.md gives approximately 7 ns of the 12.2 ns field stage of
+ * An earlier estimate gives approximately 7 ns of the 12.2 ns field stage of
  * `getField` to a megamorphic load with a string key. It uses a synthetic test with
  * **24 different object shapes** as the evidence. But `probe-access.mjs`, which
  * measures the stages, registers **one** component only. Therefore the real call site
@@ -12,7 +12,7 @@
  * This measurement needs care. If you only increase the number of components, you
  * also change the number of entities for each component, and therefore the locality
  * of the cache. A first attempt showed that K=24 was *faster* than K=1 for that
- * reason. Therefore this probe changes the number of shapes, and it keeps EACH other
+ * reason. Therefore this probe changes the number of shapes, and it keeps each other
  * variable constant. To do this, it uses the method that makes the `_fieldIndex`
  * objects: `Object.create(null)`, and then the keys in the sequence of the schema.
  * Therefore two components whose schemas have the same field names in the same
@@ -21,8 +21,8 @@
  * equal number of archetypes, and an equal sequence of the reads. The only difference
  * is whether the 24 schemas use the same field names:
  *
- *   THE SAME names    ⇒ 24 components, 1 `_fieldIndex` shape  ⇒ the IC finds the shape
- *   DIFFERENT names   ⇒ 24 components, 24 shapes              ⇒ the IC is megamorphic
+ *   The same names    ⇒ 24 components, 1 `_fieldIndex` shape  ⇒ the IC finds the shape
+ *   different names   ⇒ 24 components, 24 shapes              ⇒ the IC is megamorphic
  *
  * The difference between the two worlds is the megamorphic cost in the real code. No
  * other variable can be the cause.
@@ -79,7 +79,7 @@ console.log(`only difference between the two rows: whether the 24 schemas share 
 const results = {};
 for (const unique of [false, true]) {
 	const { ecs, defs, fields, ids } = world(unique);
-	const label = unique ? "UNIQUE names — 24 _fieldIndex shapes" : "SAME names   —  1 _fieldIndex shape";
+	const label = unique ? "unique names, 24 _fieldIndex shapes" : "same names  ,  1 _fieldIndex shape";
 	results[unique] = time(label, 20 * TOTAL, () => {
 		let s = 0;
 		for (let r = 0; r < 20; r++)
@@ -94,14 +94,14 @@ for (const unique of [false, true]) {
 }
 console.log(`
   megamorphic cost of the string-keyed field index, on real code:
-    ${(results[true] - results[false]).toFixed(2)} ns  (INVESTIGATION.md fix 1 projects −7.00)`);
+    ${(results[true] - results[false]).toFixed(2)} ns  (the earlier proposal projects −7.00)`);
 
 // Same two worlds through `refRead`, which resolves the field once at creation.
 // If the string-keyed load were the dominant cost, refRead should be flat here.
 console.log(`\nsame two worlds through refRead (field resolved once, not per read)`);
 for (const unique of [false, true]) {
 	const { ecs, defs, fields, ids } = world(unique);
-	time(unique ? "UNIQUE names, refRead" : "SAME names,   refRead", 20 * TOTAL, () => {
+	time(unique ? "unique names, refRead" : "same names,   refRead", 20 * TOTAL, () => {
 		let s = 0;
 		for (let r = 0; r < 20; r++)
 			for (let c = 0; c < K; c++) {

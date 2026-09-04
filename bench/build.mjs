@@ -3,8 +3,8 @@
  *
  * The build gives `__DEV__` a value, but it does not fold the result. Therefore the
  * bundle keeps each development guard as a branch, and the value of the flag
- * controls that branch at run time. The RESULT of the code is thus the result of
- * the released package, but the FORM of the code is not: `vite` folds the flag and
+ * controls that branch at run time. The result of the code is thus the result of
+ * the released package, but the form of the code is not: `vite` folds the flag and
  * then removes the branch and its body from the artifacts.
  *
  * The correctness tools use this file. A measurement tool must not use it, because
@@ -18,7 +18,7 @@
  *
  * `profile.mjs` also uses this file, but no property makes that necessary. The
  * artifacts keep the name of each function, and thus a profile of the artifacts is
- * possible to read. Note that NEITHER build keeps the lines of `src/`, and neither
+ * possible to read. Neither build keeps the lines of `src/`, and neither
  * build makes a source map. Therefore `readlines.mjs` gives the line of the bundle,
  * and not the line of the file that you name on the command line.
  *
@@ -35,9 +35,9 @@ const root = path.resolve(here, "..");
 // esbuild is an indirect dependency of vite. It is in the pnpm store, and pnpm
 // does not put it in node_modules/.
 //
-// The search for the store goes UP from this directory, and it does not look only
+// The search for the store goes up from this directory, and it does not look only
 // at the root of this checkout. A git worktree has no `node_modules` of its own,
-// and thus the store is in a parent directory — the same rule that lets node find
+// and thus the store is in a parent directory, the same rule that lets node find
 // the modules from a worktree inside the checkout (`dist.mjs` gives the reason).
 const esbuild = (() => {
 	try {

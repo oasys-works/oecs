@@ -40,7 +40,7 @@ const ENTRY = { production: "index.js", development: "index.development.js" };
  * of the entry file. `dest` receives a new copy at each call.
  *
  * `from` can be a different checkout, and it can be a git worktree. A worktree has
- * no `node_modules` of its own. Therefore the caller must put the worktree INSIDE
+ * no `node_modules` of its own. Therefore the caller must put the worktree inside
  * this checkout, because node then finds `node_modules` in a parent directory. Do
  * not make a symbolic link to `node_modules`: a subsequent delete of the worktree
  * can go through the link and remove the modules of the user.

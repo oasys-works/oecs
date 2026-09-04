@@ -7,7 +7,7 @@ import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 
 describe("Event system", () => {
-	// ==== Event key registration and emit/read ====
+	// ==== Event key registration and emit and read ====
 
 	it("emit in one system, read in a later system within the same update", () => {
 		const world = new ECS();
@@ -24,7 +24,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				const dmg = ctx.read(Damage);
+				const dmg = ctx.readEvents(Damage);
 				for (let i = 0; i < dmg.length; i++) {
 					received.push({ target: dmg.target[i], amount: dmg.amount[i] });
 				}
@@ -54,7 +54,7 @@ describe("Event system", () => {
 				if (frame === 0) {
 					ctx.emit(Hit, { damage: 99 });
 				}
-				readLength = ctx.read(Hit).length;
+				readLength = ctx.readEvents(Hit).length;
 			}
 		});
 
@@ -85,7 +85,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				if (ctx.read(GameOver).length > 0) {
+				if (ctx.readEvents(GameOver).length > 0) {
 					fired = true;
 				}
 			}
@@ -118,7 +118,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				const s = ctx.read(Score);
+				const s = ctx.readEvents(Score);
 				for (let i = 0; i < s.length; i++) {
 					totals.push(s.points[i]);
 				}
@@ -151,7 +151,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				readCount = ctx.read(Ready).length;
+				readCount = ctx.readEvents(Ready).length;
 			}
 		});
 
@@ -163,8 +163,8 @@ describe("Event system", () => {
 	});
 
 	// Regression: startup() had no clearEvents() (only update() did),
-	// so events emitted in a startup phase leaked into the first update() — a
-	// frame-1 PRE_UPDATE/UPDATE reader saw them as if emitted this frame. They
+	// so events emitted in a startup phase leaked into the first update(), a
+	// frame-1 PRE_UPDATE and UPDATE reader saw them as if emitted this frame. They
 	// must be drained at the end of startup, since events live one *update* tick
 	// and startup is not an update tick.
 	it("startup-emitted events do not leak into the first update", () => {
@@ -184,13 +184,13 @@ describe("Event system", () => {
 		const preUpdateReader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				preUpdateLen = ctx.read(Boot).length;
+				preUpdateLen = ctx.readEvents(Boot).length;
 			}
 		});
 		const updateReader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				updateLen = ctx.read(Boot).length;
+				updateLen = ctx.readEvents(Boot).length;
 			}
 		});
 
@@ -214,7 +214,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				readLength = ctx.read(Nothing).length;
+				readLength = ctx.readEvents(Nothing).length;
 			}
 		});
 
@@ -242,7 +242,7 @@ describe("Event system", () => {
 		const reader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				count = ctx.read(Tick).length;
+				count = ctx.readEvents(Tick).length;
 			}
 		});
 
@@ -272,13 +272,13 @@ describe("Event system", () => {
 		const updateReader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				updateLen = ctx.read(Input).length;
+				updateLen = ctx.readEvents(Input).length;
 			}
 		});
 		const postUpdateReader = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
-				postUpdateLen = ctx.read(Input).length;
+				postUpdateLen = ctx.readEvents(Input).length;
 			}
 		});
 
@@ -337,8 +337,8 @@ describe("Event system", () => {
 	// Regression: a `__DEV__` missing-field emit must not desync the
 	// SoA columns. The old `emit` pushed per-field then threw mid-loop, so a
 	// two-field event missing the second field left the first column one row
-	// ahead of both `reader.length` and the un-pushed column — a permanent
-	// desync if the throw is caught. `emit` now validates ALL fields before
+	// ahead of both `reader.length` and the un-pushed column, a permanent
+	// desync if the throw is caught. `emit` now validates all fields before
 	// mutating any column, so a caught throw leaves every column untouched and
 	// the next valid emit lands at row 0.
 	it("a thrown emit (missing field) does not desync the channel columns", () => {
@@ -346,7 +346,7 @@ describe("Event system", () => {
 		const Pair = eventKey<{ a: number; b: number }>("Pair");
 		world.events.register(Pair, ["a", "b"] as const);
 
-		// `b` is missing — must throw under __DEV__ before touching any column.
+		// `b` is missing, must throw under __DEV__ before touching any column.
 		try {
 			world.events.emit(Pair, { a: 1 } as { a: number; b: number });
 			expect.fail("should have thrown");
@@ -358,11 +358,11 @@ describe("Event system", () => {
 		// The throw must have rolled back cleanly: nothing buffered yet.
 		expect(world.events.read(Pair).length).toBe(0);
 
-		// A subsequent VALID emit lands at row 0 with consistent columns.
+		// A subsequent valid emit lands at row 0 with consistent columns.
 		world.events.emit(Pair, { a: 2, b: 3 });
 		const reader = world.events.read(Pair);
 
-		// reader.length agrees with EVERY column length — no column is one
+		// reader.length agrees with every column length, no column is one
 		// element ahead from the half-applied emit.
 		expect(reader.length).toBe(1);
 		expect(reader.a.length).toBe(1);
@@ -400,7 +400,7 @@ describe("Event system", () => {
 	//
 	// EventReader columns were declared Float64Array but backed by growable
 	// number[]: a system trusting the declared type and calling .subarray/.set/
-	// .byteLength got undefined/threw, and the reader aliased the live channel
+	// .byteLength got undefined and threw, and the reader aliased the live channel
 	// so it could mutate it. The columns are now read-only numeric arrays whose
 	// declared type matches the runtime backing.
 
@@ -418,7 +418,7 @@ describe("Event system", () => {
 		expect(reader.points[0]).toBe(1);
 		expect(reader.points[1]).toBe(2);
 
-		// Runtime backing is a plain Array — the old Float64Array typing was a
+		// Runtime backing is a plain Array, the old Float64Array typing was a
 		// lie, so typed-array methods are absent. This documents why the
 		// declared type must not advertise them.
 		expect(Array.isArray(reader.points)).toBe(true);
@@ -432,7 +432,7 @@ describe("Event system", () => {
 		// ever regresses to Float64Array or to a mutable array.
 		type AssertNotTypedArray = Column extends Float64Array ? never : true;
 		type AssertReadonlyNumberArray = Column extends ReadonlyArray<number> ? true : never;
-		// ReadonlyArray<number> is not assignable to number[]; a regression to a
+		// ReadonlyArray<number> is not assignable to number[]. A regression to a
 		// mutable column (writable reader) would make this `never`.
 		type AssertNotMutableArray = Column extends number[] ? never : true;
 

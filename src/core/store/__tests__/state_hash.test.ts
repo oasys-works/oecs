@@ -9,7 +9,7 @@ import {
 	growColumnStore,
 	restoreColumnStore,
 	columnStoreStateHash,
-	snapshotColumnStore,
+	columnStoreBytesView,
 	TYPE_TAG,
 	type ArchetypeSpec
 } from "..";
@@ -31,10 +31,10 @@ function spec(
 	};
 }
 
-describe("fnv1a_32 — known vectors", () => {
+describe("fnv1a_32, known vectors", () => {
 	// Reference values from the FNV-1a (32-bit) test suite:
 	//   http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-test-vectors
-	// (also reproduced in IETF draft-eastlake-fnv).
+	// (also reproduced in ietf draft-eastlake-fnv).
 	it("empty input returns the offset basis", () => {
 		expect(fnv1a32(new Uint8Array(0))).toBe(FNV1A_OFFSET_BASIS);
 		expect(fnv1a32(new Uint8Array(0))).toBe(0x811c9dc5);
@@ -51,7 +51,7 @@ describe("fnv1a_32 — known vectors", () => {
 
 	it("result is always an unsigned 32-bit number", () => {
 		// A single high byte forces the prime multiplication into a value that
-		// would be negative under signed interpretation — must come back
+		// would be negative under signed interpretation, must come back
 		// unsigned.
 		const h = fnv1a32(new Uint8Array([0xff, 0xff, 0xff, 0xff]));
 		expect(h).toBeGreaterThanOrEqual(0);
@@ -90,7 +90,7 @@ describe("fnv1a_32 — known vectors", () => {
 	});
 });
 
-describe("column_store_state_hash — determinism", () => {
+describe("column_store_state_hash, determinism", () => {
 	it("identical stores hash identically", () => {
 		const make = () => {
 			const s = createColumnStore([
@@ -115,11 +115,11 @@ describe("column_store_state_hash — determinism", () => {
 		(store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)[0] = 7;
 		(store.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array)[0] = 1.5;
 
-		expect(columnStoreStateHash(store)).toBe(fnv1a32(snapshotColumnStore(store)));
+		expect(columnStoreStateHash(store)).toBe(fnv1a32(columnStoreBytesView(store)));
 	});
 });
 
-describe("column_store_state_hash — byte sensitivity", () => {
+describe("column_store_state_hash, byte sensitivity", () => {
 	it("changes when a column byte changes", () => {
 		const make = () =>
 			createColumnStore([spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])]);
@@ -156,14 +156,14 @@ describe("column_store_state_hash — byte sensitivity", () => {
 		const b = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.f32 }])
 		]);
-		// Same row capacity, same column key, but different type_tag — that
+		// Same row capacity, same column key, but different type_tag, that
 		// has to show up in the snapshot bytes (descriptor region) and
 		// therefore in the hash.
 		expect(columnStoreStateHash(a)).not.toBe(columnStoreStateHash(b));
 	});
 });
 
-describe("column_store_state_hash — round-trip", () => {
+describe("column_store_state_hash, round-trip", () => {
 	it("snapshot → restore preserves the hash", () => {
 		const store = createColumnStore([
 			spec(0, 4, [
@@ -174,7 +174,7 @@ describe("column_store_state_hash — round-trip", () => {
 		(store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)[0] = 42;
 		(store.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array)[0] = 3.14;
 
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		expect(columnStoreStateHash(restored)).toBe(columnStoreStateHash(store));
 	});
 
@@ -190,18 +190,18 @@ describe("column_store_state_hash — round-trip", () => {
 		const after = columnStoreStateHash(grown);
 
 		// Header field `view_stamp` and `capacity` both changed, plus the
-		// trailing padding region grew. The hash must reflect that — the
+		// trailing padding region grew. The hash must reflect that, the
 		// snapshot bytes are not the same.
 		expect(after).not.toBe(before);
 	});
 });
 
-describe("column_store_state_hash — page-rounding allocators", () => {
+describe("column_store_state_hash, page-rounding allocators", () => {
 	const PAGE = 64 * 1024;
 
 	/** Mimics `wasmMemoryAllocator` / `growableSabAllocator`: rounds the
 	 * requested byte count up to the next 64 KiB page, so the returned
-	 * `SharedArrayBuffer` is LARGER than `capacity`. The SAB header still
+	 * `SharedArrayBuffer` is larger than `capacity`. The SAB header still
 	 * records the exact `capacity`. */
 	const pageRoundingAllocator = (bytes: number): SharedArrayBuffer =>
 		new SharedArrayBuffer(Math.ceil(bytes / PAGE) * PAGE);
@@ -220,25 +220,25 @@ describe("column_store_state_hash — page-rounding allocators", () => {
 
 	it("snapshot is sized to header.capacity, not the padded buffer.byteLength", () => {
 		const store = make(pageRoundingAllocator);
-		// The allocator handed back a full page; the canonical size is smaller.
+		// The allocator handed back a full page. The canonical size is smaller.
 		expect(store.buffer.byteLength).toBe(PAGE);
 		expect(store.header.capacity).toBeLessThan(store.buffer.byteLength);
 
-		expect(snapshotColumnStore(store).byteLength).toBe(store.header.capacity);
+		expect(columnStoreBytesView(store).byteLength).toBe(store.header.capacity);
 	});
 
 	it("hashes identically to a default-allocator store of the same logical state", () => {
 		// Same logical state, different allocators (default = exact size,
-		// page-rounding = padded). The trailing page slack must NOT leak into
+		// page-rounding = padded). The trailing page slack must not leak into
 		// the hash, or determinism checks would false-alarm across allocators.
 		expect(columnStoreStateHash(make())).toBe(columnStoreStateHash(make(pageRoundingAllocator)));
 	});
 
 	it("round-trips without growing the SAB", () => {
 		const store = make(pageRoundingAllocator);
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 
-		// restore allocates exactly the snapshot length; sizing the snapshot to
+		// restore allocates exactly the snapshot length. Sizing the snapshot to
 		// capacity means the round-trip lands back at capacity instead of
 		// silently inheriting (and re-padding) the page slack.
 		expect(restored.buffer.byteLength).toBe(store.header.capacity);

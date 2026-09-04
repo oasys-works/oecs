@@ -1,12 +1,12 @@
 /***
- * BinaryHeap — generic array-backed binary heap with configurable ordering.
+ * BinaryHeap, generic array-backed binary heap with configurable ordering.
  *
  * Array layout uses implicit indexing: root at index 0, children of node `i`
  * at `2i + 1` and `2i + 2`, parent of node `i` at `(i - 1) >> 1`.
  *
  * The comparator determines ordering: when `compare(a, b) < 0`, `a` has
  * higher priority and floats toward the root. A standard `(a, b) => a - b`
- * comparator yields a min-heap; `(a, b) => b - a` yields a max-heap.
+ * comparator yields a min-heap. `(a, b) => b - a` yields a max-heap.
  *
  * push and pop are O(log n). peek and clear are O(1).
  *

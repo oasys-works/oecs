@@ -1,12 +1,12 @@
 /**
- * Inspector field-handle × the REAL reactive read bridge — the two-way
+ * Inspector field-handle × the real reactive read bridge, the two-way
  * loop closes end-to-end.
  *
  * The handle reads `Cell.x` through `syncFieldsToMap`'s `reactiveMap` (the read
  * channel) and writes through the {@link Editor} (a `setField` host command on
  * the bus). Asserts the acceptance criteria: reading reflects the channel, `set`
  * enqueues a `SetField` (off-schedule, applied at the next tick), the channel
- * re-publishes the new value, and the edit is undoable — all on the real engine,
+ * re-publishes the new value, and the edit is undoable, all on the real engine,
  * nothing mocked.
  */
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ function setup() {
 	const world = new ECS({ deterministic: true });
 	const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 	const commands = installHostCommandSeam(world);
-	// The REAL read channel: component observers → reactiveMap, per-entity.
+	// The real read channel: component observers → reactiveMap, per-entity.
 	const sync = syncFieldsToMap(world, Cell, ["x", "heat"]);
 	const editor = new Editor(commands, (eid, def, field) =>
 		world.isAlive(eid) ? world.getField(eid, def, field) : undefined
@@ -32,7 +32,7 @@ function setup() {
 	return { world, Cell, sync, editor };
 }
 
-describe("fieldHandle — two-way feel over the reactive read bridge", () => {
+describe("fieldHandle, two-way feel over the reactive read bridge", () => {
 	it("value reflects the channel; set enqueues an undoable SetField; the loop closes", () => {
 		const { world, Cell, sync, editor } = setup();
 
@@ -49,7 +49,7 @@ describe("fieldHandle — two-way feel over the reactive read bridge", () => {
 		root(() => effect(() => seen.push(handle.value)));
 		expect(last()).toBe(10); // reading reflects the reactive channel
 
-		// set() enqueues a SetField — off-schedule, so the channel is untouched
+		// set() enqueues a SetField, off-schedule, so the channel is untouched
 		// until the tick drains the bus. The editor shadow gives an optimistic echo.
 		handle.set(25);
 		expect(handle.pending).toBe(25);
@@ -69,7 +69,7 @@ describe("fieldHandle — two-way feel over the reactive read bridge", () => {
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (e) => (id = e));
 		batchedUpdate(world, 1 / 60);
-		expect(editor.depths().undo).toBe(1); // just the spawn
+		expect(editor.depths().undo).toBe(1); // only the spawn
 
 		const handle = fieldHandle(editor, id!, Cell, "x", () => sync.map.get(id!)?.x);
 		handle.set(7);

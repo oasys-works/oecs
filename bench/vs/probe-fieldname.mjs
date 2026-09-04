@@ -1,9 +1,9 @@
 /**
  * Which method for a name to an ordinal must replace `_fieldIndex[cid][field]`?
  *
- * Fix 1 in INVESTIGATION.md says: "keep `_fieldIndex` as a flat `Int32Array` with the
- * key `cid * stride + ordinal`". That method gives 1.43 ns for the load of the
- * *ordinal*. But the public API receives the NAME of a field. Therefore a flat
+ * One earlier proposal was to keep `_fieldIndex` as a flat `Int32Array` with the
+ * key `cid * stride + ordinal`. That method gives 1.43 ns for the load of the
+ * *ordinal*. But the public API receives the name of a field. Therefore a flat
  * `Int32Array` does not remove the step with the string. It only moves that step.
  * This probe measures the step itself, and it uses the same shape of data that the
  * real `_fieldIndex` has: one object shape for each component, and therefore a
@@ -33,14 +33,14 @@ function time(label, iters, fn) {
 /**
  * `WIDTH` fields per component, `COMPS` distinct component shapes. Field names
  * are per-component (`f0_x`, `f1_x`, …) so no two components share an object
- * shape — the property that makes the current keyed load megamorphic.
+ * shape, the property that makes the current keyed load megamorphic.
  */
 function bench(COMPS, WIDTH) {
-	console.log(`\n${COMPS} component shapes × ${WIDTH} fields — read field ordinal ${WIDTH - 1} (worst case for a scan)`);
+	console.log(`\n${COMPS} component shapes × ${WIDTH} fields, read field ordinal ${WIDTH - 1} (worst case for a scan)`);
 
-	const rec = []; // Record<string, number>  — what we do today
-	const map = []; // Map<string, number>     — every Map shares one hidden class
-	const names = []; // string[]              — already stored as `_fieldNames`
+	const rec = []; // Record<string, number>   what we do today
+	const map = []; // Map<string, number>      every Map shares one hidden class
+	const names = []; // string[]               already stored as `_fieldNames`
 	const flat = new Int32Array(COMPS * WIDTH); // the fix-1 shape, ordinal already known
 	for (let c = 0; c < COMPS; c++) {
 		const o = Object.create(null);
@@ -59,7 +59,7 @@ function bench(COMPS, WIDTH) {
 	}
 
 	// The call-site strings. A real call site passes a literal, so these are the
-	// same interned strings the tables were built with — pointer-comparable.
+	// same interned strings the tables were built with, pointer-comparable.
 	const asked = names.map((ns) => ns[WIDTH - 1]);
 	const cids = new Int32Array(N);
 	for (let i = 0; i < N; i++) cids[i] = i % COMPS;
@@ -140,7 +140,7 @@ console.log("\nnon-interned key (computed at the call site, 24 shapes × 3 field
 		map.push(m);
 		names.push(ns);
 	}
-	// Fresh string objects with the same contents — no pointer identity.
+	// Fresh string objects with the same contents, no pointer identity.
 	const asked = names.map((ns) => ns[2].split("").join(""));
 	const cids = new Int32Array(N);
 	for (let i = 0; i < N; i++) cids[i] = i % COMPS;

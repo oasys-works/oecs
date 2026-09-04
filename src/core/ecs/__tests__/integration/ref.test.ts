@@ -209,7 +209,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	// Live column binding
 	//=========================================================
 
-	it("ref reads live data — reflects external writes", () => {
+	it("ref reads live data, reflects external writes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const e = world.spawn();
@@ -234,7 +234,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(pos.x).toBe(77);
 	});
 
-	it("ref reads/writes through the live column buffer after a grow", () => {
+	it("ref reads and writes through the live column buffer after a grow", () => {
 		// A held ref reads `col.buf` live (not a buffer snapshot taken at creation),
 		// so it stays correct when the column grows and refreshes its view in place.
 		// A tiny columnCapacity forces the grow within a handful of appends.
@@ -254,7 +254,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		world.startup();
 		world.update(0);
 
-		// Hold a ref to e, THEN append enough same-archetype entities to force the
+		// Hold a ref to e, then append enough same-archetype entities to force the
 		// Pos column to grow (reallocating + refreshing the backing view).
 		const pos = ctx.ref(Pos, e);
 		for (let i = 0; i < 64; i++) {
@@ -293,7 +293,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				expect(pos.x).toBe(10);
 				expect(pos.y).toBe(20);
 
-				// Defer adding Vel — entity should NOT move archetypes yet
+				// Defer adding Vel, entity should not move archetypes yet
 				ctx.commands.add(e, Vel, { vx: 1, vy: 2 });
 
 				// Ref should still be valid: entity is still in [Pos]
@@ -333,7 +333,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				const vel = ctx.refRead(Vel, e);
 				expect(vel.vx).toBe(7);
 
-				// Defer removing Vel — entity stays in [Pos, Vel] until flush
+				// Defer removing Vel, entity stays in [Pos, Vel] until flush
 				ctx.commands.remove(e, Vel);
 
 				// Ref still reads correct data from the old archetype
@@ -347,7 +347,7 @@ describe("ComponentRef (ctx.ref)", () => {
 
 		expect(refVxAfterDeferredRemove).toBe(7);
 
-		// After flush, entity is in [Pos] — Vel is gone
+		// After flush, entity is in [Pos]. Vel is gone
 		expect(world.hasComponent(e, Vel)).toBe(false);
 		expect(world.getField(e, Pos, "x")).toBe(5);
 	});
@@ -367,7 +367,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				const pos = ctx.refRead(Pos, e);
 				expect(pos.x).toBe(42);
 
-				// Defer destruction — entity is still alive and in its archetype
+				// Defer destruction, entity is still alive and in its archetype
 				ctx.commands.despawn(e);
 
 				// Ref still works: entity has not been removed yet
@@ -405,7 +405,7 @@ describe("ComponentRef (ctx.ref)", () => {
 				// Defer adding a third component
 				ctx.commands.add(e, Health, { hp: 100 });
 
-				// Both refs still valid — use vel to update pos
+				// Both refs still valid, use vel to update pos
 				pos.x += vel.vx;
 				pos.y += vel.vy;
 
@@ -431,6 +431,10 @@ describe("ComponentRef (ctx.ref)", () => {
 	// Field enumeration
 	//=========================================================
 
+	// Every ref and cursor in the process shares one prototype (ref.ts), so the
+	// prototype carries the field names of every registered component, and not
+	// only those of this one. The contract here is that the component's own
+	// fields are present as enumerable accessors.
 	it("component fields are enumerable on the prototype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -454,11 +458,12 @@ describe("ComponentRef (ctx.ref)", () => {
 
 		expect(keys).toContain("x");
 		expect(keys).toContain("y");
-		expect(keys).toHaveLength(2);
+		expect(typeof Object.getOwnPropertyDescriptor(proto, "x")?.get).toBe("function");
+		expect(typeof Object.getOwnPropertyDescriptor(proto, "y")?.set).toBe("function");
 	});
 
 	//=========================================================
-	// DEV guards: ref on a missing component / tag throws an
+	// DEV guards: ref on a missing component or tag throws an
 	// ECSError instead of a raw TypeError from createRef.
 	//=========================================================
 

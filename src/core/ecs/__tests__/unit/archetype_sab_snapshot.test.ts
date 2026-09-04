@@ -8,7 +8,7 @@ import { BitSet, type TypedArrayTag } from "../../../../type_primitives";
 import {
 	createColumnStore,
 	restoreColumnStore,
-	snapshotColumnStore,
+	columnStoreBytesView,
 	TYPE_TAG,
 	type ArchetypeSpec,
 	type TypeTagValue
@@ -74,7 +74,7 @@ function specFromLayouts(
 	};
 }
 
-describe("Archetype data through snapshot/restore", () => {
+describe("Archetype data through snapshot and restore", () => {
 	it("a restored SAB-backed archetype reads the same column values", () => {
 		const layouts = [makeLayout(1, ["x", "y"], "f64"), makeLayout(2, ["hp"], "i32")];
 		const store = createColumnStore([specFromLayouts(0, 4, layouts)]);
@@ -87,8 +87,8 @@ describe("Archetype data through snapshot/restore", () => {
 		a.writeFieldsPositional(1, compId(1), [3.5, 4.5], 1);
 		a.writeFieldsPositional(1, compId(2), [200], 1);
 
-		// Snapshot now; rebuild the world from bytes.
-		const restoredStore = restoreColumnStore(snapshotColumnStore(store));
+		// Snapshot now. Rebuild the world from bytes.
+		const restoredStore = restoreColumnStore(columnStoreBytesView(store));
 		const restored = Archetype.fromColumnStore(
 			archId(0),
 			makeMask(1, 2),
@@ -98,7 +98,7 @@ describe("Archetype data through snapshot/restore", () => {
 		);
 
 		// The restored archetype starts at length 0 (Archetype.length lives
-		// on the host, not in the SAB) — but the column values themselves
+		// on the host, not in the SAB), but the column values themselves
 		// are in the SAB, so reads by row come back identical.
 		expect(restored.readField(0, compId(1), "x")).toBeCloseTo(1.5);
 		expect(restored.readField(0, compId(1), "y")).toBeCloseTo(2.5);
@@ -116,7 +116,7 @@ describe("Archetype data through snapshot/restore", () => {
 		a.addEntity(entity(0));
 		a.writeFieldsPositional(0, compId(1), [10], 1);
 
-		const restoredStore = restoreColumnStore(snapshotColumnStore(store));
+		const restoredStore = restoreColumnStore(columnStoreBytesView(store));
 		const restored = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, restoredStore, 0);
 
 		// Mutate the original archetype's column.

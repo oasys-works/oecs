@@ -6,7 +6,7 @@ import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 describe("ctx.commands (deferred structural facade)", () => {
-	it("spawn / add / despawn apply at the phase flush", () => {
+	it("spawn, add and despawn apply at the phase flush", () => {
 		const world = new ECS({ memory: { columnCapacity: 16 } });
 		const Pos = world.registerComponent({ x: "f64", y: "f64" });
 		const Mark = world.registerTag();
@@ -61,7 +61,7 @@ describe("ctx.commands (deferred structural facade)", () => {
 		expect(world.hasComponent(e, Pos)).toBe(true);
 	});
 
-	it("disable / enable are deferred to the flush", () => {
+	it("disable and enable are deferred to the flush", () => {
 		const world = new ECS({ memory: { columnCapacity: 16 } });
 		const Pos = world.registerComponent({ x: "f64", y: "f64" });
 		const e = world.spawnBundle(bundle(Pos, { x: 1, y: 1 }));

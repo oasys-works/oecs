@@ -12,7 +12,7 @@ ECS ──observers──▶ @oasys/oecs/reactive-sync ──▶ @oasys/oecs/rea
 The parts compose, but each part also operates alone. You can use the kernel by itself, drive React
 through `toExternalStore`, or connect the full chain into Solid.
 
-## `@oasys/oecs/reactive` — the signals kernel
+## `@oasys/oecs/reactive`, the signals kernel
 
 This is a reactive kernel with no dependencies. It is fine-grained and glitch-free, and it is the
 same class of machine as the observer system of the ECS, at a finer level of detail. It pulls
@@ -77,7 +77,7 @@ reactiveArray<T>(initial?, eq?): ReactiveArray<T>;  // get/set/push/pop/splice/l
 > **Give an `eq` function that compares content when the values are objects.** Under the default
 > `Object.is`, a projection that gives a new object in each tick compares as unequal each time, and
 > it starts each subscriber in each frame. Use `shallow` from `reactive-sync`, or write your own
-> comparator. For `reactiveMap`, note that `undefined` means "absent": use `delete`, and not
+> comparator. For `reactiveMap`,  `undefined` means "absent": use `delete`, and not
 > `set(key, undefined)`. For `reactiveArray`, a `set(i)` call that is out of range does nothing,
 > and it gives a warning in development. To make the array longer, use `push`, `splice`, or
 > `reconcile`.
@@ -94,7 +94,7 @@ together. It does not call it at the time of the subscription, so read the initi
 `toExternalStore` gives the exact shape that `useSyncExternalStore` in React needs. Its snapshot
 keeps the same reference between two changes, so React does not loop.
 
-## `@oasys/oecs/reactive-sync` — the bridge from the ECS to the kernel
+## `@oasys/oecs/reactive-sync`, the bridge from the ECS to the kernel
 
 This drains the ECS [observers](./observers.md) into reactive collections. In each tick it
 publishes **only the changed** entities and columns, which is `O(changed)`. Each `sync*` function
@@ -106,7 +106,7 @@ import { syncComponentToMap, shallow, batchedUpdate } from "@oasys/oecs/reactive
 const positions = syncComponentToMap(ecs, Pos, (row) => ({ x: row.field("x"), y: row.field("y") }),
   { eq: shallow });               // → positions.map : ReactiveMap<EntityID, {x,y}>
 
-batchedUpdate(ecs, 1 / 60);        // = batch(() => ecs.update(dt)) — one tick, one UI flush
+batchedUpdate(ecs, 1 / 60);        // = batch(() => ecs.update(dt)), one tick, one UI flush
 ```
 
 ```ts
@@ -135,7 +135,7 @@ batchedUpdate(ecs, dt): void;
 > each frame. Give `eq: shallow`, or use a scalar projection. This is the most frequent error with
 > `reactive-sync`.
 
-## `@oasys/oecs/solid` — the SolidJS adapter
+## `@oasys/oecs/solid`, the SolidJS adapter
 
 This brings the values of the kernel into SolidJS. **`solid-js` is an optional peer dependency**,
 and only this entry point imports it.
@@ -144,7 +144,7 @@ and only this entry point imports it.
 import { fromKernel, fromKernelMap } from "@oasys/oecs/solid";
 
 fromKernel<T>(accessor: () => T): Accessor<T>;                       // a kernel value → a Solid signal
-fromKernelMap<K, V>(map: ReactiveMap<K, V>): { keys; cell(key) };    // a collection with keys → <For>
+fromKernelMap<K, V>(map: ReactiveMap<K, V>): { keys; bindCell(key) };    // a collection with keys → <For>
 fromKernelStruct<T>(struct: T): T;                                   // a reactiveStruct → Solid tracking for each field
 fromKernelArray<T>(arr: ReactiveArray<T>): Accessor<readonly T[]>;   // a reactiveArray → <Index each>
 ```
@@ -152,7 +152,7 @@ fromKernelArray<T>(arr: ReactiveArray<T>): Accessor<readonly T[]>;   // a reacti
 ```tsx
 const view = fromKernelMap(positions.map);
 <For each={view.keys()}>{(id) => {
-  const p = view.cell(id);           // subscribes to the row of this entity alone
+  const p = view.bindCell(id);           // subscribes to the row of this entity alone
   return <circle cx={p()?.x} cy={p()?.y} />;
 }}</For>
 ```
@@ -165,8 +165,8 @@ const view = fromKernelMap(positions.map);
 
 ## See also
 
-- [observers](./observers.md) — what `reactive-sync` drains
-- [change detection](./change-detection.md) — the dirty tracking behind `O(changed)`
-- [the host write path](./host-write-seam.md) — the write side (UI to ECS) that pairs with this
+- [observers](./observers.md), what `reactive-sync` drains
+- [change detection](./change-detection.md), the dirty tracking behind `O(changed)`
+- [the host write path](./host-write-seam.md), the write side (UI to ECS) that pairs with this
   read side
-- [editor](./editor.md) — undo, redo, and field handles, which use both sides
+- [editor](./editor.md), undo, redo, and field handles, which use both sides

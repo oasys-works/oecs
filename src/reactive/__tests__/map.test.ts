@@ -1,6 +1,6 @@
 /**
  * Keyed reactive map gate: fine-grained per-key isolation (changing one entity
- * wakes only that entity's reader), structure-vs-value separation (size/keys track
+ * wakes only that entity's reader), structure-vs-value separation (size and keys track
  * membership, not value updates), the absent→present→deleted lifecycle, and batch
  * coalescing. The per-key isolation is what makes an O(changed) ECS→UI sync
  * possible.
@@ -28,7 +28,7 @@ describe("reactiveMap", () => {
 		expect(runs[2]).toBe(2);
 	});
 
-	it("separates structure (size/keys) from value updates", () => {
+	it("separates structure (size and keys) from value updates", () => {
 		const m = reactiveMap<string, number>();
 		let sizeRuns = 0;
 		let lastSize = -1;
@@ -148,7 +148,7 @@ describe("reactiveMap", () => {
 	});
 
 	it("never skips a delete under a custom eq (absence is not value-equal)", () => {
-		// delete writes `undefined` into the cell to wake its readers as absent; the eq
+		// delete writes `undefined` into the cell to wake its readers as absent. The eq
 		// wrapper must treat present-vs-absent as unequal so the clear is never swallowed.
 		const m = reactiveMap<string, { hp: number }>((a, b) => a.hp === b.hp);
 		m.set("x", { hp: 100 });

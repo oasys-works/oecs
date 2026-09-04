@@ -1,5 +1,5 @@
 /***
- * Component — Schema definition and phantom-typed handles.
+ * Component. Schema definition and phantom-typed handles.
  *
  * Components are defined as records mapping field names to typed array tags:
  *
@@ -10,10 +10,10 @@
  *
  *   const Vel = ecs.registerComponent(["vx", "vy"] as const);
  *
- * At runtime, a ComponentDef<S> is just a ComponentID (branded number).
+ * At runtime, a ComponentDef<S> is only a ComponentID (branded number).
  * The generic S is erased but carried at compile-time, enabling
- * type-safe column access: the mutable arch.getColumn(Pos, "x", tick) returns
- * Float64Array, arch.getColumn(Energy, "current", tick) returns Int32Array.
+ * type-safe column access: the mutable arch.getColumnMut(Pos, "x", tick) returns
+ * Float64Array, arch.getColumnMut(Energy, "current", tick) returns Int32Array.
  * The read-only arch.getColumnRead(...) returns a `ReadonlyColumn` view.
  *
  * Tag components (empty schema) participate in archetype matching
@@ -60,12 +60,12 @@ export type FieldValues<S extends ComponentSchema> = {
 };
 
 /**
- * Values argument tuple for attaching a component of schema `S` — empty for a
+ * Values argument tuple for attaching a component of schema `S`, empty for a
  * tag, a single optional partial-values map otherwise. A tag schema
  * (`Record<string, never>`) would otherwise degenerate: `keyof` an
  * index-signature record is `string`, so `Partial<FieldValues<…>>` collapses to
  * `Record<string, number>` and `Frozen({ anything: 1 })` compiles. The
- * conditional forbids values on tags outright; a schema-erased `ComponentDef`
+ * conditional forbids values on tags outright. A schema-erased `ComponentDef`
  * falls into the valued branch, so untyped call sites keep the loose shape.
  */
 export type ValuesArg<S extends ComponentSchema> = S extends Record<string, never>
@@ -76,7 +76,7 @@ export type ValuesArg<S extends ComponentSchema> = S extends Record<string, neve
  * `FieldValues` for APIs where the values object is required and complete
  * (`addComponent`'s valued overload, the host-seam `SpawnEntry`). Guards the
  * same tag degeneracy as `ValuesArg`: a tag accepts only the empty object
- * (`Record<string, never>` — every property typed `never`), so
+ * (`Record<string, never>`, every property typed `never`), so
  * `addComponent(e, Frozen, { x: 1 })` is a compile error while the
  * tag-overload-less call sites can still pass `{}`.
  */
@@ -86,9 +86,9 @@ export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<st
 
 /**
  * Trailing-argument tuple for the attach surfaces (`ctx.commands.add`'s
- * explicit-values form, `ctx.addSparse`): a tag takes NO values argument, a valued schema REQUIRES a
- * complete one. Encodes the former tag/valued overload pair as one signature,
- * which the typed system seam needs — its `def` parameter is a single
+ * explicit-values form, `ctx.addSparse`): a tag takes no values argument, a valued schema requires a
+ * complete one. Encodes the former tag and valued overload pair as one signature,
+ * which the typed system seam needs, its `def` parameter is a single
  * declared-access-constrained type param, and per-schema overloads would
  * re-introduce the tag-vs-valued split on top of it.
  */
@@ -102,42 +102,42 @@ export type ColumnsForSchema<S extends ComponentSchema> = {
 };
 
 /**
- * Mutable sibling of `ColumnsForSchema` — the field-keyed column group handed
- * back by `eachChunk`'s `cols.mut(def)` (no `readonly`, since the whole point
+ * Mutable sibling of `ColumnsForSchema`, the field-keyed column group handed
+ * back by `forEachChunk`'s `cols.mut(def)` (no `readonly`, since the whole point
  * is in-place writes). The change-tick is stamped once when the group is
- * resolved, so the per-row loop is plain typed-array indexing (§eachChunk).
+ * resolved, so the per-row loop is plain typed-array indexing.
  */
 export type MutableColumnsForSchema<S extends ComponentSchema> = {
 	[K in keyof S]: TagToTypedArray[S[K]];
 };
 
-// Phantom slot carrying the schema OUTSIDE the call signature (see ComponentDef).
+// Phantom slot carrying the schema outside the call signature (see ComponentDef).
 declare const __schema: unique symbol;
 
 /**
  * A component handle. **Callable**: `Pos({ x, y })` produces a `Bundle` (omitted
- * fields zero-fill at attach), so one varargs shape — `spawn(Pos({x,y}),
- * Vel({vx:1}), IsEnemy)` — replaces the older incompatible attach shapes. A bare
+ * fields zero-fill at attach), so one varargs shape, `spawn(Pos({x,y}),
+ * Vel({vx:1}), IsEnemy)`, replaces the older incompatible attach shapes. A bare
  * `Pos` (uncalled) still stands in for a tag / all-zero values wherever a
  * `BundleOrDef` is accepted.
  *
  * The numeric component id lives on `.id` (registration order). Consumers treat
- * the def as an opaque handle; internal code reads `def.id` where it needs the
+ * the def as an opaque handle. Internal code reads `def.id` where it needs the
  * raw id. The call signature's `S` makes `ComponentDef<{x:"f64"}>` distinct from
  * `ComponentDef<{vx:"f64"}>`.
  *
- * The optional `[__schema]` slot never exists at runtime; it re-states `S` in a
- * covariant tuple position so that a TAG def type is not a universal assignment
+ * The optional `[__schema]` slot never exists at runtime. It re-states `S` in a
+ * covariant tuple position so that a tag def type is not a universal assignment
  * sink. Through the call signature alone every def is assignable to
  * `ComponentDef<Record<string, never>>` (the tag callable takes no required
- * args and any `Bundle` satisfies its return), which would let ONE tag in a
+ * args and any `Bundle` satisfies its return), which would let one tag in a
  * system's declared-access union admit every component at compile time
- * (§typestate — `DeclaredRead` and friends in system.ts). With the slot, a
+ * (`DeclaredRead` and friends in system.ts). With the slot, a
  * valued schema is not assignable to the tag schema (`"f64" ⊀ never`), while
  * schema erasure (`ComponentDef<S>` → bare `ComponentDef`) still works because
  * every schema is assignable to `ComponentSchema`.
  *
- * Build one with `makeComponentDef`; never construct by hand.
+ * Build one with `createComponentDef`. Never construct by hand.
  */
 export interface ComponentDef<S extends ComponentSchema = ComponentSchema> {
 	(...values: ValuesArg<S>): Bundle<S>;
@@ -147,18 +147,18 @@ export interface ComponentDef<S extends ComponentSchema = ComponentSchema> {
 
 /**
  * Recover a def's schema type: `SchemaOf<typeof Pos>` is `{x:"f64", y:"f64"}`.
- * The typed `SystemContext` methods (§typestate) constrain their `def`
+ * The typed `SystemContext` methods (system.ts) constrain their `def`
  * parameter to the system's declared-access union and use this to type the
  * field argument, in place of taking `ComponentDef<S>` directly.
  */
 export type SchemaOf<D> = D extends ComponentDef<infer S extends ComponentSchema> ? S : never;
 
 /**
- * `unknown` if `D` is one of the query's declared terms, else an error tuple —
- * the query-seam sibling of system.ts's `DeclaredRead` (§typestate).
- * `Query.eachChunk`'s cursor and `ArchetypeView`'s column
+ * `unknown` if `D` is one of the query's declared terms, else an error tuple,
+ * the query-seam sibling of system.ts's `DeclaredRead`.
+ * `Query.forEachChunk`'s cursor and `ArchetypeView`'s column
  * accessors intersect this into their `def` parameter so fetching a component
- * that is NOT a term of the iterating query fails to compile (previously
+ * that is not a term of the iterating query fails to compile (previously
  * caught only by the dev-mode access check, and only when the system's
  * declaration was itself wrong). Same encoding rules as the system asserts:
  * stable `D extends ComponentDef<any>` constraints keep instantiations
@@ -168,17 +168,17 @@ export type DeclaredQueryTerm<Defs extends readonly ComponentDef<any>[], D> = [D
 	Defs[number]
 ]
 	? unknown
-	: ["component is not a term of this query — add it with .and(...)", D];
+	: ["component is not a term of this query, add it with .and(...)", D];
 
 /** Options bag accepted by `registerComponent` / `registerSparseComponent`. */
 export interface ComponentRegisterOptions {
-	/** Debug label for diagnostics — errors then read `'Pos' (component 5)`
+	/** Debug label for diagnostics, errors then read `'Pos' (component 5)`
 	 * instead of `component 5`. Never affects behaviour, layout, or hashing. */
 	readonly name?: string;
 }
 
 /**
- * Schema-erased component handle — just the `.id`. Internal, schema-agnostic
+ * Schema-erased component handle, only the `.id`. Internal, schema-agnostic
  * code (access checks, dirty-set notes, field-id lookup) takes this instead of
  * `ComponentDef`: the callable signature makes `ComponentDef<S>` *invariant* in
  * `S` (a generic `ComponentDef<S>` is not assignable to `ComponentDef`), but
@@ -187,13 +187,13 @@ export interface ComponentRegisterOptions {
  */
 export type ComponentHandle = { readonly id: ComponentID };
 
-// ── Callable bundles (§bundles) ───────────────────────────────────────────
+// ── Callable bundles ───────────────────────────────────────────
 // A `Bundle` pairs a component def with the values to write. A `BundleOrDef` is
-// therefore `Bundle | ComponentDef` — both objects now (the def is a callable),
+// therefore `Bundle | ComponentDef`, both objects now (the def is a callable),
 // so the runtime tells them apart with a `typeof === "function"` test (a bare
 // callable def vs a plain `{def, values}` bundle object).
 
-// Shared frozen empty — assignable to `Partial<FieldValues<S>>` for any S (the
+// Shared frozen empty, assignable to `Partial<FieldValues<S>>` for any S (the
 // empty object type has no index signature, so it satisfies all-optional props).
 const NO_VALUES = Object.freeze({});
 
@@ -201,10 +201,10 @@ const NO_VALUES = Object.freeze({});
  * Mint a callable `ComponentDef` for a freshly-registered component id. The
  * returned function produces a `Bundle` when called (`Pos({x,y})`) and carries
  * its numeric id on a non-enumerable `.id` (invisible to spreads / `JSON`).
- * The single cast bridges the function value to the branded handle type — the
+ * The single cast bridges the function value to the branded handle type, the
  * `.id` is installed at runtime by `defineProperty` (the branded-ID boundary).
  */
-export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): ComponentDef<S> {
+export function createComponentDef<S extends ComponentSchema>(id: ComponentID): ComponentDef<S> {
 	const def = ((values?: Partial<FieldValues<S>>): Bundle<S> => ({
 		def,
 		values: values ?? NO_VALUES
@@ -215,7 +215,7 @@ export function makeComponentDef<S extends ComponentSchema>(id: ComponentID): Co
 
 export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 	readonly def: ComponentDef<S>;
-	// Partial — an omitted field zero-fills at attach (`writeFields`'s `?? 0`),
+	// Partial, an omitted field zero-fills at attach (`writeFields`'s `?? 0`),
 	// so a bundle need not carry every field.
 	readonly values: Partial<FieldValues<S>>;
 }
@@ -223,10 +223,10 @@ export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 /** Either a populated bundle or a bare def (tag / all-fields-zero). */
 export type BundleOrDef<S extends ComponentSchema = ComponentSchema> = Bundle<S> | ComponentDef<S>;
 
-/** Re-validate one bundle-or-def item against its OWN def's schema. A bare def
- * (the callable) passes as-is; a bundle is re-stated as `Bundle<S>` for its
+/** Re-validate one bundle-or-def item against its own def's schema. A bare def
+ * (the callable) passes as-is. A bundle is re-stated as `Bundle<S>` for its
  * def's `S`, so a hand-written `{ def, values }` literal whose fields don't
- * match the def is rejected — closing the raw-literal leak that `bundle(Pos,…)`
+ * match the def is rejected, closing the raw-literal leak that `bundle(Pos,…)`
  * / `Pos(…)` never had (those validate at their own call site). Per-element
  * mapper for `StrictBundles`. */
 export type StrictBundle<T> = T extends ComponentDef
@@ -235,7 +235,7 @@ export type StrictBundle<T> = T extends ComponentDef
 		? Bundle<S>
 		: never;
 
-/** Mapped tuple over a bundle-or-def varargs list — each element re-checked
+/** Mapped tuple over a bundle-or-def varargs list, each element re-checked
  * against its own def's schema. The SolidJS-`on` per-element pattern (pull the
  * tuple apart, map every element), over callable bundles instead of
  * `{ def, values }` entry-objects. The one strictness mechanism shared by
@@ -245,7 +245,7 @@ export type StrictBundles<Items extends readonly BundleOrDef[]> = {
 };
 
 /** Recover the def tuple from a bundle-or-def varargs list, so `template(...)`
- * still returns `Template<[Pos, Vel]>` — the typed key set that `spawn`'s
+ * still returns `Template<[Pos, Vel]>`, the typed key set that `spawn`'s
  * `overrides` (`TemplateOverrides`) maps over. Also a per-element tuple map. */
 export type DefsOf<Items extends readonly BundleOrDef[]> = {
 	[K in keyof Items]: Items[K] extends { def: infer D extends ComponentDef }
@@ -255,7 +255,7 @@ export type DefsOf<Items extends readonly BundleOrDef[]> = {
 			: never;
 };
 
-/** Pair a component def with field values to attach. Omitted fields zero-fill;
+/** Pair a component def with field values to attach. Omitted fields zero-fill
  * a tag def takes no values (see `ValuesArg`). */
 export function bundle<S extends ComponentSchema>(
 	def: ComponentDef<S>,
@@ -264,7 +264,7 @@ export function bundle<S extends ComponentSchema>(
 	return { def, values: (values as [Partial<FieldValues<S>>?])[0] ?? NO_VALUES };
 }
 
-/** Extract the def from a `BundleOrDef`. A bare def is the callable; a bundle a plain object. */
+/** Extract the def from a `BundleOrDef`. A bare def is the callable. A bundle a plain object. */
 export function bundleDef(item: BundleOrDef): ComponentDef {
 	return typeof item === "function" ? item : item.def;
 }
@@ -281,7 +281,7 @@ export function bundleValues(item: BundleOrDef): Readonly<Record<string, number>
  * **Advisory, not a runtime barrier:** the value behind this type is the live
  * mutable backing `TypedArray` (`Archetype.getColumnRead` returns
  * `.buf as unknown as ReadonlyColumn`), so a deliberate cast can still write
- * through. For mutation use the mutable `Archetype.getColumn` (tick-bumping).
+ * through. For mutation use the mutable `Archetype.getColumnMut` (tick-bumping).
  * Enforced by the escape-hatch lint, not the runtime.
  */
 export interface ReadonlyColumn {
@@ -291,7 +291,7 @@ export interface ReadonlyColumn {
 
 /**
  * Compile-time readonly view of a Uint32Array. Blocks index writes at the type
- * layer. **Advisory, not a runtime barrier** — same caveat as `ReadonlyColumn`:
+ * layer. **Advisory, not a runtime barrier**, same caveat as `ReadonlyColumn`:
  * the underlying value is the live mutable buffer.
  */
 export interface ReadonlyUint32Array {

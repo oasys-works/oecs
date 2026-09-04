@@ -19,7 +19,7 @@ handle.dispose();   // remove the registration when you are finished (you can ca
 ```ts
 observe<S>(def: ComponentDef<S>, config: ObserverConfig): ObserverHandle;
 interface ObserverHandle {
-  dispose(): void;              // remove the registration; safe to call more than one time
+  dispose(): void;              // remove the registration. Safe to call more than one time
   [Symbol.dispose](): void;     // the same, in the TC39 explicit-resource-management form
 }
 ```
@@ -29,24 +29,24 @@ The `Symbol.dispose` member makes the handle compatible with `using`. So `using 
 The shape of `config` decides which callbacks are permitted:
 
 ```ts
-// Structural — add/remove/enable/disable:
+// the structural callbacks are add, remove, enable, and disable:
 interface StructuralObserverConfig {
   onAdd?: (entityId: EntityID, ctx: SystemContext) => void;
   onRemove?: (entityId: EntityID, ctx: SystemContext) => void;
   onDisable?: (entityId: EntityID, ctx: SystemContext) => void;
   onEnable?: (entityId: EntityID, ctx: SystemContext) => void;
-  access?: Partial<SystemAccessDeclaration>;   // and the reads/writes/spawns that the callbacks need
+  access?: Partial<SystemAccessDeclaration>;   // and the reads, writes and spawns that the callbacks need
   yieldExisting?: boolean;
   name?: string;                               // a label in frame traces (for observation only)
 }
 
-// onSet, archetype granularity (the default) — one call for each archetype column that changed:
+// onSet, archetype granularity (the default), one call for each archetype column that changed:
 interface ArchetypeSetObserverConfig extends /* the base above */ {
   onSet: (arch: ArchetypeView, ctx: SystemContext) => void;
   granularity?: "archetype";
 }
 
-// onSet, entity granularity — one call for each entity that changed:
+// onSet, entity granularity, one call for each entity that changed:
 interface EntitySetObserverConfig extends /* the base above */ {
   onSet: (entityId: EntityID, ctx: SystemContext) => void;
   granularity: "entity";
@@ -66,8 +66,12 @@ interface EntitySetObserverConfig extends /* the base above */ {
   - *Archetype granularity* (the default) gives `(arch, ctx)` for each archetype column that
     changed. It uses the change tick, which costs nothing more. You iterate the `arch.entityCount`
     rows yourself.
-  - *Entity granularity* gives `(entityId, ctx)` for each entity that changed. It reads an optional
-    dirty list that has one entry for each row.
+  - *Entity granularity* gives `(entityId, ctx)` for each entity that changed. It reads a row tick
+    that the engine keeps for each row of the component. The paths that record an entity are
+    `setField`, `updateField`, `markChanged`, `ref` when you create it, and a mutable cursor on
+    each `at`. A write through the raw column from `cols.mut` records nothing, so store into
+    `cols.ticks(def)` there, one store for each row you change (see [queries](./queries.md)).
+    Registration turns on the row ticks of the component, as `ecs.trackRows(def)` does.
 
 ```ts
 // React to each entity whose HexPos changed, exactly one time for each entity:
@@ -91,8 +95,12 @@ ecs.observe(HexPos, {
 > uses the change tick, which costs nothing more, but it runs one time for each archetype column
 > that changed. So you receive each row of that archetype, even when only one row changed. Entity
 > granularity runs exactly one time for each entity that changed, but **registration of it turns on
-> a dirty list for each row** of that component, which has a cost on the write path. Select the
-> granularity by the density of the changes.
+> a row tick for each row** of that component, which costs one word of memory for each row and a
+> record on each by-id write. The drain costs the count of recorded entities while that count
+> stays small against the live entities. Past a fraction of them, and in a frame where a chunk loop
+> took `cols.ticks(def)`, the by-id record stops listing and the drain walks each row of every
+> archetype of `def` that a writer stamped instead. Select the granularity by the density of the
+> changes, and let the drain pick its path.
 
 > [!WARNING]
 > **Only deferred operations in the schedule run a *structural* observer** (`onAdd`, `onRemove`,
@@ -103,7 +111,7 @@ ecs.observe(HexPos, {
 > `onSet` is **not** controlled by the receiver. It is derived change detection: the change ticks,
 > and the dirty list for each entity, which the engine reads at the detection point after the
 > update. So an `ecs.setField` call on the host between two frames reaches the `onSet` observers
-> at the next `update()`, exactly as `ctx.setField` does.
+> at the next `update()`, at both granularities and one time, exactly as `ctx.setField` does.
 >
 > **This includes `ecs.despawn`**, which is immediate since 0.5.0. A despawn on the host runs no
 > `onRemove` for the components of the entity. It also runs none for the entities that a relation
@@ -117,6 +125,14 @@ ecs.observe(HexPos, {
 > [!WARNING]
 > **Do not emit an event from `onSet`.** It runs where the engine is about to clear the events, and
 > it throws `OBSERVER_ONSET_EMIT` in development. See [events](./events.md).
+
+> [!NOTE]
+> A sparse component takes one observer shape, `onSet` with entity granularity. It has no
+> archetype, so no structural callback and no archetype grain, and `observe` throws
+> `OBSERVER_INVALID_CONFIG` for those. A relation takes none, and the types refuse one: at runtime
+> a relation is a number in its own id space, which the engine cannot tell from a sparse
+> component, so pass a relation nowhere a component is expected. See
+> [sparse storage](./sparse-storage.md).
 
 > [!NOTE]
 > `yieldExisting: true` runs `onAdd` again over the current **enabled** matches at registration.
@@ -148,7 +164,7 @@ produces that state in a canonical order, so a replay reproduces it.
 
 ## See also
 
-- [change detection](./change-detection.md) — the polling alternative and the tick that both use
-- [entities](./entities.md) — enable and disable, which `onDisable` and `onEnable` observe
-- [relations](./relations.md) — the cleanup policies, which are a related mechanism that reacts to
+- [change detection](./change-detection.md), the polling alternative and the tick that both use
+- [entities](./entities.md), enable and disable, which `onDisable` and `onEnable` observe
+- [relations](./relations.md), the cleanup policies, which are a related mechanism that reacts to
   a structural change

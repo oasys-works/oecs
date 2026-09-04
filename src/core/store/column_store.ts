@@ -1,17 +1,17 @@
 /**
- * ColumnStore — the sizing + layout primitive that turns a set of archetype
+ * ColumnStore, the sizing + layout primitive that turns a set of archetype
  * requirements into a `SharedArrayBuffer` carrying:
  *   1. A locked 32-byte header (see `header.ts`).
  *   2. A layout descriptor region (see `descriptor.ts`).
  *   3. Aligned column regions, each addressable via a TypedArray view.
  *
  * `Store.allocate` returns TypedArray views into a single SAB at the
- * right offset. This file builds that mapping — given
+ * right offset. This file builds that mapping, given
  * `{ archetype_id, row_capacity, columns: [{ component_id, field_id,
  * type_tag }] }` for every archetype, it computes byte offsets, writes the
  * header + descriptor, and hands back the views in one shot.
  *
- * NOT YET wired into `Archetype` / `Store` — that lands in a follow-up
+ * Not yet wired into `Archetype` / `Store`, that lands in a follow-up
  * once `view_stamp` invalidation is in place. The intent
  * here is to lock the offset math against a binary fixture so the
  * Archetype migration can lean on a tested primitive instead of inventing
@@ -36,6 +36,7 @@ import {
 	type TypeTagValue,
 	TYPE_TAG,
 	TYPE_TAG_STRIDE,
+	archetypeDescriptorBytes,
 	layoutDescriptorRegionBytes,
 	writeLayoutDescriptorRegion
 } from "./descriptor";
@@ -46,21 +47,21 @@ import { EVENT_RING_DEFAULT_CAPACITY_SLOTS } from "./event_ring";
 import { STORE_PREFIX_REGIONS, type StoreRegionOffsetField } from "./store_regions";
 import {
 	regionTableBytes,
-	validateRegionSpecs,
+	assertRegionSpecs,
 	writeRegionTable,
 	type RegionTableEntry,
 	type StoreRegionSpec
 } from "./region_table";
 
-/** Caller-facing column spec — no `byte_off` yet, the store computes it. */
+/** Caller-facing column spec, no `byte_off` yet, the store computes it. */
 export interface ColumnSpec {
 	readonly componentId: number;
 	readonly fieldId: number;
 	readonly typeTag: TypeTagValue;
 }
 
-/** Caller-facing archetype spec — no `column_count` (derived) and no
- * `byte_off`s in the columns; both are computed during sizing. */
+/** Caller-facing archetype spec, no `column_count` (derived) and no
+ * `byte_off`s in the columns. Both are computed during sizing. */
 export interface ArchetypeSpec {
 	readonly archetypeId: number;
 	/** Component bitmask, `COMPONENT_MASK_WORDS` little-endian u32 words. */
@@ -70,7 +71,7 @@ export interface ArchetypeSpec {
 }
 
 /** A single column's view after allocation. The `byte_off` matches what
- * was recorded in the layout descriptor; `view` is a TypedArray of the
+ * was recorded in the layout descriptor. `view` is a TypedArray of the
  * right element type, length `row_capacity`, backed by the SAB. */
 export interface ColumnView {
 	readonly componentId: number;
@@ -85,7 +86,7 @@ export interface ColumnView {
  * key encoding `(component_id, field_id)` so a (cid, fid) pair maps to
  * its column in O(1). The encoding (see `columnKey`) is dense over
  * (cid: 0..65535, fid: 0..65535), letting V8 keep this as a
- * Number-keyed `Map` — meaningfully faster than the previous string
+ * Number-keyed `Map`, meaningfully faster than the previous string
  * keys (no per-lookup template-string allocation, no string hashing).
  * The row order matches `ArchetypeSpec.columns`. The
  * `component_mask` words mirror what's in the SAB layout descriptor so
@@ -102,8 +103,8 @@ export interface ArchetypeViews {
 
 export interface ColumnStore {
 	/** The backing buffer. `ArrayBufferLike` because the store is backing-agnostic:
-	 * a `SharedArrayBuffer` for the SAB/WASM/worker profile, or a plain fixed
-	 * `ArrayBuffer` for the pure-TS heap profile (`heapArraybufferAllocator`).
+	 * a `SharedArrayBuffer` for the SAB, WASM and worker profile, or a plain fixed
+	 * `ArrayBuffer` for the pure-TS heap profile (`heapArrayBufferAllocator`).
 	 * Consumers that genuinely require sharing (worker transfer, WASM memory)
 	 * narrow back to `SharedArrayBuffer` at their boundary. */
 	readonly buffer: ArrayBufferLike;
@@ -146,11 +147,11 @@ export function columnKey(componentId: number, fieldId: number): number {
  * their operands to **signed** 32-bit integers (`ToInt32`). Once an offset
  * reaches 2³¹ the result wraps to a negative number (or, for some inputs, a
  * misaligned positive one), which then flows straight into
- * `new Uint8Array(buffer, byte_off, …)` — either a thrown `RangeError` deep in
+ * `new Uint8Array(buffer, byte_off, …)`, either a thrown `RangeError` deep in
  * the TypedArray ctor or, worse, a silently wrong view overlapping another
  * column. The 256 MiB default allocator cap (`growableSabAllocator`) keeps
  * real matches three orders of magnitude below this, but the cap is tunable
- * and callers are invited to raise it for bigger worlds — so the layout step
+ * and callers are invited to raise it for bigger worlds, so the layout step
  * guards the hard 2³¹ ceiling explicitly rather than relying on the policy
  * cap to stay in front of it. */
 export const STORE_MAX_BYTE_OFFSET = 2 ** 31;
@@ -165,7 +166,7 @@ export class StoreLayoutOverflowError extends Error {
 			`SAB column layout offset ${byteOff} reaches or exceeds the 2³¹ ` +
 				`(${STORE_MAX_BYTE_OFFSET}-byte) ceiling. Past 2 GiB the signed-32-bit ` +
 				`bitwise alignment math wraps to negative/misaligned offsets. This is a ` +
-				`structural limit independent of the (default 256 MiB) allocator cap — a ` +
+				`structural limit independent of the (default 256 MiB) allocator cap, a ` +
 				`single SAB cannot back more than ~2 GiB of column data.`
 		);
 		this.name = "StoreLayoutOverflowError";
@@ -191,8 +192,8 @@ export function alignUp(off: number, align: number): number {
 /**
  * Build the TypedArray view for one column.
  *
- * EVERY view gets an explicit `(byteOffset, length)`, and it must stay that
- * way. A TypedArray built with no length argument TRACKS the length of its
+ * Every view gets an explicit `(byteOffset, length)`, and it must stay that
+ * way. A TypedArray built with no length argument tracks the length of its
  * buffer. Measurement shows that a length-tracking view over a buffer that can
  * grow is the worst of all the access shapes: each element access costs many
  * times what the same access costs through a fixed-length view, on every engine
@@ -203,7 +204,7 @@ export function alignUp(off: number, align: number): number {
  * only place. `extend.test.ts` locks the other half: a view keeps its length
  * when the buffer below it grows.
  */
-function makeView(
+function createView(
 	buffer: ArrayBufferLike,
 	typeTag: TypeTagValue,
 	byteOff: number,
@@ -230,20 +231,20 @@ function makeView(
 }
 
 /** Build the layout-descriptor-region descriptors (with `byte_off` and
- * `stride` filled in) and return both them and the byte offset just past
- * the last column — i.e. the total SAB size.
+ * `stride` filled in) and return both them and the byte offset immediately past
+ * the last column, i.e. the total SAB size.
  *
- * `headroomBytes` reserves slack at the end of the descriptor region — ON
- * TOP OF the natural size for `specs` — so future extends can append new
+ * `headroomBytes` reserves slack at the end of the descriptor region. On
+ * top of the natural size for `specs`, so future extends can append new
  * descriptor entries without shifting existing column byte_offs. Used by
- * the growable-SAB path — column views stay valid across
+ * the growable-SAB path, column views stay valid across
  * `extendColumnStore` because their byte_offs don't move.
  *
- * Additive, not a floor: `regionSize = natural + headroom`, NOT
+ * Additive, not a floor: `regionSize = natural + headroom`, not
  * `max(natural, headroom)`. A floor only yields slack while `natural` is
- * below it; the moment the descriptor region outgrows the floor (the
+ * below it. The moment the descriptor region outgrows the floor (the
  * headroom exhausts and a realloc re-plans the merged spec set), a floor
- * would size the region to exactly `natural` — zero slack — and every
+ * would size the region to exactly `natural`, zero slack, and every
  * subsequent extend would take the slow realloc path forever after. The
  * additive form re-creates the same `headroom` margin on every realloc.
  * For the engine's empty-seed store (`createColumnStore([], …)`, where
@@ -256,7 +257,7 @@ function planLayout(
 ): { descriptors: ArchetypeDescriptor[]; totalBytes: number; regionBytes: number } {
 	// The descriptor region itself sits at `regionOff`. Columns start after
 	// the descriptor region. We do not know the descriptor region size until
-	// we know `column_count` per archetype — but that's just `columns.length`
+	// we know `column_count` per archetype, but that is only `columns.length`
 	// in the spec, so we can size the region up front.
 	const naturalRegionSize = layoutDescriptorRegionBytes(
 		specs.map((s) => ({
@@ -304,8 +305,8 @@ function planLayout(
 		};
 	}
 	// The last column's `cursor += stride * row_capacity` isn't followed by
-	// another `alignUp`, so the final total can land at/above 2³¹ even when
-	// every per-column guard passed. This total becomes the SAB byteLength;
+	// another `alignUp`, so the final total can land at and above 2³¹ even when
+	// every per-column guard passed. This total becomes the SAB byteLength
 	// guard it too.
 	if (cursor > STORE_MAX_BYTE_OFFSET) {
 		throw new StoreLayoutOverflowError(cursor);
@@ -313,7 +314,7 @@ function planLayout(
 	return { descriptors, totalBytes: cursor, regionBytes: regionSize };
 }
 
-/** Exported for the layout tests' overflow-guard coverage; the in-place
+/** Exported for the layout tests' overflow-guard coverage. The in-place
  * resize paths use `layoutColumnsAtTail` (layout_ops.ts), not this. */
 export { planLayout };
 
@@ -323,7 +324,7 @@ export { planLayout };
 /** Optional configuration for `createColumnStore`. */
 export interface CreateColumnStoreOptions {
 	/** Extra slack to reserve at the end of the layout descriptor region,
-	 * ON TOP OF the natural size for `specs` (additive, not a floor).
+	 * on top of the natural size for `specs` (additive, not a floor).
 	 * The descriptor region is padded with this many unused bytes so future
 	 * `extendColumnStore` calls can append new archetype descriptors into the
 	 * slack without shifting existing column byte_offs. Pairs with
@@ -339,12 +340,12 @@ export interface CreateColumnStoreOptions {
 	readonly reservedDescriptorBytes?: number;
 	/** When provided, allocates a command ring inside
 	 * the SAB at a stable offset right after the 48-byte header. Slot
-	 * count MUST be a power of two; `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`
-	 * (256) is the canonical value. Omitted ⇒ no ring; `command_ring_off`
+	 * count must be a power of two. `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`
+	 * (256) is the canonical value. Omitted ⇒ no ring. `command_ring_off`
 	 * stays at 0 ("absent"); existing test fixtures with hand-rolled SABs
 	 * see the legacy layout (descriptor region immediately after header).
 	 *
-	 * Sizing the ring this way — between header and descriptor region —
+	 * Sizing the ring this way, between header and descriptor region,
 	 * keeps `command_ring_off` stable across `extendColumnStore` /
 	 * `growColumnStore` calls, since those grow the descriptor region and
 	 * the column tail but never the bytes between header and descriptor. */
@@ -352,58 +353,58 @@ export interface CreateColumnStoreOptions {
 	/** When provided, allocates the entity-index region inside the SAB at a
 	 * stable offset between the command ring
 	 * (or header) and the descriptor region. Holds `(generations,
-	 * archetypes, rows)` triples indexed by entity slot; the engine's
-	 * `Store` populates them as entities are created/moved/destroyed,
+	 * archetypes, rows)` triples indexed by entity slot. The engine's
+	 * `Store` populates them as entities are created, moved and destroyed,
 	 * and Zig systems read them to resolve cross-entity targets without
-	 * a callback. Capacity is in *slots* (entities), not bytes; each
-	 * slot is 12 bytes. Omitted ⇒ no region; `entity_index_off` stays
+	 * a callback. Capacity is in *slots* (entities), not bytes. Each
+	 * slot is 12 bytes. Omitted ⇒ no region. `entity_index_off` stays
 	 * at 0 ("absent"). The engine's Store always sets it to
-	 * `ENTITY_INDEX_DEFAULT_CAPACITY`; bare-SAB tests can leave it
+	 * `ENTITY_INDEX_DEFAULT_CAPACITY`. Bare-SAB tests can leave it
 	 * absent. */
 	readonly entityIndexCapacity?: number;
 	/** When provided, allocates the event ring
 	 * inside the SAB at a stable offset between the entity-index region
-	 * and the descriptor region. Same SPSC shape as the command ring;
+	 * and the descriptor region. Same SPSC shape as the command ring
 	 * carries ECS signal payloads so Zig systems can emit and consume
 	 * them during `tick()` without callbacks into TS.
 	 *
-	 * Slot count MUST be a power of two; `EVENT_RING_DEFAULT_CAPACITY_SLOTS`
-	 * (256) is the canonical value. Omitted ⇒ no ring; `event_ring_off`
+	 * Slot count must be a power of two. `EVENT_RING_DEFAULT_CAPACITY_SLOTS`
+	 * (256) is the canonical value. Omitted ⇒ no ring. `event_ring_off`
 	 * stays at 0 ("absent"); existing test fixtures with hand-rolled
 	 * SABs see the layout without it. */
 	readonly eventRingCapacitySlots?: number;
 	/** When provided, allocates the action ring
-	 * inside the SAB at a stable offset between the entity-index/event-ring
-	 * and the region-table directory. Main writes encoded actions to it;
+	 * inside the SAB at a stable offset between the entity-index and event-ring
+	 * and the region-table directory. Main writes encoded actions to it
 	 * the sim worker drains them on each apply.
 	 *
-	 * Slot count MUST be a power of two; `ACTION_RING_DEFAULT_CAPACITY_SLOTS`
-	 * (256) is the canonical value. Omitted ⇒ no ring; `action_ring_off`
-	 * stays at 0 ("absent"); bare-SAB tests skip it. (Engine mechanism — the
-	 * `Store` allocates one always-on; it is no longer a public ECS option.) */
+	 * Slot count must be a power of two. `ACTION_RING_DEFAULT_CAPACITY_SLOTS`
+	 * (256) is the canonical value. Omitted ⇒ no ring. `action_ring_off`
+	 * stays at 0 ("absent"); bare-SAB tests skip it. (Engine mechanism, the
+	 * `Store` allocates one always-on. It is no longer a public ECS option.) */
 	readonly actionRingCapacitySlots?: number;
 	/** Consumer-declared SAB regions. Each `StoreRegionSpec` carries an
-	 * opaque `region_id`, a precomputed byte size, and an `init` closure; the
+	 * opaque `region_id`, a precomputed byte size, and an `init` closure. The
 	 * engine lays them out after the mechanism regions, writes a generic
 	 * region-table directory (`region_table.ts`) keyed by `region_id`, and
-	 * snapshots/restores them across a grow/extend. The engine never
-	 * interprets `region_id` — a game (e.g. `@internal/sim`'s region specs)
-	 * owns it. Omitted ⇒ no consumer regions; `region_table_off` stays 0. */
+	 * snapshots and restores them across a grow or extend. The engine never
+	 * interprets `region_id`, a game (e.g. `@internal/sim`'s region specs)
+	 * owns it. Omitted ⇒ no consumer regions. `region_table_off` stays 0. */
 	readonly regions?: readonly StoreRegionSpec[];
 	/** Byte size of the always-before-descriptor sim-bindings region (v5 /
 	 * "SAB-is-the-interface"). A consumer that opts into a WASM backend supplies
-	 * its own size here — `@internal/sim`'s `SIM_BINDINGS_BYTES`, computed from
+	 * its own size here, `@internal/sim`'s `SIM_BINDINGS_BYTES`, computed from
 	 * the game's binding manifest. The engine treats the region as opaque bytes:
 	 * it reserves the block at `bindings_off` (right before the descriptor
-	 * region, so the offset is stable across grow/extend) and the host writes the
+	 * region, so the offset is stable across grow and extend) and the host writes the
 	 * `(component_id, field_id)` IDs into it via `write_sim_bindings`.
 	 *
-	 * Omitted / 0 ⇒ NO bindings region (`bindings_off` stays 0, "absent") — the
+	 * Omitted / 0 ⇒ no bindings region (`bindings_off` stays 0, "absent"), the
 	 * default for a pure-TS game that pays nothing for the WASM seam. This used
 	 * to be the engine-baked `SIM_BINDINGS_BYTES` ABI constant reflected from the
-	 * game's Zig struct; it is now de-welded, so a manifest edit no longer dirties
+	 * game's Zig struct. It is now de-welded, so a manifest edit no longer dirties
 	 * the engine ABI golden. Re-derived across realloc by `optionsFromOld`
-	 * (= `layout_descriptor_off - bindings_off`), so it survives grow/extend
+	 * (= `layout_descriptor_off - bindings_off`), so it survives grow and extend
 	 * without a carried policy field. */
 	readonly bindingsRegionBytes?: number;
 }
@@ -416,8 +417,8 @@ export interface ColumnStoreInternal extends ColumnStore {
 	readonly _regionBytes: number;
 	readonly _allocator: BufferAllocator;
 	/** The `reservedDescriptorBytes` policy this store was created with
-	 * (the additive descriptor-region headroom margin; 0 when none). Carried
-	 * with the store — NOT re-derivable from the SAB bytes, since `_regionBytes`
+	 * (the additive descriptor-region headroom margin, 0 when none). Carried
+	 * with the store. Not re-derivable from the SAB bytes, since `_regionBytes`
 	 * holds the absolute region size (natural + this), and once `natural`
 	 * outgrows the margin the two are indistinguishable. The realloc slow path
 	 * reads it via `optionsFromOld` and re-reserves the same margin, so a
@@ -425,14 +426,28 @@ export interface ColumnStoreInternal extends ColumnStore {
 	 * in-place fast path instead of going permanently slow. The
 	 * `*_in_place` paths carry it forward verbatim. */
 	readonly _reservedDescriptorBytes: number;
+	/** The descriptor-region bytes in use: the sum of `archetypeDescriptorBytes`
+	 * over every archetype. The in-place extend reads it to find where the next
+	 * descriptor goes and how much headroom remains. Cached here so an extend
+	 * does not sum over every archetype each time, which made the cost of the
+	 * N-th archetype grow with N. Absent on a record that predates the cache
+	 * (a store from `growColumnStore`), and then summed one time on demand. */
+	readonly _usedDescriptorBytes?: number;
+}
+
+/** The descriptor-region bytes that `archetypes` use. */
+export function usedDescriptorBytes(archetypes: ReadonlyMap<number, ArchetypeViews>): number {
+	let used = 0;
+	for (const [, arch] of archetypes) used += archetypeDescriptorBytes(arch.columnsInOrder.length);
+	return used;
 }
 
 /** Typed recovery of `ColumnStoreInternal` from a public `ColumnStore`.
  * Not every store is internal: `restoreColumnStore` deliberately returns a
  * plain `{ buffer, view, header, archetypes }` (a snapshot carries no JS-side
- * allocator or headroom policy), and grow/extend must send such a store down
- * the realloc slow path. This guard is the ONE place that discrimination
- * happens — grow/extend previously re-derived the internal type via
+ * allocator or headroom policy), and grow and extend must send such a store down
+ * the realloc slow path. This guard is the one place that discrimination
+ * happens, grow and extend previously re-derived the internal type via
  * structural `as`-casts at six sites. */
 export function isColumnStoreInternal(store: ColumnStore): store is ColumnStoreInternal {
 	const s = store as Partial<ColumnStoreInternal>;
@@ -447,7 +462,7 @@ export function isColumnStoreInternal(store: ColumnStore): store is ColumnStoreI
  * and construct one TypedArray view per column.
  *
  * The returned `ColumnStore` is the source of truth for "where every column
- * lives in this SAB". `view_stamp` is initialised to 0 — a SAB
+ * lives in this SAB". `view_stamp` is initialised to 0, a SAB
  * grow flow bumps it. */
 export function createColumnStore(
 	specs: readonly ArchetypeSpec[],
@@ -456,17 +471,17 @@ export function createColumnStore(
 ): ColumnStore {
 	// SAB-availability is enforced by the allocator (the only thing that builds a
 	// SharedArrayBuffer): `DEFAULT_SAB_ALLOCATOR` / `growableSabAllocator` throw
-	// `SabUnavailableError` in a SAB-less runtime, while `heapArraybufferAllocator`
-	// returns a plain ArrayBuffer. So this function is backing-agnostic — it builds
+	// `SabUnavailableError` in a SAB-less runtime, while `heapArrayBufferAllocator`
+	// returns a plain ArrayBuffer. So this function is backing-agnostic. It builds
 	// views over whatever `allocator(totalBytes)` hands back.
 	//
-	// Region order in the buffer: header, the engine MECHANISM prefix regions
-	// (STORE_PREFIX_REGIONS — command/entity-index/event/action), the generic
-	// region-table directory + CONSUMER regions, then the always-present
+	// Region order in the buffer: header, the engine mechanism prefix regions
+	// (STORE_PREFIX_REGIONS, command, entity-index, event and action), the generic
+	// region-table directory + consumer regions, then the always-present
 	// sim-bindings block, then the layout descriptor + column data. Everything
 	// before the descriptor region keeps a stable offset across descriptor /
 	// column growth. STORE_PREFIX_REGIONS (mechanism) + the consumer region table
-	// are both walked again by the realloc snapshot/restore in extend.ts.
+	// are both walked again by the realloc snapshot and restore in extend.ts.
 	const regionOffsets = {} as Record<StoreRegionOffsetField, number>;
 	let cursor = STORE_HEADER_BYTES;
 	for (let i = 0; i < STORE_PREFIX_REGIONS.length; i++) {
@@ -483,10 +498,10 @@ export function createColumnStore(
 	// and addressed via a generic region-table directory rather than named
 	// header fields. The directory precedes the regions (so its own offset is
 	// stable too); each entry records the region's `byte_length`, letting the
-	// realloc snapshot/restore path copy a region across a grow without
+	// realloc snapshot and restore path copy a region across a grow without
 	// re-deriving consumer knobs.
 	const consumerRegions = options.regions ?? [];
-	validateRegionSpecs(consumerRegions);
+	assertRegionSpecs(consumerRegions);
 	const regionTableCount = consumerRegions.length;
 	const regionTableOff = regionTableCount > 0 ? cursor : 0;
 	cursor += regionTableBytes(regionTableCount);
@@ -504,8 +519,8 @@ export function createColumnStore(
 	// descriptor region so its offset is stable across `extendColumnStore` /
 	// `growColumnStore` (those grow the descriptor region + column tail, never the
 	// bytes before it). The host writes the `(component_id, field_id)` IDs into it
-	// once per layout via `write_sim_bindings`; the Zig per-system exports read
-	// from here. Engine-opaque — the size is a runtime input, not an
+	// once per layout via `write_sim_bindings`. The Zig per-system exports read
+	// from here. Engine-opaque, the size is a runtime input, not an
 	// ABI constant reflected from the game's binding struct.
 	const bindingsBytes = options.bindingsRegionBytes ?? 0;
 	const bindingsOff = bindingsBytes === 0 ? 0 : cursor;
@@ -541,7 +556,7 @@ export function createColumnStore(
 	writeStoreHeader(view, header);
 	// Zero-fill the sim-bindings region defensively (when present). A fresh
 	// allocator buffer is already zeroed, but `growableSabAllocator` may hand
-	// back a reused arena slice — zero it so a stale layout's IDs can't bleed
+	// back a reused arena slice, zero it so a stale layout's IDs can't bleed
 	// through before the host's first `write_sim_bindings`.
 	if (bindingsBytes > 0) new Uint8Array(buffer, bindingsOff, bindingsBytes).fill(0);
 	// Initialise each present region's header. `off !== 0` ⇒ that region's
@@ -562,7 +577,7 @@ export function createColumnStore(
 	}
 	writeLayoutDescriptorRegion(view, layoutDescriptorOff, descriptors);
 
-	const archetypes = buildArchetypeViews(buffer, descriptors);
+	const archetypes = createArchetypeViews(buffer, descriptors);
 
 	const store: ColumnStoreInternal = {
 		buffer,
@@ -573,7 +588,8 @@ export function createColumnStore(
 		_allocator: allocator,
 		// Carry the headroom policy with the store so the realloc slow path
 		// (`optionsFromOld`) can re-reserve the same margin.
-		_reservedDescriptorBytes: options.reservedDescriptorBytes ?? 0
+		_reservedDescriptorBytes: options.reservedDescriptorBytes ?? 0,
+		_usedDescriptorBytes: usedDescriptorBytes(archetypes)
 	};
 	return store;
 }
@@ -591,11 +607,11 @@ export { ENTITY_INDEX_DEFAULT_CAPACITY };
 export { EVENT_RING_DEFAULT_CAPACITY_SLOTS };
 
 /** Build the `ArchetypeViews` map from a SAB and its parsed descriptors.
- * Shared by `createColumnStore` (fresh allocation, byte_offs just computed)
+ * Shared by `createColumnStore` (fresh allocation, byte_offs only computed)
  * and `restoreColumnStore` (existing allocation, byte_offs read out of the
  * snapshot). Either way the views land at the byte_offs the descriptors
- * already carry — this helper does not plan layout. */
-export function buildArchetypeViews(
+ * already carry. This helper does not plan layout. */
+export function createArchetypeViews(
 	buffer: ArrayBufferLike,
 	descriptors: readonly ArchetypeDescriptor[]
 ): Map<number, ArchetypeViews> {
@@ -612,7 +628,7 @@ export function buildArchetypeViews(
 				typeTag: c.typeTag,
 				byteOff: c.byteOff,
 				stride: c.stride,
-				view: makeView(buffer, c.typeTag, c.byteOff, d.rowCapacity)
+				view: createView(buffer, c.typeTag, c.byteOff, d.rowCapacity)
 			};
 			columnsInOrder[j] = colView;
 			columns.set(columnKey(c.componentId, c.fieldId), colView);

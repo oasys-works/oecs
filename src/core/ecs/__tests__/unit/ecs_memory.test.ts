@@ -4,7 +4,7 @@
  * Covers: arm resolution + derivation arithmetic, the in-place
  * boundary (type-level brand + runtime backstop, Store constructor assert),
  * the loud migration guard for the removed knobs, and the intent-aware
- * STORE_CAP_EXCEEDED fatal (semantics unchanged — still no fallback).
+ * STORE_CAP_EXCEEDED fatal (semantics unchanged, still no fallback).
  */
 import { describe, it, expect } from "vitest";
 import { ECS } from "../../ecs";
@@ -21,7 +21,7 @@ import { ECSError, ECS_ERROR } from "../../utils/error";
 import {
 	DEFAULT_SAB_ALLOCATOR,
 	growableSabAllocator,
-	heapArraybufferAllocator,
+	heapArrayBufferAllocator,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
 	ENTITY_INDEX_BYTES_PER_SLOT,
 	type InPlaceBufferAllocator
@@ -41,7 +41,7 @@ function expectInvalid(fn: () => unknown, fragment: string): void {
 	expect((thrown as ECSError).message).toContain(fragment);
 }
 
-describe("resolve_ecs_memory — axis A: how big", () => {
+describe("resolve_ecs_memory, axis A: how big", () => {
 	it("defaults: 256 MiB cap, 1024 columns, full entity-index reservation", () => {
 		const plan = resolveECSMemory();
 		expect(plan.source).toBe("heap");
@@ -117,7 +117,7 @@ describe("resolve_ecs_memory — axis A: how big", () => {
 		expect(plan.columnCapacity).toBe(16_384);
 		expect(plan.entityIndexCapacity).toBe(131_072);
 		// Sized backwards from a 64 MiB cap the index would have taken the full
-		// EntityID space — eight times what the count needs.
+		// EntityID space, eight times what the count needs.
 		expect(plan.entityIndexCapacity).toBeLessThan(ENTITY_INDEX_DEFAULT_CAPACITY);
 	});
 
@@ -132,7 +132,7 @@ describe("resolve_ecs_memory — axis A: how big", () => {
 	});
 });
 
-describe("resolve_ecs_memory — axis B: what backs it", () => {
+describe("resolve_ecs_memory, axis B: what backs it", () => {
 	it("heap (the default): a plain ArrayBuffer, never a SharedArrayBuffer", () => {
 		const plan = resolveECSMemory({ backing: "heap" });
 		expect(plan.source).toBe("heap");
@@ -180,7 +180,7 @@ describe("resolve_ecs_memory — axis B: what backs it", () => {
 	});
 
 	// The one place the two axes really do collide: a WASM Memory's page maximum
-	// IS the ceiling, so a second ceiling beside it would be two answers to one
+	// is the ceiling, so a second ceiling beside it would be two answers to one
 	// question. Named as a conflict rather than silently ignored.
 	it("wasm: rejects a maxBytes beside the page maximum", () => {
 		expectInvalid(
@@ -204,7 +204,7 @@ describe("resolve_ecs_memory — axis B: what backs it", () => {
 	});
 
 	it("allocator: runtime backstop rejects a non-in-place allocator", () => {
-		// boundary: deliberately defeating the InPlaceBufferAllocator brand — the
+		// boundary: deliberately defeating the InPlaceBufferAllocator brand, the
 		// whole point of this test is that the *runtime* backstop catches what an
 		// untyped JS caller could pass despite the compile-time boundary.
 		const defeated = DEFAULT_SAB_ALLOCATOR as InPlaceBufferAllocator;
@@ -222,13 +222,13 @@ describe("resolve_ecs_memory — axis B: what backs it", () => {
 		const cap = 4 * MiB;
 		const plan = resolveECSMemory({
 			maxBytes: cap,
-			backing: { allocator: heapArraybufferAllocator(cap) }
+			backing: { allocator: heapArrayBufferAllocator(cap) }
 		});
 		expect(plan.entityIndexCapacity).toBeLessThan(ENTITY_INDEX_DEFAULT_CAPACITY);
 		expect(plan.entityIndexCapacity * ENTITY_INDEX_BYTES_PER_SLOT).toBeLessThanOrEqual(cap / 4);
 		// And the world actually builds, which is the part that used to throw.
 		const world = new ECS({
-			memory: { maxBytes: cap, backing: { allocator: heapArraybufferAllocator(cap) } }
+			memory: { maxBytes: cap, backing: { allocator: heapArrayBufferAllocator(cap) } }
 		});
 		const Pos = world.registerComponent({ x: "i32" });
 		world.startup();
@@ -243,7 +243,7 @@ describe("resolve_ecs_memory — axis B: what backs it", () => {
 	});
 });
 
-describe("resolve_ecs_memory — the axes are independent", () => {
+describe("resolve_ecs_memory, the axes are independent", () => {
 	// The claim the flattening rests on, and the reason the P11 probe ran first:
 	// one sizing intent must give one set of numbers on every backing.
 	it("one entity count gives the same sizing on every backing", () => {
@@ -251,7 +251,7 @@ describe("resolve_ecs_memory — the axes are independent", () => {
 		const plans = [
 			resolveECSMemory({ entities, backing: "heap" }),
 			resolveECSMemory({ entities, backing: "shared" }),
-			resolveECSMemory({ entities, backing: { allocator: heapArraybufferAllocator(32 * MiB) } }),
+			resolveECSMemory({ entities, backing: { allocator: heapArrayBufferAllocator(32 * MiB) } }),
 			resolveECSMemory({ entities, backing: { wasm: { maximumPages: 512 } } })
 		];
 		for (const plan of plans) {
@@ -280,13 +280,13 @@ describe("ECS memory wiring", () => {
 	});
 
 	it("throws loudly on the removed pre-0.5 memory knobs", () => {
-		// boundary: the removed keys no longer typecheck; JSON-ingress shape
+		// boundary: the removed keys no longer typecheck. JSON-ingress shape
 		// mimics an unmigrated untyped caller.
 		const stale = JSON.parse('{ "initial_capacity": 64 }');
 		expectInvalid(() => new ECS(stale), "replaced by ECSOptions.memory");
 	});
 
-	// The pre-0.6 arms are REMOVED, not aliased. A silently-ignored `budget`
+	// The pre-0.6 arms are removed, not aliased. A silently-ignored `budget`
 	// would size a world wrong and only surface as a cap failure much later.
 	it("throws loudly on each removed pre-0.6 arm and names the rewrite", () => {
 		const cases: readonly [string, string][] = [
@@ -334,7 +334,7 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 		let thrown: unknown;
 		try {
 			// Push column doubling past the 1 MiB cap. Each entity is 16 B of
-			// column data; doublings march 4 → ... → 65536 rows (1 MiB) and the
+			// column data. Doublings march 4 → ... → 65536 rows (1 MiB) and the
 			// next grow request crosses the cap well before the index ceiling.
 			for (let i = 0; i < 1 << 16; i++) {
 				const e = store.createEntity();
@@ -352,7 +352,7 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 	});
 
 	// Spawn-path counterpart of the clean `addComponent` cap test above.
-	// `spawn`/`spawnMany` used to commit the entity slot before the column write
+	// `spawn` and `spawnMany` used to commit the entity slot before the column write
 	// that can throw, so a cap hit mid-spawn left a phantom-alive slot: counts
 	// over-counted by one, the id unreachable. The fix reserves column capacity
 	// before committing the slot, so the throw lands with the world untouched.
@@ -364,13 +364,13 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 			bufferAllocator: growableSabAllocator(cap)
 		});
 		const Pos = store.registerComponent({ x: "f64", y: "f64" } as const);
-		const tmpl = store.resolveTemplate([{ def: Pos }]);
+		const tmpl = store.createTemplate([{ def: Pos }]);
 
 		const ids: EntityID[] = [];
 		let thrown: unknown;
 		try {
-			// 16 B/row; column doublings march to the 1 MiB cap, then the next
-			// spawn's grow request overflows it — well before the index ceiling.
+			// 16 B/row. Column doublings march to the 1 MiB cap, then the next
+			// spawn's grow request overflows it, well before the index ceiling.
 			for (let i = 0; i < 1 << 16; i++) ids.push(store.spawn(tmpl));
 		} catch (e) {
 			thrown = e;
@@ -380,17 +380,17 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 
 		// We actually drove into the cap (not an empty / off-by-one loop).
 		expect(ids.length).toBeGreaterThan(0);
-		// No phantom-alive slot: the live count equals exactly the ids handed back
-		// — the failed spawn committed nothing — and every returned id is alive.
+		// No phantom-alive slot: the live count equals exactly the ids handed back,
+		// the failed spawn committed nothing, and every returned id is alive.
 		expect(store.entityCount).toBe(ids.length);
 		for (const id of ids) expect(store.isAlive(id)).toBe(true);
 	});
 
-	it("spawn_many cap hit is atomic — no partial / phantom batch", () => {
+	it("spawn_many cap hit is atomic, no partial or phantom batch", () => {
 		const cap = 1 * MiB;
 		// Same index sizing as the clean-path test: 1<<16 slots reserve ~0.75 MiB,
 		// which fits under the 1 MiB cap at construction and leaves the SAB *column*
-		// grow — not the index ceiling or a construction-time reservation — as the
+		// grow, not the index ceiling or a construction-time reservation, as the
 		// cap throw under test.
 		const store = new Store({
 			initialCapacity: 4,
@@ -398,11 +398,11 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 			bufferAllocator: growableSabAllocator(cap)
 		});
 		const Pos = store.registerComponent({ x: "f64", y: "f64" } as const);
-		const tmpl = store.resolveTemplate([{ def: Pos }]);
+		const tmpl = store.createTemplate([{ def: Pos }]);
 
 		// One bulk spawn whose column reservation (1<<16 rows × 16 B = 1 MiB, atop
 		// the index region) blows past the cap. The index pre-check passes (count
-		// fits the index space), so `ensureRowCapacity` is the throw — and it
+		// fits the index space), so `reserveRows` is the throw, and it
 		// fires before any slot is committed.
 		const before = store.entityCount;
 		let thrown: unknown;

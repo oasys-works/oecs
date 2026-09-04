@@ -19,7 +19,7 @@ const move = ecs.registerSystem({
   writes: [Pos],
   queries: [[Pos, Vel]],
   fn: (ctx, dt) => {
-    movers.eachChunk((cols, count) => {
+    movers.forEachChunk((cols, count) => {
       const { x, y } = cols.mut(Pos);
       const { vx, vy } = cols.read(Vel);
       for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
@@ -27,7 +27,7 @@ const move = ecs.registerSystem({
   },
 });
 
-ecs.addSystems(SCHEDULE.UPDATE, move);   // registration is not scheduling — do both
+ecs.addSystems(SCHEDULE.UPDATE, move);   // registration is not scheduling, do both
 ```
 
 > [!IMPORTANT]
@@ -35,16 +35,16 @@ ecs.addSystems(SCHEDULE.UPDATE, move);   // registration is not scheduling — d
 > `ecs.addSystems(phase, descriptor)` (see [schedule](./schedule.md)). If you do not, the system
 > never runs.
 
-## `registerSystem` — three forms
+## `registerSystem`, three forms
 
 ```ts
-// 1. Config form — the form for real work.
+// 1. Config form, the form for real work.
 registerSystem(config: SystemConfig): SystemDescriptor;
 
-// 2. Function alone — no query, NO declared access.
+// 2. The function alone, with no query and no declared access.
 registerSystem(fn: (ctx, dt) => void): SystemDescriptor;
 
-// 3. Function with a query builder — the query is resolved one time, at registration.
+// 3. Function with a query builder, the query is resolved one time, at registration.
 registerSystem<Defs>(
   fn: (q: Query<Defs>, ctx, dt) => void,
   queryFn: (qb: QueryBuilder) => Query<Defs>,
@@ -69,22 +69,22 @@ registerSystem<Defs>(
 
 ```ts
 interface SystemConfig {
-  fn?: (ctx: SystemContext, dt: number) => void;  // the update body — required unless backendHandle is set
-                                                  // (one of the two, DEV-enforced; see compute backends below)
+  fn?: (ctx: SystemContext, dt: number) => void;  // the update body, required unless backendHandle is set
+                                                  // (one of the two, DEV-enforced, see compute backends below)
 
   // --- Access declarations (checked in development) ---
   reads:  readonly ComponentDef[];                // required (empty = "touches no columns")
-  writes: readonly ComponentDef[];                // required; a write also gives read access
+  writes: readonly ComponentDef[];                // required. A write also gives read access
   spawns?:    readonly (readonly ComponentDef[] | Template)[];
   despawns?:  readonly (ComponentDef | Template)[];
-  transitions?: readonly SystemTransition[];      // add/remove sets during a tick
+  transitions?: readonly SystemTransition[];      // add and remove sets during a tick
   resourceReads?:  readonly ResourceKey<any>[];
   resourceWrites?: readonly ResourceKey<any>[];
   sparseReads?:   readonly SparseComponentDef[];
   sparseWrites?:  readonly SparseComponentDef[];
   relationReads?:  readonly RelationDef[];        // include ANY_RELATION for forEachRelatedTo
   relationWrites?: readonly RelationDef[];
-  queries?: readonly (readonly ComponentDef[])[]; // one entry for each closed-over / builder query — a check only
+  queries?: readonly (readonly ComponentDef[])[]; // one entry for each closed-over / builder query, a check only
 
   // --- Optional ---
   name?: string;                                  // diagnostics
@@ -129,7 +129,7 @@ const sys = ecs.registerSystem({
     ctx.setField(e, Pos, "x", 1);
     // ✗ compile error: […, "component is not declared in this system's writes", …]
     ctx.commands.despawn(e);
-    // ✗ compile error: "this system declares no despawns — despawn is not permitted"
+    // ✗ compile error: "this system declares no despawns, so despawn is not permitted"
   },
 });
 ```
@@ -150,7 +150,7 @@ run-time checks on. They find the errors that the type system cannot:
 - A config that you build dynamically (a value with the `SystemConfig` type) registers with a
   permissive context.
 
-**An alternative:** add a type to the context parameter — `fn(ctx: SystemContext) { … }` — to
+**An alternative:** add a type to the context parameter, `fn(ctx: SystemContext) { … }`, to
 remove the limits from one system. The run-time checker still applies. This is how a test that
 violates its own declaration on purpose asserts the development throw. A helper function can
 continue to take a plain `SystemContext`, because you can assign each limited context to it.
@@ -189,13 +189,13 @@ so that iteration stays safe, and **immediate** reads and writes.
 ### Reads and writes of components (immediate)
 
 ```ts
-ref<S>(def, entityId): ComponentRef<S>;         // a mutable cached accessor — sets the change tick
-refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only — no change to the tick
+ref<S>(def, entityId): ComponentRef<S>;         // a mutable cached accessor, sets the change tick
+refRead<S>(def, entityId): ReadonlyComponentRef<S>;   // read-only, no change to the tick
 getField<S>(entityId, def, field): number;
-tryGetField<S>(entityId, def, field): number | undefined; // total: dead/missing → undefined
+tryGetField<S>(entityId, def, field): number | undefined; // total: dead or missing → undefined
 setField<S>(entityId, def, field, value): void; // writes and sets the change tick
-updateField<S>(entityId, def, field, fn): number;     // read, modify, write; gives the new value
-markChanged(entityId, def): void;               // mark one entity for onSet by hand (raw loops)
+updateField<S>(entityId, def, field, fn): number;     // read, modify, write. Gives the new value
+markChanged(entityId, def): void;               // record one entity for onSet by id. In a chunk loop, cols.ticks is cheaper
 ```
 
 See [refs](./refs.md) for `ref` and `refRead`, and [change detection](./change-detection.md) for
@@ -203,7 +203,7 @@ the meaning of "sets the change tick".
 
 <a id="ctxcommands--deferred-structural-ops"></a>
 
-### `ctx.commands` — deferred structural operations
+### `ctx.commands`, deferred structural operations
 
 ```ts
 ctx.commands.spawn(...items: BundleOrDef[]): EntityID;   // the create is immediate, the attaches are deferred
@@ -233,7 +233,7 @@ ctx.commands.enable(entityId): this;
 ```ts
 isAlive(id): boolean;            hasComponent(id, def): boolean;   isDisabled(id): boolean;
 
-// Sparse and relation operations — IMMEDIATE (see sparse-storage.md / relations.md)
+// Sparse and relation operations are immediate (see sparse-storage.md and relations.md)
 addSparse / removeSparse / hasSparse / getSparseField / setSparseField
 addRelation / removeRelation / targetOf / targetsOf / sourcesOf / hasRelation
 
@@ -241,7 +241,7 @@ addRelation / removeRelation / targetOf / targetsOf / sourcesOf / hasRelation
 emit(key, values?): void;   read(key): EventReader;
 resource(key): T;   setResource(key, value): void;   removeResource(key): void;   hasResource(key): boolean;
 
-get ecsTick(): number;   // the current write tick of the store
+get ecsTick(): number;   // the frame tick, the count of updates so far
 flush(): void;           // apply the buffered structural operations now
 ```
 
@@ -280,10 +280,10 @@ backend, `fn` runs as the pure-TypeScript alternative.
 
 ## See also
 
-- [schedule](./schedule.md) — the phases, the order of systems, system sets, run conditions, and
+- [schedule](./schedule.md), the phases, the order of systems, system sets, run conditions, and
   the frame loop
-- [queries](./queries.md) — the terminal functions that a system body uses
-- [refs](./refs.md) · [change detection](./change-detection.md) — the mutation surface and the tick
-- [WASM backends](./wasm.md) · [parallel execution](./parallel.md) — systems that a backend runs,
+- [queries](./queries.md), the terminal functions that a system body uses
+- [refs](./refs.md), [change detection](./change-detection.md), the mutation surface and the tick
+- [WASM backends](./wasm.md), [parallel execution](./parallel.md), systems that a backend runs,
   and access declarations that are ready for parallel execution
-- [the host write path](./host-write-seam.md) — how to send writes in from outside the schedule
+- [the host write path](./host-write-seam.md), how to send writes in from outside the schedule

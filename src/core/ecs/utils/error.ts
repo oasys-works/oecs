@@ -25,6 +25,7 @@ export enum ECS_ERROR {
 	OBSERVER_NON_CONVERGENT = "OBSERVER_NON_CONVERGENT",
 	OBSERVER_INVALID_CONFIG = "OBSERVER_INVALID_CONFIG",
 	OBSERVER_ONSET_EMIT = "OBSERVER_ONSET_EMIT",
+	ROW_TICKS_NOT_TRACKED = "ROW_TICKS_NOT_TRACKED",
 	INVALID_FIXED_TIMESTEP = "INVALID_FIXED_TIMESTEP",
 	INVALID_MAX_FIXED_STEPS = "INVALID_MAX_FIXED_STEPS",
 	INVALID_RECORDER_SCHEDULE = "INVALID_RECORDER_SCHEDULE",
@@ -33,14 +34,14 @@ export enum ECS_ERROR {
 	/** An Archetype's row bookkeeping is inconsistent with its backing columns:
 	 * a reserve that did not deliver the capacity it was asked for, a restore
 	 * handed an out-of-range partition boundary, or a cached row plane
-	 * (`_bufs`/`_eids`) left pointing at a stale buffer. Dev-only, and an
-	 * internal-invariant failure rather than a caller error — distinct from
+	 * (`_bufs` and `_eids`) left pointing at a stale buffer. Dev-only, and an
+	 * internal-invariant failure rather than a caller error, distinct from
 	 * `STORE_CAP_EXCEEDED`, which is the allocator refusing a legitimate grow. */
 	ARCHETYPE_ROW_INVARIANT = "ARCHETYPE_ROW_INVARIANT",
 	OPTIONAL_TERM_NOT_DECLARED = "OPTIONAL_TERM_NOT_DECLARED",
 	QUERY_ACCESS_UNDECLARED = "QUERY_ACCESS_UNDECLARED",
-	/** A system touched a component/sparse/relation/resource it didn't declare
-	 * in its access surface — distinct from *_NOT_REGISTERED (which means the
+	/** A system touched a component, sparse, relation and resource it didn't declare
+	 * in its access surface, distinct from *_NOT_REGISTERED (which means the
 	 * thing was never registered with the world at all). */
 	ACCESS_UNDECLARED = "ACCESS_UNDECLARED",
 	/** `Query.singleEntity` found 0 or >1 matches (dev-only assertion). */

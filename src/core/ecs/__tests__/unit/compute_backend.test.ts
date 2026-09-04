@@ -1,5 +1,5 @@
 /**
- * ComputeBackend seam — the pure-TS fixture proof.
+ * ComputeBackend seam, the pure-TS fixture proof.
  *
  * The pluggable opt-in backend seam is validated end-to-end by a
  * fixture that attaches *no* game backend: a bare `ECS` runs pure-TS systems
@@ -14,7 +14,7 @@ import type { ComputeBackend, BackendSystemHandle } from "../../compute_backend"
 import type { SystemConfig, SystemFn } from "../../system";
 import { unsafeCast } from "../../../../type_primitives";
 
-/** Records every engine→backend call; mints opaque handles as plain indices. */
+/** Records every engine→backend call. Mints opaque handles as plain indices. */
 class FakeBackend implements ComputeBackend {
 	readonly layoutCalls: number[] = [];
 	readonly runCalls: BackendSystemHandle[] = [];
@@ -29,7 +29,7 @@ class FakeBackend implements ComputeBackend {
 const handle = (n: number): BackendSystemHandle => unsafeCast<BackendSystemHandle>(n);
 
 /** A full SystemConfig with empty access (so the config-form `backendHandle`
- * field is reachable — the bare/2-arg overloads can't carry it). */
+ * field is reachable, the bare/2-arg overloads can't carry it). */
 function config(fn: SystemFn, backendHandle?: BackendSystemHandle): SystemConfig {
 	return {
 		reads: [],

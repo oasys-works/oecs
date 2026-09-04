@@ -1,7 +1,7 @@
 # Relations
 
 > [!NOTE]
-> **0.5.0 — a grouped surface.** The registration, mutation, reads, wildcards, traversal, and
+> **0.5.0, a grouped surface.** The registration, mutation, reads, wildcards, traversal, and
 > compaction of a relation are on the **`ecs.relations`** facade: `ecs.relations.register()`,
 > `ecs.relations.add(child, ChildOf, parent)`, `ecs.relations.targetOf(child, ChildOf)`,
 > `ecs.relations.ancestorsOf(...)`, and `ecs.relations.compact()`. Also, `relationCount` is
@@ -20,14 +20,14 @@ no dense row moves.
 
 ```ts
 import { registerChildOf } from "@oasys/oecs";
-const ChildOf = registerChildOf(ecs);           // a supplied preset — a free function (see below)
+const ChildOf = registerChildOf(ecs);           // a supplied preset, a free function (see below)
 
 const parent = ecs.spawn();
 const child  = ecs.spawn();
 ecs.relations.add(child, ChildOf, parent);
 
 ecs.relations.targetOf(child, ChildOf);      // parent
-ecs.relations.sourcesOf(parent, ChildOf);    // [child, …] — each entity whose parent is `parent`
+ecs.relations.sourcesOf(parent, ChildOf);    // [child, …], each entity whose parent is `parent`
 ```
 
 ## How to register a relation
@@ -41,8 +41,8 @@ type RelationOptions =
   | { readonly exclusive?: true; readonly multi?: false;
       readonly onDeleteTarget?: OnDeleteTarget }    // one target for each source (the default)
   | { readonly multi: true; readonly exclusive?: false;
-      readonly onDeleteTarget?: OnDeleteTarget };   // a SET of targets for each source
-// onDeleteTarget: "delete" | "clear" | "orphan" — the cleanup policy; the default is "orphan"
+      readonly onDeleteTarget?: OnDeleteTarget };   // a set of targets for each source
+// onDeleteTarget: "delete" | "clear" | "orphan", the cleanup policy, and the default is "orphan"
 ```
 
 A relation is **exclusive** by default: there is one target for each source, and a new `add`
@@ -58,8 +58,8 @@ A relation is **exclusive** by default: there is one target for each source, and
 Each function is on the `ecs.relations` facade:
 
 ```ts
-add(src, def, tgt): this;          // exclusive replaces the target; multi adds to the set
-remove(src, def, tgt?): this;      // multi: give no tgt to remove ALL the targets of src
+add(src, def, tgt): this;          // exclusive replaces the target. Multi adds to the set
+remove(src, def, tgt?): this;      // multi: give no tgt to remove all the targets of src
 has(src, def): boolean;
 ```
 
@@ -74,8 +74,8 @@ has(src, def): boolean;
 targetOf(src, def): EntityID | undefined;   // one target (an exclusive relation)
 targetsOf(src, def): EntityID[];            // each target, ascending by id
 sourcesOf(tgt, def): EntityID[];            // the reverse index: the sources that point at tgt, ascending
-pairsOf(def): [EntityID, EntityID][];       // each (source, target) pair — the (R, *) wildcard, low frequency
-sourcesOfAny(tgt): [RelationDef, EntityID][];  // each (relation, source) at tgt — the (*, T) wildcard, low frequency
+pairsOf(def): [EntityID, EntityID][];       // each (source, target) pair, the (R, *) wildcard, low frequency
+sourcesOfAny(tgt): [RelationDef, EntityID][];  // each (relation, source) at tgt, the (*, T) wildcard, low frequency
 ```
 
 - `targetOf` is for an exclusive relation, and the compiler holds you to that.
@@ -90,20 +90,20 @@ sourcesOfAny(tgt): [RelationDef, EntityID][];  // each (relation, source) at tgt
 
 You can compose a relation into a [query](./queries.md). The members of a relation are distributed
 across the archetypes. So these queries iterate with `forEachEntity` or `forEachRelatedTo`, and
-not with the dense `forEach` or `eachChunk`.
+not with the dense `forEach` or `forEachChunk`.
 
 ```ts
-withRelation(...defs): Query<Defs>;     // (R, *) — sources that hold ANY target under R
+withRelation(...defs): Query<Defs>;     // (R, *), sources that hold any target under R
 withoutRelation(...defs): Query<Defs>;  // remove those sources
-forEachRelatedTo(target, cb): void;     // (*, T) — each source related to `target` under ANY relation
+forEachRelatedTo(target, cb): void;     // (*, T), each source related to `target` under any relation
 hierarchy(relation, maxDepth?): Query<Defs>;   // put the matches in parent-before-child depth order
 ```
 
 ```ts
-// "Each enemy that is a child of something" — (R, *):
+// "Each enemy that is a child of something", (R, *):
 ecs.query(Enemy).withRelation(ChildOf).forEachEntity((e) => { /* … */ });
 
-// "Each entity that targets this boss" — (*, T):
+// "Each entity that targets this boss", (*, T):
 bossQuery.forEachRelatedTo(boss, (attacker) => { /* … */ });
 ```
 
@@ -129,7 +129,7 @@ For exclusive parent chains (hierarchies), there are three helpers that calculat
 immediately:
 
 ```ts
-ancestorsOf(src, def): EntityID[];   // [src, parent, …, root] — the nearest first
+ancestorsOf(src, def): EntityID[];   // [src, parent, …, root], the nearest first
 rootOf(src, def): EntityID;          // the root of the chain (src itself when it has no target)
 cascadeOf(root, def): EntityID[];    // the subtree with the root, breadth first (parents before children)
 ```
@@ -147,9 +147,9 @@ cleanup policy. Both are always exclusive.
 
 ```text
 import { registerChildOf, registerIsA } from "@oasys/oecs";
-// Free functions — the ECS is their first argument (they are not methods on it):
-registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;   // ChildOf(child → parent); default "delete"
-registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;       // IsA(instance → exemplar); default "clear"
+// Free functions, the ECS is their first argument (they are not methods on it):
+registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;   // ChildOf(child → parent). Default "delete"
+registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;       // IsA(instance → exemplar). Default "clear"
 interface BuiltinRelationOptions { readonly onDeleteTarget?: OnDeleteTarget }
 ```
 
@@ -172,9 +172,9 @@ is destroyed:
 
 | Policy | Effect |
 | --- | --- |
-| `"delete"` | cascade — destroy each source also, and repeat down the tree (the `ChildOf` default) |
-| `"clear"` | remove the relation from each source; the sources continue (the `IsA` default) |
-| `"orphan"` | leave the link; reads stay safe, but `targetOf` gives a handle to a dead entity (the overall default) |
+| `"delete"` | cascade, destroy each source also, and repeat down the tree (the `ChildOf` default) |
+| `"clear"` | remove the relation from each source. The sources continue (the `IsA` default) |
+| `"orphan"` | leave the link. Reads stay safe, but `targetOf` gives a handle to a dead entity (the overall default) |
 
 > [!WARNING]
 > **`orphan` lets the reverse index grow.** Under `orphan`, the reverse entries of a destroyed
@@ -190,15 +190,15 @@ is destroyed:
 ```ts
 type RelationDef<C extends RelationCardinality = RelationCardinality>;  // the handle from ecs.relations.register
 type RelationCardinality = "exclusive" | "multi";  // the type parameter behind RelationDef<"exclusive"> / RelationDef<"multi">
-type RelationID;                  // the branded numeric id space behind RelationDef (registration order; separate from ComponentID)
+type RelationID;                  // the branded numeric id space behind RelationDef (registration order, separate from ComponentID)
 type OnDeleteTarget = "delete" | "clear" | "orphan";
-const ANY_RELATION: RelationDef;  // the authorization value for (*, T) queries — list it in relationReads
+const ANY_RELATION: RelationDef;  // the authorization value for (*, T) queries, list it in relationReads
 const HIERARCHY_UNBOUNDED: number; // = +Infinity, the default maxDepth of hierarchy
 ```
 
 ## See also
 
-- [sparse storage](./sparse-storage.md) — the mechanism that relations are built on
-- [queries](./queries.md) — how the relation terms fit the query verbs
-- [systems](./systems.md) — the `relationReads` and `relationWrites` declarations
-- [determinism](./determinism.md) — a snapshot records the relation targets in a canonical order
+- [sparse storage](./sparse-storage.md), the mechanism that relations are built on
+- [queries](./queries.md), how the relation terms fit the query verbs
+- [systems](./systems.md), the `relationReads` and `relationWrites` declarations
+- [determinism](./determinism.md), a snapshot records the relation targets in a canonical order

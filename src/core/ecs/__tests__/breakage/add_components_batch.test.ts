@@ -1,10 +1,10 @@
 /**
- * Dynamic batching contract for `addComponents` / `removeComponents` —
+ * The dynamic batching contract for `addComponents` and `removeComponents`.
  *
  * `Store.addComponents(eid, [A, B, C, D])` used to walk the
  * archetype graph one component at a time. Each step that crossed into an
  * archetype the SAB had never carried triggered a fresh `extendColumnStore`
- * call — three of those intermediate archetypes ([+A], [+A,+B], [+A,+B,+C])
+ * call, three of those intermediate archetypes ([+A], [+A,+B], [+A,+B,+C])
  * never held an entity, but they still cost a full SAB realloc + copy each.
  * With the final-mask refactor, only the destination archetype is created.
  *
@@ -14,9 +14,9 @@
  *   2. Same for `removeComponents` when N components are dropped.
  *   3. No-op calls (entries that don't change the mask) don't bump
  *      `view_stamp` at all.
- *   4. Functional behavior — final archetype, field values, swap-and-pop
- *      bookkeeping — matches the per-step graph walk it replaces.
- *   5. Intermediate archetypes are NOT materialised: a fresh world that
+ *   4. Functional behavior, final archetype, field values, swap-and-pop
+ *      bookkeeping, matches the per-step graph walk it replaces.
+ *   5. Intermediate archetypes are not materialised: a fresh world that
  *      goes 0 → [A,B,C] via a single `addComponents` ends up with exactly
  *      two archetypes (empty + [A,B,C]), not four.
  */
@@ -85,7 +85,7 @@ describe("add_components batching", () => {
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const afterFirst = viewStamp(world);
 
-		// Add the same defs again with new values — entity stays in [A, B].
+		// Add the same defs again with new values, entity stays in [A, B].
 		world.addComponents(e, A({ v: 100 }), B({ v: 200 }));
 
 		expect(viewStamp(world)).toBe(afterFirst); // no new archetype
@@ -106,7 +106,7 @@ describe("add_components batching", () => {
 
 		const before = viewStamp(world);
 		world.addComponents(e,
-			A({ v: 11 }), // already present — overwrite
+			A({ v: 11 }), // already present, overwrite
 			B({ v: 22 }), // new
 			C({ v: 33 }) // new
 		);
@@ -132,7 +132,7 @@ describe("remove_components batching", () => {
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }), C({ v: 3 }), D({ v: 4 }));
 
 		const afterAdd = viewStamp(world);
-		// Remove three components — target [D] has not been planted yet, so
+		// Remove three components, target [D] has not been planted yet, so
 		// one extend. The two intermediates ([B,C,D] and [C,D]) that the
 		// old graph walk would have created are skipped.
 		world.removeComponents(e, A, B, C);
@@ -172,7 +172,7 @@ describe("remove_components batching", () => {
 		const eAnchor = world.spawn();
 		world.addComponent(eAnchor, A, { v: 99 });
 
-		// Now create an entity in [A, B] and remove B — target is [A], which
+		// Now create an entity in [A, B] and remove B, target is [A], which
 		// already exists, so no SAB extend should fire.
 		const e = world.spawn();
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
@@ -189,7 +189,7 @@ describe("remove_components batching", () => {
 /**
  * Composite-add edge cache. The second+ add of the same (source
  * archetype, added-set) must resolve through `currentArch`'s cached composite
- * edge — one packed-key `Map.get` yielding target + transition map — yet land
+ * edge, one packed-key `Map.get` yielding target + transition map, yet land
  * the entity in exactly the same archetype, with the same field values, as the
  * first (cold) call's final-mask resolve. These pin that the cache is a pure
  * accelerator: identical observable state, no extra archetypes planted.
@@ -201,13 +201,13 @@ describe("add_components composite-add edge cache", () => {
 		const B = world.registerComponent(["v"] as const);
 
 		const ids = Array.from({ length: 5 }, () => world.spawn());
-		// First call resolves cold (mask hash + archLookup) and plants the edge;
+		// First call resolves cold (mask hash + archLookup) and plants the edge
 		// calls 2..5 hit the composite cache. All must agree.
 		for (let i = 0; i < ids.length; i++) {
 			world.addComponents(ids[i], A({ v: 10 + i }), B({ v: 20 + i }));
 		}
 
-		// empty + [A,B] only — the cache plants no archetypes of its own.
+		// empty + [A,B] only, the cache plants no archetypes of its own.
 		expect(world.archetypeCount).toBe(2);
 		for (let i = 0; i < ids.length; i++) {
 			expect(world.hasComponent(ids[i], A)).toBe(true);
@@ -224,8 +224,8 @@ describe("add_components composite-add edge cache", () => {
 		const C = world.registerComponent(["v"] as const);
 
 		// Two live entities sitting in [A] (a real row, not the rowless empty
-		// archetype) — this is the issue's target case: plural add on an entity
-		// that already exists. e1's add resolves cold; e2's hits the cache and
+		// archetype). This is the issue's target case: plural add on an entity
+		// that already exists. e1's add resolves cold. E2's hits the cache and
 		// must travel the cached src→target transition map via moveEntityFrom.
 		const e1 = world.spawn();
 		const e2 = world.spawn();
@@ -236,7 +236,7 @@ describe("add_components composite-add edge cache", () => {
 		const archetypesAfterCold = world.archetypeCount;
 		world.addComponents(e2, B({ v: 21 }), C({ v: 22 }));
 
-		// The cached hit reuses the [A,B,C] archetype — no new one.
+		// The cached hit reuses the [A,B,C] archetype, no new one.
 		expect(world.archetypeCount).toBe(archetypesAfterCold);
 		for (const [e, a, b, c] of [
 			[e1, 1, 11, 12],
@@ -256,7 +256,7 @@ describe("add_components composite-add edge cache", () => {
 		const e1 = world.spawn();
 		const e2 = world.spawn();
 		world.addComponents(e1, A({ v: 1 }), B({ v: 2 }));
-		// Reversed order — a distinct cache key, but the union {A,B} is the same
+		// Reversed order, a distinct cache key, but the union {A,B} is the same
 		// archetype, so no second archetype is planted.
 		world.addComponents(e2, B({ v: 4 }), A({ v: 3 }));
 
@@ -276,8 +276,8 @@ describe("add_components composite-add edge cache", () => {
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }));
 		const stamp = viewStamp(world);
 
-		// Same set from the SAME (now [A,B]) source: every def is already present,
-		// so this is an in-place overwrite, not a transition — the cache must not
+		// Same set from the same (now [A,B]) source: every def is already present,
+		// so this is an in-place overwrite, not a transition, the cache must not
 		// short-circuit it into a spurious move.
 		world.addComponents(e, A({ v: 100 }), B({ v: 200 }));
 

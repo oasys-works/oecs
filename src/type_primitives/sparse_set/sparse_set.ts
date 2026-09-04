@@ -1,5 +1,5 @@
 /***
- * SparseSet — O(1) integer-key set with cache-friendly dense iteration.
+ * SparseSet. O(1) integer-key set with cache-friendly dense iteration.
  *
  * Keys are non-negative integers. A dense number[] holds members packed
  * at 0..size-1 for linear iteration. A sparse number[] maps

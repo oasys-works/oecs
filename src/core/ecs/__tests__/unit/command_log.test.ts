@@ -1,14 +1,14 @@
 /**
- * Record / replay over the host command log — the final layer of the
+ * Record and replay over the host command log, the final layer of the
  * host → ECS write seam. Asserts the deterministic-sim payoff:
  *   - the apply path logs the applied `HostCommand`s + per-tick `dt` + seed,
- *     behind an opt-in recorder (off by default — the un-recorded drain is
+ *     behind an opt-in recorder (off by default, the un-recorded drain is
  *     unchanged);
- *   - the log round-trips through serialize → deserialize (plain JSON);
- *   - a replay driver re-applies it against a FRESH world and, under the
+ *   - the log round-trips through serialize → deserialize (plain JSON)
+ *   - a replay driver re-applies it against a fresh world and, under the
  *     determinism opt-in, reproduces the per-tick `stateHash`
- *     sequence bit-for-bit — including the dt-driven evolution of a system
- *     (the clock), proving `dt` is a real replayed input, not just the commands;
+ *     sequence bit-for-bit, including the dt-driven evolution of a system
+ *     (the clock), proving `dt` is a real replayed input, not only the commands
  *   - both transports (typed queue + `onCommand` ring) land in the one log.
  *
  * Runs under vitest's `__DEV__ = true` (the per-system access check is live).
@@ -31,7 +31,7 @@ import {
 	replayCommandLog,
 	type CommandLog
 } from "../../command_log";
-import { asComponentId, makeComponentDef, type ComponentDef } from "../../component";
+import { asComponentId, createComponentDef, type ComponentDef } from "../../component";
 import { ECS_ERROR, type ECSError } from "../../utils/error";
 import { pushCommand } from "../../../store";
 import type { EntityID } from "../../entity";
@@ -60,7 +60,7 @@ function firstEntity(world: ECS, def: ComponentDef): EntityID | undefined {
  * A world built identically for record and for replay: a `Cell` data component, a
  * `Clock` whose `ms` a dt-driven UPDATE system advances by `round(dt*1000)` each
  * tick, the write seam, and (optionally) a recorder. Registration order is fixed
- * so branded ids line up across the two worlds — the contract replay rests on.
+ * so branded ids line up across the two worlds, the contract replay rests on.
  */
 function buildWorld(recorder?: HostCommandSink): Built {
 	const world = new ECS({ deterministic: true });
@@ -89,7 +89,7 @@ function buildWorld(recorder?: HostCommandSink): Built {
 	return { world, Cell, Clock, commands };
 }
 
-/** The dts each tick of the scripted session runs with — deliberately varied so
+/** The dts each tick of the scripted session runs with, deliberately varied so
  * the clock's per-tick step (`round(dt*1000)`) differs every tick. */
 const TICK_DTS = [1 / 60, 1 / 30, 1 / 60, 1 / 120, 1 / 60] as const;
 const EXPECTED_CLOCK_MS = TICK_DTS.reduce((sum, dt) => sum + Math.round(dt * 1000), 0); // 92
@@ -114,27 +114,27 @@ function recordSession(): { recorder: HostCommandRecorder; hashes: number[] } {
 	const hashes: number[] = [];
 	let cellB: EntityID | undefined;
 
-	// tick 0 — set a field on the seed-time cell.
+	// tick 0, set a field on the seed-time cell.
 	commands.setField(cellA!, Cell, "x", 100);
 	world.update(TICK_DTS[0]);
 	hashes.push(world.snapshots.stateHash());
 
-	// tick 1 — spawn a second cell.
+	// tick 1, spawn a second cell.
 	commands.spawn([spawnEntry(Cell, { x: 5, heat: 5 })], (e) => (cellB = e));
 	world.update(TICK_DTS[1]);
 	hashes.push(world.snapshots.stateHash());
 
-	// tick 2 — mutate the new cell + disable the first.
+	// tick 2, mutate the new cell + disable the first.
 	commands.setField(cellB!, Cell, "heat", 7);
 	commands.disable(cellA!);
 	world.update(TICK_DTS[2]);
 	hashes.push(world.snapshots.stateHash());
 
-	// tick 3 — NO commands: only the clock advances (proves dt drives state).
+	// tick 3. No commands: only the clock advances (proves dt drives state).
 	world.update(TICK_DTS[3]);
 	hashes.push(world.snapshots.stateHash());
 
-	// tick 4 — re-enable the first, despawn the second.
+	// tick 4, re-enable the first, despawn the second.
 	commands.enable(cellA!);
 	commands.despawn(cellB!);
 	world.update(TICK_DTS[4]);
@@ -143,7 +143,7 @@ function recordSession(): { recorder: HostCommandRecorder; hashes: number[] } {
 	return { recorder, hashes };
 }
 
-describe("command log — recorder buckets startup vs ticks", () => {
+describe("command log, recorder buckets startup vs ticks", () => {
 	it("seed-time commands land in the startup bucket, frame commands in ticks", () => {
 		const recorder = new HostCommandRecorder(7);
 		const { world, Cell, commands } = buildWorld(recorder);
@@ -162,7 +162,7 @@ describe("command log — recorder buckets startup vs ticks", () => {
 		world.update(1 / 60); // empty tick
 
 		const log = recorder.log();
-		// Two update ticks recorded — even the second with no commands, so its dt
+		// Two update ticks recorded, even the second with no commands, so its dt
 		// is captured for replay.
 		expect(log.ticks).toHaveLength(2);
 		expect(log.ticks[0].commands).toHaveLength(1);
@@ -191,7 +191,7 @@ describe("command log — recorder buckets startup vs ticks", () => {
 	});
 });
 
-describe("command log — serialize ↔ deserialize round-trips", () => {
+describe("command log, serialize ↔ deserialize round-trips", () => {
 	it("a recorded log survives JSON serialize → deserialize unchanged", () => {
 		const { recorder } = recordSession();
 		const log = recorder.log();
@@ -199,8 +199,8 @@ describe("command log — serialize ↔ deserialize round-trips", () => {
 		const restored = deserializeCommandLog(serializeCommandLog(log));
 
 		// Lossless round-trip: re-serializing the restored log yields byte-identical
-		// JSON. (Deep object-equality won't work — a `ComponentDef` is a callable, so
-		// the reviver reconstructs a fresh def with the same id but a new identity;
+		// JSON. (Deep object-equality won't work, a `ComponentDef` is a callable, so
+		// the reviver reconstructs a fresh def with the same id but a new identity
 		// the serialized form, which carries only the id, is the stable comparison.)
 		expect(serializeCommandLog(restored)).toBe(serializeCommandLog(log));
 		expect(restored.seed).toBe(log.seed);
@@ -226,11 +226,11 @@ describe("command log — serialize ↔ deserialize round-trips", () => {
 	// *values* object owns a field whose name collides with that sentinel, the
 	// reviver (which keys solely off the tag's presence) would silently rebuild the
 	// values map into a `ComponentDef`, dropping the data. Field names are arbitrary
-	// strings, so this is reachable — the serializer must refuse the collision
+	// strings, so this is reachable, the serializer must refuse the collision
 	// rather than emit a log that corrupts on parse.
 	it("refuses to serialize a log whose values field name collides with the def tag", () => {
 		const DEF_TAG = "__component_def";
-		const Weird = makeComponentDef<{ [DEF_TAG]: "f64"; ok: "f64" }>(asComponentId(3));
+		const Weird = createComponentDef<{ [DEF_TAG]: "f64"; ok: "f64" }>(asComponentId(3));
 		const log: CommandLog = {
 			seed: 7,
 			startup: [
@@ -258,7 +258,7 @@ describe("command log — serialize ↔ deserialize round-trips", () => {
 	// the replacer itself emits are not re-passed to it, so a normal log with defs
 	// (and ordinary field names) still serializes and round-trips cleanly.
 	it("still serializes a log whose values use ordinary field names", () => {
-		const Pos = makeComponentDef<{ x: "f64"; y: "f64" }>(asComponentId(1));
+		const Pos = createComponentDef<{ x: "f64"; y: "f64" }>(asComponentId(1));
 		const log: CommandLog = {
 			seed: 0,
 			startup: [{ kind: "add_component", eid: 1 as EntityID, def: Pos, values: { x: 9, y: 8 } }],
@@ -277,7 +277,7 @@ describe("command log — serialize ↔ deserialize round-trips", () => {
 	});
 });
 
-describe("command log — replay reaches the same state", () => {
+describe("command log, replay reaches the same state", () => {
 	it("replaying a deserialized log reproduces per-tick state_hash bit-for-bit", () => {
 		const { recorder, hashes: original } = recordSession();
 
@@ -299,17 +299,17 @@ describe("command log — replay reaches the same state", () => {
 		const fresh = buildWorld();
 		replayCommandLog(fresh.world, fresh.commands, log);
 
-		// The clock advanced by round(dt*1000) per tick — its final value pins that
+		// The clock advanced by round(dt*1000) per tick, its final value pins that
 		// every recorded dt was replayed (a wrong dt would change the sum).
 		const clockId = firstEntity(fresh.world, fresh.Clock);
 		expect(clockId).toBeDefined();
 		expect(fresh.world.getField(clockId!, fresh.Clock, "ms")).toBe(EXPECTED_CLOCK_MS);
 
-		// cellB was despawned in the last tick; cellA was re-enabled → one live Cell.
+		// cellB was despawned in the last tick. CellA was re-enabled → one live Cell.
 		expect(fresh.world.query(fresh.Cell).entityCount).toBe(1);
 	});
 
-	it("dt is a replayed input — tampering one tick's dt diverges the replay", () => {
+	it("dt is a replayed input, tampering one tick's dt diverges the replay", () => {
 		const { recorder, hashes: original } = recordSession();
 		const log = deserializeCommandLog(serializeCommandLog(recorder.log()));
 
@@ -328,7 +328,7 @@ describe("command log — replay reaches the same state", () => {
 	});
 });
 
-describe("command log — both transports land in one log", () => {
+describe("command log, both transports land in one log", () => {
 	const OP_SET = 10;
 
 	it("a ring-sourced command is recorded, and replays through the typed queue", () => {
@@ -360,7 +360,7 @@ describe("command log — both transports land in one log", () => {
 		world.update(1 / 60);
 		expect(world.getField(cell!, Cell, "x")).toBe(55);
 
-		// The ring-sourced setField is in the SAME log as the typed-queue spawn.
+		// The ring-sourced setField is in the same log as the typed-queue spawn.
 		const log = recorder.log();
 		const allTickCommands = log.ticks.flatMap((t) => t.commands);
 		const ringSet = allTickCommands.find((c) => c.kind === "set_field");
@@ -370,7 +370,7 @@ describe("command log — both transports land in one log", () => {
 		}
 
 		// Replay: ring-decoded commands re-apply through the typed queue (the log
-		// holds decoded HostCommands — one vocabulary, transport-independent). A
+		// holds decoded HostCommands, one vocabulary, transport-independent). A
 		// replay world needs no ring.
 		const replayLog = deserializeCommandLog(serializeCommandLog(log));
 		const fresh = new ECS({ deterministic: true });
@@ -385,7 +385,7 @@ describe("command log — both transports land in one log", () => {
 	});
 });
 
-describe("command log — replay without determinism", () => {
+describe("command log, replay without determinism", () => {
 	let recorder: HostCommandRecorder;
 
 	beforeEach(() => {
@@ -400,7 +400,7 @@ describe("command log — replay without determinism", () => {
 		world.update(1 / 60);
 		const log = deserializeCommandLog(serializeCommandLog(recorder.log()));
 
-		// ...but replay into a NON-deterministic world. stateHash would throw, so
+		// ...but replay into a non-deterministic world. stateHash would throw, so
 		// the driver skips it (hash defaults to the world's `deterministic` flag).
 		const fresh = new ECS(); // deterministic: false (default)
 		const FreshCell = fresh.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
@@ -408,7 +408,7 @@ describe("command log — replay without determinism", () => {
 		const result = replayCommandLog(fresh, freshQueue, log);
 
 		expect(result.stateHashes).toHaveLength(0);
-		// State is still reproduced — replay doesn't depend on hashing.
+		// State is still reproduced, replay doesn't depend on hashing.
 		const cell = firstEntity(fresh, FreshCell);
 		expect(fresh.getField(cell!, FreshCell, "x")).toBe(3);
 		expect(fresh.getField(cell!, FreshCell, "heat")).toBe(4);

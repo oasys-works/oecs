@@ -8,9 +8,9 @@
 
 There are two different ideas here, and it is easy to confuse them:
 
-- **Shared execution storage** — The columns can be in a `SharedArrayBuffer` or in a shared
+- **Shared execution storage**. The columns can be in a `SharedArrayBuffer` or in a shared
   `WebAssembly.Memory`. So a worker or a WASM backend can see the same bytes.
-- **Parallel execution of the schedule** — This runs independent systems at the same time. oecs
+- **Parallel execution of the schedule**. This runs independent systems at the same time. oecs
   does not do this yet, and the public scheduler runs the systems in sequence.
 
 ## What operates today
@@ -154,8 +154,8 @@ compilation of your backend, and each parallel kernel that is specific to your p
 
 ## See also
 
-- [WASM backends](./wasm.md) — how to connect shared memory and `ComputeBackend`
-- [memory](./memory.md) — the heap, shared, and WASM storage profiles
-- [systems](./systems.md) — the access declarations and `exclusive`
-- [schedule](./schedule.md) — the phases, the order, system sets, and run conditions
-- [the host write path](./host-write-seam.md) — safe writes from outside the schedule
+- [WASM backends](./wasm.md), how to connect shared memory and `ComputeBackend`
+- [memory](./memory.md), the heap, shared, and WASM storage profiles
+- [systems](./systems.md), the access declarations and `exclusive`
+- [schedule](./schedule.md), the phases, the order, system sets, and run conditions
+- [the host write path](./host-write-seam.md), safe writes from outside the schedule

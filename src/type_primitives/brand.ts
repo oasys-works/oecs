@@ -1,8 +1,8 @@
 /***
- * Brand — Nominal typing for TypeScript.
+ * Brand. Nominal typing for TypeScript.
  *
  * Brand<T, Name> intersects T with a phantom readonly symbol property
- * tagged with Name. The symbol never exists at runtime — it only prevents
+ * tagged with Name. The symbol never exists at runtime. It only prevents
  * accidental assignment between structurally identical types.
  *
  * Example: EntityID and ComponentID are both numbers at runtime, but
@@ -14,7 +14,7 @@
 declare const brand: unique symbol;
 
 /**
- * Nominal typing helper — intersects T with a phantom readonly symbol
+ * Nominal typing helper, intersects T with a phantom readonly symbol
  * so structurally identical types become compile-time incompatible.
  *
  */

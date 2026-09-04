@@ -4,7 +4,7 @@
  *
  * `probe-fieldshape.mjs` shows that 24 different `_fieldIndex` shapes cost the same
  * as one shape. Therefore megamorphism is not the cause. The other possible cause is
- * the method that MAKES the object. `store.ts` makes it with `Object.create(null)`,
+ * the method that makes the object. `store.ts` makes it with `Object.create(null)`,
  * and that is a correct choice, because no key of `Object.prototype` can then collide
  * with a field that has the name `constructor`. But an object with a null prototype
  * goes to **dictionary mode** when the code assigns keys to it. In dictionary mode,
@@ -48,7 +48,7 @@ function run(shapes) {
 		// What store.ts builds today.
 		const np = Object.create(null);
 		for (let f = 0; f < 3; f++) np[keys[f]] = f;
-		// Same content, ordinary object literal — fast properties, real IC.
+		// Same content, ordinary object literal, fast properties, real IC.
 		const lit = { [keys[0]]: 0, [keys[1]]: 1, [keys[2]]: 2 };
 		const m = new Map();
 		for (let f = 0; f < 3; f++) m.set(keys[f], f);

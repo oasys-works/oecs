@@ -4,12 +4,12 @@
  * Insertions that would exceed an archetype's SAB row capacity now trigger
  * a host-side `growColumnStore` + `refreshViews` dance via a handler
  * installed by `Store` on every SAB-backed `Archetype`. After the handler
- * runs, the offending push is guaranteed to fit; live rows of every other
+ * runs, the offending push is guaranteed to fit. Live rows of every other
  * archetype are carried forward and their column views are repointed at
  * the new SAB.
  *
- * These tests pin the surface — capacity doubling, view-stamp bump per
- * grow, data preservation across grow on the growing archetype AND on its
+ * These tests pin the surface, capacity doubling, view-stamp bump per
+ * grow, data preservation across grow on the growing archetype and on its
  * unaffected neighbours, and SAB-identity replacement (the realloc-and-
  * republish strategy).
  */
@@ -22,14 +22,14 @@ import type { EntityID } from "../../entity";
 const Position = { x: "f64", y: "f64" } as const;
 const Velocity = { vx: "f64", vy: "f64" } as const;
 
-// `ColumnStore.header` is the cached snapshot captured at create-time; the
+// `ColumnStore.header` is the cached snapshot captured at create-time. The
 // canonical view_stamp lives in the DataView. Reading via the DataView is
 // the truth (matches the convention in store_sab_shadow.test.ts).
 function liveViewStamp(s: ColumnStore): number {
 	return readStoreHeader(s.view).viewStamp;
 }
 
-describe("Store — SAB grow + refresh", () => {
+describe("Store. SAB grow + refresh", () => {
 	it("inserting past initial capacity grows the SAB and preserves earlier rows", () => {
 		const store = new Store(4);
 		const Pos = store.registerComponent(Position);
@@ -41,7 +41,7 @@ describe("Store — SAB grow + refresh", () => {
 			entities.push(e);
 		}
 
-		// All 13 entities live with their original values — including the
+		// All 13 entities live with their original values, including the
 		// first 4 written before any grow happened.
 		const arch = store.getEntityArchetype(entities[0]);
 		expect(arch.entityCount).toBe(13);
@@ -101,7 +101,7 @@ describe("Store — SAB grow + refresh", () => {
 		expect(liveViewStamp(store.columnStore)).toBe(stampAfterExtend + 2);
 	});
 
-	it("preserves OTHER archetypes' rows when one grows", () => {
+	it("preserves other archetypes' rows when one grows", () => {
 		// Build two archetypes with rows: [Pos] and [Pos, Vel]. Force the
 		// [Pos] archetype past capacity. The [Pos, Vel] archetype's live
 		// rows must survive the realloc.
@@ -163,7 +163,7 @@ describe("Store — SAB grow + refresh", () => {
 		}
 
 		// With the default `growableSabAllocator`,
-		// the SAB is grown in place — same instance, larger byteLength.
+		// the SAB is grown in place, same instance, larger byteLength.
 		// The realloc-and-republish behaviour still works
 		// (it's selected by passing `DEFAULT_SAB_ALLOCATOR` explicitly) but
 		// is no longer the default. The view_stamp still bumps so callers

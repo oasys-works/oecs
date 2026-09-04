@@ -104,7 +104,7 @@ const REGION_FIXTURE: readonly ArchetypeDescriptor[] = [ARCHETYPE_FIXTURE, ARCHE
 
 // ───────────────────────── Tests ─────────────────────────────
 
-describe("SAB ColumnDescriptor — 16-byte fixed layout", () => {
+describe("SAB ColumnDescriptor, 16-byte fixed layout", () => {
 	it("fixture writes to the golden byte sequence", () => {
 		const buf = new ArrayBuffer(COLUMN_DESCRIPTOR_BYTES);
 		const view = new DataView(buf);
@@ -115,7 +115,7 @@ describe("SAB ColumnDescriptor — 16-byte fixed layout", () => {
 	it("ColumnDescriptor is exactly 16 bytes wide", () => {
 		expect(COLUMN_DESCRIPTOR_BYTES).toBe(16);
 		// Offsets must match the Zig `extern struct` field positions.
-		// Reordering or adding a field shifts these — fails before the fixture
+		// Reordering or adding a field shifts these, fails before the fixture
 		// to point at the version-bump requirement.
 		expect(COLUMN_DESCRIPTOR_OFFSETS).toEqual({
 			component_id: 0,
@@ -157,7 +157,7 @@ describe("SAB ColumnDescriptor — 16-byte fixed layout", () => {
 	});
 });
 
-describe("SAB ArchetypeDescriptor — 36-byte header + N × 16", () => {
+describe("SAB ArchetypeDescriptor, 36-byte header + N × 16", () => {
 	it("fixture writes to the golden byte sequence (1 column)", () => {
 		const buf = new ArrayBuffer(archetypeDescriptorBytes(1));
 		const view = new DataView(buf);
@@ -169,7 +169,7 @@ describe("SAB ArchetypeDescriptor — 36-byte header + N × 16", () => {
 	it("header is exactly ARCHETYPE_DESCRIPTOR_HEADER_BYTES (36) bytes", () => {
 		expect(ARCHETYPE_DESCRIPTOR_HEADER_BYTES).toBe(36);
 		// archetype_id, component_mask (4 words @ 4), row_count, row_capacity,
-		// column_count, enabled_count. Reordering or widening shifts these —
+		// column_count, enabled_count. Reordering or widening shifts these,
 		// fails before the fixture to point at the version-bump requirement.
 		expect(Object.values(ARCHETYPE_DESCRIPTOR_OFFSETS)).toEqual([0, 4, 20, 24, 28, 32]);
 	});
@@ -204,7 +204,7 @@ describe("SAB ArchetypeDescriptor — 36-byte header + N × 16", () => {
 	});
 });
 
-describe("SAB layout descriptor region — sequential variable-length walk", () => {
+describe("SAB layout descriptor region, sequential variable-length walk", () => {
 	it("layout_descriptor_region_bytes sums each archetype's footprint", () => {
 		// 1-column archetype = 52, 1-column archetype = 52, total = 104.
 		expect(layoutDescriptorRegionBytes(REGION_FIXTURE)).toBe(104);
@@ -213,7 +213,7 @@ describe("SAB layout descriptor region — sequential variable-length walk", () 
 			{ ...ARCHETYPE_FIXTURE, columns: [COLUMN_FIXTURE, COLUMN_FIXTURE, COLUMN_FIXTURE] },
 			ARCHETYPE_2
 		];
-		// 36 + 3×16 = 84; plus 52 = 136.
+		// 36 + 3×16 = 84, plus 52 = 136.
 		expect(layoutDescriptorRegionBytes(wider)).toBe(136);
 	});
 

@@ -1,5 +1,5 @@
 /**
- * Entity-index SAB region — `EntityID` → `(archetype_id, row, generation)`
+ * Entity-index SAB region, `EntityID` → `(archetype_id, row, generation)`
  * lookup table shared with the Zig sim.
  *
  * Every hot fixed-update system that needs to resolve an `EntityID`
@@ -12,7 +12,7 @@
  * Layout:
  *
  *   [ length:    u32 ]   high-water index (count of slots ever issued)
- *   [ capacity:  u32 ]   backing-array length (slots × 1; not bytes)
+ *   [ capacity:  u32 ]   backing-array length (slots × 1, not bytes)
  *   [ _pad0:     u32 ]   alignment pad to 16 bytes
  *   [ _pad1:     u32 ]   ───
  *   [ generations[capacity]: i32 ]
@@ -21,22 +21,22 @@
  *
  * Sentinels:
  *   - `generations[i] = 0` (INITIAL_GENERATION) for never-used slots.
- *     Generation grows by 1 on every destroy; an `EntityID`'s generation
+ *     Generation grows by 1 on every destroy. An `EntityID`'s generation
  *     field matches `generations[index]` iff it's still alive.
  *   - `archetypes[i] = -1` (UNASSIGNED) when the slot hasn't been placed
- *     into an archetype, OR when the entity is destroyed.
+ *     into an archetype, or when the entity is destroyed.
  *   - `rows[i]      = -1` (UNASSIGNED) on destroy / not-placed.
  *
  * Field width: i32 (signed) on the TS side so `-1` round-trips through
- * `Int32Array` without unsigned coercion. Zig reads as i32 too — bit
+ * `Int32Array` without unsigned coercion. Zig reads as i32 too, bit
  * pattern is identical to u32 `0xFFFFFFFF` for the UNASSIGNED case, and
  * for valid archetype_ids (bounded by `MAX_INDEX = 2^20`) the sign bit
- * is never set, so signed/unsigned interpretation agrees.
+ * is never set, so signed or unsigned interpretation agrees.
  *
  * Region placement: between command ring and descriptor region so the
  * offset is stable across descriptor / column-region growth (same
  * property the command ring gets). Grow path (when entityHighWater
- * exceeds `capacity`) uses `growColumnStore` — slow path, same as
+ * exceeds `capacity`) uses `growColumnStore`, slow path, same as
  * descriptor-region overflow.
  *
  * Reading from Zig: see `packages/sim/src/entity_index.zig` for the
@@ -51,7 +51,7 @@ export const ENTITY_INDEX_HEADER_BYTES = 16;
 export const ENTITY_INDEX_BYTES_PER_SLOT = 12;
 
 /** Byte offsets within the region header. Locked by the
- * `entity_index.test.ts` golden bytes; any change here is a
+ * `entity_index.test.ts` golden bytes. Any change here is a
  * `SIM_ABI_VERSION` bump. */
 export const ENTITY_INDEX_HEADER_OFFSETS = {
 	length: 0,
@@ -63,12 +63,12 @@ export const ENTITY_INDEX_HEADER_OFFSETS = {
  * `MAX_INDEX = (1 << 20) - 1 + 1 = 1_048_576` (the EntityID 20-bit index
  * range, see `entity.ts`), so the region pre-sizes to the entire
  * addressable entity space and `createEntity` can never run out under
- * the default. 1M × 12 B ≈ 12 MiB SAB region — virtual memory only;
- * physical pages allocate lazily via OS page-fault on first touch, so
- * the typical 1000-entity workload pays for ~12 KiB physical even though the
- * virtual reservation is 12 MiB.
+ * the default. That is a 12 MiB SAB region, and it is virtual memory only.
+ * Physical pages allocate lazily, through an OS page fault on first touch. A
+ * small workload therefore pays for a few KiB of physical memory, even though
+ * the virtual reservation is 12 MiB.
  *
- * Tests / benches can pass a smaller `StoreOptions.entityIndexCapacity`
+ * Tests and benches can pass a smaller `StoreOptions.entityIndexCapacity`
  * to bench tighter reservations. A future PR will replace this with
  * on-demand growth via `growColumnStore` so the default can drop. */
 export const ENTITY_INDEX_DEFAULT_CAPACITY = 1 << 20;
@@ -108,7 +108,7 @@ export class EntityIndexError extends Error {
 /** Initialise the region header at `regionOff`. Sets `length=0` and
  * `capacity=<arg>`. The i32 arrays past the header are left untouched
  * (callers normally allocate the region on a fresh, zero-initialised
- * SAB; generation 0 is the INITIAL_GENERATION sentinel, archetype/row
+ * SAB. Generation 0 is the INITIAL_GENERATION sentinel, archetype and row
  * sentinels of 0 are caught by `length=0` so no read reaches them). */
 export function initEntityIndexRegion(
 	view: DataView,
@@ -144,13 +144,13 @@ export function setEntityIndexLength(view: DataView, regionOff: number, length: 
 
 /** Materialise the three Int32Array views over the region's column data
  * for use by the engine's Store. The views live as long as the
- * SharedArrayBuffer hasn't been reallocated — refresh on `view_stamp`
+ * SharedArrayBuffer hasn't been reallocated, refresh on `view_stamp`
  * bump (the engine's `_onBufferResized` callback).
  *
  * Three separate views (not a single struct-of-arrays object) because
  * the engine's hot paths benefit from each being a direct typed-array
- * read; V8 specialises `arr[i] = v` aggressively for typed arrays. */
-export function buildEntityIndexViews(
+ * read. V8 specialises `arr[i] = v` aggressively for typed arrays. */
+export function createEntityIndexViews(
 	buffer: ArrayBufferLike,
 	regionOff: number,
 	capacity: number
@@ -160,7 +160,7 @@ export function buildEntityIndexViews(
 	readonly rows: Int32Array;
 } {
 	// boundary: TypedArray interop. The region was sized to fit
-	// `capacity` slots × 3 i32 columns; the SAB is the source of truth.
+	// `capacity` slots × 3 i32 columns. The SAB is the source of truth.
 	return {
 		generations: new Int32Array(buffer, entityIndexGenerationsOff(regionOff), capacity),
 		archetypes: new Int32Array(buffer, entityIndexArchetypesOff(regionOff, capacity), capacity),

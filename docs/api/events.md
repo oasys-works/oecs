@@ -1,7 +1,7 @@
 # Events
 
 > [!NOTE]
-> **0.5.0 — a grouped surface.** On the host, the registration, emission, and reading of an event
+> **0.5.0, a grouped surface.** On the host, the registration, emission, and reading of an event
 > are on the **`ecs.events`** facade: `ecs.events.register(Damage, ["amount"])`,
 > `ecs.events.registerSignal(Ping)`, `ecs.events.emit(Damage, {...})`, and
 > `ecs.events.read(Damage)`. In a system, `ctx.emit` and `ctx.read` have not changed. Version 0.5.0
@@ -26,11 +26,11 @@ ecs.events.registerSignal(Jumped);
 ## How to emit and read
 
 On the host these functions are on the facade: `ecs.events.emit` and `ecs.events.read`. In a system
-they are `ctx.emit` and `ctx.read`. The shapes are the same in both places:
+they are `ctx.emit` and `ctx.readEvents`. The shapes are the same in both places:
 
 ```ts
-emit(key: SignalKey): void;                     // signal — no payload
-emit<S>(key: EventKey<S>, values: S): void;     // event — the full payload
+emit(key: SignalKey): void;                     // a signal, and no payload
+emit<S>(key: EventKey<S>, values: S): void;     // an event, and the full payload
 read<S>(key: EventKey<S>): EventReader<S>;
 ```
 
@@ -43,12 +43,12 @@ ctx.emit(Contact, { a: e1, b: e2 });
 ctx.emit(Jumped);
 
 // a consumer system (the same frame):
-const hits = ctx.read(Contact);
+const hits = ctx.readEvents(Contact);
 for (let i = 0; i < hits.length; i++) {
-  const a = hits.a[i];   // typed as EntityID — the brand survives emit → read
+  const a = hits.a[i];   // typed as EntityID, because the brand survives emit and read
   const b = hits.b[i];
 }
-const jumps = ctx.read(Jumped).length;   // a signal carries only its count
+const jumps = ctx.readEvents(Jumped).length;   // a signal carries only its count
 ```
 
 ```ts
@@ -102,6 +102,6 @@ payload to a signal, or if you read the columns that a signal does not have.
 
 ## See also
 
-- [systems](./systems.md) — where you emit and read
-- [observers](./observers.md) — the `onSet` and `onAdd` callbacks, and why they cannot emit
-- [resources](./resources.md) — persistent global state, in contrast to an event for one frame
+- [systems](./systems.md), where you emit and read
+- [observers](./observers.md), the `onSet` and `onAdd` callbacks, and why they cannot emit
+- [resources](./resources.md), persistent global state, in contrast to an event for one frame

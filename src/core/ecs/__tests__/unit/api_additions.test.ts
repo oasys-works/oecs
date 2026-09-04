@@ -1,9 +1,9 @@
 /**
  * Batch-4 API additions (combinators + dispose):
- *  - total `has*` probes + `tryGetField` (dead/missing → undefined, no throw);
- *  - `Query.firstEntity` / `Query.singleEntity`;
- *  - host-side `ecs.refRead` parity with `ctx.refRead`;
- *  - run-condition combinators `not` / `allOf` / `anyOf`;
+ *  - total `has*` probes + `tryGetField` (dead or missing → undefined, no throw)
+ *  - `Query.firstEntity` / `Query.singleEntity`
+ *  - host-side `ecs.refRead` parity with `ctx.refRead`
+ *  - run-condition combinators `not` / `allOf` / `anyOf`
  *  - `ObserverHandle[Symbol.dispose]` (`using` support).
  */
 
@@ -15,11 +15,11 @@ import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
 
 function staleOf(e: number): never {
-	return (e + (1 << 20)) as never; // same index, bumped generation — dead
+	return (e + (1 << 20)) as never; // same index, bumped generation, dead
 }
 
 describe("total has* + tryGetField", () => {
-	it("hasComponent/hasSparse/hasRelation return false for a dead entity", () => {
+	it("hasComponent, hasSparse and hasRelation return false for a dead entity", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
 		const Tag = world.registerSparseComponent({ v: "f64" });
@@ -130,7 +130,7 @@ describe("host refRead", () => {
 
 describe("run-condition combinators", () => {
 	const ctx = { ecsTick: 4 } as unknown as ConditionContext;
-	it("not / allOf / anyOf evaluate and merge declares", () => {
+	it("not, allOf and anyOf evaluate and merge declares", () => {
 		const every2 = runEveryNTicks(2); // true at tick 4
 		const every3 = runEveryNTicks(3); // false at tick 4
 		expect(not(every3).evaluate(ctx)).toBe(true);
@@ -163,7 +163,7 @@ describe("ObserverHandle Symbol.dispose", () => {
 			world.update(1 / 60); // deferred add flushes → onAdd fires
 			expect(fires).toBe(1);
 		}
-		// handle disposed at block exit — e2 gains Tag, observer is gone
+		// handle disposed at block exit, e2 gains Tag, observer is gone
 		world.update(1 / 60);
 		expect(fires).toBe(1);
 		expect(world.hasComponent(e2, Tag)).toBe(true);

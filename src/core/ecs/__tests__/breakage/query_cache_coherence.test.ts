@@ -4,7 +4,7 @@ import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
 
 describe("Query cache coherence edge cases", () => {
-	it("query cached before entities exist — live array picks them up when matching entities are created", () => {
+	it("query cached before entities exist, live array picks them up when matching entities are created", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -36,7 +36,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(total).toBe(2);
 	});
 
-	it("query -> add entities -> destroy all -> add new to same archetype — for..of correct", () => {
+	it("query -> add entities -> destroy all -> add new to same archetype, for..of correct", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -81,7 +81,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(readValues).toEqual([10, 20]);
 	});
 
-	it("query with .not(Tag) + add Tag during system — entity gone from query after flush", () => {
+	it("query with .not(Tag) + add Tag during system, entity gone from query after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -118,7 +118,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(world.hasComponent(e, Tag)).toBe(true);
 	});
 
-	it("two queries Q1=[Pos], Q2=[Pos,Vel]; remove Vel during system — entity in Q1 not Q2 after flush", () => {
+	it("two queries Q1=[Pos], Q2=[Pos,Vel]; remove Vel during system, entity in Q1 not Q2 after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -148,11 +148,11 @@ describe("Query cache coherence edge cases", () => {
 		// After flush: entity moved from [Pos,Vel] archetype to [Pos] archetype
 		// q1 should still see it (entity still has Pos)
 		expect(q1.entityCount).toBe(1);
-		// q2 should NOT see it (entity no longer has Vel)
+		// q2 should not see it (entity no longer has Vel)
 		expect(q2.entityCount).toBe(0);
 	});
 
-	it("archetype empty -> re-populated — query yields exactly 1 archetype with 1 entity", () => {
+	it("archetype empty -> re-populated, query yields exactly 1 archetype with 1 entity", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -184,10 +184,10 @@ describe("Query cache coherence edge cases", () => {
 		expect(world.getField(e2, Pos, "x")).toBe(99);
 	});
 
-	it("200 distinct queries in tight loop — cache size correct, no duplicates", () => {
+	it("200 distinct queries in tight loop, cache size correct, no duplicates", () => {
 		const world = new ECS();
 
-		// 200 distinct query masks built from distinct component PAIRS drawn
+		// 200 distinct query masks built from distinct component pairs drawn
 		// from a small pool (well inside the SAB descriptor component limit):
 		// C(21,2) = 210 ≥ 200 distinct two-component masks.
 		const POOL = 21;

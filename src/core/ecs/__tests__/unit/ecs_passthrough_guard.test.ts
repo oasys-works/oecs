@@ -1,17 +1,17 @@
 /**
- * ECS facade — pass-through band guard.
+ * ECS facade, pass-through band guard.
  *
- * `ecs.ts` ends with a marker-delimited "STORE PASS-THROUGH BAND": the
+ * `ecs.ts` ends with a marker-delimited "store pass-through band": the
  * contiguous section holding every ECS method that is a *pure mechanical
- * delegation* to a collaborator (`this.store` / `this.schedule` / `this.ctx`
+ * delegation* to a collaborator (`this._store` / `this._schedule` / `this._ctx`
  * / `this._observers`). The band's invariant is that logic can never silently
- * accrete there — a method that grows a dev check, an argument adaptation, or
+ * accrete there, a method that grows a dev check, an argument adaptation, or
  * a second call has outgrown the band and must move above it, next to the
  * other real logic.
  *
  * This test enforces the invariant structurally: it parses `ecs.ts` with the
  * TypeScript compiler API and asserts every class member between the
- * BEGIN/END markers has one of exactly three body shapes:
+ * begin and end markers has one of exactly three body shapes:
  *
  *   1. `return this.<delegate>.<member>(…);`   (return delegation)
  *   2. `return this.<delegate>.<member>;`      (property-read delegation)
@@ -19,7 +19,7 @@
  *      optionally followed by `return this;`   (chainable delegation)
  *
  * and that the body contains no other calls and no control flow. Arguments
- * may only forward parameters (identifiers / spreads) or supply inert
+ * may only forward parameters (identifiers and spreads) or supply inert
  * literals (e.g. `registerSignal`'s `[]`, `registerTag`'s `{}` cast).
  *
  * See the band header comment in ecs.ts.
@@ -32,7 +32,7 @@ import ts from "typescript";
 
 const BEGIN_MARKER = "// === BEGIN STORE PASS-THROUGH BAND ===";
 const END_MARKER = "// === END STORE PASS-THROUGH BAND ===";
-const DELEGATES = new Set(["store", "schedule", "ctx", "_observers"]);
+const DELEGATES = new Set(["_store", "_schedule", "_ctx", "_observers"]);
 
 const ecsPath = fileURLToPath(new URL("../../ecs.ts", import.meta.url));
 const source = readFileSync(ecsPath, "utf8");
@@ -47,7 +47,7 @@ function isDelegateAccess(expr: ts.Expression): boolean {
 	);
 }
 
-/** An argument may forward a parameter or supply an inert literal — never
+/** An argument may forward a parameter or supply an inert literal, never
  * compute. `as`-casts and parenthesization are transparent. */
 function isInertArgument(arg: ts.Expression): boolean {
 	if (ts.isSpreadElement(arg)) return isInertArgument(arg.expression);
@@ -118,7 +118,7 @@ function checkBody(name: string, body: ts.Block, violations: Violation[]): void 
 	}
 
 	// Belt-and-braces: regardless of shape, the body may contain exactly one
-	// call and zero control flow — catches logic smuggled into an argument
+	// call and zero control flow, catches logic smuggled into an argument
 	// position or a nested expression the shape check missed.
 	let callCount = 0;
 	const walk = (node: ts.Node): void => {
@@ -175,8 +175,8 @@ describe("ECS pass-through band", () => {
 	it("the band is populated (the markers actually delimit the delegations)", () => {
 		expect(ecsClass).toBeDefined();
 		// 38 delegating members after the 0.5.0 flat-form removal (the
-		// relations/events/resources/snapshots delegations moved to the
-		// facades). Shrinking is fine — methods can move out later — but an
+		// relations, events, resources and snapshots delegations moved to the
+		// facades). Shrinking is fine, methods can move out later, but an
 		// empty band means the markers drifted.
 		expect(bandMembers.length).toBeGreaterThan(30);
 		const names = new Set(
@@ -193,7 +193,7 @@ describe("ECS pass-through band", () => {
 		for (const m of bandMembers) {
 			const name = m.name && ts.isIdentifier(m.name) ? m.name.text : "<unnamed>";
 			if (ts.isMethodDeclaration(m) || ts.isGetAccessorDeclaration(m)) {
-				// Overload signatures have no body — nothing to check.
+				// Overload signatures have no body, nothing to check.
 				if (m.body !== undefined) checkBody(name, m.body, violations);
 			} else if (ts.isSetAccessorDeclaration(m)) {
 				violations.push({ member: name, reason: "setters do not belong in the band" });

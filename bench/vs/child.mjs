@@ -1,5 +1,5 @@
 /**
- * One measurement: ONE library and ONE case, in a new process. It writes
+ * One measurement: One library and one case, in a new process. It writes
  * `{"bestMs":…,"medianMs":…,"iters":…}` to stdout.
  *
  * A separate process is the same rule that `bench/ab/child.mjs` records. It is more
@@ -58,7 +58,7 @@ for (let s = 0; s < samples; s++) {
 	times.push(Number(t1 - t0) / 1e6);
 }
 times.sort((a, b) => a - b);
-// The checksum is taken AFTER all warmup + sample runs, so every library has
+// The checksum is taken after all warmup + sample runs, so every library has
 // executed `fn` exactly (warmup + samples) times against the same starting state.
 // That makes the value comparable across libraries: if one of them iterated the
 // wrong entity set, dropped writes to an out-of-bounds index, or no-opped

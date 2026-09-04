@@ -1,5 +1,5 @@
 /**
- * `Store.publishRowCountsToDescriptor` correctness and idempotence.
+ * `Store.publishRowCounts` correctness and idempotence.
  *
  * The lockstep descriptor walk must stamp every SAB-backed
  * archetype's live `length` into its descriptor's `row_count` field
@@ -11,7 +11,7 @@
  * flag set by every mutation site (`_mark_queries_dirty` + immediate
  * `Store.destroyEntity`) and cleared by publish. Read-only tick phases
  * call `ctx.flush()` which drains empty buffers and then invokes
- * publish; the descriptor walk must skip the work entirely when nothing
+ * publish. The descriptor walk must skip the work entirely when nothing
  * has changed. Verified by overwriting a descriptor's `row_count` with a
  * sentinel and confirming a no-op publish leaves the sentinel intact.
  */
@@ -58,15 +58,15 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 			posVelEntities.push(e);
 		}
 
-		store.publishRowCountsToDescriptor();
+		store.publishRowCounts();
 
 		const counts = rowCountByArchId(store);
 		// Every SAB-backed archetype must be represented in the descriptor region.
 		for (const arch of store.columnStore.archetypes.keys()) {
 			expect(counts.has(arch)).toBe(true);
 		}
-		// Assert the LITERAL row counts the test arranged — 3 in the [Pos]-only
-		// archetype, 2 in [Pos,Vel] — not values re-derived from
+		// Assert the literal row counts the test arranged, 3 in the [Pos]-only
+		// archetype, 2 in [Pos,Vel], not values re-derived from
 		// `Archetype.length` (which `publish` itself stamps with the same rule,
 		// so a shared off-by-one would pass). Locate each archetype by an
 		// entity known to live in it.
@@ -85,10 +85,10 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 			const e = store.createEntity();
 			store.addComponent(e, Pos, { x: i, y: i });
 		}
-		store.publishRowCountsToDescriptor();
+		store.publishRowCounts();
 
 		// Overwrite every descriptor's row_count with a sentinel value.
-		// A real publish would clobber these; a no-op publish must not.
+		// A real publish would clobber these. A no-op publish must not.
 		const view = store.columnStore.view;
 		const regionOff = view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 		const archCount = view.getUint32(STORE_HEADER_OFFSETS.archetype_count, true);
@@ -101,10 +101,10 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 			off += 24 + d.columns.length * 16;
 		}
 
-		// No mutations between this and the previous publish — flag is clean.
-		store.publishRowCountsToDescriptor();
+		// No mutations between this and the previous publish, flag is clean.
+		store.publishRowCounts();
 
-		// Sentinel must survive: every descriptor still reads SENTINEL.
+		// Sentinel must survive: every descriptor still reads the sentinel.
 		off = regionOff;
 		for (const d of descs) {
 			const rc = view.getUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.row_count, true);
@@ -122,16 +122,16 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 			store.addComponent(e, Pos, { x: i, y: i });
 			entities.push(e);
 		}
-		store.publishRowCountsToDescriptor();
+		store.publishRowCounts();
 		expect(
 			rowCountByArchId(store).get(store.getEntityArchetype(entities[0]).id as number)
 		).toBe(5);
 
-		// Defer-destroy two; flush; publish. Descriptor row_count must drop.
+		// Defer-destroy two. Flush. Publish. Descriptor row_count must drop.
 		store.destroyEntityDeferred(entities[0]);
 		store.destroyEntityDeferred(entities[1]);
-		store.flushDestroyed();
-		store.publishRowCountsToDescriptor();
+		store.flushDestroys();
+		store.publishRowCounts();
 		expect(
 			rowCountByArchId(store).get(store.getEntityArchetype(entities[2]).id as number)
 		).toBe(3);
@@ -146,16 +146,16 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 			store.addComponent(e, Pos, { x: i, y: i });
 			entities.push(e);
 		}
-		store.publishRowCountsToDescriptor();
+		store.publishRowCounts();
 		const archId = store.getEntityArchetype(entities[0]).id as number;
 		expect(rowCountByArchId(store).get(archId)).toBe(4);
 
 		// Immediate-mode destroy bypasses _mark_queries_dirty (known bug
-		// path) but MUST still flag row_counts dirty — otherwise the SAB
+		// path) but must still flag row_counts dirty, otherwise the SAB
 		// descriptor would silently keep the pre-destroy count and any
 		// WASM tick reading it would loop over a freed slot.
 		store.destroyEntity(entities[0]);
-		store.publishRowCountsToDescriptor();
+		store.publishRowCounts();
 		expect(rowCountByArchId(store).get(archId)).toBe(3);
 	});
 });

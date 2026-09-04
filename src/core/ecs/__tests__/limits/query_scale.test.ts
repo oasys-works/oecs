@@ -1,10 +1,10 @@
 /**
- * Query scale — "no corruption at moderate scale", NOT a cap boundary.
+ * Query scale, "no corruption at moderate scale", not a cap boundary.
  *
  * Query-cache dedup and live archetype growth over ≤63 tags / ≤20
- * components and a few hundred entities — well inside the 128-component SAB
+ * components and a few hundred entities, well inside the 128-component SAB
  * descriptor limit. These verify cached queries stay coherent and
- * grow live, not behavior AT the cap. The real cap boundary lives in
+ * grow live, not behavior at the cap. The real cap boundary lives in
  * `limits/component_count_cap.test.ts`.
  */
 
@@ -14,7 +14,7 @@ import { ECS } from "../../ecs";
 describe("Query scale", () => {
 	it("100 unique queries, each returns correct cached reference", () => {
 		const world = new ECS();
-		// 100 distinct archetypes/queries built from distinct component PAIRS
+		// 100 distinct archetypes and queries built from distinct component pairs
 		// drawn from a small pool (well inside the SAB descriptor component
 		// limit): C(15,2) = 105 ≥ 100 distinct two-component masks.
 		const POOL = 15;
@@ -87,7 +87,7 @@ describe("Query scale", () => {
 	it("live query stress: register query, create new archetypes, verify live growth", () => {
 		const world = new ECS();
 		const Common = world.registerComponent(["v"] as const);
-		// Common + tags must stay within the SAB descriptor component limit;
+		// Common + tags must stay within the SAB descriptor component limit
 		// 63 distinct single-tag archetypes is plenty to exercise live
 		// query growth and stays well under the cap.
 		const TAG_COUNT = 63;
@@ -112,7 +112,7 @@ describe("Query scale", () => {
 		expect(q.archetypeCount).toBe(TAG_COUNT + 1);
 	});
 
-	it("query cache deduplication — same mask always returns same Query", () => {
+	it("query cache deduplication, same mask always returns same Query", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);

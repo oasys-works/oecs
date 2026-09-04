@@ -1,16 +1,16 @@
 /**
- * Host → ECS write seam — core contract.
+ * Host → ECS write seam, core contract.
  *
- * Runs under vitest's `__DEV__ = true`, so the per-system access check is LIVE.
+ * Runs under vitest's `__DEV__ = true`, so the per-system access check is live.
  * That makes the `exclusive` bypass load-bearing here: the apply system mutates
  * components it never declared, which a normal system cannot (the negative
  * control proves it). Asserts the properties de-risked in the write-seam prototype:
- *   - enqueue defers — nothing changes until the schedule head drains;
- *   - the full vocabulary applies (spawn / despawn / add / remove / set / dis/enable);
- *   - `onSpawned` reports the deferred id;
+ *   - enqueue defers, nothing changes until the schedule head drains
+ *   - the full vocabulary applies (spawn, despawn, add, remove, set, disable and enable
+ *   - `onSpawned` reports the deferred id
  *   - the PRE_STARTUP drain applies seed-time edits at `startup()`.
- * Coalescing into one reactive commit/tick is the read bridge's property
- * (`engine-extensions/reactive` ecs_sync.test.ts); the seam just funnels into the
+ * Coalescing into one reactive commit and tick is the read bridge's property
+ * (`engine-extensions/reactive` ecs_sync.test.ts). The seam only funnels into the
  * same deferred flush.
  */
 import { beforeEach, describe, expect, it } from "vitest";
@@ -35,30 +35,30 @@ type CellDef = ComponentDef<{ x: "i32"; heat: "i32" }>;
 function makeWorld(): { world: ECS; Cell: CellDef; commands: HostCommandQueue } {
 	const world = new ECS({ deterministic: true });
 	const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
-	// Install BEFORE startup so the apply system is head-of-phase and the
+	// Install before startup so the apply system is head-of-phase and the
 	// PRE_STARTUP drain exists.
 	const commands = installHostCommandSeam(world);
 	return { world, Cell, commands };
 }
 
-describe("host command seam — enqueue defers", () => {
+describe("host command seam, enqueue defers", () => {
 	it("enqueue mutates nothing until the schedule head drains", () => {
 		const { world, Cell, commands } = makeWorld();
 		world.startup();
 
 		commands.spawn([spawnEntry(Cell, { x: 5, heat: 0 })]);
 		// Off-schedule enqueue: the world is untouched, the queue holds it.
-		expect(commands.pending).toBe(1);
+		expect(commands.pendingCount).toBe(1);
 		expect(world.query(Cell).entityCount).toBe(0);
 
 		world.update(1 / 60);
 		// Drained at PRE_UPDATE head, applied at the flush.
-		expect(commands.pending).toBe(0);
+		expect(commands.pendingCount).toBe(0);
 		expect(world.query(Cell).entityCount).toBe(1);
 	});
 });
 
-describe("host command seam — the vocabulary applies", () => {
+describe("host command seam, the vocabulary applies", () => {
 	let world: ECS;
 	let Cell: CellDef;
 	let commands: HostCommandQueue;
@@ -137,7 +137,7 @@ describe("host command seam — the vocabulary applies", () => {
 	});
 });
 
-describe("host command seam — PRE_STARTUP drain", () => {
+describe("host command seam. PRE_STARTUP drain", () => {
 	it("seed-time commands apply at startup, before any update", () => {
 		const { world, Cell, commands } = makeWorld();
 		commands.spawn([spawnEntry(Cell, { x: 11, heat: 0 })]);
@@ -148,9 +148,9 @@ describe("host command seam — PRE_STARTUP drain", () => {
 	});
 });
 
-describe("host command seam — exclusive bypass is load-bearing", () => {
+describe("host command seam, exclusive bypass is load-bearing", () => {
 	it("the apply system mutates undeclared components without throwing (DEV access check live)", () => {
-		// makeWorld's apply system declares NO access yet spawns/sets Cell — only
+		// makeWorld's apply system declares no access yet spawns and sets Cell, only
 		// `exclusive: true` lets that pass. If the bypass regressed, this throws.
 		const { world, Cell, commands } = makeWorld();
 		world.startup();
@@ -170,8 +170,8 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 			SCHEDULE.UPDATE,
 			world.registerSystem({
 				name: "rogue",
-				// Declares no writes — so writing Cell.x must throw the access check.
-				// ctx annotated permissive (§typestate escape hatch): the violation
+				// Declares no writes, so writing Cell.x must throw the access check.
+				// ctx annotated permissive (the permissive escape hatch): the violation
 				// is deliberate, to assert the runtime throw.
 				reads: [],
 				writes: [],
@@ -184,8 +184,8 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 });
 
 // ===========================================================================
-// SAB command_ring transport — the second transport. The typed queue
-// (above) and the ring resolve to the SAME `applyHostCommand`.
+// SAB command_ring transport, the second transport. The typed queue
+// (above) and the ring resolve to the same `applyHostCommand`.
 // ===========================================================================
 
 // Consumer-chosen opcodes (the engine owns no opcode numbers). `0` is the
@@ -193,7 +193,7 @@ describe("host command seam — exclusive bypass is load-bearing", () => {
 const OP_SET = 10;
 const OP_DESPAWN = 11;
 
-/** A world whose apply system drains BOTH transports: the typed queue and the
+/** A world whose apply system drains both transports: the typed queue and the
  * SAB ring (via a dispatcher binding `setField` + `despawn` codecs). */
 function makeRingWorld(): {
 	world: ECS;
@@ -215,13 +215,13 @@ function pushRing(world: ECS, op: number, payload: Uint8Array): void {
 	pushCommand(buffer.view, buffer.header.commandRingOff, op, payload);
 }
 
-describe("host command ring codec — golden bytes", () => {
+describe("host command ring codec, golden bytes", () => {
 	it("ring_set_field packs id as u32 + value as f64 within the 15-byte payload", () => {
 		const world = new ECS({ deterministic: true });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 		const codec = ringSetFieldCodec(Cell, "x");
 
-		// eid = (gen 0x10 << 20) | index 0x20304 = 0x01020304 — chosen so the LE
+		// eid = (gen 0x10 << 20) | index 0x20304 = 0x01020304, chosen so the LE
 		// u32 bytes are visually obvious. value 2.0 = 0x4000000000000000.
 		const eid = createEntityId(0x20304, 0x10);
 		const payload = codec.encode({ kind: "set_field", eid, def: Cell, field: "x", value: 2 });
@@ -260,7 +260,7 @@ describe("host command ring codec — golden bytes", () => {
 	});
 });
 
-describe("host command seam — two transports, one apply dispatch", () => {
+describe("host command seam, two transports, one apply dispatch", () => {
 	it("a set_field via the ring and via the typed queue land identical world state", () => {
 		const { world, Cell, commands } = makeRingWorld();
 		world.startup();
@@ -288,7 +288,7 @@ describe("host command seam — two transports, one apply dispatch", () => {
 		);
 		world.update(1 / 60);
 
-		// Identical world state — proving both transports resolve to the same
+		// Identical world state, proving both transports resolve to the same
 		// `applyHostCommand`.
 		expect(world.getField(a!, Cell, "x")).toBe(42);
 		expect(world.getField(b!, Cell, "x")).toBe(42);
@@ -305,7 +305,7 @@ describe("host command seam — two transports, one apply dispatch", () => {
 		world.update(1 / 60);
 		expect(world.query(Cell).entityCount).toBe(1);
 
-		// Despawn via the ring — a structural change, which must route through the
+		// Despawn via the ring, a structural change, which must route through the
 		// same deferred buffers + phase flush a typed-queue despawn uses.
 		pushRing(world, OP_DESPAWN, ringDespawnCodec().encode({ kind: "despawn", eid: e! }));
 		world.update(1 / 60);
@@ -321,7 +321,7 @@ describe("host command seam — two transports, one apply dispatch", () => {
 		commands.spawn([spawnEntry(Cell, { x: 3, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
 
-		// Opcode 99 is bound to nothing — drained and skipped, no throw, no effect.
+		// Opcode 99 is bound to nothing, drained and skipped, no throw, no effect.
 		const payload = new Uint8Array(HOST_COMMAND_PAYLOAD_BYTES);
 		pushRing(world, 99, payload);
 		// A valid set behind it still applies (the skipped slot didn't stall the ring).
@@ -341,7 +341,7 @@ describe("host command seam — two transports, one apply dispatch", () => {
 	});
 });
 
-describe("host command dispatcher — opcode validation", () => {
+describe("host command dispatcher, opcode validation", () => {
 	it("rejects op_code 0 (reserved empty-slot marker) and out-of-u8 codes", () => {
 		const d = new HostCommandDispatcher();
 		expect(() => d.on(0, () => {})).toThrow();
@@ -350,8 +350,8 @@ describe("host command dispatcher — opcode validation", () => {
 	});
 });
 
-describe("host command seam — set_field immediate/deferred ordering guard", () => {
-	it("set_field on a component added in the SAME frame throws an actionable error", () => {
+describe("host command seam, set_field immediate and deferred ordering guard", () => {
+	it("set_field on a component added in the same frame throws an actionable error", () => {
 		const { world, Cell, commands } = makeWorld();
 		const Vel = world.registerComponent({ vx: "i32" }) as ComponentDef<{ vx: "i32" }>;
 		world.startup();
@@ -360,9 +360,9 @@ describe("host command seam — set_field immediate/deferred ordering guard", ()
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);
 
-		// add defers to the flush; setField is immediate — so setting a
-		// field on the just-added (not-yet-flushed) Vel is illegal. The guard turns
-		// the opaque getColumn failure into an actionable message rather than
+		// add defers to the flush. SetField is immediate, so setting a
+		// field on the newly added (not-yet-flushed) Vel is illegal. The guard turns
+		// the opaque getColumnMut failure into an actionable message rather than
 		// letting it surface deep in the column lookup.
 		commands.add(e!, Vel, { vx: 0 });
 		commands.setField(e!, Vel, "vx", 9);
@@ -381,12 +381,12 @@ describe("host command seam — set_field immediate/deferred ordering guard", ()
 	});
 });
 
-describe("host command seam — recorder cannot drain on FIXED_UPDATE", () => {
+describe("host command seam, recorder cannot drain on FIXED_UPDATE", () => {
 	// A recorder logs each tick's `world.update(dt)` so `replayCommandLog` can
-	// re-issue it. A FIXED_UPDATE drain receives the FIXED sub-step dt, not the
+	// re-issue it. A FIXED_UPDATE drain receives the fixed sub-step dt, not the
 	// host's variable `update(dt)`, so recording there would replay
 	// `update(fixedTimestep)` and diverge (a different fixed sub-step count plus
-	// any dt-integrating system). The seam rejects this at INSTALL time rather than
+	// any dt-integrating system). The seam rejects this at install time rather than
 	// silently logging the wrong dt.
 	const recorder = { openTick: () => {}, record: () => {} };
 

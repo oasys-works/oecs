@@ -2,10 +2,10 @@
  * Dual-variant library build.
  *
  * Emits two production artifacts from the single `vite.config.ts`:
- *   1. `production`  — `__DEV__:false`, dev guards DCE'd, plain `*.js`/`*.cjs`
- *      (the package default; `main`/`module` and the no-condition `exports`
+ *   1. `production` , `__DEV__:false`, dev guards DCE'd, plain `*.js` and `*.cjs`
+ *      (the package default, `main` and `module` and the no-condition `exports`
  *      fallback point here). Runs first: clears `dist` and emits declarations.
- *   2. `development` — `__DEV__:true`, guards retained, `*.development.js`/
+ *   2. `development`, `__DEV__:true`, guards retained, `*.development.js`/
  *      `*.development.cjs` (served by the `/dev` subpath and the `development`
  *      export condition). Runs second: adds its artifacts without clearing.
  *

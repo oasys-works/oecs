@@ -1,28 +1,28 @@
 /**
- * Hierarchy depth-ordering QUERY TERM — `.hierarchy(R)`, the in-query
- * analog of flecs `cascade` / bitECS `Hierarchy()`.
+ * Hierarchy depth-ordering query term, `.hierarchy(R)`, the in-query
+ * analog of flecs `cascade` and bitECS `Hierarchy()`.
  *
  * `.hierarchy(R)` reorders a query's matched entities into **hierarchy depth
- * order** over the exclusive relation `R` (parents before children) — it does NOT
+ * order** over the exclusive relation `R` (parents before children). It does not
  * narrow the matched set, so an entity with no `R`-parent is a root (depth 0) and
  * is yielded first. The order is canonical: depth ascending, then **entity index
  * ascending within each depth band** (a total, insertion-order-independent order).
  * It is iterated via `forEachEntity` (members scatter across archetypes).
  *
  * Covers the acceptance criteria:
- *  - canonical depth order (depth, then eid), parents before children;
- *  - the band is GLOBALLY eid-ascending, not parent-grouped (vs a BFS forest);
- *  - optional `maxDepth` (bitECS depth limit);
- *  - exclusive-only guard (`RELATION_MODE_MISMATCH`) + cycle guard (`RELATION_CYCLE`);
- *  - intersection / composition with dense + sparse terms;
- *  - `relationReads: [R]` access declaration (in-system);
- *  - `forEach` / `count` reject a hierarchy query (no per-archetype span);
+ *  - canonical depth order (depth, then eid), parents before children
+ *  - the band is globally eid-ascending, not parent-grouped (vs a BFS forest)
+ *  - optional `maxDepth` (bitECS depth limit)
+ *  - exclusive-only guard (`RELATION_MODE_MISMATCH`) + cycle guard (`RELATION_CYCLE`)
+ *  - intersection and composition with dense + sparse terms
+ *  - `relationReads: [R]` access declaration (in-system)
+ *  - `forEach` and `count` reject a hierarchy query (no per-archetype span)
  *  - cached, stable instances + single-ordering guard.
  *
  * Entity index == creation order for a fresh world (generation 0), so the
  * within-band order asserted below is creation order. Every node carries a tag so
  * it occupies an archetype row (a component-less entity is "unplaced" and yielded
- * by no query — a pre-existing ECS property, not specific to this term).
+ * by no query, a pre-existing ECS property, not specific to this term).
  */
 
 import { describe, expect, it } from "vitest";
@@ -35,7 +35,7 @@ import type { EntityID } from "../../entity";
 import type { SystemContext } from "../../query";
 import type { SystemConfig } from "../../system";
 
-/** Collect a hierarchy query's yielded entities IN ORDER (order is the point —
+/** Collect a hierarchy query's yielded entities in order (order is the point,
  * do not sort). */
 function order(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] {
 	const out: number[] = [];
@@ -43,13 +43,13 @@ function order(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] 
 	return out;
 }
 
-describe(".hierarchy(R) — canonical depth ordering", () => {
+describe(".hierarchy(R), canonical depth ordering", () => {
 	it("yields parents before children: depth ascending, then eid ascending in band", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world); // exclusive
 
-		// Create deliberately so that lower-index entities live DEEPER, proving the
+		// Create deliberately so that lower-index entities live deeper, proving the
 		// primary key is depth (not raw eid): r(0)=root, x(1)/y(2)=grandchildren,
 		// p(3)/q(4)=children of r.
 		const r = world.spawn();
@@ -64,7 +64,7 @@ describe(".hierarchy(R) — canonical depth ordering", () => {
 		world.relations.add(x, ChildOf, p); // depth 2
 		world.relations.add(y, ChildOf, q); // depth 2
 
-		// depth 0: [r] ; depth 1: [p, q] (3 < 4) ; depth 2: [x, y] (1 < 2)
+		// depth 0: [r] . Depth 1: [p, q] (3 < 4) . Depth 2: [x, y] (1 < 2)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r, p, q, x, y].map(Number));
 	});
 
@@ -77,15 +77,15 @@ describe(".hierarchy(R) — canonical depth ordering", () => {
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([solo as number]);
 	});
 
-	it("orders a FOREST globally by eid within a band, not parent-grouped (vs BFS)", () => {
+	it("orders a forest globally by eid within a band, not parent-grouped (vs bfs)", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 
-		// Two roots; each one child. Create the second root's child (cB) BEFORE the
+		// Two roots. Each one child. Create the second root's child (cB) before the
 		// first root's child (cA), so within depth 1 the canonical order is cB < cA
 		// even though cB's parent (r2) has the higher index. A BFS-per-root walk
-		// would instead group as [r1, r2, cA, cB] — this pins the depth-band-eid
+		// would instead group as [r1, r2, cA, cB]. This pins the depth-band-eid
 		// semantics the issue specifies.
 		const r1 = world.spawn(); // 0
 		const r2 = world.spawn(); // 1
@@ -95,7 +95,7 @@ describe(".hierarchy(R) — canonical depth ordering", () => {
 		world.relations.add(cA, ChildOf, r1);
 		world.relations.add(cB, ChildOf, r2);
 
-		// depth 0: [r1, r2] ; depth 1: [cB, cA] (index 2 < 3)
+		// depth 0: [r1, r2] . Depth 1: [cB, cA] (index 2 < 3)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r1, r2, cB, cA].map(Number));
 	});
 
@@ -113,7 +113,7 @@ describe(".hierarchy(R) — canonical depth ordering", () => {
 
 		// Re-parent c onto a (exclusive replace): c becomes depth 1 alongside b.
 		world.relations.add(c, ChildOf, a);
-		// depth 0: [a] ; depth 1: [b, c] (index b < c)
+		// depth 0: [a] . Depth 1: [b, c] (index b < c)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([a, b, c].map(Number));
 	});
 
@@ -137,7 +137,7 @@ describe(".hierarchy(R) — canonical depth ordering", () => {
 	});
 });
 
-describe(".hierarchy(R) — max_depth", () => {
+describe(".hierarchy(R), max_depth", () => {
 	it("drops entities deeper than max_depth (inclusive)", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -158,12 +158,12 @@ describe(".hierarchy(R) — max_depth", () => {
 	});
 });
 
-describe(".hierarchy(R) — intersection / composition", () => {
+describe(".hierarchy(R), intersection and composition", () => {
 	it("intersects the matched set with a dense require term (depth stays structural)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const ChildOf = registerChildOf(world);
-		// root has NO Pos → not matched, but still counts toward child depth.
+		// root has no Pos → not matched, but still counts toward child depth.
 		const root = world.spawn();
 		const child = world.spawn();
 		const grand = world.spawn();
@@ -204,15 +204,15 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		const c = world.spawn();
 		for (const e of [r, c]) world.addComponent(e, Node);
 		world.relations.add(c, ChildOf, r);
-		// hierarchy(R).and(Node) keeps the ordering term — equals query(Node).hierarchy(R).
+		// hierarchy(R).and(Node) keeps the ordering term, equals query(Node).hierarchy(R).
 		expect(order(world.query().hierarchy(ChildOf).and(Node))).toEqual([r, c].map(Number));
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r, c].map(Number));
 	});
 
-	it("survives a require_sparse composed AFTER hierarchy (routes through _derive_sparse)", () => {
+	it("survives a require_sparse composed after hierarchy (routes through _derive_sparse)", () => {
 		// The drop-on-compose trap: a sparse term composed onto a
 		// hierarchy-bearing query must thread `_hierarchy` through `_deriveSparse`,
-		// or the ordering is silently lost. Build the SAME world as the
+		// or the ordering is silently lost. Build the same world as the
 		// hierarchy-last sparse test and assert both orders agree with the spec.
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -234,8 +234,8 @@ describe(".hierarchy(R) — intersection / composition", () => {
 		expect(order(world.query(Node).withSparse(Marked).hierarchy(ChildOf))).toEqual(expected);
 	});
 
-	it("survives a require_relation composed AFTER hierarchy (routes through _derive_relation)", () => {
-		// Same trap on the relation-wildcard derive path. ChildOf defines the tree;
+	it("survives a require_relation composed after hierarchy (routes through _derive_relation)", () => {
+		// Same trap on the relation-wildcard derive path. ChildOf defines the tree
 		// a second relation Tagged is the (R, *) membership filter composed last.
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -275,7 +275,7 @@ describe(".hierarchy(R) — intersection / composition", () => {
 	});
 });
 
-describe(".hierarchy(R) — guards", () => {
+describe(".hierarchy(R), guards", () => {
 	it("throws RELATION_MODE_MISMATCH on a multi relation (exclusive-only)", () => {
 		const world = new ECS();
 		const Node = world.registerTag();
@@ -339,7 +339,7 @@ describe(".hierarchy(R) — guards", () => {
 	});
 });
 
-describe(".hierarchy(R) — cached, stable instances", () => {
+describe(".hierarchy(R), cached, stable instances", () => {
 	it("repeated unbounded hierarchy from the same parent returns the identical Query", () => {
 		const world = new ECS();
 		const R = world.relations.register();
@@ -355,7 +355,7 @@ describe(".hierarchy(R) — cached, stable instances", () => {
 	});
 });
 
-describe(".hierarchy(R) — access declaration (relation_reads)", () => {
+describe(".hierarchy(R), access declaration (relation_reads)", () => {
 	function base(overrides: Partial<SystemConfig>): SystemConfig {
 		return {
 			reads: [],

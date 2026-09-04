@@ -7,7 +7,7 @@
  * write the same bytes the descriptor advertises.
  *
  * Not a binary fixture (the byte offsets depend on alignment and column
- * order — locked at the descriptor level in `descriptor.test.ts`). The
+ * order, locked at the descriptor level in `descriptor.test.ts`). The
  * contract pinned here is "views land where the descriptor says they
  * land", which is the load-bearing invariant for the eventual Archetype
  * integration.
@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
 	columnKey,
 	createColumnStore,
-	isValidSab,
+	isValidStoreHeader,
 	readLayoutDescriptorRegion,
 	readStoreHeader,
 	STORE_HEADER_BYTES,
@@ -27,12 +27,12 @@ import {
 	type ArchetypeSpec
 } from "../index";
 
-// The sim-bindings region size is game-owned — the engine no longer
+// The sim-bindings region size is game-owned, the engine no longer
 // exports a `SIM_BINDINGS_BYTES` ABI constant. A consumer that opts into a WASM
-// backend supplies its own size via `bindingsRegionBytes`; this test owns its
+// backend supplies its own size via `bindingsRegionBytes`. This test owns its
 // own value (mirrors @internal/sim's 64-field × 2-byte region).
 const BINDINGS_BYTES = 128;
-// Internal layout primitives not surfaced through the barrel — exercised
+// Internal layout primitives not surfaced through the barrel, exercised
 // directly so the 2³¹ overflow guard can be pinned without allocating
 // a 2 GiB SharedArrayBuffer.
 import { alignUp, STORE_MAX_BYTE_OFFSET, StoreLayoutOverflowError, planLayout } from "../column_store";
@@ -50,7 +50,7 @@ const SPEC_SINGLE: ArchetypeSpec = {
 	]
 };
 
-// Two archetypes — exercises descriptor walk + multiple typed-array views.
+// Two archetypes, exercises descriptor walk + multiple typed-array views.
 const SPEC_MULTI: readonly ArchetypeSpec[] = [
 	{
 		archetypeId: 1,
@@ -69,17 +69,17 @@ const SPEC_MULTI: readonly ArchetypeSpec[] = [
 	}
 ];
 
-describe("create_column_store — SAB allocation + layout", () => {
+describe("create_column_store. SAB allocation + layout", () => {
 	it("writes a valid header at byte 0", () => {
 		const store = createColumnStore([SPEC_SINGLE]);
-		expect(isValidSab(store.view)).toBe(true);
+		expect(isValidStoreHeader(store.view)).toBe(true);
 
 		const h = readStoreHeader(store.view);
 		expect(h.magic).toBe(STORE_MAGIC);
 		expect(h.simAbiVersion).toBe(SIM_ABI_VERSION);
 		expect(h.viewStamp).toBe(0);
 		expect(h.archetypeCount).toBe(1);
-		// No bindings region by default (opt-in) — a pure-TS store
+		// No bindings region by default (opt-in), a pure-TS store
 		// pays nothing for the WASM seam, so the descriptor sits right after the
 		// header and `bindings_off` is the absent sentinel 0.
 		expect(h.bindingsOff).toBe(0);
@@ -113,16 +113,16 @@ describe("create_column_store — SAB allocation + layout", () => {
 		expect(arch).toBeDefined();
 		if (!arch) return; // type narrow
 
-		// Each ColumnView's byte_off matches the descriptor; writing through
+		// Each ColumnView's byte_off matches the descriptor. Writing through
 		// the view at index i lands at byte_off + i*stride. Inspect via the
-		// DataView to catch any view/descriptor offset mismatch.
+		// DataView to catch any view and descriptor offset mismatch.
 		const u32View = arch.columns.get(columnKey(2, 0));
 		expect(u32View).toBeDefined();
 		if (!u32View) return;
 		expect(u32View.typeTag).toBe(TYPE_TAG.u32);
 		expect(u32View.stride).toBe(4);
 		// Stride alignment: byte_off must be a multiple of 4 for a u32 view
-		// (TypedArray constructor throws on misalignment; this catches it
+		// (TypedArray constructor throws on misalignment, this catches it
 		// even if the SAB allocation pads accidentally).
 		expect(u32View.byteOff % 4).toBe(0);
 
@@ -143,7 +143,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 		}
 
 		// Fill every column with a distinctive constant pattern, then verify
-		// each view reads back its own pattern — proving the byte ranges
+		// each view reads back its own pattern, proving the byte ranges
 		// don't alias. A bug that put u32 and f64 at overlapping offsets
 		// would scramble one or the other.
 		const u8 = arch.columns.get(columnKey(1, 0))!.view as Uint8Array;
@@ -160,11 +160,11 @@ describe("create_column_store — SAB allocation + layout", () => {
 	});
 
 	it("every column view is fixed-length and never tracks the buffer", () => {
-		// A TypedArray built with no length argument TRACKS its buffer's length.
+		// A TypedArray built with no length argument tracks its buffer's length.
 		// Measurement puts that shape far behind a fixed-length view on every
-		// engine tested, so `makeView` always gives the length. This walks every
+		// engine tested, so `createView` always gives the length. This walks every
 		// column of every archetype and holds that line: a view spans its own rows
-		// and no more. See the `makeView` doc in `column_store.ts`.
+		// and no more. See the `createView` doc in `column_store.ts`.
 		const store = createColumnStore(SPEC_MULTI);
 		let checked = 0;
 		for (const s of SPEC_MULTI) {
@@ -196,7 +196,7 @@ describe("create_column_store — SAB allocation + layout", () => {
 			rowCapacity: 2,
 			columns: [
 				// Trigger a non-8-aligned cursor by putting a single u8
-				// column first; if `alignUp` is wrong, the f64 ctor throws
+				// column first. If `alignUp` is wrong, the f64 ctor throws
 				// before we even reach an assertion.
 				{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.u8 },
 				{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.f64 }
@@ -222,10 +222,10 @@ describe("create_column_store — SAB allocation + layout", () => {
 	});
 
 	it("SAB is exactly the size the header reports", () => {
-		// Useful invariant for snapshot/restore — header.capacity
+		// Useful invariant for snapshot and restore, header.capacity
 		// is the authoritative size and `Store.snapshot()` will return a
 		// Uint8Array view of that many bytes. If the SAB and the header
-		// disagree, snapshot/restore truncates or overruns.
+		// disagree, snapshot and restore truncates or overruns.
 		const store = createColumnStore(SPEC_MULTI);
 		expect(store.header.capacity).toBe(store.buffer.byteLength);
 		expect(readStoreHeader(store.view).capacity).toBe(store.buffer.byteLength);
@@ -236,10 +236,10 @@ describe("create_column_store — SAB allocation + layout", () => {
 		// is registered). Must produce a SAB that's at least the descriptor
 		// region offset, with archetype_count = 0.
 		const store = createColumnStore([]);
-		expect(isValidSab(store.view)).toBe(true);
+		expect(isValidStoreHeader(store.view)).toBe(true);
 		const h = readStoreHeader(store.view);
 		expect(h.archetypeCount).toBe(0);
-		// Header only — no bindings region by default, descriptor region
+		// Header only, no bindings region by default, descriptor region
 		// zero-sized with no archetypes.
 		expect(h.capacity).toBe(STORE_HEADER_BYTES);
 		expect(store.archetypes.size).toBe(0);
@@ -261,14 +261,14 @@ describe("create_column_store — SAB allocation + layout", () => {
 	});
 });
 
-describe("create_column_store — sim-bindings region (opt-in)", () => {
+describe("create_column_store, sim-bindings region (opt-in)", () => {
 	it("reserves the region before the descriptor when bindings_region_bytes is set", () => {
 		const store = createColumnStore([SPEC_SINGLE], undefined, {
 			bindingsRegionBytes: BINDINGS_BYTES
 		});
 		const h = readStoreHeader(store.view);
 		// Region sits right after the header (no rings here), before the
-		// descriptor — a stable offset across grow/extend.
+		// descriptor, a stable offset across grow/extend.
 		expect(h.bindingsOff).toBe(STORE_HEADER_BYTES);
 		expect(h.layoutDescriptorOff).toBe(STORE_HEADER_BYTES + BINDINGS_BYTES);
 	});
@@ -295,12 +295,12 @@ describe("create_column_store — sim-bindings region (opt-in)", () => {
 	});
 });
 
-describe("create_column_store — command ring", () => {
+describe("create_column_store, command ring", () => {
 	it("command_ring_off is 0 when option is omitted (legacy layout)", () => {
 		const store = createColumnStore([SPEC_SINGLE]);
 		const h = readStoreHeader(store.view);
 		expect(h.commandRingOff).toBe(0);
-		// Descriptor region sits right after the header; no command ring, no
+		// Descriptor region sits right after the header. No command ring, no
 		// bindings region (opt-in).
 		expect(h.layoutDescriptorOff).toBe(STORE_HEADER_BYTES);
 	});
@@ -348,7 +348,7 @@ describe("create_column_store — command ring", () => {
 	});
 });
 
-describe("align_up — 2³¹ overflow guard", () => {
+describe("align_up, 2³¹ overflow guard", () => {
 	it("rounds up correctly for in-range offsets", () => {
 		expect(alignUp(0, 8)).toBe(0);
 		expect(alignUp(1, 8)).toBe(8);
@@ -360,8 +360,8 @@ describe("align_up — 2³¹ overflow guard", () => {
 
 	it("accepts offsets right up to the ceiling without wrapping negative", () => {
 		// The largest input that still rounds to a value < 2³¹. The unguarded
-		// bitwise math would already be fine here; this pins that the guard
-		// does NOT fire one step too early.
+		// bitwise math would already be fine here. This pins that the guard
+		// does not fire one step too early.
 		const off = STORE_MAX_BYTE_OFFSET - 8;
 		const aligned = alignUp(off, 8);
 		expect(aligned).toBe(off);
@@ -372,7 +372,7 @@ describe("align_up — 2³¹ overflow guard", () => {
 		// Before the fix, `alignUp(2³¹, 8)` returned -2147483648 (signed-32
 		// wrap) and that negative offset reached `new Uint8Array(buffer, off, …)`.
 		expect(() => alignUp(STORE_MAX_BYTE_OFFSET, 8)).toThrow(StoreLayoutOverflowError);
-		// And the boundary just below, where rounding up would cross 2³¹.
+		// And the boundary immediately below, where rounding up would cross 2³¹.
 		expect(() => alignUp(STORE_MAX_BYTE_OFFSET - 7, 8)).toThrow(StoreLayoutOverflowError);
 	});
 
@@ -388,8 +388,8 @@ describe("align_up — 2³¹ overflow guard", () => {
 	});
 });
 
-describe("plan_layout — 2³¹ overflow guard", () => {
-	// `planLayout` only computes byte offsets; it never allocates, so a spec
+describe("plan_layout, 2³¹ overflow guard", () => {
+	// `planLayout` only computes byte offsets. It never allocates, so a spec
 	// whose columns span >2 GiB can be exercised cheaply (no 2 GiB SAB).
 	const over2gibSpec: ArchetypeSpec = {
 		archetypeId: 1,

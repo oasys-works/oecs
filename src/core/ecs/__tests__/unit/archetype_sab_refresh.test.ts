@@ -6,7 +6,7 @@ import {
 	type ArchetypeColumnLayout,
 	type ColumnFactory
 } from "../../archetype";
-import { asComponentId, makeComponentDef } from "../../component";
+import { asComponentId, createComponentDef } from "../../component";
 import { createEntityId } from "../../entity";
 import {
 	BitSet,
@@ -15,7 +15,7 @@ import {
 } from "../../../../type_primitives";
 
 // Heap factory for the "heap vs SAB" comparison cases below. The
-// production path no longer takes the heap branch;
+// production path no longer takes the heap branch
 // this factory is purely a test convenience to keep `isBufferBacked` and
 // `refreshViews` invariants pinned against a heap counterpart.
 const heapFactory: ColumnFactory = (_cid, _fidx, tag) => new TypedArrayFor[tag](16);
@@ -130,9 +130,9 @@ describe("Archetype.refresh_views", () => {
 		expect(a.readField(1, compId(1), "x")).toBe(20);
 		expect(a.readField(2, compId(1), "x")).toBe(30);
 
-		// The column buffer is now a view into the NEW SAB.
-		const def = makeComponentDef<{ x: "i32" }>(compId(1));
-		const col = a.getColumn(def, "x", 1);
+		// The column buffer is now a view into the new SAB.
+		const def = createComponentDef<{ x: "i32" }>(compId(1));
+		const col = a.getColumnMut(def, "x", 1);
 		expect(col.buffer).toBe(bigger.buffer);
 		expect(col.length).toBe(16);
 	});
@@ -152,7 +152,7 @@ describe("Archetype.refresh_views", () => {
 		});
 		a.refreshViews(bigger);
 
-		// Continue adding past the original limit; data already in the
+		// Continue adding past the original limit. Data already in the
 		// archetype is preserved.
 		a.addEntity(entity(2));
 		a.addEntity(entity(3));

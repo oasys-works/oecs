@@ -7,14 +7,14 @@
 oecs does **not** supply a compiled WASM simulation. It supplies the engine connections that a WASM
 simulation needs:
 
-- `memory.wasm` — make the backing buffer of the ECS a shared `WebAssembly.Memory`.
-- `ecs.wasmMemory` — give that memory to your module.
-- `ecs.fieldId(def, field)` — translate the fields of a component into stable numeric ids for FFI.
-- `ecs.onStoreLayoutPublished(listener)` — read the column offsets again after each attach and each
+- `memory.wasm`, make the backing buffer of the ECS a shared `WebAssembly.Memory`.
+- `ecs.wasmMemory`, give that memory to your module.
+- `ecs.fieldId(def, field)`, translate the fields of a component into stable numeric ids for FFI.
+- `ecs.subscribeLayout(listener)`, read the column offsets again after each attach and each
   growth.
-- `ecs.attachBackend(backend)` with `SystemConfig.backendHandle` — send the systems that you select
+- `ecs.attachBackend(backend)` with `SystemConfig.backendHandle`, send the systems that you select
   to your backend, in place of their TypeScript closure.
-- `HostCommandDispatcher` — an optional ring transport with fixed slots, for writes from a worker
+- `HostCommandDispatcher`, an optional ring transport with fixed slots, for writes from a worker
   or from the wire back into the host ECS.
 
 ## Select a memory profile
@@ -112,7 +112,7 @@ const move = ecs.registerSystem({
   backendHandle: moveHandle,
   fn: (ctx, dt) => {
     // The pure-TS alternative, for tests, for browsers that do not support WASM, or when no backend is attached.
-    movers.eachChunk((cols, count) => {
+    movers.forEachChunk((cols, count) => {
       const { x, y } = cols.mut(Pos);
       const { vx, vy } = cols.read(Vel);
       for (let i = 0; i < count; i++) {
@@ -156,7 +156,7 @@ head of the schedule:
 
 ```ts
 import { installHostCommandSeam } from "@oasys/oecs";
-// The ring transport is a wire and ABI surface — @oasys/oecs/internal (no semver guarantees):
+// The ring transport is a wire and ABI surface, @oasys/oecs/internal (no semver guarantees):
 import { HostCommandDispatcher, ringDespawnCodec, ringSetFieldCodec } from "@oasys/oecs/internal";
 
 const ring = new HostCommandDispatcher()
@@ -186,8 +186,8 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 
 ## See also
 
-- [memory](./memory.md) — the storage profiles, the limits, and `memoryPlan`
-- [systems](./systems.md) — `backendHandle` and the access declarations of a system
-- [the host write path](./host-write-seam.md) — the typed queue and the ring transport between
+- [memory](./memory.md), the storage profiles, the limits, and `memoryPlan`
+- [systems](./systems.md), `backendHandle` and the access declarations of a system
+- [the host write path](./host-write-seam.md), the typed queue and the ring transport between
   threads
-- [determinism](./determinism.md) — how to keep the heap, shared, and WASM runs comparable
+- [determinism](./determinism.md), how to keep the heap, shared, and WASM runs comparable

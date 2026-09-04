@@ -1,11 +1,11 @@
-# bench — tools that measure oecs and test oecs
+# bench, tools that measure oecs and test oecs
 
 Use these tools only for local work. They are not a part of the package.
 
 ## Which build each tool uses
 
 There are two ways to make the library, and a tool uses one of them. The two groups
-of tools make a DIFFERENT choice, and each choice is correct for its group. Do not
+of tools make a different choice, and each choice is correct for its group. Do not
 assume that one sentence covers all of them.
 
 | way | file | what it makes |
@@ -14,7 +14,7 @@ assume that one sentence covers all of them.
 | a bundle of `src/` | `build.mjs` | One ESM file from esbuild. It gives `__DEV__` a value, but it keeps each guard as a branch. |
 
 The difference is important. `build.mjs` gives the flag a value, and thus the guards
-do not RUN. But it does not remove them, and thus the guards are still in the code.
+do not run. But it does not remove them, and thus the guards are still in the code.
 The build of the package removes each guard and its body. A guard makes its function
 larger, and the size of a function controls the decisions of the compiler about it.
 
@@ -27,13 +27,13 @@ larger, and the size of a function controls the decisions of the compiler about 
 | `net-oracle/run.mjs` | a bundle of `src/`: development, or production with `--prod` | More guards give more mechanisms a chance to find a fault. |
 | `net-oracle/mutants.mjs` | a bundle of `src/`: development, or production with `--prod` | The same reason. This tool also replaces a text in the bundle, which the form of `src/` makes possible. |
 | `fuzz.mjs` | a bundle of `src/`: development, or production with `--prod` | The same reason. |
-| `net-oracle/oracle.test.mjs` | `src/` (vitest sets `__DEV__ = true`) | The same reason. This file tests the CODE IN THE TREE, and `net-oracle/run.mjs` tests a bundle. It is NOT a part of `pnpm test`: the root `vitest.config.ts` collects `src/**` alone, so a person runs it through `bench/net-oracle/vitest.config.ts`. |
+| `net-oracle/oracle.test.mjs` | `src/` (vitest sets `__DEV__ = true`) | The same reason. This file tests the code in the tree, and `net-oracle/run.mjs` tests a bundle. It is not a part of `pnpm test`: the root `vitest.config.ts` collects `src/**` alone, so a person runs it through `bench/net-oracle/vitest.config.ts`. |
 
 Therefore **`ab/` and `vs/` measure the artifacts, and the correctness tools use the
 development path by default.** A development guard that finds a fault is not
 evidence that the released package finds it. Run the `--prod` form of the
 correctness tools before you make a claim about the shipped build. `--prod` gives
-the correct RESULT for those tools, because the guards do not run. The mutant
+the correct result for those tools, because the guards do not run. The mutant
 battery finds all its mutants in both builds, and `net-oracle/README.md` records
 which mechanism fires in each.
 
@@ -49,7 +49,7 @@ then use `ab/` for the result.
 | --- | --- |
 | `ab/` | Compares two builds of oecs. Use it to find if a change made the code faster. |
 | `vs/` | Compares oecs with seven other ECS libraries for JavaScript. |
-| `net-oracle/` | Reduces an interaction net, and compares each step with a reference model. It also covers the change detection, the row partition, the host write seam, the events, the resources, the sparse components, and the `f64` and `SharedArrayBuffer` profiles. |
+| `net-oracle/` | Reduces an interaction net, and compares each step with a reference model. It also covers the change detection, the row partition, the host write seam, the events, the resources, the sparse components, each column kind, and the `f64` and `SharedArrayBuffer` profiles. A fingerprint of every agent runs at each tick, and at each phase of a tick in a development build. |
 
 Each directory has a `README.md` file with more data about the tool.
 
@@ -85,10 +85,11 @@ node bench/fuzz.mjs --prod 1 4000             # the same seeds, against the ship
 node bench/vs/vs.mjs --rounds 9               # compare oecs with the other libraries
 node bench/net-oracle/run.mjs                 # find errors with the reference model
 node bench/net-oracle/run.mjs --prod          # the same, against the shipped build
+node bench/net-oracle/run.mjs --stress        # large nets, the fingerprint of every agent at each tick
 node bench/net-oracle/mutants.mjs --prod      # the mutant battery, against the shipped build
 
-# the same oracle layers against the LIVE TypeScript sources, through vitest.
-# `pnpm test` does NOT run this; the root vitest configuration keeps `bench/` out.
+# the same oracle layers against the live TypeScript sources, through vitest.
+# `pnpm test` does not run this. The root vitest configuration keeps `bench/` out.
 pnpm exec vitest run --config bench/net-oracle/vitest.config.ts
 ```
 
@@ -130,5 +131,5 @@ delete a `.out/` directory at any time, because the tools make the files again.
    middle half, and not only the summary.
 5. Look at the cases with a fresh world in the setup. If a timed loop makes the store
    allocate, the row measures the allocator, and its value is not stable. To make an
-   archetype in the setup is not the same as to give it a capacity — refer to
+   archetype in the setup is not the same as to give it a capacity, refer to
    `ab/README.md`.

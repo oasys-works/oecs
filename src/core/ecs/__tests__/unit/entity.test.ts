@@ -11,40 +11,40 @@ import {
 // X and Y chosen to be one bit off from power of 2s
 const [x, y] = [31, 7];
 
-// Adversarial round-trip table — replaces a former unseeded
+// Adversarial round-trip table, replaces a former unseeded
 // `Math.random()` 10k-iteration loop (a failure was non-reproducible).
 // Every value is chosen for its bit pattern, so the cartesian product
 // below exercises the 20-bit index | 11-bit generation boundary far more
-// pointedly than random draws did: min/max, one-bit-off-power-of-two, the
+// pointedly than random draws did: min or max, one-bit-off-power-of-two, the
 // per-field high bit, and the two alternating-bit masks (0x5… / 0xA…) that
 // expose any bit leakage across the field boundary.
 const ADVERSARIAL_INDICES = [
 	0, // min
 	1, // low bit
-	31, // 0x1F — one bit off 32
-	32, // 0x20 — power of two
+	31, // 0x1F, one bit off 32
+	32, // 0x20, power of two
 	0x5_5555, // alternating 0101…
 	0xa_aaaa, // alternating 1010…
 	0x8_0000, // index high bit
 	MAX_INDEX - 1, // 0xFFFFE
-	MAX_INDEX // 0xFFFFF — max
+	MAX_INDEX // 0xFFFFF, max
 ];
 const ADVERSARIAL_GENERATIONS = [
 	0, // min
 	1, // low bit
-	7, // 0x7 — one bit off 8
+	7, // 0x7, one bit off 8
 	0x2aa, // alternating 01010…
 	0x555, // alternating 10101…
 	0x400, // generation high bit
 	MAX_GENERATION - 1, // 0x7FE
-	MAX_GENERATION // 0x7FF — max
+	MAX_GENERATION // 0x7FF, max
 ];
 
 describe("entity_id with generation", () => {
 	//=========================================================
 	// Pack & Unpack
 	//=========================================================
-	it("roundtrips: pack/unpack", () => {
+	it("roundtrips: pack and unpack", () => {
 		const id = createEntityId(x, y);
 		expect(getEntityIndex(id)).toBe(x);
 		expect(getEntityGeneration(id)).toBe(y);
@@ -55,7 +55,7 @@ describe("entity_id with generation", () => {
 			for (const generation of ADVERSARIAL_GENERATIONS) {
 				const id = createEntityId(index, generation);
 				// Assert the unpacked pair as an object so a failure prints the
-				// exact (index, generation) that broke, not just two numbers.
+				// exact (index, generation) that broke, not only two numbers.
 				expect({
 					index: getEntityIndex(id),
 					generation: getEntityGeneration(id)

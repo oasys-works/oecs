@@ -35,7 +35,7 @@ function makeSystem(overrides?: Partial<SystemConfig>): SystemDescriptor {
 
 describe("Schedule", () => {
 	//=========================================================
-	// Basic add/has/remove
+	// Basic add, has and remove
 	//=========================================================
 
 	it("add_systems and has_system", () => {
@@ -138,8 +138,8 @@ describe("Schedule", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 
-		expect(() => schedule.runStartup(ctx, 0)).not.toThrow();
-		expect(() => schedule.runUpdate(ctx, 0.016, 0)).not.toThrow();
+		expect(() => schedule.runStartup(ctx)).not.toThrow();
+		expect(() => schedule.runUpdate(ctx, 0.016)).not.toThrow();
 	});
 
 	//=========================================================
@@ -147,22 +147,22 @@ describe("Schedule", () => {
 	//=========================================================
 
 	it("does not recycle a lastRun slot into a system added mid-phase", () => {
-		// `runLabel` hoists its plan's `slots` into a local, so a system removed
+		// `runPhase` hoists its plan's `slots` into a local, so a system removed
 		// from inside the phase still runs (the snapshot holds it) and still writes
 		// `systemLastRun[itsSlot] = tick` on the way out. If `removeSystem`'s freed
 		// slot were handed straight to a system added in the same phase, that tail
 		// write would land on the new system's last-run tick and silently shift its
-		// `changed()` window — cross-talk the `Map` this array replaced could not
+		// `changed()` window, cross-talk the `Map` this array replaced could not
 		// produce. Reachable from an observer or a teardown helper that removes and
 		// re-adds systems mid-phase (e.g. `uninstallHostCommandSeam`).
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const seen: number[] = [];
 
-		// `late` is added during the phase, so it first runs on the NEXT tick.
+		// `late` is added during the phase, so it first runs on the next tick.
 		const late = makeSystem({ fn: () => seen.push(ctx.lastRunTick) });
 		// `victim` is removed during the phase but still runs from the snapshot,
-		// after the remover — its tail write is the hazard.
+		// after the remover, its tail write is the hazard.
 		const victim = makeSystem();
 		let swapped = false;
 		const remover = makeSystem({
@@ -177,25 +177,26 @@ describe("Schedule", () => {
 		// Insertion order is the tiebreak, so the phase runs remover then victim.
 		schedule.addSystems(SCHEDULE.UPDATE, remover, victim);
 
-		schedule.runUpdate(ctx, 0.016, 7);
+		schedule.runUpdate(ctx, 0.016);
 		// `late` was not in the plan this phase captured.
 		expect(seen).toEqual([]);
 		expect(schedule.hasSystem(victim)).toBe(false);
 		expect(schedule.hasSystem(late)).toBe(true);
 
-		// First run of `late`: a freshly added system's window starts at tick 0, not
-		// at 7 — which is what `victim`'s tail write left in the slot it freed.
-		schedule.runUpdate(ctx, 0.016, 8);
+		// First run of `late`: a freshly added system's window starts at 0, not
+		// at the change tick `victim`'s tail write left in the slot it freed.
+		schedule.runUpdate(ctx, 0.016);
 		expect(seen).toEqual([0]);
 
-		// And on the run after that it sees its own previous tick, so the fresh slot
+		// And on the run after that it sees its own previous run, so the fresh slot
 		// is a real slot and not a hole that reads 0 forever.
-		schedule.runUpdate(ctx, 0.016, 9);
-		expect(seen).toEqual([0, 8]);
+		schedule.runUpdate(ctx, 0.016);
+		expect(seen.length).toBe(2);
+		expect(seen[1]).toBeGreaterThan(0);
 	});
 
 	it("a slot reused outside a phase starts the new system at tick 0", () => {
-		// The guard above is scoped to the running-phase window only; between phases
+		// The guard above is scoped to the running-phase window only. Between phases
 		// reuse proceeds, and a reused slot must be zeroed so the incoming system
 		// does not inherit the outgoing one's last-run tick.
 		const schedule = new Schedule();
@@ -204,20 +205,20 @@ describe("Schedule", () => {
 		const sys = makeSystem({ fn: () => seen.push(ctx.lastRunTick) });
 
 		schedule.addSystems(SCHEDULE.UPDATE, sys);
-		schedule.runUpdate(ctx, 0.016, 3);
-		schedule.runUpdate(ctx, 0.016, 4);
+		schedule.runUpdate(ctx, 0.016);
+		schedule.runUpdate(ctx, 0.016);
 		expect(seen).toEqual([0, 3]);
 
 		// Remove and re-add between phases: the slot comes back off the free list,
 		// so the window restarts at 0 rather than resuming from 4.
 		schedule.removeSystem(sys);
 		schedule.addSystems(SCHEDULE.UPDATE, sys);
-		schedule.runUpdate(ctx, 0.016, 5);
+		schedule.runUpdate(ctx, 0.016);
 		expect(seen).toEqual([0, 3, 0]);
 	});
 });
 
-describe("Schedule — system sets", () => {
+describe("Schedule, system sets", () => {
 	// Build a system that records `label` into `order` when it runs.
 	function recorder(order: string[], label: string): SystemDescriptor {
 		return makeSystem({ fn: () => order.push(label) });
@@ -248,7 +249,7 @@ describe("Schedule — system sets", () => {
 		);
 		schedule.configureSet(A, { before: [B] });
 
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 
 		const idx = (l: string) => order.indexOf(l);
 		expect(order.length).toBe(4);
@@ -269,7 +270,7 @@ describe("Schedule — system sets", () => {
 		);
 		schedule.configureSet(B, { after: [A] });
 
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 
 		const idx = (l: string) => order.indexOf(l);
 		expect(Math.max(idx("a1"), idx("a2"))).toBeLessThan(Math.min(idx("b1"), idx("b2")));
@@ -291,7 +292,7 @@ describe("Schedule — system sets", () => {
 		);
 		schedule.configureSet(Group, { after: [anchor] });
 
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 		const idx = (l: string) => order.indexOf(l);
 		expect(idx("anchor")).toBeLessThan(idx("g1"));
 		expect(idx("anchor")).toBeLessThan(idx("g2"));
@@ -302,11 +303,11 @@ describe("Schedule — system sets", () => {
 		const order: string[] = [];
 		const Solo = systemSet("Solo");
 		schedule.addSystems(SCHEDULE.UPDATE, { system: recorder(order, "solo"), set: Solo });
-		// "every member before every member" — self-edges are skipped, so with one
+		// "every member before every member", self-edges are skipped, so with one
 		// member this introduces no edge and must not be flagged as a cycle.
 		schedule.configureSet(Solo, { before: [Solo] });
 
-		expect(() => schedule.runUpdate(makeCtx(), 0.016, 0)).not.toThrow();
+		expect(() => schedule.runUpdate(makeCtx(), 0.016)).not.toThrow();
 		expect(order).toEqual(["solo"]);
 	});
 
@@ -320,13 +321,13 @@ describe("Schedule — system sets", () => {
 		schedule.addSystems(SCHEDULE.UPDATE, { system: second, set: B }, { system: first, set: A });
 
 		// First run builds + caches the sort (insertion tiebreak → b, a).
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 		expect(order1).toEqual(["b", "a"]);
 
 		// Configuring ordering must invalidate the cache so the next run re-sorts.
 		schedule.configureSet(A, { before: [B] });
 		order1.length = 0;
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 		expect(order1).toEqual(["a", "b"]);
 	});
 
@@ -339,7 +340,7 @@ describe("Schedule — system sets", () => {
 			{ system: recorder(order, "x"), set: Group },
 			{ system: recorder(order, "y"), set: Group }
 		);
-		schedule.runUpdate(makeCtx(), 0.016, 0);
+		schedule.runUpdate(makeCtx(), 0.016);
 		expect(order.sort()).toEqual(["x", "y"]);
 	});
 });

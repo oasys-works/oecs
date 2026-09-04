@@ -36,15 +36,15 @@ enum SCHEDULE {
 
 ## The frame loop
 
-**`ecs.startup()`** — Call this one time, after you connect the systems and the observers. It
+**`ecs.startup()`**. Call this one time, after you connect the systems and the observers. It
 prepares the archetypes, runs the `onAdded` hook of each system, runs the three startup phases, and
 clears each event that they emitted. So frame 1 does not see an old startup event.
 
-**`ecs.update(dt)`** — This is one frame. It runs the fixed-update catch-up loop, then
+**`ecs.update(dt)`**. This is one frame. It runs the fixed-update catch-up loop, then
 `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Then it dispatches the `onSet` observers, clears the
 events, and increases the tick.
 
-**`ecs.flush()`** — This applies the buffered deferred structural operations now. You rarely need
+**`ecs.flush()`**. This applies the buffered deferred structural operations now. You rarely need
 it, because the phase boundaries and `update()` already flush.
 
 ### How to drive the loop: `FrameStepper`
@@ -60,7 +60,7 @@ const stepper = new FrameStepper(ecs, {
   autoStart: true,   // start the rAF loop immediately (default false)
 });
 stepper.play();               // tick on requestAnimationFrame
-stepper.pause();              // stop; a manual step() continues to operate
+stepper.pause();              // stop. A manual step() continues to operate
 stepper.toggle();
 stepper.step();               // advance exactly one frame (debuggers, tests, editors)
 stepper.stepFrames(10);       // replay a paused simulation
@@ -78,12 +78,12 @@ and a test, can supply `requestFrame` and `cancelFrame`. A validation failure th
 ## How to add systems and set their order
 
 ```ts
-addSystems(label: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this;
+addSystems(phase: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this;
 
 interface SystemEntry {
   system: SystemDescriptor;
   ordering?: { before?: SystemOrderingTarget[]; after?: SystemOrderingTarget[] };
-  runIf?: RunCondition | RunCondition[];   // joined with AND to the conditions of each set
+  runIf?: RunCondition | RunCondition[];   // joined with and to the conditions of each set
   set?: SystemSet | SystemSet[];
 }
 // SystemOrderingTarget = SystemDescriptor | SystemSet
@@ -136,7 +136,7 @@ ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: collide,   set: physics });
 ecs.configureSet(physics, { runIf: notPaused, before: [render] });
 ```
 
-The effective gate of a member is the **AND** of its own conditions and the conditions of each set
+The effective gate of a member is the **and** of its own conditions and the conditions of each set
 that contains it. `configureSet` adds to the configuration, and its order against `addSystems` is
 not important. You can configure the set before you add its members, or after.
 
@@ -156,7 +156,7 @@ interface RunCondition {
   readonly reads?: readonly ComponentDef[];
   readonly resourceReads?: readonly ResourceKey<unknown>[];
 }
-// ConditionContext exposes only { ecsTick, resource(key), hasResource(key) } — read-only.
+// ConditionContext exposes only { ecsTick, resource(key), hasResource(key) }, read-only.
 ```
 
 The supplied conditions are:
@@ -188,7 +188,7 @@ const notPaused = runIfResourceEq(PausedRes, false);
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
 ecs.configureSet(physics, { runIf: notPaused });
 
-// composed: run the AI less frequently, but only while the game is not paused
+// composed: run the ai less frequently, but only while the game is not paused
 ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: allOf(notPaused, runEveryNTicks(10)) });
 ```
 
@@ -220,7 +220,7 @@ the usual configuration for stable physics.
 ```ts
 const ecs = new ECS({ fixedTimestep: 1 / 50, maxFixedSteps: 4 });
 get fixedTimestep(): number;   set fixedTimestep(value: number);   // validates again
-get fixedAlpha(): number;      // accumulator / fixedTimestep — the interpolation factor in [0, 1)
+get fixedAlpha(): number;      // accumulator and fixedTimestep, the interpolation factor in [0, 1)
 ```
 
 Each `update(dt)` call adds `dt` to an accumulator. It then runs `FIXED_UPDATE` one time for each
@@ -241,6 +241,6 @@ full `fixedTimestep` in that accumulator: 0 times for a small `dt`, and several 
 
 ## See also
 
-- [systems](./systems.md) — how to declare and write the systems that you schedule here
-- [resources](./resources.md) — the state that `runIfResourceEq` gates on
-- [determinism](./determinism.md) — why a run condition must stay pure
+- [systems](./systems.md), how to declare and write the systems that you schedule here
+- [resources](./resources.md), the state that `runIfResourceEq` gates on
+- [determinism](./determinism.md), why a run condition must stay pure

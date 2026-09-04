@@ -27,7 +27,7 @@ describe("callable bundles", () => {
 		expect(world.getField(e, Vel, "vy")).toBe(4);
 		expect(world.hasComponent(e, Tag)).toBe(true);
 
-		// omitted field zero-fills (matches the template / writeFields contract)
+		// omitted field zero-fills (matches the template and writeFields contract)
 		const e2 = world.spawnBundle(bundle(Pos, { x: 7 }));
 		expect(world.getField(e2, Pos, "x")).toBe(7);
 		expect(world.getField(e2, Pos, "y")).toBe(0);
@@ -64,7 +64,7 @@ describe("callable component defs", () => {
 		expect(typeof A).toBe("function");
 		expect(typeof A.id).toBe("number");
 		expect(A.id).not.toBe(B.id);
-		// `.id` is non-enumerable — a spread/JSON of the def doesn't leak it.
+		// `.id` is non-enumerable, a spread or JSON of the def doesn't leak it.
 		expect(Object.keys(A)).not.toContain("id");
 	});
 
@@ -85,7 +85,7 @@ describe("callable component defs", () => {
 		const Vel = world.registerComponent({ vx: "f64", vy: "f64" });
 		const Tag = world.registerTag();
 
-		// Pos({x,y}) / Vel({vx}) callable form; Tag bare; Vel omits vy → zero-fill.
+		// Pos({x,y}) / Vel({vx}) callable form. Tag bare. Vel omits vy → zero-fill.
 		const e = world.spawnBundle(Pos({ x: 5, y: 6 }), Vel({ vx: 7 }), Tag);
 		expect(world.getField(e, Pos, "x")).toBe(5);
 		expect(world.getField(e, Pos, "y")).toBe(6);

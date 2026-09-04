@@ -1,10 +1,10 @@
 // STRUCTURAL_DURING_ITERATION (dev guard): host-side structural mutations are
-// immediate (0.5.0), so despawning / transitioning / toggling an entity of an
+// immediate (0.5.0), so despawning, transitioning and toggling an entity of an
 // archetype that a live host query walk is visiting would swap-remove rows
-// under the iterator — entities get silently skipped or visited twice. The
+// under the iterator, entities get silently skipped or visited twice. The
 // audit repro: 3 entities, despawn-in-forEach, only 2 died and 1 was never
-// visited. The guard turns that into a loud dev error; mutations touching
-// archetypes NOT being walked stay legal.
+// visited. The guard turns that into a loud dev error. Mutations touching
+// archetypes not being walked stay legal.
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
@@ -37,12 +37,12 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 				}
 			});
 		});
-		// The guard fired BEFORE any mutation (`removeRow` is `_destroyOne`'s
+		// The guard fired before any mutation (`removeRow` is `_destroyOne`'s
 		// first write), so the failed despawn left all 3 entities intact.
 		expect(q.entityCount).toBe(3);
 	});
 
-	it("removeComponent / addComponent transitions out of a walked archetype throw", () => {
+	it("removeComponent and addComponent transitions out of a walked archetype throw", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent(["x"] as const);
 		const Tag = ecs.registerTag();
@@ -61,20 +61,20 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 		});
 	});
 
-	it("disable of a walked entity throws inside eachChunk", () => {
+	it("disable of a walked entity throws inside forEachChunk", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent(["x"] as const);
 		const e = ecs.spawn();
 		ecs.addComponent(e, Pos, { x: 1 });
 		const q = ecs.query(Pos);
 		expectIterationGuard(() => {
-			q.eachChunk(() => {
+			q.forEachChunk(() => {
 				ecs.disable(e);
 			});
 		});
 	});
 
-	it("despawning an entity in a DIFFERENT archetype during the walk is legal", () => {
+	it("despawning an entity in a different archetype during the walk is legal", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent(["x"] as const);
 		const Other = ecs.registerComponent(["y"] as const);
@@ -122,7 +122,7 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 			fn() {
 				q.forEach((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
-						// deferred — applies at the phase flush, after the walk
+						// deferred, applies at the phase flush, after the walk
 						void arch.entityIds[i];
 					}
 				});

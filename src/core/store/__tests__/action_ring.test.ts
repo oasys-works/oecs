@@ -140,7 +140,7 @@ describe("drain_action_ring", () => {
 		pushAction(view, off, new Uint8Array([10, 20]));
 		const held: Uint8Array[] = [];
 		drainActionRing(view, off, (p) => held.push(p));
-		// Drain a second time after held captured references; held should
+		// Drain a second time after held captured references. Held should
 		// not have been overwritten.
 		expect(Array.from(held[0])).toEqual([1, 2, 3]);
 		expect(Array.from(held[1])).toEqual([10, 20]);
@@ -179,7 +179,7 @@ describe("zero-length entry", () => {
 
 	it("drain delivers a zero-length entry and does not stall entries behind it", () => {
 		const { view, off } = makeRing();
-		// [0-byte entry, then a normal entry] — pre-fix the drain terminated on
+		// [0-byte entry, then a normal entry], pre-fix the drain terminated on
 		// the zero-length entry's len===0 return, dropping its handler and
 		// stranding [7, 8] for a tick.
 		enqueueRawSlot(view, off, 0, []);
@@ -267,7 +267,7 @@ describe("Atomics head ordering", () => {
 	});
 
 	it("round-trips correctly over a SharedArrayBuffer backing", () => {
-		// The production backing is a SharedArrayBuffer; confirm Atomics on
+		// The production backing is a SharedArrayBuffer. Confirm Atomics on
 		// the head region behave identically to the ArrayBuffer path.
 		const buffer = new SharedArrayBuffer(actionRingBytes(4));
 		const view = new DataView(buffer);

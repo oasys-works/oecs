@@ -1,12 +1,12 @@
 /**
- * reactiveStruct gate — per-field channels for a fixed-shape record.
+ * reactiveStruct gate, per-field channels for a fixed-shape record.
  * Adds the enumerable-proxy property `fromKernelStruct` relies on.
  */
 import { describe, expect, it } from "vitest";
 import { batch, computed, effect, root } from "../kernel";
 import { reactiveStruct } from "../struct";
 
-describe("reactiveStruct — per-field channels", () => {
+describe("reactiveStruct, per-field channels", () => {
 	it("per-field isolation: a field write wakes only that field's reader", () => {
 		root(() => {
 			const [s, set] = reactiveStruct({ gold: 0, population: 0, food: 0 });
@@ -95,7 +95,7 @@ describe("reactiveStruct — per-field channels", () => {
 			expect(Object.keys(s)).toEqual(["status", "latency", "fps"]);
 			expect({ ...s }).toEqual({ status: 0, latency: 0, fps: 0 });
 
-			// An effect that only ENUMERATES (no field read) must not subscribe — a
+			// An effect that only enumerates (no field read) must not subscribe, a
 			// later field write wakes nobody.
 			let runs = 0;
 			effect(() => {
@@ -133,7 +133,7 @@ describe("reactiveStruct — per-field channels", () => {
 
 		it("a non-field key (then / Symbol.iterator) reads undefined and does not throw", () => {
 			const [s] = reactiveStruct({ a: 1 });
-			// `await proxy` probes `.then`; `for..of` probes `Symbol.iterator`.
+			// `await proxy` probes `.then`. `for..of` probes `Symbol.iterator`.
 			expect(() => (s as { then?: unknown }).then).not.toThrow();
 			expect((s as { then?: unknown }).then).toBeUndefined();
 			expect((s as { [Symbol.iterator]?: unknown })[Symbol.iterator]).toBeUndefined();
@@ -141,8 +141,8 @@ describe("reactiveStruct — per-field channels", () => {
 
 		it("getOwnPropertyDescriptor is an accessor reading the live signal and reflects setter writes", () => {
 			const [s, set] = reactiveStruct({ a: 1, b: 2 });
-			// The descriptor is an ACCESSOR (get-based) whose getter reads the live
-			// signal — so the value materializes through `.get()` (and through spread /
+			// The descriptor is an accessor (get-based) whose getter reads the live
+			// signal, so the value materializes through `.get()` (and through spread /
 			// Object.values, which invoke it), reflecting the current value rather than
 			// the static `undefined` a value-less descriptor would normalize to.
 			const d1 = Object.getOwnPropertyDescriptor(s, "a");

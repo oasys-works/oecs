@@ -1,7 +1,7 @@
 # Determinism
 
 > [!NOTE]
-> **0.5.0 — a grouped surface.** The determinism surface is the state digest with the snapshot and
+> **0.5.0, a grouped surface.** The determinism surface is the state digest with the snapshot and
 > resume functions. It is on the **`ecs.snapshots`** facade. The members are
 > `ecs.snapshots.stateHash()`, `ecs.snapshots.capture()`, `ecs.snapshots.restore(bytes)`,
 > `ecs.snapshots.captureSparse()`, `restoreSparse()`, and the `ecs.snapshots.deterministic` flag.
@@ -19,7 +19,7 @@ not expose the hash and snapshot surface.
 
 ```ts
 const ecs = new ECS({ deterministic: true });
-const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns — see the rule against floats
+const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns, see the rule against floats
 
 // …run the same history on two ECS instances…
 ecs.snapshots.stateHash();   // the same number on both, at the same tick boundary
@@ -29,7 +29,7 @@ ecs.snapshots.stateHash();   // the same number on both, at the same tick bounda
 
 ```ts
 new ECS({ deterministic: true });   // false by default
-ecs.snapshots.deterministic;        // read the flag — a getter on the facade
+ecs.snapshots.deterministic;        // read the flag, a getter on the facade
 ```
 
 The flag controls exactly the surface that has a canonical order: `stateHash`, `capture` and
@@ -64,15 +64,15 @@ not to the capacity of the buffer.
 ```ts
 ecs.snapshots.capture(): Uint8Array;           // capture the full live ECS
 ecs.snapshots.restore(bytes: Uint8Array): void; // put a snapshot onto this live ECS
-const ECS_SNAPSHOT_VERSION: number;  // this tags the format of the combined frame; restore throws for a different version
+const ECS_SNAPSHOT_VERSION: number;  // this tags the format of the combined frame. Restore throws for a different version
 class ECSRestoreError extends Error {}
 ```
 
 A snapshot captures three sections into one `Uint8Array` that is complete in itself:
 
-- **dense** — the column bytes and the entity index;
-- **sparse** — the sparse components and the relations, in a canonical order;
-- **host bookkeeping** — the tick, the free list of recycled entities *in live order*, the count of
+- **dense**, the column bytes and the entity index
+- **sparse**, the sparse components and the relations, in a canonical order
+- **host bookkeeping**, the tick, the free list of recycled entities *in live order*, the count of
   live entities, and the partition counts of each archetype.
 
 Take a snapshot at a tick boundary.
@@ -87,11 +87,11 @@ Take a snapshot at a tick boundary.
 `restore` validates the incoming bytes **completely, before it touches the live backing**. It
 checks:
 
-- the magic number and the version;
-- the exact length of the frame;
-- the capacity of the entity index;
-- the set of archetypes;
-- the `(componentId, fieldId, typeTag)` identity of each column;
+- the magic number and the version
+- the exact length of the frame
+- the capacity of the entity index
+- the set of archetypes
+- the `(componentId, fieldId, typeTag)` identity of each column
 - the bounds of each index.
 
 Only then does it write. Each difference throws, and it **leaves the live
@@ -104,9 +104,9 @@ side.
 > - have the **same registration of components and archetypes** as the snapshot, because the engine
 >   rebuilds the graph from your registration code, and not from the bytes. To **prepare** the ECS,
 >   register the same components and templates, and then run `startup()`. Its set of archetypes is
->   then stable;
+>   then stable
 > - have the **same capacity of the entity index**, so give the same [`memory`](./memory.md)
->   options to both;
+>   options to both
 > - be `{ deterministic: true }`.
 >
 > If you give it a snapshot of the column store alone, and not a full-world `capture()`, it fails
@@ -149,8 +149,8 @@ You must avoid the other sources of divergence yourself:
 
 ## See also
 
-- [memory](./memory.md) — how to size two instances the same for a restore, and the shared and heap
+- [memory](./memory.md), how to size two instances the same for a restore, and the shared and heap
   storage that agree on the hash
-- [the host write path](./host-write-seam.md) — the command log that record and replay is built on
-- [components](./components.md) — the requirement for integer columns
-- [traces](./tracing.md) — `phaseBoundary`, to reduce a divergence to one phase
+- [the host write path](./host-write-seam.md), the command log that record and replay is built on
+- [components](./components.md), the requirement for integer columns
+- [traces](./tracing.md), `phaseBoundary`, to reduce a divergence to one phase

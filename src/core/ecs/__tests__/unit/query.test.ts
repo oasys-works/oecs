@@ -27,7 +27,7 @@ describe("ECS query", () => {
 		// Query [Pos, Vel] should match only e1's archetype
 		const matches = world.query(Pos, Vel);
 		expect(matches.archetypeCount).toBe(1);
-		expect(matches._nonEmpty()[0].entityList).toContain(e1);
+		expect(matches.nonEmptyArchs()[0].rowEntityIds).toContain(e1);
 	});
 
 	it("query with single component returns all archetypes containing it", () => {
@@ -79,7 +79,7 @@ describe("ECS query", () => {
 
 		const first = world.query(Pos);
 
-		// Adding another entity to the same archetype does NOT create a new archetype
+		// Adding another entity to the same archetype does not create a new archetype
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 
@@ -101,7 +101,7 @@ describe("ECS query", () => {
 		const result = world.query(Pos);
 		const lengthBefore = result.archetypeCount;
 
-		// Create an entity with only Health — unrelated to Pos query
+		// Create an entity with only Health, unrelated to Pos query
 		const e2 = world.spawn();
 		world.addComponent(e2, Hp, { hp: 100 });
 
@@ -132,7 +132,7 @@ describe("ECS query", () => {
 	});
 
 	//=========================================================
-	// Query.not() — exclusion filtering
+	// Query.not(), exclusion filtering
 	//=========================================================
 
 	it("not() excludes archetypes that have the given component", () => {
@@ -166,7 +166,7 @@ describe("ECS query", () => {
 		expect(entityIds).not.toContain(e2);
 	});
 
-	it("not() cache hit — same Query reference returned on repeated calls", () => {
+	it("not() cache hit, same Query reference returned on repeated calls", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -179,7 +179,7 @@ describe("ECS query", () => {
 	});
 
 	//=========================================================
-	// Query.and() — extend required set
+	// Query.and(), extend required set
 	//=========================================================
 
 	it("and() returns same cached Query as query() with both components", () => {
@@ -197,7 +197,7 @@ describe("ECS query", () => {
 		expect(qChained).toBe(qDirect);
 	});
 
-	it("and() chaining is order-independent — same mask → same result", () => {
+	it("and() chaining is order-independent, same mask → same result", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -208,7 +208,7 @@ describe("ECS query", () => {
 		expect(q1).toBe(q2);
 	});
 
-	it("and() cache hit — same Query reference on repeated chains", () => {
+	it("and() cache hit, same Query reference on repeated chains", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -230,7 +230,7 @@ describe("ECS query", () => {
 	});
 
 	//=========================================================
-	// Query.anyOf() — any-of filtering
+	// Query.anyOf(), any-of filtering
 	//=========================================================
 
 	it("any_of() passes archetypes with at least one of the any_of-components", () => {
@@ -249,7 +249,7 @@ describe("ECS query", () => {
 		world.addComponent(e2, Pos, { x: 5, y: 6 });
 		world.addComponent(e2, Hp, { hp: 100 });
 
-		// e3: Pos only — no Vel or Hp
+		// e3: Pos only, no Vel or Hp
 		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 7, y: 8 });
 
@@ -264,7 +264,7 @@ describe("ECS query", () => {
 		expect(entityIds).not.toContain(e3);
 	});
 
-	it("any_of() cache hit — same Query reference on repeated calls", () => {
+	it("any_of() cache hit, same Query reference on repeated calls", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -278,7 +278,7 @@ describe("ECS query", () => {
 
 	// Regression: the `componentIndex` inverted index is a push-only
 	// `ArchetypeID[][]` (not a `Map<Set>`) on the premise that a
-	// (component, archetype) pair is registered AT MOST ONCE — so a shared
+	// (component, archetype) pair is registered at most once, so a shared
 	// component must never make a single-component query visit one of its
 	// archetypes twice, nor over-count its entities.
 	it("shared component across many archetypes is visited once per archetype, no duplicates", () => {
@@ -290,7 +290,7 @@ describe("ECS query", () => {
 
 		// 4 distinct archetypes, all containing Pos: {Pos}, {Pos,Vel},
 		// {Pos,Hp}, {Pos,Vel,Hp,Static}. Pos's componentIndex bucket gets one
-		// entry per archetype — a duplicate would double-visit here.
+		// entry per archetype, a duplicate would double-visit here.
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		const e2 = world.spawn();

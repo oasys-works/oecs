@@ -6,7 +6,7 @@
 // `setSparseField`) and relation (`addRelation` / `removeRelation`)
 // mutators used to forward straight to the store with no check, because
 // `SystemAccessDeclaration` had no vocabulary for the two new id spaces. These
-// tests pin the closed hole: an undeclared sparse/relation access throws in
+// tests pin the closed hole: an undeclared sparse or relation access throws in
 // `__DEV__`, mirroring the dense path, and the dense vs sparse vs relation id
 // spaces never alias one another.
 
@@ -16,7 +16,7 @@ import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../query";
 import type { SystemConfig } from "../../system";
 
-/** Empty dense access declaration; spread and override the sparse/relation
+/** Empty dense access declaration. Spread and override the sparse and relation
  * terms per test. */
 function base(overrides: Partial<SystemConfig>): SystemConfig {
 	return {
@@ -33,7 +33,7 @@ function base(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 /** Register `sys` into UPDATE, start the world, and return the thunk that runs
- * one update tick (where the system's `fn` — and its access checks — fire). */
+ * one update tick (where the system's `fn`, and its access checks, fire). */
 function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	const sys = world.registerSystem(cfg);
 	world.addSystems(SCHEDULE.UPDATE, sys);
@@ -60,7 +60,7 @@ describe("Sparse access validation", () => {
 		expect(tick).toThrow(/system 'sparse_adder'.*sparse component.*didn't declare/);
 	});
 
-	it("permits a sparse add/remove/set when declared in sparse_writes", () => {
+	it("permits a sparse add, remove and set when declared in sparse_writes", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
@@ -148,7 +148,7 @@ describe("Sparse access validation", () => {
 		const tick = runOnce(
 			world,
 			base({
-				// Only declares the write — must still be allowed to read it.
+				// Only declares the write, must still be allowed to read it.
 				name: "sparse_write_implies_read",
 				sparseWrites: [Cooldown],
 				fn(ctx) {
@@ -193,7 +193,7 @@ describe("Sparse access validation", () => {
 			base({
 				name: "sparse_prober",
 				fn(ctx) {
-					seen = ctx.hasSparse(e, Cooldown); // undeclared — must NOT throw
+					seen = ctx.hasSparse(e, Cooldown); // undeclared, must NOT throw
 				}
 			})
 		);
@@ -223,7 +223,7 @@ describe("Relation access validation", () => {
 		expect(tick).toThrow(/system 'relation_adder'.*relation.*didn't declare/);
 	});
 
-	it("permits relation add/remove when declared in relation_writes", () => {
+	it("permits relation add and remove when declared in relation_writes", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -298,7 +298,7 @@ describe("Relation access validation", () => {
 			base({
 				name: "relation_prober",
 				fn(ctx) {
-					seen = ctx.hasRelation(a, Targets); // undeclared — must NOT throw
+					seen = ctx.hasRelation(a, Targets); // undeclared, must NOT throw
 				}
 			})
 		);
@@ -355,7 +355,7 @@ describe("Access id spaces are disjoint", () => {
 	});
 });
 
-describe("Sparse/relation access outside any system", () => {
+describe("Sparse and relation access outside any system", () => {
 	it("host-side sparse + relation mutations are never access-checked", () => {
 		const world = new ECS();
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);

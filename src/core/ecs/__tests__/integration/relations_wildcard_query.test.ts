@@ -1,16 +1,16 @@
 /**
- * Relationship wildcard QUERY TERMS — `(R, *)` / `(*, T)` as composable
+ * Relationship wildcard query terms, `(R, *)` / `(*, T)` as composable
  * query terms, distinct from the cold materializing helpers `pairsOf(R)` /
  * `sourcesOfAny(T)`.
  *
- *  - `withRelation(R)` / `withoutRelation(R)` — `(R, *)`: match sources that
+ *  - `withRelation(R)` / `withoutRelation(R)`, `(R, *)`: match sources that
  *    hold (or don't hold) any target under `R`. Membership semantics (each source
  *    once), iterated via `forEachEntity`, reusing the sparse-match path
- *    (insertion order; canonical sorting reserved for `stateHash`/snapshot).
- *  - `forEachRelatedTo(T)` — `(*, T)`: every source related to `T` under any
+ *    (insertion order, canonical sorting reserved for `stateHash`/snapshot).
+ *  - `forEachRelatedTo(T)`, `(*, T)`: every source related to `T` under any
  *    relation, dedup'd, ascending-EntityID order, composing with the receiver's
- *    dense / sparse / `(R, *)` predicate.
- *  - Access: `withRelation` needs `relationReads: [R]`; `forEachRelatedTo`
+ *    dense and sparse / `(R, *)` predicate.
+ *  - Access: `withRelation` needs `relationReads: [R]`. `forEachRelatedTo`
  *    needs `relationReads: [ANY_RELATION]`.
  */
 
@@ -25,9 +25,9 @@ import type { SystemConfig } from "../../system";
 const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
-/** Collect a sparse/wildcard query's yielded entities as a sorted number array
- * (membership order is insertion order, not canonical — so sort for set-equality
- * assertions; determinism of the raw order is asserted separately). */
+/** Collect a sparse and wildcard query's yielded entities as a sorted number array
+ * (membership order is insertion order, not canonical, so sort for set-equality
+ * assertions. Determinism of the raw order is asserted separately). */
 function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] {
 	const out: number[] = [];
 	q.forEachEntity((e) => out.push(e as number));
@@ -37,14 +37,14 @@ function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
 // ─────────────────────────── (R, *) withRelation ───────────────────────
-describe("(R, *) require_relation — membership", () => {
+describe("(R, *) require_relation, membership", () => {
 	it("matches every source holding a target (exclusive), spanning archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 		const Targets = world.relations.register();
 
-		// Sources in different archetypes; some related, some not.
+		// Sources in different archetypes. Some related, some not.
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		const b = world.spawn();
@@ -75,7 +75,7 @@ describe("(R, *) require_relation — membership", () => {
 		world.relations.add(a, Likes, t3);
 		world.relations.add(b, Likes, t1);
 
-		// Membership: a appears ONCE despite three targets (not pair-expansion).
+		// Membership: a appears once despite three targets (not pair-expansion).
 		expect(collect(world.query().withRelation(Likes))).toEqual(sorted([a, b]));
 	});
 
@@ -120,7 +120,7 @@ describe("(R, *) require_relation — membership", () => {
 });
 
 // ─────────────────────────── (R, *) composition ────────────────────────────
-describe("(R, *) require_relation / exclude_relation — composition", () => {
+describe("(R, *) require_relation / exclude_relation, composition", () => {
 	it("intersects with a dense require term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -199,7 +199,7 @@ describe("(R, *) require_relation / exclude_relation — composition", () => {
 });
 
 // ─────────────────────────── (R, *) cache stability ────────────────────────
-describe("(R, *) require_relation — cached, stable instances", () => {
+describe("(R, *) require_relation, cached, stable instances", () => {
 	it("repeated require_relation from the same parent returns the identical Query", () => {
 		const world = new ECS();
 		const R = world.relations.register();
@@ -241,7 +241,7 @@ function collectRelated(
 	return out;
 }
 
-describe("(*, T) for_each_related_to — any relation, fixed target", () => {
+describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 	it("collects every source related to T across relation kinds, dedup'd", () => {
 		const world = new ECS();
 		const Targets = world.relations.register();
@@ -258,7 +258,7 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		world.relations.add(a, Targets, other); // re-target away is irrelevant; a→other now
 
 		const got = collectRelated(world.query(), T).sort((x, y) => x - y);
-		// a re-targeted to `other`, so a no longer points at T; b and c do.
+		// a re-targeted to `other`, so a no longer points at T. B and c do.
 		expect(got).toEqual(sorted([b, c]));
 	});
 
@@ -293,7 +293,7 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		world.relations.add(a, Likes, liked);
 		const b = world.spawn(); // targets T only
 		world.relations.add(b, Targets, T);
-		// sources related to T that ALSO have any Likes pair → just a.
+		// sources related to T that also have any Likes pair → only a.
 		expect(collectRelated(world.query().withRelation(Likes), T)).toEqual(sorted([a]));
 	});
 
@@ -305,14 +305,14 @@ describe("(*, T) for_each_related_to — any relation, fixed target", () => {
 		world.relations.add(a, Targets, T);
 		world.despawn(T); // deferred...
 		world.flush(); // ...a dangles; reverse entry persists keyed by dead T
-		// sourcesOf returns the dangling source; forEachRelatedTo agrees.
+		// sourcesOf returns the dangling source. forEachRelatedTo agrees.
 		expect(world.relations.sourcesOf(T, Targets).map((e) => e as number)).toEqual([a as number]);
 		expect(collectRelated(world.query(), T)).toEqual([a as number]);
 	});
 });
 
 // ─────────────────────────── determinism ───────────────────────────────────
-describe("(R, *) determinism — identical histories yield identical order", () => {
+describe("(R, *) determinism, identical histories yield identical order", () => {
 	it("two worlds built by the same op sequence yield the same raw order", () => {
 		const build = (): number[] => {
 			const world = new ECS();
@@ -332,7 +332,7 @@ describe("(R, *) determinism — identical histories yield identical order", () 
 });
 
 // ─────────────────────────── dense-path guard ──────────────────────────────
-describe("(R, *) — dense-path methods refuse the wildcard query", () => {
+describe("(R, *), dense-path methods refuse the wildcard query", () => {
 	it("count() / for_each() throw, steering to for_each_entity", () => {
 		const world = new ECS();
 		const R = world.relations.register();

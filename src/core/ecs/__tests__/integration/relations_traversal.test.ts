@@ -1,5 +1,5 @@
 /**
- * Relations — traversal over an exclusive relation's tree.
+ * Relations, traversal over an exclusive relation's tree.
  *
  * Covers the issue's acceptance criteria:
  *  - `ancestorsOf` / `rootOf`: walk an exclusive relation from a source up to
@@ -7,7 +7,7 @@
  *  - `cascadeOf`: breadth-first subtree walk that visits parents before
  *    children, deterministically (children ascending by id);
  *  - the cycle guard: a cycle in a traversable relation throws `RELATION_CYCLE`
- *    in `__DEV__` rather than hanging;
+ *    in `__DEV__` rather than hanging
  *  - traversal is exclusive-only: a multi relation throws `RELATION_MODE_MISMATCH`.
  */
 
@@ -19,7 +19,7 @@ import { getEntityIndex, type EntityID } from "../../entity";
 const ids = (es: EntityID[]): number[] => es.map((e) => e as number);
 const getIndex = (e: EntityID): number => getEntityIndex(e);
 
-describe("ECS relation traversal — up chain", () => {
+describe("ECS relation traversal, up chain", () => {
 	it("walks a multi-level chain from a source to its root", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register(); // exclusive
@@ -63,7 +63,7 @@ describe("ECS relation traversal — up chain", () => {
 	});
 
 	it("up-walk stops at a dangling dead handle, not the recycled slot's occupant", () => {
-		// Regression: the up-walk advanced by entity INDEX
+		// Regression: the up-walk advanced by entity index
 		// via the index-keyed sparse store, so a dangling target handle (orphan
 		// policy) whose slot was recycled would splice the chain onto the
 		// unrelated new occupant. It must terminate at the dead handle instead.
@@ -75,13 +75,13 @@ describe("ECS relation traversal — up chain", () => {
 		world.relations.add(leaf, ChildOf, mid);
 		world.relations.add(mid, ChildOf, root);
 
-		// Destroy mid; orphan policy leaves leaf pointing at the dead handle.
+		// Destroy mid. Orphan policy leaves leaf pointing at the dead handle.
 		world.despawn(mid);
 		world.flush();
 		expect(world.isAlive(mid)).toBe(false);
 
 		// Recycle mid's slot (index 1, fresh generation) into an unrelated entity
-		// that has its OWN parent — the trigger for the old splice bug.
+		// that has its own parent, the trigger for the old splice bug.
 		const recycled = world.spawn();
 		const other = world.spawn();
 		world.relations.add(recycled, ChildOf, other);
@@ -103,7 +103,7 @@ describe("ECS relation traversal — up chain", () => {
 	});
 });
 
-describe("ECS relation traversal — cascade", () => {
+describe("ECS relation traversal, cascade", () => {
 	it("visits parents before children, breadth-first", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
@@ -135,7 +135,7 @@ describe("ECS relation traversal — cascade", () => {
 		}
 	});
 
-	it("a leaf cascades to just itself", () => {
+	it("a leaf cascades to itself only", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
 		const leaf = world.spawn();
@@ -143,7 +143,7 @@ describe("ECS relation traversal — cascade", () => {
 	});
 });
 
-describe("ECS relation traversal — cycle guard", () => {
+describe("ECS relation traversal, cycle guard", () => {
 	it("throws RELATION_CYCLE on an up-walk through a cycle (no hang)", () => {
 		const world = new ECS();
 		const ChildOf = world.relations.register();
@@ -174,7 +174,7 @@ describe("ECS relation traversal — cycle guard", () => {
 	});
 });
 
-describe("ECS relation traversal — exclusive only", () => {
+describe("ECS relation traversal, exclusive only", () => {
 	it("throws on a multi relation", () => {
 		const world = new ECS();
 		const Likes = world.relations.register({ multi: true });

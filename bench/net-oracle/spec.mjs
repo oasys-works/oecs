@@ -2,7 +2,7 @@
  * The specification of the interaction combinators: the types of agent, the table of
  * rules, and the rewrite algorithm. No part of this file depends on the storage.
  *
- * THE REASON THAT THE REFERENCE NET AND THE ECS NET SHARE THIS FILE: the item under
+ * The reason that the reference net and the ECS net share this file: the item under
  * test is the *storage* of a net in the ECS, which is archetype migration, relation
  * mutation and observers. It is not my ability to write the rules of an interaction
  * net two times. If each side calculated the connections itself, a difference
@@ -24,19 +24,19 @@
  */
 
 // ── Agent types ─────────────────────────────────────────────────────────────
-export const CON = 0; // γ — constructor, 2 auxiliary ports
-export const DUP = 1; // δ — duplicator, 2 auxiliary ports
-export const ERA = 2; // ε — eraser, 0 auxiliary ports
+export const CON = 0; // γ, constructor, 2 auxiliary ports
+export const DUP = 1; // δ, duplicator, 2 auxiliary ports
+export const ERA = 2; // ε, eraser, 0 auxiliary ports
 export const ROOT = 3; // net interface anchor, 0 auxiliary ports, no rules
 
 export const TYPE_NAME = ["CON", "DUP", "ERA", "ROOT"];
 
-/** Total ports per type, principal included. Port 0 is always the principal;
+/** Total ports per type, principal included. Port 0 is always the principal
  * ports 1..n are auxiliary. Fixed at 3 max, which is what lets both backings
  * use a flat stride-3 layout. */
 export const PORTS = [3, 3, 1, 1];
 
-/** The widest port count — the stride of every per-port array in both backings. */
+/** The widest port count, the stride of every per-port array in both backings. */
 export const MAX_PORTS = 3;
 
 /** Slot value meaning "this port does not exist on this agent". Live ports always
@@ -47,9 +47,9 @@ export const NO_SLOT = 255;
 //
 // A rule's wiring is written over two kinds of endpoint:
 //
-//   negative  — an *external* endpoint: one of the redex's own auxiliary ports,
+//   negative   an *external* endpoint: one of the redex's own auxiliary ports,
 //               standing for "whatever that port was connected to".
-//   >= 0      — a port of an agent the rule creates, encoded `newIndex * 8 + port`.
+//   >= 0       a port of an agent the rule creates, encoded `newIndex * 8 + port`.
 //
 // Keeping both in one integer space is what makes the resolver below a plain
 // loop over integers instead of a tagged-union walk.
@@ -70,7 +70,7 @@ const EXT_CODE = [
 
 /**
  * The six rules, keyed by `ta * 4 + tb` with `ta <= tb`. The caller canonicalises
- * the pair into that order, so each unordered pair needs exactly one entry —
+ * the pair into that order, so each unordered pair needs exactly one entry,
  * which is also what makes the system unambiguous (a precondition of strong
  * confluence).
  *
@@ -80,16 +80,16 @@ const EXT_CODE = [
  */
 export const RULES = [];
 
-// γ ⋈ γ — annihilation: the two agents vanish, their aux ports wire straight
+// γ ⋈ γ, annihilation: the two agents vanish, their aux ports wire straight
 // through. Same for δ ⋈ δ.
 RULES[CON * 4 + CON] = { name: "CON~CON", news: [], wires: [[A1, B1], [A2, B2]] };
 RULES[DUP * 4 + DUP] = { name: "DUP~DUP", news: [], wires: [[A1, B1], [A2, B2]] };
 
-// ε ⋈ ε — annihilation with nothing left over.
+// ε ⋈ ε, annihilation with nothing left over.
 RULES[ERA * 4 + ERA] = { name: "ERA~ERA", news: [], wires: [] };
 
-// ε ⋈ γ — erasure propagates: the eraser is replaced by one eraser per aux port
-// of the agent it consumed. Same for ε ⋈ δ. Canonical order puts CON/DUP first
+// ε ⋈ γ, erasure propagates: the eraser is replaced by one eraser per aux port
+// of the agent it consumed. Same for ε ⋈ δ. Canonical order puts CON and DUP first
 // (type 0/1) and ERA second (type 2), so the *aux* ports here are A1/A2.
 RULES[CON * 4 + ERA] = {
 	name: "CON~ERA",
@@ -102,7 +102,7 @@ RULES[DUP * 4 + ERA] = {
 	wires: [[N(0, 0), A1], [N(1, 0), A2]],
 };
 
-// γ ⋈ δ — commutation: each agent is duplicated across the other, and the four
+// γ ⋈ δ, commutation: each agent is duplicated across the other, and the four
 // copies cross-connect. This is the only rule that *grows* the net (2 agents in,
 // 4 out), and so the only source of the allocation pressure the soak needs.
 //
@@ -132,7 +132,7 @@ RULES[CON * 4 + DUP] = {
  * A stable small integer per rule, assigned in canonical `(ta, tb)` order.
  *
  * The provenance layer stores "which rule fired" in a `u8` column, and a
- * deterministic world forbids anything else; deriving the ids from the table
+ * deterministic world forbids anything else. Deriving the ids from the table
  * rather than hand-numbering them keeps the two in step if a rule is ever added.
  */
 export const RULE_ID = {};
@@ -165,20 +165,20 @@ export function reduces(ta, tb) {
  * `net` is an adapter with:
  *   typeOf(a) -> type
  *   getLink(a, p) -> [agent, port]        // the port this one is wired to
- *   setLink(a, p, b, q)                   // writes BOTH directions
+ *   setLink(a, p, b, q)                   // writes both directions
  *   createAgent(type) -> id
  *   destroyAgent(id)
- *   settle()                              // make created/destroyed agents usable
- *   onLoop()                              // a wire closed on itself; count it
+ *   settle()                              // make created and destroyed agents usable
+ *   onLoop()                              // a wire closed on itself. Count it
  *
  * Returns the rule that fired, or `null` for an inert pair.
  *
  * The interesting part is endpoint resolution. A rule says "wire A1 to B1",
  * meaning "wire whatever a's port 1 was attached to, to whatever b's port 1 was
- * attached to". But a's port 1 may have been attached to *b's port 2* — a wire
- * internal to the redex — in which case the endpoint is itself a port of an
+ * attached to". But a's port 1 may have been attached to *b's port 2*, a wire
+ * internal to the redex, in which case the endpoint is itself a port of an
  * agent we are about to destroy, and the real target is found by following that
- * port's own rule wire. Chasing those chains is what `resolve` does; a chain
+ * port's own rule wire. Chasing those chains is what `resolve` does. A chain
  * that closes on itself is a wire loop with no agents left on it, which is a
  * real (if unobservable) part of the net state, so it gets counted rather than
  * dropped.
@@ -187,7 +187,7 @@ export function applyRewrite(net, a, b) {
 	let ta = net.typeOf(a);
 	let tb = net.typeOf(b);
 	// Canonicalise into the rule table's `ta <= tb` order. Both backings run this
-	// same swap on the same types, so both agree on which agent is "first" — that
+	// same swap on the same types, so both agree on which agent is "first", that
 	// is what keeps the created-agent order identical and the id map trivial.
 	if (ta > tb) {
 		const t = a;
@@ -198,9 +198,9 @@ export function applyRewrite(net, a, b) {
 		tb = tt;
 	}
 	const rule = RULES[ta * 4 + tb];
-	if (rule === undefined) return null; // inert (ROOT); the pair just stands
+	if (rule === undefined) return null; // inert (ROOT), and the pair only stands
 
-	// 1. Snapshot the redex's external endpoints BEFORE anything is destroyed.
+	// 1. Snapshot the redex's external endpoints before anything is destroyed.
 	const pair = [a, b];
 	const types = [ta, tb];
 	const ext = new Map();
@@ -239,7 +239,7 @@ export function applyRewrite(net, a, b) {
 			if (seen.has(cur)) return null; // closed wire loop
 			seen.add(cur);
 			const [g, q] = ext.get(cur);
-			// Is this endpoint a port of one of the two agents we just destroyed?
+			// Is this endpoint a port of one of the two agents we destroyed?
 			// If so it is a pass-through: hop to the endpoint the rule wires it to.
 			const s = g === a ? 0 : g === b ? 1 : -1;
 			if (s === -1) return [g, q]; // a live agent outside the redex
@@ -252,8 +252,8 @@ export function applyRewrite(net, a, b) {
 	};
 
 	// 5. Apply. A wire whose two ends both resolve into the redex collapses to a
-	//    loop; because the chain graph is a permutation, that happens to both ends
-	//    together or to neither — asserted rather than assumed.
+	//    loop, because the chain graph is a permutation, that happens to both ends
+	//    together or to neither, asserted rather than assumed.
 	for (let i = 0; i < rule.wires.length; i++) {
 		const [u, v] = rule.wires[i];
 		const pu = resolve(u);
@@ -273,10 +273,10 @@ export function applyRewrite(net, a, b) {
 // ── Self-checks on the rule table ───────────────────────────────────────────
 
 /**
- * Verify every rule is linear — each redex auxiliary port and each created
+ * Verify every rule is linear, each redex auxiliary port and each created
  * agent's port used exactly once. Linearity is what makes the system strongly
  * confluent, so the rewrite-count oracle is only as sound as this check. Run it
- * once at startup; it is pure table inspection.
+ * once at startup. It is pure table inspection.
  */
 export function assertRulesLinear() {
 	for (let ta = 0; ta < 4; ta++) {
@@ -315,7 +315,7 @@ export function assertRulesLinear() {
 
 // ── Deterministic RNG ───────────────────────────────────────────────────────
 
-/** xorshift32 — the same generator `bench/fuzz.mjs` uses, so seeds are
+/** xorshift32, the same generator `bench/fuzz.mjs` uses, so seeds are
  * comparable across the two harnesses. */
 export function rng(seed) {
 	let s = seed >>> 0 || 1;

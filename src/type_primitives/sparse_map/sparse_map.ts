@@ -1,5 +1,5 @@
 /***
- * SparseMap — O(1) integer-keyed map with cache-friendly dense iteration.
+ * SparseMap. O(1) integer-keyed map with cache-friendly dense iteration.
  *
  * Keys are non-negative integers. Two parallel dense arrays (keys + values)
  * enable linear iteration. A sparse number[] maps key → dense index for

@@ -1,6 +1,6 @@
 /**
  * A diagnostic for the `iter2` case. In the time of each library, how much is the
- * ACQUISITION OF THE QUERY for each frame, and how much is the loop?
+ * acquisition of the query for each frame, and how much is the loop?
  *
  * This division is necessary for an equal comparison. A real frame loop acquires its
  * query again at each tick. Therefore `iter2` calls the query inside the repetition
@@ -111,9 +111,9 @@ function time(label, fn) {
 	ecs.spawnMany(ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 1 })), N);
 	const q = ecs.query(Pos, Vel);
 	console.log("oecs");
-	time("eachChunk per rep", () => {
+	time("forEachChunk per rep", () => {
 		for (let r = 0; r < REPS; r++) {
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { vx, vy } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -123,7 +123,7 @@ function time(label, fn) {
 			});
 		}
 	});
-	time("eachChunk alone, empty body", () => {
-		for (let r = 0; r < REPS; r++) q.eachChunk((_c, count) => (sink = count));
+	time("forEachChunk alone, empty body", () => {
+		for (let r = 0; r < REPS; r++) q.forEachChunk((_c, count) => (sink = count));
 	});
 }

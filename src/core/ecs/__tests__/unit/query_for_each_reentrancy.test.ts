@@ -1,10 +1,10 @@
 /**
  * `Query.forEach` re-entrancy must not corrupt the non-empty buffer.
  *
- * `forEach`/`count`/`ChangedQuery.forEach` bind the array returned by
- * `Query._nonEmpty()` once and walk it. Before the fix, `_nonEmpty()`
+ * `forEach`, `count` and `ChangedQuery.forEach` bind the array returned by
+ * `Query.nonEmptyArchs()` once and walk it. Before the fix, `nonEmptyArchs()`
  * rebuilt that array *in place* (`dst.length = 0; …push`) whenever the query
- * dirty epoch advanced — so a nested `forEach`/`count` on the *same* Query,
+ * dirty epoch advanced, so a nested `forEach` and `count` on the *same* Query,
  * after an immediate-mode mutation that crosses a 0↔non-zero entity boundary
  * (which bumps the epoch), truncated the array the outer loop was mid-walking.
  * Result: a still-non-empty archetype gets skipped, or an archetype that was
@@ -12,15 +12,15 @@
  *
  * The fix makes the rebuild allocate a fresh array and swap it in, so the
  * outer iterator keeps walking the snapshot it started with. In-system
- * iteration was never affected — deferred mutations settle the epoch during
+ * iteration was never affected, deferred mutations settle the epoch during
  * `flushStructural`, between systems, never mid-loop. The trigger is host /
  * immediate-mode code that iterates and mutates on the same Query.
  *
  * NOTE (STRUCTURAL_DURING_ITERATION): mutating the archetype the walk is
- * CURRENTLY visiting is a dev error since the host-iteration guard landed —
- * the row swap-remove skips/repeats entities under the per-row walk. These
+ * currently visiting is a dev error since the host-iteration guard landed,
+ * the row swap-remove skips and repeats entities under the per-row walk. These
  * tests therefore cross the 0↔non-zero boundary on archetypes the outer
- * callback is NOT standing in; the fresh-array machinery still protects
+ * callback is not standing in. The fresh-array machinery still protects
  * prod (where the dev guard is compiled out) and every not-currently-visited
  * case.
  */
@@ -35,7 +35,7 @@ const Position = ["x", "y"] as const;
 const Tag = ["v"] as const;
 
 function getStore(world: ECS): Store {
-	return (world as unknown as { store: Store }).store;
+	return (world as unknown as { _store: Store })._store;
 }
 
 describe("Query.for_each re-entrancy", () => {
@@ -73,8 +73,8 @@ describe("Query.for_each re-entrancy", () => {
 			if (!mutated) {
 				mutated = true;
 				// Immediate-mode mutation: empty one matching archetype (1→0,
-				// bumps the epoch), then re-enter `_nonEmpty()` via a nested
-				// count() on the SAME query. Pre-fix this rebuilt the shared
+				// bumps the epoch), then re-enter `nonEmptyArchs()` via a nested
+				// count() on the same query. Pre-fix this rebuilt the shared
 				// array in place under the outer loop.
 				store.destroyEntity(e1);
 				q.entityCount;
@@ -126,7 +126,7 @@ describe("Query.for_each re-entrancy", () => {
 			if (!mutated) {
 				mutated = true;
 				// Fill the empty matching archetype (0→non-zero, bumps the
-				// epoch), then re-enter via a nested forEach on the SAME query.
+				// epoch), then re-enter via a nested forEach on the same query.
 				// Single transition (empty arch → [Pos, B]) so no row leaves the
 				// archetype this callback is standing in (see header NOTE).
 				const e2 = world.spawn();
@@ -136,7 +136,7 @@ describe("Query.for_each re-entrancy", () => {
 		});
 
 		// The freshly-filled [Pos, B] was empty at iteration start, so the outer
-		// walk must NOT visit it. Pre-fix, the in-place rebuild grew the array
+		// walk must not visit it. Pre-fix, the in-place rebuild grew the array
 		// under the cursor and the outer loop ran off the end into the new entry.
 		expect(order.length).toBe(2);
 		expect(visited.size).toBe(2);
@@ -149,7 +149,7 @@ describe("Query.for_each re-entrancy", () => {
 		const A = world.registerComponent(Tag);
 		const store = getStore(world);
 
-		// One entity in [Pos], two in [Pos, A]; a 2→1 destroy in [Pos, A] is a
+		// One entity in [Pos], two in [Pos, A]. A 2→1 destroy in [Pos, A] is a
 		// same-side move (no 0-crossing, no epoch bump, no rebuild). The destroy
 		// runs from [Pos]'s callback so the mutated archetype is not the one the
 		// walk is standing in (see header NOTE).

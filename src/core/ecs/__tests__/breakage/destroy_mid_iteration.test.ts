@@ -5,7 +5,7 @@ import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 describe("Destruction during system execution", () => {
-	it("system destroys current entity — archetype columns valid for remaining entities", () => {
+	it("system destroys current entity, archetype columns valid for remaining entities", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -53,7 +53,7 @@ describe("Destruction during system execution", () => {
 		expect(world.entityCount).toBe(2);
 	});
 
-	it("system marks ALL entities for deferred destruction — iteration completes, entities dead after flush", () => {
+	it("system marks all entities for deferred destruction, iteration completes, entities dead after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -93,7 +93,7 @@ describe("Destruction during system execution", () => {
 		expect(world.entityCount).toBe(0);
 	});
 
-	it("interleaved create + destroy in single system — entity_count correct after flush", () => {
+	it("interleaved create + destroy in single system, entity_count correct after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -147,7 +147,7 @@ describe("Destruction during system execution", () => {
 		}
 	});
 
-	it("destroy in sys1, sys2 still sees entity (deferred) — dead after update completes", () => {
+	it("destroy in sys1, sys2 still sees entity (deferred), dead after update completes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 

@@ -2,9 +2,9 @@
  * Generic consumer region registry (it de-games the SAB substrate).
  *
  * The load-bearing acceptance claim: a consumer can declare an
- * ARBITRARY named region (a `region_id` the engine has never heard of) and the
+ * arbitrary named region (a `region_id` the engine has never heard of) and the
  * engine lays it out, addresses it through the generic region-table directory,
- * and — crucially — snapshots and restores it across a SAB grow without knowing
+ * and, crucially, snapshots and restores it across a SAB grow without knowing
  * anything about its contents. No game concept (terrain / spatial-grid / … )
  * appears anywhere in this file: the regions here are fabricated.
  */
@@ -18,7 +18,7 @@ import {
 	growColumnStore,
 	growableSabAllocator,
 	readHeaderRegionTable,
-	validateRegionSpecs,
+	assertRegionSpecs,
 	RegionRegistryError,
 	REGION_TABLE_ENTRY_BYTES,
 	STORE_HEADER_OFFSETS,
@@ -27,7 +27,7 @@ import {
 	type StoreRegionSpec
 } from "..";
 
-// Fabricated region ids — deliberately NOT any GAME_REGION_ID. The engine
+// Fabricated region ids, deliberately not any GAME_REGION_ID. The engine
 // treats them as opaque tokens.
 const FABRICATED_ID = 0xbeef;
 const OTHER_ID = 0x1234;
@@ -84,16 +84,16 @@ describe("generic consumer region table", () => {
 			regions: [fabricatedRegion(FABRICATED_ID, 64, 0)]
 		});
 		const off0 = findRegionOffset(store.view, FABRICATED_ID);
-		// Write live bytes AFTER init — these are the consumer's runtime state
+		// Write live bytes after init, these are the consumer's runtime state
 		// that must survive a realloc (the class of data once lost for the
-		// mechanism regions; here we prove it for a consumer region).
+		// mechanism regions. Here we prove it for a consumer region).
 		store.view.setUint32(off0 + 8, 0xdead_beef, true);
 		store.view.setUint32(off0 + 60, 0x0bad_cafe, true); // last u32 in the 64-byte region
 
 		// Extend with a new archetype. The default allocator is not in-place, so
-		// this takes the realloc-and-republish slow path — i.e. it exercises
-		// `snapshotPrefixRegions` / `restorePrefixRegions` for the consumer
-		// region, not just the mechanism regions.
+		// this takes the realloc-and-republish slow path, i.e. it exercises
+		// `snapshotRegions` / `restoreRegions` for the consumer
+		// region, not only the mechanism regions.
 		const result = extendColumnStore(store, {
 			newArchetypes: [{ ...ARCH, archetypeId: 2 }]
 		});
@@ -121,18 +121,18 @@ describe("generic consumer region table", () => {
 			regionId: OTHER_ID,
 			byteLength: 48
 		});
-		// Distinct offsets — the two regions don't overlap.
+		// Distinct offsets, the two regions don't overlap.
 		expect(findRegionOffset(store.view, FABRICATED_ID)).not.toBe(
 			findRegionOffset(store.view, OTHER_ID)
 		);
 	});
 
 	it("rejects invalid region sets (zero id, duplicate id, non-positive size)", () => {
-		expect(() => validateRegionSpecs([fabricatedRegion(0, 16, 0)])).toThrow(RegionRegistryError);
+		expect(() => assertRegionSpecs([fabricatedRegion(0, 16, 0)])).toThrow(RegionRegistryError);
 		expect(() =>
-			validateRegionSpecs([fabricatedRegion(1, 16, 0), fabricatedRegion(1, 16, 0)])
+			assertRegionSpecs([fabricatedRegion(1, 16, 0), fabricatedRegion(1, 16, 0)])
 		).toThrow(RegionRegistryError);
-		expect(() => validateRegionSpecs([{ id: 1, name: "x", bytes: 0, init: () => {} }])).toThrow(
+		expect(() => assertRegionSpecs([{ id: 1, name: "x", bytes: 0, init: () => {} }])).toThrow(
 			RegionRegistryError
 		);
 		// createColumnStore applies the same validation.
@@ -143,18 +143,18 @@ describe("generic consumer region table", () => {
 });
 
 // The slow-path `extendColumnStore` round-trip above proves consumer regions
-// survive a realloc. These cover the OTHER three realloc shapes the substrate
+// survive a realloc. These cover the other three realloc shapes the substrate
 // can take, so every path that touches a consumer region is exercised:
-//   - in-place `extendColumnStore` (growable allocator): the region must NOT be
-//     snapshotted/restored — it sits before the descriptor tail and stays put,
+//   - in-place `extendColumnStore` (growable allocator): the region must not be
+//     snapshotted/restored. It sits before the descriptor tail and stays put,
 //     so its bytes and offset are carried forward verbatim.
-//   - realloc `growColumnStore` (default allocator): a RESIZE, not an append —
-//     routes the region through `snapshotPrefixRegions` / `restorePrefixRegions`
+//   - realloc `growColumnStore` (default allocator): a resize, not an append,
+//     routes the region through `snapshotRegions` / `restoreRegions`
 //     exactly like the extend slow path.
 //   - in-place `growColumnStore` (growable allocator): like the in-place extend,
 //     the region is untouched while only the grown archetype's columns relocate.
-describe("consumer regions survive every grow/extend path", () => {
-	it("carries a consumer region across an IN-PLACE extend (growable allocator)", () => {
+describe("consumer regions survive every grow and extend path", () => {
+	it("carries a consumer region across an in-PLACE extend (growable allocator)", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const store = createColumnStore([ARCH], alloc, {
 			reservedDescriptorBytes: 4096,
@@ -171,7 +171,7 @@ describe("consumer regions survive every grow/extend path", () => {
 		expect(result.viewsPreserved).toBe(true); // confirms the in-place fast path ran
 
 		// In-place never relocates the region (it precedes the descriptor tail),
-		// so neither its offset nor its bytes change — no snapshot/restore involved.
+		// so neither its offset nor its bytes change, no snapshot or restore involved.
 		const off1 = findRegionOffset(result.store.view, FABRICATED_ID);
 		expect(off1).toBe(off0);
 		expect(result.store.view.getUint32(off1, true)).toBe(0xcafe_f00d); // init marker
@@ -187,7 +187,7 @@ describe("consumer regions survive every grow/extend path", () => {
 		store.view.setUint32(off0 + 60, 0x0bad_cafe, true); // last u32 in the region
 
 		// Resize the existing archetype. The default allocator is not in-place, so
-		// this takes the realloc path — the grow-side twin of the extend slow path.
+		// this takes the realloc path, the grow-side twin of the extend slow path.
 		const result = growColumnStore(store, {
 			archetypes: [{ archetypeId: 1, newRowCapacity: 16, rowCount: 0 }]
 		});
@@ -199,7 +199,7 @@ describe("consumer regions survive every grow/extend path", () => {
 		expect(result.store.view.getUint32(off1 + 60, true)).toBe(0x0bad_cafe);
 	});
 
-	it("carries a consumer region across an IN-PLACE grow (growable allocator)", () => {
+	it("carries a consumer region across an in-PLACE grow (growable allocator)", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const store = createColumnStore([ARCH], alloc, {
 			reservedDescriptorBytes: 4096,
@@ -216,22 +216,22 @@ describe("consumer regions survive every grow/extend path", () => {
 		expect(result.viewsPreserved).toBe(true); // confirms the in-place grow fast path ran
 
 		const off1 = findRegionOffset(result.store.view, FABRICATED_ID);
-		expect(off1).toBe(off0); // region precedes the descriptor region — untouched by the grow
+		expect(off1).toBe(off0); // region precedes the descriptor region, untouched by the grow
 		expect(result.store.view.getUint32(off1, true)).toBe(0xcafe_f00d);
 		expect(result.store.view.getUint32(off1 + 8, true)).toBe(0xfeed_beef);
 	});
 });
 // The header-driven readers trust `region_table_count`, but a corrupt or
-// foreign SAB (passes `isValidSab`'s length + magic + ABI check) can carry a
+// foreign SAB (passes `isValidStoreHeader`'s length + magic + ABI check) can carry a
 // garbage count. Reading it blindly drives a huge `new Array(count)` and
-// out-of-bounds `getUint32` reads — surfacing a raw `RangeError` rather than a
+// out-of-bounds `getUint32` reads, surfacing a raw `RangeError` rather than a
 // typed registry error. The readers now bound `tableOff + count*ENTRY_BYTES`
 // against the buffer and throw `RegionRegistryError`.
 describe("header region-table readers reject an overrunning count", () => {
-	/** A standalone DataView with the header's `region_table_off` pointing just
+	/** A standalone DataView with the header's `region_table_off` pointing only
 	 * past the header and a `region_table_count` whose directory runs past the
 	 * end of the buffer. Only the two header fields the readers consult are
-	 * written; everything else is zero. */
+	 * written. Everything else is zero. */
 	function corruptCountView(): DataView {
 		// Small buffer: header + room for one entry. The count below claims many
 		// more entries than fit, so the directory overruns.

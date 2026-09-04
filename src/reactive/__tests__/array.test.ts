@@ -1,11 +1,11 @@
 /**
- * reactiveArray gate — ordered per-slot channels + structural-sharing reconcile.
+ * reactiveArray gate, ordered per-slot channels + structural-sharing reconcile.
  */
 import { describe, expect, it } from "vitest";
 import { batch, effect, root } from "../kernel";
 import { reactiveArray } from "../array";
 
-describe("reactiveArray — ordered per-slot channels", () => {
+describe("reactiveArray, ordered per-slot channels", () => {
 	it("per-slot isolation: changing one slot wakes only its reader; equal set is a no-op", () => {
 		root(() => {
 			const a = reactiveArray<number>([0, 10, 20, 30, 40]);

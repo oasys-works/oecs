@@ -1,9 +1,9 @@
 /**
- * Run conditions / system sets.
+ * Run conditions and system sets.
  *
  * ECS-level behaviour: the determinism acceptance (a false gate is byte-for-byte
  * the system being absent that tick), the three shipped built-ins, set-level
- * gating + AND semantics, the skipped-system last-run invariant, the custom
+ * gating + and semantics, the skipped-system last-run invariant, the custom
  * predicate path, and the dev-mode access check on a condition's reads. Pure
  * scheduling mechanics (set-ordering edge expansion, the no-gate fast path) live
  * in `unit/schedule.test.ts`.
@@ -23,13 +23,13 @@ import { openAccess } from "../test_helpers";
 
 describe("Run conditions", () => {
 	//=========================================================
-	// Acceptance 1 — a false gate == the system being absent that tick
+	// Acceptance 1, a false gate == the system being absent that tick
 	//=========================================================
 
 	it("a false run-condition skips the body: state_hash identical to removing the system", () => {
 		const Flag = resourceKey<boolean>("Flag");
 
-		// World A: system gated OFF (resource is false → condition never fires).
+		// World A: system gated off (resource is false → condition never fires).
 		const a = new ECS({ deterministic: true });
 		const PosA = a.registerComponent(["x"] as const, "i32");
 		a.resources.register(Flag, false);
@@ -45,7 +45,7 @@ describe("Run conditions", () => {
 		a.startup();
 		a.update(1 / 60);
 
-		// World B: the SAME system is simply never scheduled (genuinely absent).
+		// World B: the same system is never scheduled (genuinely absent).
 		const b = new ECS({ deterministic: true });
 		const PosB = b.registerComponent(["x"] as const, "i32");
 		b.resources.register(Flag, false);
@@ -63,14 +63,14 @@ describe("Run conditions", () => {
 		// Skipped == absent.
 		expect(a.snapshots.stateHash()).toBe(b.snapshots.stateHash());
 
-		// And flipping the gate ON makes the system run — state diverges from the
+		// And flipping the gate on makes the system run, state diverges from the
 		// skipped case, confirming the gate isn't a no-op in both directions.
 		a.resources.set(Flag, true);
 		a.update(1 / 60);
 		expect(a.snapshots.stateHash()).not.toBe(b.snapshots.stateHash());
 	});
 
-	it("a skipped system enqueues nothing — a gated-off spawn never materialises", () => {
+	it("a skipped system enqueues nothing, a gated-off spawn never materialises", () => {
 		const Flag = resourceKey<boolean>("Flag");
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerComponent([] as const);
@@ -165,7 +165,7 @@ describe("Run conditions", () => {
 		};
 
 		// offset is a phase mod n: 7 ≡ 1, 6 ≡ 0, −1 ≡ 2 (mod 3). No spurious early
-		// fire from signed-zero modulo — each equals its in-range phase.
+		// fire from signed-zero modulo, each equals its in-range phase.
 		expect(runWith(3, 7)).toEqual(runWith(3, 1)); // [1, 4, 7]
 		expect(runWith(3, 7)).toEqual([1, 4, 7]);
 		expect(runWith(3, 6)).toEqual([0, 3, 6]); // ≡ offset 0
@@ -209,17 +209,20 @@ describe("Run conditions", () => {
 			name: "skip_tick_1",
 			evaluate: (ctx) => ctx.ecsTick !== 1
 		};
+		// The change tick of each run, to compare the next run's last-run against.
+		const runs: number[] = [];
 		const sys = world.registerSystem((ctx) => {
 			observed.push(ctx.lastRunTick);
+			runs.push(world.getChangeTick());
 		});
 		world.addSystems(SCHEDULE.UPDATE, { system: sys, runIf: skipTick1 });
 		world.startup();
 
 		for (let i = 0; i < 4; i++) world.update(1 / 60); // ticks 0,1(skip),2,3
 
-		// Ran at 0 (last_run seed 0), skipped 1, ran at 2 seeing last_run STILL 0
-		// (the skip left it unadvanced), ran at 3 seeing last_run 2.
-		expect(observed).toEqual([0, 0, 2]);
+		// Ran at 0 (last_run seed 0), skipped 1, ran at 2 seeing the run at 0
+		// (the skip left it unadvanced), ran at 3 seeing the run at 2.
+		expect(observed).toEqual([0, runs[0], runs[1]]);
 	});
 
 	//=========================================================
@@ -256,7 +259,7 @@ describe("Run conditions", () => {
 
 describe("System sets", () => {
 	//=========================================================
-	// Acceptance 2 — a shared condition gates every member together
+	// Acceptance 2, a shared condition gates every member together
 	//=========================================================
 
 	it("a set condition gates all members as a group", () => {
@@ -285,7 +288,7 @@ describe("System sets", () => {
 		expect([aRuns, bRuns]).toEqual([1, 1]);
 	});
 
-	it("member effective gate is the AND of its own condition and the set's", () => {
+	it("member effective gate is the and of its own condition and the set's", () => {
 		const SetOn = resourceKey<boolean>("SetOn");
 		const OwnOn = resourceKey<boolean>("OwnOn");
 		const world = new ECS({ deterministic: true });
@@ -328,7 +331,7 @@ describe("System sets", () => {
 		const sys = world.registerSystem(() => {
 			runs++;
 		});
-		// configure BEFORE the member is added — picked up at run time.
+		// configure before the member is added, picked up at run time.
 		world.configureSet(Set, { runIf: runIfResourceEq(On, true) });
 		world.addSystems(SCHEDULE.UPDATE, { system: sys, set: Set });
 		world.startup();

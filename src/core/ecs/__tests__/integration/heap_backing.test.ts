@@ -1,10 +1,10 @@
 /**
- * Pure-TS heap backing (`memory: { backing: "heap" }`) — the oecs
+ * Pure-TS heap backing (`memory: { backing: "heap" }`), the oecs
  * profile. The engine's core/ecs runs over a plain fixed `ArrayBuffer`
- * instead of a `SharedArrayBuffer`: no cross-origin isolation, no worker/WASM
+ * instead of a `SharedArrayBuffer`: no cross-origin isolation, no worker or WASM
  * transfer. These tests prove the heap world is functionally a peer of the SAB
- * world — construct, grow, tick, query, structural change, determinism,
- * snapshot/restore — and that it needs no `SharedArrayBuffer` global at all.
+ * world, construct, grow, tick, query, structural change, determinism,
+ * snapshot and restore, and that it needs no `SharedArrayBuffer` global at all.
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ECS } from "../../ecs";
@@ -12,10 +12,10 @@ import { SCHEDULE } from "../../schedule";
 import type { ComponentDef } from "../../component";
 import type { EntityID } from "../../entity";
 import {
-	heapArraybufferAllocator,
+	heapArrayBufferAllocator,
 	growableSabAllocator,
 	fixedSabAllocator,
-	snapshotColumnStore,
+	columnStoreBytesView,
 	restoreColumnStore,
 	columnStoreStateHash,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
@@ -27,7 +27,7 @@ const MiB = 1024 * 1024;
 const isSab = (b: unknown): boolean =>
 	typeof SharedArrayBuffer !== "undefined" && b instanceof SharedArrayBuffer;
 
-/** A world with a Pos/Vel move system; spawns `n` movers (n > default column
+/** A world with a Pos and Vel move system. Spawns `n` movers (n > default column
  * capacity forces an in-place grow) and ticks `steps` times. Returns the world
  * plus probes so callers can assert integrated state. */
 function worldWithMovers(
@@ -36,8 +36,8 @@ function worldWithMovers(
 	steps: number
 ): { world: ECS; Pos: ComponentDef; Vel: ComponentDef; ids: EntityID[]; dt: number } {
 	const world = new ECS(memory);
-	// A `{ deterministic: true }` world rejects f32/f64 columns, so size the
-	// mover columns as integers there; non-deterministic worlds keep f64 for the
+	// A `{ deterministic: true }` world rejects f32 or f64 columns, so size the
+	// mover columns as integers there. Non-deterministic worlds keep f64 for the
 	// fractional-dt precision assertions (`toBeCloseTo`) the grow tests rely on.
 	const colType = world.snapshots.deterministic ? "i32" : "f64";
 	const Pos = world.registerComponent(["x", "y"] as const, colType);
@@ -45,7 +45,7 @@ function worldWithMovers(
 	const movers = world.query(Pos, Vel);
 	const move = world.registerSystem({
 		// exclusive grant keeps the dev-only access-declaration check out of the
-		// way; this test is about storage, not access policy.
+		// way. This test is about storage, not access policy.
 		exclusive: true,
 		reads: [],
 		writes: [],
@@ -87,11 +87,11 @@ describe("heap backing: construct + grow + tick", () => {
 		expect(isSab(world.columnStore.buffer)).toBe(false);
 	});
 
-	it("the live world's buffer is FIXED (non-resizable) — V8 fast-path guard (0.5.3)", () => {
+	it("the live world's buffer is fixed (non-resizable). V8 fast-path guard (0.5.3)", () => {
 		// The user-facing end of the 0.5.3 fix: a real heap world's column buffer
 		// must be non-resizable so every `col[i]` in a system stays on V8's fast
 		// element-access path. Reverting the allocator to a resizable buffer would
-		// silently ~4-5× the iteration cost of every system; assert the shape here.
+		// silently make the iteration of every system far slower. Assert the shape here.
 		const { world } = worldWithMovers({ memory: { backing: "heap" } }, 2000, 1);
 		const buffer = world.columnStore.buffer as unknown as { resizable: boolean };
 		expect(buffer.resizable).toBe(false);
@@ -100,7 +100,7 @@ describe("heap backing: construct + grow + tick", () => {
 	it("constructs + ticks + grows under a small heap.maxBytes cap", () => {
 		// Regression: the heap arm used to hardcode the full entity-index
 		// reservation (~12 MiB), so any `heap.maxBytes` below that threw
-		// StoreCapExceededError at `new ECS(...)` — before the world even existed.
+		// StoreCapExceededError at `new ECS(...)`, before the world even existed.
 		// A small-cap heap world must construct, tick, and grow like the
 		// equivalent maxBytes SAB world (whose arm always clamped the index).
 		const N = 2000; // > default column cap (1024) → forces an in-place grow under the cap
@@ -145,9 +145,9 @@ describe("heap backing: construct + grow + tick", () => {
 });
 
 describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
-	// WHY THIS BACKING EXISTS: JavaScriptCore has no fast store path for a
-	// TypedArray view over a GROWABLE `SharedArrayBuffer`. Reads cost what a
-	// fixed buffer costs; every column WRITE costs several times more, so an
+	// Why this backing exists: JavaScriptCore has no fast store path for a
+	// TypedArray view over a growable `SharedArrayBuffer`. Reads cost what a
+	// fixed buffer costs. Every column write costs several times more, so an
 	// iteration-bound system on the shared profile runs far slower on Safari and
 	// Bun than the same system on the heap profile. A fixed SAB removes that,
 	// and it keeps the sharing the profile exists for. V8 shows no difference,
@@ -156,7 +156,7 @@ describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
 		memory: { maxBytes: cap, backing: { allocator: fixedSabAllocator(cap) } }
 	});
 
-	it("is a SharedArrayBuffer, and it is NOT growable", () => {
+	it("is a SharedArrayBuffer, and it is not growable", () => {
 		const { world } = worldWithMovers(fixedSabWorld(), 10, 1);
 		expect(isSab(world.columnStore.buffer)).toBe(true);
 		// The whole point of the backing. A growable buffer here would restore
@@ -166,7 +166,7 @@ describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
 	});
 
 	it("integrates correctly across an in-place grow (5000 > default column cap)", () => {
-		// Growth relocates columns WITHIN the reserved buffer, exactly as the
+		// Growth relocates columns within the reserved buffer, exactly as the
 		// heap backing does. The buffer itself never grows, so every view built
 		// before the grow stays valid.
 		const N = 5000;
@@ -181,8 +181,8 @@ describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
 
 	it("extends for new archetypes without running past the cap", () => {
 		// The regression this guards: the tail cursor for a new column region
-		// used to come from `buffer.byteLength` for EVERY SharedArrayBuffer. A
-		// buffer reserved at the cap has its byteLength AT the cap, so the first
+		// used to come from `buffer.byteLength` for every SharedArrayBuffer. A
+		// buffer reserved at the cap has its byteLength at the cap, so the first
 		// extend asked for more than the cap and the world died before it could
 		// spawn anything. The tail must come from the header capacity whenever
 		// the allocator reserved.
@@ -229,7 +229,7 @@ describe("heap backing: determinism is backing-agnostic", () => {
 	});
 
 	it("a heap world and a shared (SharedArrayBuffer) world agree on state_hash", () => {
-		// The digest folds column bytes, not the buffer kind — so swapping the
+		// The digest folds column bytes, not the buffer kind, so swapping the
 		// backing must not perturb it.
 		expect(build({ memory: { backing: "heap" }, deterministic: true })).toBe(
 			build({ memory: { backing: "shared" }, deterministic: true })
@@ -247,13 +247,13 @@ describe("shared backing: opt-in SharedArrayBuffer profile", () => {
 	});
 });
 
-describe("heap backing: snapshot / restore", () => {
+describe("heap backing: snapshot and restore", () => {
 	it("round-trips a heap snapshot into another heap buffer, digest-identical", () => {
 		const { world } = worldWithMovers({ memory: { backing: "heap" } }, 1500, 3);
 		const hash = columnStoreStateHash(world.columnStore);
 
-		const snap = new Uint8Array(snapshotColumnStore(world.columnStore)); // stable copy
-		const restored = restoreColumnStore(snap, heapArraybufferAllocator());
+		const snap = new Uint8Array(columnStoreBytesView(world.columnStore)); // stable copy
+		const restored = restoreColumnStore(snap, heapArrayBufferAllocator());
 
 		expect(isSab(restored.buffer)).toBe(false);
 		expect(columnStoreStateHash(restored)).toBe(hash);
@@ -263,7 +263,7 @@ describe("heap backing: snapshot / restore", () => {
 describe("heap backing: no SharedArrayBuffer in the runtime", () => {
 	// Simulate a browser without cross-origin isolation, where the
 	// `SharedArrayBuffer` global is absent. `typeof SharedArrayBuffer` then
-	// reports "undefined" — the condition the SAB allocators guard on.
+	// reports "undefined", the condition the SAB allocators guard on.
 	afterEach(() => vi.unstubAllGlobals());
 
 	it("a heap world constructs + ticks with no SharedArrayBuffer global", () => {
@@ -272,7 +272,7 @@ describe("heap backing: no SharedArrayBuffer in the runtime", () => {
 
 		const { world, Pos, ids, dt } = worldWithMovers({ memory: { backing: "heap" } }, 2000, 5);
 		// `isSab` short-circuits to false when the SharedArrayBuffer global is
-		// stubbed away, so it can't fail here — assert the buffer is a real
+		// stubbed away, so it can't fail here, assert the buffer is a real
 		// ArrayBuffer instead (a check that survives the stub and can fail).
 		expect(world.columnStore.buffer).toBeInstanceOf(ArrayBuffer);
 		expect(world.getField(ids[1999], Pos, "x")).toBeCloseTo(1999 + dt * 5, 9);
@@ -280,9 +280,9 @@ describe("heap backing: no SharedArrayBuffer in the runtime", () => {
 
 	it("opting into the SAB allocator throws SabUnavailableError when SAB is missing", () => {
 		vi.stubGlobal("SharedArrayBuffer", undefined);
-		// oecs's default profile is heap (proven above), so `new ECS()` does NOT
+		// oecs's default profile is heap (proven above), so `new ECS()` does not
 		// throw without the global. Only explicitly choosing the SharedArrayBuffer
-		// allocator — the `@oasys/oecs/shared` profile — requires it.
+		// allocator, the `@oasys/oecs/shared` profile, requires it.
 		expect(() => new ECS({ memory: { backing: { allocator: growableSabAllocator() } } })).toThrow(
 			SabUnavailableError
 		);

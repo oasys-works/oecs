@@ -1,55 +1,55 @@
 /**
- * Command ring — WASM-side producer / TS-side consumer SPSC ring buffer
+ * Command ring. WASM-side producer / TS-side consumer SPSC ring buffer
  * for structural-change intents emitted during `sim.tick()`.
  *
  * Layout:
  *
- *   [ write_head:   u32 ]   slot 0..N-1, monotonic (NOT slot-modulo)
+ *   [ write_head:   u32 ]   slot 0..N-1, monotonic (not slot-modulo)
  *   [ read_head:    u32 ]   slot 0..N-1, monotonic
  *   [ capacity:     u32 ]   slot count, power-of-two
- *   [ overflow:     u32 ]   0 = OK; 1 = WASM exhausted the ring this tick
+ *   [ overflow:     u32 ]   0 = OK, 1 = WASM exhausted the ring this tick
  *   [ slot 0:       16 B ]  opCode: u8, payload: [15]u8
  *   [ slot 1:       16 B ]  ...
  *   ...
  *
  * SPSC contract (single host thread):
- *   - Producer: WASM `sim.tick()`. Pushes 0..N commands during one tick;
+ *   - Producer: WASM `sim.tick()`. Pushes 0..N commands during one tick
  *     bumps `write_head` after each.
  *   - Consumer: TS host, immediately after `wasm.tick()` returns. Drains
- *     0..N pending commands; bumps `read_head` after each.
+ *     0..N pending commands. Bumps `read_head` after each.
  *   - The two never run concurrently (one host thread orchestrates
  *     both). A later worker offload promotes the head
- *     bumps to `Atomics.store`; that's an additive change without
+ *     bumps to `Atomics.store`. That's an additive change without
  *     altering the layout.
  *
  * Overflow:
  *   - If WASM would write a slot when (`write_head - read_head == capacity`),
  *     it sets `overflow = 1` and drops the command. TS treats overflow as
- *     a hard error in dev builds; production logs and continues (a command
+ *     a hard error in dev builds. Production logs and continues (a command
  *     might be lost rather than crash the host).
  *
  * Slot format:
  *   byte 0:       opCode (u8). 0 is reserved as the empty-slot marker
  *                 (`COMMAND_OP_EMPTY`); all other codes are consumer-defined.
- *                 The engine never interprets a code — it drains
+ *                 The engine never interprets a code. It drains
  *                 `(opCode, payload)` and hands them to the attached
  *                 consumer, which owns the opcode enum + payload codecs (the
  *                 game's live in `@internal/sim`'s `command_payloads.ts`).
  *   bytes 1..15:  payload, op-specific. Multi-byte fields may be
- *                 unaligned within the payload; readers must use byte-
+ *                 unaligned within the payload. Readers must use byte-
  *                 oriented helpers (DataView in TS, `mem.readInt` in Zig).
  *
- * The ring lives BEFORE the layout-descriptor region in the SAB (right
+ * The ring lives before the layout-descriptor region in the SAB (right
  * after the 32-byte header) so its offset is stable across descriptor /
  * column-region growth. The host writes `header.command_ring_off` to
- * point at it during `createColumnStore`; absent ring is signalled by
+ * point at it during `createColumnStore`. Absent ring is signalled by
  * `command_ring_off === 0`.
  */
 
 /** Total bytes for the ring header. */
 export const COMMAND_RING_HEADER_BYTES = 16;
 
-/** Fixed slot size — 1-byte opCode + 15-byte payload. */
+/** Fixed slot size, 1-byte opCode + 15-byte payload. */
 export const COMMAND_RING_SLOT_BYTES = 16;
 
 /** Default ring capacity in slots. 256 × 16 B = 4 KiB of ring data plus
@@ -59,7 +59,7 @@ export const COMMAND_RING_SLOT_BYTES = 16;
 export const COMMAND_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
 /** Byte offsets within the ring header. Mirrored on the Zig side in
- * `packages/sim/src/command_ring.zig` — keep in sync. */
+ * `packages/sim/src/command_ring.zig`, keep in sync. */
 export const COMMAND_RING_HEADER_OFFSETS = {
 	write_head: 0,
 	read_head: 4,
@@ -69,7 +69,7 @@ export const COMMAND_RING_HEADER_OFFSETS = {
 
 /** Op-code `0` is reserved across the SAB layer as the empty-slot marker
  * so a zero-initialised SAB doesn't appear to hold a valid command (mirror
- * of `EVENT_OP_EMPTY`). All non-zero codes are opaque to the engine —
+ * of `EVENT_OP_EMPTY`). All non-zero codes are opaque to the engine,
  * the attached consumer owns the opcode enum + payload codecs (the game's
  * `COMMAND_OP` + `SpawnUnitFields` live in `@internal/sim`). */
 export const COMMAND_OP_EMPTY = 0;
@@ -80,7 +80,7 @@ export function commandRingBytes(capacitySlots: number): number {
 }
 
 /** True when `n` is a positive power of two. Used to validate
- * `capacity_slots` — the `head & (capacity - 1)` modulo trick relies on
+ * `capacity_slots`, the `head & (capacity - 1)` modulo trick relies on
  * this. */
 function isPow2(n: number): boolean {
 	return n > 0 && (n & (n - 1)) === 0;
@@ -94,7 +94,7 @@ export class CommandRingError extends Error {
 }
 
 /** Initialise the ring header at `ringOff` in the SAB. Zeroes
- * `write_head`, `read_head`, and `overflow_flag`; sets `capacity_slots`.
+ * `write_head`, `read_head`, and `overflow_flag`. Sets `capacity_slots`.
  * Slot bytes are left as-is (callers normally allocate the ring on a
  * fresh, zero-initialised SAB). */
 export function initCommandRing(view: DataView, ringOff: number, capacitySlots: number): void {
@@ -110,25 +110,25 @@ export function initCommandRing(view: DataView, ringOff: number, capacitySlots: 
 }
 
 /** Read live ring-header field. */
-export function ringWriteHead(view: DataView, ringOff: number): number {
+export function commandRingWriteHead(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.write_head, true);
 }
-export function ringReadHead(view: DataView, ringOff: number): number {
+export function commandRingReadHead(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.read_head, true);
 }
-export function ringCapacitySlots(view: DataView, ringOff: number): number {
+export function commandRingCapacitySlots(view: DataView, ringOff: number): number {
 	return view.getUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.capacity_slots, true);
 }
-export function ringOverflow(view: DataView, ringOff: number): boolean {
+export function commandRingOverflow(view: DataView, ringOff: number): boolean {
 	return view.getUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.overflow_flag, true) !== 0;
 }
 
 /** Pending command count = `(write_head - read_head) mod 2^32`. The
  * `>>> 0` keeps the result a u32 in the wrap-around case (rings live for
- * the host's lifetime; 2^32 commands at 50 Hz ≈ 2 years, but the
+ * the host's lifetime. 2^32 commands at 50 Hz ≈ 2 years, but the
  * arithmetic should be correct regardless). */
 export function pendingCommandCount(view: DataView, ringOff: number): number {
-	return (ringWriteHead(view, ringOff) - ringReadHead(view, ringOff)) >>> 0;
+	return (commandRingWriteHead(view, ringOff) - commandRingReadHead(view, ringOff)) >>> 0;
 }
 
 /** Push a command into the ring from the TS side. Production producer is
@@ -141,9 +141,9 @@ export function pushCommand(
 	opCode: number,
 	payload: Uint8Array
 ): boolean {
-	// Symmetric with `pushEvent` / `CommandDispatcher.on` / `checkRingOpCode`:
+	// Symmetric with `pushEvent` / `CommandDispatcher.on` / `assertRingOpCode`:
 	// opCode 0 is the empty-slot marker and a non-u8 corrupts the slot byte. The
-	// production producer is WASM (op-codes ≥ 1), so this guards the TS test/host
+	// production producer is WASM (op-codes ≥ 1), so this guards the TS test and host
 	// producer for parity.
 	if (opCode === COMMAND_OP_EMPTY) {
 		throw new CommandRingError(`command opCode must be > 0 (0 is reserved as the empty-slot marker)`);
@@ -156,9 +156,9 @@ export function pushCommand(
 			`command payload must be ${COMMAND_RING_SLOT_BYTES - 1} bytes (got ${payload.byteLength})`
 		);
 	}
-	const writeHead = ringWriteHead(view, ringOff);
-	const readHead = ringReadHead(view, ringOff);
-	const capacity = ringCapacitySlots(view, ringOff);
+	const writeHead = commandRingWriteHead(view, ringOff);
+	const readHead = commandRingReadHead(view, ringOff);
+	const capacity = commandRingCapacitySlots(view, ringOff);
 	if ((writeHead - readHead) >>> 0 >= capacity) {
 		view.setUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.overflow_flag, 1, true);
 		return false;
@@ -168,7 +168,7 @@ export function pushCommand(
 	view.setUint8(slotOff, opCode);
 	// boundary: TypedArray interop. Materialise a payload-sized view at the
 	// slot's payload region and copy in. The DataView is owned by the
-	// caller; reads/writes through the slot's own DataView would work but
+	// caller. Reads and writes through the slot's own DataView would work but
 	// would require a fresh DataView per slot, so we use Uint8Array.set
 	// which V8 specialises well.
 	const dest = new Uint8Array(view.buffer, slotOff + 1, COMMAND_RING_SLOT_BYTES - 1);
@@ -177,7 +177,7 @@ export function pushCommand(
 	return true;
 }
 
-/** Read one command from the ring. Returns opCode (0 = empty/no
+/** Read one command from the ring. Returns opCode (0 = empty, no
  * command) and fills `outPayload` (15 bytes) with the slot's payload.
  * When 0 is returned, `outPayload` is untouched. */
 export function popCommand(view: DataView, ringOff: number, outPayload: Uint8Array): number {
@@ -186,10 +186,10 @@ export function popCommand(view: DataView, ringOff: number, outPayload: Uint8Arr
 			`outPayload must be ${COMMAND_RING_SLOT_BYTES - 1} bytes (got ${outPayload.byteLength})`
 		);
 	}
-	const writeHead = ringWriteHead(view, ringOff);
-	const readHead = ringReadHead(view, ringOff);
+	const writeHead = commandRingWriteHead(view, ringOff);
+	const readHead = commandRingReadHead(view, ringOff);
 	if (writeHead === readHead) return COMMAND_OP_EMPTY;
-	const capacity = ringCapacitySlots(view, ringOff);
+	const capacity = commandRingCapacitySlots(view, ringOff);
 	const slotIdx = readHead & (capacity - 1);
 	const slotOff = ringOff + COMMAND_RING_HEADER_BYTES + slotIdx * COMMAND_RING_SLOT_BYTES;
 	const opCode = view.getUint8(slotOff);

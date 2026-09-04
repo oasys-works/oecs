@@ -16,11 +16,11 @@ describe("Column buffer invalidation", () => {
 	// Columns are TypedArrays over a single SAB. A grow
 	// allocs a fresh SAB, copies live rows forward, and `refreshViews`
 	// repoints every `BufferBackedColumn._buf` at the new SAB. The contract
-	// below (a reference taken before the grow retains pre-grow values;
-	// writes through it don't affect live data) is preserved — the stale
-	// reference is just a view over the now-unreferenced old SAB instead
+	// below (a reference taken before the grow retains pre-grow values
+	// writes through it don't affect live data) is preserved, the stale
+	// reference is only a view over the now-unreferenced old SAB instead
 	// of a stand-alone heap buffer.
-	it("get_column returns STALE TypedArray after archetype grows past capacity", () => {
+	it("get_column returns stale TypedArray after archetype grows past capacity", () => {
 		// Use small initial capacity to force reallocation quickly
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -36,12 +36,12 @@ describe("Column buffer invalidation", () => {
 		let staleX: Float64Array | null = null;
 		// White-box: needs the concrete column mutator, so iterate the
 		// `@internal` concrete archetype list rather than the public view.
-		for (const arch of q._nonEmpty()) {
-			staleX = arch.getColumn(Pos, "x", 0);
+		for (const arch of q.nonEmptyArchs()) {
+			staleX = arch.getColumnMut(Pos, "x", 0);
 		}
 		expect(staleX).not.toBeNull();
 
-		// Now add 10 more entities — forces the column to grow past 4 → 8 → 16
+		// Now add 10 more entities, forces the column to grow past 4 → 8 → 16
 		for (let i = 3; i < 13; i++) {
 			const e = world.spawn();
 			world.addComponent(e, Pos, { x: i, y: i * 10 });
@@ -49,15 +49,15 @@ describe("Column buffer invalidation", () => {
 
 		// Grab fresh column ref
 		let freshX: Float64Array | null = null;
-		for (const arch of q._nonEmpty()) {
-			freshX = arch.getColumn(Pos, "x", 0);
+		for (const arch of q.nonEmptyArchs()) {
+			freshX = arch.getColumnMut(Pos, "x", 0);
 		}
 
-		// The underlying buffer was reallocated — old ref should be a DIFFERENT object
+		// The underlying buffer was reallocated, old ref should be a different object
 		expect(freshX).not.toBe(staleX);
 
 		// The old ref still has the first 3 values (they were copied during grow)
-		// but it does NOT have the new values — it's stale
+		// but it does not have the new values. It's stale
 		expect(staleX![0]).toBe(0);
 		expect(staleX![1]).toBe(1);
 		expect(staleX![2]).toBe(2);
@@ -65,7 +65,7 @@ describe("Column buffer invalidation", () => {
 		// while fresh should have 5
 		expect(freshX![5]).toBe(5);
 
-		// CRITICAL: writing to stale ref does NOT affect the live data
+		// Critical: writing to stale ref does not affect the live data
 		staleX![0] = 999;
 		expect(freshX![0]).toBe(0); // live data unaffected
 		expect(world.getField(q.archetypes[0].entityIds[0] as EntityID, Pos, "x")).toBe(0);
@@ -80,7 +80,7 @@ describe("Column buffer invalidation", () => {
 		world.addComponent(e1, Pos, { x: 42, y: 84 });
 
 		// Create a ref for e1 in the [Pos]-only archetype
-		// The ref snapshots .buf pointers at creation time
+		// the ref snapshots .buf pointers at creation time
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
@@ -89,7 +89,7 @@ describe("Column buffer invalidation", () => {
 				expect(ref.x).toBe(42);
 
 				// Now cause e1 to transition to [Pos, Vel] archetype
-				// This is deferred, so ref should still work within this system
+				// this is deferred, so ref should still work within this system
 				ctx.commands.add(e1, Vel, { vx: 1, vy: 2 });
 
 				// ref should still read correctly (deferred, no transition yet)
@@ -102,7 +102,7 @@ describe("Column buffer invalidation", () => {
 		world.update(0);
 
 		// After flush, e1 moved to [Pos, Vel] archetype
-		// If someone held onto the ref across frames, it would be stale
+		// if someone held onto the ref across frames, it would be stale
 		expect(world.hasComponent(e1, Vel)).toBe(true);
 		expect(world.getField(e1, Pos, "x")).toBe(42);
 	});
@@ -112,7 +112,7 @@ describe("Column buffer invalidation", () => {
 // 2. Swap-and-pop correctness across many columns
 // ============================================================
 describe("Swap-and-pop multi-column integrity", () => {
-	it("destroying entity at row 0 with 5-field component: swapped entity has ALL fields correct", () => {
+	it("destroying entity at row 0 with 5-field component: swapped entity has all fields correct", () => {
 		const world = new ECS();
 		const Data = world.registerComponent(["a", "b", "c", "d", "e"] as const);
 
@@ -134,7 +134,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 		expect(world.getField(e1, Data, "d")).toBe(41);
 		expect(world.getField(e1, Data, "e")).toBe(51);
 
-		// e2 moved rows but ALL columns must have correct data
+		// e2 moved rows but all columns must have correct data
 		expect(world.getField(e2, Data, "a")).toBe(12);
 		expect(world.getField(e2, Data, "b")).toBe(22);
 		expect(world.getField(e2, Data, "c")).toBe(32);
@@ -179,7 +179,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 		expect(seen.get(100)).toBe(1000);
 		expect(seen.get(300)).toBe(3000);
 		expect(seen.get(400)).toBe(4000);
-		// Destroyed entity's data (200, 2000) should NOT appear
+		// Destroyed entity's data (200, 2000) should not appear
 		expect(seen.has(200)).toBe(false);
 	});
 
@@ -223,7 +223,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 // ============================================================
 // 3. Entity recycling and stale ID protection
 // ============================================================
-describe("Entity ID recycling — stale reference safety", () => {
+describe("Entity ID recycling, stale reference safety", () => {
 	it("stale ID after single recycle: is_alive returns false, has_component throws in dev", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -235,15 +235,15 @@ describe("Entity ID recycling — stale reference safety", () => {
 		world.despawn(e1);
 		world.flush();
 
-		// Create new entity — should recycle e1's index slot with bumped generation
+		// Create new entity, should recycle e1's index slot with bumped generation
 		const e2 = world.spawn();
 		world.addComponent(e2, Pos, { x: 999, y: 888 });
 
 		// isAlive correctly rejects stale ID
 		expect(world.isAlive(stale)).toBe(false);
 
-		// hasComponent is TOTAL: a stale id returns false in
-		// dev and prod alike — a "has" probe must be safe to ask about dead ids.
+		// hasComponent is total: a stale id returns false in
+		// dev and prod alike, a "has" probe must be safe to ask about dead ids.
 		expect(world.hasComponent(stale, Pos)).toBe(false);
 
 		// e2 should have its own data, not e1's
@@ -266,12 +266,12 @@ describe("Entity ID recycling — stale reference safety", () => {
 			world.flush();
 		}
 
-		// ALL 100 previous IDs should be dead
+		// All 100 previous IDs should be dead
 		for (const id of staleIds) {
 			expect(world.isAlive(id)).toBe(false);
 		}
 
-		// Create one more — it lives
+		// Create one more. It lives
 		const final = world.spawn();
 		expect(world.isAlive(final)).toBe(true);
 	});
@@ -287,12 +287,12 @@ describe("Entity ID recycling — stale reference safety", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				// Queue a destroy AND an add on the same entity. `flush()` runs
-				// structural changes (adds, then removes) BEFORE destructions, and
+				// Queue a destroy and an add on the same entity. `flush()` runs
+				// structural changes (adds, then removes) before destructions, and
 				// a deferred destroy keeps `e` alive until that later phase. So
-				// when adds flush, `e` is still alive and the add EXECUTES —
-				// transitioning `e` into [Pos, Vel]. flushDestroyed then runs and
-				// swap-and-pops that row out. The add is NOT skipped; the destroy
+				// when adds flush, `e` is still alive and the add executes,
+				// transitioning `e` into [Pos, Vel]. flushDestroys then runs and
+				// swap-and-pops that row out. The add is not skipped. The destroy
 				// reclaims its row afterwards.
 				ctx.commands.despawn(e);
 				ctx.commands.add(e, Vel, { vx: 10, vy: 20 });
@@ -317,7 +317,7 @@ describe("Entity ID recycling — stale reference safety", () => {
 });
 
 // ============================================================
-// 4. Deferred flush ordering — add-before-remove surprises
+// 4. Deferred flush ordering, add-before-remove surprises
 // ============================================================
 describe("Deferred flush ordering edge cases", () => {
 	it("remove then add same component (queue order): remove wins because adds flush first", () => {
@@ -343,14 +343,14 @@ describe("Deferred flush ordering edge cases", () => {
 		world.update(0);
 
 		// Flush order: adds first, then removes
-		// The add runs first: Vel already present → overwrites to {99,99}
+		// the add runs first: Vel already present → overwrites to {99,99}
 		// The remove runs second: strips Vel
-		// Net result: entity does NOT have Vel
+		// Net result: entity does not have Vel
 		expect(world.hasComponent(e, Vel)).toBe(false);
 		expect(world.hasComponent(e, Pos)).toBe(true);
 	});
 
-	it("two systems: sys1 adds C, sys2 removes C — removal wins", () => {
+	it("two systems: sys1 adds C, sys2 removes C, removal wins", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -411,7 +411,7 @@ describe("Deferred flush ordering edge cases", () => {
 });
 
 // ============================================================
-// 5. Rapid archetype transition chains — data survives many hops
+// 5. Rapid archetype transition chains, data survives many hops
 // ============================================================
 describe("Multi-hop archetype transitions", () => {
 	it("entity survives 20 add transitions: data preserved at every step", () => {
@@ -426,7 +426,7 @@ describe("Multi-hop archetype transitions", () => {
 		for (let i = 0; i < 20; i++) {
 			world.addComponent(e, comps[i], { v: (i + 1) * 111 });
 
-			// ALL previously-added components must still have correct values
+			// All previously-added components must still have correct values
 			for (let j = 0; j <= i; j++) {
 				expect(world.getField(e, comps[j], "v")).toBe((j + 1) * 111);
 			}
@@ -463,7 +463,7 @@ describe("Multi-hop archetype transitions", () => {
 			world.addComponent(e, comps[i], { v: (i + 1) * 9999 });
 		}
 
-		// ALL components present with correct values
+		// All components present with correct values
 		for (let i = 0; i < 10; i++) {
 			expect(world.hasComponent(e, comps[i])).toBe(true);
 			if (i % 2 === 0) {
@@ -489,7 +489,7 @@ describe("Multi-hop archetype transitions", () => {
 		// e1 and e2 are in same archetype [A]
 
 		world.addComponent(e1, B, { v: 10 });
-		// e1 moved to [A,B], e2 stays in [A] — but e2's row may have changed via swap-and-pop
+		// e1 moved to [A,B], e2 stays in [A], but e2's row may have changed via swap-and-pop
 
 		world.addComponent(e2, C, { v: 20 });
 		// e2 moved to [A,C]
@@ -538,7 +538,7 @@ describe("Query iteration edge cases", () => {
 		expect(total).toBe(2);
 	});
 
-	it("entity transitions OUT of matching archetype: query no longer yields it", () => {
+	it("entity transitions out of matching archetype: query no longer yields it", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -550,13 +550,13 @@ describe("Query iteration edge cases", () => {
 		const posVelQuery = world.query(Pos, Vel);
 		expect(posVelQuery.entityCount).toBe(1);
 
-		// Remove Vel — entity moves to [Pos] archetype
+		// Remove Vel, entity moves to [Pos] archetype
 		world.removeComponent(e, Vel);
 
-		// The [Pos,Vel] archetype is now empty — query skips empty archetypes
+		// The [Pos,Vel] archetype is now empty, query skips empty archetypes
 		expect(posVelQuery.entityCount).toBe(0);
 
-		// Re-add Vel — entity moves back
+		// Re-add Vel, entity moves back
 		world.addComponent(e, Vel, { vx: 99, vy: 88 });
 		expect(posVelQuery.entityCount).toBe(1);
 
@@ -583,7 +583,7 @@ describe("Query iteration edge cases", () => {
 		world.despawn(entities[1]);
 		world.flush();
 
-		// entityList should contain exactly {e0, e2, e3, e4} (in some order)
+		// rowEntityIds should contain exactly {e0, e2, e3, e4} (in some order)
 		const q = world.query(Pos);
 		const listed = new Set<number>();
 		q.forEach((arch) => {
@@ -604,7 +604,7 @@ describe("Query iteration edge cases", () => {
 // ============================================================
 // 7. Batch operations edge cases
 // ============================================================
-describe("Batch operations — data integrity", () => {
+describe("Batch operations, data integrity", () => {
 	it("batch_add preserves per-entity source data for shared columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -621,7 +621,7 @@ describe("Batch operations — data integrity", () => {
 		const srcArch = world.query(Pos).archetypes[0];
 		world.batchAddComponent(srcArch.id, Vel, { vx: 1, vy: 2 });
 
-		// Each entity should have its UNIQUE Pos values preserved (not clobbered)
+		// Each entity should have its unique Pos values preserved (not clobbered)
 		for (let i = 0; i < 10; i++) {
 			expect(world.getField(entities[i], Pos, "x")).toBe(i * 7);
 			expect(world.getField(entities[i], Pos, "y")).toBe(i * 13);
@@ -724,7 +724,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 				// Entity exists immediately (create is not deferred)
 				aliveInSystem = world.isAlive(createdEntity);
 
-				// But it should NOT appear in Pos query yet (add is deferred)
+				// But it should not appear in Pos query yet (add is deferred)
 				inQueryDuringSystem = posQuery.entityCount > 0;
 			}
 		});
@@ -788,7 +788,7 @@ describe("Archetype transition affects co-resident entities", () => {
 		const e2 = world.spawn();
 		world.addComponent(e2, A, { v: 300 });
 
-		// Move e0 to [A, B] — this removes e0 from [A] via swap-and-pop
+		// Move e0 to [A, B]. This removes e0 from [A] via swap-and-pop
 		// e2 (last) should swap into e0's old row
 		world.addComponent(e0, B, { v: 999 });
 
@@ -800,7 +800,7 @@ describe("Archetype transition affects co-resident entities", () => {
 		expect(world.getField(e1, A, "v")).toBe(200);
 		expect(world.getField(e2, A, "v")).toBe(300);
 
-		// Move e1 to [A, B] — e2 should swap again
+		// Move e1 to [A, B], e2 should swap again
 		world.addComponent(e1, B, { v: 888 });
 
 		expect(world.getField(e1, A, "v")).toBe(200);
@@ -825,7 +825,7 @@ describe("Archetype transition affects co-resident entities", () => {
 		world.addComponent(e2, A, { v: 30 });
 		world.addComponent(e2, B, { v: 31 });
 
-		// Remove B from e0 — e0 moves to [A], e2 swaps into e0's row in [A,B]
+		// Remove B from e0, e0 moves to [A], e2 swaps into e0's row in [A,B]
 		world.removeComponent(e0, B);
 
 		expect(world.getField(e0, A, "v")).toBe(10);
@@ -838,7 +838,7 @@ describe("Archetype transition affects co-resident entities", () => {
 });
 
 // ============================================================
-// 10. writeFields with partial/missing values
+// 10. writeFields with partial or missing values
 // ============================================================
 describe("Component value edge cases", () => {
 	it("overwriting component values in-place preserves other entities in same archetype", () => {
@@ -871,7 +871,7 @@ describe("Component value edge cases", () => {
 			entities.push(e);
 		}
 
-		// Destroy e0 — e4 swaps into row 0
+		// Destroy e0, e4 swaps into row 0
 		world.despawn(entities[0]);
 		world.flush();
 

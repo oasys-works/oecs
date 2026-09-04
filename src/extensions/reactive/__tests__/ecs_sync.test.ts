@@ -1,12 +1,12 @@
 /**
- * ecs_sync gate — the "unlock" proof on the REAL engine, not a mock world.
+ * ecs_sync gate, the "unlock" proof on the real engine, not a mock world.
  *
  * Asserts the acceptance criteria end-to-end through actual component
  * observers + change detection:
- *   - one changed entity in an N-entity world wakes exactly one row;
- *   - a quiet tick wakes nobody (publish-only-dirty);
- *   - spawn inserts a row, despawn deletes it (structural observers);
- *   - an equal-value re-publish wakes nobody (the map's content `eq`);
+ *   - one changed entity in an N-entity world wakes exactly one row
+ *   - a quiet tick wakes nobody (publish-only-dirty)
+ *   - spawn inserts a row, despawn deletes it (structural observers)
+ *   - an equal-value re-publish wakes nobody (the map's content `eq`)
  *   - one tick = one coalesced flush (`batchedUpdate`).
  */
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ import {
 } from "../ecs_sync";
 
 /** Build a world whose UPDATE system writes `Pos.x` for whatever eids the test
- * queues, and spawns/despawns whatever it queues — so the test scripts a tick. */
+ * queues, and spawns and despawns whatever it queues, so the test scripts a tick. */
 function makeWorld() {
 	const world = new ECS();
 	const Pos = world.registerComponent({ x: "f64" });
@@ -75,8 +75,8 @@ function makeWorld() {
 	return { world, Pos, toWrite, toSpawn, toDespawn, toDisable, toEnable, spawned };
 }
 
-describe("syncComponentToMap — real ECS → reactiveMap", () => {
-	// The publish-only-dirty guarantee must hold IDENTICALLY for both grains: the
+describe("syncComponentToMap, real ECS → reactiveMap", () => {
+	// The publish-only-dirty guarantee must hold identically for both grains: the
 	// "column" grain republishes the whole dirty archetype but value-eq collapses
 	// it to O(changed) wakes, exactly like "entity". Run the core gate for both.
 	it.each(["entity", "column"] as const)(
@@ -157,7 +157,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 		});
 		wakes = 0;
 
-		// Re-write the SAME value: onSet fires (tick-dirty), but the content eq
+		// Re-write the same value: onSet fires (tick-dirty), but the content eq
 		// means the per-key signal skips → the row wakes nobody.
 		toWrite.push({ eid: e, x: 5 });
 		batchedUpdate(world, 1 / 60);
@@ -191,7 +191,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 		world.addComponent(e, Pos, { x: 1 });
 		// The caller declares an unrelated extra read. Pre-fix, `{ reads:[def],
 		// ...access }` let `access.reads` OVERRIDE and drop `def`, so the projection's
-		// `getField(Pos)` — run under the observer's access in __DEV__ — threw. The
+		// `getField(Pos)`, run under the observer's access in __DEV__, threw. The
 		// merge keeps `def` in the read set, so seed + tick both succeed.
 		const sync = syncComponentToMap(world, Pos, (row) => row.field("x"), {
 			access: { reads: [Other] }
@@ -206,7 +206,7 @@ describe("syncComponentToMap — real ECS → reactiveMap", () => {
 });
 
 // ---------------------------------------------------------------------------
-// syncFieldsToMap — declarative field-list sugar (auto shallow eq)
+// syncFieldsToMap, declarative field-list sugar (auto shallow eq)
 // ---------------------------------------------------------------------------
 describe("syncFieldsToMap", () => {
 	it("projects the listed fields and auto-dedups by content (no hand-written eq)", () => {
@@ -235,7 +235,7 @@ describe("syncFieldsToMap", () => {
 		);
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2, hp: 100 });
-		// Project only {x, y}; hp is NOT in the field list.
+		// Project only {x, y}; hp is not in the field list.
 		const sync = syncFieldsToMap(world, Pos, ["x", "y"]);
 		world.startup();
 		expect(sync.map.get(e)).toEqual({ x: 1, y: 2 });
@@ -250,7 +250,7 @@ describe("syncFieldsToMap", () => {
 		wakes = 0;
 
 		// Writing hp marks the entity dirty (it's the same component), so the row is
-		// re-projected — but the projection {x,y} is unchanged, and the AUTO shallow
+		// re-projected, but the projection {x,y} is unchanged, and the auto shallow
 		// eq skips it. No hand-written comparator needed.
 		toWrite.push({ eid: e, field: "hp", v: 50 });
 		batchedUpdate(world, 1 / 60);
@@ -265,7 +265,7 @@ describe("syncFieldsToMap", () => {
 });
 
 // ---------------------------------------------------------------------------
-// syncJoinToMap — multi-component join (the staleness fix)
+// syncJoinToMap, multi-component join (the staleness fix)
 // ---------------------------------------------------------------------------
 /** World with Pos{x} + Health{hp}; a system writes either component or adds/
  * removes Health on a Pos entity, so a test can script a join scenario. */
@@ -312,8 +312,8 @@ function makeJoinWorld() {
 	return { world, Pos, Health, writePos, writeHp, addHp, removeHp, toDisable, toEnable };
 }
 
-describe("syncJoinToMap — multi-component join", () => {
-	it("a write to a SECONDARY joined component republishes the row (no staleness)", () => {
+describe("syncJoinToMap, multi-component join", () => {
+	it("a write to a secondary joined component republishes the row (no staleness)", () => {
 		const { world, Pos, Health, writeHp } = makeJoinWorld();
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 7 });
@@ -336,9 +336,9 @@ describe("syncJoinToMap — multi-component join", () => {
 		});
 		wakes = 0;
 
-		// Mutating ONLY Health must still republish the joined row. A single-
-		// component sync on Pos + a manual Health read would have gone stale here —
-		// this is the bug the join fixes.
+		// Mutating only Health must still republish the joined row. A single-
+		// component sync on Pos + a manual Health read would have gone stale here.
+		// This is the bug the join fixes.
 		writeHp.push({ eid: e, hp: 80 });
 		batchedUpdate(world, 1 / 60);
 		expect(wakes).toBe(1);
@@ -348,7 +348,7 @@ describe("syncJoinToMap — multi-component join", () => {
 	it("membership tracks the full join: appears on gaining the last component, drops on losing one", () => {
 		const { world, Pos, Health, addHp, removeHp } = makeJoinWorld();
 		const e = world.spawn();
-		world.addComponent(e, Pos, { x: 1 }); // has Pos only — NOT a join member
+		world.addComponent(e, Pos, { x: 1 }); // has Pos only. NOT a join member
 		const sync = syncJoinToMap(world, [Pos, Health], (row) => ({
 			x: row.field(Pos, "x"),
 			hp: row.field(Health, "hp")
@@ -367,12 +367,12 @@ describe("syncJoinToMap — multi-component join", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Entity enable/disable — disable = soft remove from the
+// Entity enable and disable, disable = soft remove from the
 // channel, enable = re-add. A disabled entity leaves the default-query result
 // set, so it leaves the map (flecs query-monitor / Bevy default-query-filter /
 // RxDB observable-query semantics). seedExisting seeds enabled members only.
 // ---------------------------------------------------------------------------
-describe("syncComponentToMap — enable/disable", () => {
+describe("syncComponentToMap, enable and disable", () => {
 	it.each(["entity", "column"] as const)(
 		"[grain=%s] disabling deletes the row; re-enabling republishes it",
 		(grain) => {
@@ -389,20 +389,20 @@ describe("syncComponentToMap — enable/disable", () => {
 			expect(sync.map.has(e)).toBe(false);
 
 			// A write while disabled does not resurrect it (column sweep is bounded by
-			// enabled rows; entity grain's dirty list still drains but the row is gone —
+			// enabled rows. Entity grain's dirty list still drains but the row is gone,
 			// the next enable republishes the current value).
 			toWrite.push({ eid: e, x: 9 });
 			batchedUpdate(world, 1 / 60);
 			expect(sync.map.has(e)).toBe(false);
 
-			// Re-enable → republished with its CURRENT value.
+			// Re-enable → republished with its current value.
 			toEnable.push(e);
 			batchedUpdate(world, 1 / 60);
 			expect(sync.map.get(e)).toBe(9);
 		}
 	);
 
-	it("seedExisting seeds enabled members only — a disabled entity is absent at attach", () => {
+	it("seedExisting seeds enabled members only, a disabled entity is absent at attach", () => {
 		const { world, Pos } = makeWorld();
 		const enabled = world.spawn();
 		const disabled = world.spawn();
@@ -439,7 +439,7 @@ describe("syncComponentToMap — enable/disable", () => {
 	});
 });
 
-describe("syncJoinToMap — enable/disable", () => {
+describe("syncJoinToMap, enable and disable", () => {
 	it("disabling a join member drops the row; re-enabling re-adds it", () => {
 		const { world, Pos, Health, toDisable, toEnable } = makeJoinWorld();
 		const e = world.spawn();
@@ -452,7 +452,7 @@ describe("syncJoinToMap — enable/disable", () => {
 		world.startup();
 		expect(sync.map.get(e)).toEqual({ x: 7, hp: 100 });
 
-		// Disable fires onDisable for BOTH joined components (dropRow is idempotent).
+		// Disable fires onDisable for both joined components (unpublish is idempotent).
 		toDisable.push(e);
 		batchedUpdate(world, 1 / 60);
 		expect(sync.map.has(e)).toBe(false);
@@ -463,10 +463,10 @@ describe("syncJoinToMap — enable/disable", () => {
 		expect(sync.map.get(e)).toEqual({ x: 7, hp: 100 });
 	});
 
-	it("completing the join on a DISABLED entity does not add it (on_add enabled-only)", () => {
+	it("completing the join on a disabled entity does not add it (on_add enabled-only)", () => {
 		// The bug the churn oracle caught: a live onAdd fires for a joined
-		// component ADDED to an already-disabled entity (a structural event is
-		// enable-agnostic), and `publishIfMember` checked only `hasComponent` — so it
+		// component added to an already-disabled entity (a structural event is
+		// enable-agnostic), and `publishIfMember` checked only `hasComponent`, so it
 		// published a row `query(Pos, Health)` excludes. Here `e` has Pos, is disabled,
 		// then gains Health (completing the join) while disabled: it must stay absent
 		// until enabled, then appear on enable.
@@ -482,7 +482,7 @@ describe("syncJoinToMap — enable/disable", () => {
 		expect(sync.map.has(e)).toBe(false); // not enabled, not a member
 
 		// Gain Health while disabled → join is structurally complete, but the entity is
-		// disabled, so the channel must NOT show it (it is absent from the default query).
+		// disabled, so the channel must not show it (it is absent from the default query).
 		addHp.push({ eid: e, hp: 50 });
 		batchedUpdate(world, 1 / 60);
 		expect(sync.map.has(e)).toBe(false);
@@ -494,15 +494,15 @@ describe("syncJoinToMap — enable/disable", () => {
 	});
 });
 
-describe("syncComponentToMap — enable/disable add path", () => {
+describe("syncComponentToMap, enable and disable add path", () => {
 	it.each(["entity", "column"] as const)(
-		"[grain=%s] adding the synced component to a DISABLED entity does not add it (on_add enabled-only)",
+		"[grain=%s] adding the synced component to a disabled entity does not add it (on_add enabled-only)",
 		(grain) => {
 			// The single-component twin of the join bug: onAdd fires for the
 			// synced component added to an already-disabled entity, and `publishEntity`
-			// had no enabled guard — so it published a row `query(Health)` excludes. Sync
-			// HEALTH (the addable component); `e` carries Pos, is disabled, then gains
-			// Health while disabled — it must stay absent until enabled.
+			// had no enabled guard, so it published a row `query(Health)` excludes. Sync
+			// health (the addable component); `e` carries Pos, is disabled, then gains
+			// Health while disabled. It must stay absent until enabled.
 			const { world, Pos, Health, addHp, toEnable } = makeJoinWorld();
 			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 }); // a real entity (carries Pos), no Health yet
@@ -523,14 +523,14 @@ describe("syncComponentToMap — enable/disable add path", () => {
 });
 
 // ---------------------------------------------------------------------------
-// syncSingletonToStruct — singleton entity → reactiveStruct.
-// The singleton/resource shape: per-FIELD channels (not per-entity), keyless. The
-// three load-bearing properties end-to-end through a real tick, plus seed / quiet /
-// dispose / disable+enable. A struct has no delete, so disable resets to defaults.
+// syncSingletonToStruct, singleton entity → reactiveStruct.
+// The singleton and resource shape: per-field channels (not per-entity), keyless. The
+// three load-bearing properties end-to-end through a real tick, plus seed and quiet /
+// dispose and disable+enable. A struct has no delete, so disable resets to defaults.
 // ---------------------------------------------------------------------------
-/** A world whose UPDATE system drains a write/disable/enable queue against ONE
+/** A world whose UPDATE system drains a write, disable and enable queue against one
  * reserved singleton entity carrying a `Session` component (netStatus enum-as-i32,
- * latency/fps f64) — the heterogeneous-but-numeric shape the mechanism targets. */
+ * latency and fps f64), the heterogeneous-but-numeric shape the mechanism targets. */
 function makeSingletonWorld() {
 	const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
 	const Session = world.registerComponent({ netStatus: "i32", latency: "f64", fps: "f64" });
@@ -570,7 +570,7 @@ function makeSingletonWorld() {
 
 const SESSION_FIELDS = ["netStatus", "latency", "fps"] as const;
 
-/** Attach per-field effects; returns a live wake-count record, zeroed after mount. */
+/** Attach per-field effects. Returns a live wake-count record, zeroed after mount. */
 function watchStruct(struct: { netStatus: number; latency: number; fps: number }): {
 	netStatus: number;
 	latency: number;
@@ -595,7 +595,7 @@ function watchStruct(struct: { netStatus: number; latency: number; fps: number }
 	return wakes;
 }
 
-describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () => {
+describe("syncSingletonToStruct, real ECS singleton → reactiveStruct", () => {
 	it("seeds the struct with the singleton's current field values on attach", () => {
 		const { world, Session, singleton } = makeSingletonWorld();
 		const sync = syncSingletonToStruct(world, Session, singleton, SESSION_FIELDS);
@@ -603,9 +603,9 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 		expect({ ...sync.struct }).toEqual({ netStatus: 2, latency: 20, fps: 60 });
 	});
 
-	it("`into` drives a pre-created (eager) struct — the module-scope channel seam", () => {
+	it("`into` drives a pre-created (eager) struct, the module-scope channel seam", () => {
 		const { world, Session, singleton, writes } = makeSingletonWorld();
-		// An eager struct created BEFORE the world/sync — the client UI seam shape.
+		// An eager struct created before the world and sync, the client UI seam shape.
 		const channel = reactiveStruct({ netStatus: 0, latency: 0, fps: 0 });
 		const sync = syncSingletonToStruct(world, Session, singleton, SESSION_FIELDS, {
 			into: channel
@@ -678,7 +678,7 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 
 	it("projects a subset of fields (channel only what the UI reads)", () => {
 		const { world, Session, singleton, writes } = makeSingletonWorld();
-		// Only latency; netStatus/fps are not in the field list.
+		// Only latency. NetStatus and fps are not in the field list.
 		const sync = syncSingletonToStruct(world, Session, singleton, ["latency"]);
 		world.startup();
 		expect(Object.keys(sync.struct)).toEqual(["latency"]);
@@ -722,7 +722,7 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 		world.startup();
 		const wakes = watchStruct(sync.struct);
 
-		// Disable → onDisable resets fields to defaults; onSet skips the disabled entity.
+		// Disable → onDisable resets fields to defaults. OnSet skips the disabled entity.
 		toDisable.push(singleton);
 		batchedUpdate(world, 1 / 60);
 		expect({ ...sync.struct }).toEqual({ netStatus: 0, latency: 0, fps: 0 });
@@ -733,7 +733,7 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 		batchedUpdate(world, 1 / 60);
 		expect(sync.struct.latency).toBe(0);
 
-		// Enable → onEnable republishes the entity's CURRENT values (latency now 77).
+		// Enable → onEnable republishes the entity's current values (latency now 77).
 		toEnable.push(singleton);
 		batchedUpdate(world, 1 / 60);
 		expect({ ...sync.struct }).toEqual({ netStatus: 2, latency: 77, fps: 60 });
@@ -741,19 +741,19 @@ describe("syncSingletonToStruct — real ECS singleton → reactiveStruct", () =
 });
 
 // ---------------------------------------------------------------------------
-// syncSingletonToArray — singleton entity → reactiveArray. The
-// ORDERED sibling of syncSingletonToStruct: positional slots (the army). Gates the
-// army's real delivery path — a HOST-SIDE setField (network callbacks write the
-// ArmyComposition OUTSIDE any system) drained into the channel at the next tick —
-// plus seed / into / per-slot isolation / coalescing / dispose, and the reset-to-
+// syncSingletonToArray, singleton entity → reactiveArray. The
+// ordered sibling of syncSingletonToStruct: positional slots (the army). Gates the
+// army's real delivery path, a host-side setField (network callbacks write the
+// ArmyComposition outside any system) drained into the channel at the next tick,
+// plus seed and into / per-slot isolation, coalescing and dispose, and the reset-to-
 // declared-initials behaviour (an empty slot is the channel's sentinel, not type 0).
 // ---------------------------------------------------------------------------
 const SLOT_FIELDS = ["s0", "s1", "s2"] as const;
 const EMPTY = 255; // an "empty slot" sentinel (cf. the army's EMPTY_SLOT = 0xff)
 
-/** A world with ONE singleton carrying a 3-slot `Army` component (u8 per slot),
+/** A world with one singleton carrying a 3-slot `Army` component (u8 per slot),
  * its slots initialised to EMPTY. An UPDATE system drains an in-tick write/disable/
- * enable queue; host-side writes go straight through `world.setField` in the test. */
+ * enable queue. Host-side writes go straight through `world.setField` in the test. */
 function makeSingletonArrayWorld() {
 	const world = new ECS({ deterministic: false });
 	const Army = world.registerComponent({ s0: "u8", s1: "u8", s2: "u8" });
@@ -791,7 +791,7 @@ function makeSingletonArrayWorld() {
 	return { world, Army, singleton, writes, toDisable, toEnable };
 }
 
-/** Attach a per-slot effect; returns a live wake-count array, zeroed after mount. */
+/** Attach a per-slot effect. Returns a live wake-count array, zeroed after mount. */
 function watchArray(array: ReactiveArray<number>, n: number): number[] {
 	const wakes = new Array<number>(n).fill(0);
 	root(() => {
@@ -806,7 +806,7 @@ function watchArray(array: ReactiveArray<number>, n: number): number[] {
 	return wakes;
 }
 
-describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => {
+describe("syncSingletonToArray, real ECS singleton → reactiveArray", () => {
 	it("seeds the array with the singleton's current slots on attach", () => {
 		const { world, Army, singleton } = makeSingletonArrayWorld();
 		const sync = syncSingletonToArray(world, Army, singleton, SLOT_FIELDS);
@@ -814,7 +814,7 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		expect(sync.array.snapshot()).toEqual([EMPTY, EMPTY, EMPTY]);
 	});
 
-	it("`into` drives a pre-created (eager) reactiveArray — the army channel seam", () => {
+	it("`into` drives a pre-created (eager) reactiveArray, the army channel seam", () => {
 		const { world, Army, singleton } = makeSingletonArrayWorld();
 		const channel = reactiveArray<number>([EMPTY, EMPTY, EMPTY]);
 		const sync = syncSingletonToArray(world, Army, singleton, SLOT_FIELDS, { into: channel });
@@ -823,9 +823,9 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		expect(channel.snapshot()).toEqual([EMPTY, EMPTY, EMPTY]);
 	});
 
-	it("a HOST-SIDE write (the army's network-callback path) reaches the channel next tick", () => {
-		// The army is written by network callbacks via world.setField OUTSIDE any
-		// system; the dirty mark drains at the next tick's onSet detection point.
+	it("a host-SIDE write (the army's network-callback path) reaches the channel next tick", () => {
+		// The army is written by network callbacks via world.setField outside any
+		// system. The dirty mark drains at the next tick's onSet detection point.
 		const { world, Army, singleton } = makeSingletonArrayWorld();
 		const sync = syncSingletonToArray(world, Army, singleton, SLOT_FIELDS);
 		world.startup();
@@ -892,13 +892,13 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		// oscillates on every enable↔disable cycle. Reject the misconfiguration at setup.
 		const { world, Army, singleton } = makeSingletonArrayWorld();
 
-		// Too SHORT: 2 slots for 3 fields.
+		// Too short: 2 slots for 3 fields.
 		const tooShort = reactiveArray<number>([EMPTY, EMPTY]);
 		expect(() =>
 			syncSingletonToArray(world, Army, singleton, SLOT_FIELDS, { into: tooShort })
 		).toThrow(/into\.length \(2\) must equal fields\.length \(3\)/);
 
-		// Too LONG: 4 slots for 3 fields.
+		// Too long: 4 slots for 3 fields.
 		const tooLong = reactiveArray<number>([EMPTY, EMPTY, EMPTY, EMPTY]);
 		expect(() =>
 			syncSingletonToArray(world, Army, singleton, SLOT_FIELDS, { into: tooLong })
@@ -907,7 +907,7 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 
 	it("accepts an `into` whose length equals fields.length and syncs normally", () => {
 		// The correctly-sized `into` is the supported path: no throw, and it drives the
-		// SAME array, seeds it, and publishes host-side writes at the next tick.
+		// same array, seeds it, and publishes host-side writes at the next tick.
 		const { world, Army, singleton } = makeSingletonArrayWorld();
 		const channel = reactiveArray<number>([EMPTY, EMPTY, EMPTY]); // length === fields.length
 		let sync!: ReturnType<typeof syncSingletonToArray>;
@@ -923,9 +923,9 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		expect(channel.snapshot()).toEqual([EMPTY, 3, EMPTY]); // synced
 	});
 
-	it("disable resets to the channel's DECLARED initials (the empty sentinel, not 0)", () => {
-		// The reset target is the eager channel's own defaults — for the army that's
-		// EMPTY per slot. A blind 0 would read as unit type 0 (a real unit).
+	it("disable resets to the channel's declared initials (the empty sentinel, not 0)", () => {
+		// The reset target is the eager channel's own defaults, for the army that's
+		// empty per slot. A blind 0 would read as unit type 0 (a real unit).
 		const { world, Army, singleton, writes, toDisable, toEnable } = makeSingletonArrayWorld();
 		const channel = reactiveArray<number>([EMPTY, EMPTY, EMPTY]);
 		const sync = syncSingletonToArray(world, Army, singleton, SLOT_FIELDS, { into: channel });
@@ -938,7 +938,7 @@ describe("syncSingletonToArray — real ECS singleton → reactiveArray", () => 
 		batchedUpdate(world, 1 / 60);
 		expect(sync.array.snapshot()).toEqual([EMPTY, EMPTY, EMPTY]); // sentinel, NOT [0,0,0]
 
-		// Enable republishes the singleton's CURRENT slots (s0 still 1 in the column).
+		// Enable republishes the singleton's current slots (s0 still 1 in the column).
 		toEnable.push(singleton);
 		batchedUpdate(world, 1 / 60);
 		expect(sync.array.snapshot()).toEqual([1, EMPTY, EMPTY]);
@@ -957,11 +957,11 @@ describe("shallow", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-sync coalescing — the Engine._tick contract. The per-sync "one batched
-// tick → 1 commit" gates above hold within ONE channel; this gates the property
-// ACROSS channels: a reader depending on several syncs' channels wakes once per
+// Cross-sync coalescing, the Engine._tick contract. The per-sync "one batched
+// tick → 1 commit" gates above hold within one channel. This gates the property
+// across channels: a reader depending on several syncs' channels wakes once per
 // batched tick, not once per changed field. This is exactly what
-// `Engine._tick`'s `batch(() => ecs.update(dt))` provides in production — the
+// `Engine._tick`'s `batch(() => ecs.update(dt))` provides in production, the
 // unbatched counter-case below is why the wrapper is load-bearing (an unbatched
 // kernel write flushes synchronously, so each publish wakes readers separately).
 // ---------------------------------------------------------------------------
@@ -1003,7 +1003,7 @@ describe("cross-sync coalescing (the batched-tick contract)", () => {
 		return { world, writes, net, clock };
 	}
 
-	it("a reader spanning two channels wakes ONCE per batched tick", () => {
+	it("a reader spanning two channels wakes once per batched tick", () => {
 		const { world, writes, net, clock } = makeTwoChannelWorld();
 		let wakes = 0;
 		root(() => {
@@ -1022,7 +1022,7 @@ describe("cross-sync coalescing (the batched-tick contract)", () => {
 		expect(wakes).toBe(1); // one tick → one commit, ACROSS syncs
 	});
 
-	it("an UNBATCHED update wakes the reader once per changed channel (why _tick batches)", () => {
+	it("an unbatched update wakes the reader once per changed channel (why _tick batches)", () => {
 		const { world, writes, net, clock } = makeTwoChannelWorld();
 		let wakes = 0;
 		root(() => {
@@ -1035,7 +1035,7 @@ describe("cross-sync coalescing (the batched-tick contract)", () => {
 		wakes = 0;
 
 		writes.push({ latency: 40, elapsed: 2.5 });
-		world.update(1 / 60); // bare update — each publish flushes synchronously
+		world.update(1 / 60); // bare update, each publish flushes synchronously
 		expect(wakes).toBe(2); // documents the torn behavior batch() removes
 	});
 });

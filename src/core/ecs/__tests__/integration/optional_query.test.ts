@@ -1,20 +1,20 @@
 /**
- * Optional query terms — fetch-if-present (Bevy `Option<&T>` / flecs `?`).
+ * Optional query terms, fetch-if-present (Bevy `Option<&T>` / flecs `?`).
  *
- * `q.optional(T)` fetches `T` when an entity has it but does NOT exclude
+ * `q.optional(T)` fetches `T` when an entity has it but does not exclude
  * entities that lack it: the matched set stays at the required terms, spanning
  * archetypes with and without `T`. Per archetype span the column is resolved via
- * `arch.getOptionalColumnRead(T, field)` — the column when present,
+ * `arch.getOptionalColumnRead(T, field)`, the column when present,
  * `undefined` when absent. These tests cover the issue's acceptance criteria:
- *  - iterate entities WITH and WITHOUT the optional component (both branches);
- *  - the present/absent accessor returns a column vs `undefined`;
- *  - read-only ⇒ a `stateHash` no-op;
+ *  - iterate entities with and without the optional component (both branches)
+ *  - the present or absent accessor returns a column vs `undefined`
+ *  - read-only ⇒ a `stateHash` no-op
  *  - the optional read is access-declared (`reads:[T]`), and the check fires even
- *    on the absent span;
- *  - composition with `and` / `not` / `anyOf` is symmetric — the term survives a
- *    dense compose in EITHER order (the silent-drop regression);
- *  - the term gates the fetch — `getOptionalColumnRead` throws in `__DEV__` if
- *    the component wasn't declared via `.optional(T)`;
+ *    on the absent span
+ *  - composition with `and` / `not` / `anyOf` is symmetric, the term survives a
+ *    dense compose in either order (the silent-drop regression);
+ *  - the term gates the fetch, `getOptionalColumnRead` throws in `__DEV__` if
+ *    the component wasn't declared via `.optional(T)`
  *  - cache identity.
  */
 
@@ -28,7 +28,7 @@ const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 const Health = ["hp"] as const;
 
-/** Empty dense access declaration; spread and override per test. */
+/** Empty dense access declaration. Spread and override per test. */
 function base(overrides: Partial<SystemConfig>): SystemConfig {
 	return {
 		reads: [],
@@ -44,7 +44,7 @@ function base(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 /** Register `sys` into UPDATE, start the world, return the run-one-tick thunk
- * (where the system's `fn` — and its access checks — fire). */
+ * (where the system's `fn`, and its access checks, fire). */
 function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	const sys = world.registerSystem(cfg);
 	world.addSystems(SCHEDULE.UPDATE, sys);
@@ -54,7 +54,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 
 describe("ECS optional query terms", () => {
 	//=========================================================
-	// Both branches: iterate with AND without the optional component
+	// Both branches: iterate with and without the optional component
 	//=========================================================
 
 	it("iterates entities with and without the optional component", () => {
@@ -62,7 +62,7 @@ describe("ECS optional query terms", () => {
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		// e1 has Vel, e2 does not — two archetypes ({Pos,Vel} and {Pos}).
+		// e1 has Vel, e2 does not, two archetypes ({Pos,Vel} and {Pos}).
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 10, vy: 20 });
@@ -91,7 +91,7 @@ describe("ECS optional query terms", () => {
 			}
 		});
 
-		// Matched set = required term (Pos) → BOTH entities iterate.
+		// Matched set = required term (Pos) → both entities iterate.
 		expect(visited.sort()).toEqual([e1, e2].sort());
 		expect(withVel).toEqual([e1]);
 		expect(withoutVel).toEqual([e2]);
@@ -131,7 +131,7 @@ describe("ECS optional query terms", () => {
 		});
 		expect(presentBefore).toEqual([false]);
 
-		// Give it Vel — host-side immediate add, then the optional column resolves.
+		// Give it Vel, host-side immediate add, then the optional column resolves.
 		world.addComponent(e, Vel, { vx: 7, vy: 8 });
 
 		let presentAfter = false;
@@ -238,12 +238,12 @@ describe("ECS optional query terms", () => {
 		expect(tick).toThrow(/system 'undeclared_optional'.*read.*didn't declare/);
 	});
 
-	it("access check fires on the absent span, not just the present one", () => {
+	it("access check fires on the absent span, not only the present one", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 
-		// Only a {Pos} entity exists — the optional Vel column is ALWAYS absent,
+		// Only a {Pos} entity exists, the optional Vel column is always absent,
 		// so the check must run before the absent short-circuit to fire here.
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
@@ -280,7 +280,7 @@ describe("ECS optional query terms", () => {
 
 		expect(first).toBe(second); // same (parent_id, cid) → cached
 		expect(first).not.toBe(plain); // distinct identity from the plain query
-		// Same matched archetype set as the plain query (optional doesn't narrow).
+		// same matched archetype set as the plain query (optional doesn't narrow).
 		expect(first.archetypes).toBe(plain.archetypes);
 	});
 
@@ -296,13 +296,13 @@ describe("ECS optional query terms", () => {
 		expect(multi).toBe(chained);
 	});
 
-	it("composes with and / not while keeping the optional fetch", () => {
+	it("composes with `and` and `not` while it keeps the optional fetch", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
 		const Hp = world.registerComponent(Health, "i32");
 
-		// Require Pos AND Hp, exclude nothing extra, fetch Vel if present.
+		// Require Pos and Hp, exclude nothing extra, fetch Vel if present.
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 1 });
 		world.addComponent(e1, Hp, { hp: 100 });
@@ -331,7 +331,7 @@ describe("ECS optional query terms", () => {
 
 	//=========================================================
 	// Composition is symmetric: the optional term survives a dense compose
-	// in EITHER order (the order-dependent silent-drop regression).
+	// in either order (the order-dependent silent-drop regression).
 	//=========================================================
 
 	it("keeps the optional term when .optional() precedes .and() (the dropped order)", () => {
@@ -348,11 +348,11 @@ describe("ECS optional query terms", () => {
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Hp, { hp: 50 }); // no Vel
 
-		// optional FIRST, then and — the order that used to drop the term and
+		// optional first, then and, the order that used to drop the term and
 		// alias the plain `.and(Hp)` query.
 		const q = world.query(Pos).optional(Vel).and(Hp);
 
-		// The plain compose (no optional) is a DISTINCT object — proof the term
+		// The plain compose (no optional) is a distinct object, proof the term
 		// gave the composed query its own identity rather than collapsing onto it.
 		const plain = world.query(Pos).and(Hp);
 		expect(q).not.toBe(plain);
@@ -384,7 +384,7 @@ describe("ECS optional query terms", () => {
 		world.addComponent(e2, Pos, { x: 2, y: 2 });
 		world.addComponent(e2, Hp, { hp: 9 }); // {Pos,Hp} → excluded by not(Hp)
 
-		// optional FIRST, then not(Hp): the term must survive, and the fetch must
+		// optional first, then not(Hp): the term must survive, and the fetch must
 		// not throw the dev-gate.
 		const q = world.query(Pos).optional(Vel).without(Hp);
 		const seen: number[] = [];
@@ -420,7 +420,7 @@ describe("ECS optional query terms", () => {
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 		world.addComponent(e, Vel, { vx: 1, vy: 1 });
 
-		// Plain query — never called .optional(Vel).
+		// Plain query, never called .optional(Vel).
 		const q = world.query(Pos);
 		expect(() =>
 			q.forEach((arch) => {
@@ -438,7 +438,7 @@ describe("ECS optional query terms", () => {
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
-		// Declared .optional(Hp), but fetches Vel — Vel is not in the scope.
+		// Declared .optional(Hp), but fetches Vel. Vel is not in the scope.
 		const q = world.query(Pos).optional(Hp);
 		expect(() =>
 			q.forEach((arch) => {
@@ -457,7 +457,7 @@ describe("ECS optional query terms", () => {
 		world.addComponent(e, Pos, { x: 1, y: 1 });
 		world.addComponent(e, Vel, { vx: 2, vy: 2 });
 
-		// .optional(Vel) declared; changed(Pos) wraps it. The changed-query
+		// .optional(Vel) declared. Changed(Pos) wraps it. The changed-query
 		// loop never entered an optional scope, so this fetch silently passed.
 		const cq = world.query(Pos).optional(Vel).changed(Pos);
 
@@ -476,7 +476,7 @@ describe("ECS optional query terms", () => {
 	});
 
 	//=========================================================
-	// Multi-arg dense compose is cached/stable on a non-dense receiver:
+	// Multi-arg dense compose is cached and stable on a non-dense receiver:
 	// folding through the single-arg cache stops _carry_nondense from
 	// minting a fresh query-id per call.
 	//=========================================================

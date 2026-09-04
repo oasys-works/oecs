@@ -1,41 +1,41 @@
 /**
  * A comparison of oecs with bitECS, koota, becsy, miniplex, harmony-ecs, wolf-ecs
  * and piecs, and with raw typed arrays as the limit. `cases.mjs::IMPLS` is the
- * authority on that list; this comment is not.
+ * authority on that list. This comment is not.
  *
  * The libraries come from `bench/vs/node_modules`. Install them with `npm ci` in
- * this directory, and NOT with `npm install`: `package.json` uses `^` ranges for
+ * this directory, and not with `npm install`: `package.json` uses `^` ranges for
  * four of them, and thus a plain install can give versions that are different from
  * the versions in `README.md`. `package-lock.json` pins the documented versions.
  *
  * The method, and the reason for each part of it:
  *
- *   ONE PROCESS FOR EACH MEASUREMENT OF A LIBRARY AND A CASE — refer to
+ *   One process for each measurement of a library and a case, refer to
  *     `child.mjs`. All the libraries in one process give many shapes at each
  *     measured call site. No library operates in that condition.
  *
- *   EACH ROUND CHANGES THE SEQUENCE OF THE LIBRARIES — round `r` starts the list
+ *   Each round changes the sequence of the libraries, round `r` starts the list
  *     of the libraries at offset `r`. Therefore no library is always first, when
  *     the page cache is warm and the CPU is cold. No library is always last, when
  *     the CPU is hot and its frequency is low. But each library receives an equal
- *     part of the slow changes ONLY IF `rounds % libraries === 0`. With fewer
+ *     part of the slow changes only if `rounds % libraries === 0`. With fewer
  *     rounds than libraries, the libraries at the end of the list are never first,
  *     and each library gets a different set of positions. The tool gives a warning
  *     for that condition. A measurement at 5 rounds and at 9 rounds moved no ratio
- *     of this table outside its own spread, so the effect is small here — but the
+ *     of this table outside its own spread, so the effect is small here, but the
  *     warning keeps the claim above true.
  *
- *   THE MEDIAN OF THE BEST VALUE OF EACH ROUND — in one round, the best value has
+ *   The median of the best value of each round, in one round, the best value has
  *     the least noise, because noise only adds time. The median across the rounds
  *     then removes the round that had a garbage collection, or an interruption from
  *     the scheduler, in a timed part.
  *
- *   THE TOOL SHOWS THE SPREAD — the range `[min..max]` across the rounds, as a
+ *   The tool shows the spread, the range `[min..max]` across the rounds, as a
  *     percentage of the median. A wide spread shows that you must not use this row.
  *     The tool shows the spread, and therefore one round with a low value cannot
  *     look like a result.
  *
- *   CALIBRATION WITH --null — the tool runs oecs in EVERY position of the library
+ *   Calibration with --null, the tool runs oecs in every position of the library
  *     list, with a different label in each position. Each row of that report must
  *     show approximately 1.00×. A different value is the bias of the equipment, and
  *     it is also the limit of the method: the method cannot measure a difference
@@ -46,9 +46,9 @@
  *     approximately 3% on the ratios and much wider spreads on some rows. Use the
  *     full-width figure.
  *
- *   ABSENT, AND NOT EMULATED — if a library has no API for a case, the tool shows
- *     `—  (no API for this case)`. It writes no substitute, because a substitute
- *     measures itself. A measurement that FAILED is a different condition, and the
+ *   Absent, and not emulated. If a library has no API for a case, the tool shows
+ *     `none  (no API for this case)`. It writes no substitute, because a substitute
+ *     measures itself. A measurement that failed is a different condition, and the
  *     tool shows it as `failed`. The two must never look the same: an absent row is
  *     a statement about the library, and a failed row is a statement about this
  *     machine.
@@ -78,12 +78,12 @@ const SAMPLES = Number(flag("samples", 7));
 const ONLY = flag("case", null);
 const NULL_RUN = argv.includes("--null");
 
-// Derived from IMPLS rather than hand-listed: a hand-listed copy silently dropped
+// Derived from impls rather than hand-listed: a hand-listed copy silently dropped
 // three libraries that had already been added to `cases.mjs`, and the run looked
 // perfectly healthy without them.
 const ONLY_LIBS = flag("libs", null);
 const ALL_LIBS = Object.keys(IMPLS);
-// A null run puts oecs in EVERY position of the list, and not in two positions.
+// A null run puts oecs in every position of the list, and not in two positions.
 // The width of the list sets the number of measurements in a round, and thus the
 // length of a round and the heat that it makes. A two-wide null calibrated
 // conditions that no real run has, and it reported a limit that was too small.
@@ -104,7 +104,7 @@ if (ROUNDS % LIBS.length !== 0) {
 	);
 }
 
-// oecs is built once, and the tool measures the ARTIFACT of the package. Each
+// oecs is built once, and the tool measures the artifact of the package. Each
 // other library comes from `node_modules` as its author released it. Therefore
 // both sides of the comparison are a released build, and no library gets an
 // advantage from the form of its code. `dist.mjs` gives the reason that a bundle
@@ -126,9 +126,9 @@ const bundle = buildDist(FROM, path.join(outDir, `oecs.${tag}`));
 const results = new Map(); // `${label}|${case}` -> number[] of per-round bests
 const iters = new Map(); // case -> iters
 const checksums = new Map(); // `${label}|${case}` -> number, compared across libraries
-// Two different reasons for an empty cell, kept apart. `absent` is a statement
-// about the LIBRARY: it has no API for this case, and `child.mjs` says so. `failed`
-// is a statement about this MACHINE: the measurement did not run. An earlier
+// two different reasons for an empty cell, kept apart. `absent` is a statement
+// about the library: it has no API for this case, and `child.mjs` says so. `failed`
+// is a statement about this machine: the measurement did not run. An earlier
 // version put both into one set and printed "no API for this case" for both, and
 // thus a module that was not installed read as a gap in the design of a competitor.
 const absent = new Set();
@@ -143,7 +143,7 @@ function failureReason(err) {
 		.split("\n")
 		.map((l) => l.trim())
 		.filter(Boolean);
-	// The line where the error was THROWN, and not the source line that node echoes
+	// The line where the error was thrown, and not the source line that node echoes
 	// above it. Node prints `  throw new ERR_MODULE_NOT_FOUND(...)` before the real
 	// message, and that line names the code but says nothing about the cause.
 	const thrown = lines.find((l) => /^\w*Error\b[^\n]*:/.test(l));
@@ -167,9 +167,9 @@ for (let r = 0; r < ROUNDS; r++) {
 					{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd: here }
 				);
 			} catch (err) {
-				// The FIRST informative line, and not the last three. Node puts its own
+				// The first informative line, and not the last three. Node puts its own
 				// version banner at the end of a stack, so `slice(-3)` kept the banner
-				// and discarded the line that names the cause — `ERR_MODULE_NOT_FOUND`
+				// and discarded the line that names the cause, `ERR_MODULE_NOT_FOUND`
 				// for a library that is not installed, for example.
 				console.error(`  ! ${label}/${c} FAILED: ${failureReason(err)}`);
 				failed.set(key(label, c), failureReason(err));
@@ -209,10 +209,10 @@ const nsOf = (label, c) => {
 };
 
 console.log(
-	`\n${NULL_RUN ? "NULL CALIBRATION (oecs vs oecs — every ratio should read ~1.00×)" : "head-to-head"}` +
-		`  ·  ${ROUNDS} rounds × ${SAMPLES} samples, one process per measurement, rotated order`
+	`\n${NULL_RUN ? "NULL calibration (oecs vs oecs, every ratio should read ~1.00×)" : "head-to-head"}` +
+		`  ${ROUNDS} rounds × ${SAMPLES} samples, one process per measurement, rotated order`
 );
-console.log(`node ${process.version}  ·  ns/op, lower is better  ·  ratio = library ÷ oecs\n`);
+console.log(`node ${process.version}  ns/op, lower is better  ratio = library ÷ oecs\n`);
 
 const W = 12;
 for (const c of cases) {
@@ -224,19 +224,19 @@ for (const c of cases) {
 			const why = failed.get(key(label, c));
 			console.log(
 				why === undefined
-					? `   ${label.padEnd(W)}        —      (no API for this case)`
-					: `   ${label.padEnd(W)}        ✗      FAILED — ${why.slice(0, 90)}`
+					? `   ${label.padEnd(W)}       none     (no API for this case)`
+					: `   ${label.padEnd(W)}        ✗      FAILED. ${why.slice(0, 90)}`
 			);
 			continue;
 		}
-		// One round gives `min === max`, and thus a spread of 0.0% — which reads as
+		// One round gives `min === max`, and thus a spread of 0.0%, which reads as
 		// "very stable" when it means "one sample". Say which it is.
 		const spread = ((v.max - v.min) / v.med) * 100;
 		const ratio = base === null ? null : v.ns / base.ns;
 		console.log(
 			`   ${label.padEnd(W)} ${v.ns.toFixed(2).padStart(8)} ns` +
 				`   ${ratio === null ? "" : `${ratio.toFixed(2)}×`.padStart(7)}` +
-				`   ${v.rounds < 2 ? "spread  n/a  (1 round)" : `spread ${spread.toFixed(1).padStart(5)}%`}`
+				`   ${v.rounds < 2 ? "spread  none  (1 round)" : `spread ${spread.toFixed(1).padStart(5)}%`}`
 		);
 	}
 	console.log();
@@ -246,7 +246,7 @@ for (const c of cases) {
 // Every library ran `fn` the same number of times against the same starting
 // state, so for a case with a checksum all of them must agree. A disagreement
 // means someone iterated a different entity set or dropped writes, and any
-// timing comparison against them is meaningless — so this is reported loudly
+// timing comparison against them is meaningless, so this is reported loudly
 // rather than as a footnote.
 {
 	let checked = 0;
@@ -258,7 +258,7 @@ for (const c of cases) {
 		const [, ref] = vals[0];
 		for (const [l, v] of vals.slice(1)) {
 			// Float accumulation order differs between a dense column walk and an
-			// id-indexed walk, so an exact match is not required — a relative
+			// id-indexed walk, so an exact match is not required, a relative
 			// tolerance well below any real "wrong entity set" error is.
 			if (Math.abs(v - ref) > Math.abs(ref) * 1e-9 + 1e-9) {
 				bad.push(`${c}: ${vals[0][0]}=${ref} but ${l}=${v}`);
@@ -266,7 +266,7 @@ for (const c of cases) {
 		}
 	}
 	if (bad.length > 0) {
-		console.log(`\n!! CHECKSUM DISAGREEMENT — the libraries did not do the same work:`);
+		console.log(`\n!! CHECKSUM DISAGREEMENT, the libraries did not do the same work:`);
 		for (const b of bad) console.log(`   ${b}`);
 		console.log(`   Timings above are not comparable until this is fixed.\n`);
 	} else if (checked > 0) {
@@ -277,7 +277,7 @@ for (const c of cases) {
 // A failure is not a result. Say so once, loudly, so that a table with a hole in
 // it is never read as a complete comparison.
 if (failed.size > 0) {
-	console.log(`!! ${failed.size} measurement(s) FAILED — this table is not complete:`);
+	console.log(`!! ${failed.size} measurement(s) FAILED. This table is not complete:`);
 	for (const [k, why] of failed) console.log(`   ${k.replace("|", "/")}: ${why.slice(0, 120)}`);
 	console.log(`   A failed cell is a fault of this machine, and not a gap in a library.\n`);
 }

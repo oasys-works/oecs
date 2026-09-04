@@ -1,5 +1,5 @@
 /***
- * Compile-time typing assertions for the reactive bridge — never executed (see
+ * Compile-time typing assertions for the reactive bridge, never executed (see
  * `core/ecs/__tests__/typing_assertions.ts` for the mechanism: `tsc --noEmit`
  * validates every `@ts-expect-error` on each typecheck).
  ***/
@@ -24,11 +24,11 @@ function joinReaderAssertions(): void {
 	void v;
 
 	void syncJoinToMap(world, [Pos, Health], (row) => {
-		// @ts-expect-error — Mana is not part of this join: its changes aren't
+		// @ts-expect-error. Mana is not part of this join: its changes aren't
 		// subscribed, so reading it would go stale (the module-header footgun).
 		const stale = row.field(Mana, "mp");
 
-		// @ts-expect-error — 'hp' is a Health field, not a Pos field
+		// @ts-expect-error, 'hp' is a Health field, not a Pos field
 		const wrongField = row.field(Pos, "hp");
 
 		return stale + wrongField;

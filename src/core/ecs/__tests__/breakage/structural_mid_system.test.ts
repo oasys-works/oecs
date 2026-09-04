@@ -5,7 +5,7 @@ import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 describe("Structural changes mid-system are properly deferred", () => {
-	it("system adds component to entity it is iterating — does not appear until next update", () => {
+	it("system adds component to entity it is iterating, does not appear until next update", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -45,7 +45,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		expect(world.getField(e, Vel, "vy")).toBe(20);
 	});
 
-	it("system removes component during iteration — columns remain accessible for rest of loop", () => {
+	it("system removes component during iteration, columns remain accessible for rest of loop", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -84,11 +84,11 @@ describe("Structural changes mid-system are properly deferred", () => {
 		world.update(0);
 
 		// Deferred remove must not invalidate or shift columns mid-loop: both
-		// entities read their exact spawn values — px=[1,5], vx=[3,7] interleaved.
+		// entities read their exact spawn values, px=[1,5], vx=[3,7] interleaved.
 		expect(valuesRead).toEqual([1, 3, 5, 7]);
 	});
 
-	it("system adds component to entity A while iterating entity B in same archetype — no corruption", () => {
+	it("system adds component to entity A while iterating entity B in same archetype, no corruption", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -130,7 +130,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		expect(world.getField(eB, Pos, "y")).toBe(400);
 	});
 
-	it("system adds same component to 100 entities during one tick — all transition after flush", () => {
+	it("system adds same component to 100 entities during one tick, all transition after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -176,7 +176,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		}
 	});
 
-	it("chain of 3 systems: sys1 adds C, sys2+sys3 query C — should NOT find it until next update", () => {
+	it("chain of 3 systems: sys1 adds C, sys2+sys3 query C, should not find it until next update", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Marker = world.registerTag();
@@ -195,7 +195,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 			}
 		});
 
-		// sys2: queries for Marker — should NOT find entity this frame
+		// sys2: queries for Marker, should not find entity this frame
 		const markerQuery = world.query(Marker);
 		const sys2 = world.registerSystem({
 			...openAccess([Marker]),
@@ -224,13 +224,13 @@ describe("Structural changes mid-system are properly deferred", () => {
 		// After flush, Marker is present
 		expect(world.hasComponent(e, Marker)).toBe(true);
 
-		// On the NEXT update, sys2 and sys3 should see it
+		// On the next update, sys2 and sys3 should see it
 		world.update(0);
 		expect(sys2CountDuring).toBe(1);
 		expect(sys3CountDuring).toBe(1);
 	});
 
-	it("system creates 100 new entities with components during execution — all correct after update", () => {
+	it("system creates 100 new entities with components during execution, all correct after update", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -265,7 +265,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		}
 	});
 
-	it("system adds then removes same component (both deferred) — component absent after flush", () => {
+	it("system adds then removes same component (both deferred), component absent after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Marker = world.registerTag();
@@ -286,8 +286,8 @@ describe("Structural changes mid-system are properly deferred", () => {
 		world.startup();
 		world.update(0);
 
-		// ECS flushes adds first, then removes — so add Marker, then remove Marker.
-		// Result: entity does NOT have Marker.
+		// ECS flushes adds first, then removes, so add Marker, then remove Marker.
+		// Result: entity does not have Marker.
 		expect(world.hasComponent(e, Marker)).toBe(false);
 		// Entity should still be alive and retain Pos
 		expect(world.isAlive(e)).toBe(true);

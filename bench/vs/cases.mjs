@@ -4,22 +4,22 @@
  *
  * There is one factory for each library, and each factory returns
  * `{ [caseName]: {fn, iters, setup?, check?} }`. Each implementation obeys one
- * rule: USE THE METHOD THAT THE LIBRARY ITSELF RECOMMENDS. Therefore each library
+ * rule: Use the method that the library itself recommends. Therefore each library
  * gets the fastest path for access in its own documentation. The cases do not use
  * one common form, because a common form gives an advantage to the library that it
  * fits. If a library keeps no component data itself (piecs), the tool measures the
  * typed arrays that the library requires from the caller.
  *
- * That rule has a second half, and the two halves can disagree. A METHOD that the
- * documentation recommends is not always a CALL to the library. miniplex holds an
+ * That rule has a second half, and the two halves can disagree. A method that the
+ * documentation recommends is not always a call to the library. miniplex holds an
  * entity as a plain object, and thus a user tests for a component with a property
  * read. But miniplex also has `Bucket.has(entity)`, and wolf-ecs is reported as
  * absent for the same case because it has no equivalent. The rule is applied the
- * same way in both places: where the library HAS a membership call, the case uses
+ * same way in both places: where the library has a membership call, the case uses
  * that call. Refer to the note above the miniplex `has` case.
  *
  * The set of cases includes a case only if all the libraries can do the same work.
- * Therefore the set does NOT include relations, observers, change detection or
+ * Therefore the set does not include relations, observers, change detection or
  * snapshots. Most of the libraries have none of these functions. A comparison
  * of features must include them, but a benchmark cannot.
  *
@@ -34,10 +34,10 @@ const FRAG_BITS = 6; // 2^6 = 64 archetype variants
 const FRAG_ARCH = 1 << FRAG_BITS;
 const FRAG_PER = Math.floor(N / FRAG_ARCH);
 
-/** The accumulator of the last timed loop. Each `fn` that only READS writes its sum
+/** The accumulator of the last timed loop. Each `fn` that only reads writes its sum
  * here, so that the engine cannot remove the loop as dead code.
  *
- * `read_by_id` and `has` also use it as their CHECKSUM (`check: () => sink`). That
+ * `read_by_id` and `has` also use it as their checksum (`check: () => sink`). That
  * is correct, because `child.mjs` makes one process for one library and one case:
  * no other case can write `sink` in that process, and `check` runs after the last
  * sample. Both cases must give exactly `20 * N`. Each library seeds `x = 1` for
@@ -49,7 +49,7 @@ export let sink = 0;
 
 /**
  * Prevents the error that made the first value for bitECS incorrect. If a library
- * uses the ENTITY ID as the index of its component storage, the arrays must have the
+ * uses the entity ID as the index of its component storage, the arrays must have the
  * size of the highest id, and not the size of the number of entities. A store to an
  * index outside a typed array does not throw an error, and it does not write the
  * value. It removes the value, and it also makes the engine deoptimize the loop.
@@ -83,7 +83,7 @@ export function oecsCases(lib) {
 			iters: 100 * N,
 			fn: () => {
 				for (let r = 0; r < 100; r++) {
-					q.eachChunk((cols, count) => {
+					q.forEachChunk((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						const { vx, vy } = cols.read(Vel);
 						for (let i = 0; i < count; i++) {
@@ -95,7 +95,7 @@ export function oecsCases(lib) {
 			},
 			check: () => {
 				let s = 0;
-				q.eachChunk((cols, count) => {
+				q.forEachChunk((cols, count) => {
 					const { x } = cols.read(Pos);
 					for (let i = 0; i < count; i++) s += x[i];
 				});
@@ -117,7 +117,7 @@ export function oecsCases(lib) {
 		const q = ecs.query(Pos);
 		// The case uses `x += 2` against columns with the initial value zero, and it
 		// does not use `x += y`. Each library here makes the initial value zero. But
-		// the libraries do NOT all give a method to set a column at the spawn: the
+		// the libraries do not all give a method to set a column at the spawn: the
 		// `Entity.make` function of harmony with a tag in the type does not do it.
 		// Therefore a constant increment is the only form that gives a checksum that
 		// you can compare across all the libraries. This case measures the dispatch
@@ -127,7 +127,7 @@ export function oecsCases(lib) {
 			iters: 300 * FRAG_PER * FRAG_ARCH,
 			fn: () => {
 				for (let r = 0; r < 300; r++) {
-					q.eachChunk((cols, count) => {
+					q.forEachChunk((cols, count) => {
 						const { x } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += 2;
 					});
@@ -135,7 +135,7 @@ export function oecsCases(lib) {
 			},
 			check: () => {
 				let s = 0;
-				q.eachChunk((cols, count) => {
+				q.forEachChunk((cols, count) => {
 					const { x } = cols.read(Pos);
 					for (let i = 0; i < count; i++) s += x[i];
 				});
@@ -153,7 +153,7 @@ export function oecsCases(lib) {
 		// the `const { x } = Pos` that bitECS puts outside its own loop.
 		//
 		// This case used `getField` before. `getField` is the incorrect path for this
-		// shape, because it finds the NAME of the field at each call.
+		// shape, because it finds the name of the field at each call.
 		// `probe-fieldname.mjs` gives 6.5 ns to 7.9 ns for that operation alone. A
 		// cursor finds the offset of the column one time. Therefore a read of a field
 		// is one index operation. `probe-refcursor.mjs` gives 13.42 ns for a cursor,
@@ -239,10 +239,195 @@ export function oecsCases(lib) {
 	return cases;
 }
 
+// ── oecs, the id-indexed storage ────────────────────────────────────────────
+// the same library, with the data in sparse components: one typed array for
+// each field, indexed by entity, outside the archetype. That is the layout of
+// bitECS, wolf and piecs, so this column is the equal comparison for the rows
+// that read by id or move membership. The iteration rows walk the sparse set
+// through `forEachEntity` with a sparse cursor. The driver of that walk is the
+// cost, and not the gather through the id list: `probe-sparse-iter.mjs` splits
+// it. A dense tag, `Slot`, gives each entity a row, so the sparse walk has a
+// dense base to filter against, as the documented form asks.
+export function oecsSparseCases(lib) {
+	const { ECS } = lib;
+	const PRESIZED = { memory: { columnCapacity: Math.round(N * 1.2) } };
+	const PRESIZED_BULK = { memory: { columnCapacity: N * 6 } };
+	const cases = {};
+
+	{
+		const ecs = new ECS(PRESIZED);
+		const Slot = ecs.registerTag();
+		const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+		const Vel = ecs.registerSparseComponent({ vx: "f64", vy: "f64" });
+		const ids = ecs.spawnMany(ecs.template(Slot), N);
+		for (let i = 0; i < N; i++) {
+			ecs.addSparse(ids[i], Pos, { x: 0, y: 0 });
+			ecs.addSparse(ids[i], Vel, { vx: 1, vy: 1 });
+		}
+		const q = ecs.query(Slot).withSparse(Pos, Vel);
+		const p = ecs.sparseCursor(Pos);
+		const v = ecs.sparseCursorRead(Vel);
+		const step = (e) => {
+			p.at(e);
+			v.at(e);
+			p.x += v.vx * DT;
+			p.y += v.vy * DT;
+		};
+		cases.iter2 = {
+			iters: 100 * N,
+			fn: () => {
+				for (let r = 0; r < 100; r++) q.forEachEntity(step);
+			},
+			check: () => {
+				let s = 0;
+				q.forEachEntity((e) => {
+					p.at(e);
+					s += p.x;
+				});
+				return s;
+			},
+		};
+	}
+
+	{
+		const ecs = new ECS(PRESIZED);
+		const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+		const tags = [];
+		for (let i = 0; i < FRAG_BITS; i++) tags.push(ecs.registerTag());
+		const Slot = ecs.registerTag();
+		for (let mask = 0; mask < FRAG_ARCH; mask++) {
+			const items = [Slot];
+			for (let b = 0; b < FRAG_BITS; b++) if (mask & (1 << b)) items.push(tags[b]);
+			const ids = ecs.spawnMany(ecs.template(...items), FRAG_PER);
+			for (let i = 0; i < ids.length; i++) ecs.addSparse(ids[i], Pos, { x: 0, y: 0 });
+		}
+		const q = ecs.query(Slot).withSparse(Pos);
+		const p = ecs.sparseCursor(Pos);
+		const step = (e) => {
+			p.at(e);
+			p.x += 2;
+		};
+		cases.iter_frag = {
+			iters: 300 * FRAG_PER * FRAG_ARCH,
+			fn: () => {
+				for (let r = 0; r < 300; r++) q.forEachEntity(step);
+			},
+			check: () => {
+				let s = 0;
+				q.forEachEntity((e) => {
+					p.at(e);
+					s += p.x;
+				});
+				return s;
+			},
+		};
+	}
+
+	{
+		const ecs = new ECS(PRESIZED);
+		const Slot = ecs.registerTag();
+		const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+		const ids = ecs.spawnMany(ecs.template(Slot), N);
+		for (let i = 0; i < N; i++) ecs.addSparse(ids[i], Pos, { x: 1, y: 1 });
+		// The sparse cursor is the read by id that the docs recommend for this
+		// layout: `at` writes the entity index, and a field read is one load.
+		const pos = ecs.sparseCursorRead(Pos);
+		cases.read_by_id = {
+			iters: 20 * N,
+			fn: () => {
+				let s = 0;
+				for (let r = 0; r < 20; r++)
+					for (let i = 0; i < N; i++) {
+						pos.at(ids[i]);
+						s += pos.x;
+					}
+				sink = s;
+			},
+			check: () => sink,
+		};
+		cases.has = {
+			iters: 20 * N,
+			fn: () => {
+				let s = 0;
+				for (let r = 0; r < 20; r++)
+					for (let i = 0; i < N; i++) s += ecs.hasSparse(ids[i], Pos) ? 1 : 0;
+				sink = s;
+			},
+			check: () => sink,
+		};
+	}
+
+	cases.spawn = {
+		iters: 3 * N,
+		setup: () => {
+			const ecs = new ECS(PRESIZED_BULK);
+			const Slot = ecs.registerTag();
+			const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+			const Vel = ecs.registerSparseComponent({ vx: "f64", vy: "f64" });
+			// The dense entry pre-sizes its columns so the allocator stays out of the
+			// timed part. The sparse columns grow with the highest member index, so
+			// the setup spawns the full population one time, gives the last entity
+			// both components, and despawns them all: the columns then cover every
+			// index the timed loop will reuse.
+			const t = ecs.template(Slot);
+			const warm = ecs.spawnMany(t, 3 * N);
+			ecs.addSparse(warm[warm.length - 1], Pos, { x: 0, y: 0 });
+			ecs.addSparse(warm[warm.length - 1], Vel, { vx: 0, vy: 0 });
+			for (let i = 0; i < warm.length; i++) ecs.despawn(warm[i]);
+			return { ecs, t, Pos, Vel, pv: { x: 1, y: 2 }, vv: { vx: 0, vy: 0 } };
+		},
+		fn: (s) => {
+			const { ecs, t, Pos, Vel, pv, vv } = s;
+			for (let i = 0; i < 3 * N; i++) {
+				const e = ecs.spawn(t);
+				ecs.addSparse(e, Pos, pv);
+				ecs.addSparse(e, Vel, vv);
+			}
+		},
+	};
+
+	cases.despawn = {
+		iters: N,
+		setup: () => {
+			const ecs = new ECS(PRESIZED);
+			const Slot = ecs.registerTag();
+			const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+			const ids = ecs.spawnMany(ecs.template(Slot), N);
+			for (let i = 0; i < N; i++) ecs.addSparse(ids[i], Pos, { x: 1, y: 1 });
+			return { ecs, ids };
+		},
+		fn: (s) => {
+			for (let i = 0; i < s.ids.length; i++) s.ecs.despawn(s.ids[i]);
+		},
+	};
+
+	cases.add_remove = {
+		iters: 10 * N,
+		setup: () => {
+			const ecs = new ECS(PRESIZED);
+			const Slot = ecs.registerTag();
+			const Pos = ecs.registerSparseComponent({ x: "f64", y: "f64" });
+			const Tag = ecs.registerSparseTag();
+			const ids = ecs.spawnMany(ecs.template(Slot), N);
+			for (let i = 0; i < N; i++) ecs.addSparse(ids[i], Pos, { x: 1, y: 1 });
+			return { ecs, ids, Tag };
+		},
+		fn: (s) => {
+			const { ecs, ids, Tag } = s;
+			for (let r = 0; r < 5; r++) {
+				for (let i = 0; i < ids.length; i++) ecs.addSparse(ids[i], Tag);
+				for (let i = 0; i < ids.length; i++) ecs.removeSparse(ids[i], Tag);
+			}
+		},
+	};
+
+	return cases;
+}
+
 // ── bitECS 0.4 ──────────────────────────────────────────────────────────────
-// Components are plain user-owned storage; SoA typed arrays are the documented
+// Components are plain user-owned storage. SoA typed arrays are the documented
 // fast shape. `query` returns a dense entity array, so the idiomatic hot loop is
-// an indexed walk over it — there is no chunked column API to use instead.
+// an indexed walk over it. There is no chunked column API to use instead.
 export function bitecsCases(lib) {
 	const {
 		createWorld,
@@ -258,9 +443,9 @@ export function bitecsCases(lib) {
 
 	{
 		const world = createWorld();
-		// SIZED FOR THE MAX ENTITY ID, NOT THE ENTITY COUNT. bitECS ids run 1..N, so
-		// a `Float64Array(N)` puts index N out of bounds — and an OOB typed-array
-		// store does not throw, it silently drops the write AND deoptimises the
+		// Sized for the largest entity id, not the entity count. bitECS ids run 1..N, so
+		// a `Float64Array(N)` puts index N out of bounds, and an oob typed-array
+		// store does not throw, it silently drops the write and deoptimises the
 		// enclosing loop. Getting this wrong reported bitECS 5× slower than it is.
 		// This is exactly what the cross-library checksum below exists to catch.
 		const CAP = N + 2;
@@ -374,7 +559,7 @@ export function bitecsCases(lib) {
 			const Vel = { vx: new Float64Array(3 * N + 1), vy: new Float64Array(3 * N + 1) };
 			return { world, Pos, Vel };
 		},
-		// `addComponents` (plural) applies both in one call — bitECS's own bundle path,
+		// `addComponents` (plural) applies both in one call, bitECS's own bundle path,
 		// and the fair counterpart to oecs spawning from a template. Two separate
 		// `addComponent` calls would charge bitECS an extra archetype move that its API
 		// does not require.
@@ -437,8 +622,8 @@ export function bitecsCases(lib) {
 
 // ── harmony-ecs ─────────────────────────────────────────────────────────────
 // Namespaced API. `Schema.makeBinary` is the SoA (TypedArray) storage class and
-// a query iterates `[entities, [columns…]]` per matched archetype — the closest
-// analogue to oecs's `eachChunk`, and what the README's own example uses.
+// a query iterates `[entities, [columns…]]` per matched archetype, the closest
+// analogue to oecs's `forEachChunk`, and what the README's own example uses.
 export function harmonyCases(lib) {
 	const { World, Schema, Entity, Query, Format } = lib;
 	const V2 = { x: Format.float64, y: Format.float64 };
@@ -454,7 +639,7 @@ export function harmonyCases(lib) {
 		// A harmony query is an array of `[entities, columns]` tuples, so both the
 		// README's `for..of` and a plain indexed walk are valid. The indexed form is
 		// used because it is the faster of the two available paths (the iterator
-		// allocation costs ~3× — see `probe-query.mjs`), and every library here gets
+		// allocation costs ~3×, see `probe-query.mjs`), and every library here gets
 		// its best documented path.
 		cases.iter2 = {
 			iters: 100 * N,
@@ -528,10 +713,10 @@ export function harmonyCases(lib) {
 			},
 			check: () => sink,
 		};
-		// `Entity.has` takes a TYPE (an array of schemas), not a single schema, and
-		// re-normalises it on every call — an allocation and a sort per probe. That
+		// `Entity.has` takes a type (an array of schemas), not a single schema, and
+		// re-normalises it on every call, an allocation and a sort per probe. That
 		// is the library's own code on its own documented path, so it is measured
-		// rather than worked around; the shape of the API is part of what is being
+		// rather than worked around. The shape of the API is part of what is being
 		// compared. The type array is hoisted so the loop is not also measuring a
 		// literal allocation the caller could have avoided.
 		const posType = [Pos];
@@ -602,7 +787,7 @@ export function harmonyCases(lib) {
 // ── wolf-ecs ────────────────────────────────────────────────────────────────
 // `defineComponent` returns the SoA storage directly, and `Query.forEach` walks
 // entity ids. Storage is indexed by entity id, so the hot loop is an id-indexed
-// walk — same shape as bitECS.
+// walk, same shape as bitECS.
 export function wolfCases(lib) {
 	const { ECS, types, all } = lib;
 	const cases = {};
@@ -703,7 +888,7 @@ export function wolfCases(lib) {
 			},
 			check: () => sink,
 		};
-		// wolf-ecs exposes no public per-entity membership test; the archetype
+		// wolf-ecs exposes no public per-entity membership test. The archetype
 		// mask check its own query path uses is protected. Reported as absent
 		// rather than emulated with a hand-rolled probe that would not be the
 		// library's own code.
@@ -776,7 +961,7 @@ export function wolfCases(lib) {
 }
 
 // ── piecs ───────────────────────────────────────────────────────────────────
-// piecs stores NO component data: `createComponentId()` mints a bit, and the
+// piecs stores no component data: `createComponentId()` mints a bit, and the
 // caller owns the arrays. So the storage measured here is host Float64Arrays
 // indexed by entity id, which is what the library's own README prescribes.
 // Queries are expressed as systems and iterated per archetype.
@@ -916,7 +1101,7 @@ export function piecsCases(lib) {
 		};
 	}
 
-	// `prefabricate` is piecs's own template API — an archetype handed to
+	// `prefabricate` is piecs's own template API, an archetype handed to
 	// `createEntity` so the entity lands in its final archetype directly, exactly
 	// what `ecs.spawn(template)` does for oecs. Two `addComponent` calls instead
 	// would charge piecs archetype moves its API lets the caller skip.
@@ -985,17 +1170,17 @@ export function piecsCases(lib) {
 }
 
 // ── koota ───────────────────────────────────────────────────────────────────
-// Traits are SoA: `getStore`/`useStores` hand back per-field arrays indexed BY
-// ENTITY ID, same storage shape as bitECS/wolf/piecs — so the hot loop is an
+// Traits are SoA: `getStore` and `useStores` hand back per-field arrays indexed by
+// Entity ID, same storage shape as bitECS/wolf/piecs, so the hot loop is an
 // id-indexed walk over the query's dense entity array. `useStores` is the
-// documented fast path; `updateEach` is the ergonomic one and is not used here.
-// Note the arrays are plain JS arrays, not TypedArrays — koota's own choice.
+// documented fast path. `updateEach` is the ergonomic one and is not used here.
+// Note the arrays are plain JS arrays, not TypedArrays, koota's own choice.
 export function kootaCases(lib) {
 	const { createWorld, trait, getStore } = lib;
 	const cases = {};
 
-	// A koota entity VALUE packs a world id in its high bits, while the SoA stores
-	// are indexed by the bare entity id — so the store index is `entities[i].id()`,
+	// A koota entity value packs a world id in its high bits, while the SoA stores
+	// are indexed by the bare entity id, so the store index is `entities[i].id()`,
 	// exactly as the README's `useStores` example writes it. Indexing by the packed
 	// value instead reads `undefined` (NaN into the checksum) and turns the store
 	// array into a holey dictionary-mode array: it reported koota at 244 ms on
@@ -1063,7 +1248,7 @@ export function kootaCases(lib) {
 		const es = [];
 		for (let i = 0; i < N; i++) es.push(world.spawn(Pos));
 		const px = getStore(world, Pos);
-		// Bare ids resolved once at setup — the same thing the other id-indexed
+		// Bare ids resolved once at setup, the same thing the other id-indexed
 		// libraries hold, so the timed loop is a store read and not an unpack.
 		const idx = Array.from(world.query(Pos)).map((e) => e.id());
 		assertIdsFit(idx, px.x.length, "koota/read_by_id");
@@ -1138,10 +1323,10 @@ export function kootaCases(lib) {
 }
 
 // ── miniplex ────────────────────────────────────────────────────────────────
-// Object-based (AoS), by design: an entity IS a plain object and an archetype
+// Object-based (AoS), by design: an entity is a plain object and an archetype
 // holds references to those objects. There are no columns to walk, so the hot
 // loop dereferences one object per entity. That is not a handicap imposed by this
-// harness — it is the library's storage model, and the reason it is in the table.
+// harness. It is the library's storage model, and the reason it is in the table.
 export function miniplexCases(lib) {
 	const { World } = lib;
 	const cases = {};
@@ -1172,7 +1357,7 @@ export function miniplexCases(lib) {
 
 	{
 		const world = new World();
-		// miniplex archetypes are keyed by component NAME presence, so 6 optional
+		// miniplex archetypes are keyed by component name presence, so 6 optional
 		// tag keys give the same 64 combinations the other libraries get from tags.
 		for (let mask = 0; mask < FRAG_ARCH; mask++) {
 			for (let k = 0; k < FRAG_PER; k++) {
@@ -1206,12 +1391,12 @@ export function miniplexCases(lib) {
 		// query by its configuration, so a call inside the loop would measure that
 		// cache. Every other library also gets its accessor before the loop.
 		//
-		// `connect()` is NECESSARY, and it is not an optimization. A miniplex query
+		// `connect()` is necessary, and it is not an optimization. A miniplex query
 		// connects to the world only when something reads its entities, and `has()`
 		// does not do that read. Therefore a query that nothing iterated first reports
 		// `has() === false` for every entity, and the loop then measures a search of an
-		// EMPTY bucket. That condition is fast and it is meaningless. The cross-library
-		// checksum found it: the sum was 0 where every other library gave 20·N.
+		// empty bucket. That condition is fast and it is meaningless. The cross-library
+		// checksum found it: the sum was 0 where every other library gave 20 × N.
 		const q = world.with("pos").connect();
 		cases.read_by_id = {
 			iters: 20 * N,
@@ -1222,19 +1407,20 @@ export function miniplexCases(lib) {
 			},
 			check: () => sink,
 		};
-		// `Query.has(entity)` is miniplex's OWN membership call: `Query` extends
+		// `Query.has(entity)` is miniplex's own membership call: `Query` extends
 		// `Bucket`, and `Bucket.has` is documented as "returns true if the bucket
 		// contains the given entity".
 		//
 		// This case read `es[i].pos !== undefined` before. That is hand-written user
-		// code and not a call to miniplex, and it made miniplex the fastest library in
-		// this row by a large factor. wolf-ecs is reported as ABSENT for this same case,
-		// because it has no public membership call — so the two libraries were judged by
-		// two different rules, and the rule at the top of this file says that a case
-		// must not write a substitute. miniplex HAS the call, so the case uses it.
+		// code and not a call to miniplex, and it made miniplex the fastest library
+		// in this row by a large factor. wolf-ecs is reported as absent for this
+		// same case, because it has no public membership call. So the two libraries
+		// were judged by two different rules. The rule at the top of this file says
+		// that a case must not write a substitute. miniplex has the call, so the
+		// case uses it.
 		//
 		// The property read is not wrong for a miniplex user: an entity is a plain
-		// object, and a property read is the natural idiom. But it prices the LAYOUT,
+		// object, and a property read is the natural idiom. But it prices the layout,
 		// and this row prices a membership API. `README.md` records both, and it records
 		// that the property read is much faster than the call.
 		cases.has = {
@@ -1278,7 +1464,7 @@ export function miniplexCases(lib) {
 			// Plant the "tag" query outside the timed part. oecs, bitECS, harmony, wolf,
 			// piecs and koota all put their target archetype in the setup, and miniplex
 			// did not: the first `addComponent` inside the loop made the query and its
-			// bucket. The cost is small against 10·N operations, but this file compares
+			// bucket. The cost is small against 10 × N operations, but this file compares
 			// libraries only where they do equal work.
 			world.with("tag");
 			return { world, es };
@@ -1296,20 +1482,20 @@ export function miniplexCases(lib) {
 }
 
 // ── becsy ───────────────────────────────────────────────────────────────────
-// The closest design cousin here: declared read/write access, systems-scoped
+// The closest design cousin here: declared read and write access, systems-scoped
 // component access, and an SoA store behind an entity-accessor API. That model is
 // also why only three cases appear.
 //
-// `World.create` is ASYNC, and all component access must happen inside a system
-// with declared access — there is no host-side read path. So each case is a becsy
-// System, and the repetition loop lives INSIDE `execute()` so the measurement is
+// `World.create` is async, and all component access must happen inside a system
+// with declared access. There is no host-side read path. So each case is a becsy
+// System, and the repetition loop lives inside `execute()` so the measurement is
 // iteration cost rather than 100 scheduler dispatches (matching what every other
 // library's loop measures).
 //
-// ABSENT cases: `read_by_id`, `has`, `despawn`, `add_remove` all need stable
+// Absent cases: `read_by_id`, `has`, `despawn`, `add_remove` all need stable
 // per-entity handles across ticks, which becsy provides only via explicitly
 // `hold()`-ed references with their own lifetime rules. Emulating that would
-// measure the emulation, so those report `—`.
+// measure the emulation, so those report `none`.
 export async function becsyCases(lib) {
 	const { System, Type, World, component, system } = lib;
 	const cases = {};
@@ -1324,16 +1510,16 @@ export async function becsyCases(lib) {
 		component(Pos);
 		component(Vel);
 		let doneCheck = 0;
-		// ONE system, not two. becsy infers system precedence from declared access, and
+		// One system, not two. becsy infers system precedence from declared access, and
 		// a separate seeder that writes what the mover also writes is a precedence
 		// cycle it refuses to schedule. Seeding on the first tick from inside the mover
 		// sidesteps that without reaching for explicit ordering.
 		//
 		// `World.create` does not expose its system instances, so the system captures
-		// itself at construction — that handle is how the repetition count is set.
+		// itself at construction, that handle is how the repetition count is set.
 		let mv = null;
 		class Move extends System {
-			// becsy enforces declared access just as oecs does: creating a component
+			// becsy enforces declared access as oecs does: creating a component
 			// requires naming it writable first. `q.using(...).write` grants access
 			// without producing a result set.
 			granted = this.query((q) => q.using(Pos, Vel).write);
@@ -1367,7 +1553,7 @@ export async function becsyCases(lib) {
 		}
 		system(Move);
 		const world = await World.create({ defs: [Pos, Vel, Move], maxEntities: N * 4 });
-		// Tick 1 seeds; entities become query-visible on the next tick.
+		// Tick 1 seeds. Entities become query-visible on the next tick.
 		mv.reps = 0;
 		await world.execute();
 		await world.execute();
@@ -1446,9 +1632,10 @@ export function rawCases() {
 
 export const IMPLS = {
 	oecs: { kind: "bundle", make: oecsCases },
+	"oecs-sparse": { kind: "bundle", make: oecsSparseCases },
 	bitecs: { kind: "npm", pkg: "bitecs", make: bitecsCases },
 	koota: { kind: "npm", pkg: "koota", make: kootaCases },
-	// No `exports` map, and the `main` field is UMD — the ESM build has to be named
+	// no `exports` map, and the `main` field is umd, the ESM build has to be named
 	// explicitly or a bare import yields an empty namespace.
 	becsy: { kind: "npm", pkg: "@lastolivegames/becsy/index.js", make: becsyCases },
 	miniplex: { kind: "npm", pkg: "miniplex", make: miniplexCases },

@@ -3,7 +3,7 @@ import { SparseSet } from "../sparse_set";
 
 describe("SparseSet", () => {
   //=========================================================
-  // has / add
+  // has and add
   //=========================================================
 
   it("empty set has nothing", () => {
@@ -25,7 +25,7 @@ describe("SparseSet", () => {
     expect(s.has(6)).toBe(false);
   });
 
-  it("add is idempotent — duplicate add does not change size", () => {
+  it("add is idempotent, duplicate add does not change size", () => {
     const s = new SparseSet();
     s.add(5);
     s.add(5);
@@ -112,7 +112,7 @@ describe("SparseSet", () => {
     s.add(10);
     s.add(20);
     s.add(30);
-    // Delete first — 30 swaps into slot 0
+    // Delete first, 30 swaps into slot 0
     s.delete(10);
     // Now delete 30 (now at slot 0)
     s.delete(30);
@@ -175,7 +175,7 @@ describe("SparseSet", () => {
   });
 
   //=========================================================
-  // values / iteration
+  // values and iteration
   //=========================================================
 
   it("values exposes the dense array", () => {

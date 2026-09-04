@@ -1,5 +1,5 @@
 /**
- * Grouped ECS facades — behavior of the four secondary surfaces.
+ * Grouped ECS facades, behavior of the four secondary surfaces.
  *
  * Each facade wraps the Store entry points the pre-0.5 flat forms used
  * (flat forms removed in 0.5.0), so these pin the facade surfaces directly:
@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { ECS, eventKey, resourceKey, signalKey } from "../../index";
 
 describe("ECS grouped facades", () => {
-	it("relations: register/add/has/targetOf/traversal/compact", () => {
+	it("relations: register, add, has, targetOf, traversal and compact", () => {
 		const ecs = new ECS();
 		const ChildOf = ecs.relations.register();
 		const parent = ecs.spawn();
@@ -38,7 +38,7 @@ describe("ECS grouped facades", () => {
 		expect(ecs.relations.compact()).toBeGreaterThanOrEqual(0);
 	});
 
-	it("events: register/emit/read and signals", () => {
+	it("events: register, emit and read and signals", () => {
 		const ecs = new ECS();
 		const Damage = eventKey<{ amount: number }>("Damage");
 		const Ping = signalKey("Ping");
@@ -53,7 +53,7 @@ describe("ECS grouped facades", () => {
 		expect(reader.amount[0]).toBe(7);
 	});
 
-	it("resources: register/get/set/remove/has", () => {
+	it("resources: register, get, set, remove and has", () => {
 		const ecs = new ECS();
 		const Gold = resourceKey<number>("Gold");
 		ecs.resources.register(Gold, 10);
@@ -67,7 +67,7 @@ describe("ECS grouped facades", () => {
 		expect(ecs.resources.has(Gold)).toBe(false);
 	});
 
-	it("snapshots: deterministic flag + capture/restore round-trip", () => {
+	it("snapshots: deterministic flag + capture and restore round-trip", () => {
 		const ecs = new ECS({ deterministic: true });
 		expect(ecs.snapshots.deterministic).toBe(true);
 

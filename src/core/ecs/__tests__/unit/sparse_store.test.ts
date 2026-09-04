@@ -1,15 +1,15 @@
 /**
- * Sparse storage class — out-of-identity components.
+ * Sparse storage class, out-of-identity components.
  *
  * Covers the substrate slice's acceptance criteria:
- *  - CRUD (register / add / has / get / set / remove) through the public `ECS`.
- *  - The no-transition invariant: a sparse add/remove churn cycle leaves both
+ *  - CRUD (register, add, has, get, set and remove) through the public `ECS`.
+ *  - The no-transition invariant: a sparse add and remove churn cycle leaves both
  *    `archetype_count` and the entity's `archetype_id` unchanged.
  *  - Sparse data stays correct under entity destroy + swap-remove of dense
  *    neighbours (data is keyed by entity index, not archetype row).
  *  - Sparse registration does not consume a bitmask identity bit
  *    (`STORE_DESCRIPTOR_COMPONENT_LIMIT` independence).
- *  - Interaction with dense add/remove on the same entity.
+ *  - Interaction with dense add and remove on the same entity.
  */
 
 import { describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ describe("SparseComponentStore (substrate)", () => {
 		expect(store.getField(5, 0)).toBe(99);
 		expect(store.size).toBe(1);
 
-		expect(store.setField(5, 0, 42)).toBe(true);
+		expect(store.setField(5, 0, 42, 0)).toBe(true);
 		expect(store.getField(5, 0)).toBe(42);
 
 		expect(store.remove(5)).toBe(true);
@@ -60,12 +60,12 @@ describe("SparseComponentStore (substrate)", () => {
 
 	it("set_field on an absent index is a no-op returning false", () => {
 		const store = new SparseComponentStore(["hp"], ["f64"]);
-		expect(store.setField(3, 0, 5)).toBe(false);
+		expect(store.setField(3, 0, 5, 0)).toBe(false);
 	});
 });
 
 describe("ECS sparse component API", () => {
-	it("registers and does full CRUD through the public surface", () => {
+	it("registers and does full crud through the public surface", () => {
 		const ecs = new ECS();
 		const Health = ecs.registerSparseComponent(Hp);
 		const e = ecs.spawn();
@@ -110,7 +110,7 @@ describe("ECS sparse component API", () => {
 });
 
 describe("sparse no-transition invariant", () => {
-	it("add/remove churn leaves archetype_count and the entity's archetype_id stable", () => {
+	it("add and remove churn leaves archetype_count and the entity's archetype_id stable", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);
 		const Health = store.registerSparseComponent(Hp);
@@ -121,7 +121,7 @@ describe("sparse no-transition invariant", () => {
 		const archCountBefore = store.archetypeCount;
 		const archIdBefore = store.getEntityArchetype(e).id;
 
-		// One churn cycle, repeated — never touches the archetype graph.
+		// One churn cycle, repeated, never touches the archetype graph.
 		for (let i = 0; i < 5; i++) {
 			store.addSparse(e, Health, { hp: i });
 			expect(store.hasSparse(e, Health)).toBe(true);
@@ -143,11 +143,11 @@ describe("sparse independence from the bitmask identity", () => {
 		for (let i = 0; i < STORE_DESCRIPTOR_COMPONENT_LIMIT; i++) {
 			store.registerComponent({ ["f" + i]: "f64" });
 		}
-		// A 129th DENSE component must throw...
+		// A 129th dense component must throw...
 		expect(() => store.registerComponent({ overflow: "f64" })).toThrow();
 
 		// ...but sparse components register freely past the cap, and plenty of
-		// them — they live in a separate id space outside the mask.
+		// them. They live in a separate id space outside the mask.
 		const e = store.createEntity();
 		for (let i = 0; i < 300; i++) {
 			const def = store.registerSparseComponent({ v: "f64" });
@@ -193,7 +193,7 @@ describe("sparse correctness under destroy + dense swap-remove", () => {
 		store.addSparse(e, Health, { hp: 7 });
 
 		store.destroyEntityDeferred(e);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		// The freed index is recycled by the next createEntity.
 		const reused = store.createEntity();
@@ -213,7 +213,7 @@ describe("sparse correctness under destroy + dense swap-remove", () => {
 	});
 });
 
-describe("sparse interaction with dense add/remove on the same entity", () => {
+describe("sparse interaction with dense add and remove on the same entity", () => {
 	it("sparse data survives a dense archetype transition", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);
@@ -223,7 +223,7 @@ describe("sparse interaction with dense add/remove on the same entity", () => {
 		store.addSparse(e, Health, { hp: 100 });
 
 		// Adding then removing a dense component moves the entity across
-		// archetypes (a row copy) — the sparse store is out of identity and
+		// archetypes (a row copy), the sparse store is out of identity and
 		// untouched.
 		store.addComponent(e, Position, { x: 1, y: 1 });
 		expect(store.getSparseField(e, Health, "hp")).toBe(100);

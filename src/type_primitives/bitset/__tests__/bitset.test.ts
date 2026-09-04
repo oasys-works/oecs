@@ -3,7 +3,7 @@ import { BitSet } from "../bitset";
 
 describe("BitSet", () => {
   //=========================================================
-  // has / set / clear
+  // has, set and clear
   //=========================================================
 
   it("has returns false on empty bitset", () => {
@@ -185,7 +185,7 @@ describe("BitSet", () => {
   });
 
   //=========================================================
-  // copy / copyWithSet / copyWithClear
+  // copy, copyWithSet and copyWithClear
   //=========================================================
 
   it("copy creates an independent clone", () => {

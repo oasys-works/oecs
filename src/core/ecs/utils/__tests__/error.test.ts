@@ -1,7 +1,7 @@
 /**
- * `ECSError` — the ECS-domain `AppError` subclass, tested next to its
+ * `ECSError`, the ECS-domain `AppError` subclass, tested next to its
  * definition. The base-class (`AppError`) behaviour is covered by
- * `src/utils/__tests__/error.test.ts`; this file exercises only the
+ * `src/utils/__tests__/error.test.ts`. This file exercises only the
  * ECS-specific surface: the `ECS_ERROR` category, its default-message
  * behaviour, the always-operational contract, the `name`, the enum's
  * distinctness, and the `isEcsError` guard.

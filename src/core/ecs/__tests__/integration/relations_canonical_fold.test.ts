@@ -1,17 +1,17 @@
 /**
- * Relations — canonical fold is the single source of truth.
+ * Relations, canonical fold is the single source of truth.
  *
  * After the polymorphic `RelationStore` refactor, the canonical multi traversal
  * (sources ascending by index, each source's targets ascending by id, empty
- * sets skipped) lives in exactly one place — `RelationStore.for_each_canonical_-
- * target_set` — and `stateHash`, `snapshotRelations`, and `pairsOf` all fold
+ * sets skipped) lives in exactly one place, `RelationStore.for_each_canonical_-
+ * target_set`, and `stateHash`, `snapshotRelations`, and `pairsOf` all fold
  * through it. These tests lock in that they can no longer disagree:
  *
  *  - the digest + the `(R,*)` enumeration are insertion-order-independent (the
  *    determinism property the canonical ordering exists to give);
  *  - snapshot → restore round-trips the multi forward sets so `stateHash` and
- *    `pairsOf` are preserved across the wire-shaped buffer;
- *  - `compactRelations` is pure reverse-index reclaim — it
+ *    `pairsOf` are preserved across the wire-shaped buffer
+ *  - `compactRelations` is pure reverse-index reclaim. It
  *    perturbs neither `stateHash` (reverse index isn't folded) nor `pairsOf`
  *    (forward links are left dangling), which is the cardinality-free shape the
  *    refactor rides.
@@ -24,9 +24,9 @@ import type { EntityID } from "../../entity";
 const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, number][] =>
 	pairs.map(([s, t]) => [s as number, t as number]);
 
-describe("relations canonical fold — single source of truth", () => {
+describe("relations canonical fold, single source of truth", () => {
 	it("state_hash + pairs_of are insertion-order-independent for a multi relation", () => {
-		// World A and B hold identical logical content reached by DIFFERENT
+		// World A and B hold identical logical content reached by different
 		// add orders. The canonical fold must make them hash + enumerate the same.
 		const build = (order: "forward" | "scrambled"): { store: Store; pairs: [number, number][] } => {
 			const store = new Store({ deterministic: true });
@@ -88,7 +88,7 @@ describe("relations canonical fold — single source of truth", () => {
 		const targetsBefore = pairNums(src.pairsOf(Targets));
 		const bytes = src.snapshotSparse();
 
-		// Restore into a fresh world with the SAME registration order.
+		// Restore into a fresh world with the same registration order.
 		const dst = new Store({ deterministic: true });
 		const Likes2 = dst.registerRelation({ multi: true });
 		const Targets2 = dst.registerRelation({ exclusive: true });
@@ -122,7 +122,7 @@ describe("relations canonical fold — single source of truth", () => {
 		store.addRelation(s1, Targets, victim);
 
 		// Destroy the shared target. Under `orphan` (the default), the forward
-		// links + reverse entries are left dangling — this is the accumulation
+		// links + reverse entries are left dangling. This is the accumulation
 		// `compactRelations` exists to reclaim.
 		store.destroyEntity(victim);
 		expect(store.isAlive(victim)).toBe(false);

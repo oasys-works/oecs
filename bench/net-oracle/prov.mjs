@@ -6,15 +6,15 @@
  * Therefore four documented behaviours have no test. For all four, a bug gives no
  * error message:
  *
- *   - **sets of targets on a multi relation** — the order from `targetsOf`, and a set
+ *   - **sets of targets on a multi relation**, the order from `targetsOf`, and a set
  *     of targets that becomes smaller because a *target* died, and not because the
- *     source made a change;
- *   - **the `"delete"` cascade** — the destruction of one entity destroys other
- *     entities indirectly, and the ECS must also call `onRemove` for each of them;
- *   - **`"orphan"` with `relations.compact()`** — the documented growth of the
+ *     source made a change
+ *   - **the `"delete"` cascade**, the destruction of one entity destroys other
+ *     entities indirectly, and the ECS must also call `onRemove` for each of them
+ *   - **`"orphan"` with `relations.compact()`**, the documented growth of the
  *     reverse index, its reclaim count, and the guarantee that the compaction
- *     changes nothing else;
- *   - **the helpers that do a traversal** — `ancestorsOf`, `rootOf`, `cascadeOf` and
+ *     changes nothing else
+ *   - **the helpers that do a traversal**, `ancestorsOf`, `rootOf`, `cascadeOf` and
  *     `hierarchy`.
  *
  * An audit log that keeps its records by epoch uses all four naturally. There is one
@@ -32,14 +32,14 @@
  * model that recycled ids, as the ECS does, cannot find the difference between a dead
  * handle and a handle that it used again.
  *
- * The model also holds the CHAIN of the records inside each epoch. Each record points
+ * The model also holds the chain of the records inside each epoch. Each record points
  * at the record before it in the same epoch, through the exclusive `PrevRec` relation.
  * That chain has one level for each record of the epoch, so it is hundreds of levels
  * deep. `InEpoch` is one level deep, and one level cannot test three things:
  *
- *   - `ancestorsOf` and `rootOf` over a chain with more than one edge;
- *   - truncation of a walk by `maxDepth`;
- *   - the promise that a walk gives a parent BEFORE its children. A parent in the
+ *   - `ancestorsOf` and `rootOf` over a chain with more than one edge
+ *   - truncation of a walk by `maxDepth`
+ *   - the promise that a walk gives a parent before its children. A parent in the
  *     `InEpoch` tree is an `Epoch` entity, and the query selects `Record` entities.
  *     Therefore no parent is in the result set, and there is nothing to order. In the
  *     `PrevRec` chain a parent and a child are both records, so the order is checkable.
@@ -49,10 +49,10 @@ export class RefProv {
 	constructor({ epochEvery, retain }) {
 		this.epochEvery = epochEvery;
 		this.retain = retain;
-		/** epochIndex -> { alive, ancestors: epochIndex[] } — never pruned, so a dead
+		/** epochIndex -> { alive, ancestors: epochIndex[] }, never pruned, so a dead
 		 * handle stays distinguishable from a recycled one. */
 		this.epochs = new Map();
-		this.liveEpochs = []; // indices, ascending — the retention window
+		this.liveEpochs = []; // indices, ascending, the retention window
 		this.currentEpoch = -1;
 		this.nextEpoch = 0;
 		/** serial -> { rule, epoch, produced: Set<refAgentId> } */
@@ -75,7 +75,7 @@ export class RefProv {
 			compactReclaimed: 0,
 			maxLiveRecords: 0,
 			maxProducedSet: 0,
-			/** The deepest chain of records that a run made. A walk over one level
+			/** the deepest chain of records that a run made. A walk over one level
 			 * proves nothing about `maxDepth`, so the floor for non-vacuity reads this. */
 			maxChainDepth: 0,
 		};
@@ -168,12 +168,12 @@ export class RefProv {
 
 	/**
 	 * Mirrors `onDeleteTarget: "clear"` on `Produced`: when an agent dies, it drops
-	 * out of every record's target set. Note the direction — the record is the
-	 * *source* and survives; it is the ECS's job to shrink its set, and nothing the
+	 * out of every record's target set. Note the direction, the record is the
+	 * *source* and survives. It is the ECS's job to shrink its set, and nothing the
 	 * record itself does causes it.
 	 */
 	/**
-	 * Remove one `(record, agent)` pair from a `Produced` set, because a SYSTEM
+	 * Remove one `(record, agent)` pair from a `Produced` set, because a system
 	 * called `ctx.removeRelation` for it.
 	 *
 	 * Each other change to this set comes from the `"clear"` policy, which runs when
@@ -215,8 +215,8 @@ export class RefProv {
 	 * ancestor, minus those already reclaimed.
 	 *
 	 * Only the orphan relation can contribute. Under `"clear"` a dying target
-	 * unlinks every source, which empties and deletes its reverse key; under
-	 * `"delete"` the sources die with it; and a dying *source* is purged from every
+	 * unlinks every source, which empties and deletes its reverse key. Under
+	 * `"delete"` the sources die with it, and a dying *source* is purged from every
 	 * reverse set, so a live target never holds a dead source.
 	 */
 	pendingOrphanKeys() {
@@ -241,10 +241,10 @@ export class RefProv {
 	 *
 	 * This is documented behaviour rather than a leak, and it is worth stating
 	 * because it is genuinely surprising: the reverse index is *derived*, so
-	 * `restore` rebuilds it from the surviving **forward** links — and under
+	 * `restore` rebuilds it from the surviving **forward** links, and under
 	 * `"orphan"` those still carry the dangling dead handles by design. A
 	 * `compact()` therefore does not survive a snapshot round-trip. The oracle only
-	 * found this because it asserted the reclaim count exactly; a `>= 0` check would
+	 * found this because it asserted the reclaim count exactly. A `>= 0` check would
 	 * have sailed past it.
 	 */
 	noteRestored() {
@@ -252,7 +252,7 @@ export class RefProv {
 	}
 
 	/**
-	 * The chain of records of each LIVE epoch, in order from the root.
+	 * The chain of records of each live epoch, in order from the root.
 	 *
 	 * Element 0 of a chain is the root, and element `d` is at depth `d` in the
 	 * `PrevRec` tree. A chain holds live records alone, and the cascade destroys a

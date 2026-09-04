@@ -3,11 +3,11 @@
 oecs puts its run-time safety checks behind one compile-time flag, `__DEV__`, which `src/dev_flag.ts`
 exposes as `DEV`. There are about 328 checks:
 
-- the bounds and liveness checks;
-- the system access checker, which holds you to `reads` and `writes`;
-- the validation of a system that you added two times, and of each registration;
-- the guards against a structural change during iteration;
-- the `ECSError` messages that a person can read;
+- the bounds and liveness checks
+- the system access checker, which holds you to `reads` and `writes`
+- the validation of a system that you added two times, and of each registration
+- the guards against a structural change during iteration
+- the `ECSError` messages that a person can read
 - the tracers for the frames and the dispatches.
 
 Each one of these is a **development aid, and not a production guarantee**. In a production build
@@ -39,14 +39,14 @@ guards removed automatically in your production bundle. You change no code:
 
 | Your setup | It resolves to |
 | --- | --- |
-| `vite dev` / `webpack --mode development` | the **development** build of `@oasys/oecs` (the guards are on) |
-| `vite build` / `webpack --mode production` | the **production** build of `@oasys/oecs` (the guards are removed) |
+| `vite dev` or `webpack --mode development` | the **development** build of `@oasys/oecs` (the guards are on) |
+| `vite build` or `webpack --mode production` | the **production** build of `@oasys/oecs` (the guards are removed) |
 | plain Node, a CDN, or a bundler that sets no condition | the **production** build (the `default`) |
 
 ### How to select the build with the guards directly
 
 For a `<script>` tag or a CDN, for a short debugging session, or for a bundler that does *not* set
-a condition automatically, import the development build explicitly. Note that raw esbuild and
+a condition automatically, import the development build explicitly. Raw esbuild and
 Rollup resolve to `default`, which is production.
 
 ```ts
@@ -68,7 +68,7 @@ To turn the safety checks **on** while you develop, set the global variable **be
 import** of the package:
 
 ```ts
-globalThis.__DEV__ = true; // this MUST run before the first import of oecs
+globalThis.__DEV__ = true; // this must run before the first import of oecs
 import { ECS } from "@oasys/oecs";
 ```
 
@@ -103,11 +103,11 @@ get the guards on npm, load `@oasys/oecs/dev`, or build in development mode.
 
 ## Quick reference
 
-| I want… | npm | Deno / JSR |
+| I want… | npm | Deno and JSR |
 | --- | --- | --- |
-| to ship production (the default) | `import "@oasys/oecs"` | the default — do nothing |
+| to ship production (the default) | `import "@oasys/oecs"` | the default, do nothing |
 | the guards while I develop | automatic in a bundler in development mode, or `import "@oasys/oecs/dev"` | `globalThis.__DEV__ = true` before the first import |
-| the guards physically removed | the production build (the default) | not possible without a bundler — the switch is at run time only |
+| the guards physically removed | the production build (the default) | not possible without a bundler, the switch is at run time only |
 
 See also: [errors](./api/errors.md), which lists the `ECSError` values that are for development only
 and the values that are always active, and the

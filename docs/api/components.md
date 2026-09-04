@@ -12,13 +12,13 @@ object for each entity. This is why iteration is a small loop over adjacent memo
 import { ECS } from "@oasys/oecs";
 const ecs = new ECS();
 
-// Record form — one type for each field.
+// The record form gives one type to each field.
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 
-// Array shorthand — the same type in each field (the default is "f64").
+// The array shorthand gives the same type to each field. The default is "f64".
 const Vel = ecs.registerComponent(["vx", "vy"] as const);
 
-// Tag — no fields, only a marker.
+// A tag has no fields. It is only a marker.
 const IsEnemy = ecs.registerTag();
 ```
 
@@ -42,12 +42,12 @@ Each field is a number in a typed-array column. The type tag selects the type of
 ## `registerComponent`
 
 ```ts
-// Record form — an explicit type for each field.
+// the record form gives an explicit type to each field.
 registerComponent<S extends Record<string, TypedArrayTag>>(
   schema: S, opts?: ComponentRegisterOptions
 ): ComponentDef<S>;
 
-// Array shorthand — the same type in each field, "f64" by default.
+// The array shorthand gives the same type to each field, "f64" by default.
 registerComponent<const F extends readonly string[], T extends TypedArrayTag = "f64">(
   fields: F, type?: T, opts?: ComponentRegisterOptions
 ): ComponentDef<{ readonly [K in F[number]]: T }>;
@@ -102,7 +102,7 @@ ecs.query(Pos).without(Frozen);       // remove the frozen entities
 
 <a id="the-handle-is-callable--bundles"></a>
 
-## The handle is callable — bundles
+## The handle is callable, thus it makes bundles
 
 `registerComponent` gives you a `ComponentDef<S>`, which is a **callable handle**:
 
@@ -124,7 +124,7 @@ import { bundle } from "@oasys/oecs";
 Pos({ x: 10, y: 20 });          // call the def
 bundle(Pos, { x: 10, y: 20 });  // the free function (an identical result)
 
-// Spawn with a variable number of arguments — immediate, on the host:
+// Spawn with a variable number of arguments, immediate, on the host:
 const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 ```
 
@@ -133,8 +133,8 @@ tag, at each position that accepts a bundle. The same shapes go through `ctx.com
 and `ctx.commands.add(...)` in a system (see [systems](./systems.md)).
 
 > [!TIP]
-> **Absent values become zero.** When you build a bundle — `Pos({ x: 10 })` or
-> `bundle(Pos, { x: 10 })` — the ECS writes `0` in each field that you did not give. This is the
+> **Absent values become zero.** When you build a bundle, `Pos({ x: 10 })` or
+> `bundle(Pos, { x: 10 })`, the ECS writes `0` in each field that you did not give. This is the
 > typed path to attach a subset of the values. The typed overload
 > `ecs.addComponent(e, Pos, values)` demands **all** values (`CompleteFieldValues<S>`, which is
 > each field). There you must give `0` explicitly, or use a bundle.
@@ -149,7 +149,7 @@ This is the immediate attach and detach surface on the host. In a system, use th
 
 ```ts
 addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): this;   // tag
-addComponent<S>(entityId: EntityID, bundle: Bundle<S>): this;                       // bundle — absent fields become zero
+addComponent<S>(entityId: EntityID, bundle: Bundle<S>): this;                       // a bundle, and absent fields become zero
 addComponent<S>(entityId: EntityID, def: ComponentDef<S>, values: CompleteFieldValues<S>): this;  // all values
 removeComponent(entityId: EntityID, def: ComponentDef): this;
 ```
@@ -233,8 +233,8 @@ type ComponentHandle = { readonly id: ComponentID };                // a view wi
 
 ## See also
 
-- [entities](./entities.md) — how to attach components, and templates for bulk spawns
-- [queries](./queries.md) — how to match on components and read columns
-- [sparse storage](./sparse-storage.md) — components outside the identity (no limit, and good for
+- [entities](./entities.md), how to attach components, and templates for bulk spawns
+- [queries](./queries.md), how to match on components and read columns
+- [sparse storage](./sparse-storage.md), components outside the identity (no limit, and good for
   data that changes frequently)
-- [determinism](./determinism.md) — why a deterministic `ECS` rejects floats
+- [determinism](./determinism.md), why a deterministic `ECS` rejects floats

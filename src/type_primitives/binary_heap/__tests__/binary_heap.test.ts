@@ -25,7 +25,7 @@ describe("BinaryHeap", () => {
   });
 
   //=========================================================
-  // push / size
+  // push and size
   //=========================================================
 
   it("push increases size", () => {
@@ -60,7 +60,7 @@ describe("BinaryHeap", () => {
   });
 
   //=========================================================
-  // pop — min-heap ordering
+  // pop, min-heap ordering
   //=========================================================
 
   it("pop returns elements in ascending order (min-heap)", () => {
@@ -166,7 +166,7 @@ describe("BinaryHeap", () => {
   });
 
   //=========================================================
-  // interleaved push/pop
+  // interleaved push and pop
   //=========================================================
 
   it("interleaved push and pop maintain heap property", () => {

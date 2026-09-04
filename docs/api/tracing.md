@@ -5,14 +5,14 @@
 > build. They answer different questions. `FrameTrace` shows the sequence of causes and effects in
 > **one frame**. `dispatchTrace` collects **counts** across the full process.
 
-## The frame trace — what happened in this frame
+## The frame trace, what happened in this frame
 
 Attach a sink. The engine then emits ordered events inside each `update(dt)` call:
 
-- which systems ran, in each phase, in topological order;
-- the structural commands that each one put in the queue;
-- the flush boundaries;
-- the observers that ran;
+- which systems ran, in each phase, in topological order
+- the structural commands that each one put in the queue
+- the flush boundaries
+- the observers that ran
 - the emissions and the reads of events.
 
 ```ts
@@ -21,7 +21,7 @@ import { FrameTraceRecorder } from "@oasys/oecs";
 const recorder = new FrameTraceRecorder();
 ecs.setTrace(recorder);        // does nothing in a production build
 ecs.update(1 / 60);
-recorder.frames();             // readonly FrameTrace[] — one for each update(), in order
+recorder.frames();             // readonly FrameTrace[], one for each update(), in order
 recorder.reset();              // remove the captured frames
 ecs.setTrace(null);            // detach
 ```
@@ -31,7 +31,7 @@ setTrace(sink: FrameTraceSink | null): void;
 
 interface FrameTraceSink {
   tickBegin(tick, dt): void;   tickEnd(tick): void;
-  systemStart(system, phase): void;   systemEnd(system): void;
+  systemBegin(system, phase): void;   systemEnd(system): void;
   commandQueued(op: StructuralOp, entity, component: number | null): void;
   flushBegin(phase): void;   flushEnd(phase): void;
   phaseBoundary(phase): void;
@@ -71,7 +71,7 @@ interface FrameTrace { readonly tick: number; readonly dt: number; readonly even
 > [observers](./observers.md). A sink must have no effect on the `ECS`, because this connection
 > observes only.
 
-## The dispatch trace — counts across the process
+## The dispatch trace, counts across the process
 
 This is a global object. It collects the **counts** of the dispatches of events, resources, and
 actions, by call site. It is a profile of *how frequently* a channel runs, and not of the order.
@@ -80,7 +80,7 @@ actions, by call site. It is a profile of *how frequently* a channel runs, and n
 import { dispatchTrace } from "@oasys/oecs/internal"; // an unstable surface for tools
 
 dispatchTrace.isActive();    // the run-time half of the gate: the VISUAL_INTEL_TRACE environment variable (the call sites check __DEV__)
-dispatchTrace.snapshot();    // DispatchTraceSnapshot — deterministic, sorted, and serializable to JSON
+dispatchTrace.snapshot();    // DispatchTraceSnapshot, deterministic, sorted, and serializable to JSON
 dispatchTrace.reset();
 ```
 
@@ -106,6 +106,6 @@ interface DispatchTraceSnapshot {
 
 ## See also
 
-- [determinism](./determinism.md) — how to use `phaseBoundary` with `stateHash` to find a
+- [determinism](./determinism.md), how to use `phaseBoundary` with `stateHash` to find a
   divergence
-- [systems](./systems.md) · [observers](./observers.md) — the objects that a frame trace reports on
+- [systems](./systems.md), [observers](./observers.md), the objects that a frame trace reports on

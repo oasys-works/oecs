@@ -6,7 +6,7 @@ import {
 	type ArchetypeColumnLayout,
 	type ColumnFactory
 } from "../../archetype";
-import { asComponentId, makeComponentDef } from "../../component";
+import { asComponentId, createComponentDef } from "../../component";
 import { createEntityId } from "../../entity";
 import {
 	BitSet,
@@ -93,9 +93,9 @@ describe("Archetype.from_column_store", () => {
 		const a = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0);
 
 		expect(a.hasColumns).toBe(true);
-		// Buf for each field IS the SAB view; mutating one is visible via the other.
-		const def = makeComponentDef<{ x: "f64"; y: "f64" }>(compId(1));
-		const colX = a.getColumn(def, "x", 0);
+		// Buf for each field is the SAB view. Mutating one is visible via the other.
+		const def = createComponentDef<{ x: "f64"; y: "f64" }>(compId(1));
+		const colX = a.getColumnMut(def, "x", 0);
 		const sabX = columnStore.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view;
 		expect(colX.buffer).toBe(columnStore.buffer);
 		expect(colX).toBe(sabX);
@@ -149,9 +149,9 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 
 	function snapshotColumns(a: Archetype): { x: number[]; y: number[]; hp: number[] } {
 		const len = a.entityCount;
-		const x = a._flatColumns[0].buf;
-		const y = a._flatColumns[1].buf;
-		const hp = a._flatColumns[2].buf;
+		const x = a.flatColumns[0].buf;
+		const y = a.flatColumns[1].buf;
+		const hp = a.flatColumns[2].buf;
 		return {
 			x: Array.from(x.subarray(0, len)),
 			y: Array.from(y.subarray(0, len)),
@@ -173,17 +173,17 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		a.writeFieldsPositional(2, compId(2), [300], 3);
 
 		// swap-remove the middle row
-		a.removeEntity(1);
+		a.swapRemoveRow(1);
 	}
 
-	it("entity_count and column state match after add/write/remove sequence", () => {
+	it("entity_count and column state match after add, write and remove sequence", () => {
 		const { heap, buffer } = buildPair(8);
 		applyOps(heap);
 		applyOps(buffer);
 
 		expect(buffer.entityCount).toBe(heap.entityCount);
 		expect(snapshotColumns(buffer)).toEqual(snapshotColumns(heap));
-		expect(Array.from(buffer.entityList)).toEqual(Array.from(heap.entityList));
+		expect(Array.from(buffer.rowEntityIds)).toEqual(Array.from(heap.rowEntityIds));
 	});
 
 	it("read_field round-trips through SAB columns", () => {
@@ -205,8 +205,8 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		a.addEntity(entity(0));
 		a.addEntity(entity(1));
 
-		const def = makeComponentDef<{ x: "f32" }>(compId(1));
-		const col = a.getColumn(def, "x", 1);
+		const def = createComponentDef<{ x: "f32" }>(compId(1));
+		const col = a.getColumnMut(def, "x", 1);
 		col[0] = 11;
 		col[1] = 22;
 
@@ -231,9 +231,9 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 
 		expect(start).toBe(1);
 		expect(a.entityCount).toBe(4);
-		// Seed row preserved; batch rows all zero.
-		expect(Array.from(a._flatColumns[0].buf.subarray(0, 4))).toEqual([42, 0, 0, 0]);
-		expect(Array.from(a._flatColumns[1].buf.subarray(0, 4))).toEqual([43, 0, 0, 0]);
+		// Seed row preserved. Batch rows all zero.
+		expect(Array.from(a.flatColumns[0].buf.subarray(0, 4))).toEqual([42, 0, 0, 0]);
+		expect(Array.from(a.flatColumns[1].buf.subarray(0, 4))).toEqual([43, 0, 0, 0]);
 	});
 
 	it("bulk_move_all_from copies between two SAB-backed archetypes", () => {
@@ -261,7 +261,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(dstStart).toBe(0);
 		expect(dst.entityCount).toBe(3);
 		expect(src.entityCount).toBe(0);
-		expect(Array.from(dst._flatColumns[0].buf.subarray(0, 3))).toEqual([7, 8, 9]);
+		expect(Array.from(dst.flatColumns[0].buf.subarray(0, 3))).toEqual([7, 8, 9]);
 	});
 
 	it("writes through one Archetype's view are visible across SAB", () => {

@@ -1,13 +1,13 @@
 /**
- * Interop contract gate: the two invariants a foreign UI framework relies on —
+ * Interop contract gate: the two invariants a foreign UI framework relies on,
  * `subscribe` fires once per coalesced change (never on an equal write), and
  * `getSnapshot` is referentially stable (so React's useSyncExternalStore can't
- * storm). This is the zero-dep CI gate. A full proof needs REAL mounted React
- * / Preact / Vue / Solid trees, which needs those renderers + a DOM. They do
+ * storm). This is the zero-dep CI gate. A full proof needs real mounted React
+ * / Preact, Vue and Solid trees, which needs those renderers + a DOM. They do
  * not belong in the engine's unit CI.
  *
- * The React model here mirrors useSyncExternalStore's actual mount/commit loop so
- * the negative control (an unstable snapshot) is a genuine storm, caught — the
+ * The React model here mirrors useSyncExternalStore's actual mount and commit loop so
+ * the negative control (an unstable snapshot) is a genuine storm, caught, the
  * same shape the real-framework harness confirms against React itself.
  */
 import { describe, expect, it } from "vitest";
@@ -57,8 +57,8 @@ describe("vanilla subscribe", () => {
 	});
 
 	it("does not subscribe to accessors the consumer reads inside onChange", () => {
-		// onChange runs inside the subscription effect; a kernel read in the consumer's
-		// callback must NOT become a dependency of the subscription (else an unrelated
+		// onChange runs inside the subscription effect. A kernel read in the consumer's
+		// callback must not become a dependency of the subscription (else an unrelated
 		// signal it touches would silently re-fire onChange). subscribe untracks it.
 		const [a, setA] = signal(0);
 		const [other, setOther] = signal(0);
@@ -78,13 +78,13 @@ describe("vanilla subscribe", () => {
 });
 
 // React's useSyncExternalStore: on mount it reads getSnapshot during render, then
-// re-reads in an effect; if the two differ it re-renders synchronously until they
+// re-reads in an effect. If the two differ it re-renders synchronously until they
 // agree. A fresh-object snapshot never converges -> the render storm.
 function reactMountRenders<T>(store: ExternalStore<T>, cap = 1000): number {
 	let renders = 0;
 	for (;;) {
 		renders++;
-		if (renders > cap) throw new Error("RENDER STORM: getSnapshot is not referentially stable");
+		if (renders > cap) throw new Error("render storm: getSnapshot is not referentially stable");
 		const rendered = store.getSnapshot();
 		const recheck = store.getSnapshot();
 		if (Object.is(rendered, recheck)) return renders;
@@ -125,12 +125,12 @@ describe("React external-store contract", () => {
 		expect(renders).toBe(4);
 	});
 
-	it("NEGATIVE CONTROL: an unstable getSnapshot is caught as a render storm", () => {
+	it("negative control: an unstable getSnapshot is caught as a render storm", () => {
 		const [a] = signal(0);
 		const broken: ExternalStore<{ v: number }> = {
 			subscribe: toExternalStore(a).subscribe,
 			getSnapshot: () => ({ v: a() }) // fresh object every call
 		};
-		expect(() => reactMountRenders(broken)).toThrow(/RENDER STORM/);
+		expect(() => reactMountRenders(broken)).toThrow(/render storm/);
 	});
 });

@@ -1,13 +1,13 @@
 /**
  * Post-build declaration fixups (POLISH_AUDIT M19).
  *
- * 1. Rewrite relative import/export specifiers in every emitted `.d.ts` to
- *    explicit `./x.js` / `./x/index.js` form — node16/nodenext ESM resolution
+ * 1. Rewrite relative import and export specifiers in every emitted `.d.ts` to
+ *    explicit `./x.js` / `./x/index.js` form, node16/nodenext ESM resolution
  *    requires extensions, and vite-plugin-dts emits extensionless specifiers
  *    (attw InternalResolutionError otherwise).
  * 2. Duplicate each fixed `.d.ts` as a `.d.cts` sibling (specifiers rewritten
  *    to `.cjs`) so the `require` condition's `types` no longer points CJS TS
- *    consumers at ESM-flavored declarations — the attw "masquerading" failure.
+ *    consumers at ESM-flavored declarations, the attw "masquerading" failure.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -28,10 +28,10 @@ const dtsFiles = [];
 function fixSpecifier(fromDir, spec, ext) {
 	if (fs.existsSync(path.join(fromDir, spec + ".d.ts"))) return spec + ext;
 	if (fs.existsSync(path.join(fromDir, spec, "index.d.ts"))) return spec + "/index" + ext;
-	return spec; // already extensioned or external — leave untouched
+	return spec; // already extensioned or external, leave untouched
 }
 
-// `from "./x"`, `import "./x"`, `import("./x")` — every syntactic position a
+// `from "./x"`, `import "./x"`, `import("./x")`, every syntactic position a
 // relative specifier can appear in a declaration file.
 const SPEC_RE = /((?:from\s+|import\s+|import\s*\(\s*)["'])(\.[^"']*)(["'])/g;
 

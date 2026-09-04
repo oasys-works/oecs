@@ -1,11 +1,11 @@
 /**
- * Archetype scale — "no corruption at moderate scale", NOT a cap boundary.
+ * Archetype scale, "no corruption at moderate scale", not a cap boundary.
  *
  * Distinct-archetype creation, per-step transition data preservation, and
- * the archetype edge cache over ≤63 components / ~50 archetypes — all
+ * the archetype edge cache over ≤63 components / ~50 archetypes, all
  * comfortably inside the 128-component SAB descriptor limit. These
  * verify archetype identity + transitions stay correct at scale, not
- * behavior AT the component cap. The real cap boundary lives in
+ * behavior at the component cap. The real cap boundary lives in
  * `limits/component_count_cap.test.ts`.
  */
 

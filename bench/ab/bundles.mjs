@@ -13,16 +13,16 @@
  * The method is the method of `ref.mjs`, and the reasons are the same. There is
  * one child process for each measurement (`child.mjs`). The rounds change which
  * side starts first, and thus slow changes are equal for both sides of a round.
- * The result is the ORDER-BALANCED median of the paired ratios of the rounds:
+ * The result is the order-balanced median of the paired ratios of the rounds:
  * a median in each order, and then the square root of the product of the two.
  * `ref.mjs` records why a median of all the rounds together keeps a position bias
  * at its full strength. The tool also shows the spread, and therefore a row with
  * much noise cannot look like a result.
  *
  * There is one difference from `ref.mjs`. The spread here is the full `[min..max]`
- * of the ratios of the rounds, and there is no NOISY verdict. Therefore one round
+ * of the ratios of the rounds, and there is no noisy verdict. Therefore one round
  * with a garbage collection in a timed part makes a row look wider here than in
- * `ref.mjs`, and a row can show REGRESSED with no support from the spread. Read the
+ * `ref.mjs`, and a row can show regressed with no support from the spread. Read the
  * spread. Do not read the delta only. Use `ref.mjs` when you need a verdict.
  *
  *   node bench/ab/bundles.mjs <base.mjs> <work.mjs> [filter] [--rounds 12]
@@ -38,7 +38,7 @@ const flag = (name, dflt) => {
 	const i = args.indexOf(`--${name}`);
 	return i >= 0 ? args[i + 1] : dflt;
 };
-// The flags that take a VALUE, listed explicitly. `ref.mjs` records why the rule
+// The flags that take a value, listed explicitly. `ref.mjs` records why the rule
 // "a word after any `--flag` is that flag's value" is wrong: a flag with no value
 // then eats the positional word after it.
 const VALUE_FLAGS = new Set(["rounds", "warmup", "samples"]);
@@ -53,7 +53,7 @@ if (!baseFile || !workFile) {
 	process.exit(2);
 }
 const filter = positional[2] ?? "";
-// EVEN by default: the delta is a median in each order, and the two orders must
+// Even by default: the delta is a median in each order, and the two orders must
 // get an equal number of rounds.
 const rounds = Number(flag("rounds", "12"));
 const warmup = Number(flag("warmup", "3"));
@@ -92,7 +92,7 @@ for (let r = 0; r < rounds; r++) {
 	process.stderr.write(`round ${r + 1}/${rounds}\n`);
 }
 
-// Both medians INTERPOLATE for an even count — `ref.mjs` records why. A ratio is
+// Both medians interpolate for an even count, `ref.mjs` records why. A ratio is
 // multiplicative, so the middle of two ratios is their geometric mean.
 const median = (xs) => {
 	const s = [...xs].sort((x, y) => x - y);
@@ -117,8 +117,8 @@ function balancedCentre(ratios) {
 const names = [...samplesA.keys()];
 const w = Math.max(...names.map((n) => n.length), 4);
 console.log(
-	`\n${isNull ? "NULL CALIBRATION (same bundle both sides — every row should read ~0%)" : "A/B"}` +
-		`  ·  ${rounds} rounds, paired, alternating order`
+	`\n${isNull ? "NULL calibration (same bundle both sides, every row should read ~0%)" : "A/B"}` +
+		`  ${rounds} rounds, paired, alternating order`
 );
 console.log(`\n${"case".padEnd(w)}  ${"base".padStart(10)}  ${"work".padStart(10)}   median Δ    spread`);
 console.log("─".repeat(w + 50));
@@ -142,7 +142,7 @@ for (const name of names) {
 	if (Math.abs(delta) > Math.abs(worst)) worst = delta;
 	if (delta > 3) regressed++;
 	else if (delta < -3) improved++;
-	const mark = delta > 3 ? " REGRESSED" : delta < -3 ? " improved" : "";
+	const mark = delta > 3 ? " regressed" : delta < -3 ? " improved" : "";
 	console.log(
 		`${name.padEnd(w)}  ${nsA.toFixed(2).padStart(10)}  ${nsB.toFixed(2).padStart(10)}   ` +
 			`${(delta >= 0 ? "+" : "") + delta.toFixed(1)}%`.padStart(8) +
@@ -150,6 +150,6 @@ for (const name of names) {
 	);
 }
 console.log(
-	`\n${names.length} cases · ${improved} improved >3% · ${regressed} regressed >3% · largest |Δ| ${worst.toFixed(1)}%`
+	`\n${names.length} cases, ${improved} improved >3%, ${regressed} regressed >3%, largest |Δ| ${worst.toFixed(1)}%`
 );
 if (isNull) console.log(`(null run: everything above is harness bias, not a result)`);

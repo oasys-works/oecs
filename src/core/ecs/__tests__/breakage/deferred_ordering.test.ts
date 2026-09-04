@@ -5,7 +5,7 @@ import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 describe("Deferred operation ordering", () => {
-	it("deferred add A then add B — entity has both after flush", () => {
+	it("deferred add A then add B, entity has both after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const A = world.registerTag();
@@ -34,7 +34,7 @@ describe("Deferred operation ordering", () => {
 		expect(world.getField(e, Pos, "y")).toBe(2);
 	});
 
-	it("deferred add A then remove A — entity does NOT have A (add first, then remove)", () => {
+	it("deferred add A then remove A, entity does not have A (add first, then remove)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const A = world.registerTag();
@@ -56,13 +56,13 @@ describe("Deferred operation ordering", () => {
 
 		// Flush processes all adds first, then all removes.
 		// So: add A (entity transitions to [Pos, A]), then remove A (transitions back to [Pos]).
-		// Result: entity does NOT have A.
+		// Result: entity does not have A.
 		expect(world.hasComponent(e, A)).toBe(false);
 		expect(world.hasComponent(e, Pos)).toBe(true);
 		expect(world.getField(e, Pos, "x")).toBe(5);
 	});
 
-	it("multiple deferred adds of same component — last values win", () => {
+	it("multiple deferred adds of same component, last values win", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -91,7 +91,7 @@ describe("Deferred operation ordering", () => {
 		expect(world.getField(e, Vel, "vy")).toBe(60);
 	});
 
-	it("deferred add + deferred destroy — structural flush applies, then destroy", () => {
+	it("deferred add + deferred destroy, structural flush applies, then destroy", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -111,14 +111,14 @@ describe("Deferred operation ordering", () => {
 		world.startup();
 		world.update(0);
 
-		// Flush processes structural changes (adds/removes) first, then destructions.
+		// Flush processes structural changes (adds and removes) first, then destructions.
 		// So: entity gets Vel added, then entity is destroyed.
 		// Entity should be dead after the update.
 		expect(world.isAlive(e)).toBe(false);
 		expect(world.entityCount).toBe(0);
 	});
 
-	it("3 systems defer different ops on same entity — operations apply in correct order", () => {
+	it("3 systems defer different ops on same entity, operations apply in correct order", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const A = world.registerTag();
@@ -159,7 +159,7 @@ describe("Deferred operation ordering", () => {
 		world.update(0);
 
 		// After flush: adds are processed first (add B, add C), then removes (remove A).
-		// Entity should have: Pos, B, C but NOT A.
+		// Entity should have: Pos, B, C but not A.
 		expect(world.hasComponent(e, Pos)).toBe(true);
 		expect(world.hasComponent(e, A)).toBe(false);
 		expect(world.hasComponent(e, B)).toBe(true);
@@ -168,7 +168,7 @@ describe("Deferred operation ordering", () => {
 		expect(world.getField(e, Pos, "y")).toBe(2);
 	});
 
-	it("stress: 500 entities each getting random deferred add or remove — all final states match expected", () => {
+	it("stress: 500 entities each getting random deferred add or remove, all final states match expected", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();

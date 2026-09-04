@@ -55,9 +55,9 @@ class Builder {
  * oracle in the harness that neither implementation can influence:
  *
  *   - a tree of `depth` CON levels has `2^depth - 1` CON nodes and `2^depth` ERA
- *     leaves;
+ *     leaves
  *   - each CON costs exactly one ERA~CON rewrite (and re-emits two erasers),
- *     each leaf ERA exactly one ERA~ERA rewrite;
+ *     each leaf ERA exactly one ERA~ERA rewrite
  *   - plus one rewrite for the top CON that holds the net's ROOT branch.
  *
  * Total: `2 * (2^depth - 1) + 2` = **2^(depth+1)** rewrites, terminating in a
@@ -88,7 +88,7 @@ export function erasureTree(depth) {
  * becoming two CONs and spawning two DUPs) and one copy is then erased. Peak
  * live agents run several times the initial count before collapsing back.
  *
- * No closed form is claimed — the reference reducer is the oracle here, backed by
+ * No closed form is claimed, the reference reducer is the oracle here, backed by
  * the rewrite-count invariance check across reduction orders.
  */
 export function dupTree(depth) {
@@ -106,7 +106,7 @@ export function dupTree(depth) {
 /**
  * A random net: a random perfect matching over the ports of a random agent mix.
  *
- * Unlike the structured generators this has no reason to terminate — interaction
+ * Unlike the structured generators this has no reason to terminate, interaction
  * combinators are Turing-complete, and a random net can loop forever or grow
  * without bound. That is deliberate: the step cap turns it into an open-ended
  * churn source, and the lockstep oracle does not need termination (only the
@@ -119,7 +119,7 @@ export function randomNet(seed, nCon, nDup, nEra) {
 	for (let i = 0; i < nCon; i++) b.add(CON);
 	for (let i = 0; i < nDup; i++) b.add(DUP);
 	for (let i = 0; i < nEra; i++) b.add(ERA);
-	// A perfect matching needs an even port count; ERA contributes one port each,
+	// A perfect matching needs an even port count. ERA contributes one port each,
 	// so one extra eraser fixes the parity.
 	let ports = [];
 	const collect = () => {
@@ -150,7 +150,7 @@ export function randomNet(seed, nCon, nDup, nEra) {
 }
 
 /**
- * Validate a NetSpec before either backing loads it — one ROOT, every port
+ * Validate a NetSpec before either backing loads it, one ROOT, every port
  * matched exactly once, no port out of range. A malformed spec would otherwise
  * surface as a mismatch deep in a soak, blamed on the ECS.
  */

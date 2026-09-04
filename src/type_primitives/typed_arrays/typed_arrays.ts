@@ -1,7 +1,7 @@
 /***
- * GrowableTypedArray — TypedArray wrapper with amortised O(1) append.
+ * GrowableTypedArray. TypedArray wrapper with amortised O(1) append.
  *
- * TypedArrays have fixed length — resizing requires allocating a new
+ * TypedArrays have fixed length, resizing requires allocating a new
  * buffer and copying. GrowableTypedArray wraps one with a separate
  * logical length and doubles the backing buffer on overflow.
  *
@@ -28,7 +28,7 @@ export type AnyTypedArray =
 
 /**
  * Common surface of a row-addressable column buffer. `GrowableTypedArray<T>`
- * implements it over a heap-allocated TypedArray; SAB-backed columns (see
+ * implements it over a heap-allocated TypedArray. SAB-backed columns (see
  * `packages/engine/src/core/sab/sab_backed_column.ts`) implement it over a
  * `SharedArrayBuffer` view at a known offset. Archetype column storage
  * targets this interface so a single code path serves both backings.
@@ -41,7 +41,11 @@ export interface ColumnBacking<T extends AnyTypedArray> {
 	swapRemove(i: number): number;
 	clear(): void;
 	view(): T;
-	ensureCapacity(capacity: number): void;
+	/** Guarantee room for `capacity` elements, or throw. An implementation that
+	 * owns its buffer grows to fit. One that views a buffer it does not own
+	 * cannot grow, so it throws when `capacity` passes the view. Neither name
+	 * promises growth, thus a caller plans for the throw. */
+	reserve(capacity: number): void;
 	bulkAppend(src: T, srcOffset: number, count: number): void;
 	bulkAppendZeroes(count: number): void;
 	bulkAppendValue(value: number, count: number): void;
@@ -49,7 +53,7 @@ export interface ColumnBacking<T extends AnyTypedArray> {
 	 * valid data. The snapshot-mount path (`Archetype.restoreHostRows`)
 	 * uses this: a restored SAB carries the column bytes, but the column's logical
 	 * length is host state that must be re-synced with `Archetype.length`. Throws
-	 * if `len` exceeds capacity. NOT a hot-path method — push/pop track length. */
+	 * if `len` exceeds capacity. Not a hot-path method, push and pop track length. */
 	setLength(len: number): void;
 }
 
@@ -81,7 +85,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 		return this._buf[--this._len];
 	}
 
-	public get(i: number): number {
+	public getAt(i: number): number {
 		return this._buf[i];
 	}
 
@@ -107,13 +111,13 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 	 * caller guarantees `[0, len)` already holds valid data. Grows the backing if
 	 * needed so the length is always representable. */
 	public setLength(len: number): void {
-		this.ensureCapacity(len);
+		this.reserve(len);
 		this._len = len;
 	}
 
 	/**
 	 * Raw backing buffer. Valid data: indices 0..length-1.
-	 * This reference is stable until the next push() that triggers a grow —
+	 * This reference is stable until the next push() that triggers a grow,
 	 * do not cache across entity additions.
 	 */
 	public get buf(): T {
@@ -122,7 +126,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 
 	/**
 	 * Zero-copy subarray view of valid data (0..length-1).
-	 * Shares the backing buffer — invalidated if a subsequent push() grows.
+	 * Shares the backing buffer, invalidated if a subsequent push() grows.
 	 */
 	public view(): T {
 		// TypedArray interop: `subarray` returns the same concrete constructor
@@ -143,8 +147,9 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 		};
 	}
 
-	/** Ensure the backing buffer can hold at least `capacity` elements without growing. */
-	public ensureCapacity(capacity: number): void {
+	/** Grow the backing buffer to hold `capacity` elements. Reallocates and
+	 * copies when the current buffer is short, so `buf` and `view()` go stale. */
+	public reserve(capacity: number): void {
 		if (capacity <= this._buf.length) return;
 		let newCap = this._buf.length || 1;
 		while (newCap < capacity) newCap *= GROWTH_FACTOR;
@@ -158,8 +163,8 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 	 * Grows if needed. Equivalent to push() in a loop but uses TypedArray.set().
 	 */
 	public bulkAppend(src: T, srcOffset: number, count: number): void {
-		this.ensureCapacity(this._len + count);
-		// TypedArray interop: `_buf` and `src` share constructor `T` at runtime;
+		this.reserve(this._len + count);
+		// TypedArray interop: `_buf` and `src` share constructor `T` at runtime
 		// the lib.dom `set()` overloads can't see that, hence the cast.
 		this._buf.set(src.subarray(srcOffset, srcOffset + count) as any, this._len);
 		this._len += count;
@@ -167,7 +172,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 
 	/** Append `count` zeroes. Grows if needed. */
 	public bulkAppendZeroes(count: number): void {
-		this.ensureCapacity(this._len + count);
+		this.reserve(this._len + count);
 		this._buf.fill(0, this._len, this._len + count);
 		this._len += count;
 	}
@@ -175,7 +180,7 @@ export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBackin
 	/** Append `count` copies of `value`. Grows if needed. Single-pass
 	 * analogue of `bulkAppendZeroes` for a non-zero default. */
 	public bulkAppendValue(value: number, count: number): void {
-		this.ensureCapacity(this._len + count);
+		this.reserve(this._len + count);
 		this._buf.fill(value, this._len, this._len + count);
 		this._len += count;
 	}

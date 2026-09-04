@@ -8,14 +8,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    // Collect ONLY from this checkout's `src/`. Every test in the repo lives
-    // there, and the default scan starts at the project root — which picks up
+    // Collect only from this checkout's `src/`. Every test in the repo lives
+    // there, and the default scan starts at the project root, which picks up
     // any git worktree parked inside it. `.claude/worktrees/<branch>/src/` holds
     // a second full copy of the suite, so an unscoped run reports roughly twice
     // the file count and validates another branch alongside this one. A release
     // gate has to count this tree and nothing else.
     //
-    // `bench/` is DELIBERATELY out of this list. It is a local tool, and it is not
+    // `bench/` is deliberately out of this list. It is a local tool, and it is not
     // a part of the package or of the gate. `bench/net-oracle/oracle.test.mjs` is a
     // vitest file, so a person can run it by name, and this list keeps it out of
     // `pnpm test`. `bench/net-oracle/README.md` gives the command.

@@ -1,10 +1,10 @@
 /**
- * Component observers — onAdd / onRemove / onSet.
+ * Component observers, onAdd and onRemove / onSet.
  *
- * Ports the two locked proofs to the REAL engine:
- *   - determinism: one logical op-set in several INPUT ORDERINGS → identical
+ * Ports the two locked proofs to the real engine:
+ *   - determinism: one logical op-set in several input orderings → identical
  *     `stateHash` (the `observer_determinism_sim` scenario);
- *   - glitch-freedom: a producer/consumer pair yields the glitch-free result
+ *   - glitch-freedom: a producer and consumer pair yields the glitch-free result
  *     under access-topological order (the `observer_ordering_sim` scenario).
  * Plus the acceptance-criteria guards: no-observer fast path, radix (not
  * comparator) ordering, access enforcement, dirty-state-out-of-hash, cascade
@@ -19,10 +19,10 @@ import { ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 
 // ============================================================================
-// Phase 1 — structural observers (onAdd / onRemove)
+// Phase 1, structural observers (onAdd and onRemove)
 // ============================================================================
 
-describe("Observers — onAdd / onRemove basics", () => {
+describe("Observers, onAdd and onRemove basics", () => {
 	it("onAdd fires at the flush boundary for a deferred add", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
@@ -52,12 +52,12 @@ describe("Observers — onAdd / onRemove basics", () => {
 			access: openAccess([Tag])
 		});
 		const e = world.spawn();
-		world.addComponent(e, Tag); // immediate setup add — does NOT fire onAdd
+		world.addComponent(e, Tag); // immediate setup add, does NOT fire onAdd
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => {
 				ctx.commands.remove(e, Tag); // effective
-				ctx.commands.remove(e, Tag); // no-op (already lacks) — must not fire
+				ctx.commands.remove(e, Tag); // no-op (already lacks), must not fire
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -66,13 +66,13 @@ describe("Observers — onAdd / onRemove basics", () => {
 		expect(removed).toEqual([e as number]);
 	});
 
-	it("immediate (top-level) add_component does NOT fire onAdd (fires only at the flush boundary)", () => {
+	it("immediate (top-level) add_component does not fire onAdd (fires only at the flush boundary)", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		let fires = 0;
 		world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
 		const e = world.spawn();
-		world.addComponent(e, Tag); // immediate path — not an observed point
+		world.addComponent(e, Tag); // immediate path, not an observed point
 		expect(fires).toBe(0);
 	});
 
@@ -102,20 +102,20 @@ describe("Observers — onAdd / onRemove basics", () => {
 });
 
 // ============================================================================
-// A handle disposed MID-ROUND must not fire later in the same flush.
+// A handle disposed mid-round must not fire later in the same flush.
 //
-// `dispatchStructural` captures the topo order ONCE, then walks it. A sibling
+// `dispatchStructural` captures the topo order once, then walks it. A sibling
 // observer's callback can reach another observer's `dispose()` handle and flip
 // its `disposed` flag, but the already-captured `order` snapshot still holds the
-// now-disposed entry. The fire loop skips `obs.disposed`; without that skip the
+// now-disposed entry. The fire loop skips `obs.disposed`. Without that skip the
 // disposed observer still fires for components later in the topo order this same
-// round. The two observers are registered on DIFFERENT components A and B (A
+// round. The two observers are registered on different components A and B (A
 // first ⇒ lower component id ⇒ fires first under the cid tie-break, with no
-// read/write dependency between them), and a single deferred batch adds (and, in
+// read and write dependency between them), and a single deferred batch adds (and, in
 // the second case, removes) both so one flush dispatches both in topo order.
 // ============================================================================
 
-describe("Observers — dispose mid-round", () => {
+describe("Observers, dispose mid-round", () => {
 	it("an observer disposed from a sibling's on_add does not fire later the same round", () => {
 		const world = new ECS({ deterministic: true });
 		const A = world.registerTag(); // registered first → lower cid → fires first
@@ -135,7 +135,7 @@ describe("Observers — dispose mid-round", () => {
 			access: openAccess([B])
 		});
 		const e = world.spawn();
-		// One deferred batch adds BOTH A and B → a single flush dispatches both in
+		// One deferred batch adds both A and B → a single flush dispatches both in
 		// topo order (A before B).
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
@@ -170,9 +170,9 @@ describe("Observers — dispose mid-round", () => {
 			access: openAccess([B])
 		});
 		const e = world.spawn();
-		world.addComponent(e, A); // immediate setup — does not fire onRemove
+		world.addComponent(e, A); // immediate setup, does not fire onRemove
 		world.addComponent(e, B);
-		// One deferred batch removes BOTH A and B → one flush dispatches both
+		// One deferred batch removes both A and B → one flush dispatches both
 		// onRemove in topo order (A before B).
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
@@ -192,13 +192,13 @@ describe("Observers — dispose mid-round", () => {
 
 // ============================================================================
 // onRemove fans out across a destroy. A destroy is a remove of the whole
-// mask, so it must fire onRemove for every carried component — at the deferred
+// mask, so it must fire onRemove for every carried component, at the deferred
 // flush boundary, in the same commit-then-observe / canonical-order discipline
 // as an explicit remove. The entity is freed before the callback runs, so the
-// onRemove identifies WHAT was destroyed by its (now dead) eid.
+// onRemove identifies what was destroyed by its (now dead) eid.
 // ============================================================================
 
-describe("Observers — onRemove on destroy", () => {
+describe("Observers, onRemove on destroy", () => {
 	it("a deferred destroy fires onRemove for every component the entity carried", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -235,7 +235,7 @@ describe("Observers — onRemove on destroy", () => {
 			onRemove: (eid) => removed.push(eid as number),
 			access: openAccess([Tag])
 		});
-		const e = world.spawn(); // alive but unplaced — carries nothing
+		const e = world.spawn(); // alive but unplaced, carries nothing
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
 			fn: (ctx) => ctx.commands.despawn(e)
@@ -293,8 +293,8 @@ describe("Observers — onRemove on destroy", () => {
 		const sys = world.registerSystem({
 			...openAccess([A, B]),
 			fn: (ctx) => {
-				ctx.commands.remove(e, A); // explicit remove — fires with e live
-				ctx.commands.despawn(e); // destroy — fires onRemove(B) with e freed
+				ctx.commands.remove(e, A); // explicit remove, fires with e live
+				ctx.commands.despawn(e); // destroy, fires onRemove(B) with e freed
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -390,7 +390,7 @@ describe("Observers — onRemove on destroy", () => {
 	});
 });
 
-describe("Observers — canonical ordering", () => {
+describe("Observers, canonical ordering", () => {
 	it("fires entities in entity-id order regardless of queue order (radix, not queue)", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
@@ -420,17 +420,18 @@ describe("Observers — canonical ordering", () => {
 	it("orders by bare entity index across the high radix pass and recycled generations", () => {
 		// Hardens the canonical-order guard against the two radix-internal
 		// regressions the 8-entity case above can't see:
-		//   1. a single-pass radix — caught by spanning > 1024 indices so the
+		//   1. a single-pass radix, caught by spanning > 1024 indices so the
 		//      second 10-bit pass is load-bearing (8 entities all fit the low pass);
 		//   2. a sort keyed on the full packed handle (index | generation) rather
-		//      than the bare index — caught by recycling low-index slots so they
-		//      carry a non-zero generation. With every generation 0 (no recycling)
-		//      bare-index order and packed-handle order coincide, so a sort that
-		//      never reduced to the 20-bit index would have stayed green.
-		// (Dropping the radix's defensive `& INDEX_MASK` alone is a behavioural
-		// no-op — the index is exactly 20 bits and the two 10-bit passes never
-		// read the generation bits above bit 19 — so the catchable regression is
-		// a sort that *does* consider those bits, e.g. a comparator on raw IDs.)
+		//      than the bare index, caught by recycling low-index slots so they
+		//      carry a non-zero generation. With every generation 0 there is no
+		//      recycling, so bare-index order and packed-handle order coincide.
+		//      A sort that never reduced to the 20-bit index would have stayed
+		//      green.
+		// Dropping the radix's defensive `& INDEX_MASK` alone is a behavioural
+		// no-op. The index is exactly 20 bits, and the two 10-bit passes never
+		// read the generation bits above bit 19. So the catchable regression is
+		// a sort that *does* consider those bits, such as a comparator on raw ids.
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const fired: number[] = [];
@@ -446,9 +447,9 @@ describe("Observers — canonical ordering", () => {
 		const ids: EntityID[] = [];
 		for (let i = 0; i < N; i++) ids.push(world.spawn()); // all generation 0
 
-		// Recycle a handful of LOW-index slots: a deferred destroy + flush frees
+		// Recycle a handful of low-index slots: a deferred destroy + flush frees
 		// the slot, then a fresh createEntity pops it back off the LIFO free stack
-		// with generation + 1 — small index, but large packed handle.
+		// with generation + 1, small index, but large packed handle.
 		const recycle = [0, 1, 2, 5, 9];
 		for (const i of recycle) world.despawn(ids[i]);
 
@@ -464,7 +465,7 @@ describe("Observers — canonical ordering", () => {
 		world.update(1 / 60); // warm-up: flushes the deferred destroys; scrambled empty ⇒ nothing fires
 		expect(fired).toEqual([]);
 
-		// Reclaim the freed slots — same low indices, now generation >= 1.
+		// Reclaim the freed slots, same low indices, now generation >= 1.
 		for (let k = 0; k < recycle.length; k++) {
 			const e = world.spawn();
 			ids[getEntityIndex(e)] = e;
@@ -475,28 +476,28 @@ describe("Observers — canonical ordering", () => {
 		scrambled = ids.slice().reverse();
 		world.update(1 / 60);
 
-		// Canonical firing order is ascending by BARE index. A single-pass radix
-		// interleaves the 1024+ slots; a packed-handle sort pushes the recycled
-		// (high-generation) low indices to the end — both break strict ascent.
+		// Canonical firing order is ascending by bare index. A single-pass radix
+		// interleaves the 1024+ slots. A packed-handle sort pushes the recycled
+		// (high-generation) low indices to the end, both break strict ascent.
 		const expected = ids.map((e) => getEntityIndex(e)).sort((a, b) => a - b);
 		expect(fired).toEqual(expected);
 		expect(fired.length).toBe(N);
 	});
 });
 
-describe("Observers — determinism (observer_determinism_sim, real engine)", () => {
-	// Cross-component-reading, cascading observers — the three things that make
+describe("Observers, determinism (observer_determinism_sim, real engine)", () => {
+	// Cross-component-reading, cascading observers, the three things that make
 	// firing order matter. A correct (commit → observe canonical → fixed-point)
-	// design produces the same DERIVED per-entity state across input orderings.
+	// design produces the same derived per-entity state across input orderings.
 	//
 	// Two distinct digests, matching the sim:
-	//   - `stateHash` (raw) hashes archetype rows in INSERTION order, so it is
-	//     legitimately queue-order-sensitive — even with NO observers (that's how
+	//   - `stateHash` (raw) hashes archetype rows in insertion order, so it is
+	//     legitimately queue-order-sensitive, even with no observers (that's how
 	//     lockstep works: identical input order → identical hash for divergence
 	//     detection). It is the *replay* (same-order) guarantee.
-	//   - the sim's `hashState` folds the world in canonical ENTITY-ID order, so
+	//   - the sim's `hashState` folds the world in canonical entity-ID order, so
 	//     it isolates the observer-derived values from row layout. That is the
-	//     order-INVARIANCE measure.
+	//     order-invariance measure.
 	function build(): {
 		world: ECS;
 		A: ReturnType<ECS["registerComponent"]>;
@@ -543,7 +544,7 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 		return { world, A, B, C, ids };
 	}
 
-	// FNV-1a over the world in canonical entity-id order — the real-engine analog
+	// FNV-1a over the world in canonical entity-id order, the real-engine analog
 	// of the sim's `hashState`.
 	function canonicalDigest(b: ReturnType<typeof build>): number {
 		const { world, A, B, C, ids } = b;
@@ -615,8 +616,8 @@ describe("Observers — determinism (observer_determinism_sim, real engine)", ()
 	});
 });
 
-describe("Observers — glitch-free ordering (observer_ordering_sim, real engine)", () => {
-	// Producer P (onAdd C) writes D=50; consumer Q (onAdd B) reads D → A = D+1.
+describe("Observers, glitch-free ordering (observer_ordering_sim, real engine)", () => {
+	// Producer P (onAdd C) writes D=50. Consumer Q (onAdd B) reads D → A = D+1.
 	// Access-topological order fires P before Q ⇒ A = 51 (glitch-free).
 	function run(perm: (ids: EntityID[]) => EntityID[]): number[] {
 		const world = new ECS({ deterministic: true });
@@ -668,7 +669,7 @@ describe("Observers — glitch-free ordering (observer_ordering_sim, real engine
 	});
 });
 
-describe("Observers — no-observer fast path", () => {
+describe("Observers, no-observer fast path", () => {
 	function scenario(world: ECS, Tag: ReturnType<ECS["registerTag"]>, ids: EntityID[]): void {
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
@@ -697,14 +698,14 @@ describe("Observers — no-observer fast path", () => {
 	});
 });
 
-describe("Observers — access enforcement", () => {
+describe("Observers, access enforcement", () => {
 	it("an undeclared write inside an observer throws in __DEV__", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
-		// Observer declares nothing but writes Pos — accessCheck must catch it.
+		// Observer declares nothing but writes Pos, accessCheck must catch it.
 		world.observe(Tag, {
 			onAdd: (eid, ctx) => ctx.setField(eid, Pos, "x", 1),
 			access: { writes: [Tag] }
@@ -739,7 +740,7 @@ describe("Observers — access enforcement", () => {
 	});
 });
 
-describe("Observers — cascades", () => {
+describe("Observers, cascades", () => {
 	it("a cascading chain converges to a fixed point", () => {
 		const world = new ECS({ deterministic: true });
 		const A = world.registerTag();
@@ -791,14 +792,14 @@ describe("Observers — cascades", () => {
 	});
 });
 
-describe("Observers — yield_existing", () => {
+describe("Observers, yield_existing", () => {
 	it("replays onAdd over current matches on registration, in entity-id order", () => {
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const ids: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
 			const e = world.spawn();
-			world.addComponent(e, Tag); // immediate — no observer yet
+			world.addComponent(e, Tag); // immediate, no observer yet
 			ids.push(e);
 		}
 		const fired: number[] = [];
@@ -811,19 +812,19 @@ describe("Observers — yield_existing", () => {
 	});
 
 	it("a yield_existing registration mid-system does not disable access_check for the rest of the frame", () => {
-		// The replay enters/leaves the observer's access frame; a bare leave
+		// The replay enters and leaves the observer's access frame. A bare leave
 		// nulls the caller's frame (leave() doesn't pop), silently disabling
 		// dev-mode enforcement for the remainder of the registering system. The
 		// undeclared Pos write below must still throw under the restored frame.
 		const world = new ECS({ deterministic: true });
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
-		// A pre-existing match so yieldExisting actually enters/leaves a frame.
+		// A pre-existing match so yieldExisting actually enters and leaves a frame.
 		const existing = world.spawn();
 		world.addComponent(existing, Tag);
 		const target = world.spawn();
 		world.addComponent(target, Pos, { x: 0 });
-		// System declares Tag only — NOT Pos. Mid-frame it lazily registers a
+		// System declares Tag only. Not Pos. Mid-frame it lazily registers a
 		// yieldExisting observer, then performs an undeclared write to Pos.
 		const sys = world.registerSystem({
 			...openAccess([Tag]),
@@ -833,7 +834,7 @@ describe("Observers — yield_existing", () => {
 					yieldExisting: true,
 					access: openAccess([Tag])
 				});
-				ctx.setField(target, Pos, "x", 1); // undeclared — must throw
+				ctx.setField(target, Pos, "x", 1); // undeclared, must throw
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -843,10 +844,10 @@ describe("Observers — yield_existing", () => {
 });
 
 // ============================================================================
-// Phase 2 — data observers (onSet)
+// Phase 2, data observers (onSet)
 // ============================================================================
 
-describe("Observers — onSet (per-entity, dirty list)", () => {
+describe("Observers, onSet (per-entity, dirty list)", () => {
 	it("fires once per changed entity, deduped within a tick", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -864,7 +865,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 			...openAccess([Pos]),
 			fn: (ctx) => {
 				ctx.setField(e1, Pos, "x", 1);
-				ctx.setField(e1, Pos, "x", 2); // same entity again — dedups
+				ctx.setField(e1, Pos, "x", 2); // same entity again, dedups
 				ctx.setField(e2, Pos, "x", 3);
 			}
 		});
@@ -877,7 +878,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 	});
 
 	it("records a dirty row from a ctx.ref write via ctx.mark_changed", () => {
-		// `ctx.ref` / `ctx.getColumn` writes bypass setField's auto-record, so a
+		// `ctx.ref` / `ctx.getColumnMut` writes bypass setField's auto-record, so a
 		// per-entity onSet consumer marks the row explicitly (the bench's winning
 		// `tick+list`: raw write + an int push).
 		const world = new ECS({ deterministic: true });
@@ -923,9 +924,9 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 		expect(fires).toBe(0);
 	});
 
-	it("fans every changed entity out to ALL per-entity onSet observers on the same component", () => {
-		// Two independent subsystems observe onSet for the SAME component. Each
-		// must receive the full changed-entity set — the first observer's drain
+	it("fans every changed entity out to all per-entity onSet observers on the same component", () => {
+		// Two independent subsystems observe onSet for the same component. Each
+		// must receive the full changed-entity set, the first observer's drain
 		// must not starve the rest (the consume-once bug: a shared dirty list was
 		// taken by the first observer, leaving later observers an empty list).
 		const world = new ECS({ deterministic: true });
@@ -963,7 +964,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 
 	it("records a host-side ECS.set_field write for the per-entity onSet observer", () => {
 		// A mutation through the host facade (outside a system, between updates)
-		// must still be seen by an entity-granular onSet observer — `ECS.setField`
+		// must still be seen by an entity-granular onSet observer, `ECS.setField`
 		// records the dirty row exactly like `SystemContext.setField`.
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -983,7 +984,7 @@ describe("Observers — onSet (per-entity, dirty list)", () => {
 	});
 });
 
-describe("Observers — onSet (archetype-granular, change tick)", () => {
+describe("Observers, onSet (archetype-granular, change tick)", () => {
 	it("fires once per changed archetype-column with the archetype view; not on unchanged ticks", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -1004,7 +1005,7 @@ describe("Observers — onSet (archetype-granular, change tick)", () => {
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
-		world.update(1 / 60); // tick 0: setup writes already stamped tick 0 — baseline replay
+		world.update(1 / 60); // tick 0: setup writes already stamped tick 0, baseline replay
 		const afterTick0 = counts.length;
 		world.update(1 / 60); // tick 1: write → fires once
 		world.update(1 / 60); // tick 2: no write → must not fire
@@ -1013,7 +1014,7 @@ describe("Observers — onSet (archetype-granular, change tick)", () => {
 	});
 });
 
-describe("Observers — dirty state stays out of state_hash", () => {
+describe("Observers, dirty state stays out of state_hash", () => {
 	it("a populated dirty list does not change state_hash vs no tracking", () => {
 		// Capture the hash mid-tick (after writes, before the post-update drain),
 		// with and without an entity-onSet observer enabling dirty tracking.
@@ -1045,10 +1046,10 @@ describe("Observers — dirty state stays out of state_hash", () => {
 	});
 });
 
-describe("Observers — onSet and the one-tick event window", () => {
+describe("Observers, onSet and the one-tick event window", () => {
 	it("onSet reads events emitted earlier in the same tick (it fires inside the window)", () => {
 		// `clearEvents` is the tick's last act (after `dispatchSet`), so onSet sees
-		// the settled component snapshot AND this tick's events. (Was 0 before,
+		// the settled component snapshot and this tick's events. (Was 0 before,
 		// when the clear ran before `dispatchSet`.)
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -1057,7 +1058,7 @@ describe("Observers — onSet and the one-tick event window", () => {
 		let seen = -1;
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
-				seen = ctx.read(Ev).length;
+				seen = ctx.readEvents(Ev).length;
 			},
 			granularity: "entity",
 			access: openAccess([Pos])
@@ -1078,7 +1079,7 @@ describe("Observers — onSet and the one-tick event window", () => {
 	});
 
 	it("does not extend event lifetime: the channel is empty at the tick boundary (snapshot-safe)", () => {
-		// stateHash() and the world snapshot exclude event state; that is sound only
+		// stateHash() and the world snapshot exclude event state. That is sound only
 		// because no event survives the update() boundary. onSet reading an event must
 		// not keep it alive into the next tick.
 		const world = new ECS({ deterministic: true });
@@ -1087,7 +1088,7 @@ describe("Observers — onSet and the one-tick event window", () => {
 		world.events.register(Ev, ["v"] as const);
 		world.observe(Pos, {
 			onSet: (_eid, ctx) => {
-				void ctx.read(Ev).length; // read inside onSet — must not extend lifetime
+				void ctx.readEvents(Ev).length; // read inside onSet, must not extend lifetime
 			},
 			granularity: "entity",
 			access: openAccess([Pos])
@@ -1103,7 +1104,7 @@ describe("Observers — onSet and the one-tick event window", () => {
 					ctx.emit(Ev, { v: 1 });
 					ctx.setField(e, Pos, "x", 1);
 				}
-				nextTickLen.push(ctx.read(Ev).length);
+				nextTickLen.push(ctx.readEvents(Ev).length);
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
@@ -1115,8 +1116,8 @@ describe("Observers — onSet and the one-tick event window", () => {
 	});
 
 	it("throws if an onSet observer emits an event (its emission would be silently dropped)", () => {
-		// onSet runs at the tick tail; anything it emits is wiped by `clearEvents`
-		// before any reader, and would break snapshot/restore determinism if it
+		// onSet runs at the tick tail. Anything it emits is wiped by `clearEvents`
+		// before any reader, and would break snapshot and restore determinism if it
 		// survived. A __DEV__ guard turns the silent drop into a loud error.
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(["x"] as const, "i32");
@@ -1138,5 +1139,188 @@ describe("Observers — onSet and the one-tick event window", () => {
 		expect(() => world.update(1 / 60)).toThrow(
 			expect.objectContaining({ category: ECS_ERROR.OBSERVER_ONSET_EMIT })
 		);
+	});
+});
+
+describe("Observers, onSet (per-entity) records ref and cursor writes", () => {
+	// A ref and a cursor write raw columns through shared setters, which cannot
+	// record. The record lands at creation and at each `at()`, conservatively,
+	// as the archetype stamp does. Before this, both writes were invisible to
+	// an entity-granular onSet while the docs said a ref write was seen.
+	function world() {
+		const ecs = new ECS({ deterministic: true });
+		const Pos = ecs.registerComponent(["x"] as const, "i32");
+		const fired: number[] = [];
+		ecs.observe(Pos, {
+			onSet: (eid) => fired.push(getEntityIndex(eid)),
+			granularity: "entity",
+			access: openAccess([Pos])
+		});
+		const e = ecs.spawn();
+		ecs.addComponent(e, Pos, { x: 0 });
+		const other = ecs.spawn();
+		ecs.addComponent(other, Pos, { x: 0 });
+		return { ecs, Pos, e, other, fired };
+	}
+
+	it("records a ctx.ref write without markChanged", () => {
+		const { ecs, Pos, e, fired } = world();
+		const sys = ecs.registerSystem({
+			...openAccess([Pos]),
+			fn: (ctx) => {
+				ctx.ref(Pos, e).x = 9;
+			}
+		});
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		ecs.update(1 / 60);
+		expect(fired).toEqual([getEntityIndex(e)]);
+		expect(ecs.getField(e, Pos, "x")).toBe(9);
+	});
+
+	it("records each entity a ctx.cursor repoints to", () => {
+		const { ecs, Pos, e, other, fired } = world();
+		const sys = ecs.registerSystem({
+			...openAccess([Pos]),
+			fn: (ctx) => {
+				const c = ctx.cursor(Pos);
+				c.at(e).x = 1;
+				c.at(other).x = 2;
+			}
+		});
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		ecs.update(1 / 60);
+		expect(fired.sort((a, b) => a - b)).toEqual(
+			[e, other].map((id) => getEntityIndex(id)).sort((a, b) => a - b)
+		);
+	});
+
+	it("records a host cursor repoint between frames", () => {
+		const { ecs, Pos, e, fired } = world();
+		const sys = ecs.registerSystem({ ...openAccess([Pos]), fn: () => {} });
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		ecs.update(1 / 60);
+		ecs.cursor(Pos).at(e).x = 4;
+		ecs.update(1 / 60);
+		expect(fired).toEqual([getEntityIndex(e)]);
+	});
+
+	it("does not record refRead or cursorRead", () => {
+		const { ecs, Pos, e, other, fired } = world();
+		const sys = ecs.registerSystem({
+			...openAccess([Pos]),
+			fn: (ctx) => {
+				void ctx.refRead(Pos, e).x;
+				void ctx.cursorRead(Pos).at(other).x;
+			}
+		});
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		ecs.update(1 / 60);
+		ecs.cursorRead(Pos).at(e);
+		ecs.update(1 / 60);
+		expect(fired).toEqual([]);
+	});
+
+	it("collapses a ref plus markChanged on one entity into one firing", () => {
+		const { ecs, Pos, e, fired } = world();
+		const sys = ecs.registerSystem({
+			...openAccess([Pos]),
+			fn: (ctx) => {
+				const r = ctx.ref(Pos, e);
+				r.x = 9;
+				ctx.markChanged(e, Pos);
+			}
+		});
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		ecs.update(1 / 60);
+		expect(fired).toEqual([getEntityIndex(e)]);
+	});
+});
+
+describe("Observers, onSet (archetype-granular) and the host window", () => {
+	it("fires once on the next update for a host setField between frames", () => {
+		// The dispatch keeps the change tick of its own run as the baseline. A
+		// host write between frames stamps above it, so the next dispatch
+		// reports it, and the one after does not. Before this the baseline was
+		// the next frame tick, which a host write never reached.
+		const ecs = new ECS({ deterministic: true });
+		const Pos = ecs.registerComponent(["x"] as const, "i32");
+		let fires = 0;
+		ecs.observe(Pos, {
+			onSet: () => fires++,
+			granularity: "archetype",
+			access: openAccess([Pos])
+		});
+		const sys = ecs.registerSystem({ ...openAccess([Pos]), fn: () => {} });
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		const e = ecs.spawn();
+		ecs.addComponent(e, Pos, { x: 0 });
+		ecs.update(1 / 60);
+		ecs.update(1 / 60);
+		fires = 0;
+		ecs.setField(e, Pos, "x", 7);
+		ecs.update(1 / 60);
+		expect(fires).toBe(1);
+		ecs.update(1 / 60);
+		expect(fires).toBe(1);
+	});
+
+	it("does not fire twice for a write a system made before the dispatch", () => {
+		const ecs = new ECS({ deterministic: true });
+		const Pos = ecs.registerComponent(["x"] as const, "i32");
+		let fires = 0;
+		ecs.observe(Pos, {
+			onSet: () => fires++,
+			granularity: "archetype",
+			access: openAccess([Pos])
+		});
+		let write = false;
+		const sys = ecs.registerSystem({
+			...openAccess([Pos]),
+			fn: (ctx) => {
+				if (write) ctx.setField(e, Pos, "x", 1);
+			}
+		});
+		ecs.addSystems(SCHEDULE.UPDATE, sys);
+		ecs.startup();
+		const e = ecs.spawn();
+		ecs.addComponent(e, Pos, { x: 0 });
+		ecs.update(1 / 60);
+		ecs.update(1 / 60);
+		fires = 0;
+		write = true;
+		ecs.update(1 / 60);
+		write = false;
+		ecs.update(1 / 60);
+		expect(fires).toBe(1);
+	});
+});
+
+describe("observe() and a definition that is not a dense component", () => {
+	it("accepts the entity-level onSet of a sparse component, and rejects a malformed handle", () => {
+		const ecs = new ECS({ deterministic: true });
+		const S = ecs.registerSparseComponent({ v: "i32" });
+		expect(() =>
+			ecs.observe(S, {
+				granularity: "entity",
+				access: { reads: [], writes: [] },
+				onSet: () => {}
+			})
+		).not.toThrow();
+		// A relation def is a number in its own id space, so the runtime cannot
+		// tell it from a sparse def. The types do. A handle with no id is the
+		// shape the runtime can name.
+		expect(() =>
+			ecs.observe({} as never, {
+				granularity: "entity",
+				access: { reads: [], writes: [] },
+				onSet: () => {}
+			})
+		).toThrow(expect.objectContaining({ category: ECS_ERROR.OBSERVER_INVALID_CONFIG }));
 	});
 });

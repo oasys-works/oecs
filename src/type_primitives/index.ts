@@ -1,5 +1,5 @@
 /**
- * Type-primitives barrel — assertions, brands, errors, plus data-structure primitives.
+ * Type-primitives barrel, assertions, brands, errors, plus data-structure primitives.
  */
 
 export * from "./assertions";

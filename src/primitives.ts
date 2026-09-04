@@ -1,11 +1,11 @@
 /**
- * `@oasys/oecs/primitives` — the general-purpose data-structure primitives the
- * ECS is built on, surfaced for direct consumer use: a bit set, sparse set/map,
+ * `@oasys/oecs/primitives`, the general-purpose data-structure primitives the
+ * ECS is built on, surfaced for direct consumer use: a bit set, sparse set and map,
  * growable typed arrays, a binary heap, and a topological sort.
  *
- * These are the low-level building blocks only; the ECS itself is the default
+ * These are the low-level building blocks only. The ECS itself is the default
  * `@oasys/oecs` entry. The internal assertion, brand, and error helpers under
- * `src/type_primitives/` are intentionally NOT re-exported here.
+ * `src/type_primitives/` are intentionally not re-exported here.
  *
  * @module
  */

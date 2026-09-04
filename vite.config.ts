@@ -5,9 +5,9 @@ import path from "path";
 
 // Two production-artifact variants are emitted from one config (see
 // scripts/build.mjs): the default `production` build (`__DEV__:false`, guards
-// DCE'd, plain `*.js`/`*.cjs`) and the `development` build (`__DEV__:true`,
-// guards retained, `*.development.js`/`*.development.cjs`). The variant is
-// selected via OECS_VARIANT; the dev server (`command !== "build"`) is always
+// DCE'd, plain `*.js` and `*.cjs`) and the `development` build (`__DEV__:true`,
+// guards retained, `*.development.js` and `*.development.cjs`). The variant is
+// selected via OECS_VARIANT. The dev server (`command !== "build"`) is always
 // guards-on. Declarations are identical across variants, so `dts` runs only in
 // the production pass and `emptyOutDir` clears the dir only on that first pass.
 const DEV_BUILD = process.env.OECS_VARIANT === "development";
@@ -39,13 +39,13 @@ export default defineConfig(({ command }) => ({
 
   build: {
     target: "es2022",
-    // Production pass wipes dist; the development pass adds its `*.development.*`
+    // production pass wipes dist. The development pass adds its `*.development.*`
     // artifacts alongside without clearing the production output.
     emptyOutDir: !DEV_BUILD,
     lib: {
       // Multi-entry, one per published subpath. Keys are src-relative paths so
       // the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
-      // land at matching paths — the `exports` map points both at the same path.
+      // land at matching paths, the `exports` map points both at the same path.
       entry: {
         index: path.resolve(__dirname, "src/index.ts"),
         shared: path.resolve(__dirname, "src/shared.ts"),
@@ -73,7 +73,7 @@ export default defineConfig(({ command }) => ({
         `${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`,
     },
     rollupOptions: {
-      // solid-js is an optional peerDependency — never bundle it.
+      // solid-js is an optional peerDependency, never bundle it.
       external: ["solid-js"],
     },
   },

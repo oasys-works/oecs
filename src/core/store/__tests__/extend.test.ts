@@ -12,7 +12,7 @@ import {
 import { growableSabAllocator, wasmMemoryAllocator, type BufferAllocator } from "../allocator";
 import { extendColumnStore, StoreExtendError } from "../extend";
 import { growColumnStore } from "../grow";
-import type { ColumnStoreInternal } from "../column_store";
+import { usedDescriptorBytes, type ColumnStoreInternal } from "../column_store";
 
 function spec(
 	archetypeId: number,
@@ -33,7 +33,7 @@ function spec(
 	};
 }
 
-describe("extend_column_store — happy path", () => {
+describe("extend_column_store, happy path", () => {
 	it("appends a new archetype while keeping the existing one", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
@@ -65,7 +65,7 @@ describe("extend_column_store — happy path", () => {
 		expect(newViewStamp).toBe(1);
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 		// The realloc path patches the returned header so its cached
-		// `view_stamp` / `capacity` match the SAB bytes — no stale 0.
+		// `view_stamp` / `capacity` match the SAB bytes, no stale 0.
 		expect(next.header.viewStamp).toBe(1);
 		expect(next.header.capacity).toBe(readStoreHeader(next.view).capacity);
 	});
@@ -159,11 +159,87 @@ describe("extend_column_store — happy path", () => {
 		expect(Array.from(rf64.subarray(0, 3))).toEqual([1.5, 2.5, 3.5]);
 	});
 
+	it("builds the `existing` list only on the realloc path, and reads a function for it", () => {
+		// Heap store, no in-place allocator: every extend reallocs, so the
+		// function must run and its row counts must carry the rows across.
+		const old = createColumnStore([
+			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
+		]);
+		const i32 = old.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		i32[0] = 7;
+		i32[1] = 8;
+		let calls = 0;
+		const { store: next } = extendColumnStore(old, {
+			newArchetypes: [spec(1, 4, [{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
+			existing: () => {
+				calls++;
+				return [{ archetypeId: 0, newRowCapacity: 0, rowCount: 2 }];
+			}
+		});
+		expect(calls).toBe(1);
+		const ri32 = next.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		expect(Array.from(ri32.subarray(0, 2))).toEqual([7, 8]);
+
+		// In-place store with headroom: the in-place path moves no rows, so the
+		// function must not run at all.
+		const alloc = growableSabAllocator(1024 * 1024);
+		const inPlace = createColumnStore(
+			[spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
+			alloc,
+			{ reservedDescriptorBytes: 4096 }
+		);
+		let inPlaceCalls = 0;
+		const res = extendColumnStore(
+			inPlace,
+			{
+				newArchetypes: [spec(1, 4, [{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
+				existing: () => {
+					inPlaceCalls++;
+					return [];
+				}
+			},
+			alloc
+		);
+		expect(res.viewsPreserved).toBe(true);
+		expect(inPlaceCalls).toBe(0);
+	});
+
+	it("keeps the used descriptor bytes correct across repeated in-place extends", () => {
+		// each in-place extend lands its descriptor after the previous ones. The
+		// count of used bytes is cached on the store and not summed each time, so
+		// a stale cache would overwrite an earlier descriptor or refuse an extend
+		// that fits. Five extends, then every archetype must still read back.
+		const alloc = growableSabAllocator(1024 * 1024);
+		let store: ColumnStore = createColumnStore(
+			[spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
+			alloc,
+			{ reservedDescriptorBytes: 4096 }
+		);
+		for (let id = 1; id <= 5; id++) {
+			const res = extendColumnStore(
+				store,
+				{ newArchetypes: [spec(id, 4, [{ componentId: id + 1, fieldId: 0, typeTag: TYPE_TAG.f64 }])] },
+				alloc
+			);
+			expect(res.viewsPreserved).toBe(true);
+			store = res.store;
+			const col = store.archetypes.get(id)!.columns.get(columnKey(id + 1, 0))!.view as Float64Array;
+			col[0] = id * 1.5;
+		}
+		expect(store.archetypes.size).toBe(6);
+		expect(readStoreHeader(store.view).archetypeCount).toBe(6);
+		expect((store as ColumnStoreInternal)._usedDescriptorBytes).toBe(usedDescriptorBytes(store.archetypes));
+		for (let id = 1; id <= 5; id++) {
+			const col = store.archetypes.get(id)!.columns.get(columnKey(id + 1, 0))!.view as Float64Array;
+			expect(col[0]).toBe(id * 1.5);
+		}
+	});
+
 	it("leaves existing archetypes empty when no row_count is supplied", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		// Write some bytes that should NOT be copied because no row_count was declared.
+		// Write some bytes that should not be copied because no row_count was declared.
 		(old.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)[0] = 99;
 
 		const { store: next } = extendColumnStore(old, {
@@ -199,7 +275,7 @@ describe("extend_column_store — happy path", () => {
 	});
 });
 
-describe("extend_column_store — growable in-place fast path", () => {
+describe("extend_column_store, growable in-place fast path", () => {
 	it("reuses the same SAB across extends when allocator is growable + headroom present", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
@@ -247,7 +323,7 @@ describe("extend_column_store — growable in-place fast path", () => {
 		);
 		const i32After = next.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		const f64After = next.archetypes.get(0)!.columns.get(columnKey(1, 1))!.view as Float64Array;
-		// Same TypedArray instance — not rebuilt.
+		// Same TypedArray instance, not rebuilt.
 		expect(i32After).toBe(i32Before);
 		expect(f64After).toBe(f64Before);
 		// Data survived.
@@ -257,9 +333,9 @@ describe("extend_column_store — growable in-place fast path", () => {
 	});
 
 	it("keeps column view lengths fixed when the buffer below them grows", () => {
-		// The other half of the rule the `makeView` doc states. The test above
+		// The other half of the rule the `createView` doc states. The test above
 		// proves the view instance and its data survive an in-place extend, but a
-		// length-TRACKING view survives both of those too, and then silently spans
+		// The length-tracking view survives both of those too, and then silently spans
 		// the grown buffer. Only the length tells the two shapes apart, and the
 		// tracking one is the slowest access shape measured on every engine.
 		const alloc = growableSabAllocator(1024 * 1024);
@@ -335,14 +411,14 @@ describe("extend_column_store — growable in-place fast path", () => {
 	});
 
 	it("falls back to realloc path when descriptor headroom is exhausted", () => {
-		// Reserve only enough for the initial archetype; the new one must
+		// Reserve only enough for the initial archetype. The new one must
 		// trigger the slow path (which reallocates a fresh SAB from the
 		// same growable allocator).
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
 			[spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
 			alloc
-			// no reservedDescriptorBytes — headroom == 0 after first archetype
+			// no reservedDescriptorBytes, headroom == 0 after first archetype
 		);
 		const { store: next } = extendColumnStore(
 			old,
@@ -352,15 +428,15 @@ describe("extend_column_store — growable in-place fast path", () => {
 			alloc
 		);
 		// Either the SAB is the same (in-place worked) or different (slow
-		// path took over). Headroom == 0 means slow path; in that case
+		// path took over). Headroom == 0 means slow path. In that case
 		// the test's contract is "fast path was correctly skipped". The
-		// extend STILL must produce a working store.
+		// extend still must produce a working store.
 		expect(next.archetypes.size).toBe(2);
 		expect(readStoreHeader(next.view).archetypeCount).toBe(2);
 	});
 });
 
-describe("extend_column_store — descriptor headroom survives realloc", () => {
+describe("extend_column_store, descriptor headroom survives realloc", () => {
 	// One single-column archetype's descriptor footprint.
 	const ONE_COL = archetypeDescriptorBytes(1);
 
@@ -374,7 +450,7 @@ describe("extend_column_store — descriptor headroom survives realloc", () => {
 		);
 	}
 
-	// Sum the descriptor bytes the store's archetypes actually occupy — the
+	// Sum the descriptor bytes the store's archetypes actually occupy, the
 	// "natural" descriptor-region size for the current set.
 	function usedRegion(store: ColumnStore): number {
 		let used = 0;
@@ -384,11 +460,11 @@ describe("extend_column_store — descriptor headroom survives realloc", () => {
 		return used;
 	}
 
-	it("re-reserves headroom on realloc so the NEXT extend is in-place again", () => {
+	it("re-reserves headroom on realloc so the next extend is in-place again", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		// Headroom for two extra single-col archetypes beyond the seed. The
-		// third in-place extend exhausts it and forces the realloc path; the
-		// fix must hand the realloc'd store fresh headroom so the extend AFTER
+		// third in-place extend exhausts it and forces the realloc path. The
+		// fix must hand the realloc'd store fresh headroom so the extend after
 		// that goes back to the in-place fast path (pre-fix it stayed slow
 		// forever).
 		let store: ColumnStore = createColumnStore(
@@ -405,7 +481,7 @@ describe("extend_column_store — descriptor headroom survives realloc", () => {
 			if (!sawRealloc) {
 				sawRealloc = !result.viewsPreserved;
 			} else {
-				// First extend after the realloc — this is the regression point.
+				// First extend after the realloc. This is the regression point.
 				inPlaceAfterRealloc = result.viewsPreserved;
 				break;
 			}
@@ -441,7 +517,7 @@ describe("extend_column_store — descriptor headroom survives realloc", () => {
 	});
 });
 
-describe("extend_column_store — wasm-memory in-place fast path", () => {
+describe("extend_column_store, wasm-memory in-place fast path", () => {
 	it("takes the in-place branch under wasm_memory_allocator (views_preserved=true)", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 64, shared: true });
 		const alloc = wasmMemoryAllocator(memory);
@@ -461,7 +537,7 @@ describe("extend_column_store — wasm-memory in-place fast path", () => {
 		);
 		expect(result.viewsPreserved).toBe(true);
 
-		// Existing column view is the SAME TypedArray instance — not rebuilt.
+		// Existing column view is the same TypedArray instance, not rebuilt.
 		const i32After = result.store.archetypes.get(0)!.columns.get(columnKey(1, 0))!
 			.view as Int32Array;
 		expect(i32After).toBe(i32Before);
@@ -473,7 +549,7 @@ describe("extend_column_store — wasm-memory in-place fast path", () => {
 		// Pick a small initial memory so adding a wide new archetype forces
 		// `memory.grow()` and a fresh `memory.buffer` reference. The
 		// `isInPlace` fast path must still preserve the existing column
-		// view's reads/writes.
+		// view's reads and writes.
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 64, shared: true });
 		const alloc = wasmMemoryAllocator(memory);
 		const old = createColumnStore(
@@ -485,7 +561,7 @@ describe("extend_column_store — wasm-memory in-place fast path", () => {
 		const i32Before = old.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		i32Before[2] = 42;
 
-		// Add a fat archetype: 1024 rows × 8 bytes/row × 4 columns = 32 KiB,
+		// Add a fat archetype: 1024 rows × 8 bytes and row × 4 columns = 32 KiB,
 		// big enough to force the WASM memory past its initial page on a
 		// freshly-allocated 64 KiB store.
 		const fat = spec(1, 1024, [
@@ -554,7 +630,7 @@ describe("extend_column_store — wasm-memory in-place fast path", () => {
 	});
 });
 
-describe("extend_column_store — rejections", () => {
+describe("extend_column_store, rejections", () => {
 	it("rejects an empty plan", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])

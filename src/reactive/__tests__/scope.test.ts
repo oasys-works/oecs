@@ -1,6 +1,6 @@
 /**
- * Ownership-scope gate: cleanups fire before each re-run and on dispose; a `root`
- * tears down its whole subtree; a parent re-run disposes the children its previous
+ * Ownership-scope gate: cleanups fire before each re-run and on dispose. A `root`
+ * tears down its whole subtree. A parent re-run disposes the children its previous
  * run created (the nested-effect leak guard).
  */
 import { describe, expect, it } from "vitest";

@@ -1,14 +1,14 @@
 /**
- * Sparse storage class — query integration.
+ * Sparse storage class, query integration.
  *
  * The second query-match path: queries can `withSparse` / `withoutSparse`
  * a sparse component and iterate the matching entities via `forEachEntity`,
  * across every archetype. Covers the issue's acceptance criteria:
- *  - require a sparse component (members only, regardless of archetype);
- *  - exclude a sparse component;
- *  - mixed dense-bitmask + sparse-membership terms → correct intersection;
- *  - multi-sparse require (smallest-store drive) → intersection;
- *  - empty-result cases;
+ *  - require a sparse component (members only, regardless of archetype)
+ *  - exclude a sparse component
+ *  - mixed dense-bitmask + sparse-membership terms → correct intersection
+ *  - multi-sparse require (smallest-store drive) → intersection
+ *  - empty-result cases
  *  - the dense `forEach` path stays untouched (no sparse consultation).
  */
 
@@ -20,7 +20,7 @@ const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
 // Collect the entities a sparse query yields, as a sorted plain-number array
-// (iteration order over a sparse set is not canonical — the determinism
+// (iteration order over a sparse set is not canonical, the determinism
 // paths sort first).
 function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] {
 	const out: number[] = [];
@@ -32,7 +32,7 @@ const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((
 
 describe("ECS sparse query integration", () => {
 	//=========================================================
-	// withSparse — members only, across all archetypes
+	// withSparse, members only, across all archetypes
 	//=========================================================
 
 	it("require_sparse yields exactly the members, spanning archetypes", () => {
@@ -60,12 +60,12 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(b, Marked);
 		world.addSparse(c, Marked);
 
-		// query() with no dense terms → match-all dense; the sparse term filters.
+		// query() with no dense terms → match-all dense. The sparse term filters.
 		const q = world.query().withSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a, b, c]));
 	});
 
-	it("require_sparse reflects live add/remove of membership", () => {
+	it("require_sparse reflects live add and remove of membership", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
 		const a = world.spawn();
@@ -166,7 +166,7 @@ describe("ECS sparse query integration", () => {
 		const B = world.registerSparseTag();
 
 		const ents = [0, 1, 2, 3, 4].map(() => world.spawn());
-		// A is the larger set; B is the rarer one (drives iteration).
+		// A is the larger set. B is the rarer one (drives iteration).
 		for (const e of ents) world.addSparse(e, A);
 		world.addSparse(ents[1], B);
 		world.addSparse(ents[3], B);
@@ -259,7 +259,7 @@ describe("ECS sparse query integration", () => {
 	});
 
 	//=========================================================
-	// withSparse / withoutSparse are cached & stable
+	// withSparse and withoutSparse are cached & stable
 	//=========================================================
 
 	it("require_sparse returns a stable cached query for the same term", () => {
@@ -275,7 +275,7 @@ describe("ECS sparse query integration", () => {
 		const B = world.registerSparseTag();
 		const base = world.query();
 		// The multi-arg form used to mint a fresh Query + id + term arrays on every
-		// call; it now folds through the single-term cache, so repeated calls are
+		// call. It now folds through the single-term cache, so repeated calls are
 		// the identical instance.
 		expect(base.withSparse(A, B)).toBe(base.withSparse(A, B));
 	});
@@ -309,7 +309,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(ents[1], B);
 		world.addSparse(ents[3], B);
 
-		// Single-call multi-arg form — equivalent to the chained-require test above.
+		// Single-call multi-arg form, equivalent to the chained-require test above.
 		const q = world.query().withSparse(A, B);
 		expect(collect(q)).toEqual(sorted([ents[1], ents[3]]));
 	});
@@ -345,7 +345,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
-		world.spawn(); // no Pos — excluded by the dense term
+		world.spawn(); // no Pos, excluded by the dense term
 
 		expect(collect(world.query(Pos))).toEqual(sorted([a, b]));
 	});
@@ -354,7 +354,7 @@ describe("ECS sparse query integration", () => {
 	// Tag with a non-empty schema works the same
 	//=========================================================
 
-	it("works with a sparse component carrying fields, not just tags", () => {
+	it("works with a sparse component carrying fields, not only tags", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Burning = world.registerSparseComponent({ dps: "f64" });

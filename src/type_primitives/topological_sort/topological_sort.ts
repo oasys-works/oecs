@@ -1,5 +1,5 @@
 /***
- * topologicalSort — Kahn's algorithm with a BinaryHeap ready queue.
+ * topologicalSort. Kahn's algorithm with a BinaryHeap ready queue.
  *
  * Accepts an arbitrary node set, a dependency edge map, and a tiebreaker
  * comparator used to order nodes that are simultaneously ready (zero in-degree).

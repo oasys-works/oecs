@@ -2,14 +2,14 @@
 
 A **ref** is a cached accessor for the component of one entity. It is a small object, and its
 properties read and write the fields of that entity. A
-[**cursor**](#cursors--many-entities-by-id) is the same accessor, created one time and then pointed
-at each of many entities in turn. Use a cursor when you walk a list of ids.
+[**cursor**](#cursors-many-entities-by-id) is the same accessor, created one time and then moved
+to each of many entities in turn. Use a cursor when you walk a list of ids.
 
 Use a ref on a **low-frequency path that touches one entity**, where the
-[`eachChunk`](./queries.md#eachchunk--mutable-hot-path) column loop is not correct:
+[`forEachChunk`](./queries.md#foreachchunk--mutable-hot-path) column loop is not correct:
 
-- a reaction to one event;
-- a change to a specific entity, by id;
+- a reaction to one event
+- a change to a specific entity, by id
 - an occasional write to a different entity.
 
 ```ts
@@ -36,7 +36,7 @@ ability to mutate, and there is no `refMut`.
 > **Why the definition comes first.** `ref` and `refRead` are the single-entity members of the
 > **column-cursor family**, and not of the entity-accessor family. They are the equivalent, outside
 > iteration, of the cursors inside a loop:
-> [`cols.mut(def)` and `cols.read(def)`](./queries.md#eachchunk--mutable-hot-path). All four share
+> [`cols.mut(def)` and `cols.read(def)`](./queries.md#foreachchunk--mutable-hot-path). All four share
 > the same rule (the mutable name has no suffix, and the read-only name has the `Read` suffix)
 > *and* the same argument order (the definition comes first). So `ctx.ref(Pos, e)` reads as "a
 > cursor onto `Pos`, for entity `e`", which agrees with `cols.mut(Pos)`. That order is
@@ -46,14 +46,17 @@ ability to mutate, and there is no `refMut`.
 
 The accessor finds the archetype, the row, and the columns **one time, when you create it**. Each
 later read or write of a field is then one index operation on a typed array. To create a ref, the
-engine makes one `Object.create` call over a cached prototype.
+engine makes one `Object.create` call over one prototype that every ref and every cursor in the
+process shares. One prototype gives every accessor one shape, so the cost of a field read does not
+increase with the number of components that you read through refs.
 
 > [!IMPORTANT]
 > **`ctx.ref` sets the change tick of the component immediately, when you create the ref.** It does
 > this before you write anything, and also if you never write. This marks the component as changed
-> on that archetype for this tick, which is what a [`changed(def)`](./change-detection.md) query
-> uses. If you only read, use **`ctx.refRead`**. It does not set the tick, so you do not cause an
-> incorrect change detection, and you also show your intention.
+> on that archetype for this run, which is what a [`changed(def)`](./change-detection.md) query
+> uses. At the same moment it records the entity for an [`onSet`](./observers.md) observer with
+> entity granularity. If you only read, use **`ctx.refRead`**. It sets and records nothing, so you
+> do not cause an incorrect change detection, and you also show your intention.
 
 ## Points to note
 
@@ -83,17 +86,17 @@ engine makes one `Object.create` call over a cached prototype.
 > does a read check, so declare it in `reads`. Both throw `ENTITY_NOT_ALIVE` for a handle to an
 > entity that is not alive.
 
-## Cursors — many entities, by id
+## Cursors, many entities, by id
 
 A ref is created for one entity. When you have a **list of ids** to walk, you pay that creation
 again for each entity, and the loop then discards each ref that it created. A **cursor** is the same
-accessor with the creation lifted out of the loop. You create it one time, and then you point it at
+accessor with the creation lifted out of the loop. You create it one time, and then you move it to
 each entity with `at`:
 
 ```ts
 const p = ctx.cursor(Pos);          // create one time
 for (let i = 0; i < ids.length; i++) {
-  p.at(ids[i]);                     // point it, no allocation
+  p.at(ids[i]);                     // move it, and no allocation
   p.x += p.y * dt;                  // reads and writes ids[i]
 }
 ```
@@ -108,7 +111,7 @@ type ReadonlyComponentCursor<S> = {  readonly [K in keyof S]: number } & { at(e:
 
 The same rules as the rest of the family hold: the definition comes first, the mutable name has no
 suffix, and the read-only name has the `Read` suffix. `at` returns the cursor, so a single read
-stays one expression — `ecs.cursor(Pos).at(e).x` — but in a loop, call it as a statement.
+stays one expression, `ecs.cursor(Pos).at(e).x`, but in a loop, call it as a statement.
 
 What a cursor does, against the other ways to read by id:
 
@@ -130,8 +133,9 @@ all, and a cursor helps even when you read a single field.
 > cannot do.
 
 > [!IMPORTANT]
-> `ctx.cursor` sets the change tick on each `at`, in the same way and for the same reason that
-> `ctx.ref` sets it when you create a ref. Use **`ctx.cursorRead`** when you only read.
+> `ctx.cursor` sets the change tick on each `at`, and records the entity for an entity-level
+> `onSet`, in the same way and for the same reason that `ctx.ref` does when you create a ref. The
+> host `ecs.cursor` does the same. Use **`ctx.cursorRead`** when you only read.
 > `ReadonlyComponentCursor` is a limit at compile time only, exactly as `ReadonlyComponentRef` is.
 
 > [!NOTE]
@@ -148,23 +152,30 @@ all, and a cursor helps even when you read a single field.
 
 A cursor removes the allocation. It does not remove the entity → archetype → row resolution, which
 is what dense packing costs. So a query is still the better tool when a query can express the set,
-because an [`eachChunk`](./queries.md#eachchunk--mutable-hot-path) column walk resolves nothing for
+because an [`forEachChunk`](./queries.md#foreachchunk--mutable-hot-path) column walk resolves nothing for
 each row. Use a cursor when the set of entities comes from somewhere else: a list of ids, the
 payload of an event, or the result of a spatial query.
+
+A cursor over a [sparse component](./sparse-storage.md#cursors-many-entities-by-id)
+(`sparseCursor` and `sparseCursorRead`) removes the resolution too. The columns of a sparse
+component are indexed by entity, so `at` writes one field and a read is one load. When a system
+reads a component by id far more than it sweeps it, register that component as sparse and read it
+through a sparse cursor.
 
 ## What to use, and when
 
 | Situation | Use |
 | --- | --- |
-| Mutate many entities of one archetype, in each frame | the [`eachChunk`](./queries.md#eachchunk--mutable-hot-path) column loop |
+| Mutate many entities of one archetype, in each frame | the [`forEachChunk`](./queries.md#foreachchunk--mutable-hot-path) column loop |
 | Read many entities, in each frame | the [`forEach`](./queries.md#foreach--read-only) column loop |
 | Touch **many** entities by id, from a list a query cannot express | `ctx.cursor` or `ctx.cursorRead` |
+| Touch **many** entities by id, and the component is read by id more than it is swept | a sparse component, with `ctx.sparseCursor` or `ctx.sparseCursorRead` |
 | Touch one entity by id, or a low-frequency path | `ctx.ref` or `ctx.refRead` |
 | One field, one entity, one time | `ctx.getField` or `ctx.setField` |
 
 ## See also
 
-- [change detection](./change-detection.md) — the meaning of "sets the change tick", and how
+- [change detection](./change-detection.md), the meaning of "sets the change tick", and how
   `changed()` uses it
-- [queries](./queries.md) — the column loops for high-frequency paths
-- [systems](./systems.md) — the full `ctx` surface
+- [queries](./queries.md), the column loops for high-frequency paths
+- [systems](./systems.md), the full `ctx` surface

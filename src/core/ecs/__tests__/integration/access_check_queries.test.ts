@@ -1,8 +1,8 @@
 // The `queries ⊆ reads ∪ writes` registration lint.
 //
-// `SystemConfig.queries` is an OPTIONAL declaration of the components a system
+// `SystemConfig.queries` is an optional declaration of the components a system
 // iterates via `ctx.query(...)`. The runtime `accessCheck` already throws at
-// the first iteration if a system reads a component it never declared; this
+// the first iteration if a system reads a component it never declared. This
 // lint moves that failure forward to `registerSystem` by checking the two
 // declarations agree. A query term reads each listed component's presence /
 // columns, so every id in `queries` must appear in `reads ∪ writes`.
@@ -18,7 +18,7 @@ import { ECS_ERROR, type ECSError } from "../../utils/error";
 import type { SystemConfig } from "../../system";
 import type { SystemContext } from "../../query";
 
-/** Minimal dense-empty config; spread and override per test. */
+/** Minimal dense-empty config. Spread and override per test. */
 function base(overrides: Partial<SystemConfig>): SystemConfig {
 	return {
 		reads: [],
@@ -73,7 +73,7 @@ describe("queries ⊆ reads ∪ writes lint", () => {
 			const err = e as ECSError;
 			expect(err.category).toBe(ECS_ERROR.QUERY_ACCESS_UNDECLARED);
 			expect(err.message).toContain("'mover'");
-			// Only the undeclared Vel is listed; the declared Pos is not.
+			// Only the undeclared Vel is listed. The declared Pos is not.
 			expect(undeclaredIds(err.message)).toEqual([Vel.id]);
 		}
 	});
@@ -83,7 +83,7 @@ describe("queries ⊆ reads ∪ writes lint", () => {
 		const A = world.registerComponent(["a"] as const);
 		const B = world.registerComponent(["b"] as const);
 		try {
-			// B appears in two groups but is undeclared — it should be listed once.
+			// B appears in two groups but is undeclared. It should be listed once.
 			world.registerSystem(base({ reads: [A], queries: [[A, B], [B]] }));
 			expect.unreachable("registration should have thrown");
 		} catch (e) {
@@ -94,7 +94,7 @@ describe("queries ⊆ reads ∪ writes lint", () => {
 	it("does not lint when queries is undefined (opt-in declaration)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);
-		// reads/writes empty and no queries decl — nothing to validate at registration
+		// reads and writes empty, no queries declared, nothing to validate at registration
 		// (a real read would still throw at runtime via accessCheck).
 		expect(() => world.registerSystem(base({ reads: [Pos] }))).not.toThrow();
 	});
@@ -107,7 +107,7 @@ describe("queries ⊆ reads ∪ writes lint", () => {
 	it("skips the lint for exclusive systems (full access)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);
-		// reads/writes empty but exclusive grants full access — a queries decl
+		// reads and writes empty but exclusive grants full access, a queries decl
 		// must not be rejected.
 		expect(() => world.registerSystem(base({ exclusive: true, queries: [[Pos]] }))).not.toThrow();
 	});

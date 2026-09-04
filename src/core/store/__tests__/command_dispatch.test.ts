@@ -1,6 +1,6 @@
 /**
- * `CommandDispatcher` — the generic register-a-handler-per-opcode drain surface
- * (a game-agnostic ECS). The engine ships no game opcodes; a consumer binds
+ * `CommandDispatcher`, the generic register-a-handler-per-opcode drain surface
+ * (a game-agnostic ECS). The engine ships no game opcodes. A consumer binds
  * a payload codec + handler to each opcode and round-trips a fabricated,
  * non-game command through the ring. This is the acceptance test for "a consumer
  * can register opcodes + payload codecs and round-trip a fabricated non-game
@@ -16,7 +16,7 @@ import {
 	pushCommand
 } from "..";
 
-/** A fabricated, deliberately NON-game command — proves the engine surface is
+/** A fabricated, deliberately non-game command, proves the engine surface is
  * opaque to opcode semantics. Two u32s packed little-endian into the 15-byte
  * payload region. */
 interface MoveCursorFields {
@@ -24,7 +24,7 @@ interface MoveCursorFields {
 	readonly y: number;
 }
 
-/** An opcode no game in this repo uses — picked high to make the point that the
+/** An opcode no game in this repo uses, picked high to make the point that the
  * engine neither defines nor validates it beyond "u8, not 0". */
 const OP_MOVE_CURSOR = 200;
 

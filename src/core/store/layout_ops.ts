@@ -1,15 +1,15 @@
 /**
- * Shared layout/realloc operations for `growColumnStore` / `extendColumnStore`
- *. The two files used to duplicate ~200 lines of structurally parallel
- * logic — the tail-cursor `alignUp` placement with its 2³¹ offset guard, the
+ * Shared layout and realloc operations for `growColumnStore` / `extendColumnStore`.
+ * The two files used to duplicate ~200 lines of structurally parallel
+ * logic, the tail-cursor `alignUp` placement with its 2³¹ offset guard, the
  * in-place buffer grow + view-mint step, and the whole realloc-and-republish
  * choreography (snapshot → createColumnStore → restore → view-stamp bump →
- * header patch). Each invariant now has one home here; grow/extend keep only
+ * header patch). Each invariant now has one home here. Grow and extend keep only
  * their genuinely distinct logic (which archetypes move, how descriptors are
  * written, how result views merge).
  *
  * The prefix-region and live-column snapshot helpers also live here (moved
- * from extend.ts) — they are exactly the realloc path's building blocks, and
+ * from extend.ts). They are exactly the realloc path's building blocks, and
  * housing them beside `reallocAndRepublish` removes the grow → extend value
  * import that marked these files as one module split in two.
  */
@@ -35,7 +35,7 @@ import {
 	type StoreRegionOffsetField
 } from "./store_regions";
 
-/** Per-archetype resize/copy input, shared by `GrowPlan.archetypes` and
+/** Per-archetype resize and copy input, shared by `GrowPlan.archetypes` and
  * `ExtendPlan.existing` (so callers can reuse plan-building helpers). The
  * caller picks the new `row_capacity` and declares the current live
  * `row_count` so the copy knows how many rows matter. */
@@ -46,7 +46,7 @@ export interface ArchetypeGrowSpec {
 }
 
 /** One archetype's column-layout request for `layoutColumnsAtTail`. `stride`
- * is resolved by the caller — grow reuses the old column's stride verbatim;
+ * is resolved by the caller, grow reuses the old column's stride verbatim
  * extend derives it from `TYPE_TAG_STRIDE[typeTag]` for brand-new columns. */
 export interface TailArchetypeLayout {
 	readonly archetypeId: number;
@@ -60,10 +60,10 @@ export interface TailArchetypeLayout {
 	}[];
 }
 
-/** Tail-cursor column placement — the single home for the in-place paths'
+/** Tail-cursor column placement, the single home for the in-place paths'
  * layout rule and the 2³¹ offset cap. Starting at `startCursor`
  * (the current buffer byteLength), each archetype's columns are placed
- * `alignUp(cursor, stride)` then advanced by `stride * rowCapacity`; the
+ * `alignUp(cursor, stride)` then advanced by `stride * rowCapacity`. The
  * final tail (last column's advance, not re-aligned) becomes the grown
  * buffer's byteLength and is guarded past `STORE_MAX_BYTE_OFFSET` exactly
  * like `planLayout` guards the create-time layout. Descriptors come back
@@ -106,9 +106,9 @@ export function layoutColumnsAtTail(
 }
 
 /** Grow an in-place-backed store's buffer to `newTotal` and mint the DataView
- * the caller must write headers/descriptors through. `growableSabAllocator` /
- * `heapArraybufferAllocator` return the SAME buffer instance grown in place;
- * `wasmMemoryAllocator` returns a NEW ref over the same linear memory — old
+ * the caller must write headers and descriptors through. `growableSabAllocator` /
+ * `heapArrayBufferAllocator` return the same buffer instance grown in place;
+ * `wasmMemoryAllocator` returns a new ref over the same linear memory, old
  * typed-array views stay valid either way (the `isInPlace` contract), but
  * when the ref changed the old DataView's byteLength is frozen at the
  * pre-grow size, so a fresh DataView over the new ref is required for any
@@ -123,19 +123,21 @@ export function growBufferInPlace(
 }
 
 /**
- * Byte offset where the next appended column region begins — the tail cursor
- * the in-place grow/extend paths pass to `layoutColumnsAtTail`.
+ * Byte offset where the next appended column region begins, the tail cursor
+ * the in-place grow and extend paths pass to `layoutColumnsAtTail`.
  *
- * For the growable-SAB and wasm backings the buffer is sized to the live extent
- * (`SharedArrayBuffer.grow` resizes exactly; wasm rounds up to a page, and its
- * fast path deliberately lands new regions past that page-rounded tail), so
- * `buffer.byteLength` IS the tail. For the pure-TS **heap** backing (0.5.3) the
- * buffer is a FIXED `ArrayBuffer` reserved at the full cap for V8 fast-path
- * element access, so its `byteLength` is `maxBytes`, NOT the used size — the
- * true tail is the header `capacity` (the logical high-water; new columns land
- * in still-zero fixed-buffer space just past the last live column).
+ * For the growable-SAB and wasm backings the buffer is sized to the live extent,
+ * so `buffer.byteLength` is the tail. `SharedArrayBuffer.grow` resizes exactly.
+ * Wasm rounds up to a page, and its fast path deliberately lands new regions
+ * past that page-rounded tail.
  *
- * The question is whether the allocator reserved the cap, NOT which buffer
+ * The pure-TS **heap** backing differs. Its buffer is a fixed `ArrayBuffer`
+ * reserved at the full cap for V8 fast-path element access, so its `byteLength`
+ * is `maxBytes`, not the used size. The true tail is the header `capacity`, the
+ * logical high-water. New columns land in still-zero fixed-buffer space
+ * immediately past the last live column.
+ *
+ * The question is whether the allocator reserved the cap, not which buffer
  * class it returned: `fixedSabAllocator` reserves a fixed `SharedArrayBuffer`
  * and needs the header rule, while `growableSabAllocator` grows a
  * `SharedArrayBuffer` to the live extent and needs the `byteLength` rule. So
@@ -153,19 +155,19 @@ export function tailCursorBytes(old: ColumnStoreInternal): number {
 /**
  * Derive `CreateColumnStoreOptions` from an old ColumnStore so a slow-path realloc
  * preserves the same set of optional regions at the same byte offsets in the
- * new SAB. Without this, an extend / grow would silently drop a region — the
+ * new SAB. Without this, an extend or grow would silently drop a region, the
  * command ring's pending commands, every entity placement in the index, etc.
  * would be lost.
  *
  * Walks `STORE_PREFIX_REGIONS`: each present region's `readOptions` replays the
  * exact capacity the engine configured (regions may carry non-default sizes),
- * not just the default. Live state (write_head, length, …) is preserved
- * separately via `snapshotPrefixRegions`.
+ * not only the default. Live state (write_head, length, …) is preserved
+ * separately via `snapshotRegions`.
  *
  * Also re-applies the descriptor-region headroom policy
- * (`reservedDescriptorBytes`). Unlike the prefix regions this is NOT
- * read from the SAB bytes — it's a JS-side policy carried on
- * `ColumnStoreInternal._reservedDescriptorBytes` — but it belongs here for the
+ * (`reservedDescriptorBytes`). Unlike the prefix regions this is not
+ * read from the SAB bytes. It's a JS-side policy carried on
+ * `ColumnStoreInternal._reservedDescriptorBytes`, but it belongs here for the
  * same reason: without it the realloc'd store drops to zero descriptor
  * headroom and every later `extendColumnStore` takes the slow path forever.
  * Re-reserving the same margin (additive, see `planLayout`) keeps the
@@ -178,11 +180,11 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 		const off = old.view.getUint32(STORE_HEADER_OFFSETS[region.headerOff], true);
 		if (off !== 0) region.readOptions(old.view, off, options);
 	}
-	// Consumer regions: the region-table directory is self-describing —
-	// each entry carries the region's id and byte length — so the new SAB can be
-	// re-laid-out identically WITHOUT re-deriving the consumer's sizing knobs.
+	// Consumer regions: the region-table directory is self-describing,
+	// each entry carries the region's id and byte length, so the new SAB can be
+	// re-laid-out identically without re-deriving the consumer's sizing knobs.
 	// `init` is a no-op here: the region's live bytes are restored verbatim by
-	// `restorePrefixRegions`, so createColumnStore only needs the size to
+	// `restoreRegions`, so createColumnStore only needs the size to
 	// reserve the right span at the same offset.
 	const table = readHeaderRegionTable(old.view);
 	if (table.length > 0) {
@@ -195,12 +197,12 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 			})
 		);
 	}
-	// Sim-bindings region: self-describing from the old header — the
+	// Sim-bindings region: self-describing from the old header, the
 	// region is the gap between `bindings_off` and the descriptor region, so its
 	// size is re-derived rather than carried as a JS-side policy. `bindings_off`
 	// = 0 means the consumer never opted into a bindings region (pure-TS game),
-	// so the new SAB reserves none either. The region's live bytes are NOT
-	// snapshotted — the host re-writes them via `write_sim_bindings` on the
+	// so the new SAB reserves none either. The region's live bytes are not
+	// snapshotted, the host re-writes them via `write_sim_bindings` on the
 	// `setLayout` that fires after every realloc (loader.ts), same as before.
 	const bindingsOff = old.view.getUint32(STORE_HEADER_OFFSETS.bindings_off, true);
 	if (bindingsOff !== 0) {
@@ -215,27 +217,27 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 
 /** A prefix-region snapshot: the live bytes of every present region from the
  * old SAB. `mechanism` is keyed by the `StoreHeader` field holding a mechanism
- * region's offset; `consumer` is keyed by `region_id` (consumer regions have no
- * named header field). Pairs `snapshotPrefixRegions` with
- * `restorePrefixRegions`. */
+ * region's offset. `consumer` is keyed by `region_id` (consumer regions have no
+ * named header field). Pairs `snapshotRegions` with
+ * `restoreRegions`. */
 export interface PrefixRegionSnapshot {
 	readonly mechanism: Map<StoreRegionOffsetField, Uint8Array>;
 	readonly consumer: Map<number, Uint8Array>;
 }
 
 /**
- * Snapshot the live bytes of every present region — both engine MECHANISM
- * regions (STORE_PREFIX_REGIONS) and CONSUMER regions (the region-table
- * directory) — from the old SAB BEFORE any allocator call that may detach
+ * Snapshot the live bytes of every present region, both engine mechanism
+ * regions (STORE_PREFIX_REGIONS) and consumer regions (the region-table
+ * directory), from the old SAB before any allocator call that may detach
  * views. Each entry is a heap `Uint8Array` copy (via `slice()`) so it survives
- * an allocator-induced detach; `restorePrefixRegions` places it back at the
+ * an allocator-induced detach. `restoreRegions` places it back at the
  * matching offset in the new SAB.
  *
- * Header bytes themselves are NOT snapshotted — `createColumnStore` writes the
+ * Header bytes themselves are not snapshotted, `createColumnStore` writes the
  * header (and the region-table directory) from scratch with the correct
  * view_stamp (bumped after this call) and offsets.
  */
-export function snapshotPrefixRegions(old: ColumnStore): PrefixRegionSnapshot {
+export function snapshotRegions(old: ColumnStore): PrefixRegionSnapshot {
 	const mechanism = new Map<StoreRegionOffsetField, Uint8Array>();
 	for (let i = 0; i < STORE_PREFIX_REGIONS.length; i++) {
 		const region = STORE_PREFIX_REGIONS[i];
@@ -260,11 +262,11 @@ export function snapshotPrefixRegions(old: ColumnStore): PrefixRegionSnapshot {
 }
 
 /** Restore prefix-region byte snapshots into `newStore` at the matching
- * region offsets. Pairs with `snapshotPrefixRegions`. The new SAB's regions
+ * region offsets. Pairs with `snapshotRegions`. The new SAB's regions
  * were sized identically by `optionsFromOld`, so each snapshot lands at the
- * same length its source had — mechanism regions at their named header offset,
+ * same length its source had, mechanism regions at their named header offset,
  * consumer regions at the offset the rebuilt region-table resolves their id to. */
-export function restorePrefixRegions(newStore: ColumnStore, snap: PrefixRegionSnapshot): void {
+export function restoreRegions(newStore: ColumnStore, snap: PrefixRegionSnapshot): void {
 	for (const [headerOff, bytes] of snap.mechanism) {
 		const off = newStore.view.getUint32(STORE_HEADER_OFFSETS[headerOff], true);
 		// boundary: TypedArray interop. Write back at the same offset.
@@ -281,12 +283,12 @@ export function restorePrefixRegions(newStore: ColumnStore, snap: PrefixRegionSn
 }
 
 /**
- * Snapshot per-archetype live column bytes from `old` BEFORE any
+ * Snapshot per-archetype live column bytes from `old` Before any
  * subsequent allocator call may detach the underlying typed-array views.
  * Returned shape: `{ archetype_id → Uint8Array[] }`, one entry per
  * column in `columnsInOrder`. Each `Uint8Array` is a fresh copy
  * (not a view) so it survives a `WebAssembly.Memory.grow`. Archetypes
- * with `row_count === 0` are omitted — nothing to copy.
+ * with `row_count === 0` are omitted, nothing to copy.
  */
 export function snapshotLiveColumns(
 	old: ColumnStore,
@@ -301,9 +303,9 @@ export function snapshotLiveColumns(
 			const c = oldArch.columnsInOrder[i];
 			const liveBytes = rowCount * c.stride;
 			const snap = new Uint8Array(liveBytes);
-			// boundary: TypedArray interop. `c.view` is `AnyTypedArray`; we
+			// boundary: TypedArray interop. `c.view` is `AnyTypedArray`. We
 			// reinterpret its byte range as `Uint8Array` for the copy. The
-			// source SAB is not mutated; the snapshot owns its own storage.
+			// source SAB is not mutated. The snapshot owns its own storage.
 			snap.set(new Uint8Array(c.view.buffer, c.view.byteOffset, liveBytes));
 			cols.push(snap);
 		}
@@ -314,11 +316,11 @@ export function snapshotLiveColumns(
 
 /**
  * Write per-archetype column snapshots produced by `snapshotLiveColumns`
- * into `newStore`'s column views. The snapshot's column ORDER must match
- * the new archetype's `columnsInOrder` (extend / grow guarantee this
+ * into `newStore`'s column views. The snapshot's column order must match
+ * the new archetype's `columnsInOrder` (extend and grow guarantee this
  * because they carry the column spec forward unchanged).
  */
-export function restoreColumnSnapshots(
+export function restoreLiveColumns(
 	newStore: ColumnStore,
 	snapshots: Map<number, Uint8Array[]>
 ): void {
@@ -340,31 +342,31 @@ export function restoreColumnSnapshots(
 
 /**
  * The realloc-and-republish slow path shared by `growColumnStore` and
- * `extendColumnStore` — everything between "the specs are decided" and "the
+ * `extendColumnStore`, everything between "the specs are decided" and "the
  * caller shapes its result":
  *
- *   1. Capture `view_stamp` and snapshot live rows AND prefix regions
- *      (command ring, entity-index) BEFORE the allocator call — the
+ *   1. Capture `view_stamp` and snapshot live rows and prefix regions
+ *      (command ring, entity-index) before the allocator call, the
  *      wasmMemoryAllocator may detach `old`'s views on grow, so everything
  *      needed is captured first. The prefix-region preservation is the
- *      contract `Store` relies on to keep its entity table across resizes;
+ *      contract `Store` relies on to keep its entity table across resizes
  * `optionsFromOld` re-reserves regions and descriptor headroom
  * so the republished store keeps its layout and fast paths.
- *   2. `createColumnStore` with the derived options (fresh buffer; the same
+ *   2. `createColumnStore` with the derived options (fresh buffer, the same
  *      growable allocator carries forward so the new buffer also grows in
  *      place).
  *   3. Restore live rows + prefix regions. Archetypes without a row count
- *      contributed no snapshot and stay zero-initialised; prefix regions
+ *      contributed no snapshot and stay zero-initialised. Prefix regions
  *      overwrite the empty state `createColumnStore` initialised.
  *   4. Bump `view_stamp` from the pre-capture value and patch the returned
- *      header so its cached `viewStamp` matches the buffer bytes just
- *      written — `createColumnStore` stamped it 0. `capacity` /
+ *      header so its cached `viewStamp` matches the buffer bytes only
+ *      written, `createColumnStore` stamped it 0. `capacity` /
  *      `archetype_count` are already correct (createColumnStore sized them),
- *      so the spread carries them — and the internal `_allocator` /
- *      `_regionBytes` fields — through unchanged.
+ *      so the spread carries them, and the internal `_allocator` /
+ *      `_regionBytes` fields, through unchanged.
  *
- * Every view in the returned store is fresh; callers MUST refresh
- * (`viewsPreserved: false` is the callers' contract with THEIR callers).
+ * Every view in the returned store is fresh. Callers must refresh
+ * (`viewsPreserved: false` is the callers' contract with their callers).
  */
 export function reallocAndRepublish(
 	old: ColumnStore,
@@ -374,13 +376,13 @@ export function reallocAndRepublish(
 ): { store: ColumnStore; oldViewStamp: number; newViewStamp: number } {
 	const oldViewStamp = old.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 	const snapshots = snapshotLiveColumns(old, rowCountsById);
-	const prefixSnap = snapshotPrefixRegions(old);
+	const prefixSnap = snapshotRegions(old);
 	const derivedOptions = optionsFromOld(old);
 
 	const newStore = createColumnStore(specs, allocator, derivedOptions);
 
-	restoreColumnSnapshots(newStore, snapshots);
-	restorePrefixRegions(newStore, prefixSnap);
+	restoreLiveColumns(newStore, snapshots);
+	restoreRegions(newStore, prefixSnap);
 
 	const newViewStamp = (oldViewStamp + 1) >>> 0;
 	newStore.view.setUint32(STORE_HEADER_OFFSETS.view_stamp, newViewStamp, true);

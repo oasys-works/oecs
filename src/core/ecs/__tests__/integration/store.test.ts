@@ -194,7 +194,7 @@ describe("Store (integration)", () => {
 		expect(posMatches.length).toBe(3);
 
 		// Both entities are found across matching archetypes
-		const allEntities = posMatches.flatMap((a) => [...a.entityList]);
+		const allEntities = posMatches.flatMap((a) => [...a.rowEntityIds]);
 		expect(allEntities).toContain(e1);
 		expect(allEntities).toContain(e2);
 
@@ -203,12 +203,12 @@ describe("Store (integration)", () => {
 			makeMask(Pos.id, Vel.id)
 		);
 		expect(posVelMatches.length).toBe(1);
-		expect(posVelMatches[0].entityList).toContain(e1);
+		expect(posVelMatches[0].rowEntityIds).toContain(e1);
 
 		// Query for [Hp] - only e2's archetype matches
 		const hpMatches = store.getMatchingArchetypes(makeMask(Hp.id));
 		expect(hpMatches.length).toBe(1);
-		expect(hpMatches[0].entityList).toContain(e2);
+		expect(hpMatches[0].rowEntityIds).toContain(e2);
 	});
 
 	it("get_matching_archetypes returns empty for unregistered component combo", () => {
@@ -256,7 +256,7 @@ describe("Store (integration)", () => {
 
 		store.destroyEntity(e1);
 		expect(archetypes[0].entityCount).toBe(1);
-		expect(archetypes[0].entityList).toContain(e2);
+		expect(archetypes[0].rowEntityIds).toContain(e2);
 	});
 
 	it("destroy_entity handles swap-and-pop for remaining entity data", () => {
@@ -268,7 +268,7 @@ describe("Store (integration)", () => {
 		store.addComponent(e1, Pos, { x: 10, y: 20, z: 30 });
 		store.addComponent(e2, Pos, { x: 100, y: 200, z: 300 });
 
-		// Destroy e1 — e2 should swap into row 0
+		// Destroy e1, e2 should swap into row 0
 		store.destroyEntity(e1);
 
 		const arch = store.getEntityArchetype(e2);

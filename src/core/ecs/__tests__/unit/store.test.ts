@@ -25,7 +25,7 @@ const Position = { x: "f64", y: "f64", z: "f64" } as const;
 const Velocity = { vx: "f64", vy: "f64", vz: "f64" } as const;
 const Health = { current: "f64", max: "f64" } as const;
 const Tag = {} as const; // empty (marker component)
-// Two FLOAT (f32) fields — the only column types whose "undefined" coerces to
+// Two float (f32) fields, the only column types whose "undefined" coerces to
 // NaN (Int* coerce to 0). Used to pin the omitted-field-is-0 contract.
 const Float2 = { fx: "f32", fy: "f32" } as const;
 
@@ -55,7 +55,7 @@ describe("Store", () => {
 		expect(store.isAlive(id)).toBe(false);
 	});
 
-	it("entity_count tracks create/destroy", () => {
+	it("entity_count tracks create and destroy", () => {
 		const store = new Store();
 		expect(store.entityCount).toBe(0);
 
@@ -78,11 +78,11 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// Generation rollover / slot retirement
+	// Generation rollover and slot retirement
 	//=========================================================
 
 	// Drive slot 0 through every live generation (0..MAX_LIVE_GENERATION) so the
-	// next destroy exhausts its counter. `destroy` cycles the slot one step;
+	// next destroy exhausts its counter. `destroy` cycles the slot one step
 	// returns the freshly recreated handle occupying slot 0 each time.
 	function churnSlotToExhaustion(
 		store: Store,
@@ -100,7 +100,7 @@ describe("Store", () => {
 			id = store.createEntity();
 		}
 
-		// Slot 0 now holds the last live generation; the next destroy retires it.
+		// Slot 0 now holds the last live generation. The next destroy retires it.
 		expect(getEntityIndex(id)).toBe(0);
 		expect(getEntityGeneration(id)).toBe(MAX_LIVE_GENERATION);
 		return { lastLive: id, gen0Handle };
@@ -112,7 +112,7 @@ describe("Store", () => {
 
 		store.destroyEntity(lastLive);
 
-		// The exhausted index must NOT be recycled — the next entity takes a fresh slot.
+		// The exhausted index must not be recycled, the next entity takes a fresh slot.
 		const next = store.createEntity();
 		expect(getEntityIndex(next)).toBe(1);
 	});
@@ -121,17 +121,17 @@ describe("Store", () => {
 		const store = new Store();
 		const { lastLive } = churnSlotToExhaustion(store, (s, id) => {
 			s.destroyEntityDeferred(id);
-			s.flushDestroyed();
+			s.flushDestroys();
 		});
 
 		store.destroyEntityDeferred(lastLive);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		const next = store.createEntity();
 		expect(getEntityIndex(next)).toBe(1);
 	});
 
-	it("no stale handle to a retired slot ever reads as alive (ABA closed)", () => {
+	it("no stale handle to a retired slot ever reads as alive (aba closed)", () => {
 		const store = new Store();
 		const { lastLive, gen0Handle } = churnSlotToExhaustion(store, (s, id) =>
 			s.destroyEntity(id)
@@ -141,15 +141,15 @@ describe("Store", () => {
 		// The original generation-0 handle is the classic ABA aliasing risk: a
 		// wrapping counter would resurrect it. With retirement it stays dead.
 		expect(store.isAlive(gen0Handle)).toBe(false);
-		// The just-retired handle is dead too.
+		// The newly retired handle is dead too.
 		expect(store.isAlive(lastLive)).toBe(false);
 		// Every handle the allocator could ever have issued for slot 0 carries a
-		// generation in 0..MAX_LIVE_GENERATION; all must read dead.
+		// generation in 0..MAX_LIVE_GENERATION. All must read dead.
 		for (const gen of [0, 1, MAX_LIVE_GENERATION]) {
 			expect(store.isAlive(createEntityId(0, gen))).toBe(false);
 		}
-		// A forged handle carrying the RETIRED_GENERATION tombstone — the value
-		// parked in the retired slot — now reads DEAD (fail-closed). It is
+		// A forged handle carrying the RETIRED_GENERATION tombstone, the value
+		// parked in the retired slot, now reads dead (fail-closed). It is
 		// never issued to a live entity, so excluding it closes the ABA window from
 		// the other side: even a handle aliasing the retired slot's own generation
 		// can't read alive.
@@ -167,7 +167,7 @@ describe("Store", () => {
 		expect(store.isAlive((MAX_ENTITY_ID + 1) as EntityID)).toBe(false);
 		expect(store.isAlive(0xffffffff as EntityID)).toBe(false);
 		// A garbage handle whose low 20 bits alias the live slot's index but whose
-		// high bits are out of range must NOT inherit the live slot's liveness.
+		// high bits are out of range must not inherit the live slot's liveness.
 		const aliasedOob = ((MAX_ENTITY_ID + 1) | getEntityIndex(live)) as EntityID;
 		expect(store.isAlive(aliasedOob)).toBe(false);
 		// The tombstone generation on a never-allocated slot is dead too.
@@ -275,7 +275,7 @@ describe("Store", () => {
 		expect(archetypes[0].entityCount).toBe(1);
 
 		store.destroyEntityDeferred(id);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(store.isAlive(id)).toBe(false);
 		expect(archetypes[0].entityCount).toBe(0);
@@ -290,8 +290,8 @@ describe("Store", () => {
 		store.destroyEntityDeferred(id);
 		expect(store.pendingDestroyCount).toBe(2);
 
-		// flush should not throw — second entry is skipped because entity is already dead
-		expect(() => store.flushDestroyed()).not.toThrow();
+		// flush should not throw, second entry is skipped because entity is already dead
+		expect(() => store.flushDestroys()).not.toThrow();
 		expect(store.isAlive(id)).toBe(false);
 		expect(store.pendingDestroyCount).toBe(0);
 	});
@@ -318,7 +318,7 @@ describe("Store", () => {
 		store.destroyEntityDeferred(b);
 		expect(store.pendingDestroyCount).toBe(2);
 
-		store.flushDestroyed();
+		store.flushDestroys();
 		expect(store.pendingDestroyCount).toBe(0);
 	});
 
@@ -334,7 +334,7 @@ describe("Store", () => {
 		const id = store.createEntity();
 		store.addComponent(id, Pos, { x: 1, y: 2, z: 3 });
 
-		// Deferred add — entity should NOT have Velocity yet
+		// Deferred add, entity should not have Velocity yet
 		store.addComponentDeferred(id, Vel, { vx: 4, vy: 5, vz: 6 });
 		expect(store.hasComponent(id, Vel)).toBe(false);
 		expect(store.hasComponent(id, Pos)).toBe(true);
@@ -361,7 +361,7 @@ describe("Store", () => {
 		store.addComponent(id, Pos, { x: 1, y: 2, z: 3 });
 		store.addComponent(id, Vel, { vx: 4, vy: 5, vz: 6 });
 
-		// Deferred remove — entity should still have Velocity
+		// Deferred remove, entity should still have Velocity
 		store.removeComponentDeferred(id, Vel);
 		expect(store.hasComponent(id, Vel)).toBe(true);
 
@@ -380,13 +380,13 @@ describe("Store", () => {
 		const id = store.createEntity();
 		store.addComponent(id, Pos, { x: 1, y: 2, z: 3 });
 
-		// Buffer a Vel that is BOTH added and removed in the same flush. This is
+		// Buffer a Vel that is both added and removed in the same flush. This is
 		// the only construction that distinguishes the ordering: under
 		// adds-before-removes the add lands first and the later remove strips it
 		// (Vel ends absent); under removes-first the remove would be a no-op on
 		// a not-yet-present Vel and the add would survive (Vel ends present).
-		// Final membership alone — as the old test asserted with only-added
-		// Vel/Hp and only-removed Pos — cannot tell the two orderings apart.
+		// Final membership alone, as the old test asserted with only-added
+		// Vel and Hp and only-removed Pos, cannot tell the two orderings apart.
 		store.addComponentDeferred(id, Hp, { current: 100, max: 200 });
 		store.addComponentDeferred(id, Vel, { vx: 1, vy: 2, vz: 3 });
 		store.removeComponentDeferred(id, Vel);
@@ -417,7 +417,7 @@ describe("Store", () => {
 		expect(store.isAlive(id)).toBe(true);
 		expect(store.hasComponent(id, Vel)).toBe(true);
 
-		store.flushDestroyed();
+		store.flushDestroys();
 		expect(store.isAlive(id)).toBe(false);
 	});
 
@@ -495,7 +495,7 @@ describe("Store", () => {
 		// Kill entity a before flushing
 		store.destroyEntity(a);
 
-		// Should not throw — dead entity a is skipped
+		// Should not throw, dead entity a is skipped
 		expect(() => store.flushStructural()).not.toThrow();
 
 		// b should still get its component
@@ -559,13 +559,13 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// Float columns: an omitted field reads back 0, NOT NaN
+	// Float columns: an omitted field reads back 0, not NaN
 	//=========================================================
 
-	// Contract (mirrors the template zero-fill in `resolveTemplate`): a field
+	// Contract (mirrors the template zero-fill in `createTemplate`): a field
 	// absent from the supplied `values` is written as 0. A Float32/64Array stores
 	// `undefined` as NaN, so before the `?? 0` fix the omitted float field came
-	// back NaN. The expected value below is DERIVED from the contract (omitted ⇒
+	// back NaN. The expected value below is derived from the contract (omitted ⇒
 	// 0), not loosened to match output.
 
 	it("add_component with a partial values object zero-fills the omitted float field (write_fields)", () => {
@@ -584,7 +584,7 @@ describe("Store", () => {
 		expect(fy).toBe(0);
 	});
 
-	it("add_component with an empty values object zero-fills BOTH float fields (write_fields)", () => {
+	it("add_component with an empty values object zero-fills both float fields (write_fields)", () => {
 		const store = new Store();
 		const Float = store.registerComponent(Float2);
 		const id = store.createEntity();
@@ -603,7 +603,7 @@ describe("Store", () => {
 		const Float = store.registerComponent(Float2);
 
 		// Place three entities in a non-empty source archetype (Pos), then batch-add
-		// the float component to ALL of them with fx supplied and fy omitted.
+		// the float component to all of them with fx supplied and fy omitted.
 		const ids = [store.createEntity(), store.createEntity(), store.createEntity()];
 		for (const e of ids) store.addComponent(e, Pos, { x: 0, y: 0, z: 0 });
 		const srcArch = store.getEntityArchetype(ids[0]).id;
@@ -621,7 +621,7 @@ describe("Store", () => {
 	});
 
 	//=========================================================
-	// spawnMany — count guard precedes the allocation
+	// spawnMany, count guard precedes the allocation
 	//=========================================================
 
 	// `spawnMany` allocates `new Array(count)` before doing work. A negative
@@ -632,7 +632,7 @@ describe("Store", () => {
 	it("spawn_many with a negative count returns [] and does not throw RangeError", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
-		const p = store.resolveTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
+		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
 
 		let result: ReturnType<Store["spawnMany"]> | undefined;
 		expect(() => {
@@ -645,7 +645,7 @@ describe("Store", () => {
 	it("spawn_many with count 0 returns [] and spawns nothing", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
-		const p = store.resolveTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
+		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
 
 		expect(store.spawnMany(p, 0)).toEqual([]);
 		expect(store.entityCount).toBe(0);
@@ -654,7 +654,7 @@ describe("Store", () => {
 	it("spawn_many with a positive count still spawns that many entities", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
-		const p = store.resolveTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
+		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
 
 		const ids = store.spawnMany(p, 3);
 		expect(ids.length).toBe(3);
@@ -687,7 +687,7 @@ describe("Store", () => {
 
 		const markerArchetypes = store.getMatchingArchetypes(makeMask(Marker.id));
 		expect(markerArchetypes.length).toBe(1);
-		expect(markerArchetypes[0].entityList).toContain(e1);
+		expect(markerArchetypes[0].rowEntityIds).toContain(e1);
 	});
 
 	//=========================================================
@@ -695,12 +695,12 @@ describe("Store", () => {
 	//=========================================================
 
 	// Regression: `emitEvent` / `emitSignal` mark a channel dirty
-	// (push its id to `dirtyEventChannels`) only AFTER a successful emit.
-	// The old order sampled `reader.length === 0` and pushed the id BEFORE
-	// `channel.emit(...)`; if that emit threw the `__DEV__` missing-field check,
-	// `reader.length` stayed 0, so the NEXT (valid) emit saw an empty channel
-	// and pushed the id a SECOND time — duplicating it in the dirty list. The
-	// duplicate inflates `_devBufferedEventCount` and makes `clearEvents`
+	// (push its id to `dirtyEventChannels`) only after a successful emit.
+	// The old order sampled `reader.length === 0` and pushed the id before
+	// `channel.emit(...)`. If that emit threw the `__DEV__` missing-field check,
+	// `reader.length` stayed 0, so the next (valid) emit saw an empty channel
+	// and pushed the id a second time, duplicating it in the dirty list. The
+	// duplicate inflates `devBufferedEventCount` and makes `clearEvents`
 	// walk the channel twice, breaking the at-most-once-per-tick invariant.
 
 	it("a thrown emit does not double-register the channel in the dirty list", () => {
@@ -708,9 +708,9 @@ describe("Store", () => {
 		const Pair = store.registerEvent<{ a: number; b: number }>(["a", "b"]);
 
 		// Fresh channel: nothing buffered, dirty list empty.
-		expect(store._devBufferedEventCount()).toBe(0);
+		expect(store.devBufferedEventCount).toBe(0);
 
-		// `b` is missing — emit throws under __DEV__ without marking the channel.
+		// `b` is missing, emit throws under __DEV__ without marking the channel.
 		try {
 			store.emitEvent(Pair, { a: 1 });
 			expect.fail("should have thrown");
@@ -720,23 +720,23 @@ describe("Store", () => {
 		}
 
 		// Nothing was buffered and the channel was not marked dirty.
-		expect(store._devBufferedEventCount()).toBe(0);
+		expect(store.devBufferedEventCount).toBe(0);
 
-		// A subsequent VALID emit buffers exactly one event and marks the channel
+		// A subsequent valid emit buffers exactly one event and marks the channel
 		// dirty exactly once. With the bug the id is now in the dirty list twice,
 		// so the buffered count is double-counted (2, not 1).
 		store.emitEvent(Pair, { a: 2, b: 3 });
-		expect(store._devBufferedEventCount()).toBe(1);
+		expect(store.devBufferedEventCount).toBe(1);
 
-		// `clearEvents` clears the channel; a duplicate id is harmless to the
+		// `clearEvents` clears the channel. A duplicate id is harmless to the
 		// channel (clear is idempotent) but the count must drop to 0 in one pass.
 		store.clearEvents();
-		expect(store._devBufferedEventCount()).toBe(0);
+		expect(store.devBufferedEventCount).toBe(0);
 
 		// And after clearing, the channel is reusable: the next emit re-registers
 		// it once and the reader reads the fresh row back at index 0.
 		store.emitEvent(Pair, { a: 4, b: 5 });
-		expect(store._devBufferedEventCount()).toBe(1);
+		expect(store.devBufferedEventCount).toBe(1);
 		const reader = store.getEventReader(Pair);
 		expect(reader.length).toBe(1);
 		expect(reader.a[0]).toBe(4);

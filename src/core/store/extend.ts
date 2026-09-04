@@ -1,39 +1,40 @@
 /**
- * Host-side SAB extend — plant a NEW archetype region at the SAB tail
+ * Host-side SAB extend, plant a new archetype region at the SAB tail
  * Where `growColumnStore` resizes existing
  * archetype rows, `extendColumnStore` adds an archetype the SAB has never
  * carried before.
  *
- * Motivation: live ECS discovers archetypes dynamically — a new component
+ * Motivation: live ECS discovers archetypes dynamically, a new component
  * combination first seen at tick T spawns a new `Archetype` at runtime.
  * For ECS to live on a single SAB, the host needs
  * a way to add that archetype's column region without throwing away the
  * existing rows. `extendColumnStore` is that primitive.
  *
  * Mechanism mirrors `growColumnStore`:
- *   1. Compose a merged spec list — old archetypes at their current
+ *   1. Compose a merged spec list, old archetypes at their current
  *      capacities + new archetypes from the plan.
  *   2. Allocate a fresh SAB via `createColumnStore` (descriptor region is
  *      re-sized to fit the new archetype count).
  *   3. Copy live rows for every existing archetype that the caller
- *      declared a `row_count` for. Defaults to 0 — same convention as
+ *      declared a `row_count` for. Defaults to 0, same convention as
  *      `growColumnStore`.
- *   4. Bump `view_stamp` from the OLD SAB's live value (not the cached
+ *   4. Bump `view_stamp` from the old SAB's live value (not the cached
  *      header snapshot, which goes stale across consecutive extends).
  *
- * The old SAB is untouched; callers may keep reading from it until they
+ * The old SAB is untouched. Callers may keep reading from it until they
  * swap in views from the new store and call `refreshViews` on the
  * affected Archetypes.
  */
 
 import { STORE_HEADER_OFFSETS } from "./header";
 import {
-	buildArchetypeViews,
+	createArchetypeViews,
 	type ArchetypeSpec,
 	type ArchetypeViews,
 	type ColumnStore,
 	isColumnStoreInternal,
-	type ColumnStoreInternal
+	type ColumnStoreInternal,
+	usedDescriptorBytes
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
 import {
@@ -51,13 +52,19 @@ import {
 } from "./layout_ops";
 
 export interface ExtendPlan {
-	/** Archetypes to append. Each `archetype_id` MUST be absent from
-	 * `old.archetypes`; collisions throw `StoreExtendError`. */
+	/** Archetypes to append. Each `archetype_id` must be absent from
+	 * `old.archetypes`. Collisions throw `StoreExtendError`. */
 	readonly newArchetypes: readonly ArchetypeSpec[];
 	/** Per-existing-archetype live row counts. Same shape as
 	 * `GrowPlan.archetypes` so callers can reuse plan-building helpers.
-	 * Omitted or `0` ⇒ no rows to copy (the archetype is empty). */
-	readonly existing?: readonly ArchetypeGrowSpec[];
+	 * Omitted or `0` ⇒ no rows to copy (the archetype is empty).
+	 *
+	 * Only the realloc path reads it: the in-place path moves no rows. A
+	 * caller that must walk every archetype to build the list can pass a
+	 * function instead, and the list is then built only when the realloc path
+	 * runs. The in-place path is the common one, and a list built for every
+	 * extend made the cost of the N-th archetype grow with N. */
+	readonly existing?: readonly ArchetypeGrowSpec[] | (() => readonly ArchetypeGrowSpec[]);
 }
 
 export interface ExtendResult {
@@ -68,7 +75,7 @@ export interface ExtendResult {
 	 * instance is reused, existing column TypedArray views are unchanged,
 	 * and callers may skip `refreshViews` on every pre-existing
 	 * Archetype. False when the slow path ran (fresh SAB or wasm-memory
-	 * grow with detached views); callers MUST refresh every Archetype's
+	 * grow with detached views); callers must refresh every Archetype's
 	 * SAB-backed columns from the returned `store` before reading them. */
 	readonly viewsPreserved: boolean;
 }
@@ -86,9 +93,9 @@ export class StoreExtendError extends Error {
  * `allocator`: pluggable buffer source forwarded into
  * `createColumnStore`. When the allocator is `wasmMemoryAllocator`,
  * `memory.grow` may detach `old`'s typed-array views before the copy
- * runs — so live rows are snapshotted into heap `Uint8Array`s BEFORE the
+ * runs, so live rows are snapshotted into heap `Uint8Array`s before the
  * allocator call and restored into the new views afterwards. The cost
- * is one extra heap allocation per live archetype-column; negligible
+ * is one extra heap allocation per live archetype-column. Negligible
  * compared to the SAB walk itself. */
 export function extendColumnStore(
 	old: ColumnStore,
@@ -115,13 +122,52 @@ export function extendColumnStore(
 		newIds.add(id);
 	}
 
-	// 2. Build per-archetype row-count index from the plan's `existing` list.
-	//    Reject row_counts naming an archetype that isn't in the old store —
+	// 2. The in-place fast path.
+	//
+	// When the old store was built with `growableSabAllocator` and it
+	// has enough descriptor-region headroom for the new archetypes'
+	// entries, we can:
+	//   - Reuse the old SAB (its `.grow()` extends in place, existing
+	//     typed-array views built with explicit `(byteOffset, length)`
+	//     stay valid).
+	//   - Append the new descriptors into the descriptor-region slack
+	//     (existing descriptor bytes stay put).
+	//   - Place the new archetypes' column regions at the SAB tail.
+	//   - Skip snapshot+restore entirely, existing column data does not
+	//     move.
+	//   - Build views only for the new archetypes.
+	//
+	// Cost per extend is O(new-columns-this-extend), and does not depend on
+	// how many archetypes the store already holds: the used descriptor bytes
+	// are cached on the store, and the archetype map is appended to, not
+	// copied. The realloc path below is the one that walks every archetype,
+	// so `plan.existing` is not read before this point.
+	if (allocator?.isInPlace === true && isColumnStoreInternal(old) && old._allocator === allocator) {
+		const regionOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
+		const usedRegion = old._usedDescriptorBytes ?? usedDescriptorBytes(old.archetypes);
+		// New descriptor bytes needed.
+		let newRegion = 0;
+		for (let i = 0; i < plan.newArchetypes.length; i++) {
+			newRegion += archetypeDescriptorBytes(plan.newArchetypes[i].columns.length);
+		}
+		if (usedRegion + newRegion <= old._regionBytes) {
+			return extendColumnStoreInPlace(old, plan.newArchetypes, regionOff, usedRegion, newRegion);
+		}
+		// Headroom exhausted, fall through to the realloc-and-republish
+		// path. The store carries forward the same growable allocator so
+		// the new SAB also grows in place (only allocated fresh here), and
+		// `optionsFromOld` re-reserves the descriptor-region headroom so
+		// the realloc'd store keeps taking this fast path next time.
+	}
+
+	// 3. Build per-archetype row-count index from the plan's `existing` list.
+	//    Reject row_counts naming an archetype that isn't in the old store,
 	//    that's a caller bug, not a silent no-op.
 	const rowCountsById = new Map<number, number>();
-	if (plan.existing) {
-		for (let i = 0; i < plan.existing.length; i++) {
-			const spec = plan.existing[i];
+	const existing = typeof plan.existing === "function" ? plan.existing() : plan.existing;
+	if (existing) {
+		for (let i = 0; i < existing.length; i++) {
+			const spec = existing[i];
 			if (!old.archetypes.has(spec.archetypeId)) {
 				throw new StoreExtendError(
 					`existing row_count names unknown archetype_id ${spec.archetypeId}`
@@ -144,56 +190,16 @@ export function extendColumnStore(
 		}
 	}
 
-	// 2.5. IN-PLACE FAST PATH.
-	//
-	// When the old store was built with `growableSabAllocator` AND it
-	// has enough descriptor-region headroom for the new archetypes'
-	// entries, we can:
-	//   - Reuse the old SAB (its `.grow()` extends in place — existing
-	//     typed-array views built with explicit `(byteOffset, length)`
-	//     stay valid).
-	//   - Append the new descriptors into the descriptor-region slack
-	//     (existing descriptor bytes stay put).
-	//   - Place the new archetypes' column regions at the SAB tail.
-	//   - Skip snapshot+restore entirely — existing column data does not
-	//     move.
-	//   - Build views only for the new archetypes.
-	//
-	// Cost per extend drops from O(total-columns-across-all-archetypes)
-	// to O(new-columns-this-extend). That's the gap an earlier extend-cost
-	// audit identified as the remaining 10× lazy-registration tax.
-	if (allocator?.isInPlace === true && isColumnStoreInternal(old) && old._allocator === allocator) {
-		const regionOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
-		// Used descriptor bytes = sum over existing archetypes.
-		let usedRegion = 0;
-		for (const [, arch] of old.archetypes) {
-			usedRegion += archetypeDescriptorBytes(arch.columnsInOrder.length);
-		}
-		// New descriptor bytes needed.
-		let newRegion = 0;
-		for (let i = 0; i < plan.newArchetypes.length; i++) {
-			newRegion += archetypeDescriptorBytes(plan.newArchetypes[i].columns.length);
-		}
-		if (usedRegion + newRegion <= old._regionBytes) {
-			return extendColumnStoreInPlace(old, plan.newArchetypes, regionOff, usedRegion);
-		}
-		// Headroom exhausted — fall through to the realloc-and-republish
-		// path. The store carries forward the SAME growable allocator so
-		// the new SAB also grows in place (just allocated fresh here), and
-		// `optionsFromOld` re-reserves the descriptor-region headroom so
-		// the realloc'd store keeps taking this fast path next time.
-	}
-
-	// 3. Compose the merged spec list. Existing archetypes preserve their
-	//    column ordering and current row_capacity (extend never resizes —
+	// 4. Compose the merged spec list. Existing archetypes preserve their
+	//    column ordering and current row_capacity (extend never resizes,
 	//    that's grow's job).
 	//
 	// Pass the existing archetype's `columnsInOrder` directly as the new
-	// spec's `columns` — `ColumnView` is structurally a `ColumnSpec` (the
+	// spec's `columns`, `ColumnView` is structurally a `ColumnSpec` (the
 	// three required readonly fields `component_id`, `field_id`, `type_tag`
-	// match; extra fields like `byte_off`, `stride`, `view` are harmless).
+	// match. Extra fields like `byte_off`, `stride`, `view` are harmless).
 	// Previously we mapped to a fresh `{ component_id, field_id, type_tag }`
-	// object per column on every extend — that's an O(total columns)
+	// object per column on every extend, that's an O(total columns)
 	// allocation each call, dominant during the lazy-registration ramp-up
 	// where 500 archetypes × ~3 columns × 500 extends = 750k allocations.
 	const mergedSpecs: ArchetypeSpec[] = [];
@@ -209,16 +215,16 @@ export function extendColumnStore(
 		mergedSpecs.push(plan.newArchetypes[i]);
 	}
 
-	// 4–6. Realloc-and-republish (see `reallocAndRepublish` for the snapshot →
-	// create → restore → stamp choreography). New archetypes start zeroed —
+	// Steps 5 to 7. Realloc-and-republish (see `reallocAndRepublish` for the snapshot →
+	// create → restore → stamp choreography). New archetypes start zeroed,
 	// fresh SABs and grown wasm-memory both zero-initialise.
 	//
 	// Slow path: the returned store has fresh ArchetypeViews built via
-	// `buildArchetypeViews`. Old views in caller-side wrappers (e.g.,
+	// `createArchetypeViews`. Old views in caller-side wrappers (e.g.,
 	// BufferBackedColumn instances) are stale even if the underlying SAB
 	// happens to be the same instance (wasmMemoryAllocator preserves
 	// `memory.buffer` across grow but the column byte_offs were
-	// recomputed in the new layout). Callers MUST refresh.
+	// recomputed in the new layout). Callers must refresh.
 	const { store, oldViewStamp, newViewStamp } = reallocAndRepublish(
 		old,
 		mergedSpecs,
@@ -233,27 +239,27 @@ export function extendColumnStore(
  * Pre-conditions verified by the caller in
  * `extendColumnStore`:
  *   - `old._allocator.isInPlace === true` (i.e. the allocator promises
- *     existing TypedArray/DataView views remain valid after the next
- *     allocator call — see `BufferAllocator.isInPlace`).
+ *     existing TypedArray or DataView views remain valid after the next
+ *     allocator call, see `BufferAllocator.isInPlace`).
  *   - `old._regionBytes >= usedRegion + new_descriptor_bytes`
  *     (descriptor headroom suffices for the new archetypes).
  *
- * Existing column TypedArray views are carried forward verbatim — the
- * `isInPlace` contract guarantees they still read/write the same
+ * Existing column TypedArray views are carried forward verbatim, the
+ * `isInPlace` contract guarantees they still read and write the same
  * bytes after the allocator extends the underlying storage. The cost is
  * only what's intrinsic to the new archetypes: write their descriptors,
  * allocate new byte ranges at the SAB tail, build their column views.
  *
  * Two `isInPlace` variants are handled identically here:
- *   - `growableSabAllocator` returns the SAME SAB instance grown in
- *     place; `grownBuffer === old.buffer`.
- *   - `wasmMemoryAllocator` returns a NEW SAB ref pointing to the
- *     same underlying shared linear memory; `grownBuffer !== old.buffer` but
+ *   - `growableSabAllocator` returns the same SAB instance grown in
+ *     place. `grownBuffer === old.buffer`.
+ *   - `wasmMemoryAllocator` returns a new SAB ref pointing to the
+ *     same underlying shared linear memory. `grownBuffer !== old.buffer` but
  *     old views still operate on the same bytes (verified empirically
  *     against Bun + V8).
  *
  * When the SAB ref changed we mint a fresh `DataView` over `grownBuffer`
- * so header / descriptor writes past the pre-grow `byteLength` are
+ * so header and descriptor writes past the pre-grow `byteLength` are
  * legal. New archetype views are built over `grownBuffer` (their byte
  * ranges live past the pre-grow tail, so the old ref's frozen
  * `byteLength` would refuse them).
@@ -262,9 +268,10 @@ function extendColumnStoreInPlace(
 	old: ColumnStoreInternal,
 	newArchetypes: readonly ArchetypeSpec[],
 	regionOff: number,
-	usedRegion: number
+	usedRegion: number,
+	newRegion: number
 ): ExtendResult {
-	// 1. Compute new column byte_offs at the SAB tail — `tailCursorBytes(old)`
+	// 1. Compute new column byte_offs at the SAB tail, `tailCursorBytes(old)`
 	//    is the live extent (header `capacity` for the fixed heap buffer,
 	//    `buffer.byteLength` for the growable-SAB / wasm backings). New columns
 	//    have no prior stride, so it's derived from the type tag here.
@@ -286,22 +293,22 @@ function extendColumnStoreInPlace(
 	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
 	// `capacity` for the fixed heap ArrayBuffer, or `buffer.byteLength` for the
 	// growable-SAB / wasm backings (the wasm fast path deliberately lands new
-	// regions past its page-rounded tail — unchanged here).
+	// regions past its page-rounded tail, unchanged here).
 	const { descriptors: newDescriptors, newTotal } = layoutColumnsAtTail(
 		tailCursorBytes(old),
 		tailLayouts
 	);
 
-	// 2. Grow the storage to fit the new tail — see `growBufferInPlace`.
+	// 2. Grow the storage to fit the new tail, see `growBufferInPlace`.
 	//    Header + descriptor writes below all stay within the pre-grow byte
 	//    range (the fast path requires descriptor-region headroom suffices
 	//    for the new descriptors), but tracking the live SAB on
-	//    `newStore.view` keeps future grows / extends well-formed.
+	//    `newStore.view` keeps future grows and extends well-formed.
 	const { grownBuffer, newView } = growBufferInPlace(old, newTotal);
 
 	// 3. Append the new descriptor entries into the reserved descriptor
 	//    region slack (after the existing entries, before the unused
-	//    tail). Existing descriptor bytes are not touched — their column
+	//    tail). Existing descriptor bytes are not touched, their column
 	//    byte_offs in particular stay valid for existing column views.
 	let descOff = regionOff + usedRegion;
 	for (let i = 0; i < newDescriptors.length; i++) {
@@ -309,7 +316,7 @@ function extendColumnStoreInPlace(
 	}
 
 	// 4. Update header fields. The header sits at the very start of the
-	//    SAB; writes via `newView` (over the live SAB ref) are always
+	//    SAB. Writes via `newView` (over the live SAB ref) are always
 	//    in-bounds regardless of which `isInPlace` variant we took.
 	const oldViewStamp = newView.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 	const newArchetypeCount = old.archetypes.size + newArchetypes.length;
@@ -319,20 +326,22 @@ function extendColumnStoreInPlace(
 	newView.setUint32(STORE_HEADER_OFFSETS.view_stamp, newViewStamp, true);
 
 	// 5. Build views for the new archetypes only. Existing archetype
-	//    views are reused as-is — `isInPlace` guarantees they still
+	//    views are reused as-is, `isInPlace` guarantees they still
 	//    operate on the same memory. New views must bind to `grownBuffer`
 	//    (the post-grow ref) because their byte ranges live past the
-	//    pre-grow tail; under wasm memory the old ref's frozen
+	//    pre-grow tail. Under wasm memory the old ref's frozen
 	//    `byteLength` would refuse them.
-	const newViewsMap = buildArchetypeViews(grownBuffer, newDescriptors);
+	const newViewsMap = createArchetypeViews(grownBuffer, newDescriptors);
 
-	// 6. Merge old + new into a fresh archetypes Map. `ArchetypeViews`
-	//    references are stable — same `ColumnView` objects, same
-	//    TypedArray instances.
-	const mergedArchetypes = new Map<number, ArchetypeViews>();
-	for (const [archetypeId, arch] of old.archetypes) {
-		mergedArchetypes.set(archetypeId, arch);
-	}
+	// 6. Append the new archetypes to the old map, in place. The old record and
+	//    the new one then share one map. That is correct here and not only
+	//    cheap: the in-place extend leaves every old byte, descriptor and view
+	//    where it was, so the old record describes the same store, plus the
+	//    new archetypes. A copy of the map cost one Map.set for each archetype
+	//    on every extend, and it made the cost of the N-th archetype grow with
+	//    N. `ArchetypeViews` references are stable, same `ColumnView`
+	//    objects, same TypedArray instances.
+	const mergedArchetypes = old.archetypes as Map<number, ArchetypeViews>;
 	for (const [archetypeId, arch] of newViewsMap) {
 		mergedArchetypes.set(archetypeId, arch);
 	}
@@ -349,9 +358,10 @@ function extendColumnStoreInPlace(
 		archetypes: mergedArchetypes,
 		_regionBytes: old._regionBytes,
 		_allocator: old._allocator,
-		// Carry the headroom policy forward so a LATER realloc (once this
+		// Carry the headroom policy forward so a later realloc (once this
 		// in-place slack is exhausted) re-reserves the same margin.
-		_reservedDescriptorBytes: old._reservedDescriptorBytes
+		_reservedDescriptorBytes: old._reservedDescriptorBytes,
+		_usedDescriptorBytes: usedRegion + newRegion
 	};
 
 	// Fast path: existing ArchetypeViews carried forward unchanged, so

@@ -1,26 +1,26 @@
 /**
- * Generic SAB region table — the de-gamed replacement for the five game-named
+ * Generic SAB region table, the de-gamed replacement for the five game-named
  * header offset fields (`terrain_off`, `spatial_grid_off`, … ) the substrate
  * used to hard-code.
  *
- * The engine ships only genuinely-generic MECHANISM regions (the command /
- * event / action rings and the entity-index) as named `StoreHeader` fields. A
- * CONSUMER (a game) declares the named regions IT wants — terrain, a spatial
- * grid, whatever — as `StoreRegionSpec`s; the engine lays each out after the
+ * The engine ships only genuinely-generic mechanism regions (the command /
+ * event and action rings and the entity-index) as named `StoreHeader` fields. A
+ * Consumer (a game) declares the named regions it wants, terrain, a spatial
+ * grid, whatever, as `StoreRegionSpec`s. The engine lays each out after the
  * mechanism regions, writes a `RegionTableEntry` `(region_id, byte_offset,
  * byte_length)` into a directory at `header.region_table_off`, snapshots and
- * restores it across a SAB grow/extend, and exposes a generic
- * `regionHandle(id)`. The engine NEVER interprets `region_id` — it is a
+ * restores it across a SAB grow and extend, and exposes a generic
+ * `regionHandle(id)`. The engine never interprets `region_id`. It is a
  * consumer-owned token the consumer also resolves on the read side
  * (`findRegionOffset` here, `abi.find_region` in Zig).
  *
  * The directory is self-describing: each entry carries the region's full byte
- * length, so the realloc snapshot/restore path copies a region across a grow
+ * length, so the realloc snapshot and restore path copies a region across a grow
  * without knowing its internal shape (no per-region `readOptions` closure to
  * carry forward, unlike the mechanism registry).
  *
  * Layout (mirrors the `RegionTableEntry` extern struct in
- * `packages/sim/src/abi.zig`; offsets vendored into `vendored_abi/abi.ts`):
+ * `packages/sim/src/abi.zig`. Offsets vendored into `vendored_abi/abi.ts`):
  *
  *   [ entry 0: { region_id: u32, byte_offset: u32, byte_length: u32 } ]
  *   [ entry 1: ... ]
@@ -39,15 +39,15 @@ export { REGION_TABLE_ENTRY_BYTES, REGION_TABLE_ENTRY_OFFSETS };
  * distinct within its region set, that it also resolves on the read side),
  * computes `bytes`, and seeds the region header + contents in `init`.
  *
- * `init` runs ONCE at first allocation. Across a SAB grow/extend the region's
+ * `init` runs once at first allocation. Across a SAB grow and extend the region's
  * live bytes are snapshotted and restored verbatim (the table is
- * self-describing), so `init` is not re-run — a consumer must not rely on it
+ * self-describing), so `init` is not re-run, a consumer must not rely on it
  * firing per realloc. */
 export interface StoreRegionSpec {
-	/** Consumer-owned region id (nonzero, distinct). Written to the directory;
+	/** Consumer-owned region id (nonzero, distinct). Written to the directory
 	 * resolved by the consumer via `findRegionOffset` / `abi.find_region`. */
 	readonly id: number;
-	/** Human label for diagnostics / the self-documenting directory dump. */
+	/** Human label for diagnostics and the self-documenting directory dump. */
 	readonly name: string;
 	/** Byte size to allocate for this region (consumer computes from its knobs).
 	 * Must be > 0. */
@@ -64,14 +64,14 @@ export interface RegionTableEntry {
 }
 
 /** A resolved handle to a consumer region, returned by `ECS.regionHandle` /
- * `Store.regionHandle`. Carries the live `buffer`/`view` plus the region's byte
+ * `Store.regionHandle`. Carries the live `buffer` and `view` plus the region's byte
  * `offset` and full `bytes`, so a consumer's region module can build a
  * TypedArray view over exactly the region's span without re-reading the
- * directory. Re-fetch after a SAB grow (the offset/view may have moved). */
+ * directory. Re-fetch after a SAB grow (the offset and view may have moved). */
 export interface ColumnStoreRegionHandle {
-	/** `ArrayBufferLike` — see `ColumnStore.buffer`. Consumer regions are a SAB-profile
-	 * feature (WASM/worker), so in practice this is a `SharedArrayBuffer` wherever
-	 * regions are declared; the type is widened only because it flows from the
+	/** `ArrayBufferLike`, see `ColumnStore.buffer`. Consumer regions are a SAB-profile
+	 * feature (WASM or worker), so in practice this is a `SharedArrayBuffer` wherever
+	 * regions are declared. The type is widened only because it flows from the
 	 * backing-agnostic store. */
 	readonly buffer: ArrayBufferLike;
 	readonly view: DataView;
@@ -92,8 +92,8 @@ export function regionTableBytes(count: number): number {
 }
 
 /** Read `region_table_count` from the header and validate the directory fits
- * within the buffer. `isValidSab` checks only header-length + magic + ABI, so a
- * corrupt / foreign store buffer can carry a garbage count that would drive a huge
+ * within the buffer. `isValidStoreHeader` checks only header-length + magic + ABI, so a
+ * corrupt and foreign store buffer can carry a garbage count that would drive a huge
  * `new Array(count)` and out-of-bounds `getUint32` reads. Reject with a typed
  * error before any entry is touched. */
 function readHeaderRegionTableCount(view: DataView, tableOff: number): number {
@@ -108,26 +108,26 @@ function readHeaderRegionTableCount(view: DataView, tableOff: number): number {
 
 /** Validate a consumer region set before layout: ids must be nonzero (0 is the
  * "absent" sentinel `findRegionOffset` returns) and distinct, and each region
- * must request a positive byte size. Throws `RegionRegistryError` otherwise —
+ * must request a positive byte size. Throws `RegionRegistryError` otherwise,
  * the same loud-failure stance the mechanism registry's paired-knob guards take. */
-export function validateRegionSpecs(regions: readonly StoreRegionSpec[]): void {
+export function assertRegionSpecs(regions: readonly StoreRegionSpec[]): void {
 	const seen = new Set<number>();
 	for (let i = 0; i < regions.length; i++) {
 		const r = regions[i];
 		if (!Number.isInteger(r.id) || r.id <= 0) {
 			throw new RegionRegistryError(
-				`region "${r.name}" has invalid id ${r.id} — region ids must be positive integers (0 is the absent sentinel)`
+				`region "${r.name}" has invalid id ${r.id}, region ids must be positive integers (0 is the absent sentinel)`
 			);
 		}
 		if (seen.has(r.id)) {
 			throw new RegionRegistryError(
-				`duplicate region id ${r.id} (region "${r.name}") — ids must be distinct within a consumer's region set`
+				`duplicate region id ${r.id} (region "${r.name}"), ids must be distinct within a consumer's region set`
 			);
 		}
 		seen.add(r.id);
 		if (!Number.isInteger(r.bytes) || r.bytes <= 0) {
 			throw new RegionRegistryError(
-				`region "${r.name}" (id ${r.id}) has invalid byte size ${r.bytes} — must be a positive integer`
+				`region "${r.name}" (id ${r.id}) has invalid byte size ${r.bytes}, must be a positive integer`
 			);
 		}
 	}
@@ -184,7 +184,7 @@ export function readHeaderRegionTable(view: DataView): RegionTableEntry[] {
 
 /** Resolve a consumer region's byte offset by `region_id`, or 0 when absent
  * (no directory, or no matching entry). The TS twin of Zig
- * `abi.find_region(header_addr, region_id)`; 0 is an unambiguous "absent"
+ * `abi.find_region(header_addr, region_id)`. 0 is an unambiguous "absent"
  * sentinel because a real region never starts at SAB byte 0 (the header does). */
 export function findRegionOffset(view: DataView, regionId: number): number {
 	const tableOff = view.getUint32(STORE_HEADER_OFFSETS.region_table_off, true);
@@ -201,7 +201,7 @@ export function findRegionOffset(view: DataView, regionId: number): number {
 
 /** Resolve a consumer region's `(byte_offset, byte_length)` by `region_id`, or
  * `null` when absent. Use when a reader needs the region's size (e.g. to
- * materialise a TypedArray view) and not just its start. */
+ * materialise a TypedArray view) and not only its start. */
 export function findRegionEntry(view: DataView, regionId: number): RegionTableEntry | null {
 	const tableOff = view.getUint32(STORE_HEADER_OFFSETS.region_table_off, true);
 	if (tableOff === 0) return null;

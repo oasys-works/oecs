@@ -1,8 +1,8 @@
 /**
- * Host → ECS write seam × reactive read bridge — the loop
- * closes. The write seam funnels host commands into the SAME deferred flush and
+ * Host → ECS write seam × reactive read bridge, the loop
+ * closes. The write seam funnels host commands into the same deferred flush and
  * observers the read bridge already drains, so a frame's worth of host writes
- * surfaces through the existing change detection as ONE coalesced commit.
+ * surfaces through the existing change detection as one coalesced commit.
  *
  * This is the end-to-end version of the write-seam prototype's claim 3, on the real
  * engine: enqueue off-schedule → drain at the schedule head → reactiveMap update
@@ -56,10 +56,10 @@ describe("host command seam → reactive read bridge", () => {
 		expect(sync.map.get(id!)).toEqual({ x: 10, heat: 0 });
 	});
 
-	it("a frame of host commands coalesces into ONE UI commit", () => {
+	it("a frame of host commands coalesces into one UI commit", () => {
 		const { world, Cell, commands, sync } = makeWorld();
 
-		// A coarse reader that re-reads the whole map — under batchedUpdate it
+		// A coarse reader that re-reads the whole map, under batchedUpdate it
 		// fires at most once per tick no matter how many entities changed.
 		let commits = 0;
 		root(() => {
@@ -105,7 +105,7 @@ describe("host command SAB-ring transport → reactive read bridge", () => {
 	it("a ring-sourced despawn fires the observers the bridge drains (entity leaves the map)", () => {
 		const world = new ECS({ deterministic: true });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
-		// The apply system drains the SAB ring too; bind the despawn codec.
+		// The apply system drains the SAB ring too. Bind the despawn codec.
 		const ring = new HostCommandDispatcher().onCommand(OP_DESPAWN, ringDespawnCodec());
 		const commands = installHostCommandSeam(world, { ring });
 		const sync = syncComponentToMap(
@@ -125,7 +125,7 @@ describe("host command SAB-ring transport → reactive read bridge", () => {
 		batchedUpdate(world, 1 / 60);
 		expect(sync.map.size()).toBe(1);
 
-		// Despawn it via the OTHER transport — opaque bytes on the SAB ring. The
+		// Despawn it via the other transport, opaque bytes on the SAB ring. The
 		// structural change must route through the same deferred flush +
 		// observers the read bridge drains, so the entity leaves the map.
 		const sab = world.columnStore;

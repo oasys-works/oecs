@@ -1,5 +1,5 @@
 /**
- * Store.stateHash — live-row FNV-1a state digest.
+ * Store.stateHash, live-row FNV-1a state digest.
  *
  * `Store.stateHash()` folds (archetype_id, live row count, live column
  * bytes) for every archetype in id order. It's the canonical "live ECS
@@ -16,12 +16,12 @@ import { ECS_ERROR } from "../../utils/error";
 const Position = { x: "i32", y: "i32" } as const;
 const Velocity = { vx: "i32", vy: "i32" } as const;
 // Component shapes used by the per-word-fold tail-byte regression test.
-// A u8 column with an odd row count produces 1–3 tail bytes after
-// the word-aligned chunk; a u16 column with an odd row count produces 2.
+// A u8 column with an odd row count produces 1 to 3 tail bytes after
+// the word-aligned chunk. A u16 column with an odd row count produces 2.
 const ByteFlags = { flag: "u8" } as const;
 const HalfWord = { v: "u16" } as const;
 
-describe("Store.state_hash — live-row FNV-1a", () => {
+describe("Store.state_hash, live-row FNV-1a", () => {
 	it("two identically-built stores produce identical hashes", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
@@ -48,7 +48,7 @@ describe("Store.state_hash — live-row FNV-1a", () => {
 		// Mutate e1's row directly through its archetype column.
 		const arch = s.getEntityArchetype(e1);
 		const row = s.getEntityRow(e1);
-		arch.getColumn(Pos, "x", 1)[row] = 999;
+		arch.getColumnMut(Pos, "x", 1)[row] = 999;
 		expect(s.stateHash()).not.toBe(before);
 	});
 
@@ -86,8 +86,8 @@ describe("Store.state_hash — live-row FNV-1a", () => {
 		s.addComponent(e0, Pos, { x: 1, y: 2 });
 
 		const before = s.stateHash();
-		// Registering a NEW component doesn't add an archetype until some
-		// entity gets it; the archetype graph is unchanged.
+		// Registering a new component doesn't add an archetype until some
+		// entity gets it. The archetype graph is unchanged.
 		s.registerComponent(Velocity);
 		expect(s.stateHash()).toBe(before);
 	});
@@ -102,14 +102,14 @@ describe("Store.state_hash — live-row FNV-1a", () => {
 		const before = s.stateHash();
 		// Adding Vel transitions e0 into a new [Pos, Vel] archetype:
 		// archetype graph grows (a new (id, len) pair appears in the fold)
-		// AND the [Pos]-only archetype's row count drops to 0.
+		// And the [Pos]-only archetype's row count drops to 0.
 		s.addComponent(e0, Vel, { vx: 5, vy: 6 });
 		expect(s.stateHash()).not.toBe(before);
 	});
 
 	it("per-word fold notices a flip in a u8 tail byte", () => {
 		// Three u8 rows ⇒ 3 tail bytes, no word-aligned chunk. The per-word
-		// fold must still hash those bytes — otherwise mutations in a
+		// fold must still hash those bytes, otherwise mutations in a
 		// non-aligned tail would silently match across replays.
 		const s = new Store({ deterministic: true });
 		const F = s.registerComponent(ByteFlags);
@@ -124,7 +124,7 @@ describe("Store.state_hash — live-row FNV-1a", () => {
 		const last = es[2];
 		const arch = s.getEntityArchetype(last);
 		const row = s.getEntityRow(last);
-		arch.getColumn(F, "flag", 1)[row] = 255;
+		arch.getColumnMut(F, "flag", 1)[row] = 255;
 		expect(s.stateHash()).not.toBe(before);
 	});
 
@@ -138,14 +138,14 @@ describe("Store.state_hash — live-row FNV-1a", () => {
 		const before = s.stateHash();
 		const arch = s.getEntityArchetype(e);
 		const row = s.getEntityRow(e);
-		arch.getColumn(H, "v", 1)[row] = 0xff01;
+		arch.getColumnMut(H, "v", 1)[row] = 0xff01;
 		expect(s.stateHash()).not.toBe(before);
 	});
 
-	it("scales with live entity count — fast even when SAB is large", () => {
+	it("scales with live entity count, fast even when SAB is large", () => {
 		// 10k entities on a single archetype. The live-row hash walks ~80KB
-		// of data; `columnStoreStateHash` would walk the full SAB capacity (much
-		// larger). This test asserts correctness on a non-trivial size;
+		// of data. `columnStoreStateHash` would walk the full SAB capacity (much
+		// larger). This test asserts correctness on a non-trivial size
 		// perf is validated by replay.test.ts and determinism.test.ts.
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
@@ -170,7 +170,7 @@ describe("determinism surface is opt-in", () => {
 		}
 	}
 
-	it("defaults to off — `deterministic` is false without the opt-in", () => {
+	it("defaults to off, `deterministic` is false without the opt-in", () => {
 		expect(new Store().deterministic).toBe(false);
 		expect(new Store({ deterministic: true }).deterministic).toBe(true);
 	});
@@ -194,7 +194,7 @@ describe("determinism surface is opt-in", () => {
 		);
 	});
 
-	it("opting in reproduces the canonical digest — off-vs-on never diverges the bytes", () => {
+	it("opting in reproduces the canonical digest, off-vs-on never diverges the bytes", () => {
 		// The flag gates availability, not the digest algorithm: two deterministic
 		// stores built identically agree (the canonical fold is unchanged from the
 		// always-on era).

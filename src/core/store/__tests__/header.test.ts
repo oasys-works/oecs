@@ -7,14 +7,14 @@
  * field order, width, or endianness will flip them and fail this test. Treat
  * it the same as `wire_fingerprint.test.ts` treats the wire codec.
  *
- * PRE-PUBLISH SENTINEL: `sim_abi_version` is currently 0 ("not yet
- * published" — see `abi.zig`). While it is 0 we do NOT bump on layout
- * changes; this golden just guards against *unintended* drift.
+ * Pre-publish sentinel: `sim_abi_version` is currently 0 ("not yet
+ * published", see `abi.zig`). While it is 0 we do not bump on layout
+ * changes. This golden only guards against *unintended* drift.
  *
  * If you intentionally change the schema:
  *   1. Update `GOLDEN_HEX` to the new bytes.
- *   2. POST-PUBLISH ONLY (version >= 1): also bump `SIM_ABI_VERSION` in the
- *      same PR — the version bump is part of the "old WASM can't read new
+ *   2. Post-publish only (version >= 1): also bump `SIM_ABI_VERSION` in the
+ *      same PR, the version bump is part of the "old WASM can't read new
  *      SAB" contract. Pre-publish (version 0) the bump is intentionally
  *      skipped.
  */
@@ -26,14 +26,14 @@ import {
 	STORE_HEADER_BYTES,
 	STORE_HEADER_OFFSETS,
 	bumpViewStamp,
-	isValidSab,
+	isValidStoreHeader,
 	readStoreHeader,
 	writeStoreHeader,
 	type StoreHeader
 } from "../header";
 
 // Hand-derived from the layout, written little-endian per the
-// "WASM is LE; every host we target is LE" invariant in `header.ts`. Held
+// "WASM is LE. Every host we target is LE" invariant in `header.ts`. Held
 // here as a string so a diff failure prints the exact byte that flipped.
 const FIXTURE: StoreHeader = {
 	magic: STORE_MAGIC,
@@ -75,7 +75,7 @@ function toHex(bytes: Uint8Array): string {
 	return s;
 }
 
-describe("SAB header — locked binary layout", () => {
+describe("SAB header, locked binary layout", () => {
 	it("fixture writes to the golden byte sequence", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
@@ -125,7 +125,7 @@ describe("SAB header — locked binary layout", () => {
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, viewStamp: 0xff_ff_ff_ff });
 
-		// `>>> 0` in the implementation forces unsigned wrap; a `>>>`-free
+		// `>>> 0` in the implementation forces unsigned wrap. A `>>>`-free
 		// implementation would emit -1 here and silently mis-compare against
 		// every cached stamp downstream.
 		expect(bumpViewStamp(view)).toBe(0);
@@ -136,7 +136,7 @@ describe("SAB header — locked binary layout", () => {
 		const view = new DataView(buf);
 		writeStoreHeader(view, FIXTURE);
 
-		expect(isValidSab(view)).toBe(true);
+		expect(isValidStoreHeader(view)).toBe(true);
 	});
 
 	it("is_valid_sab rejects wrong magic", () => {
@@ -144,7 +144,7 @@ describe("SAB header — locked binary layout", () => {
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, magic: 0xdead_beef });
 
-		expect(isValidSab(view)).toBe(false);
+		expect(isValidStoreHeader(view)).toBe(false);
 	});
 
 	it("is_valid_sab rejects wrong ABI version", () => {
@@ -152,13 +152,13 @@ describe("SAB header — locked binary layout", () => {
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, simAbiVersion: SIM_ABI_VERSION + 1 });
 
-		expect(isValidSab(view)).toBe(false);
+		expect(isValidStoreHeader(view)).toBe(false);
 	});
 
 	it("is_valid_sab rejects a buffer too small to hold the header", () => {
 		const view = new DataView(new ArrayBuffer(STORE_HEADER_BYTES - 1));
 
-		expect(isValidSab(view)).toBe(false);
+		expect(isValidStoreHeader(view)).toBe(false);
 	});
 
 	it("header layout matches when written through a SharedArrayBuffer view", () => {

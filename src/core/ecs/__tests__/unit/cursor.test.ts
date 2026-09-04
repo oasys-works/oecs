@@ -4,14 +4,14 @@ import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
 
 /**
- * `ECS.cursor` / `ECS.cursorRead` and their `ctx` twins — the re-pointable
- * single-entity accessor (ref.ts §Re-pointable cursor).
+ * `ECS.cursor` / `ECS.cursorRead` and their `ctx` twins, the re-pointable
+ * single-entity accessor (the re-pointable cursor in ref.ts).
  *
  * The cursor exists for speed, but the reason it is a separate type rather than a
- * faster `ref` is that it follows entities ACROSS archetypes: its accessors read
+ * faster `ref` is that it follows entities across archetypes: its accessors read
  * through the archetype row plane rather than closing over one column group. So
  * the cases that matter here are the ones where the thing a cursor points at
- * moves — a different archetype, a swap-removed row, a grown column — and the
+ * moves, a different archetype, a swap-removed row, a grown column, and the
  * ones where `at()` must refuse.
  */
 describe("cursor", () => {
@@ -81,7 +81,7 @@ describe("cursor", () => {
 	});
 
 	it("still addresses the right column after a grow replaces the buffers", () => {
-		// The cursor holds `Archetype._bufs`, which a grow refills IN PLACE — this
+		// The cursor holds `Archetype._bufs`, which a grow refills in place. This
 		// is what that invariant buys.
 		const ecs = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
@@ -99,9 +99,9 @@ describe("cursor", () => {
 	});
 
 	it("stamps the change tick on a mutable cursor but not a read-only one", () => {
-		// White-box on `_changedTick`, like the `getColumn` cases in
+		// White-box on `_changedTick`, like the `getColumnMut` cases in
 		// integration/change_detection.test.ts: `changed()` compares against the
-		// ITERATING SYSTEM's last run tick, so the tick itself is the honest
+		// iterating system's last run tick, so the tick itself is the honest
 		// assertion for an accessor used outside a system.
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
@@ -109,7 +109,7 @@ describe("cursor", () => {
 		const q = ecs.query(Pos);
 		const tickOf = () => {
 			let t = -1;
-			for (const arch of q._nonEmpty()) t = arch._changedTick[Pos.id];
+			for (const arch of q.nonEmptyArchs()) t = arch.changedTick[Pos.id];
 			return t;
 		};
 
@@ -169,7 +169,7 @@ describe("cursor", () => {
 
 	// The access check is on `at()`, not only on the call that makes the cursor.
 	// A cursor is made one time and then kept, so it outlives the span that made
-	// it — the two ways it escapes are below. Both wrote an undeclared component
+	// it, the two ways it escapes are below. Both wrote an undeclared component
 	// with no error while the check was at the creation site only.
 	describe("declared-access check follows the cursor to its point of use", () => {
 		/** A system that declares `Tick` and nothing else. */
@@ -191,7 +191,7 @@ describe("cursor", () => {
 			const Tick = ecs.registerComponent({ n: "f64" }, { name: "Tick" });
 			const e = ecs.spawn(ecs.template(Pos({ x: 1 }), Tick({ n: 0 })));
 
-			// Made at host level, where no system is active — so the check at the
+			// Made at host level, where no system is active, so the check at the
 			// creation site passes, and only `at()` can catch this.
 			const p = ecs.cursor(Pos);
 
@@ -215,7 +215,7 @@ describe("cursor", () => {
 		it("throws for a ctx cursor that escapes into another system", () => {
 			// Worse than the host case: the cursor satisfies the DeclaredWrite
 			// typestate in the system that makes it, and then writes an undeclared
-			// component in the next one — both layers of the guarantee bypassed.
+			// component in the next one, both layers of the guarantee bypassed.
 			const ecs = new ECS();
 			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
 			const Tick = ecs.registerComponent({ n: "f64" }, { name: "Tick" });
@@ -256,7 +256,7 @@ describe("cursor", () => {
 		});
 
 		it("checks a read-only cursor against reads, not writes", () => {
-			// `cursorRead` needs `reads` only — a system that declares the component
+			// `cursorRead` needs `reads` only, a system that declares the component
 			// read-only may point one, and the mutable variant still may not.
 			const ecs = new ECS();
 			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
@@ -297,7 +297,7 @@ describe("cursor", () => {
 		});
 
 		it("stays lenient at host level, where no system is active", () => {
-			// The unattributable case the access check deliberately skips — an
+			// The unattributable case the access check deliberately skips, an
 			// `at()` outside every span must not start throwing.
 			const ecs = new ECS();
 			const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });

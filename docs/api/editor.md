@@ -17,7 +17,7 @@ const queue = installHostCommandSeam(ecs);
 // readField: how the editor reads the current values to build an inverse (from your read channel)
 const editor = new Editor(queue, (entityId, def, field) => ecs.getField(entityId, def, field));
 
-editor.setField(player, Health, "hp", 50);   // adds the forward and inverse commands; applies in the next tick
+editor.setField(player, Health, "hp", 50);   // adds the forward and inverse commands. Applies in the next tick
 editor.undo();   // → true (adds the inverse commands)
 editor.redo();   // → true
 ```
@@ -43,7 +43,7 @@ class Editor {
   get canUndo(): boolean;   get canRedo(): boolean;   // "would undo()/redo() do something", with no allocation
   clear(): void;      // remove both stacks (this does not touch the ECS)
   depths(): { undo: number; redo: number };
-  onChange(cb: () => void): () => void;                // runs after each commit, undo, redo, and clear; gives an unsubscribe function
+  onChange(cb: () => void): () => void;                // runs after each commit, undo, redo, and clear. Gives an unsubscribe function
   committedField(entityId, def, field): number | undefined; // read one committed slot through the FieldReader of the constructor
   pendingField(entityId, def, field): number | undefined;   // the optimistic value that is not yet committed
 }
@@ -95,7 +95,7 @@ fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: 
 
 interface FieldHandle {
   readonly value: number | undefined;    // a reactive read of the channel (tracked in a tracking scope)
-  set(value: number): void;               // adds a setField that you can undo; applies in the next tick
+  set(value: number): void;               // adds a setField that you can undo. Applies in the next tick
   readonly pending: number | undefined;   // a NON-reactive optimistic copy of the shadow value of the editor
 }
 ```
@@ -114,5 +114,5 @@ const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.
 
 ## See also
 
-- [the host write path](./host-write-seam.md) — the command queue that undo and redo use
-- [reactive](./reactive.md) — the read channel that a `FieldHandle` reads from
+- [the host write path](./host-write-seam.md), the command queue that undo and redo use
+- [reactive](./reactive.md), the read channel that a `FieldHandle` reads from

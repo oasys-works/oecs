@@ -6,18 +6,18 @@ immediate, and `ctx.commands.*` is deferred to the flush at the end of the phase
 breaking renames, and there is **no alias for an old name**. But they group into a small number of
 mechanical rules:
 
-1. **The lifecycle verbs** — `createEntity` becomes `spawn`, `createEntities` becomes `spawnMany`,
+1. **The lifecycle verbs**, `createEntity` becomes `spawn`, `createEntities` becomes `spawnMany`,
    and `destroyEntity` becomes `despawn`. Also, `despawn` on the host is now **immediate**, and not
    deferred (§1).
-2. **Inside a system** — Each bare deferred function is removed: `ctx.createEntity`,
+2. **Inside a system**. Each bare deferred function is removed: `ctx.createEntity`,
    `ctx.destroyEntity`, `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable`, and `ctx.enable`.
    In a system body, a deferred structural operation is on `ctx.commands` alone (§2).
-3. **Grouped facades** — 29 flat methods move onto `ecs.relations`, `ecs.events`, `ecs.resources`,
+3. **Grouped facades**, 29 flat methods move onto `ecs.relations`, `ecs.events`, `ecs.resources`,
    and `ecs.snapshots`. A small number change their name in the move: `snapshot` becomes `capture`,
    `restoreInto` becomes `restore`, `resource` becomes `get`, and others (§3).
 4. **The argument order of `sourcesOf` changed** to `(entity, def)`. At a call site with no types
    this is a quiet change of behavior. The compiler finds a call site that has types (§4).
-5. **Small renames, and the division of the internal parts** — `query.count()` becomes the
+5. **Small renames, and the division of the internal parts**, `query.count()` becomes the
    `query.entityCount` getter. `WorldRestoreError` becomes `ECSRestoreError`.
    `WORLD_SNAPSHOT_VERSION` becomes `ECS_SNAPSHOT_VERSION`. The `export *` at the root became a
    selected list, and the internal parts (`HostCommandDispatcher`, the ring codecs,
@@ -25,12 +25,12 @@ mechanical rules:
 
 Everything else did not change. That includes:
 
-- the component operations on the host (`addComponent`, `getField`, `hasComponent`, and others);
-- the queries, and the iteration (`forEach` and `eachChunk`);
-- the sparse operations;
+- the component operations on the host (`addComponent`, `getField`, `hasComponent`, and others)
+- the queries, and the iteration (`forEach` and `eachChunk`)
+- the sparse operations
 - the observers. Their API did not change, but see §1: an immediate `despawn` on the host no longer
-  runs `onRemove`;
-- the schedule;
+  runs `onRemove`
+- the schedule
 - the data, event, and resource surface on the system side (`ctx.emit`, `ctx.read`, `ctx.resource`,
   `ctx.ref`, `ctx.setField`, `ctx.addSparse`, `ctx.addRelation`, and others).
 
@@ -40,14 +40,14 @@ variable is your decision.
 
 ---
 
-## 1. The lifecycle of an entity — `spawn` and `despawn`, and `despawn` on the host is now immediate
+## 1. The lifecycle of an entity, `spawn` and `despawn`, and `despawn` on the host is now immediate
 
 | 0.4 | 0.5 |
 | --- | --- |
 | `ecs.createEntity()` | `ecs.spawn()` |
 | `ecs.createEntity(template, overrides?)` | `ecs.spawn(template, overrides?)` |
 | `ecs.createEntities(template, count)` | `ecs.spawnMany(template, count, overrides?)` |
-| `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)` — **now immediate** |
+| `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)`, **now immediate** |
 
 `ecs.spawnBundle(...)` keeps its name. `spawnMany` gains an optional third parameter: one shared
 `TemplateOverrides<Defs>` object that applies to each row that it creates. For an adjacent batch,
@@ -59,13 +59,13 @@ it uses one `fill` call for each column that you replaced.
 > next line.
 
 ```ts
-// 0.4 — destroyEntity was deferred to the flush at the end of the phase
+// 0.4, destroyEntity was deferred to the flush at the end of the phase
 ecs.destroyEntity(e);
-ecs.isAlive(e);   // still true here — the death happens at the flush
+ecs.isAlive(e);   // still true here, the death happens at the flush
 ecs.flush();
 ecs.isAlive(e);   // false
 
-// 0.5 — despawn from the host is immediate
+// 0.5, despawn from the host is immediate
 ecs.despawn(e);
 ecs.isAlive(e);   // false, immediately
 ```
@@ -91,7 +91,7 @@ not see an entity that the host destroyed. Where that is important, destroy the 
 
 ---
 
-## 2. Inside a system — `ctx.commands` is the only deferred surface
+## 2. Inside a system, `ctx.commands` is the only deferred surface
 
 Each bare deferred function on the context is gone, and not only the pair for the lifecycle:
 
@@ -99,7 +99,7 @@ Each bare deferred function on the context is gone, and not only the pair for th
 | --- | --- |
 | `ctx.createEntity()` | `ctx.commands.spawn()` |
 | `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
-| `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)` — with the same demand for all values — or the bundle form `ctx.commands.add(e, def({ … }))` |
+| `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)`, with the same demand for all values, or the bundle form `ctx.commands.add(e, def({ … }))` |
 | `ctx.removeComponent(e, def)` | `ctx.commands.remove(e, def)` |
 | `ctx.disable(e)` | `ctx.commands.disable(e)` |
 | `ctx.enable(e)` | `ctx.commands.enable(e)` |
@@ -143,7 +143,7 @@ and there is no third option.
 
 ---
 
-## 3. Grouped facades — `ecs.relations`, `ecs.events`, `ecs.resources`, and `ecs.snapshots`
+## 3. Grouped facades, `ecs.relations`, `ecs.events`, `ecs.resources`, and `ecs.snapshots`
 
 29 flat methods moved off the `ECS` class, onto four narrow facades. Each one maps one to one, and a
 small number change their name in the move, which the right column shows. The high-frequency path,
@@ -161,7 +161,7 @@ flat by design. The **names on the system side, on `ctx.*`, did not change** (`c
 | `ecs.hasRelation(src, def)` | `ecs.relations.has(src, def)` |
 | `ecs.targetOf(src, def)` | `ecs.relations.targetOf(src, def)` |
 | `ecs.targetsOf(src, def)` | `ecs.relations.targetsOf(src, def)` |
-| `ecs.sourcesOf(def, tgt)` | `ecs.relations.sourcesOf(tgt, def)` — **the arguments changed places**; see §4 |
+| `ecs.sourcesOf(def, tgt)` | `ecs.relations.sourcesOf(tgt, def)`, **the arguments changed places**. See §4 |
 | `ecs.pairsOf(def)` | `ecs.relations.pairsOf(def)` |
 | `ecs.sourcesOfAny(tgt)` | `ecs.relations.sourcesOfAny(tgt)` |
 | `ecs.ancestorsOf(src, def)` | `ecs.relations.ancestorsOf(src, def)` |
@@ -229,11 +229,11 @@ The facades are the exact mirror image of the compile-time surface. `relations.r
 cardinality into the type, and `targetOf`, `ancestorsOf`, `rootOf`, and `cascadeOf` accept an
 exclusive relation alone. The facade classes are exported as **types alone** (`ECSRelations`,
 `ECSEvents`, `ECSResources`, and `ECSSnapshots`), and the facades add no run-time export. But the
-list of run-time exports at the root did change in 0.5.0; see §5.
+list of run-time exports at the root did change in 0.5.0. See §5.
 
 ---
 
-## 4. The argument order of `sourcesOf` — from `(def, tgt)` to `(tgt, def)`
+## 4. The argument order of `sourcesOf`, from `(def, tgt)` to `(tgt, def)`
 
 `sourcesOf` was the one function on the relation surface with a different argument order.
 `targetOf(src, def)`, `targetsOf(src, def)`, and `sourcesOfAny(tgt)` each start with the entity.
@@ -290,28 +290,28 @@ const inCtx    = ctx.sourcesOf(parent, ChildOf);
 These additions are optional. Your 0.4 code needs none of them, but they replace some frequent
 workarounds. Use them as they help you:
 
-- **A bundle overload for `addComponent`** — `ecs.addComponent(e, Pos({ x: 1 }))` accepts a
+- **A bundle overload for `addComponent`**. `ecs.addComponent(e, Pos({ x: 1 }))` accepts a
   callable bundle, and the engine writes `0` in each absent field, as usual. The explicit
   `(e, def, values)` form still demands each value, so an absent field there is still a compile
   error.
-- **Total probes and `tryGetField`** — `hasComponent`, `hasSparse`, and `relations.has` now give
+- **Total probes and `tryGetField`**. `hasComponent`, `hasSparse`, and `relations.has` now give
   `false` for an entity that is not alive, and they do not throw in development. A "has" probe is
   exactly the call that you make to avoid a dead entity. `ecs.tryGetField(e, def, field)` gives
   `undefined` for an entity that is not alive, or for a component that is absent.
-- **`query.firstEntity()` and `query.singleEntity()`** — These read one entity, such as the player
+- **`query.firstEntity()` and `query.singleEntity()`**. These read one entity, such as the player
   or the camera, without a `forEach` call and a capture that you write. `singleEntity` throws
   `QUERY_NOT_SINGLETON` in development when the number of matches is 0 or more than 1.
-- **`ecs.refRead(def, e)` on the host** — a read-only view of a full component, equal to
+- **`ecs.refRead(def, e)` on the host**, a read-only view of a full component, equal to
   `ctx.refRead`.
-- **Combinators for a run condition** — `not()`, `allOf()`, and `anyOf()` compose `RunCondition`
+- **Combinators for a run condition**. `not()`, `allOf()`, and `anyOf()` compose `RunCondition`
   values, and they join the read surfaces that the operands declared.
-- **Notification of a change in the editor** — `editor.onChange(cb)` runs on each commit, undo,
+- **Notification of a change in the editor**. `editor.onChange(cb)` runs on each commit, undo,
   redo, and clear, and the `canUndo` and `canRedo` getters exist. So you no longer poll
   `depths()` in each frame.
-- **Support for `using`** — `ObserverHandle` implements `Symbol.dispose`. So   `using h = ecs.observe(Pos, { onAdd })` removes the subscription at the end of the scope.
-- **Debug names for a component** — `registerComponent(schema, { name: "Pos" })` labels a
+- **Support for `using`**. `ObserverHandle` implements `Symbol.dispose`. So   `using h = ecs.observe(Pos, { onAdd })` removes the subscription at the end of the scope.
+- **Debug names for a component**. `registerComponent(schema, { name: "Pos" })` labels a
   development error `'Pos' (component 5)`, so that you do not count the order of registration.
-- **Compile-time types from the declarations** — The config form of `registerSystem` now reads
+- **Compile-time types from the declarations**. The config form of `registerSystem` now reads
   `reads` and `writes` as literal types, and it limits `ctx` to exactly the surface that you
   declared. So access that you did not declare is a *compile* error, and the development-mode
   run-time check remains as the second line of defence. The type of a query column comes from the
@@ -319,7 +319,7 @@ workarounds. Use them as they help you:
   `RelationDef<"multi">`). A resource key and an event key are invariant. Code that was already
   correct compiles with no change. Code that declared too little access now fails at compile time,
   instead of at run time in development.
-- **The lifecycle of the write path** — `uninstallHostCommandSeam(world, queue)`,
+- **The lifecycle of the write path**. `uninstallHostCommandSeam(world, queue)`,
   `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)` (the dispatcher class now imports
   from `@oasys/oecs/internal`, §5), and `HostCommandRecorder.snapshotLog()`.
 - **A `VERSION` export**, and a `"./package.json"` export.
@@ -330,28 +330,28 @@ workarounds. Use them as they help you:
 
 You can find each 0.4 name below with a text search. None of them has an alias in 0.5.
 
-- [ ] `createEntity` → `spawn`; `createEntities` → `spawnMany` (§1).
+- [ ] `createEntity` → `spawn`. `createEntities` → `spawnMany` (§1).
 - [ ] `destroyEntity` → `despawn`. Then examine each call site on the host, because `despawn` is now
       **immediate**: nothing may read the entity between the `despawn` call and the old flush point
       (§1).
-- [ ] `ctx.createEntity()` → `ctx.commands.spawn()`; `ctx.destroyEntity(e)` →
+- [ ] `ctx.createEntity()` → `ctx.commands.spawn()`. `ctx.destroyEntity(e)` →
       `ctx.commands.despawn(e)` (§2).
 - [ ] `registerRelation`, `addRelation`, `removeRelation`, `hasRelation`, `targetOf`, `targetsOf`,
       `pairsOf`, `sourcesOfAny`, `ancestorsOf`, `rootOf`, and `cascadeOf` → `ecs.relations.*` (the
-      same name at the end, without the `Relation` part in the first four); `relationCount` →
-      `relations.count`; `compactRelations()` → `relations.compact()` (§3).
-- [ ] `registerEvent` → `events.register`; `registerSignal` → `events.registerSignal`; `emit` and
+      same name at the end, without the `Relation` part in the first four). `relationCount` →
+      `relations.count`. `compactRelations()` → `relations.compact()` (§3).
+- [ ] `registerEvent` → `events.register`. `registerSignal` → `events.registerSignal`. `emit` and
       `read` on the host → `events.emit` and `events.read` (§3).
-- [ ] `registerResource` → `resources.register`; `resource` → `resources.get`; `setResource` →
-      `resources.set`; `removeResource` → `resources.remove`; `hasResource` → `resources.has` (§3).
-- [ ] `snapshot()` → `snapshots.capture()`; `restoreInto` → `snapshots.restore`; `snapshotSparse` →
-      `snapshots.captureSparse`; `restoreSparse` → `snapshots.restoreSparse`; `stateHash` →
-      `snapshots.stateHash`; `deterministic` → `snapshots.deterministic` (§3).
+- [ ] `registerResource` → `resources.register`. `resource` → `resources.get`. `setResource` →
+      `resources.set`. `removeResource` → `resources.remove`. `hasResource` → `resources.has` (§3).
+- [ ] `snapshot()` → `snapshots.capture()`. `restoreInto` → `snapshots.restore`. `snapshotSparse` →
+      `snapshots.captureSparse`. `restoreSparse` → `snapshots.restoreSparse`. `stateHash` →
+      `snapshots.stateHash`. `deterministic` → `snapshots.deterministic` (§3).
 - [ ] `sourcesOf(def, tgt)` → `sourcesOf(tgt, def)`. **Change the places of the arguments** at each
       call site, on the host and on `ctx`. Do not trust a text search alone, because the old order
       fails with no signal in code that has no types (§4).
-- [ ] `query.count()` → `query.entityCount` (a getter — remove the parentheses) (§5).
-- [ ] `WorldRestoreError` → `ECSRestoreError`; `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`
+- [ ] `query.count()` → `query.entityCount` (a getter, remove the parentheses) (§5).
+- [ ] `WorldRestoreError` → `ECSRestoreError`. `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`
       (§5).
 - [ ] Each import from the root of `HostCommandDispatcher`, a ring codec, `resolveECSMemory`, the
       codec for a packed `EntityID`, `accessCheck`, or `dispatchTrace` → `@oasys/oecs/internal`

@@ -1,13 +1,13 @@
 /**
- * ECS memory sizing — the single place a consumer says how big a world is and
+ * ECS memory sizing, the single place a consumer says how big a world is and
  * what backs it.
  *
- * TWO QUESTIONS, TWO FIELDS. A caller answers two independent questions here:
+ * Two questions, two fields. A caller answers two independent questions here:
  *
  *   how big      `entities` (and its two shaping numbers), or `maxBytes`
- *   what backs it `backing` — heap, shared, wasm, or a custom allocator
+ *   what backs it `backing`, heap, shared, wasm, or a custom allocator
  *
- * Before 0.6 these lived in ONE key-discriminated union of five arms, so a
+ * Before 0.6 these lived in one key-discriminated union of five arms, so a
  * caller could answer only one of them. The `budget` arm and the `maxBytes` arm
  * both chose the heap allocator themselves, which made "a budget of 50,000
  * entities on a shared backing" impossible to say. The two axes are now two
@@ -19,12 +19,12 @@
  *   { memory: { entities: 50_000, backing: "shared" } }      // both axes
  *   { memory: { entities: 50_000, maxBytes: 64 * 1024 * 1024 } }  // size from one, cap from the other
  *   { memory: { backing: { wasm: { maximumPages: 4096 } } } }
- *   { memory: { backing: { allocator: heapArraybufferAllocator(cap) } } }
+ *   { memory: { backing: { allocator: heapArrayBufferAllocator(cap) } } }
  *
  * `columnCapacity` pins the exact rows per archetype column on any combination.
- * Benches and tests want that; a caller who gives `entities` gets a derived one.
+ * Benches and tests want that. A caller who gives `entities` gets a derived one.
  *
- * ONE DERIVATION, EVERY BACKING. `entityIndexCapacity` used to depend on which
+ * One derivation, every backing. `entityIndexCapacity` used to depend on which
  * arm the caller picked, and the escape hatch always reserved the full EntityID
  * space. That made a custom allocator unusable below about 12.6 MiB, because
  * the index reservation alone did not fit under the cap. The index now comes
@@ -37,15 +37,15 @@
  *
  * The resolved `intentLabel` / `budgetEntities` travel into `Store` so the
  * hard-fail at the cap is phrased in the caller's own terms ("3.2× the declared
- * budget — runaway entity creation upstream?") instead of raw bytes. The cap
- * stays a hard ceiling with no grow-beyond fallback — that decision is not this
+ * budget, runaway entity creation upstream?") instead of raw bytes. The cap
+ * stays a hard ceiling with no grow-beyond fallback, that decision is not this
  * module's to revisit.
  */
 
 import {
 	growableSabAllocator,
 	wasmMemoryAllocator,
-	heapArraybufferAllocator,
+	heapArrayBufferAllocator,
 	alignUp,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
 	ENTITY_INDEX_BYTES_PER_SLOT,
@@ -58,7 +58,7 @@ const KiB = 1024;
 const MiB = 1024 * KiB;
 const WASM_PAGE_BYTES = 64 * KiB;
 
-/** Default byte ceiling of every backing — mirrors `growableSabAllocator`'s
+/** Default byte ceiling of every backing, mirrors `growableSabAllocator`'s
  * default (see its doc comment for the measured footprint analysis that makes
  * 256 MiB structurally unreachable). */
 export const DEFAULT_ECS_CAP_BYTES = 256 * MiB;
@@ -69,13 +69,13 @@ export const DEFAULT_ECS_CAP_BYTES = 256 * MiB;
 export const BUDGET_GROWTH_HEADROOM = 3;
 
 /** Default average fully-populated row stride assumed when the caller gives an
- * entity count. The instrumented 2-party workload measured ~49 B/entity; 64
- * rounds up. */
+ * entity count. A workload with two components uses less than this for each
+ * row, thus 64 rounds up and gives headroom. */
 export const BUDGET_DEFAULT_BYTES_PER_ENTITY = 64;
 
 /** Default archetype spread assumed when the caller doesn't declare one. Drives
- * only the derived per-archetype column capacity, not correctness — an
- * under-declared spread just means earlier (amortised) column doubling. */
+ * only the derived per-archetype column capacity, not correctness, an
+ * under-declared spread only means earlier (amortised) column doubling. */
 export const BUDGET_DEFAULT_ARCHETYPES = 8;
 
 /** Floor for an entity-count-derived cap: small worlds still get room for
@@ -84,7 +84,7 @@ export const BUDGET_DEFAULT_ARCHETYPES = 8;
 const BUDGET_CAP_FLOOR_BYTES = 4 * MiB;
 
 /** WASM-backed memory. Either bring your own shared `WebAssembly.Memory` (the
- * server match context does — its sim factory owns the memory), or declare page
+ * server match context does, its sim factory owns the memory), or declare page
  * bounds and let the engine construct it. */
 export type WasmMemoryArm =
 	| {
@@ -95,7 +95,7 @@ export type WasmMemoryArm =
 	| { readonly maximumPages: number; readonly initialPages?: number; readonly memory?: never };
 
 /**
- * What backs the world's bytes. This is the ONLY axis with real exclusivity: a
+ * What backs the world's bytes. This is the only axis with real exclusivity: a
  * world has exactly one buffer, so these genuinely cannot combine. Sizing is a
  * separate field and combines with all of them.
  *
@@ -105,9 +105,9 @@ export type WasmMemoryArm =
  *                 a transferable `SharedArrayBuffer`.
  *   "shared"      a growable `SharedArrayBuffer` (`@oasys/oecs/shared`).
  *                 Enables worker offload and a WASM compute backend, and needs
- *                 COOP/COEP in a browser. See `growableSabAllocator`'s doc for
+ *                 COOP and COEP in a browser. See `growableSabAllocator`'s doc for
  *                 the JavaScriptCore write cost this backing carries.
- *   { wasm }      the buffer IS a `WebAssembly.Memory` — zero-copy with a WASM
+ *   { wasm }      the buffer is a `WebAssembly.Memory`, zero-copy with a WASM
  *                 `ComputeBackend`.
  *   { allocator } expert escape hatch. Typed `InPlaceBufferAllocator` so only
  *                 allocators that statically declare `isInPlace: true` compile.
@@ -122,14 +122,14 @@ export type MemoryBacking =
 
 /**
  * How the world is sized and what backs it. Every field is optional and every
- * combination is legal — the two axes do not police each other.
+ * combination is legal, the two axes do not police each other.
  *
  * Give `entities` when you know roughly how many the world holds. Give
  * `maxBytes` when you know the ceiling instead. Give both when you know both:
  * the count sizes the columns and the entity index, and the cap is yours.
  */
 export interface ECSMemoryOptions {
-	/** Expected peak live entities — the one number most callers know. Sizes the
+	/** Expected peak live entities, the one number most callers know. Sizes the
 	 * column capacity, the entity-index reservation and (unless `maxBytes` says
 	 * otherwise) the byte cap. Bounded by the EntityID 20-bit index space
 	 * (1<<20). */
@@ -154,35 +154,35 @@ export interface ECSMemoryOptions {
 }
 
 /** What the caller's intent resolved to. Exposed as `ECS.memoryPlan` for
- * diagnostics; `intentLabel`/`budgetEntities`/`capBytes` also travel into
+ * diagnostics. `intentLabel`, `budgetEntities` and `capBytes` also travel into
  * `Store` so cap errors speak the caller's language. */
 export interface ResolvedECSMemory {
-	/** Which backing holds the bytes — the axis-B answer. */
+	/** Which backing holds the bytes, the axis-B answer. */
 	readonly source: "heap" | "shared" | "wasm" | "allocator";
-	/** Which sizing input drove the numbers — the axis-A answer. */
+	/** Which sizing input drove the numbers, the axis-A answer. */
 	readonly sizing: "default" | "entities" | "maxBytes" | "entities+maxBytes";
 	readonly allocator: InPlaceBufferAllocator;
 	readonly columnCapacity: number;
 	readonly entityIndexCapacity: number;
 	/** Byte ceiling of the backing, `null` when unknowable from JS (a
-	 * bring-your-own `WebAssembly.Memory` hides its `maximum`; a custom allocator
+	 * bring-your-own `WebAssembly.Memory` hides its `maximum`. A custom allocator
 	 * owns its own cap unless `maxBytes` declared one). */
 	readonly capBytes: number | null;
-	/** Human phrasing of the declared intent — reused verbatim in cap errors so
+	/** Human phrasing of the declared intent, reused verbatim in cap errors so
 	 * the failure names what the caller asked for. */
 	readonly intentLabel: string;
-	/** The declared entity count when one was given — drives the "N× the
+	/** The declared entity count when one was given, drives the "N× the
 	 * declared budget" cap-error diagnostic. */
 	readonly budgetEntities: number | null;
 	/** How each derived number was arrived at, one line per decision. */
 	readonly derivation: readonly string[];
 	/** The backing `WebAssembly.Memory` when the wasm backing was used (both
-	 * bring-your-own and engine-constructed) — the consumer hands this to its
+	 * bring-your-own and engine-constructed), the consumer hands this to its
 	 * WASM `ComputeBackend` so the sim and the columns share bytes. */
 	readonly wasmMemory: WebAssembly.Memory | null;
 }
 
-/** Subset of the plan `Store` needs to phrase cap/overflow errors in the
+/** Subset of the plan `Store` needs to phrase cap and overflow errors in the
  * caller's terms. */
 export interface ECSMemoryCapContext {
 	readonly capBytes: number | null;
@@ -190,14 +190,14 @@ export interface ECSMemoryCapContext {
 	readonly budgetEntities: number | null;
 }
 
-const nextPow2 = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
+const ceilPow2 = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
 const floorPow2 = (n: number): number => 2 ** Math.floor(Math.log2(Math.max(1, n)));
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 const fmtBytes = (n: number): string =>
 	n >= MiB ? `${(n / MiB).toFixed(1)} MiB` : n >= KiB ? `${(n / KiB).toFixed(0)} KiB` : `${n} B`;
 
-function requirePositiveInt(name: string, n: number): void {
+function assertPositiveInt(name: string, n: number): void {
 	if (!Number.isInteger(n) || n <= 0) {
 		throw new ECSError(
 			ECS_ERROR.INVALID_MEMORY_OPTIONS,
@@ -209,7 +209,7 @@ function requirePositiveInt(name: string, n: number): void {
 /**
  * The pre-0.6 arms, and how each one is spelled now.
  *
- * These are REMOVED, not aliased. A silently-ignored `budget` would size a world
+ * These are removed, not aliased. A silently-ignored `budget` would size a world
  * wrong and only show up as a cap failure much later, and a silently-ignored
  * `allocator` would put the columns in a different buffer than a WASM consumer's
  * sim reads. So the guard throws and names the rewrite, the same way the
@@ -231,15 +231,15 @@ function rejectRemovedArms(opts: ECSMemoryOptions): void {
 	throw new ECSError(
 		ECS_ERROR.INVALID_MEMORY_OPTIONS,
 		`memory.${found.join(" / memory.")} was removed in 0.6: sizing and backing are now two ` +
-			`independent fields, so every combination of them is expressible. Rewrite as — ` +
+			`independent fields, so every combination of them is expressible. Rewrite as, ` +
 			found.map((k) => REMOVED_ARMS[k]).join("; ")
 	);
 }
 
 /**
  * Turn a consumer's sizing intent into a concrete memory plan. Pure apart from
- * allocator/Memory construction; throws `INVALID_MEMORY_OPTIONS` on a malformed
- * option set — at construction, not first-grow.
+ * allocator and Memory construction. Throws `INVALID_MEMORY_OPTIONS` on a malformed
+ * option set, at construction, not first-grow.
  */
 export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	if (opts !== undefined) rejectRemovedArms(opts);
@@ -249,12 +249,12 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	const pinnedColumns = opts?.columnCapacity;
 	const backing = opts?.backing ?? "heap";
 
-	if (pinnedColumns !== undefined) requirePositiveInt("columnCapacity", pinnedColumns);
-	if (declaredCap !== undefined) requirePositiveInt("maxBytes", declaredCap);
+	if (pinnedColumns !== undefined) assertPositiveInt("columnCapacity", pinnedColumns);
+	if (declaredCap !== undefined) assertPositiveInt("maxBytes", declaredCap);
 
 	// `archetypes` and `bytesPerEntity` shape a derivation that only runs when
 	// there is an entity count. Alone they do nothing, and a caller who wrote one
-	// alone meant something we did not do — say so rather than ignore it.
+	// alone meant something we did not do, say so rather than ignore it.
 	if (entities === undefined) {
 		for (const k of ["archetypes", "bytesPerEntity"] as const) {
 			if (opts?.[k] !== undefined) {
@@ -277,9 +277,9 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	if (entities !== undefined) {
 		const archetypes = opts?.archetypes ?? BUDGET_DEFAULT_ARCHETYPES;
 		const bytesPerEntity = opts?.bytesPerEntity ?? BUDGET_DEFAULT_BYTES_PER_ENTITY;
-		requirePositiveInt("entities", entities);
-		requirePositiveInt("archetypes", archetypes);
-		requirePositiveInt("bytesPerEntity", bytesPerEntity);
+		assertPositiveInt("entities", entities);
+		assertPositiveInt("archetypes", archetypes);
+		assertPositiveInt("bytesPerEntity", bytesPerEntity);
 		if (entities > 1 << 20) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
@@ -287,12 +287,12 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			);
 		}
 		// Size columns so the expected per-archetype row count fits without a
-		// doubling — the same way the 1024 default already covers the typical
+		// doubling, the same way the 1024 default already covers the typical
 		// ~1000-row workload.
-		columnCapacity = pinnedColumns ?? clamp(nextPow2(Math.ceil(entities / archetypes)), 64, 1 << 20);
-		// 2× headroom over the count before EID_MAX_INDEX_OVERFLOW — enough slack
+		columnCapacity = pinnedColumns ?? clamp(ceilPow2(Math.ceil(entities / archetypes)), 64, 1 << 20);
+		// 2× headroom over the count before EID_MAX_INDEX_OVERFLOW, enough slack
 		// for churn, small enough that runaway creation still fails fast.
-		entityIndexCapacity = clamp(nextPow2(entities * 2), 1 << 12, 1 << 20);
+		entityIndexCapacity = clamp(ceilPow2(entities * 2), 1 << 12, 1 << 20);
 		const indexBytes = entityIndexCapacity * ENTITY_INDEX_BYTES_PER_SLOT;
 		const columnBytes = entities * bytesPerEntity * BUDGET_GROWTH_HEADROOM;
 		derivedCap = alignUp(
@@ -371,30 +371,30 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 
 	// --- axis B: what backs it ----------------------------------------------
 
-	// --- wasm: the buffer IS a WebAssembly.Memory ---------------------------
+	// --- wasm: the buffer is a WebAssembly.Memory ---------------------------
 	if (typeof backing === "object" && backing.wasm !== undefined) {
 		const arm = backing.wasm;
 		if (arm.memory !== undefined) {
-			// boundary: WebAssembly.Memory FFI — `buffer` types as ArrayBuffer but
+			// boundary: WebAssembly.Memory FFI, `buffer` types as ArrayBuffer but
 			// is a SharedArrayBuffer iff constructed `shared: true`. Checked here so
 			// a non-shared Memory is a construction error naming the option, not a
 			// deep allocator throw on first use.
 			if (!(arm.memory.buffer instanceof SharedArrayBuffer)) {
 				throw new ECSError(
 					ECS_ERROR.INVALID_MEMORY_OPTIONS,
-					"memory.backing.wasm.memory must be constructed with `shared: true` — the SAB " +
+					"memory.backing.wasm.memory must be constructed with `shared: true`, the SAB " +
 						"substrate requires a SharedArrayBuffer-backed WebAssembly.Memory"
 				);
 			}
 			if (declaredCap !== undefined) {
 				throw new ECSError(
 					ECS_ERROR.INVALID_MEMORY_OPTIONS,
-					"memory.maxBytes cannot be given beside a caller-supplied WebAssembly.Memory — " +
+					"memory.maxBytes cannot be given beside a caller-supplied WebAssembly.Memory, " +
 						"the Memory declares its own ceiling through its `maximum`, which JS cannot read back."
 				);
 			}
 			// The ceiling is unknowable, so the index falls back to the default
-			// unless an entity count sized it. Before 0.6 it was ALWAYS the default
+			// unless an entity count sized it. Before 0.6 it was always the default
 			// here, which reserved the full EntityID space for every WASM world.
 			return {
 				source: "wasm",
@@ -406,19 +406,19 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				intentLabel: "caller-supplied WebAssembly.Memory",
 				budgetEntities: entities ?? null,
 				derivation: [
-					"backing = wasm_memory_allocator(memory) — zero-copy with the sim (is_in_place ✓)",
+					"backing = wasm_memory_allocator(memory), zero-copy with the sim (is_in_place ✓)",
 					"cap = the Memory's own `maximum` (declared by the caller; not readable from JS)",
 					...sizeTrace,
 					entities === undefined
-						? `entityIndex = ${entityIndexCapacity} slots (default — no entity count and no readable cap)`
+						? `entityIndex = ${entityIndexCapacity} slots (default, no entity count and no readable cap)`
 						: `entityIndex sized from the entity count above`
 				],
 				wasmMemory: arm.memory
 			};
 		}
-		requirePositiveInt("backing.wasm.maximumPages", arm.maximumPages);
+		assertPositiveInt("backing.wasm.maximumPages", arm.maximumPages);
 		const initialPages = arm.initialPages ?? Math.min(32, arm.maximumPages);
-		requirePositiveInt("backing.wasm.initialPages", initialPages);
+		assertPositiveInt("backing.wasm.initialPages", initialPages);
 		if (initialPages > arm.maximumPages) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
@@ -430,7 +430,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
 				`memory.maxBytes (${fmtBytes(declaredCap)}) cannot be given beside ` +
 					`memory.backing.wasm.maximumPages (${arm.maximumPages} pages = ` +
-					`${fmtBytes(arm.maximumPages * WASM_PAGE_BYTES)}) — the Memory's page maximum IS the ceiling. ` +
+					`${fmtBytes(arm.maximumPages * WASM_PAGE_BYTES)}), the Memory's page maximum IS the ceiling. ` +
 					`Declare it once, in pages.`
 			);
 		}
@@ -469,17 +469,17 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		if (backing.allocator.isInPlace !== true) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				"memory.backing.allocator must declare `isInPlace: true`: a live Store's flush " +
-					"loops hoist entity-index views across grows, so a non-in-place allocator (e.g. " +
-					"DEFAULT_SAB_ALLOCATOR) corrupts the entity→row mapping. Use growableSabAllocator " +
-					"/ fixedSabAllocator / wasmMemoryAllocator; non-in-place allocators are " +
-					"snapshot/test sizing only."
+				"memory.backing.allocator must declare `isInPlace: true`. A live Store's flush " +
+					"loops hoist entity-index views across grows, so an allocator that is not " +
+					"in-place (DEFAULT_SAB_ALLOCATOR, for example) corrupts the entity→row mapping. " +
+					"Use growableSabAllocator, fixedSabAllocator or wasmMemoryAllocator. An " +
+					"allocator that is not in-place is for snapshot and test sizing only."
 			);
 		}
 		// The caller's allocator owns the real ceiling, so `capBytes` stays a
-		// declaration. It is NOT only a label: with no entity count it is the only
+		// declaration. It is not only a label: with no entity count it is the only
 		// input the index derivation has, and before 0.6 this branch ignored it and
-		// always reserved the full EntityID space — which made any allocator with a
+		// always reserved the full EntityID space, which made any allocator with a
 		// cap under about 12.6 MiB fail to construct a world at all.
 		const cap = declaredCap ?? null;
 		if (entities === undefined && cap !== null) entityIndexCapacity = indexFromCap(cap);
@@ -505,13 +505,13 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 					? "entityIndex sized from the entity count above"
 					: cap !== null
 						? `entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
-						: `entityIndex = ${entityIndexCapacity} slots (default — no entity count and no declared cap)`
+						: `entityIndex = ${entityIndexCapacity} slots (default, no entity count and no declared cap)`
 			],
 			wasmMemory: null
 		};
 	}
 
-	// --- shared: opt-in SharedArrayBuffer (worker offload / WASM backend) ----
+	// --- shared: opt-in SharedArrayBuffer (worker offload and WASM backend) ----
 	if (backing === "shared") {
 		const capBytes = declaredCap ?? derivedCap ?? DEFAULT_ECS_CAP_BYTES;
 		// `growableSabAllocator` throws SabUnavailableError at Store construction
@@ -522,7 +522,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			growableSabAllocator(capBytes),
 			`shared SharedArrayBuffer backing (${fmtBytes(capBytes)} growable cap, needs COOP/COEP)`,
 			[
-				`backing = growable_sab_allocator(${fmtBytes(capBytes)}) — growable SharedArrayBuffer (is_in_place ✓); needs cross-origin isolation`,
+				`backing = growable_sab_allocator(${fmtBytes(capBytes)}), growable SharedArrayBuffer (is_in_place ✓); needs cross-origin isolation`,
 				"enables worker offload + a WASM compute backend (transferable SharedArrayBuffer)"
 			]
 		);
@@ -540,15 +540,15 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	return withCap(
 		capBytes,
 		"heap",
-		heapArraybufferAllocator(capBytes),
+		heapArrayBufferAllocator(capBytes),
 		sizing === "default"
 			? `default sizing (${fmtBytes(capBytes)} reserved cap)`
 			: entities !== undefined
 				? `budget of ${entities} entities`
 				: `explicit cap of ${fmtBytes(capBytes)}`,
 		[
-			`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}) — fixed ArrayBuffer reserved at the cap, no SAB / no COOP+COEP (is_in_place ✓)`,
-			"trade-off: no worker offload / no WASM backend (both need a transferable SharedArrayBuffer)"
+			`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}), fixed ArrayBuffer reserved at the cap, no SAB / no COOP+COEP (is_in_place ✓)`,
+			"trade-off: no worker offload and no WASM backend (both need a transferable SharedArrayBuffer)"
 		]
 	);
 }

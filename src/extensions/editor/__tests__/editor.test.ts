@@ -1,15 +1,15 @@
 /**
- * Editor layer — reified undo/redo over the typed `HostCommandQueue`.
+ * Editor layer, reified undo and redo over the typed `HostCommandQueue`.
  *
- * Asserts the properties the issue's acceptance criteria name, against the REAL
+ * Asserts the properties the issue's acceptance criteria name, against the real
  * engine (real `installHostCommandSeam`, real deferred flush):
- *   - undo/redo enqueue the inverse/forward on the SAME bus (applied at the next
- *     schedule head), never a direct mutation;
+ *   - undo and redo enqueue the inverse and forward on the same bus (applied at the next
+ *     schedule head), never a direct mutation
  *   - spawn → edit → edit → undo×N walks state back, then undo removes the spawn
  *     (the spawn inverse is finalized in `onSpawned`);
- *   - setField and despawn round-trip (despawn restores DATA under a new id, and
+ *   - setField and despawn round-trip (despawn restores data under a new id, and
  *     redo removes the respawned entity, not the dead original);
- *   - the full vocabulary (add/remove component, disable/enable) round-trips;
+ *   - the full vocabulary (add and remove component, disable and enable) round-trips
  *   - a transaction groups several actions into one undo entry.
  */
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,7 @@ function onlyCell(world: ECS, Cell: CellDef): EntityID {
 	return ids[0];
 }
 
-describe("Editor — spawn → edit → edit → undo×N (the acceptance walk-back)", () => {
+describe("Editor, spawn → edit → edit → undo×N (the acceptance walk-back)", () => {
 	it("undo walks state back, then removes the spawn; undo on an empty stack is a no-op", () => {
 		const { world, Cell, editor } = setup();
 
@@ -82,7 +82,7 @@ describe("Editor — spawn → edit → edit → undo×N (the acceptance walk-ba
 	});
 });
 
-describe("Editor — set_field undo/redo round-trips", () => {
+describe("Editor, set_field undo and redo round-trips", () => {
 	it("redo re-applies the edit, undo reverts it again", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -120,8 +120,8 @@ describe("Editor — set_field undo/redo round-trips", () => {
 	});
 });
 
-describe("Editor — despawn undo/redo (data round-trips, identity does not)", () => {
-	it("undo respawns the captured data; redo removes the RESPAWNED entity", () => {
+describe("Editor, despawn undo and redo (data round-trips, identity does not)", () => {
+	it("undo respawns the captured data; redo removes the respawned entity", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 5, heat: 3 })], (e) => (id = e));
@@ -139,7 +139,7 @@ describe("Editor — despawn undo/redo (data round-trips, identity does not)", (
 		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 
-		// Undo: respawns the data (under a NEW id — identity is not preserved).
+		// Undo: respawns the data (under a new id, identity is not preserved).
 		expect(editor.undo()).toBe(true);
 		world.update(1 / 60);
 		expect(world.query(Cell).entityCount).toBe(1);
@@ -148,7 +148,7 @@ describe("Editor — despawn undo/redo (data round-trips, identity does not)", (
 		expect(world.getField(respawned, Cell, "x")).toBe(5);
 		expect(world.getField(respawned, Cell, "heat")).toBe(3);
 
-		// Redo: removes the RESPAWNED entity (the forward despawn was rewritten to
+		// Redo: removes the respawned entity (the forward despawn was rewritten to
 		// the new id by the respawn's onSpawned), not the dead original.
 		expect(editor.redo()).toBe(true);
 		world.update(1 / 60);
@@ -157,7 +157,7 @@ describe("Editor — despawn undo/redo (data round-trips, identity does not)", (
 	});
 });
 
-describe("Editor — add/remove component round-trips", () => {
+describe("Editor, add and remove component round-trips", () => {
 	it("add_component undo removes it; redo re-adds; remove_component undo restores values", () => {
 		const { world, Cell, editor } = setup();
 		const Vel = world.registerComponent({ vx: "i32" }) as VelDef;
@@ -191,7 +191,7 @@ describe("Editor — add/remove component round-trips", () => {
 	});
 });
 
-describe("Editor — disable/enable round-trips", () => {
+describe("Editor, disable and enable round-trips", () => {
 	it("disable undo re-enables (the entity returns to the default query)", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -213,8 +213,8 @@ describe("Editor — disable/enable round-trips", () => {
 	});
 });
 
-describe("Editor — transaction grouping", () => {
-	it("a grouped transaction undoes as ONE entry", () => {
+describe("Editor, transaction grouping", () => {
+	it("a grouped transaction undoes as one entry", () => {
 		const { world, Cell, editor } = setup();
 		// Two entities to edit together.
 		let a: EntityID | undefined;
@@ -233,7 +233,7 @@ describe("Editor — transaction grouping", () => {
 		// Two spawns + one grouped edit = 3 undo entries (not 4).
 		expect(editor.depths().undo).toBe(3);
 
-		// One undo reverts BOTH field writes.
+		// One undo reverts both field writes.
 		expect(editor.undo()).toBe(true);
 		world.update(1 / 60);
 		expect(world.getField(a!, Cell, "x")).toBe(1);
@@ -241,7 +241,7 @@ describe("Editor — transaction grouping", () => {
 	});
 });
 
-describe("Editor — more than one undo/redo per frame (the stale-id regression)", () => {
+describe("Editor, more than one undo and redo per frame (the stale-id regression)", () => {
 	it("a respawn + a despawn enqueued before the same world.update do not crash and leave consistent state", () => {
 		const { world, Cell, editor } = setup();
 
@@ -255,16 +255,16 @@ describe("Editor — more than one undo/redo per frame (the stale-id regression)
 		expect(world.query(Cell).entityCount).toBe(0);
 		expect(world.isAlive(id!)).toBe(false);
 
-		// Two more editor actions BEFORE the next world.update — the multi-undo/redo-
+		// Two more editor actions before the next world.update, the multi undo and redo
 		// per-frame sequence that once regressed. redo re-enqueues the spawn (respawns
-		// under a NEW id once it applies); the immediately-following undo re-enqueues
-		// the SAME stable inverse-despawn object by reference. Pre-fix, the redo's
-		// `onSpawned` REPLACED the inverse slot with a fresh object, so this already-
+		// under a new id once it applies); the immediately-following undo re-enqueues
+		// the same stable inverse-despawn object by reference. Pre-fix, the redo's
+		// `onSpawned` replaced the inverse slot with a fresh object, so this already-
 		// enqueued despawn still pointed at the dead original `id` → ENTITY_NOT_ALIVE
 		// when the queue drained. With the stable-object fix, the respawn's `onSpawned`
 		// (which runs earlier in the same drain) mutates that object's `eid` in place,
 		// so the despawn resolves to the live respawned entity at apply time.
-		editor.redo(); // enqueue the respawn — do NOT update
+		editor.redo(); // enqueue the respawn, do NOT update
 		editor.undo(); // enqueue the despawn while the respawn is still pending
 
 		// The drain applies the respawn then the despawn, both in one tick.
@@ -277,7 +277,7 @@ describe("Editor — more than one undo/redo per frame (the stale-id regression)
 	});
 });
 
-describe("Editor — undo is just another command on the bus", () => {
+describe("Editor, undo is only another command on the bus", () => {
 	it("undo defers like any write: it mutates nothing until the next tick drains it", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -289,14 +289,14 @@ describe("Editor — undo is just another command on the bus", () => {
 		expect(world.getField(id!, Cell, "x")).toBe(42);
 
 		editor.undo();
-		// The inverse is enqueued, NOT applied — the world is untouched until the tick.
+		// The inverse is enqueued, not applied, the world is untouched until the tick.
 		expect(world.getField(id!, Cell, "x")).toBe(42);
 		world.update(1 / 60);
 		expect(world.getField(id!, Cell, "x")).toBe(9);
 	});
 });
 
-describe("Editor — an empty transaction is a no-op", () => {
+describe("Editor, an empty transaction is a no-op", () => {
 	it("records no undo entry and does not wipe the redo stack", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -308,7 +308,7 @@ describe("Editor — an empty transaction is a no-op", () => {
 		editor.undo();
 		expect(editor.depths()).toEqual({ undo: 1, redo: 1 }); // spawn left; the edit is redoable
 
-		// An empty transaction touches nothing — no phantom undo entry, redo intact.
+		// An empty transaction touches nothing, no phantom undo entry, redo intact.
 		editor.transaction(() => {});
 		expect(editor.depths()).toEqual({ undo: 1, redo: 1 });
 		// And there is no phantom edit to "undo".
@@ -317,7 +317,7 @@ describe("Editor — an empty transaction is a no-op", () => {
 	});
 });
 
-describe("Editor — pending_field self-resolves once the channel catches up", () => {
+describe("Editor, pending_field self-resolves once the channel catches up", () => {
 	it("returns the edit before commit, then undefined after; an external write is not shadowed", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -332,13 +332,13 @@ describe("Editor — pending_field self-resolves once the channel catches up", (
 		// Reconcile-on-read: the edit landed, so pending resolves to undefined.
 		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
 
-		// A later external write must NOT be shadowed by a stale pending value.
+		// A later external write must not be shadowed by a stale pending value.
 		world.setField(id!, Cell, "x", 30);
 		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
 	});
 });
 
-describe("Editor — an aborted transaction leaves no trace (the shadow-poisoning regression)", () => {
+describe("Editor, an aborted transaction leaves no trace (the shadow-poisoning regression)", () => {
 	it("pendingField reflects the committed value, and the next setField's undo restores the TRUE old value", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -346,7 +346,7 @@ describe("Editor — an aborted transaction leaves no trace (the shadow-poisonin
 		world.update(1 / 60);
 
 		// The build throws mid-way: nothing is enqueued, nothing lands on the undo
-		// stack — and, pre-fix, the aborted setField had already poisoned the shared
+		// stack, and, pre-fix, the aborted setField had already poisoned the shared
 		// shadow with 999.
 		expect(() =>
 			editor.transaction((tx) => {
@@ -354,7 +354,7 @@ describe("Editor — an aborted transaction leaves no trace (the shadow-poisonin
 				throw new Error("abort");
 			})
 		).toThrow("abort");
-		expect(editor.depths()).toEqual({ undo: 1, redo: 0 }); // just the spawn
+		expect(editor.depths()).toEqual({ undo: 1, redo: 0 }); // only the spawn
 
 		// No phantom pending echo of a value the world never held.
 		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
@@ -362,7 +362,7 @@ describe("Editor — an aborted transaction leaves no trace (the shadow-poisonin
 		expect(world.getField(id!, Cell, "x")).toBe(10);
 
 		// The next edit's inverse must seed from the real old value (10), not the
-		// aborted 999 — pre-fix, this undo restored 999.
+		// aborted 999, pre-fix, this undo restored 999.
 		editor.setField(id!, Cell, "x", 20);
 		world.update(1 / 60);
 		expect(world.getField(id!, Cell, "x")).toBe(20);
@@ -373,7 +373,7 @@ describe("Editor — an aborted transaction leaves no trace (the shadow-poisonin
 	});
 });
 
-describe("Editor — pending_field self-resolves when the slot dies", () => {
+describe("Editor, pending_field self-resolves when the slot dies", () => {
 	it("a shadowed slot on a despawned entity resolves to undefined instead of echoing forever", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -387,7 +387,7 @@ describe("Editor — pending_field self-resolves when the slot dies", () => {
 		world.update(1 / 60);
 		expect(world.isAlive(id!)).toBe(false);
 
-		// The committed read is now `undefined` (dead entity) — it can never equal the
+		// The committed read is now `undefined` (dead entity). It can never equal the
 		// shadowed 25, so pre-fix the entry echoed 25 forever and leaked. The entry
 		// self-resolves: pruned on this read, and stays undefined on the next.
 		expect(editor.pendingField(id!, Cell, "x")).toBeUndefined();
@@ -395,7 +395,7 @@ describe("Editor — pending_field self-resolves when the slot dies", () => {
 	});
 });
 
-describe("Editor — onChange / canUndo / canRedo", () => {
+describe("Editor, onChange, canUndo and canRedo", () => {
 	it("fires on commit, undo, redo, clear; unsubscribe stops it", () => {
 		const { world, Cell, editor } = setup();
 		let fires = 0;

@@ -1,17 +1,17 @@
 /**
- * Sparse storage class — determinism surface.
+ * Sparse storage class, determinism surface.
  *
  * Brings the sparse store into `stateHash` + snapshot/restore. The load-
  * bearing property is **canonical ordering**: the sparse store iterates in
- * SparseMap insertion/swap order, so the determinism paths sort by source
+ * SparseMap insertion and swap order, so the determinism paths sort by source
  * entity index before hashing/serializing. These tests pin the
  * acceptance criteria:
  *
  *  - snapshot → restore round-trips membership + data with full equality.
- *  - Two worlds with identical sparse contents inserted in DIFFERENT orders
- *    produce the SAME `stateHash` (and the same snapshot bytes).
+ *  - Two worlds with identical sparse contents inserted in different orders
+ *    produce the same `stateHash` (and the same snapshot bytes).
  *  - `stateHash` changes when any sparse datum changes (no false-equal).
- *  - Determinism holds across destroy / generation bump: a purged (stale)
+ *  - Determinism holds across destroy and generation bump: a purged (stale)
  *    source is excluded canonically, so a world that destroyed an entity and
  *    a world that never held it agree.
  */
@@ -25,30 +25,30 @@ const Hp = { hp: "i32" } as const;
 // Mixed field widths so the hash fold covers more than one field per row.
 const Cooldown = { ready_at: "i16", charges: "i32" } as const;
 
-describe("sparse state_hash — canonical ordering", () => {
+describe("sparse state_hash, canonical ordering", () => {
 	it("is independent of sparse insertion order", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
 		const Ha = a.registerSparseComponent(Hp);
 		const Hb = b.registerSparseComponent(Hp);
 
-		// Same indices (createEntity hands out 0..4 in both), same data —
+		// Same indices (createEntity hands out 0..4 in both), same data,
 		// only the order of the sparse adds differs.
 		const ea = [0, 1, 2, 3, 4].map(() => a.createEntity());
 		const eb = [0, 1, 2, 3, 4].map(() => b.createEntity());
 		const data = [10, 20, 30, 40, 50];
 
 		// World A: ascending. World B: descending. SparseMap's dense key order
-		// ends up different; canonical sort must erase that.
+		// ends up different. Canonical sort must erase that.
 		for (let i = 0; i < ea.length; i++) a.addSparse(ea[i], Ha, { hp: data[i] });
 		for (let i = eb.length - 1; i >= 0; i--) b.addSparse(eb[i], Hb, { hp: data[i] });
 
 		expect(a.stateHash()).toBe(b.stateHash());
-		// Bytes too, not just the digest — the snapshot is canonical-ordered.
+		// Bytes too, not only the digest, the snapshot is canonical-ordered.
 		expect(a.snapshotSparse()).toEqual(b.snapshotSparse());
 	});
 
-	it("is independent of add/remove churn that reorders the dense backing", () => {
+	it("is independent of add and remove churn that reorders the dense backing", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
 		const Ha = a.registerSparseComponent(Hp);
@@ -117,7 +117,7 @@ describe("sparse state_hash — canonical ordering", () => {
 	});
 });
 
-describe("sparse determinism across destroy / generation bump", () => {
+describe("sparse determinism across destroy and generation bump", () => {
 	it("excludes a destroyed (purged) source canonically", () => {
 		// World A holds three members then destroys the middle one.
 		const a = new Store({ deterministic: true });
@@ -146,7 +146,7 @@ describe("sparse determinism across destroy / generation bump", () => {
 	it("a recycled slot carries fresh data, not the prior occupant's", () => {
 		// Destroy index 0's occupant, recycle it (generation bumps), give the
 		// recycled entity different data. The digest must match a world built
-		// directly with that data — the stale row must not leak in.
+		// directly with that data, the stale row must not leak in.
 		const a = new Store({ deterministic: true });
 		const Ha = a.registerSparseComponent(Hp);
 		const a0 = a.createEntity();
@@ -177,7 +177,7 @@ describe("sparse determinism across destroy / generation bump", () => {
 	});
 });
 
-describe("sparse snapshot / restore round-trip", () => {
+describe("sparse snapshot and restore round-trip", () => {
 	function build(): { store: Store; health: ReturnType<Store["registerSparseComponent"]> } {
 		const store = new Store({ deterministic: true });
 		const health = store.registerSparseComponent(Hp);
@@ -243,18 +243,18 @@ describe("sparse snapshot / restore round-trip", () => {
 		const bytes = src.snapshotSparse();
 
 		const dst = new Store({ deterministic: true });
-		dst.registerSparseComponent(Hp); // store 0 has 1 field — shape mismatch
+		dst.registerSparseComponent(Hp); // store 0 has 1 field, shape mismatch
 		expect(() => dst.restoreSparse(bytes)).toThrow(SparseRestoreError);
 	});
 });
 
-describe("sparse restore validation — defensive hardening", () => {
+describe("sparse restore validation, defensive hardening", () => {
 	it("rejects a field-identity swap with matching shape (relation backing vs user component)", () => {
-		// SRC registers a user {hp} (sparse id 0) then a relation, whose exclusive
+		// Src registers a user {hp} (sparse id 0) then a relation, whose exclusive
 		// backing {target:f64} is sparse id 1 (the relation target bypasses the
 		// float guard). Both stores are single-field, so their snapshot record shape
-		// is identical. DST registers them in the OPPOSITE order, so slot 0 is the
-		// relation backing and slot 1 is {hp}. Field count matches per slot; the field
+		// is identical. Dst registers them in the opposite order, so slot 0 is the
+		// relation backing and slot 1 is {hp}. Field count matches per slot. The field
 		// identity (name + type) differs. An earlier count-only check passed validation
 		// and loaded hp into the relation's target field (a bogus handle) while the
 		// real target landed in the Hp store. The schema fingerprint must reject it.
@@ -275,7 +275,7 @@ describe("sparse restore validation — defensive hardening", () => {
 
 	it("rejects a field-type swap with matching name + count", () => {
 		// Same field name + count, different type tag. Field count alone can't tell
-		// {hp:i16} from {hp:i32} apart; the fingerprint folds the type, so it does.
+		// {hp:i16} from {hp:i32} apart. The fingerprint folds the type, so it does.
 		const src = new Store({ deterministic: true });
 		src.registerSparseComponent({ hp: "i16" });
 		const bytes = src.snapshotSparse();
@@ -286,9 +286,9 @@ describe("sparse restore validation — defensive hardening", () => {
 	});
 
 	it("rejects a field-name swap with matching type + count", () => {
-		// The complement of the type-swap case: same type + count, different NAME.
-		// Two single-field user stores of the SAME integer type isolate the name
-		// axis (the relation-backing-vs-user case above can't — its f64 target also
+		// The complement of the type-swap case: same type and count, a different name.
+		// Two single-field user stores of the same integer type isolate the name
+		// axis (the relation-backing-vs-user case above can't, its f64 target also
 		// differs in type). The fingerprint folds the name, so {hp:i32} ≠ {mp:i32}.
 		const src = new Store({ deterministic: true });
 		src.registerSparseComponent({ hp: "i32" });
@@ -315,7 +315,7 @@ describe("sparse restore validation — defensive hardening", () => {
 
 	it("rejects an entity index past MAX_INDEX without allocating for it", () => {
 		// A raw u32 index keys a SparseMap whose backing array grows to `index`
-		// length; an unvalidated ~4.29e9 index allocates multi-GB. Patch a valid
+		// length. An unvalidated ~4.29e9 index allocates multi-GB. Patch a valid
 		// one-member snapshot's index to MAX_INDEX + 1 and confirm restore rejects
 		// it rather than OOMing.
 		const src = new Store({ deterministic: true });
@@ -336,8 +336,8 @@ describe("sparse restore validation — defensive hardening", () => {
 	});
 
 	it("rejects a buffer longer than the declared frame (trailing bytes)", () => {
-		// Two buffers differing only in trailing padding must NOT restore
-		// identically — the snapshot is a canonical encoding, so the outer frame
+		// Two buffers differing only in trailing padding must not restore
+		// identically, the snapshot is a canonical encoding, so the outer frame
 		// check is exact (`!==`), not a lower bound.
 		const src = new Store({ deterministic: true });
 		const h = src.registerSparseComponent(Hp);
@@ -359,7 +359,7 @@ describe("sparse restore validation — defensive hardening", () => {
 		// the outer `!==` can't see. The per-section exact-exhaustion check (off ===
 		// end) catches it.
 		const src = new Store({ deterministic: true });
-		src.registerSparseComponent(Hp); // empty store; rel section is just the count
+		src.registerSparseComponent(Hp); // an empty store, and the rel section is only the count
 		const bytes = src.snapshotSparse();
 		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		const sparseLen = view.getUint32(0, true);

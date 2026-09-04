@@ -1,27 +1,27 @@
 /**
- * Reactive struct — per-field channels for a flat, fixed-shape record.
+ * Reactive struct, per-field channels for a flat, fixed-shape record.
  *
  * The third collection shape after `reactiveMap`. A
- * struct has a FIXED set of fields of heterogeneous type, keyed by a known field
- * name; each declared field gets its own signal. Reading `proxy.field` inside a
+ * struct has a fixed set of fields of heterogeneous type, keyed by a known field
+ * name. Each declared field gets its own signal. Reading `proxy.field` inside a
  * tracked scope subscribes to that field *alone*, so a per-frame write of an
  * unchanged field (the no-op skip) wakes nobody and a changed field wakes only its
- * readers — never the whole struct. There is no structure signal (the field set
+ * readers, never the whole struct. There is no structure signal (the field set
  * never changes), which makes it the cheapest of the shapes.
  *
  * Shape vs the others: use `reactiveMap` for a dynamic key set of homogeneous
- * values; use the struct for a fixed set of heterogeneous fields. The struct is the
- * read target for singleton/ephemeral UI state — net status + latency, FPS/mem,
- * wave timer — bridged from a singleton entity's component via
+ * values. Use the struct for a fixed set of heterogeneous fields. The struct is the
+ * read target for singleton and ephemeral UI state, net status + latency, FPS and mem,
+ * wave timer, bridged from a singleton entity's component via
  * `@oasys/oecs/reactive-sync`'s `syncSingletonToStruct`, and
  * rendered through `@oasys/oecs/solid`'s `fromKernelStruct`.
  *
  * `eq` is per-field `Object.is` by default (matching `signal`); pass an `eq` map to
  * override individual fields (e.g. a content `eq` for an object-valued field).
  *
- * The returned proxy is ENUMERABLE: `Object.keys(proxy)` / spread yield the field
+ * The returned proxy is enumerable: `Object.keys(proxy)` / spread yield the field
  * set so a consumer (e.g. `fromKernelStruct`) can discover the fields without being
- * told twice. Enumeration (`ownKeys` / `getOwnPropertyDescriptor`) never subscribes;
+ * told twice. Enumeration (`ownKeys` / `getOwnPropertyDescriptor`) never subscribes
  * a property *read* (the `get` trap) does.
  */
 import { signal } from "./kernel";
@@ -40,9 +40,9 @@ export function reactiveStruct<T extends object>(
 	const set = {} as { -readonly [K in keyof T]: (v: T[K]) => void };
 	// `Object.keys(initial) as Array<keyof T>`: `initial` is the trusted source of
 	// the type, so every runtime key is a declared field of T (the keyof-boundary
-	// cast — same one `services/client/.../ui_struct.ts` uses).
+	// cast, same one `services/client/.../ui_struct.ts` uses).
 	const keys = Object.keys(initial) as Array<keyof T>;
-	// Membership set for the proxy traps — O(1), and (unlike `k in reads`) it never
+	// Membership set for the proxy traps. O(1), and (unlike `k in reads`) it never
 	// counts inherited `Object.prototype` keys (`toString`, `constructor`, …) as fields.
 	const fieldSet = new Set<string | symbol>(keys as Array<string | symbol>);
 	for (const k of keys) {
@@ -54,17 +54,17 @@ export function reactiveStruct<T extends object>(
 		set[k] = write;
 	}
 	const proxy = new Proxy({} as T, {
-		// A field read subscribes; a NON-field key must not throw. `JSON.stringify`
+		// A field read subscribes. A non-field key must not throw. `JSON.stringify`
 		// (`toJSON`), `await proxy` (`then`), `String(proxy)` (`Symbol.toPrimitive`)
-		// and `for..of` (`Symbol.iterator`) all probe keys that aren't fields — fall
-		// through to the (empty) target so they see the ordinary undefined/inherited
+		// and `for..of` (`Symbol.iterator`) all probe keys that aren't fields, fall
+		// through to the (empty) target so they see the ordinary undefined and inherited
 		// value instead of calling `undefined()`. `fieldSet` (not `k in reads`) so
-		// inherited `toString`/`constructor` aren't mistaken for fields.
+		// inherited `toString` and `constructor` aren't mistaken for fields.
 		get: (target, k) => (fieldSet.has(k) ? reads[k as keyof T]() : Reflect.get(target, k)),
 		has: (_, k) => fieldSet.has(k),
 		// Enumerable without subscribing: enumeration calls `ownKeys` +
 		// `getOwnPropertyDescriptor`, never `get`, so `Object.keys(proxy)` returns
-		// the field set and tracks nothing. The descriptor is an ACCESSOR whose `get`
+		// the field set and tracks nothing. The descriptor is an accessor whose `get`
 		// reads the live signal, so `{...proxy}` / `Object.values(proxy)` /
 		// `Object.getOwnPropertyDescriptor(proxy, f).value` see the current value
 		// (a value-less descriptor would normalize to `value: undefined`). Non-field
@@ -75,16 +75,16 @@ export function reactiveStruct<T extends object>(
 			fieldSet.has(k)
 				? { get: () => reads[k as keyof T](), enumerable: true, configurable: true }
 				: undefined,
-		// Writes go through `set.field(v)` — the proxy is a READ surface, and its
+		// Writes go through `set.field(v)`, the proxy is a read surface, and its
 		// public type says so (`Readonly<T>`). The trap backs the
-		// type for JS callers / policed casts: without it, a field assignment threw
+		// type for JS callers and policed casts: without it, a field assignment threw
 		// an opaque "Cannot redefine property" (the accessor descriptor above has no
-		// setter) and a TYPO'D field silently stuck on the hidden target as a
+		// setter) and a typo'D field silently stuck on the hidden target as a
 		// non-reactive value.
 		set: (_, k) => {
 			if (DEV) {
 				throw new TypeError(
-					`reactiveStruct proxy is read-only: use set.${String(k)}(value) — ` +
+					`reactiveStruct proxy is read-only: use set.${String(k)}(value), ` +
 						`the setters tuple returned alongside the proxy`
 				);
 			}

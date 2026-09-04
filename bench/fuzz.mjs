@@ -2,7 +2,7 @@
  * Does random structural operations, and compares the result with an independent
  * model in JavaScript.
  *
- * The row plane (`Archetype._bufs`) changed how the ECS puts a row in place, how it
+ * The row plane (`Archetype.bufs`) changed how the ECS puts a row in place, how it
  * exchanges two rows, and how it removes a row. Therefore "the unit tests pass" is
  * not sufficient. This tool does long sequences of random operations: spawn,
  * despawn, add, remove, disable, enable, operations in a batch, and moves in bulk.
@@ -12,7 +12,7 @@
  *   node bench/fuzz.mjs [seed] [steps]
  *   node bench/fuzz.mjs --prod [seed] [steps]   # the build that the package ships
  *
- * THE DEFAULT BUILD IS A DEVELOPMENT BUILD, and the released package is not. A
+ * The default build is a development build, and the released package is not. A
  * development build keeps the internal assertions, and thus it gives more mechanisms
  * a chance to find a fault. But the shipped path is the production path, so `--prod`
  * runs the same seeds against `__DEV__ = false`. `bench/README.md` records which
@@ -27,7 +27,7 @@ const args = process.argv.slice(2);
 const PROD = args.includes("--prod");
 const positional = args.filter((a) => !a.startsWith("--"));
 const outfile = path.join(here, PROD ? ".out/oecs.fuzz.prod.mjs" : ".out/oecs.fuzz.mjs");
-// A development build keeps the internal assertions active; `--prod` drops them.
+// A development build keeps the internal assertions active. `--prod` drops them.
 await buildLib(outfile, { dev: !PROD });
 const { ECS } = await import(url.pathToFileURL(outfile).href);
 
@@ -149,7 +149,7 @@ function runOne(seed) {
 				m.comps.get(d)[f] = v;
 			}
 		} else if (op === 7) {
-			// addComponents / removeComponents (multi)
+			// addComponents and removeComponents (multi)
 			const e = live[pick(live.length)];
 			const m = model.get(e);
 			const d1 = defs[pick(defs.length)];
@@ -181,17 +181,17 @@ function runOne(seed) {
 		}
 
 		// A component-less entity occupies no archetype row, so it cannot carry
-		// the enabled/disabled partition — dropping the last component silently
-		// clears `disabled`, and re-adding one does NOT restore it. Mirror that.
+		// the enabled and disabled partition, dropping the last component silently
+		// clears `disabled`, and re-adding one does not restore it. Mirror that.
 		for (const m of model.values()) if (m.comps.size === 0) m.disabled = false;
 
 		if (step % 25 !== 0 && step !== STEPS - 1) continue;
 
-		// ── the ECS must hold NO MORE entities than the model ──────────────
-		// Everything below walks the MODEL and asserts `model ⊆ ecs`, and the query
+		// ── the ECS must hold no more entities than the model ──────────────
+		// Everything below walks the model and asserts `model ⊆ ecs`, and the query
 		// checks reject an entity that a query yields and the model does not want.
 		// Together those cover a leaked entity that still carries `A`, `B` or `C`. They
-		// do NOT cover a leaked entity that carries only `T` or no component at all:
+		// do not cover a leaked entity that carries only `T` or no component at all:
 		// such an entity is in no query and in no walk of the model, so a despawn that
 		// silently kept it alive was invisible. One count closes that hole, because
 		// `entityCount` counts a live entity with no component.
@@ -253,10 +253,10 @@ function runOne(seed) {
 				if (scribbled) break;
 			}
 			if (scribbled && ecs.snapshots.stateHash() === h0)
-				fail(seed, step, `stateHash blind to a field write — oracle is vacuous`);
+				fail(seed, step, `stateHash blind to a field write, oracle is vacuous`);
 			ecs.snapshots.restore(bytes);
 			const h1 = ecs.snapshots.stateHash();
-			if (h0 !== h1) fail(seed, step, `stateHash ${h0} → ${h1} across capture/restore`);
+			if (h0 !== h1) fail(seed, step, `stateHash ${h0} → ${h1} across capture and restore`);
 			for (const [e, m] of model) {
 				for (const [d, want] of m.comps) {
 					for (const f of d.fields) {
@@ -278,4 +278,4 @@ function fail(seed, step, msg) {
 
 let total = 0;
 for (let s = seed0; s < seed0 + 40; s++) total += runOne(s);
-console.log(`ok — 40 seeds × ${STEPS} steps, ${total} entities left live`);
+console.log(`ok, 40 seeds × ${STEPS} steps, ${total} entities left live`);

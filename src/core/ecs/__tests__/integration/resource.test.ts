@@ -18,7 +18,7 @@ describe("Resource system", () => {
 		expect(time.elapsed).toBe(1.5);
 	});
 
-	it("resource returns mutable reference — direct mutation works", () => {
+	it("resource returns mutable reference, direct mutation works", () => {
 		const world = new ECS();
 		const Counter = resourceKey<{ value: number }>("Counter");
 		world.resources.register(Counter, { value: 0 });
@@ -181,8 +181,8 @@ describe("Resource system", () => {
 	});
 });
 
-describe("Resource lifecycle — remove / re-insert", () => {
-	it("removeResource drops the resource — hasResource is false afterwards", () => {
+describe("Resource lifecycle, remove / re-insert", () => {
+	it("removeResource drops the resource, hasResource is false afterwards", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
@@ -205,12 +205,12 @@ describe("Resource lifecycle — remove / re-insert", () => {
 		}
 	});
 
-	it("registerResource works again after remove — present → absent → present", () => {
+	it("registerResource works again after remove, present → absent → present", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
 		world.resources.remove(Res);
-		// Re-registering must NOT throw RESOURCE_ALREADY_REGISTERED now that the
+		// Re-registering must not throw RESOURCE_ALREADY_REGISTERED now that the
 		// key is free again, and the fresh value (not the old one) is read back.
 		world.resources.register(Res, { x: 99 });
 		expect(world.resources.has(Res)).toBe(true);
@@ -229,7 +229,7 @@ describe("Resource lifecycle — remove / re-insert", () => {
 		}
 	});
 
-	it("removeResource on an already-removed key throws (idempotent removal is NOT allowed)", () => {
+	it("removeResource on an already-removed key throws (idempotent removal is not allowed)", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
@@ -263,7 +263,7 @@ describe("Resource lifecycle — remove / re-insert", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
-		// openAccess([]) declares NO resources — removing one is an undeclared write.
+		// openAccess([]) declares no resources, removing one is an undeclared write.
 		const sys = world.registerSystem({
 			...openAccess([]),
 			fn(ctx: SystemContext) {
@@ -273,11 +273,11 @@ describe("Resource lifecycle — remove / re-insert", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 		expect(() => world.update(0)).toThrow(ECSError);
-		// The resource survives — the undeclared write was rejected before the store mutated.
+		// The resource survives, the undeclared write was rejected before the store mutated.
 		expect(world.resources.has(Res)).toBe(true);
 	});
 
-	it("remove then re-register across frames — a per-mode singleton lifecycle", () => {
+	it("remove then re-register across frames, a per-mode singleton lifecycle", () => {
 		const world = new ECS();
 		const Mode = resourceKey<{ phase: number }>("Mode");
 		const seen: (number | null)[] = [];

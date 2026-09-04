@@ -25,9 +25,9 @@ describe("BufferBackedColumn", () => {
 		col.push(20);
 		col.push(30);
 		expect(col.length).toBe(3);
-		expect(col.get(0)).toBe(10);
-		expect(col.get(1)).toBe(20);
-		expect(col.get(2)).toBe(30);
+		expect(col.getAt(0)).toBe(10);
+		expect(col.getAt(1)).toBe(20);
+		expect(col.getAt(2)).toBe(30);
 	});
 
 	it("pop decrements length and returns the last value", () => {
@@ -48,9 +48,9 @@ describe("BufferBackedColumn", () => {
 		col.push(4);
 		expect(col.swapRemove(1)).toBe(2);
 		expect(col.length).toBe(3);
-		expect(col.get(0)).toBe(1);
-		expect(col.get(1)).toBe(4);
-		expect(col.get(2)).toBe(3);
+		expect(col.getAt(0)).toBe(1);
+		expect(col.getAt(1)).toBe(4);
+		expect(col.getAt(2)).toBe(3);
 	});
 
 	it("clear resets length without touching the underlying buffer", () => {
@@ -69,7 +69,7 @@ describe("BufferBackedColumn", () => {
 		col.push(0);
 		col.setAt(1, 77);
 		expect(col.length).toBe(2);
-		expect(col.get(1)).toBe(77);
+		expect(col.getAt(1)).toBe(77);
 	});
 
 	it("view() returns a subarray over valid data only", () => {
@@ -109,8 +109,8 @@ describe("BufferBackedColumn", () => {
 
 	it("ensure_capacity is a no-op within capacity, throws past it", () => {
 		const { col } = makeColumn(Int32Array, 4, 4);
-		expect(() => col.ensureCapacity(4)).not.toThrow();
-		expect(() => col.ensureCapacity(5)).toThrow(StoreColumnOverflowError);
+		expect(() => col.reserve(4)).not.toThrow();
+		expect(() => col.reserve(5)).toThrow(StoreColumnOverflowError);
 	});
 
 	it("bulk_append copies a slice and advances length", () => {
@@ -118,8 +118,8 @@ describe("BufferBackedColumn", () => {
 		const src = new Int32Array([100, 200, 300, 400]);
 		col.bulkAppend(src, 1, 2);
 		expect(col.length).toBe(2);
-		expect(col.get(0)).toBe(200);
-		expect(col.get(1)).toBe(300);
+		expect(col.getAt(0)).toBe(200);
+		expect(col.getAt(1)).toBe(300);
 	});
 
 	it("bulk_append past capacity throws and leaves state unchanged", () => {
@@ -128,7 +128,7 @@ describe("BufferBackedColumn", () => {
 		const src = new Int32Array([10, 20, 30]);
 		expect(() => col.bulkAppend(src, 0, 3)).toThrow(StoreColumnOverflowError);
 		expect(col.length).toBe(1);
-		expect(col.get(0)).toBe(1);
+		expect(col.getAt(0)).toBe(1);
 	});
 
 	it("bulk_append_zeroes zero-fills and advances length", () => {
@@ -136,10 +136,10 @@ describe("BufferBackedColumn", () => {
 		col.push(7);
 		col.bulkAppendZeroes(3);
 		expect(col.length).toBe(4);
-		expect(col.get(0)).toBe(7);
-		expect(col.get(1)).toBe(0);
-		expect(col.get(2)).toBe(0);
-		expect(col.get(3)).toBe(0);
+		expect(col.getAt(0)).toBe(7);
+		expect(col.getAt(1)).toBe(0);
+		expect(col.getAt(2)).toBe(0);
+		expect(col.getAt(3)).toBe(0);
 	});
 
 	it("bulk_append_zeroes past capacity throws", () => {
@@ -152,10 +152,10 @@ describe("BufferBackedColumn", () => {
 		col.push(7);
 		col.bulkAppendValue(9, 3);
 		expect(col.length).toBe(4);
-		expect(col.get(0)).toBe(7);
-		expect(col.get(1)).toBe(9);
-		expect(col.get(2)).toBe(9);
-		expect(col.get(3)).toBe(9);
+		expect(col.getAt(0)).toBe(7);
+		expect(col.getAt(1)).toBe(9);
+		expect(col.getAt(2)).toBe(9);
+		expect(col.getAt(3)).toBe(9);
 	});
 
 	it("bulk_append_value past capacity throws", () => {
@@ -178,8 +178,8 @@ describe("BufferBackedColumn", () => {
 		const { col } = makeColumn(Float32Array, 4, 4);
 		col.push(1.5);
 		col.push(-2.25);
-		expect(col.get(0)).toBeCloseTo(1.5);
-		expect(col.get(1)).toBeCloseTo(-2.25);
+		expect(col.getAt(0)).toBeCloseTo(1.5);
+		expect(col.getAt(1)).toBeCloseTo(-2.25);
 	});
 
 	it("works with Uint8 views", () => {
@@ -187,9 +187,9 @@ describe("BufferBackedColumn", () => {
 		col.push(255);
 		col.push(0);
 		col.push(128);
-		expect(col.get(0)).toBe(255);
-		expect(col.get(1)).toBe(0);
-		expect(col.get(2)).toBe(128);
+		expect(col.getAt(0)).toBe(255);
+		expect(col.getAt(1)).toBe(0);
+		expect(col.getAt(2)).toBe(128);
 	});
 });
 

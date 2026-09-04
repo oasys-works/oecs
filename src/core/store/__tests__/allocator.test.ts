@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_SAB_ALLOCATOR,
 	growableSabAllocator,
-	heapArraybufferAllocator,
+	heapArrayBufferAllocator,
 	wasmMemoryAllocator,
 	StoreCapExceededError
 } from "../allocator";
 
 /**
- * Allocator boundary behaviours. The grow/extend suites exercise these
- * paths *incidentally*; this file pins them at their own boundary so a
+ * Allocator boundary behaviours. The grow and extend suites exercise these
+ * paths *incidentally*. This file pins them at their own boundary so a
  * regression surfaces here rather than as a corrupted live Store.
  */
 
@@ -24,12 +24,12 @@ describe("DEFAULT_SAB_ALLOCATOR", () => {
 	it("allocates a fresh buffer per call (prior buffers untouched)", () => {
 		const a = DEFAULT_SAB_ALLOCATOR(64);
 		const b = DEFAULT_SAB_ALLOCATOR(64);
-		// Distinct instances — the default path never reuses a buffer.
+		// Distinct instances, the default path never reuses a buffer.
 		expect(a).not.toBe(b);
 	});
 
-	it("is NOT marked is_in_place — fresh-alloc moves memory", () => {
-		// The load-bearing invariant: views over a returned buffer do NOT
+	it("is not marked is_in_place, fresh-alloc moves memory", () => {
+		// The load-bearing invariant: views over a returned buffer do not
 		// survive the next allocator call, so extendColumnStore must take the
 		// snapshot+restore path. Flipping this marker corrupts the
 		// entity→row map.
@@ -37,7 +37,7 @@ describe("DEFAULT_SAB_ALLOCATOR", () => {
 	});
 });
 
-describe("growable_sab_allocator — maxBytes validation", () => {
+describe("growable_sab_allocator, maxBytes validation", () => {
 	it("rejects maxBytes <= 0", () => {
 		expect(() => growableSabAllocator(0)).toThrow();
 		expect(() => growableSabAllocator(-1)).toThrow();
@@ -57,10 +57,10 @@ describe("growable_sab_allocator — maxBytes validation", () => {
 	});
 });
 
-describe("growable_sab_allocator — hard cap throw", () => {
-	it("throws when the FIRST request exceeds maxBytes", () => {
+describe("growable_sab_allocator, hard cap throw", () => {
+	it("throws when the first request exceeds maxBytes", () => {
 		const alloc = growableSabAllocator(64);
-		// The entire design hinges on the cap being fatal — there is no
+		// The entire design hinges on the cap being fatal. There is no
 		// grow-beyond-cap fallback or compaction pass.
 		expect(() => alloc(128)).toThrow(/maxBytes/);
 	});
@@ -77,21 +77,21 @@ describe("growable_sab_allocator — hard cap throw", () => {
 	it("allows requests up to and including maxBytes", () => {
 		const alloc = growableSabAllocator(256);
 		expect(() => alloc(64)).not.toThrow();
-		// Exactly at the cap is fine — the throw is strictly `bytes > maxBytes`.
+		// Exactly at the cap is fine, the throw is strictly `bytes > maxBytes`.
 		expect(() => alloc(256)).not.toThrow();
 	});
 });
 
-describe("growable_sab_allocator — in-place contract", () => {
+describe("growable_sab_allocator, in-place contract", () => {
 	it("is marked is_in_place: true", () => {
 		expect(growableSabAllocator().isInPlace).toBe(true);
 	});
 
-	it("returns the SAME buffer reference across grows (resizes in place)", () => {
+	it("returns the same buffer reference across grows (resizes in place)", () => {
 		const alloc = growableSabAllocator();
 		const first = alloc(64);
 		const grown = alloc(128);
-		// SharedArrayBuffer.prototype.grow resizes in place — same instance.
+		// SharedArrayBuffer.prototype.grow resizes in place, same instance.
 		expect(grown).toBe(first);
 		expect(grown.byteLength).toBeGreaterThanOrEqual(128);
 	});
@@ -105,7 +105,7 @@ describe("growable_sab_allocator — in-place contract", () => {
 	});
 });
 
-describe("wasm_memory_allocator — rejections", () => {
+describe("wasm_memory_allocator, rejections", () => {
 	it("throws when the memory was not constructed with shared: true", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 4 });
 		expect(() => wasmMemoryAllocator(memory)).toThrow(/shared/);
@@ -113,7 +113,7 @@ describe("wasm_memory_allocator — rejections", () => {
 
 	it("throws a contextual error when a needed grow fails (cap reached)", () => {
 		// initial 1 page, maximum 2 pages → a request needing 3 pages forces
-		// the grow to fail. The JS API throws a RangeError (it does NOT return
+		// the grow to fail. The JS API throws a RangeError (it does not return
 		// -1); the allocator must normalise that into its own contextual error
 		// naming the requested bytes, with the underlying RangeError preserved
 		// as `cause` rather than leaking past the boundary.
@@ -134,7 +134,7 @@ describe("wasm_memory_allocator — rejections", () => {
 	});
 });
 
-describe("wasm_memory_allocator — in-place contract", () => {
+describe("wasm_memory_allocator, in-place contract", () => {
 	it("is marked is_in_place: true on shared memory", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 4, shared: true });
 		expect(wasmMemoryAllocator(memory).isInPlace).toBe(true);
@@ -161,8 +161,8 @@ describe("wasm_memory_allocator — in-place contract", () => {
 // buffer-identity semantics fails loudly on the strategy that drifted.
 describe.each([
 	["growable_sab_allocator", growableSabAllocator, SharedArrayBuffer as ArrayBufferLike["constructor"]],
-	["heap_arraybuffer_allocator", heapArraybufferAllocator, ArrayBuffer as ArrayBufferLike["constructor"]]
-] as const)("%s — shared growable-allocator contract", (_label, factory, BufferCtor) => {
+	["heap_arraybuffer_allocator", heapArrayBufferAllocator, ArrayBuffer as ArrayBufferLike["constructor"]]
+] as const)("%s, shared growable-allocator contract", (_label, factory, BufferCtor) => {
 	it("rejects invalid maxBytes", () => {
 		expect(() => factory(0)).toThrow(/positive integer/);
 		expect(() => factory(-1)).toThrow(/positive integer/);
@@ -176,7 +176,7 @@ describe.each([
 		expect(buffer.byteLength).toBeGreaterThanOrEqual(64);
 	});
 
-	it("returns the SAME buffer instance across grows (in-place contract)", () => {
+	it("returns the same buffer instance across grows (in-place contract)", () => {
 		const alloc = factory(256);
 		const first = alloc(64);
 		const second = alloc(128);
@@ -220,30 +220,30 @@ describe.each([
 	});
 });
 
-// ── 0.5.3 regression guard: the heap buffer MUST stay FIXED ──────────────────
+// ── 0.5.3 regression guard: the heap buffer must stay fixed ──────────────────
 // The pure-TS heap profile's iteration speed rests on one structural fact: its
-// `ArrayBuffer` is NON-resizable and born at the full cap. V8 has no fast
-// element-access path for TypedArray views over a resizable/growable buffer, so
-// a column view over a resizable ArrayBuffer deopts every `col[i]` (~4-5× slower
-// iteration — exactly the 0.5.0→0.5.2 regression this pins against). The
-// `byteLength >= n` assertions in the shared matrix above pass for BOTH the fixed
-// and the resizable shape, so they can't catch a revert; these lock the fixed
+// `ArrayBuffer` is non-resizable and born at the full cap. V8 has no fast
+// element-access path for TypedArray views over a resizable or growable buffer, so
+// a column view over a resizable ArrayBuffer deopts every `col[i]`, which makes
+// iteration far slower. That is the 0.5.0 to 0.5.2 regression this pins against. The
+// `byteLength >= n` assertions in the shared matrix above pass for both the fixed
+// and the resizable shape, so they can't catch a revert. These lock the fixed
 // shape directly. If you're here because these fail after "optimizing" the heap
-// allocator back to a resizable buffer: don't — see `heapArraybufferAllocator`.
-describe("heap_arraybuffer_allocator — fixed-buffer fast-path invariant (0.5.3)", () => {
-	it("reserves the FULL cap up front, not the requested size", () => {
+// allocator back to a resizable buffer: don't, see `heapArrayBufferAllocator`.
+describe("heap_arraybuffer_allocator, fixed-buffer fast-path invariant (0.5.3)", () => {
+	it("reserves the full cap up front, not the requested size", () => {
 		const cap = 4 * 1024 * 1024;
-		// Request a tiny 64 bytes; a resizable buffer would hand back byteLength 64.
-		const buffer = heapArraybufferAllocator(cap)(64);
+		// Request a tiny 64 bytes. A resizable buffer would hand back byteLength 64.
+		const buffer = heapArrayBufferAllocator(cap)(64);
 		expect(buffer).toBeInstanceOf(ArrayBuffer);
 		expect(buffer.byteLength).toBe(cap);
 	});
 
-	it("is NON-resizable — the property that keeps col[i] on V8's fast path", () => {
+	it("is non-resizable, the property that keeps col[i] on V8's fast path", () => {
 		const cap = 2 * 1024 * 1024;
-		// ES2024 `resizable`/`maxByteLength` aren't in the project's ES2022 lib
-		// types; read through a narrow shape so the assertion stays strict.
-		const buffer = heapArraybufferAllocator(cap)(1024) as unknown as {
+		// ES2024 `resizable` and `maxByteLength` aren't in the project's ES2022 lib
+		// types. Read through a narrow shape so the assertion stays strict.
+		const buffer = heapArrayBufferAllocator(cap)(1024) as unknown as {
 			resizable: boolean;
 			maxByteLength: number;
 			byteLength: number;
@@ -255,7 +255,7 @@ describe("heap_arraybuffer_allocator — fixed-buffer fast-path invariant (0.5.3
 		expect(buffer.byteLength).toBe(cap);
 	});
 
-	it("contrast: growable_sab_allocator IS growable — the shape heap must NOT have", () => {
+	it("contrast: growable_sab_allocator is growable, the shape heap must not have", () => {
 		const sab = growableSabAllocator(4 * 1024 * 1024)(1024) as unknown as { growable: boolean };
 		expect(sab.growable).toBe(true);
 	});

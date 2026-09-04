@@ -9,12 +9,12 @@ const e = ecs.spawn();
 ecs.addComponent(e, Pos, { x: 0, y: 0 });
 ecs.addComponent(e, Vel, { vx: 1, vy: 0 });
 ecs.isAlive(e);   // true
-ecs.despawn(e);   // immediate — isAlive(e) is false on the next line
+ecs.despawn(e);   // immediate, and isAlive(e) is false on the next line
 ```
 
 <a id="immediate-vs-deferred--the-one-thing-to-internalize"></a>
 
-## Immediate and deferred — the most important rule
+## Immediate and deferred, the most important rule
 
 The receiver tells you the timing. Each operation on the host facade (`ecs.*`) applies
 **immediately**. Each structural operation in a system (`ctx.commands.*`) is **deferred** to the
@@ -22,7 +22,7 @@ flush at the end of the phase.
 
 | Operation | On `ecs` (the host) | On `ctx` or `ctx.commands` (in a system) |
 | --- | --- | --- |
-| `spawn` | immediate (you get the id now) | the id is immediate; the bundles attach at the flush |
+| `spawn` | immediate (you get the id now) | the id is immediate. The bundles attach at the flush |
 | `addComponent` / `removeComponent` | **immediate** | **deferred** to the flush at the end of the phase |
 | `despawn` | **immediate** | **deferred** to the flush at the end of the phase |
 | `disable` / `enable` | **immediate** | **deferred** to the flush at the end of the phase |
@@ -30,7 +30,7 @@ flush at the end of the phase.
 
 > [!IMPORTANT]
 > Deferral in a system is not an accident. It is the mechanism that prevents an entity from moving
-> to a different archetype during a live `forEach` or `eachChunk` loop. In a system, the structural
+> to a different archetype during a live `forEach` or `forEachChunk` loop. In a system, the structural
 > operations are on [`ctx.commands`](./systems.md#ctxcommands--deferred-structural-ops). They are
 > *always* deferred, and the call site reads that way.
 >
@@ -40,7 +40,7 @@ flush at the end of the phase.
 >   names the `ctx.commands` equivalent. This covers `spawn`, `spawnBundle`, `spawnMany`,
 >   `despawn`, `addComponent`, `addComponents`, `removeComponent`, `removeComponents`,
 >   `batchAddComponent`, `batchRemoveComponent`, `disable`, and `enable`.
-> - A `forEach` or `eachChunk` walk on the host is also live iteration. If you structurally mutate
+> - A `forEach` or `forEachChunk` walk on the host is also live iteration. If you structurally mutate
 >   an entity of an archetype that you walk, it throws `STRUCTURAL_DURING_ITERATION`. Collect the
 >   ids during the walk, then mutate after it.
 
@@ -99,7 +99,7 @@ const swarm = ecs.spawnMany(Bullet, 500);   // 500 bullets, O(columns) writes
 ## How to destroy entities
 
 ```ts
-despawn(id: EntityID): void;   // IMMEDIATE on the host facade
+despawn(id: EntityID): void;   // immediate on the host facade
 isAlive(id: EntityID): boolean;
 ```
 
@@ -116,8 +116,8 @@ to a recycled slot, for a retired slot, and for an id that is out of range.
 If you disable an entity, queries do not see it, but it keeps its data and its id.
 
 ```ts
-disable(id: EntityID): this;        // immediate on the host facade; you can call it again safely
-enable(id: EntityID): this;         // immediate on the host facade; you can call it again safely
+disable(id: EntityID): this;        // immediate on the host facade. You can call it again safely
+enable(id: EntityID): this;         // immediate on the host facade. You can call it again safely
 isDisabled(id: EntityID): boolean;
 ```
 
@@ -155,7 +155,7 @@ createEntityId(index: number, generation: number): EntityID;   // pack (inverse 
 
 const MAX_INDEX = 1_048_575;        // 2^20 − 1
 const MAX_GENERATION = 2047;        // 2^11 − 1
-const RETIRED_GENERATION = 2047;    // tombstone — never issued to a live entity
+const RETIRED_GENERATION = 2047;    // a tombstone, never issued to a live entity
 const MAX_LIVE_GENERATION = 2046;
 const MAX_ENTITY_ID = 0x7FFFFFFF;   // largest valid packed id
 ```
@@ -174,7 +174,7 @@ const MAX_ENTITY_ID = 0x7FFFFFFF;   // largest valid packed id
 
 ## See also
 
-- [components](./components.md) — what you attach to an entity
-- [systems](./systems.md) — the deferred write surface, `ctx.commands`
-- [queries](./queries.md) — `.includeDisabled()` and iteration
-- [relations](./relations.md) — how to link entities with `(relation, target)` pairs
+- [components](./components.md), what you attach to an entity
+- [systems](./systems.md), the deferred write surface, `ctx.commands`
+- [queries](./queries.md), `.includeDisabled()` and iteration
+- [relations](./relations.md), how to link entities with `(relation, target)` pairs

@@ -10,7 +10,7 @@ import {
 	STORE_HEADER_OFFSETS,
 	STORE_MAGIC,
 	StoreRestoreError,
-	snapshotColumnStore,
+	columnStoreBytesView,
 	TYPE_TAG,
 	type ArchetypeSpec
 } from "..";
@@ -39,7 +39,7 @@ describe("snapshot_column_store", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const snap = snapshotColumnStore(store);
+		const snap = columnStoreBytesView(store);
 
 		expect(snap).toBeInstanceOf(Uint8Array);
 		expect(snap.byteLength).toBe(store.buffer.byteLength);
@@ -51,7 +51,7 @@ describe("snapshot_column_store", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const snap = snapshotColumnStore(store);
+		const snap = columnStoreBytesView(store);
 		const col = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 
 		col[0] = 0x11_22_33_44;
@@ -80,7 +80,7 @@ describe("restore_column_store round-trip", () => {
 		f64[0] = 1.5;
 		f64[1] = 2.5;
 
-		const snap = snapshotColumnStore(store);
+		const snap = columnStoreBytesView(store);
 		const restored = restoreColumnStore(snap);
 
 		// Different SAB instance, same byte length.
@@ -109,7 +109,7 @@ describe("restore_column_store round-trip", () => {
 		f64[1] = 2.5;
 		f64[2] = 3.5;
 
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		const ri32 = restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		const rf64 = restored.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array;
 
@@ -127,7 +127,7 @@ describe("restore_column_store round-trip", () => {
 		]);
 		const origOffs = store.archetypes.get(0)!.columnsInOrder.map((c) => c.byteOff);
 
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		const newOffs = restored.archetypes.get(0)!.columnsInOrder.map((c) => c.byteOff);
 
 		expect(newOffs).toEqual(origOffs);
@@ -142,7 +142,7 @@ describe("restore_column_store round-trip", () => {
 		});
 		expect(readStoreHeader(grown.view).viewStamp).toBe(1);
 
-		const restored = restoreColumnStore(snapshotColumnStore(grown));
+		const restored = restoreColumnStore(columnStoreBytesView(grown));
 		expect(readStoreHeader(restored.view).viewStamp).toBe(1);
 	});
 
@@ -156,7 +156,7 @@ describe("restore_column_store round-trip", () => {
 				0xcafe_f00d
 			)
 		]);
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		const arch = restored.archetypes.get(0)!;
 		expect(arch.componentMask[0]).toBe(0xdead_beef);
 		expect(arch.componentMask[1]).toBe(0xcafe_f00d);
@@ -167,20 +167,20 @@ describe("restore_column_store round-trip", () => {
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }]),
 			spec(1, 8, [{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.f32 }])
 		]);
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		expect(restored.archetypes.size).toBe(2);
 		expect(restored.archetypes.get(0)!.rowCapacity).toBe(4);
 		expect(restored.archetypes.get(1)!.rowCapacity).toBe(8);
 	});
 
-	it("writes to the restored SAB do NOT affect the original", () => {
+	it("writes to the restored SAB do not affect the original", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
 		const origCol = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		origCol[0] = 42;
 
-		const restored = restoreColumnStore(snapshotColumnStore(store));
+		const restored = restoreColumnStore(columnStoreBytesView(store));
 		const rcol = restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		rcol[0] = 99;
 
@@ -198,7 +198,7 @@ describe("restore_column_store round-trip", () => {
 		// Copy snapshot into the middle of a regular ArrayBuffer, then
 		// restore from a subarray pointing at that region.
 		const padded = new Uint8Array(8 + store.buffer.byteLength);
-		padded.set(snapshotColumnStore(store), 8);
+		padded.set(columnStoreBytesView(store), 8);
 		const view = padded.subarray(8);
 
 		const restored = restoreColumnStore(view);
@@ -219,7 +219,7 @@ describe("restore_column_store rejection", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const snap = new Uint8Array(snapshotColumnStore(store)); // copy
+		const snap = new Uint8Array(columnStoreBytesView(store)); // copy
 		// Corrupt magic.
 		new DataView(snap.buffer).setUint32(STORE_HEADER_OFFSETS.magic, 0xff_ff_ff_ff, true);
 		expect(() => restoreColumnStore(snap)).toThrow(/bad magic/);
@@ -229,21 +229,21 @@ describe("restore_column_store rejection", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const snap = new Uint8Array(snapshotColumnStore(store));
+		const snap = new Uint8Array(columnStoreBytesView(store));
 		new DataView(snap.buffer).setUint32(STORE_HEADER_OFFSETS.sim_abi_version, 999, true);
 		expect(() => restoreColumnStore(snap)).toThrow(/incompatible sim_abi_version/);
 	});
 
 	// The header checks above cover length-for-header + magic + ABI, but the
 	// layout-descriptor region itself was trusted: a snapshot that passes them
-	// yet whose descriptor offset / column extents read past the buffer used to
+	// yet whose descriptor offset and column extents read past the buffer used to
 	// surface a raw `RangeError`. Both paths now throw `StoreRestoreError` so a
 	// caller sees one error class for every malformed input.
 	it("rejects an out-of-range layout_descriptor_off", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const snap = new Uint8Array(snapshotColumnStore(store)); // copy
+		const snap = new Uint8Array(columnStoreBytesView(store)); // copy
 		// Point the descriptor region far past the end of the snapshot. Magic +
 		// ABI still validate, so this exercises the new offset bound, not the
 		// pre-existing header guards.
@@ -259,10 +259,10 @@ describe("restore_column_store rejection", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		const full = new Uint8Array(snapshotColumnStore(store)); // copy
-		// Keep just enough bytes to clear the header length check, but truncate
+		const full = new Uint8Array(columnStoreBytesView(store)); // copy
+		// Keep only enough bytes to clear the header length check, but truncate
 		// the layout-descriptor region away while archetype_count stays nonzero.
-		// Reading the (now-absent) descriptors runs off the end of the buffer;
+		// Reading the (now-absent) descriptors runs off the end of the buffer
 		// the raw RangeError must be re-thrown as StoreRestoreError.
 		expect(readStoreHeader(new DataView(full.buffer)).archetypeCount).toBeGreaterThan(0);
 		const truncated = full.slice(0, STORE_HEADER_BYTES);
@@ -270,7 +270,7 @@ describe("restore_column_store rejection", () => {
 	});
 });
 
-describe("snapshot equality / determinism", () => {
+describe("snapshot equality and determinism", () => {
 	it("two stores built from the same specs + same writes snapshot identically", () => {
 		const makeStore = () => {
 			const s = createColumnStore([
@@ -283,8 +283,8 @@ describe("snapshot equality / determinism", () => {
 			return s;
 		};
 
-		const a = snapshotColumnStore(makeStore());
-		const b = snapshotColumnStore(makeStore());
+		const a = columnStoreBytesView(makeStore());
+		const b = columnStoreBytesView(makeStore());
 		expect(b).toEqual(a);
 	});
 

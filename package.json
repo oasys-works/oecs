@@ -1,6 +1,6 @@
 {
   "name": "@oasys/oecs",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "Archetype-based Entity Component System",
   "type": "module",
   "exports": {
@@ -124,8 +124,11 @@
     "dev": "vite",
     "build": "node scripts/build.mjs && node scripts/postbuild.mjs",
     "test": "vitest",
+  "typecheck": "tsc --noEmit",
+  "test:oracle": "vitest run --config bench/net-oracle/vitest.config.ts",
+  "verify": "pnpm typecheck && vitest run && pnpm build",
     "bench": "vitest bench",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "pnpm verify"
   },
   "repository": {
     "type": "git",

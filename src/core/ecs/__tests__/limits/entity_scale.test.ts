@@ -1,11 +1,11 @@
 /**
- * Entity scale — "no corruption at moderate scale", NOT a cap boundary.
+ * Entity scale, "no corruption at moderate scale", not a cap boundary.
  *
- * These exercise create / destroy / recycle correctness at 10k entities —
+ * These exercise create, destroy and recycle correctness at 10k entities,
  * comfortably under every documented hard cap (1M `EntityID` index, 2046
  * live generations before slot retirement, 256 MiB SAB). They
- * verify nothing aliases or corrupts at scale; they do NOT probe behavior
- * AT vs OVER a cap. The real cap boundaries live in `unit/entity.test.ts`
+ * verify nothing aliases or corrupts at scale. They do not probe behavior
+ * at vs over a cap. The real cap boundaries live in `unit/entity.test.ts`
  * (index / generation overflow throws) and `unit/store.test.ts`
  * (generation-exhaustion slot retirement).
  */
@@ -29,7 +29,7 @@ describe("Entity scale", () => {
 		}
 	});
 
-	it("creates 10,000 then destroys 5,000 — survivors alive, dead are dead", () => {
+	it("creates 10,000 then destroys 5,000, survivors alive, dead are dead", () => {
 		const world = new ECS();
 		const entities = [];
 		for (let i = 0; i < 10_000; i++) {
@@ -99,7 +99,7 @@ describe("Entity scale", () => {
 		expect(world.entityCount).toBe(1_000);
 	});
 
-	it("interleaved create/destroy (create 100, destroy 50, repeat 20×), final state correct", () => {
+	it("interleaved create and destroy (create 100, destroy 50, repeat 20×), final state correct", () => {
 		const world = new ECS();
 		const alive: Set<EntityID> = new Set();
 		let allEntities: EntityID[] = [];

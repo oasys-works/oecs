@@ -1,5 +1,5 @@
 /***
- * Resource — Typed singleton key-value storage.
+ * Resource. Typed singleton key-value storage.
  *
  * Resources are global singletons that don't belong to any entity.
  * Think: time, input state, camera config, game settings.
@@ -11,9 +11,9 @@
  * Lifecycle. A resource is register-once *until removed*: a second
  * `registerResource` for a live key throws RESOURCE_ALREADY_REGISTERED, but
  * `removeResource(key)` drops it (failing closed on a missing key) and frees the
- * key to be registered again — the present → absent → present axis. Removal is
+ * key to be registered again, the present → absent → present axis. Removal is
  * access-checked as a *write* (a system must declare the key in `resourceWrites`),
- * and resources stay out of `stateHash` and snapshot/resume regardless, so a
+ * and resources stay out of `stateHash` and snapshot and resume regardless, so a
  * lifecycle change never perturbs the determinism hash.
  *
  * Usage:
@@ -30,16 +30,16 @@
 import { unsafeCast } from "../../type_primitives";
 
 /**
- * `T` is deliberately INVARIANT (via the function-typed phantom — an `in out`
+ * `T` is deliberately invariant (via the function-typed phantom, an `in out`
  * annotation is not legal on an intersection alias, so the structure carries
- * the variance): a key is used for both reads (`resource`, covariant) and
+ * the variance). A key is used for both reads (`resource`, covariant) and
  * writes (`setResource`, contravariant), so either one-sided variance is a
- * soundness hole — a covariant `T` let `ResourceKey<Cat>` widen to
- * `ResourceKey<Animal>` and `setResource` then stored a `Dog` behind a `Cat`
+ * soundness hole. A covariant `T` let `ResourceKey<Cat>` widen to
+ * `ResourceKey<Animal>`, and `setResource` then stored a `Dog` behind a `Cat`
  * key. Invariance also makes keys with different `T` mutually unassignable,
- * which is what the typed system seam's `resourceReads`/`resourceWrites`
- * narrowing keys on (§typestate). Schema-erased positions (access checks,
- * declaration lists) must use `ResourceKey<any>` — `ResourceKey<unknown>` no
+ * which is what the typed system seam's `resourceReads` and `resourceWrites`
+ * narrowing keys on (system.ts). Schema-erased positions (access checks,
+ * declaration lists) must use `ResourceKey<any>`, `ResourceKey<unknown>` no
  * longer erases.
  */
 declare const __resourceValue: unique symbol;
@@ -51,7 +51,7 @@ export function resourceKey<T>(name: string): ResourceKey<T> {
 }
 
 /** Recover a key's value type: `ResourceValueOf<typeof TimeRes>` is the Time
- * shape. The typed `SystemContext` resource surface infers the KEY type (to
+ * shape. The typed `SystemContext` resource surface infers the key type (to
  * check it against the declared-access union) and recovers `T` through this,
  * instead of taking `ResourceKey<T>` directly. */
 export type ResourceValueOf<K> = K extends ResourceKey<infer T> ? T : never;

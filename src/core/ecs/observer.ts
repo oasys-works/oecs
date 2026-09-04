@@ -1,18 +1,18 @@
 /***
- * Observer — per-component reactive hooks (onAdd / onRemove / onDisable /
- * onEnable / onSet).
+ * Observer, per-component reactive hooks (onAdd, onRemove and onDisable /
+ * onEnable and onSet).
  *
- * onDisable / onEnable extend the structural model to the entity enable/disable transition:
- * the partition swap (`disableRow`/`enableRow`) fires no onAdd/onRemove, so a
- * consumer (the reactive bridge) was blind to it. onDisable / onEnable fire at
- * the *deferred* toggle drain in `flushStructural` — like onAdd/onRemove, an
- * *immediate* host-side `ecs.disable()` does not fire — for *every component
+ * onDisable and onEnable extend the structural model to the entity enable and disable transition:
+ * the partition swap (`disableRow` and `enableRow`) fires no `onAdd` or `onRemove`, so a
+ * consumer (the reactive bridge) was blind to it. onDisable and onEnable fire at
+ * the *deferred* toggle drain in `flushStructural`, like onAdd and onRemove, an
+ * *immediate* host-side `ecs.disable()` does not fire, for *every component
  * the entity carries* (a disable is a soft remove of the whole mask from default
  * queries, the symmetric idea to a destroy fanning onRemove over the mask), and
  * collapse to one event per *net* transition across a drain (disable→enable→
- * disable in a tick = a single onDisable; required so the radix canonical order
+ * disable in a tick = a single onDisable. Required so the radix canonical order
  * never reorders a duplicate eid).
- * bitECS / flecs expose first-class component observers; we had only *system*
+ * bitECS / flecs expose first-class component observers. We had only *system*
  * lifecycle hooks, so reactions ("on `Death` added → spawn corpse", "on
  * `HexPos` set → mark spatial index") were hand-polled every tick. Observers
  * express them directly.
@@ -24,26 +24,26 @@
  *      archetype-granular onSet ≡ the existing per-archetype change tick (free),
  *      per-entity onSet ≡ the opt-in per-row dirty list surfaced as a
  *      callback.
- *   2. **onAdd/onRemove ordering is a comparator sort.** `Array.sort` for the
- *      canonical firing order costs more than the entire flush; an O(K) LSD
+ *   2. **onAdd and onRemove ordering is a comparator sort.** `Array.sort` for the
+ *      canonical firing order costs more than the entire flush. An O(K) LSD
  *      radix on the bounded 20-bit entity index gives the same order for a
  *      small part of that cost. Determinism is cheap *only* if you do not
  *      compare-sort.
  *
  * Firing order is two composed layers, both deterministic:
- *   - **across observers** — access-topological (writer-of-X before readers-of-X,
+ *   - **across observers**, access-topological (writer-of-X before readers-of-X,
  *     from each observer's `SystemAccessDeclaration`): deterministic *and*
  *     glitch-free, the ECS analog of Solid's height order.
- *   - **within an observer** — entity-id order via the radix pass above.
+ *   - **within an observer**, entity-id order via the radix pass above.
  *
- * Structural observers (onAdd/onRemove) fire during `Store.flushStructural`,
+ * Structural observers (onAdd and onRemove) fire during `Store.flushStructural`,
  * *after* the batch commits (observers never see a torn state), looping to a
  * fixed point so cascades settle. onSet fires at the post-update detection
- * point. Observer / dirty / event state is a scheduling artifact — kept OUT of
+ * point. Observer, dirty and event state is a scheduling artifact, kept out of
  * `stateHash` and snapshot (like `_changedTick`), but produced in canonical
  * order so replays reproduce.
  *
- * This module owns the registry + ordering + dispatch; the hot-path event
+ * This module owns the registry + ordering + dispatch. The hot-path event
  * collection and the deferred fixed-point loop live in `store.ts` (it owns the
  * flush). The access-topological order built here is the same write-disjointness
  * graph a later multithreaded execution can reuse.
@@ -52,10 +52,11 @@
 import { unsafeCast } from "../../type_primitives";
 import type { ArchetypeView } from "./archetype";
 import type { ComponentDef, ComponentHandle } from "./component";
+import type { SparseComponentDef } from "./sparse_store";
 import type { EntityID } from "./entity";
 import type { FrameTraceSink, ObserverOp } from "./frame_trace";
 import type { SystemContext } from "./query";
-import type { StructuralObserverEvents } from "./store";
+import type { DrainResult, StructuralObserverEvents } from "./store";
 import {
 	_INTERNAL_EMPTY_ACCESS,
 	asSystemId,
@@ -67,18 +68,16 @@ import { componentDebugName } from "./debug_names";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { DEV } from "../../dev_flag";
 
-/** What the observer registry needs from `Store` — the typed seam replacing
- * bare underscore-convention reach-through. `Store` implements this; the
+/** What the observer registry needs from `Store`, the typed seam replacing
+ * bare underscore-convention reach-through. `Store` implements this. The
  * registry holds only this view, so the compiler bounds what observer dispatch
  * can touch. Underscore names are kept so `Store`'s members stay one
  * declaration (they read as "internal" at every other call site). */
 export interface ObserverHost {
-	/** Current change tick — read for onSet baselines. */
-	readonly _tick: number;
-	/** Dev-only frame-trace sink (`null` when unset; always null in prod). */
-	readonly _trace: FrameTraceSink | null;
-	/** Sync a component's observation flags (add/remove/disable/enable/dirty). */
-	_configureComponentObservation(
+	/** Dev-only frame-trace sink (`null` when unset, always null in prod). */
+	readonly trace: FrameTraceSink | null;
+	/** Sync a component's observation flags (add, remove, disable, enable and dirty). */
+	configureObservation(
 		cid: number,
 		hasAdd: boolean,
 		hasRem: boolean,
@@ -86,32 +85,38 @@ export interface ObserverHost {
 		hasEnable: boolean,
 		trackDirty: boolean
 	): void;
-	/** Drain the per-entity onSet dirty list for `cid` (clears marks). */
-	_takeDirty(cid: number): EntityID[];
+	/** Collect the rows recorded for `cid` since the last drain. `run` is the
+	 * change tick of this dispatch. See `Store.drainSet`. */
+	drainSet(cid: number, run: number): DrainResult;
+	/** Give sparse component `sid` row ticks, for an entity-level onSet. */
+	configureSparseObservation(sid: number, hasSet: boolean): void;
+	/** Collect the members of sparse component `sid` recorded since the last
+	 * drain, alive and enabled, in member order. See `Store.drainSparseSet`. */
+	drainSparseSet(sid: number, run: number): EntityID[];
 	/** Visit archetypes whose `cid` column changed since `baseline`, in
 	 * canonical (creation-id) order. */
-	_forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
+	forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
 	/** Every live entity currently holding `cid` (dispose-on-disable sweep). */
-	_collectEntitiesWithComponent(cid: number): EntityID[];
+	collectEnabledWith(cid: number): EntityID[];
 	isAlive(id: EntityID): boolean;
 	isDisabled(id: EntityID): boolean;
 	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
 }
 
-/** Per-entity observer callback (onAdd / onRemove / onDisable / onEnable, and
+/** Per-entity observer callback (onAdd, onRemove, onDisable and onEnable, and
  * per-entity onSet). */
 export type ObserverFn = (entityId: EntityID, ctx: SystemContext) => void;
-/** Archetype-granular onSet callback — fires once per changed archetype-column;
+/** Archetype-granular onSet callback, fires once per changed archetype-column
  * the consumer iterates `arch.entityCount` rows itself. */
 export type ArchetypeObserverFn = (arch: ArchetypeView, ctx: SystemContext) => void;
 
 /** Fields common to every observer registration. `access` drives both the
- * dev-mode `accessCheck` and the access-topological firing order; it is merged
+ * dev-mode `accessCheck` and the access-topological firing order. It is merged
  * over an all-empty declaration, so a caller spells out only what it touches. */
 interface ObserverConfigBase {
 	onAdd?: ObserverFn;
 	onRemove?: ObserverFn;
-	/** Fires when an entity carrying this component is *disabled* — at the
+	/** Fires when an entity carrying this component is *disabled*, at the
 	 * deferred toggle drain, once per net transition. Mirrors `onRemove`:
 	 * a disable is a soft remove of the whole mask from default queries. An immediate
 	 * host-side `ecs.disable()` does not fire (like immediate `addComponent`). */
@@ -119,15 +124,15 @@ interface ObserverConfigBase {
 	/** Fires when an entity carrying this component is *enabled*, symmetric
 	 * with `onDisable` / `onAdd`. */
 	onEnable?: ObserverFn;
-	/** Access surface the callbacks touch (reads / writes / spawns / …). Partial:
+	/** Access surface the callbacks touch (reads, writes and spawns / …). Partial:
 	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `DEV`. */
 	access?: Partial<SystemAccessDeclaration>;
-	/** flecs-style replay of current matches on registration (onAdd only — seeds the
-	 * *enabled* members; a disabled entity is simply absent, matching default-query
+	/** flecs-style replay of current matches on registration (onAdd only, seeds the
+	 * *enabled* members. A disabled entity is absent, which matches the default-query
 	 * semantics), for order-independence of register-vs-spawn. */
 	yieldExisting?: boolean;
 	/** Diagnostic label for this observer, surfaced by the frame-trace seam
-	 * as the `observer_fired.observer` field — the same role a system's
+	 * as the `observer_fired.observer` field, the same role a system's
 	 * `name` plays. Optional and observe-only: it never touches `stateHash` or
 	 * dispatch. Defaults to `observer(<component debug name>)` when the component
 	 * was registered with a name, else `observer(<cid>)`. */
@@ -136,7 +141,7 @@ interface ObserverConfigBase {
 
 /** Per-entity onSet: `onSet(eid, ctx)` fires once per changed entity, drained
  * from the opt-in per-row dirty list (registering this enables dirty tracking
- * for the component — the dirty list + dedup bit). */
+ * for the component, the dirty list + dedup bit). */
 export interface EntitySetObserverConfig extends ObserverConfigBase {
 	onSet: ObserverFn;
 	granularity: "entity";
@@ -150,7 +155,7 @@ export interface ArchetypeSetObserverConfig extends ObserverConfigBase {
 	granularity?: "archetype";
 }
 
-/** Structural-only observer — no onSet. */
+/** Structural-only observer, no onSet. */
 export interface StructuralObserverConfig extends ObserverConfigBase {
 	onSet?: undefined;
 	granularity?: undefined;
@@ -161,16 +166,16 @@ export type ObserverConfig =
 	| EntitySetObserverConfig
 	| ArchetypeSetObserverConfig;
 
-/** Handle returned by `ecs.observe(...)`. `dispose()` unregisters; safe to
+/** Handle returned by `ecs.observe(...)`. `dispose()` unregisters. Safe to
  * call more than once. */
-// Runtime fallback matching the TS/Babel downlevel `using` helpers, which key
+// Runtime fallback matching the TS and Babel downlevel `using` helpers, which key
 // off Symbol.for("Symbol.dispose") when the well-known symbol is absent.
 const DISPOSE: typeof Symbol.dispose =
 	Symbol.dispose ?? (Symbol.for("Symbol.dispose") as typeof Symbol.dispose);
 
 export interface ObserverHandle {
 	dispose(): void;
-	/** `using h = ecs.observe(C, {...})` — explicit-resource-management sugar
+	/** `using h = ecs.observe(C, {...})`, explicit-resource-management sugar
 	 * over {@link dispose} (TC39 `Symbol.dispose`). */
 	[Symbol.dispose](): void;
 }
@@ -179,7 +184,7 @@ export interface ObserverHandle {
 interface ObserverEntry {
 	readonly id: number;
 	readonly cid: number;
-	/** The observed component's handle — carried so per-entity onSet can
+	/** The observed component's handle, carried so per-entity onSet can
 	 *  call `hasComponent(eid, def)` without re-minting a def from `cid`. */
 	readonly def: ComponentHandle;
 	readonly onAdd: ObserverFn | undefined;
@@ -190,7 +195,7 @@ interface ObserverEntry {
 	readonly onSetArch: ArchetypeObserverFn | undefined;
 	/** Synthesized frozen descriptor for `accessCheck` (cached in its WeakMap). */
 	readonly descriptor: SystemDescriptor;
-	/** Component ids this observer writes / reads — drives the topo order. */
+	/** Component ids this observer writes and reads, drives the topo order. */
 	readonly writes: ReadonlySet<number>;
 	readonly reads: ReadonlySet<number>;
 	readonly yieldExisting: boolean;
@@ -202,12 +207,24 @@ interface ObserverEntry {
 
 const INDEX_MASK = (1 << 20) - 1; // entity.ts: 20-bit dense index
 
-let _nextObserverId = 0;
+let nextObserverId = 0;
+
+/** An entity-level onSet on a sparse component. A sparse component has no
+ * archetype, so it has no structural events and no archetype grain: this is
+ * the one observer shape it takes. Dispatched after the dense observers, in
+ * registration order. */
+interface SparseSetEntry {
+	readonly id: number;
+	readonly sid: number;
+	readonly onSet: ObserverFn;
+	readonly descriptor: SystemDescriptor;
+	disposed: boolean;
+}
 
 /** Synthesize a frozen `SystemDescriptor` from a (partial) access declaration so
  * `accessCheck` can validate observer callbacks exactly as it does systems. The
  * object identity is stable for the observer's lifetime (cached in accessCheck's
- * WeakMap). The `fn` is never called — observers dispatch through their own
+ * WeakMap). The `fn` is never called, observers dispatch through their own
  * callbacks. */
 function synthDescriptor(
 	name: string,
@@ -216,14 +233,14 @@ function synthDescriptor(
 	const merged: SystemDescriptor = {
 		..._INTERNAL_EMPTY_ACCESS,
 		...access,
-		id: asSystemId(_nextObserverId++),
+		id: asSystemId(nextObserverId++),
 		name,
-		fn: _noopSystemFn
+		fn: noopSystem
 	};
 	return Object.freeze(merged);
 }
 
-function _noopSystemFn(): void {
+function noopSystem(): void {
 	/* observers never run via the schedule */
 }
 
@@ -235,9 +252,9 @@ function idSet(defs: readonly ComponentDef[] | undefined): Set<number> {
 
 /** Access-topological order over the registered observers: a producer (writes X)
  * precedes any consumer (reads X). Deterministic Kahn sort, tie-broken by
- * component id then registration id. A write/read cycle (no valid topo order)
+ * component id then registration id. A write-read cycle (no valid topo order)
  * degrades gracefully: the remaining observers are appended in the same
- * deterministic tie-break order, so the result is still replay-stable (it just
+ * deterministic tie-break order, so the result is still replay-stable (it only
  * can't promise glitch-freedom for the cyclic subset). */
 function topoOrder(entries: readonly ObserverEntry[]): ObserverEntry[] {
 	const tie = (a: ObserverEntry, b: ObserverEntry): number => a.cid - b.cid || a.id - b.id;
@@ -279,7 +296,7 @@ function topoOrder(entries: readonly ObserverEntry[]): ObserverEntry[] {
 		}
 	}
 	if (out.length !== entries.length) {
-		// Cyclic write/read dependency — append the rest deterministically.
+		// Cyclic write and read dependency, append the rest deterministically.
 		const seen = new Set(out);
 		for (const o of entries.slice().sort(tie)) if (!seen.has(o)) out.push(o);
 	}
@@ -287,43 +304,53 @@ function topoOrder(entries: readonly ObserverEntry[]): ObserverEntry[] {
 }
 
 /**
- * Registry of component observers. Owned by `ECS`; the `Store` calls back into
+ * Registry of component observers. Owned by `ECS`. The `Store` calls back into
  * `dispatchStructural` between fixed-point rounds during `flushStructural`,
  * and `ECS.update` calls `dispatchSet` at the post-update detection point.
  */
 export class ObserverRegistry {
-	private readonly entries: ObserverEntry[] = [];
+	private readonly _entries: ObserverEntry[] = [];
 	/** ComponentID → its observers (structural + onSet). */
-	private readonly byCid = new Map<number, ObserverEntry[]>();
-	/** Cached access-topological order; invalidated on register / dispose. */
+	private readonly _byCid = new Map<number, ObserverEntry[]>();
+	/** The entity-level onSet observers on sparse components, in registration
+	 * order. */
+	private readonly _sparseEntries: SparseSetEntry[] = [];
+	/** Per-`dispatchSet` cache of each sparse component's drain, so two
+	 * observers on one sparse component fire over one snapshot. */
+	private readonly _sparseDrainCache = new Map<number, EntityID[]>();
+	/** Cached access-topological order. Invalidated on register / dispose. */
 	private _topo: ObserverEntry[] | null = null;
 
-	// --- dispatch scratch (reused; never reallocated in the hot loop) ---
+	// --- dispatch scratch (reused, never reallocated in the hot loop) ---
 	// Per-component eid buckets for the current structural round, keyed by cid.
 	private readonly _addBuckets = new Map<number, number[]>();
 	private readonly _remBuckets = new Map<number, number[]>();
-	// Disable / enable buckets — populated only on a toggle-drain round
-	// (toggles drain once add/remove/destroy are quiescent, so a round carries
+	// Disable and enable buckets, populated only on a toggle-drain round
+	// (toggles drain once add, remove and destroy are quiescent, so a round carries
 	// either structural events or toggle events, never both).
 	private readonly _disBuckets = new Map<number, number[]>();
 	private readonly _enaBuckets = new Map<number, number[]>();
-	private readonly _radixOut: number[] = [];
+	// The radix scratch is a typed array, grown by doubling, and never a plain
+	// array grown by a length assignment: JavaScriptCore turns the latter into a
+	// sparse store, and each element store in the pass becomes a hash insert.
+	// Measured at an order of magnitude on the drain of a large frame there.
+	private _radixOut = new Uint32Array(1024);
 	private readonly _radixC0 = new Int32Array(1024);
 	private readonly _radixC1 = new Int32Array(1024);
-	// Per-`dispatchSet` cache of each component's drained dirty list, so a
-	// component with more than one per-entity onSet observer takes (and clears
-	// the dedup bits of) its list exactly once and fans the same snapshot out to
-	// every observer. Cleared at the end of each dispatch. (Bug: a second
-	// per-entity onSet observer on the same component used to see an empty list.)
-	private readonly _setDrainCache = new Map<number, EntityID[]>();
+	// Per-`dispatchSet` cache of each component's drain, so a component with
+	// more than one per-entity onSet observer drains exactly once and fans the
+	// same snapshot out to every observer. Cleared at the end of each dispatch.
+	// (Bug: a second per-entity onSet observer on the same component used to
+	// see an empty list.)
+	private readonly _setDrainCache = new Map<number, DrainResult>();
 
 	constructor(
-		private readonly store: ObserverHost,
-		private readonly ctx: SystemContext
+		private readonly _store: ObserverHost,
+		private readonly _ctx: SystemContext
 	) {}
 
 	get count(): number {
-		return this.entries.length;
+		return this._entries.length + this._sparseEntries.length;
 	}
 
 	/** The synthesized `SystemDescriptor`s of every registered observer, in
@@ -331,16 +358,27 @@ export class ObserverRegistry {
 	 * Fed into the `startup()` archetype-prewarm closure so an observer's declared
 	 * `spawns` / `transitions` create their target archetypes eagerly, exactly as a
 	 * system's do. Without this an observer-spawned/-transitioned archetype
-	 * first-touches lazily mid-tick — the one asymmetry left in the otherwise
+	 * first-touches lazily mid-tick, the one asymmetry left in the otherwise
 	 * uniform "no lazy archetypes" prewarm. */
 	descriptors(): SystemDescriptor[] {
-		const out: SystemDescriptor[] = new Array(this.entries.length);
-		for (let i = 0; i < this.entries.length; i++) out[i] = this.entries[i].descriptor;
+		const out: SystemDescriptor[] = [];
+		for (let i = 0; i < this._entries.length; i++) out.push(this._entries[i].descriptor);
+		for (let i = 0; i < this._sparseEntries.length; i++) out.push(this._sparseEntries[i].descriptor);
 		return out;
 	}
 
-	register(def: ComponentHandle, config: ObserverConfig): ObserverHandle {
+	register(def: ComponentHandle | SparseComponentDef, config: ObserverConfig): ObserverHandle {
+		// A sparse component is a number at runtime, and takes one observer
+		// shape, the entity-level onSet, below. A relation is a number in its own
+		// id space, which the types keep apart and the runtime cannot.
+		if (typeof def === "number") return this._registerSparse(def as unknown as number, config);
 		const cid = def.id;
+		if (typeof cid !== "number") {
+			throw new ECSError(
+				ECS_ERROR.OBSERVER_INVALID_CONFIG,
+				"observe(): the definition is not a registered component. Observe a dense or a sparse component"
+			);
+		}
 		const granularity = config.granularity ?? "archetype";
 		const isEntitySet = config.onSet !== undefined && granularity === "entity";
 		const isArchSet = config.onSet !== undefined && granularity !== "entity";
@@ -360,7 +398,7 @@ export class ObserverRegistry {
 		) {
 			throw new ECSError(
 				ECS_ERROR.OBSERVER_INVALID_CONFIG,
-				"observe(): at least one of onAdd / onRemove / onDisable / onEnable / onSet is required"
+				"observe(): at least one of onAdd, onRemove, onDisable, onEnable and onSet is required"
 			);
 		}
 
@@ -389,11 +427,11 @@ export class ObserverRegistry {
 			disposed: false
 		};
 
-		this.entries.push(entry);
-		let bucket = this.byCid.get(cid);
+		this._entries.push(entry);
+		let bucket = this._byCid.get(cid);
 		if (bucket === undefined) {
 			bucket = [];
-			this.byCid.set(cid, bucket);
+			this._byCid.set(cid, bucket);
 		}
 		bucket.push(entry);
 		this._topo = null;
@@ -405,16 +443,56 @@ export class ObserverRegistry {
 		return { dispose, [DISPOSE]: dispose };
 	}
 
+	/** The sparse arm of `register`: an entity-level onSet, and nothing else.
+	 * A sparse add and remove are immediate and touch no archetype, so there
+	 * is no flush boundary to fire a structural observer at, and no archetype
+	 * column for the archetype grain. */
+	private _registerSparse(sid: number, config: ObserverConfig): ObserverHandle {
+		if (
+			config.onSet === undefined ||
+			config.granularity !== "entity" ||
+			config.onAdd !== undefined ||
+			config.onRemove !== undefined ||
+			config.onDisable !== undefined ||
+			config.onEnable !== undefined
+		) {
+			throw new ECSError(
+				ECS_ERROR.OBSERVER_INVALID_CONFIG,
+				'observe(): a sparse component takes onSet with granularity "entity" and no other callback. Move onAdd, onRemove, onDisable, onEnable and the archetype grain to a dense component'
+			);
+		}
+		const descriptor = synthDescriptor(config.name ?? `observer(sparse ${sid})`, config.access ?? {});
+		const entry: SparseSetEntry = {
+			id: descriptor.id as unknown as number,
+			sid,
+			onSet: config.onSet as ObserverFn,
+			descriptor,
+			disposed: false
+		};
+		this._sparseEntries.push(entry);
+		this._store.configureSparseObservation(sid, true);
+		const dispose = (): void => {
+			if (entry.disposed) return;
+			entry.disposed = true;
+			const i = this._sparseEntries.indexOf(entry);
+			if (i >= 0) this._sparseEntries.splice(i, 1);
+			let left = false;
+			for (let k = 0; k < this._sparseEntries.length; k++) if (this._sparseEntries[k].sid === sid) left = true;
+			if (!left) this._store.configureSparseObservation(sid, false);
+		};
+		return { dispose, [DISPOSE]: dispose };
+	}
+
 	private _dispose(entry: ObserverEntry): void {
 		if (entry.disposed) return;
 		entry.disposed = true;
-		const i = this.entries.indexOf(entry);
-		if (i >= 0) this.entries.splice(i, 1);
-		const bucket = this.byCid.get(entry.cid);
+		const i = this._entries.indexOf(entry);
+		if (i >= 0) this._entries.splice(i, 1);
+		const bucket = this._byCid.get(entry.cid);
 		if (bucket !== undefined) {
 			const j = bucket.indexOf(entry);
 			if (j >= 0) bucket.splice(j, 1);
-			if (bucket.length === 0) this.byCid.delete(entry.cid);
+			if (bucket.length === 0) this._byCid.delete(entry.cid);
 		}
 		this._topo = null;
 		this._reconfigureComponent(entry.cid);
@@ -424,7 +502,7 @@ export class ObserverRegistry {
 	 * observers and push them to the store (which owns the flags + fast-path
 	 * counters). */
 	private _reconfigureComponent(cid: number): void {
-		const bucket = this.byCid.get(cid);
+		const bucket = this._byCid.get(cid);
 		let hasAdd = false;
 		let hasRem = false;
 		let hasDisable = false;
@@ -440,7 +518,7 @@ export class ObserverRegistry {
 				if (e.onSetEntity !== undefined) trackDirty = true;
 			}
 		}
-		this.store._configureComponentObservation(
+		this._store.configureObservation(
 			cid,
 			hasAdd,
 			hasRem,
@@ -450,29 +528,29 @@ export class ObserverRegistry {
 		);
 	}
 
-	private getTopo(): ObserverEntry[] {
-		if (this._topo === null) this._topo = topoOrder(this.entries);
+	private _getTopo(): ObserverEntry[] {
+		if (this._topo === null) this._topo = topoOrder(this._entries);
 		return this._topo;
 	}
 
 	// =======================================================
-	// Structural dispatch (onAdd / onRemove)
+	// Structural dispatch (onAdd and onRemove)
 	// =======================================================
 
 	/**
-	 * Fire onAdd / onRemove / onDisable / onEnable for one fixed-point round's
+	 * Fire onAdd, onRemove, onDisable and onEnable for one fixed-point round's
 	 * effective events, in canonical order: access-topological across observers,
 	 * entity-id order (radix) within each observer. Called by
-	 * `Store.flushStructural` after the batch commits; observer callbacks may
+	 * `Store.flushStructural` after the batch commits. Observer callbacks may
 	 * enqueue further structural ops (or toggles) onto the deferred buffers (the
 	 * store loops until quiescent).
 	 *
 	 * The events arrive as flat `(comp, eid)` parallel arrays collected during the
-	 * flush; we bucket by component once (O(K)), then walk observers in topo order
+	 * flush. We bucket by component once (O(K)), then walk observers in topo order
 	 * so a producer's writes are visible to a consumer (glitch-free). A round
-	 * carries either structural (add/rem) OR toggle (dis/ena) events, never both —
-	 * toggles drain only once add/remove/destroy are quiescent (`flushStructural`)
-	 * — but we bucket all four uniformly; the empty pairs are no-ops. Within an
+	 * carries either structural (add, remove) or toggle (disable, enable) events, never both,
+	 * toggles drain only once add, remove and destroy are quiescent (`flushStructural`),
+	 * but we bucket all four uniformly. The empty pairs are no-ops. Within an
 	 * observer the fire order is remove, add, disable, enable (the "leaving" edges
 	 * before the "entering" edges).
 	 */
@@ -482,14 +560,14 @@ export class ObserverRegistry {
 		this._bucket(ev.disComp, ev.disEid, ev.disLen, this._disBuckets);
 		this._bucket(ev.enaComp, ev.enaEid, ev.enaLen, this._enaBuckets);
 
-		const order = this.getTopo();
+		const order = this._getTopo();
 		const prev = DEV ? accessCheck.current() : null;
 		for (let oi = 0; oi < order.length; oi++) {
 			const obs = order[oi];
 			// Skip an observer disposed mid-round: a `dispose()` handle is reachable
-			// from a sibling observer's callback; `_dispose` flips `disposed` and
+			// from a sibling observer's callback. `_dispose` flips `disposed` and
 			// splices the master arrays, but not this already-captured `order`
-			// snapshot — without this check the "disposed" observer still fires for
+			// snapshot, without this check the "disposed" observer still fires for
 			// components later in the topo order this same round.
 			if (obs.disposed) continue;
 			if (obs.onRemove !== undefined) {
@@ -523,12 +601,12 @@ export class ObserverRegistry {
 	/** Radix-sort `eids` by entity index (canonical within-observer order), then
 	 * fire `fn` per entity under the observer's access scope. */
 	private _fireEach(obs: ObserverEntry, fn: ObserverFn, eids: number[], op: ObserverOp): void {
-		radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
+		this._radixOut = radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
 		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
-			const trace = DEV ? this.store._trace : null;
+			const trace = DEV ? this._store.trace : null;
 			for (let i = 0; i < eids.length; i++) {
-				fn(unsafeCast<EntityID>(eids[i]), this.ctx);
+				fn(unsafeCast<EntityID>(eids[i]), this._ctx);
 				if (DEV) trace?.observerFired(op, obs.cid, eids[i], obs.descriptor);
 			}
 		} finally {
@@ -536,15 +614,15 @@ export class ObserverRegistry {
 		}
 	}
 
-	private _bucket(comp: number[], eid: number[], len: number, into: Map<number, number[]>): void {
+	private _bucket(cids: number[], eids: number[], len: number, into: Map<number, number[]>): void {
 		for (let i = 0; i < len; i++) {
-			const cid = comp[i];
+			const cid = cids[i];
 			let b = into.get(cid);
 			if (b === undefined) {
 				b = [];
 				into.set(cid, b);
 			}
-			b.push(eid[i]);
+			b.push(eids[i]);
 		}
 	}
 
@@ -557,107 +635,165 @@ export class ObserverRegistry {
 	// =======================================================
 
 	/**
-	 * Fire onSet observers for the current tick, in canonical order. Per-entity
+	 * Fire onSet observers for the current frame, in canonical order. Per-entity
 	 * onSet drains the opt-in dirty list (once per changed entity); archetype-
 	 * granular onSet scans the change tick (once per changed archetype-column).
-	 * Called by `ECS.update` after all phases, with `tick === store._tick`.
+	 * Called by `ECS.update` after all phases. `run` is the change tick advanced
+	 * for this dispatch: above every system run of the frame, and the baseline
+	 * each archetype-granular observer keeps for its next dispatch.
 	 */
-	dispatchSet(tick: number): void {
-		if (this.entries.length === 0) return;
+	dispatchSet(run: number): void {
+		if (this._entries.length === 0 && this._sparseEntries.length === 0) return;
 		const prev = DEV ? accessCheck.current() : null;
 		// Canonical across observers: topo order (same as structural).
-		const order = this.getTopo();
+		const order = this._getTopo();
 		const drained = this._setDrainCache;
 		for (let oi = 0; oi < order.length; oi++) {
 			const obs = order[oi];
-			if (obs.onSetEntity !== undefined) this._dispatchSetEntity(obs, drained);
-			else if (obs.onSetArch !== undefined) this._dispatchSetArch(obs, tick);
+			if (obs.onSetEntity !== undefined) this._dispatchSetEntity(obs, drained, run);
+			else if (obs.onSetArch !== undefined) this._dispatchSetArch(obs, run);
 		}
-		// Return the drained scratch lists to the store empty and reset the cache.
-		for (const eids of drained.values()) eids.length = 0;
+		// The store owns and reuses the result objects. Only the cache resets.
 		drained.clear();
+		// The sparse observers, after the dense ones, in registration order.
+		const sparse = this._sparseEntries;
+		if (sparse.length !== 0) {
+			const cache = this._sparseDrainCache;
+			for (let i = 0; i < sparse.length; i++) {
+				const obs = sparse[i];
+				if (obs.disposed) continue;
+				this._dispatchSparseSet(obs, cache, run);
+			}
+			cache.clear();
+		}
 		if (DEV && prev !== null) accessCheck.enter(prev);
 	}
 
-	private _dispatchSetEntity(obs: ObserverEntry, drained: Map<number, EntityID[]>): void {
-		// Take this component's dirty list once per dispatch (clearing its dedup
-		// bits) and cache it, so every per-entity onSet observer on the same
-		// component fires over the same snapshot instead of the first one draining
-		// it out from under the rest.
-		let eids = drained.get(obs.cid);
+	/** Fire one sparse observer over the members recorded since the last
+	 * drain. The store's walk gives alive, member and enabled entities, so no
+	 * check remains here. Canonical order by entity index, through the radix. */
+	private _dispatchSparseSet(obs: SparseSetEntry, cache: Map<number, EntityID[]>, run: number): void {
+		let eids = cache.get(obs.sid);
 		if (eids === undefined) {
-			eids = this.store._takeDirty(obs.cid);
-			radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
-			drained.set(obs.cid, eids);
+			eids = this._store.drainSparseSet(obs.sid, run);
+			this._radixOut = radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
+			cache.set(obs.sid, eids);
 		}
 		if (eids.length === 0) return;
-		const def = obs.def;
-		const fn = obs.onSetEntity!;
+		const fn = obs.onSet;
 		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
 			for (let i = 0; i < eids.length; i++) {
-				const eid = unsafeCast<EntityID>(eids[i]);
-				// A row written then destroyed (or losing the component) before the drain
-				// must not fire — verify liveness + membership. A *disabled* entity is
-				// also skipped: it is excluded from default queries, so per-entity
-				// onSet must match the archetype-granular grain, whose `entityCount`
-				// sweep already skips the disabled tail. (The dirty entry is still drained
-				// here, so it doesn't accumulate; the value is republished by `onEnable`.)
-				if (
-					this.store.isAlive(eid) &&
-					this.store.hasComponent(eid, def) &&
-					!this.store.isDisabled(eid)
-				) {
-					fn(eid, this.ctx);
-					if (DEV) this.store._trace?.observerFired("set", obs.cid, eid, obs.descriptor);
-				}
+				fn(eids[i], this._ctx);
+				if (DEV) this._store.trace?.observerFired("set", obs.sid, eids[i], obs.descriptor);
 			}
 		} finally {
 			if (DEV) accessCheck.leave();
 		}
 	}
 
-	private _dispatchSetArch(obs: ObserverEntry, tick: number): void {
+	private _dispatchSetEntity(
+		obs: ObserverEntry,
+		drained: Map<number, DrainResult>,
+		run: number
+	): void {
+		// Drain this component once per dispatch and cache the result, so every
+		// per-entity onSet observer on the same component fires over the same
+		// snapshot instead of the first one draining it out from under the rest.
+		let res = drained.get(obs.cid);
+		if (res === undefined) {
+			res = this._store.drainSet(obs.cid, run);
+			this._radixOut = radixSortByIndex(res.scanned, this._radixOut, this._radixC0, this._radixC1);
+			this._radixOut = radixSortByIndex(res.listed, this._radixOut, this._radixC0, this._radixC1);
+			dedupeSorted(res.listed);
+			drained.set(obs.cid, res);
+		}
+		const scanned = res.scanned;
+		const listed = res.listed;
+		const n = scanned.length;
+		const m = listed.length;
+		if (n === 0 && m === 0) return;
+		const def = obs.def;
+		const fn = obs.onSetEntity!;
+		if (DEV) accessCheck.enter(obs.descriptor);
+		try {
+			// Two runs, each in entity-index order, merged so the firing order is the
+			// canonical one. A scanned row came from the enabled partition of a live
+			// archetype, so it fires with no check. A listed entity was recorded by
+			// id, and it may have died, lost the component or been disabled since:
+			// a disabled entity is excluded from default queries, so per-entity
+			// onSet must match the archetype grain, whose `entityCount` sweep skips
+			// the disabled tail. (The value is republished by `onEnable`.)
+			let i = 0;
+			let j = 0;
+			while (i < n || j < m) {
+				let eid: EntityID;
+				if (
+					j >= m ||
+					(i < n && ((scanned[i] as number) & INDEX_MASK) < ((listed[j] as number) & INDEX_MASK))
+				) {
+					eid = scanned[i++];
+				} else {
+					eid = listed[j++];
+					if (
+						!this._store.isAlive(eid) ||
+						!this._store.hasComponent(eid, def) ||
+						this._store.isDisabled(eid)
+					)
+						continue;
+				}
+				fn(eid, this._ctx);
+				if (DEV) this._store.trace?.observerFired("set", obs.cid, eid, obs.descriptor);
+			}
+		} finally {
+			if (DEV) accessCheck.leave();
+		}
+	}
+
+	private _dispatchSetArch(obs: ObserverEntry, run: number): void {
 		const fn = obs.onSetArch!;
 		const baseline = obs.lastSetTick;
 		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
-			this.store._forEachChangedArchetype(obs.cid, baseline, (arch) => {
-				fn(arch, this.ctx);
-				// Archetype-granular onSet has no per-entity id; report a single
+			this._store.forEachChangedArchetype(obs.cid, baseline, (arch) => {
+				fn(arch, this._ctx);
+				// Archetype-granular onSet has no per-entity id. Report a single
 				// component-level firing (entity -1) per changed archetype.
-				if (DEV) this.store._trace?.observerFired("set", obs.cid, -1, obs.descriptor);
+				if (DEV) this._store.trace?.observerFired("set", obs.cid, -1, obs.descriptor);
 			});
 		} finally {
 			if (DEV) accessCheck.leave();
 		}
-		// Next tick, only fire for archetypes changed AFTER this tick.
-		obs.lastSetTick = tick + 1;
+		// The next dispatch reports only stamps above this run. A stamp the
+		// callback made equals `run`, so it comes back to this observer never,
+		// and to a later observer in topo order now, which is the glitch-free
+		// order. A host write between frames stamps above `run` and is reported.
+		obs.lastSetTick = run;
 	}
 
 	// =======================================================
-	// yieldExisting
+	// Seeding a new observer with the existing members
 	// =======================================================
 
 	private _yieldExisting(obs: ObserverEntry): void {
 		const fn = obs.onAdd!;
 		// Enabled members only: a disabled entity is excluded from default
 		// queries, so seeding it via onAdd would publish a row that an immediate
-		// onDisable should have removed. It is simply absent at seed, matching
-		// "delete on disable" — `_collectEntitiesWithComponent` bounds on
+		// onDisable should have removed. It is absent at seed, which matches
+		// "delete on disable", `collectEnabledWith` bounds on
 		// `enabled_count`.
-		const eids = this.store._collectEntitiesWithComponent(obs.cid);
+		const eids = this._store.collectEnabledWith(obs.cid);
 		if (eids.length === 0) return;
-		radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
+		this._radixOut = radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
 		// Registration can happen mid-frame (a system closure registering a
 		// yieldExisting observer lazily), so snapshot + restore the caller's frame
-		// the way `dispatchStructural` / `dispatchSet` do — `accessCheck.leave`
+		// the way `dispatchStructural` / `dispatchSet` do, `accessCheck.leave`
 		// nulls `active` rather than popping, and a bare leave here would silently
 		// disable dev-mode access enforcement for the rest of the caller's body.
 		const prev = DEV ? accessCheck.current() : null;
 		if (DEV) accessCheck.enter(obs.descriptor);
 		try {
-			for (let i = 0; i < eids.length; i++) fn(unsafeCast<EntityID>(eids[i]), this.ctx);
+			for (let i = 0; i < eids.length; i++) fn(unsafeCast<EntityID>(eids[i]), this._ctx);
 		} finally {
 			if (DEV) {
 				accessCheck.leave();
@@ -668,22 +804,51 @@ export class ObserverRegistry {
 }
 
 /**
+ * Drop the repeated ids of a list the radix pass has ordered, in place.
+ *
+ * The by-id record dedups on the row tick: a record pushes the entity only
+ * when the row's previous stamp lay at or below the last drain. A row carries
+ * its stamp across a transition, so the record holds for a move. It does not
+ * hold when the entity leaves the component and joins it again, because the
+ * new row has no stamp to carry and reads as 0, which reopens the push. The
+ * entity then sits in the list twice and the observer fires twice for it in
+ * one dispatch. Equal ids are adjacent after the radix pass, so one walk
+ * removes them. Paid one time for each component in a dispatch, not for each
+ * observer on it.
+ */
+function dedupeSorted(eids: EntityID[]): void {
+	const n = eids.length;
+	if (n < 2) return;
+	let w = 1;
+	for (let r = 1; r < n; r++) {
+		if (eids[r] === eids[w - 1]) continue;
+		eids[w++] = eids[r];
+	}
+	eids.length = w;
+}
+
+/**
  * O(K) LSD radix sort of entity ids by their 20-bit dense index (two 10-bit
- * passes), in place. This is the canonical within-observer order — *never* a
+ * passes), in place. This is the canonical within-observer order, *never* a
  * comparator `Array.sort`, which the bench measured as much slower than the
  * entire flush. Distinct live entities have distinct indices,
- * so index order is a total canonical order. `out` is scratch (grown to length);
- * `c0` / `c1` are 1024-entry histograms (reused).
+ * so index order is a total canonical order. `out` is typed scratch, and the
+ * return value is the scratch to keep: the same buffer, or a larger one when
+ * `K` outgrew it. `c0` / `c1` are 1024-entry histograms (reused).
  */
 export function radixSortByIndex(
 	eids: number[],
-	out: number[],
+	out: Uint32Array,
 	c0: Int32Array,
 	c1: Int32Array
-): void {
+): Uint32Array {
 	const K = eids.length;
-	if (K < 2) return;
-	if (out.length < K) out.length = K;
+	if (K < 2) return out;
+	if (out.length < K) {
+		let n = out.length;
+		while (n < K) n *= 2;
+		out = new Uint32Array(n);
+	}
 	c0.fill(0);
 	c1.fill(0);
 	for (let k = 0; k < K; k++) {
@@ -703,4 +868,5 @@ export function radixSortByIndex(
 		const v = out[k];
 		eids[--c1[((v & INDEX_MASK) >> 10) & 1023]] = v;
 	}
+	return out;
 }

@@ -14,20 +14,20 @@
  * It holds four more facts. Each one has one purpose: to be the model for a
  * mechanism that the net alone does not reach.
  *
- *   - `Touch.seq` — a count of the times a `setLink` used this agent as an endpoint.
- *     This file increases the count in its OWN `setLink`. Therefore the set of agents
+ *   - `Touch.seq`, a count of the times a `setLink` used this agent as an endpoint.
+ *     This file increases the count in its own `setLink`. Therefore the set of agents
  *     that a tick writes comes from this file, and it does not come from the ECS.
  *     That set is the expected value for an `onSet` observer with the granularity of
  *     an entity, and for a `changed()` query. Refer to `driver.mjs::changeCheck`.
- *   - `disabled` — the quarantine. A default query must not show a disabled agent.
+ *   - `disabled`, the quarantine. A default query must not show a disabled agent.
  *     Therefore a disabled agent must not age, and it must keep `Fresh`.
  *     `promoteFresh` and `ageTick` below copy that rule. `compare()` then compares
  *     `Age.ticks`, and that comparison is the proof that the row partition of the ECS
- *     kept the row out of `eachChunk`.
- *   - `_quar` — the value of the `Quar.count` column. The HOST writes that column
+ *     kept the row out of `forEachChunk`.
+ *   - `_quar`, the value of the `Quar.count` column. The host writes that column
  *     through the write seam, and not a system. Therefore the comparison of the value
  *     is the check on the `set_field` command of the seam.
- *   - `refSignature` — the archetype of an agent, as a string. This file knows the
+ *   - `refSignature`, the archetype of an agent, as a string. This file knows the
  *     five facts that select the archetype: the tag for the type, `Redex`, `Fresh`,
  *     `Age` and `Tainted`. Therefore it can say which archetypes a tick must report
  *     as changed.
@@ -46,7 +46,7 @@ export class RefNet {
 		this._next = 0;
 		this.live = 0;
 		this.loops = 0;
-		/** Ids created since the last `takeCreated()` — the driver zips these
+		/** Ids created since the last `takeCreated()`, the driver zips these
 		 * against the ECS's to extend the id bijection. */
 		this.created = [];
 		this._fresh = new Set();
@@ -54,7 +54,7 @@ export class RefNet {
 		/** refId -> `Touch.seq`. This is the count of the times a `setLink` used the
 		 * agent as an endpoint. The ECS keeps the same count through
 		 * `ctx.updateField`. Therefore `compare()` compares the value, and
-		 * `driver.changeCheck` compares the SET of agents that a tick wrote. */
+		 * `driver.changeCheck` compares the set of agents that a tick wrote. */
 		this._touch = new Map();
 		/** The agents whose `Touch` this tick wrote, until `takeTouched()`. */
 		this.touched = new Set();
@@ -63,12 +63,12 @@ export class RefNet {
 		 * `Fresh`. */
 		this.disabled = new Set();
 		/** refId -> `Quar.count`. This is the count of the times the quarantine
-		 * disabled the agent. The HOST writes the same column, through
+		 * disabled the agent. The host writes the same column, through
 		 * `queue.setField` on the write seam, so `compare()` compares the value. The
 		 * column is a `u8`, so the count wraps at 256. */
 		this._quar = new Map();
 		// Incremental active-pair index. `redexes()` below is the full O(n) scan and
-		// stays the authority — this exists only so redex *selection* is O(1) instead
+		// stays the authority. This exists only so redex *selection* is O(1) instead
 		// of O(live) per rewrite, which is the difference between a thousand-rewrite
 		// run and a ten-million-rewrite one. `assertRedexIndex` re-derives it from
 		// the scan at every verification point, so it is checked, not trusted.
@@ -117,7 +117,7 @@ export class RefNet {
 		this._fresh.add(id);
 		this._dirty.add(id);
 		// A new row starts at zero. The ECS attaches `Touch` with the same value. An
-		// ATTACH does not mark the dirty list for the row; only `setField` and
+		// attach does not mark the dirty list for the row. Only `setField` and
 		// `updateField` do that. Therefore this code does not put a new agent in
 		// `touched`. `applyRewrite` wires each port of each agent that it creates, so
 		// the `setLink` calls that come after add the agent through the same path that
@@ -182,7 +182,7 @@ export class RefNet {
 		for (const t of spec.types) net.createAgent(t);
 		for (const [a, pa, b, pb] of spec.wires) net.setLink(a, pa, b, pb);
 		net.takeCreated();
-		// The initial net is not "fresh" in the churn sense — it predates tick 0,
+		// The initial net is not "fresh" in the churn sense. It predates tick 0,
 		// and the ECS loads it host-side where no observer fires. Both sides start
 		// from the same baseline: everything aged 0, nothing fresh.
 		net._fresh.clear();
@@ -194,15 +194,15 @@ export class RefNet {
 	// ── per-tick component maintenance (mirrors `world.mjs`) ────────────────
 	//
 	// Split into two calls, in the same relative order as the two ECS systems that
-	// do this work — promotion in PRE_UPDATE, ageing in POST_UPDATE. The split is
+	// do this work, promotion in PRE_UPDATE, ageing in POST_UPDATE. The split is
 	// not cosmetic: it is what leaves an agent carrying `Fresh` across the tick
 	// boundary where the oracle compares, so `Fresh` is actually checked instead of
 	// being promoted away before anyone looks.
 
-	/** Give `Age(0)` to each agent that the PREVIOUS tick created. This is the model
+	/** Give `Age(0)` to each agent that the previous tick created. This is the model
 	 * of the system in UPDATE that runs before the rewrites.
 	 *
-	 * A DISABLED agent keeps `Fresh`. The ECS system reads `qFresh`, which is a
+	 * A disabled agent keeps `Fresh`. The ECS system reads `qFresh`, which is a
 	 * default query, and a default query does not show a disabled row. Therefore this
 	 * skip is not a rule of the harness. It is the behaviour that the row partition
 	 * of the ECS must give, and `compare()` reads `Fresh` at each tick.
@@ -224,8 +224,8 @@ export class RefNet {
 	/** Bump every agent that carries `Age`. Mirrors the POST_UPDATE system. An agent
 	 * that this tick created has no `Age` yet, so this code correctly skips it.
 	 *
-	 * A DISABLED agent does not age, for the reason that `promoteFresh` gives: the
-	 * ECS system uses `qAge.eachChunk`, and that loop stops at `entityCount`, which
+	 * A disabled agent does not age, for the reason that `promoteFresh` gives: the
+	 * ECS system uses `qAge.forEachChunk`, and that loop stops at `entityCount`, which
 	 * excludes the disabled rows. `compare()` compares `Age.ticks` exactly. Therefore
 	 * a disabled row that the loop still visits gives a divergence at the next tick. */
 	ageTick() {
@@ -235,12 +235,12 @@ export class RefNet {
 		return this._fresh.has(a);
 	}
 	/**
-	 * The count of the agents that are `Fresh` AND disabled now.
+	 * The count of the agents that are `Fresh` and disabled now.
 	 *
 	 * `promoteFresh` must keep `Fresh` on each one. `qFresh` in the ECS is a default
 	 * query, and a default query does not show a disabled row. The floor for
 	 * non-vacuity reads this number, and it needs to. The state occurs only because
-	 * the promotion runs in UPDATE, which is one phase AFTER the flush where a
+	 * the promotion runs in UPDATE, which is one phase after the flush where a
 	 * deferred `disable` lands. With the promotion in PRE_UPDATE, the count is always
 	 * zero. An assertion about a state that cannot occur shows nothing.
 	 */
@@ -268,8 +268,8 @@ export class RefNet {
 	 * gives the same plan to both sides.
 	 *
 	 * `plan.churn` is a list of agents that go disable, then enable, then disable
-	 * again, in ONE drain. The ECS must collapse that sequence to one `onDisable`
-	 * call, because an observer fires one time for each NET transition. This model
+	 * again, in one drain. The ECS must collapse that sequence to one `onDisable`
+	 * call, because an observer fires one time for each net transition. This model
 	 * therefore applies the last state only, which is "disabled".
 	 */
 	applyQuarantine(plan) {
@@ -353,7 +353,7 @@ export class RefNet {
 	 * Bring the active-pair index up to date after a batch of link edits.
 	 *
 	 * A pair's status depends only on its two members' principal links and types,
-	 * and every write to either marks the agent dirty — so tearing down each pair
+	 * and every write to either marks the agent dirty, so tearing down each pair
 	 * that touches a dirty agent and re-deriving from the union of (dirty agents ∪
 	 * their ex-partners) is exact. Ex-partners matter because a torn-down pair
 	 * leaves its other member unindexed even though it was never itself dirty.
@@ -385,8 +385,8 @@ export class RefNet {
 		return this._rxA.length;
 	}
 
-	/** Pick an active pair. `rand` decides which, so the reduction ORDER is a
-	 * function of the seed — which is exactly the knob the confluence check turns. */
+	/** Pick an active pair. `rand` decides which, so the reduction order is a
+	 * function of the seed, which is exactly the knob the confluence check turns. */
 	pickRedex(rand) {
 		const i = (rand() * this._rxA.length) | 0;
 		return [this._rxA[i], this._rxB[i]];
@@ -436,7 +436,7 @@ export class RefNet {
 	/**
 	 * Self-check: every live port is wired to a live port that wires back.
 	 *
-	 * This validates the SHARED rewrite spec without reference to the ECS — if the
+	 * This validates the shared rewrite spec without reference to the ECS, if the
 	 * wire-chasing in `applyRewrite` were wrong, it would show up here first, and
 	 * a shared-spec bug is the one failure mode a two-implementation oracle cannot
 	 * otherwise see.
@@ -476,7 +476,7 @@ export class RefNet {
 	 * Canonical encoding of the part of the net reachable from ROOT, up to
 	 * isomorphism: BFS from ROOT visiting ports in index order, renumbering agents
 	 * by first visit. Two nets with the same string are the same net regardless of
-	 * how their ids were allocated — which is what lets the rewrite-count
+	 * how their ids were allocated, which is what lets the rewrite-count
 	 * invariance check compare normal forms produced under different reduction
 	 * orders.
 	 */
@@ -498,12 +498,12 @@ export class RefNet {
 			}
 		};
 		push(root);
-		// Index assignment pass — BFS, ports in order, so numbering is canonical.
+		// Index assignment pass. BFS, ports in order, so numbering is canonical.
 		for (let i = 0; i < order.length; i++) {
 			const a = order[i];
 			for (let p = 0; p < PORTS[this._type[a]]; p++) push(this._tgt[a * MAX_PORTS + p]);
 		}
-		// Emission pass — every index is now known.
+		// Emission pass, every index is now known.
 		const parts = [];
 		for (let i = 0; i < order.length; i++) {
 			const a = order[i];

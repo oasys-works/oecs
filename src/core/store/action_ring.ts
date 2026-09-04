@@ -1,32 +1,32 @@
 /**
- * Action ring — main-thread producer / worker-thread consumer SPSC ring
+ * Action ring, main-thread producer / worker-thread consumer SPSC ring
  * for client input intents (`send_action`-shaped bytes).
  *
  * Same on-the-wire shape as `command_ring.ts`, but with two practical
  * differences:
  *
- *   1. Producer/consumer roles flip — the action ring is main → worker,
+ *   1. Producer and consumer roles flip, the action ring is main → worker,
  *      whereas the command ring is sim → host.
  *   2. Slot payload carries a `length` prefix because client actions are
  *      variable-width (the encoded bytes that would normally go straight
- *      to the WebSocket). `payload[0]` is the length in bytes; bytes
+ *      to the WebSocket). `payload[0]` is the length in bytes. Bytes
  *      `[1..1+length)` are the action payload itself.
  *
  * Layout (identical to command ring header):
  *
- *   [ write_head:   u32 ]   monotonic; modulo `capacity_slots` for slot
+ *   [ write_head:   u32 ]   monotonic. Modulo `capacity_slots` for slot
  *   [ read_head:    u32 ]   monotonic
  *   [ capacity:     u32 ]   slot count, power-of-two
- *   [ overflow:     u32 ]   0 = OK; 1 = ring exhausted (producer side)
+ *   [ overflow:     u32 ]   0 = OK, 1 = ring exhausted (producer side)
  *   [ slot 0:       16 B ]  length: u8, payload: [15]u8
  *   [ slot 1:       16 B ]  ...
  *
  * SPSC contract:
  *   - Producer: main thread, from `GameNetworkClient.send_action`. Pushes
- *     one entry per user action; `Atomics.store`s `write_head` after each.
+ *     one entry per user action. `Atomics.store`s `write_head` after each.
  *   - Consumer: sim worker, drained on each `apply_diff` / `apply_snapshot`
  *     boundary. `Atomics.store`s `read_head` after each pop.
- *   - Today's consumer is a no-op observer (logs / counts in DEV) — the
+ *   - Today's consumer is a no-op observer (logs or counts in DEV), the
  *     wire path still goes main → WebSocket → server. A later change moves
  *     the `PredictionReconciler` into the worker so the action ring becomes
  *     load-bearing for client-side prediction.
@@ -35,35 +35,35 @@
  *   - If main writes a slot when `(write_head - read_head) === capacity`,
  *     it sets `overflow = 1` and the push returns `false`. The server
  *     send path is independent (`_transport.send(...)` ran first), so an
- *     overflow doesn't drop the action — it only drops worker
+ *     overflow doesn't drop the action. It only drops worker
  *     observability for that one entry.
  *
  * Atomics: the head fields (`write_head` / `read_head`) are the
- * cross-thread synchronization edge — the producer runs on the main
+ * cross-thread synchronization edge, the producer runs on the main
  * thread, the consumer in the sim worker, and both alias the same
  * `SharedArrayBuffer`. The producer writes the slot bytes, then
- * `Atomics.store`s `write_head`; the consumer `Atomics.load`s
+ * `Atomics.store`s `write_head`. The consumer `Atomics.load`s
  * `write_head` before touching the slot, reads it, then `Atomics.store`s
  * `read_head`. These SeqCst ops establish the happens-before that a
  * plain `DataView` write does not under the JS memory model:
  * without them the worker could observe a bumped `write_head` before the
  * producer's `setUint8(len)` + payload `set()` are visible and read a
- * torn/stale slot, and the producer could read a stale `read_head`
+ * torn or stale slot, and the producer could read a stale `read_head`
  * (false overflow, or overwrite a slot mid-read). Slot payload bytes
- * stay on plain `DataView` / `Uint8Array` ops — the head Atomics fence
+ * stay on plain `DataView` / `Uint8Array` ops, the head Atomics fence
  * them, so no per-byte atomic is needed. A future PR may still add an
  * `Atomics.wait/notify` pair so the worker can block between actions
- * instead of polling — additive change, no layout shift.
+ * instead of polling, additive change, no layout shift.
  */
 
 /** Total bytes for the ring header. Identical to `command_ring`. */
 export const ACTION_RING_HEADER_BYTES = 16;
 
-/** Fixed slot size — 1-byte length + 15-byte payload. */
+/** Fixed slot size, 1-byte length + 15-byte payload. */
 export const ACTION_RING_SLOT_BYTES = 16;
 
 /** Default ring capacity in slots. Sized for ~250 ms of click-spam at 60
- * Hz on the high end of human input rates; 256 × 16 B = 4 KiB + 16 B
+ * Hz on the high end of human input rates. 256 × 16 B = 4 KiB + 16 B
  * header. */
 export const ACTION_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
@@ -82,11 +82,11 @@ export const ACTION_RING_HEADER_OFFSETS = {
 	overflow_flag: 12
 } as const;
 
-/** `Int32Array` element indices for the four header u32s — the byte
+/** `Int32Array` element indices for the four header u32s, the byte
  * offsets above divided by 4. The head region is accessed exclusively
  * through `Atomics.{load,store}` on this index space so the producer and
  * consumer (different agents over one `SharedArrayBuffer`) get a
- * sequentially-consistent happens-before edge; see the file header. */
+ * sequentially-consistent happens-before edge. See the file header. */
 const HEAD_WRITE_IDX = ACTION_RING_HEADER_OFFSETS.write_head / 4;
 const HEAD_READ_IDX = ACTION_RING_HEADER_OFFSETS.read_head / 4;
 const HEAD_CAPACITY_IDX = ACTION_RING_HEADER_OFFSETS.capacity_slots / 4;
@@ -95,7 +95,7 @@ const HEAD_OVERFLOW_IDX = ACTION_RING_HEADER_OFFSETS.overflow_flag / 4;
 /** Alias an `Int32Array` over the 4-u32 header region at `ringOff`.
  * `Atomics` ops need an integer TypedArray (works on both `ArrayBuffer`
  * and `SharedArrayBuffer` backings). The element-offset arithmetic
- * requires the absolute byte offset to be 4-aligned; `initActionRing`
+ * requires the absolute byte offset to be 4-aligned. `initActionRing`
  * enforces that. Heads are stored as signed int32 but interpreted
  * unsigned by callers via `>>> 0`, matching the prior `getUint32`. */
 function headView(view: DataView, ringOff: number): Int32Array {
@@ -121,7 +121,7 @@ export class ActionRingError extends Error {
 }
 
 /** Initialise the ring header at `ringOff` in the SAB. Zeroes heads
- * and the overflow flag; sets `capacity_slots`. Slot bytes are left
+ * and the overflow flag. Sets `capacity_slots`. Slot bytes are left
  * as-is (callers normally allocate the ring on a zero-initialised SAB). */
 export function initActionRing(view: DataView, ringOff: number, capacitySlots: number): void {
 	if (!isPow2(capacitySlots)) {
@@ -164,8 +164,8 @@ export function pendingActionCount(view: DataView, ringOff: number): number {
 }
 
 /** Push an action into the ring. `payload` must be in
- * `[1, ACTION_RING_MAX_PAYLOAD_BYTES]`; longer payloads — and **empty**
- * ones — are an `ActionRingError` (the producer is the only caller and it
+ * `[1, ACTION_RING_MAX_PAYLOAD_BYTES]`. Longer payloads, and **empty**
+ * ones, are an `ActionRingError` (the producer is the only caller and it
  * can size its inputs ahead of time). The zero-length rejection closes the
  * lower-bound footgun: a 0-byte slot is indistinguishable from
  * `popAction`'s empty-ring sentinel (`0`), so admitting one would let it
@@ -195,7 +195,7 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
 	const slotIdx = writeHead & (capacity - 1);
 	const slotOff = ringOff + ACTION_RING_HEADER_BYTES + slotIdx * ACTION_RING_SLOT_BYTES;
 	view.setUint8(slotOff, len);
-	// boundary: TypedArray interop. The DataView is owned by the caller;
+	// boundary: TypedArray interop. The DataView is owned by the caller
 	// `Uint8Array.set` is the V8-fastpath bulk copy at this seam.
 	const dest = new Uint8Array(view.buffer, slotOff + 1, ACTION_RING_MAX_PAYLOAD_BYTES);
 	dest.set(payload);
@@ -204,7 +204,7 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
 	//
 	// Release store of write_head: the SeqCst store publishes the slot
 	// writes above. The consumer's acquire load of write_head (in
-	// `popAction`) sees them before it touches the slot — this is the
+	// `popAction`) sees them before it touches the slot. This is the
 	// happens-before edge.
 	Atomics.store(heads, HEAD_WRITE_IDX, (writeHead + 1) >>> 0);
 	return true;
@@ -212,10 +212,10 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
 
 /** Pop one action from the ring. Returns the byte length written into
  * `outPayload`, or `0` if the ring was empty. `outPayload` must be at
- * least `ACTION_RING_MAX_PAYLOAD_BYTES`; only the first `length` bytes
+ * least `ACTION_RING_MAX_PAYLOAD_BYTES`. Only the first `length` bytes
  * are meaningful after a non-zero return.
  *
- * NOTE: a `0` return is ambiguous — it means "ring empty" OR "a 0-byte
+ * NOTE: a `0` return is ambiguous. It means "ring empty" or "a 0-byte
  * slot" (the latter only reachable via ABI-skew, since `pushAction`
  * rejects empty payloads). Callers that loop must decide emptiness from
  * the heads (`pendingActionCount` / `write_head === read_head`), not
@@ -251,9 +251,9 @@ export function popAction(view: DataView, ringOff: number, outPayload: Uint8Arra
  * `Uint8Array(length)` so handlers can hold it past the next pop without
  * aliasing the scratch buffer. Returns the number of actions drained.
  *
- * Termination is decided from the heads (`pendingActionCount`), NOT from
- * `popAction`'s return value. A genuine 0-byte slot returns `0` — the same
- * value `popAction` yields on an empty ring — so terminating on `len === 0`
+ * Termination is decided from the heads (`pendingActionCount`), not from
+ * `popAction`'s return value. A genuine 0-byte slot returns `0`, the same
+ * value `popAction` yields on an empty ring, so terminating on `len === 0`
  * would silently consume the zero-length entry and strand everything queued
  * behind it for a tick. The heads check is SPSC-safe: this consumer
  * is the sole reader, so a non-zero pending count cannot race to empty before
@@ -267,14 +267,14 @@ export function drainActionRing(
 	const scratch = new Uint8Array(ACTION_RING_MAX_PAYLOAD_BYTES);
 	while (pendingActionCount(view, ringOff) > 0) {
 		const len = popAction(view, ringOff, scratch);
-		// Slice copies; the handler owns the buffer.
+		// Slice copies. The handler owns the buffer.
 		handler(scratch.slice(0, len));
 		drained++;
 	}
 	return drained;
 }
 
-/** Clear the overflow flag. The producer sets it on a failed push; the
+/** Clear the overflow flag. The producer sets it on a failed push. The
  * consumer can reset it once it has observed and logged the condition,
  * so a single overflow doesn't keep firing dev assertions. */
 export function clearActionRingOverflow(view: DataView, ringOff: number): void {

@@ -5,11 +5,11 @@
  *  - `registerComponent(schema, { name })` threads the debug name into
  *    access-violation and liveness messages (`'Pos' (component 0)`);
  *  - every `ENTITY_NOT_ALIVE` names the operation and decodes the packed id
- *    (index + generation) with the id in `context`;
+ *    (index + generation) with the id in `context`
  *  - access violations use the dedicated `ACCESS_UNDECLARED` category, not
- *    the registration categories, so catch-and-branch works;
- *  - resource/event "not registered" messages interpolate `key.description`
- *    and hint at the registration call;
+ *    the registration categories, so catch-and-branch works
+ *  - resource and event "not registered" messages interpolate `key.description`
+ *    and hint at the registration call
  *  - no user-facing message references snake_case option names or private
  *    tracker issue numbers.
  */
@@ -41,7 +41,7 @@ describe("component debug names", () => {
 			resourceReads: [],
 			resourceWrites: [],
 			fn: (ctx: SystemContext) => {
-				// undeclared read of Vel — must throw naming 'Vel'
+				// undeclared read of Vel, must throw naming 'Vel'
 				ctx.getField(e, Vel as never, "vx" as never);
 			}
 		});

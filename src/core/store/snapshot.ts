@@ -6,7 +6,7 @@
  * column already living inside a single `SharedArrayBuffer`,
  * snapshot collapses to "take a view over the SAB" and restore collapses
  * to "allocate a SAB of the right size, copy bytes in, re-parse the
- * descriptors to rebuild views" — no per-archetype JSON traversal.
+ * descriptors to rebuild views", no per-archetype JSON traversal.
  *
  * Properties:
  *   - **Snapshot is zero-copy.** It's a TypedArray view, not an owned
@@ -15,8 +15,8 @@
  *     survives subsequent writes to the SAB, slice the view first
  *     (`new Uint8Array(snapshot)` copies).
  *   - **Restore validates magic + ABI.** A snapshot from a SAB built with
- *     a different `SIM_ABI_VERSION` is rejected — there's no migration
- *     story across an ABI bump; bumping it implies a new save format.
+ *     a different `SIM_ABI_VERSION` is rejected. There's no migration
+ *     story across an ABI bump. Bumping it implies a new save format.
  *   - **Restore is symmetric with create.** `restore(snapshot(s))`
  *     reproduces a ColumnStore that's byte-identical to `s` (modulo the
  *     SAB instance) and whose views land at the same byte offsets.
@@ -30,7 +30,7 @@ import {
 	readStoreHeader
 } from "./header";
 import { readLayoutDescriptorRegion } from "./descriptor";
-import { buildArchetypeViews, type ColumnStore } from "./column_store";
+import { createArchetypeViews, type ColumnStore } from "./column_store";
 import { DEFAULT_SAB_ALLOCATOR, type BufferAllocator } from "./allocator";
 
 export class StoreRestoreError extends Error {
@@ -41,7 +41,7 @@ export class StoreRestoreError extends Error {
 }
 
 /** Zero-copy `Uint8Array` view over the SAB's used byte range. Length is
- * `header.capacity` — the canonical size, NOT `buffer.byteLength`. The two
+ * `header.capacity`, the canonical size, not `buffer.byteLength`. The two
  * coincide for `DEFAULT_SAB_ALLOCATOR` (it allocates exactly `totalBytes`),
  * but `wasmMemoryAllocator` / `growableSabAllocator` round the buffer up
  * to 64 KiB page boundaries, so `buffer.byteLength` can exceed `capacity` by up
@@ -51,13 +51,13 @@ export class StoreRestoreError extends Error {
  * so we size to `capacity` here.
  *
  * Capacity is read live from `store.view` rather than the cached
- * `store.header` — the in-place grow path bumps the header fields in the
+ * `store.header`, the in-place grow path bumps the header fields in the
  * view but leaves `store.header` a stale snapshot (see `grow.ts`).
  *
- * The view shares storage with the SAB; subsequent writes to columns are
+ * The view shares storage with the SAB. Subsequent writes to columns are
  * visible through it. Callers that need a stable snapshot should slice
  * (`new Uint8Array(view)`) before mutating the store further. */
-export function snapshotColumnStore(store: ColumnStore): Uint8Array {
+export function columnStoreBytesView(store: ColumnStore): Uint8Array {
 	const capacity = store.view.getUint32(STORE_HEADER_OFFSETS.capacity, true);
 	return new Uint8Array(store.buffer, 0, capacity);
 }
@@ -67,12 +67,12 @@ export function snapshotColumnStore(store: ColumnStore): Uint8Array {
  * DataView + per-archetype `ArchetypeViews`).
  *
  * `allocator` selects the backing: the default `DEFAULT_SAB_ALLOCATOR`
- * (`SharedArrayBuffer`) keeps existing callers' behaviour; pass
- * `heapArraybufferAllocator()` to round-trip a snapshot into a pure-TS heap
- * world (no SAB required). Either way only one allocation happens — restore
- * never grows — so a non-in-place allocator is fine here.
+ * (`SharedArrayBuffer`) keeps existing callers' behaviour. Pass
+ * `heapArrayBufferAllocator()` to round-trip a snapshot into a pure-TS heap
+ * world (no SAB required). Either way only one allocation happens, restore
+ * never grows, so a non-in-place allocator is fine here.
  *
- * The input can be any `Uint8Array` — a view from `snapshotColumnStore`,
+ * The input can be any `Uint8Array`, a view from `columnStoreBytesView`,
  * a sliced copy, or bytes read off disk / postMessage. The function
  * honours `bytes.byteOffset` and `bytes.byteLength`, so passing a
  * subarray that doesn't start at offset 0 of its backing buffer is
@@ -110,7 +110,7 @@ export function restoreColumnStore(
 
 	// Allocate the new backing at exactly the snapshot's byte length and copy
 	// the snapshot into it. `Uint8Array.set` is the same memcpy the spec gives
-	// us — bytes are bytes, shared or not.
+	// us, bytes are bytes, shared or not.
 	const buffer = allocator(bytes.byteLength);
 	new Uint8Array(buffer).set(bytes);
 
@@ -118,11 +118,11 @@ export function restoreColumnStore(
 	const header = readStoreHeader(view);
 
 	// Bound the descriptor-region start, then reconstruct under a guard. The header
-	// checks above cover only length-for-header + magic + ABI; the layout region
+	// checks above cover only length-for-header + magic + ABI. The layout region
 	// itself is still trusted. `readLayoutDescriptorRegion` walks
 	// `archetype_count` descriptors reading an unbounded per-archetype `column_count`
-	// from the buffer, and `buildArchetypeViews` then builds a TypedArray per
-	// column at the descriptor's `byte_off`/`row_capacity` — on a truncated / corrupt
+	// from the buffer, and `createArchetypeViews` then builds a TypedArray per
+	// column at the descriptor's `byte_off` and `row_capacity`, on a truncated and corrupt
 	// snapshot both run past the buffer end and throw a raw `RangeError`. Surface a
 	// typed `StoreRestoreError` instead so callers see one error class for all
 	// malformed input.
@@ -137,7 +137,7 @@ export function restoreColumnStore(
 			header.layoutDescriptorOff,
 			header.archetypeCount
 		);
-		const archetypes = buildArchetypeViews(buffer, descriptors);
+		const archetypes = createArchetypeViews(buffer, descriptors);
 		return { buffer, view, header, archetypes };
 	} catch (e) {
 		if (e instanceof RangeError) {

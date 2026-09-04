@@ -1,14 +1,14 @@
 /**
- * onDisable / onEnable observers — the entity enable/disable
+ * onDisable and onEnable observers, the entity enable and disable
  * transition surfaced as a structural-style observer signal so a consumer
  * (the reactive bridge) can drain it.
  *
- * Discipline mirrors onAdd/onRemove: fires at the DEFERRED toggle
- * drain in `flushStructural`, in canonical order, for EVERY component the entity
+ * Discipline mirrors onAdd and onRemove: fires at the deferred toggle
+ * drain in `flushStructural`, in canonical order, for every component the entity
  * carries (a disable is a soft remove of the whole mask from default queries), and
- * collapses to one event per NET transition across a drain. An IMMEDIATE
+ * collapses to one event per net transition across a drain. An immediate
  * `world.disable()` does not fire (like immediate `addComponent`). The signal is
- * a scheduling artifact — OUT of `stateHash`. `yieldExisting` seeds enabled
+ * a scheduling artifact. Out of `stateHash`. `yieldExisting` seeds enabled
  * members only.
  */
 import { describe, expect, it } from "vitest";
@@ -20,7 +20,7 @@ import { openAccess } from "../test_helpers";
 const Pos = { x: "i32", y: "i32" } as const;
 const Vel = { vx: "i32", vy: "i32" } as const;
 
-/** Register a system that runs the next queued command each tick — one toggle
+/** Register a system that runs the next queued command each tick, one toggle
  * script step per `world.update()`. Returns the command queue to push closures. */
 function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
 	const cmds: Array<(ctx: Parameters<NonNullable<Parameters<ECS["registerSystem"]>[0]["fn"]>>[0]) => void> = [];
@@ -38,7 +38,7 @@ function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
 	return cmds;
 }
 
-describe("Observers — onDisable / onEnable", () => {
+describe("Observers, onDisable and onEnable", () => {
 	it("a deferred disable fires onDisable at the flush boundary; re-enable fires onEnable", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
@@ -66,7 +66,7 @@ describe("Observers — onDisable / onEnable", () => {
 		expect(disabled).toEqual([e as number]); // unchanged
 	});
 
-	it("an immediate (host-side) disable does NOT fire onDisable", () => {
+	it("an immediate (host-side) disable does not fire onDisable", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
 		let fires = 0;
@@ -74,7 +74,7 @@ describe("Observers — onDisable / onEnable", () => {
 		const e = world.spawn();
 		world.addComponent(e, P, { x: 0, y: 0 });
 		world.startup();
-		world.disable(e); // immediate path — not an observed point
+		world.disable(e); // immediate path, not an observed point
 		expect(world.isDisabled(e)).toBe(true);
 		expect(fires).toBe(0);
 	});
@@ -95,7 +95,7 @@ describe("Observers — onDisable / onEnable", () => {
 
 		cmds.push((ctx) => ctx.commands.disable(e));
 		world.update(1 / 60);
-		// A disable is a soft remove of the WHOLE mask — both observers fire.
+		// A disable is a soft remove of the whole mask, both observers fire.
 		expect(onP).toEqual([e as number]);
 		expect(onV).toEqual([e as number]);
 	});
@@ -150,7 +150,7 @@ describe("Observers — onDisable / onEnable", () => {
 		const cmds = commandQueue(world, openAccess([P]));
 		world.startup();
 
-		// Disable in DESCENDING queue order; events must come out ascending by index.
+		// Disable in descending queue order. Events must come out ascending by index.
 		cmds.push((ctx) => {
 			for (let i = ids.length - 1; i >= 0; i--) ctx.commands.disable(ids[i]);
 		});
@@ -213,7 +213,7 @@ describe("Observers — onDisable / onEnable", () => {
 		expect(build(true)).toBe(build(false));
 	});
 
-	it("yield_existing seeds enabled members only — a disabled entity is absent", () => {
+	it("yield_existing seeds enabled members only, a disabled entity is absent", () => {
 		const world = new ECS({ deterministic: true });
 		const P = world.registerComponent(Pos);
 		const enabledEntity = world.spawn();
@@ -256,7 +256,7 @@ describe("Observers — onDisable / onEnable", () => {
 		);
 		world.startup();
 		world.update(1 / 60);
-		// The write marked the row dirty, but onSet skips it — the entity is disabled.
+		// The write marked the row dirty, but onSet skips it, the entity is disabled.
 		expect(sets).toEqual([]);
 
 		// Re-enable, then write again: now onSet fires.

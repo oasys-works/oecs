@@ -1,5 +1,5 @@
 /**
- * A short run of the interaction-net oracle, against the LIVE TypeScript sources.
+ * A short run of the interaction-net oracle, against the live TypeScript sources.
  *
  * The complete harness is in this directory, and `README.md` describes it. `run.mjs`
  * is the entry point for a long run, and `mutants.mjs` shows that the oracle finds a
@@ -7,7 +7,7 @@
  * closed form, the invariant of the confluence, a short run with much change, and each
  * layer for the change detection, the row partition, the write seam and the deep walks.
  *
- * THIS FILE IS NOT A PART OF `pnpm test`, AND IT IS NOT A PART OF THE RELEASE GATE.
+ * This file is not part of `pnpm test`, and it is not part of the release gate.
  * The root `vitest.config.ts` collects `src/**` and nothing else, and a file outside
  * the `include` list of a configuration cannot run, not even by its name. Run this
  * file through the configuration next to it:
@@ -16,13 +16,13 @@
  *
  * The reason to keep a vitest file at all, beside `run.mjs`: vitest resolves the
  * sources in `src/` directly, and it defines `__DEV__ = true`. Therefore this file
- * tests the CODE IN THE TREE, with the access checker and each internal assertion
- * active. `run.mjs` tests a BUNDLE, which is what `mutants.mjs` needs.
+ * tests the code in the tree, with the access checker and each internal assertion
+ * active. `run.mjs` tests a bundle, which is what `mutants.mjs` needs.
  *
  * This file has the extension `.mjs`, and it is outside `src/`. This is intentional.
  * `tsconfig.json` includes only `src`, and therefore no tool type-checks the harness.
  *
- * The harness reads the COMPLETE public entry, and not two names from it, because the
+ * The harness reads the complete public entry, and not two names from it, because the
  * layers now use the write seam, the events, the resources, the run conditions, the
  * sparse components and the command log. Therefore the import below is a namespace.
  */
@@ -34,7 +34,7 @@ import { assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs"
 import { PROBES } from "./surface.mjs";
 
 describe("interaction-net oracle (deterministic simulation, lockstep vs reference)", () => {
-	it("the rule table is linear — the precondition for every confluence claim", () => {
+	it("the rule table is linear, the precondition for every confluence claim", () => {
 		expect(() => assertRulesLinear()).not.toThrow();
 	});
 
@@ -69,7 +69,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 	);
 
 	// Commutation is the only rule that grows the net, so these carry the
-	// spawn/allocation pressure.
+	// spawn and allocation pressure.
 	it.each([5, 7])("duplication tree depth %i grows, then normalises cleanly", (depth) => {
 		const spec = assertNetSpecValid(dupTree(depth));
 		const stats = runCase(lib, spec, {
@@ -85,7 +85,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 		expect(stats.archetypes.size).toBeGreaterThanOrEqual(8);
 	});
 
-	// Unstructured churn — and the only generator that produces CON~CON / DUP~DUP.
+	// Unstructured churn, and the only generator that produces CON~CON and DUP~DUP.
 	it.each([1, 3, 6])("random net seed %i churns without diverging", (seed) => {
 		const spec = assertNetSpecValid(randomNet(seed, 30, 18, 20));
 		const stats = runCase(lib, spec, {
@@ -102,7 +102,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 
 	// The deepest oracle: strong confluence means the rewrite count and the normal
 	// form are order-invariant. If the ECS's storage loses a link or mis-migrates a
-	// row under one reduction order and not another, these part company — and no
+	// row under one reduction order and not another, these part company, and no
 	// reference implementation is needed to see it.
 	it.each([
 		["erasureTree(6)", () => erasureTree(6)],
@@ -124,8 +124,8 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 	});
 
 	// A reference reduced alone and the same reference reduced inside the lockstep
-	// tick loop must agree exactly — a check on the harness rather than the ECS.
-	// The quarantine draws from its OWN generator for this reason: a shared stream
+	// tick loop must agree exactly, a check on the harness rather than the ECS.
+	// The quarantine draws from its own generator for this reason: a shared stream
 	// would give the two runs different reduction orders.
 	it("the tick loop does not perturb the reference model", () => {
 		const spec = assertNetSpecValid(dupTree(6));
@@ -146,7 +146,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 	// ── the provenance layer ────────────────────────────────────────────────
 	// Every case above already runs it (it is on by default) and the deep
 	// assertions live in `world.assertProvenance` / `driver.compactCheck`. These two
-	// tests assert the layer is not INERT — that the cascade, the multi sets, and
+	// tests assert the layer is not inert, that the cascade, the multi sets, and
 	// the orphan reclaim actually happened rather than silently doing nothing.
 	it("cascade-destroys records transitively, firing onRemove for every victim", () => {
 		const spec = assertNetSpecValid(erasureTree(8));
@@ -164,8 +164,8 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 		expect(p.recordsCreated).toBe(stats.rewrites);
 		expect(p.epochsPruned).toBeGreaterThan(2);
 		expect(p.recordsCascaded).toBeGreaterThan(100);
-		// Records are destroyed ONLY by the cascade — nothing ever despawns one
-		// directly — so this equality is the assertion that a `"delete"` cascade fires
+		// Records are destroyed only by the cascade, nothing ever despawns one
+		// directly, so this equality is the assertion that a `"delete"` cascade fires
 		// `onRemove` for every entity it transitively destroys.
 		expect(stats.recordRemoves).toBe(p.recordsCascaded);
 		expect(stats.recordAdds).toBe(p.recordsCreated);
@@ -209,7 +209,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 	});
 
 	// Every structural mutation goes through `ctx.commands` at batch=1, which puts
-	// one rewrite per flush and so the tightest possible observer/migration cadence.
+	// one rewrite per flush and so the tightest possible observer and migration cadence.
 	it("survives per-rewrite flushing (batch=1)", () => {
 		const spec = assertNetSpecValid(dupTree(5));
 		const stats = lockstep(lib, spec, {
@@ -227,7 +227,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 
 	// ── the change detection ────────────────────────────────────────────────
 	// `driver.changeCheck` runs at every tick of every case above, and it holds the
-	// assertions. These two tests assert that the layer is not INERT. An `onSet`
+	// assertions. These two tests assert that the layer is not inert. An `onSet`
 	// observer that never fired, and a `changed()` query that always gave nothing,
 	// would pass every assertion in `changeCheck` except the ones below.
 	it("onSet fires for every write, at both granularities", () => {
@@ -249,8 +249,8 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 	it("the change detection goes quiet on a tick that writes no column", () => {
 		// The idle tail runs after the net reaches its normal form. It applies no
 		// rewrite, so `onSet` and `changed(Touch)` must report nothing, while
-		// `changed(Age)` must stay busy. `changeCheck` asserts all of that; this test
-		// asserts the tail RAN, because a tail of zero ticks proves nothing.
+		// `changed(Age)` must stay busy. `changeCheck` asserts all of that. This test
+		// asserts the tail ran, because a tail of zero ticks proves nothing.
 		const spec = assertNetSpecValid(erasureTree(6));
 		const stats = runCase(lib, spec, {
 			seed: 1,
@@ -276,17 +276,17 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			steps: 4000,
 		});
 		// `quarantineCheck` holds the exact set equality, and `compare` holds the
-		// strongest assertion: a disabled row that `eachChunk` still visits gives the
+		// strongest assertion: a disabled row that `forEachChunk` still visits gives the
 		// wrong `Age.ticks` at the next tick. These are the floors.
 		expect(stats.disableCalls).toBeGreaterThan(100);
 		expect(stats.enableCalls).toBeGreaterThan(50);
 		expect(stats.peakDisabled).toBeGreaterThan(2);
-		// The observers fire for a DEFERRED toggle alone, so every one of these calls
+		// The observers fire for a deferred toggle alone, so every one of these calls
 		// came through the host write seam.
 		expect(stats.disableCalls).toBeGreaterThanOrEqual(stats.enableCalls);
-		// A row that is both `Fresh` and DISABLED. The promotion of `Fresh` runs in
+		// A row that is both `Fresh` and disabled. The promotion of `Fresh` runs in
 		// UPDATE, which is one phase after the flush where a deferred `disable` lands,
-		// so the state occurs — and `promoteFresh` must then keep `Fresh` on the row,
+		// so the state occurs, and `promoteFresh` must then keep `Fresh` on the row,
 		// which `compare()` reads at each tick. With the promotion in PRE_UPDATE the
 		// count is always zero and that assertion is unreachable.
 		expect(stats.freshDisabledTicks).toBeGreaterThan(10);
@@ -330,7 +330,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 
 	// ── the profiles ────────────────────────────────────────────────────────
 	it("runs over an f64 column in a world with no determinism", () => {
-		// A deterministic world REJECTS a float column, so this arm is the only cover
+		// A deterministic world rejects a float column, so this arm is the only cover
 		// for one. It gives up `stateHash`, `capture` and `restore`, which all need
 		// determinism, so `snapEvery` is 0.
 		const spec = assertNetSpecValid(dupTree(5));
@@ -348,6 +348,27 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 		// `compare` compares `Age.fticks` against the same integer that `Age.ticks`
 		// holds, so the float column is checked and not merely present.
 		expect(stats.rewrites).toBeGreaterThan(0);
+	});
+
+	// ── the fingerprint, at each tick and at each phase ─────────────────────
+	it("takes the fingerprint of every agent at each tick, and at each phase of it", () => {
+		// `fingerprintCheck` compares one linear scan of each side at the end of each
+		// tick. Vitest defines `__DEV__ = true`, so the trace seam is present, and the
+		// three checkpoints inside each tick must run as well. The counts are the
+		// proof that the layer ran on each tick, and not on a cadence.
+		const spec = assertNetSpecValid(dupTree(6));
+		const stats = runCase(lib, spec, {
+			seed: 1,
+			label: spec.name,
+			maxBatch: 8,
+			verifyEvery: 4,
+			snapEvery: 8,
+			steps: 100000,
+		});
+		expect(stats.normalised).toBe(true);
+		expect(stats.fpChecks).toBe(stats.ticks);
+		expect(stats.phaseSink).toBe(true);
+		expect(stats.phaseChecks).toBe(3 * stats.ticks);
 	});
 
 	it("runs over the SharedArrayBuffer backing with every layer on", () => {
@@ -374,7 +395,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 // combinators for a run condition. `surface.mjs` gives the complete reason.
 describe("the API surface (model-checked probes)", () => {
 	it.each(PROBES)("%s", (_name, probe, floor) => {
-		// The probe reports the count of the assertions that it REALLY made, as the
+		// The probe reports the count of the assertions that it really made, as the
 		// delta of a shared counter. Therefore this floor catches a probe that took an
 		// early return or lost its assertions in an edit. A hand-written literal could
 		// not: it stays above zero however little the probe did.

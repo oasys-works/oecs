@@ -1,14 +1,14 @@
 /**
- * Relations — (relation, target) pairs on the sparse storage class.
+ * Relations, (relation, target) pairs on the sparse storage class.
  *
  * Covers the issue's acceptance criteria:
- *  - register exclusive + multi-target relations; add/remove pairs; query
+ *  - register exclusive + multi-target relations. Add and remove pairs. Query
  *    forward (`targetOf` / `targetsOf`) and reverse (`sourcesOf`);
- *  - exclusive: adding a second target replaces the first (one per source);
- *  - the reverse index stays consistent through add, remove, and re-target;
- *  - add/remove of a pair causes no archetype transition (`archetype_count`
+ *  - exclusive: adding a second target replaces the first (one per source)
+ *  - the reverse index stays consistent through add, remove, and re-target
+ *  - add or remove of a pair causes no archetype transition (`archetype_count`
  *    and the source's `archetype_id` stay put);
- *  - consistency after churn (random add/remove/re-target), incl. destroy purge.
+ *  - consistency after churn (random add, remove and re-target), incl. destroy purge.
  */
 
 import { describe, expect, it } from "vitest";
@@ -20,7 +20,7 @@ import { SparseRestoreError } from "../../sparse_store";
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-describe("ECS relations — exclusive", () => {
+describe("ECS relations, exclusive", () => {
 	it("registers, adds, queries forward + reverse, and removes", () => {
 		const world = new ECS({ deterministic: true });
 		const Targets = world.relations.register(); // exclusive by default
@@ -87,7 +87,7 @@ describe("ECS relations — exclusive", () => {
 
 		expect(sorted(world.relations.sourcesOf(tgt, R))).toEqual(sorted(srcs));
 
-		// Remove the middle one — reverse index drops only it.
+		// Remove the middle one, reverse index drops only it.
 		world.relations.remove(srcs[1], R);
 		expect(sorted(world.relations.sourcesOf(tgt, R))).toEqual(sorted([srcs[0], srcs[2]]));
 	});
@@ -115,7 +115,7 @@ describe("ECS relations — exclusive", () => {
 	});
 });
 
-describe("ECS relations — multi-target", () => {
+describe("ECS relations, multi-target", () => {
 	it("adds, removes individual pairs, and queries the set both ways", () => {
 		const world = new ECS({ deterministic: true });
 		const Likes = world.relations.register({ multi: true });
@@ -154,7 +154,7 @@ describe("ECS relations — multi-target", () => {
 		expect(world.relations.has(src, Likes)).toBe(false);
 		expect(sorted(world.relations.targetsOf(src, Likes))).toEqual([]);
 
-		// Re-populate, then remove ALL (tgt omitted).
+		// Re-populate, then remove all (tgt omitted).
 		world.relations.add(src, Likes, a);
 		world.relations.add(src, Likes, b);
 		world.relations.remove(src, Likes);
@@ -182,7 +182,7 @@ describe("ECS relations — multi-target", () => {
 describe("relations registration + validation", () => {
 	it("rejects a relation declared both exclusive and multi-target", () => {
 		const world = new ECS({ deterministic: true });
-		// Now a compile error too (RelationOptions is a union) — the cast covers
+		// Now a compile error too (RelationOptions is a union), the cast covers
 		// the JS-caller path the runtime throw still guards.
 		expect(() =>
 			world.relations.register({ exclusive: true, multi: true } as never)
@@ -227,7 +227,7 @@ describe("relations cause no archetype transition", () => {
 });
 
 describe("relations stay consistent through churn + destroy", () => {
-	it("destroying a SOURCE purges it from the reverse index (immediate)", () => {
+	it("destroying a source purges it from the reverse index (immediate)", () => {
 		const store = new Store({ deterministic: true });
 		const R = store.registerRelation();
 		const Likes = store.registerRelation({ multi: true });
@@ -246,13 +246,13 @@ describe("relations stay consistent through churn + destroy", () => {
 		expect(sorted(store.sourcesOf(a, R))).toEqual([]);
 		expect(sorted(store.sourcesOf(a, Likes))).toEqual([]);
 		expect(sorted(store.sourcesOf(b, Likes))).toEqual([]);
-		// Recycled slot starts clean — no inherited membership.
+		// Recycled slot starts clean, no inherited membership.
 		const reused = store.createEntity();
 		expect(store.hasRelation(reused, R)).toBe(false);
 		expect(store.hasRelation(reused, Likes)).toBe(false);
 	});
 
-	it("destroying a SOURCE purges it via the deferred flush path too", () => {
+	it("destroying a source purges it via the deferred flush path too", () => {
 		const store = new Store({ deterministic: true });
 		const R = store.registerRelation();
 		const src = store.createEntity();
@@ -260,7 +260,7 @@ describe("relations stay consistent through churn + destroy", () => {
 		store.addRelation(src, R, tgt);
 
 		store.destroyEntityDeferred(src);
-		store.flushDestroyed();
+		store.flushDestroys();
 
 		expect(sorted(store.sourcesOf(tgt, R))).toEqual([]);
 	});
@@ -288,8 +288,8 @@ describe("relations stay consistent through churn + destroy", () => {
 
 	it("exclusive relations fold into state_hash + snapshot for free (inherited)", () => {
 		// Exclusive targets live in the sparse field, so they ride the sparse
-		// determinism surface with no extra wiring — two worlds with identical
-		// pairs reached by different add/re-target histories hash equal, and the
+		// determinism surface with no extra wiring, two worlds with identical
+		// pairs reached by different add and re-target histories hash equal, and the
 		// pairs round-trip through snapshot/restore.
 		const make = () => {
 			const world = new ECS({ deterministic: true });
@@ -310,7 +310,7 @@ describe("relations stay consistent through churn + destroy", () => {
 
 		expect(w2.world.snapshots.stateHash()).toBe(w1.world.snapshots.stateHash());
 
-		// Snapshot/restore round-trips the exclusive target *and* rebuilds the
+		// Snapshot and restore round-trips the exclusive target *and* rebuilds the
 		// derived reverse index (which is never serialized).
 		const bytes = w1.world.snapshots.captureSparse();
 		const w3 = make();
@@ -327,7 +327,7 @@ describe("relations stay consistent through churn + destroy", () => {
 		const srcs = Array.from({ length: 6 }, () => world.spawn());
 		const tgts = Array.from({ length: 4 }, () => world.spawn());
 
-		// Deterministic LCG so the churn pattern is reproducible.
+		// Deterministic lcg so the churn pattern is reproducible.
 		let s = 12345 >>> 0;
 		const rand = (n: number): number => {
 			s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
@@ -367,13 +367,13 @@ describe("relations stay consistent through churn + destroy", () => {
 	});
 });
 
-describe("ECS relations — snapshot/restore rebuilds the derived indices", () => {
+describe("ECS relations, snapshot and restore rebuilds the derived indices", () => {
 	// The reverse index and the multi forward target sets are *not* in the
 	// sparse store, so `restoreSparse` must rebuild them: exclusive reverse
 	// from the restored sparse target field, multi forward sets + reverse from
 	// the relation section of the snapshot. Before the rebuild landed, a
 	// restored world hashed equal to the original but `sourcesOf` / multi
-	// `targetsOf` returned empty — silent determinism divergence.
+	// `targetsOf` returned empty, silent determinism divergence.
 
 	it("multi: forward sets, reverse index, and state_hash all round-trip", () => {
 		const make = () => {
@@ -421,7 +421,7 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 		w2.w.relations.add(w2.a, w2.R, w2.t2); // same membership, different target
 		expect(w2.w.snapshots.stateHash()).not.toBe(w1.w.snapshots.stateHash());
 
-		// Same end state reached by a different add/remove history hashes equal.
+		// Same end state reached by a different add and remove history hashes equal.
 		const w3 = make();
 		w3.w.relations.add(w3.a, w3.R, w3.t2);
 		w3.w.relations.add(w3.a, w3.R, w3.t1);
@@ -455,9 +455,9 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 	});
 
 	it("a destroyed-target cascade works on a restored world (reverse index live)", () => {
-		// Down-traversal (`cascadeOf`) and `delete`/`clear` cleanup both ride the
+		// Down-traversal (`cascadeOf`) and `delete` or `clear` cleanup both ride the
 		// reverse index. If restore didn't rebuild it, a restored tree would not
-		// cascade — the behavioural symptom of the silent-divergence bug.
+		// cascade, the behavioural symptom of the silent-divergence bug.
 		const make = () => {
 			const w = new ECS({ deterministic: true });
 			const ChildOf = w.relations.register({ onDeleteTarget: "delete" });
@@ -488,7 +488,7 @@ describe("ECS relations — snapshot/restore rebuilds the derived indices", () =
 	});
 });
 
-describe("relation restore validation — defensive hardening", () => {
+describe("relation restore validation, defensive hardening", () => {
 	it("rejects a multi relation source index past MAX_INDEX", () => {
 		// The multi forward set is keyed by source entity index and that index is
 		// fed to createEntityId(idx, gens[idx]); an unvalidated wild u32 reads
@@ -516,7 +516,7 @@ describe("relation restore validation — defensive hardening", () => {
 	});
 
 	it("rejects a decoded multi-relation target that is not a well-formed packed EntityID", () => {
-		// Symmetric with the source-index guard above: a crafted / truncated snapshot
+		// Symmetric with the source-index guard above: a crafted and truncated snapshot
 		// can decode a multi target whose bits fall outside the 31-bit packed layout.
 		// `getEntityIndex` would then mask it onto an unrelated live slot (the ABA
 		// mis-binding the guard prevents). Patch a valid one-target multi snapshot's
@@ -540,7 +540,7 @@ describe("relation restore validation — defensive hardening", () => {
 		const targetOff = 8 + sparseLen + 20;
 
 		// Each corruption is an exactly-representable f64 that round-trips through
-		// setFloat64/getFloat64 but fails the [0, MAX_ENTITY_ID] integer check.
+		// setFloat64 and getFloat64 but fails the [0, MAX_ENTITY_ID] integer check.
 		for (const bad of [2 ** 40, -1, 1.5, MAX_ENTITY_ID + 1]) {
 			const bytes = baseBytes.slice(); // fresh copy per case
 			const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

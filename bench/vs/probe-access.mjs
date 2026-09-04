@@ -3,7 +3,7 @@
  *
  * The comparison shows that oecs uses 21.7 ns for a read of a field by id, and that
  * the other libraries use 0.93 ns. It also shows 8.65 ns for a test of membership in
- * oecs, against 6.96 ns in bitECS. Neither value gives the REASON. The statement
+ * oecs, against 6.96 ns in bitECS. Neither value gives the reason. The statement
  * "dense rows cost one lookup" is only a part of the reason. This probe divides both
  * operations into stages through the public API. It then measures the two possible
  * causes separately.
@@ -87,17 +87,17 @@ console.log(`
     3 fields: ref reuse vs 3 getField ${tRef3.toFixed(2)} vs ${tGet3.toFixed(2)} ns`);
 
 // ── suspect 1: the string-keyed field index ─────────────────────────────────
-// `readField` ends in `this._fieldIndex[cid][field]` — a STRING-keyed load on an
+// `readField` ends in `this._fieldIndex[cid][field]`, a string-keyed load on an
 // object whose shape differs per component, i.e. a megamorphic keyed access on
 // every single read. A numeric field handle would make it an array index. This
 // prices the difference on the same data.
-console.log("\nsuspect 1 — string-keyed field index vs numeric index (synthetic)");
+console.log("\nsuspect 1, string-keyed field index vs numeric index (synthetic)");
 {
 	const COMPS = 24;
 	const byName = [];
 	const byIdx = [];
 	for (let c = 0; c < COMPS; c++) {
-		// A distinct object SHAPE per component, which is what an object literal
+		// A distinct object shape per component, which is what an object literal
 		// built from each schema's own field names produces.
 		const o = {};
 		for (let f = 0; f < 3; f++) o[`f${c}_${f}`] = f;
@@ -135,10 +135,10 @@ console.log("\nsuspect 1 — string-keyed field index vs numeric index (syntheti
 
 // ── suspect 2: what bitECS's membership test actually costs ─────────────────
 // bitECS: world[$internal] → componentMap.get(component) → 2 property loads →
-// entityMasks[gen][eid] & bitflag. Notably NO liveness check: a recycled id reads
+// entityMasks[gen][eid] & bitflag. Notably no liveness check: a recycled id reads
 // whatever mask now sits at that slot. This prices that exact shape, so the 6.96
 // vs 8.65 gap can be attributed rather than guessed at.
-console.log("\nsuspect 2 — bitECS's has() shape vs oecs's (synthetic)");
+console.log("\nsuspect 2, bitECS's has() shape vs oecs's (synthetic)");
 {
 	const comp = {};
 	const componentMap = new Map([[comp, { generationId: 0, bitflag: 1 }]]);

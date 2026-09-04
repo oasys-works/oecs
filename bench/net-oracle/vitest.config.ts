@@ -1,7 +1,7 @@
 /**
  * The vitest configuration for the oracle alone.
  *
- * The root `vitest.config.ts` collects `src/**` and NOTHING ELSE. That is
+ * The root `vitest.config.ts` collects `src/**` and nothing else. That is
  * deliberate: `bench/` is a local tool, it is not a part of the package, and the
  * oracle must not run in the release gate. A file outside the `include` list of a
  * configuration cannot run, not even by its name, so this second configuration is
@@ -33,7 +33,7 @@ export default defineConfig({
 		environment: "node",
 		root,
 		include: ["bench/net-oracle/*.test.mjs"],
-		// The oracle reduces nets with tens of thousands of rewrites, and it verifies at
+		// the oracle reduces nets with tens of thousands of rewrites, and it verifies at
 		// each tick. That is much slower than a unit test, so the default limit of five
 		// seconds for each test is too small.
 		testTimeout: 120000,

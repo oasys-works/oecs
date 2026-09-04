@@ -20,7 +20,7 @@ commit.
 ```ts
 import { SCHEDULE, installHostCommandSeam, spawnEntry } from "@oasys/oecs";
 
-const queue = installHostCommandSeam(ecs);   // BEFORE your systems and startup()
+const queue = installHostCommandSeam(ecs);   // before your systems and startup()
 ecs.addSystems(SCHEDULE.UPDATE, move);       // schedule your systems after you install the seam
 ecs.startup();
 
@@ -73,8 +73,8 @@ remove(entityId, def): this;
 setField<S>(entityId, def, field, value): this;
 disable(entityId): this;   enable(entityId): this;
 push(cmd: HostCommand): this;   // add command data that you built (the codec, replay, or editor path)
-readonly pending: number;       // the number of commands in the buffer that are not applied
-clear(): number;                // remove each buffered command WITHOUT applying it; gives how many
+readonly pendingCount: number;  // the number of commands in the buffer that are not applied
+clear(): number;                // remove each buffered command without applying it. Gives how many
 ```
 
 `clear` is for the removal of the edits in the queue, for example when a scene unloads. It does not
@@ -151,7 +151,7 @@ import { HostCommandRecorder, serializeCommandLog, deserializeCommandLog, replay
 const recorder = new HostCommandRecorder(seed);
 const queue = installHostCommandSeam(ecs, { recorder });
 // …run the session…
-const log = recorder.log();                 // a live view — serialize it to make a copy
+const log = recorder.log();                 // a live view, serialize it to make a copy
 const json = serializeCommandLog(log);
 ```
 
@@ -159,8 +159,8 @@ const json = serializeCommandLog(log);
 class HostCommandRecorder implements HostCommandSink {
   constructor(seed?: number);
   readonly seed: number;
-  log(): CommandLog;                         // a LIVE view, and not a copy
-  snapshotLog(): CommandLog;                 // a stable deep copy — the safe default
+  log(): CommandLog;                         // a live view, and not a copy
+  snapshotLog(): CommandLog;                 // a stable deep copy, the safe default
 }
 interface CommandLog { readonly seed: number; readonly startup: readonly HostCommand[]; readonly ticks: readonly RecordedTick[]; }
 interface RecordedTick { readonly tick: number; readonly dt: number; readonly commands: readonly HostCommand[]; }
@@ -199,7 +199,7 @@ a fixed size into the same `applyHostCommand`. You supply the operation codes. o
 mechanism and the codecs.
 
 ```ts
-// The ring transport is a wire and ABI surface — @oasys/oecs/internal (no semver guarantees).
+// the ring transport is a wire and ABI surface, @oasys/oecs/internal (no semver guarantees).
 import { HostCommandDispatcher, ringSetFieldCodec, ringDespawnCodec, ringDisableCodec,
          ringEnableCodec, ringRemoveComponentCodec, HOST_COMMAND_PAYLOAD_BYTES } from "@oasys/oecs/internal";
 
@@ -218,7 +218,7 @@ use the typed transport only. Exactly one dispatcher must drain each ring.
 
 ## See also
 
-- [determinism](./determinism.md) — the guarantee of fidelity for a replay
-- [editor](./editor.md) — undo and redo, which are built on this queue
-- [reactive](./reactive.md) — the read side (ECS to UI) that pairs with this write side
-- [systems](./systems.md) — `exclusive` systems, which the apply system is
+- [determinism](./determinism.md), the guarantee of fidelity for a replay
+- [editor](./editor.md), undo and redo, which are built on this queue
+- [reactive](./reactive.md), the read side (ECS to UI) that pairs with this write side
+- [systems](./systems.md), `exclusive` systems, which the apply system is

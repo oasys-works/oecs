@@ -151,7 +151,7 @@ function Dots() {
     <svg>
       <For each={positionView.keys()}>
         {(id) => {
-          const pos = positionView.cell(id);
+          const pos = positionView.bindCell(id);
           return <circle cx={pos()?.x ?? 0} cy={pos()?.y ?? 0} r={3} />;
         }}
       </For>

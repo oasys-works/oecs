@@ -1,25 +1,25 @@
 /**
- * Lifecycle / duration soak — the monotonic memory-envelope axis.
+ * Lifecycle and duration soak, the monotonic memory-envelope axis.
  *
  * The op-count-bounded soak (`entity_scale.test.ts`, "no corruption at moderate
  * scale") already covers correctness-at-scale, and the generation-exhaustion
  * slot-retirement path (`unit/store.test.ts`) covers clean recycle vs.
- * retire at a slot's boundary. Those are intentionally NOT re-covered here.
+ * retire at a slot's boundary. Those are intentionally not re-covered here.
  *
- * THIS file covers the remaining axis: a duration / lifecycle-bounded churn whose
+ * This file covers the remaining axis: a duration / lifecycle-bounded churn whose
  * *cumulative* creates far exceed *peak concurrency*, asserting the allocator's
  * by-design envelope properties:
  *
- *   1. `entityCount` returns to baseline after bounded-live churn; survivors stay
+ *   1. `entityCount` returns to baseline after bounded-live churn. Survivors stay
  *      alive with intact data, and every dead handle stays dead.
- *   2. Total backing `byteLength` ratchets to peak concurrency and NEVER grows
- *      again — no per-cycle creep keyed to *cumulative* creates.
+ *   2. Total backing `byteLength` ratchets to peak concurrency and never grows
+ *      again, no per-cycle creep keyed to *cumulative* creates.
  *   3. `entityHighWater` stays flat under steady-state churn because freed slots
- *      recycle, and advances ONLY when a slot's generation legitimately retires.
+ *      recycle, and advances only when a slot's generation legitimately retires.
  *
  * `entityHighWater` is read through the store's entity-index region `length`
- * header — exactly the field `Store.createEntity` mirrors the private counter
- * into (`store.ts`) for the SAB/WASM reader — so the test observes the
+ * header, exactly the field `Store.createEntity` mirrors the private counter
+ * into (`store.ts`) for the SAB or WASM reader, so the test observes the
  * production value, not a TS-side proxy.
  */
 
@@ -32,7 +32,7 @@ import { entityIndexLength } from "../../../store";
 const Position = ["x", "y"] as const;
 
 /** Read the slot high-water (== the private `Store.entityHighWater`) the way
- * the SAB/WASM reader does: the `length` field of the entity-index region.
+ * the SAB or WASM reader does: the `length` field of the entity-index region.
  * Re-reads `columnStore` each call so a mid-soak buffer grow can't stale the
  * view. */
 function highWater(store: ECS | Store): number {
@@ -40,7 +40,7 @@ function highWater(store: ECS | Store): number {
 	return entityIndexLength(cs.view, cs.header.entityIndexOff);
 }
 
-describe("Lifecycle / duration soak", () => {
+describe("Lifecycle and duration soak", () => {
 	it("bounded-live churn returns entityCount to baseline; survivors keep their data, dead handles stay dead", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -70,7 +70,7 @@ describe("Lifecycle / duration soak", () => {
 			dead.push(...temps);
 		}
 
-		// Back to baseline exactly — no live count leaked by the churn.
+		// Back to baseline exactly, no live count leaked by the churn.
 		expect(world.entityCount).toBe(baseline);
 		// Survivors alive with untouched data despite ~10k swap-remove relocations.
 		for (let i = 0; i < survivors.length; i++) {
@@ -78,7 +78,7 @@ describe("Lifecycle / duration soak", () => {
 			expect(world.getField(survivors[i], Pos, "x")).toBe(i);
 			expect(world.getField(survivors[i], Pos, "y")).toBe(i * 2);
 		}
-		// Every temporary handle reads dead — recycled slots don't resurrect them.
+		// Every temporary handle reads dead, recycled slots don't resurrect them.
 		for (const d of dead) expect(world.isAlive(d)).toBe(false);
 	});
 
@@ -90,7 +90,7 @@ describe("Lifecycle / duration soak", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
-		// Rolling FIFO window held at exactly PEAK live entities.
+		// Rolling FIFO window held at exactly peak live entities.
 		const live: EntityID[] = [];
 		const spawn = (n: number): void => {
 			for (let i = 0; i < n; i++) {
@@ -105,9 +105,9 @@ describe("Lifecycle / duration soak", () => {
 			world.flush();
 		};
 
-		// Warm-up: reach peak concurrency AND run one full churn cycle so every
+		// Warm-up: reach peak concurrency and run one full churn cycle so every
 		// one-time lazy growth (column doublings, region first-touch, free-list
-		// priming) happens BEFORE we lock the high-water marks.
+		// priming) happens before we lock the high-water marks.
 		spawn(PEAK);
 		despawn(CHURN);
 		spawn(CHURN);
@@ -116,9 +116,9 @@ describe("Lifecycle / duration soak", () => {
 		const peakHw = highWater(world);
 		expect(world.entityCount).toBe(PEAK);
 
-		// Soak: cumulative creates climb to PEAK + CYCLES*CHURN (= 16_000) while the
-		// live count is pinned at PEAK. A naive cumulative-keyed allocator would
-		// ratchet byteLength / high-water every cycle; recycling keeps both flat.
+		// Soak: cumulative creates climb to peak + cycles*churn (= 16_000) while the
+		// live count is pinned at the peak. A naive cumulative-keyed allocator would
+		// ratchet byteLength / high-water every cycle. Recycling keeps both flat.
 		for (let cycle = 0; cycle < CYCLES; cycle++) {
 			despawn(CHURN);
 			spawn(CHURN);
@@ -145,8 +145,8 @@ describe("Lifecycle / duration soak", () => {
 			expect(highWater(store)).toBe(1);
 		}
 
-		// Slot 0 now holds MAX_LIVE_GENERATION; the next destroy exhausts its
-		// counter and RETIRES the slot instead of recycling it — so the
+		// Slot 0 now holds MAX_LIVE_GENERATION. The next destroy exhausts its
+		// counter and retires the slot instead of recycling it, so the
 		// following allocation must take a fresh slot and bump the high-water.
 		store.destroyEntity(id);
 		const next = store.createEntity();

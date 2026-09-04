@@ -4,24 +4,24 @@ Version 0.4 derives oecs again from the ECS of the upstream oasys engine. The fu
 moved to the shape of that engine. So **each consumer meets breaking changes**. But those changes
 group into a small number of mechanical rules:
 
-1. **Names** — Each method, property, and field changed from `snake_case` to `camelCase` (§0), and
+1. **Names**. Each method, property, and field changed from `snake_case` to `camelCase` (§0), and
    a small number of verbs changed also.
-2. **Construction of the world** — `WorldOptions` becomes `ECSOptions`, and `initial_capacity`
+2. **Construction of the world**, `WorldOptions` becomes `ECSOptions`, and `initial_capacity`
    becomes the `memory` surface (§1).
-3. **Systems** — A `__DEV__` access checker now requires each system that touches component data to
+3. **Systems**. A `__DEV__` access checker now requires each system that touches component data to
    declare `reads` and `writes`, through the config form (§2).
-4. **Iteration and column access** — Mutation is now the default, because the `_mut` suffix is
+4. **Iteration and column access**. Mutation is now the default, because the `_mut` suffix is
    gone. The high-frequency loop that mutates is `eachChunk` with `cols.mut` (§3).
-5. **Events and resources** — The key factories changed their names, and the shape of an event
+5. **Events and resources**. The key factories changed their names, and the shape of an event
    schema changed (§4).
-6. **Errors** — The vocabulary is still public. `is_ecs_error` became `isEcsError` (§5).
+6. **Errors**. The vocabulary is still public. `is_ecs_error` became `isEcsError` (§5).
 
 Types and handles stay **PascalCase** (`ECS`, `EntityID`, `SCHEDULE`, and your own `Pos` and
 `Vel`). The SCREAMING_SNAKE constants (`SCHEDULE.UPDATE`, and others) did not change.
 
 ---
 
-## 0. Names — from `snake_case` to `camelCase`
+## 0. Names, from `snake_case` to `camelCase`
 
 Each method, property, parameter, and field on the public surface is now `camelCase`. For most
 calls it is a mechanical rename, one to one:
@@ -42,18 +42,18 @@ if (world.isAlive(e)) world.query(Pos).forEach((arch) => { /* ... */ });
 
 These renames are examples, and the list is not complete, because the rule applies to each name:
 
-- `register_component` → `registerComponent`; `register_tag` → `registerTag`
+- `register_component` → `registerComponent`. `register_tag` → `registerTag`
 - `create_entity` → `createEntity`
-- `add_component(s)` → `addComponent(s)`; `remove_component(s)` → `removeComponent(s)`
-- `has_component` → `hasComponent`; `is_alive` → `isAlive`
-- `get_field` → `getField`; `set_field` → `setField`
-- `register_system` → `registerSystem`; `add_systems` → `addSystems`; `remove_system` →
+- `add_component(s)` → `addComponent(s)`. `remove_component(s)` → `removeComponent(s)`
+- `has_component` → `hasComponent`. `is_alive` → `isAlive`
+- `get_field` → `getField`. `set_field` → `setField`
+- `register_system` → `registerSystem`. `add_systems` → `addSystems`. `remove_system` →
   `removeSystem`
-- `register_event` → `registerEvent`; `register_signal` → `registerSignal`
-- `register_resource` → `registerResource`; `set_resource` → `setResource`; `has_resource` →
+- `register_event` → `registerEvent`. `register_signal` → `registerSignal`
+- `register_resource` → `registerResource`. `set_resource` → `setResource`. `has_resource` →
   `hasResource`
 - `world_tick` → `ecsTick` (on the system context)
-- `entity_count` → `entityCount`; `entity_ids` → `entityIds`
+- `entity_count` → `entityCount`. `entity_ids` → `entityIds`
 
 The camelCase surface is the final state, and not a temporary condition. Version 0.4 shipped no
 snake_case alias.
@@ -67,13 +67,13 @@ snake_case alias.
 | `query.any_of(...)` | `query.anyOf(...)` | the term for a minimum of one |
 | `query.for_each(...)` | `query.forEach(...)` | read-only iteration of the archetypes |
 | `arch.get_column(def, field)` | `arch.getColumnRead(def, field)` | a read-only column |
-| `arch.get_column_mut(def, field, tick)` | *(internal)* — mutate with `query.eachChunk` and `cols.mut(def)` | see §3 |
+| `arch.get_column_mut(def, field, tick)` | *(internal)*, mutate with `query.eachChunk` and `cols.mut(def)` | see §3 |
 | `ctx.ref(def, e)` *(was read-only)* | `ctx.refRead(def, e)` | a read-only ref |
 | `ctx.ref_mut(def, e)` | `ctx.ref(def, e)` | the mutable ref is now the name with no suffix |
 | `world.destroy_entity_deferred(id)` | `world.destroyEntity(id)` | still deferred to the flush at the end of the phase |
 | `event_key(...)` / `signal_key(...)` | `eventKey(...)` / `signalKey(...)` | see §4 |
 | `resource_key(...)` | `resourceKey(...)` | see §4 |
-| `is_ecs_error(...)` | `isEcsError(...)` | still public — see §5 |
+| `is_ecs_error(...)` | `isEcsError(...)` | still public, see §5 |
 
 > **The meaning of the `ref` name changed.** In 0.3, `ctx.ref` gave a *read-only* ref, and
 > `ctx.ref_mut` gave the writable one. In 0.4 the name with no suffix is the **mutable** default
@@ -84,7 +84,7 @@ snake_case alias.
 
 ---
 
-## 1. Construction of the world — `initial_capacity` is gone
+## 1. Construction of the world, `initial_capacity` is gone
 
 `WorldOptions` is now `ECSOptions`. `fixed_timestep` is now `fixedTimestep`. `initial_capacity` is
 removed, and the `memory` surface replaces it. If you give one of the old option keys, the
@@ -108,7 +108,7 @@ const world = new ECS({ memory: { columnCapacity: 4096 } });              // set
 > removed arm throws with its new spelling, so nothing fails in silence.
 
 The default profile is a **pure-TS heap**: a plain resizable `ArrayBuffer`. So it needs no
-`SharedArrayBuffer`, and no cross-origin isolation (COOP/COEP). To select the shared-memory profile,
+`SharedArrayBuffer`, and no cross-origin isolation (COOP and COEP). To select the shared-memory profile,
 for worker offload or a WASM compute backend, use the `@oasys/oecs/shared` entry point. The `memory`
 field took one of the arms `budget`, `maxBytes`, `columnCapacity`, `shared`, `wasm`, or `allocator`.
 The package also exports `resolveECSMemory(...)`,
@@ -132,7 +132,7 @@ access. So each component access inside it throws in development. **Move each sy
 or writes ECS data to the config form**, and declare what it touches:
 
 ```ts
-// 0.3 — the query-builder form, with no access declaration
+// 0.3, the query-builder form, with no access declaration
 const move = world.register_system(
   (q, ctx, dt) => {
     q.for_each((arch) => {
@@ -150,14 +150,14 @@ const move = world.register_system(
 );
 world.add_systems(SCHEDULE.UPDATE, move);
 
-// 0.4 — the config form: declare the access, capture the query, and iterate with eachChunk
+// 0.4, the config form: declare the access, capture the query, and iterate with eachChunk
 const movers = world.query(Pos, Vel);
 const move = world.registerSystem({
   reads: [Vel],
   writes: [Pos],            // a declared write also gives read access to the same component
   fn: (ctx, dt) => {
     movers.eachChunk((cols, count) => {
-      const { x, y }   = cols.mut(Pos);   // the full group; mut() sets the change tick one time
+      const { x, y }   = cols.mut(Pos);   // the full group. Mut() sets the change tick one time
       const { vx, vy } = cols.read(Vel);  // a read-only group
       for (let i = 0; i < count; i++) {
         x[i] += vx[i] * dt;
@@ -188,7 +188,7 @@ Notes:
 
 ---
 
-## 3. Column and ref access — mutable by default, and read-only by an explicit name
+## 3. Column and ref access, mutable by default, and read-only by an explicit name
 
 The name of the accessor now shows the ability to mutate. The `_mut` suffix is gone, and read-only
 carries `Read`. The mutable accessors also handle the tick for you.
@@ -218,7 +218,7 @@ mutable ref and sets the change tick, so that `query.changed(...)` sees it.
 
 ---
 
-## 4. Events and resources — renamed factories, and a new shape for an event schema
+## 4. Events and resources, renamed factories, and a new shape for an event schema
 
 The key factories changed their names: `event_key` → `eventKey`, `signal_key` → `signalKey`, and
 `resource_key` → `resourceKey`. The **type parameter of an event schema also changed**, from a
@@ -227,12 +227,12 @@ the value type, a field with a brand, for example `EntityID`, keeps that brand t
 `read`.
 
 ```ts
-// 0.3 — the schema is a tuple of field names
+// 0.3, the schema is a tuple of field names
 const Damage = event_key<readonly ["target", "amount"]>("Damage");
 world.register_event(Damage, ["target", "amount"]);
 world.emit(Damage, { target: e, amount: 5 });
 
-// 0.4 — the schema is a record of field to value type; registerEvent still takes the list of names
+// 0.4, the schema is a record of field to value type. `registerEvent` still takes the list of names
 const Damage = eventKey<{ target: EntityID; amount: number }>("Damage");
 world.registerEvent(Damage, ["target", "amount"]);
 world.emit(Damage, { target: e, amount: 5 });
@@ -261,7 +261,7 @@ world.removeResource(Clock);   // new in 0.4
 
 ---
 
-## 5. Errors — still public, and `is_ecs_error` is now `isEcsError`
+## 5. Errors, still public, and `is_ecs_error` is now `isEcsError`
 
 The error vocabulary of the ECS **is still part of the public surface**. Only the name of the guard
 changed, from snake case to camel case. `ECSError` and the `ECS_ERROR` category enum keep their
@@ -310,41 +310,41 @@ paths throw, are plain `Error` objects, and the package exports them beside the 
 These additions are optional. Your 0.3 code needs none of them, but they are the reason for the
 increase of the major version. Use them as they help you:
 
-- **Determinism** — `new ECS({ deterministic: true })`, and then `world.stateHash()`,
+- **Determinism**. `new ECS({ deterministic: true })`, and then `world.stateHash()`,
   `world.snapshot()`, and `world.restoreInto(bytes)`, with `snapshotSparse` and `restoreSparse`.
   The hash is independent of the storage type: a heap world and a shared world with the same
   history agree.
-- **Observers** — `world.observe(def, { onAdd, onRemove, onSet, onDisable, onEnable })`, for a
+- **Observers**. `world.observe(def, { onAdd, onRemove, onSet, onDisable, onEnable })`, for a
   structure or for one entity.
-- **Relations** — `registerRelation`, `addRelation`, and `removeRelation`. The reads are
+- **Relations**. `registerRelation`, `addRelation`, and `removeRelation`. The reads are
   `targetOf`, `targetsOf`, and `sourcesOf`. The traversal helpers are `ancestorsOf`, `rootOf`, and
   `cascadeOf`. The presets are `ChildOf` and `IsA` (`registerChildOf` and `registerIsA`). The
   `(R, *)` and `(*, T)` wildcard queries are `withRelation`, `forEachRelatedTo`, and
   `ANY_RELATION`. There are also the hierarchy queries (`query.hierarchy(rel, depth)`), and the
   cleanup policies for a deleted target.
-- **Sparse component storage** — `registerSparseComponent` and `registerSparseTag`, `addSparse` and
+- **Sparse component storage**. `registerSparseComponent` and `registerSparseTag`, `addSparse` and
   `removeSparse`, and `query.withSparse(...)`. This is data outside the archetype. It uses no
   identity bit, and it causes no archetype transition.
-- **Enable and disable for an entity** — `disable`, `enable`, and `isDisabled`. A disabled row is
+- **Enable and disable for an entity**. `disable`, `enable`, and `isDisabled`. A disabled row is
   in a partition at the end of the archetype, and a default query skips it. Use
   `query.includeDisabled()` to include those rows.
-- **Templates and bundles** — `world.template([...])` with `world.createEntity(template, overrides)`
+- **Templates and bundles**. `world.template([...])` with `world.createEntity(template, overrides)`
   and `world.createEntities(template, count)`, for a create with no transition. Also
   `bundle(def, values)` with `world.spawnBundle(...)` and `ctx.commands.spawn(...)`.
-- **System sets and run conditions** — `systemSet(...)` with `world.configureSet(set, { ... })`,
+- **System sets and run conditions**. `systemSet(...)` with `world.configureSet(set, { ... })`,
   plus `runIfResourceEq`, `runEveryNTicks`, and `runIfAnyMatch`, and a `RunCondition` that you
   write.
-- **`ctx.commands`** — a facade in the style of the Bevy `Commands` type, for the *deferred*
+- **`ctx.commands`**, a facade in the style of the Bevy `Commands` type, for the *deferred*
   structural operations (`spawn`, `add`, `remove`, `despawn`, `disable`, and `enable`). It is
   clearly deferred, in contrast to the immediate `world.addComponent`.
-- **A write path from the host into the ECS** — `installHostCommandSeam(world)` applies
+- **A write path from the host into the ECS**. `installHostCommandSeam(world)` applies
   `HostCommand` values from outside the schedule, through one approved `exclusive` system. It
   supports record and replay (`HostCommandRecorder`, `replayCommandLog`, and
   `serializeCommandLog`), and a ring transport between threads (`HostCommandDispatcher`, which
   imports from `@oasys/oecs/internal` since 0.5.0).
-- **A frame trace** — `world.setTrace(sink)` with `FrameTraceRecorder` gives a structured stream of
+- **A frame trace**. `world.setTrace(sink)` with `FrameTraceRecorder` gives a structured stream of
   the events in each frame. The `__DEV__` flag controls it.
-- **A compute backend connection** — `world.attachBackend(backend)` runs the body of a system on a
+- **A compute backend connection**. `world.attachBackend(backend)` runs the body of a system on a
   compiled backend, such as WASM, instead of its TypeScript closure.
 
 ### The new entry points
@@ -352,7 +352,7 @@ increase of the major version. Use them as they help you:
 | Import | What |
 | --- | --- |
 | `@oasys/oecs` | the ECS (the default, a pure-TS heap) |
-| `@oasys/oecs/shared` | the `SharedArrayBuffer` and WASM allocators (they need COOP/COEP) |
+| `@oasys/oecs/shared` | the `SharedArrayBuffer` and WASM allocators (they need COOP and COEP) |
 | `@oasys/oecs/primitives` | `BitSet`, `SparseSet`, `SparseMap`, the growable typed arrays, `BinaryHeap`, and `topologicalSort` |
 | `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies |
 | `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel (it publishes only the changed data, in O(changed)) |

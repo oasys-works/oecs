@@ -1,5 +1,5 @@
 /***
- * Compile-time typing assertions — never executed, never imported by a test
+ * Compile-time typing assertions, never executed, never imported by a test
  * runner. `tsconfig.json` includes all of `src`, so `tsc --noEmit` checks this
  * file on every typecheck: an `@ts-expect-error` that stops erroring (a typing
  * regression loosened a signature) fails the build as "Unused '@ts-expect-error'
@@ -36,52 +36,52 @@ declare const Frozen: ComponentDef<Record<string, never>>;
 // Wrapped in a never-exported, never-called function so runtime cost is nil
 // and `noUnusedLocals` stays satisfied via the void reference below.
 function addComponentsAssertions(): void {
-	// Callable-bundle varargs — each item checked against its own def's schema.
+	// Callable-bundle varargs, each item checked against its own def's schema.
 	world.addComponents(e, Pos({ x: 1, y: 2 }), Vel({ vx: 3 })); // partial zero-fills
 	world.addComponents(e, Pos, Frozen); // bare defs: all-zero / tag
 
-	// @ts-expect-error — 'vx' is a Vel field, not a Pos field (callable form)
+	// @ts-expect-error, 'vx' is a Vel field, not a Pos field (callable form)
 	world.addComponents(e, Pos({ vx: 1 }));
 
-	// @ts-expect-error — StrictBundles rejects a raw literal whose values ⊄ its def
+	// @ts-expect-error, StrictBundles rejects a raw literal whose values ⊄ its def
 	world.addComponents(e, { def: Pos, values: { vx: 1 } });
 
-	// @ts-expect-error — cross-item mixup: Pos values on Vel (raw literal)
+	// @ts-expect-error, cross-item mixup: Pos values on Vel (raw literal)
 	world.addComponents(e, { def: Vel, values: { x: 1 } });
 
-	// @ts-expect-error — tags carry no fields
+	// @ts-expect-error, tags carry no fields
 	world.addComponents(e, Frozen({ x: 1 }));
 
-	// @ts-expect-error — field values are numbers
+	// @ts-expect-error, field values are numbers
 	world.addComponents(e, Pos({ x: "one" }));
 }
 
 function tagValueAssertions(): void {
-	// Valued defs: callable with partial values; tags: callable with none.
+	// Valued defs: callable with partial values. Tags: callable with none.
 	void Pos({ x: 1 });
 	void Pos();
 	void Frozen();
 	void bundle(Pos, { y: 2 });
 	void bundle(Frozen);
 
-	// @ts-expect-error — tag def call takes no values
+	// @ts-expect-error, tag def call takes no values
 	void Frozen({ x: 1 });
 
-	// @ts-expect-error — bundle on a tag takes no values
+	// @ts-expect-error, bundle on a tag takes no values
 	void bundle(Frozen, { x: 1 });
 
-	// @ts-expect-error — misspelled field in a def-call bundle
+	// @ts-expect-error, misspelled field in a def-call bundle
 	void Pos({ vx: 1 });
 
-	// `template` shares the callable-bundle grammar; tags refuse values too.
+	// `template` shares the callable-bundle grammar. Tags refuse values too.
 	void world.template(Pos({ x: 0, y: 0 }), Frozen);
 
-	// @ts-expect-error — tag template item carries no values
+	// @ts-expect-error, tag template item carries no values
 	void world.template(Frozen({ x: 1 }));
 }
 
 function componentDefVariance(): void {
-	// A schema-typed def must stay assignable to the erased handle — internal
+	// A schema-typed def must stay assignable to the erased handle, internal
 	// code (access declarations, command unions) depends on it.
 	const erased: ComponentDef = Pos;
 	const erasedTag: ComponentDef = Frozen;
@@ -97,67 +97,67 @@ function registerEventAssertions(): void {
 	world.events.register(ContactEvent, ["a", "b"]);
 	world.events.register(ContactEvent, ["b", "a"]);
 
-	// @ts-expect-error — under-registered: 'b' missing (emit would silently drop it)
+	// @ts-expect-error, under-registered: 'b' missing (emit would silently drop it)
 	world.events.register(ContactEvent, ["a"]);
 
-	// @ts-expect-error — foreign field
+	// @ts-expect-error, foreign field
 	world.events.register(ContactEvent, ["a", "b", "c"]);
 
-	// A schema-erased key has no finite key set — the cover check is skipped.
+	// A schema-erased key has no finite key set, the cover check is skipped.
 	world.events.register(ErasedEvent, ["whatever"]);
 }
 
 declare const queue: HostCommandQueue;
 
 function hostSeamAssertions(): void {
-	// Entry values are complete and schema-checked per def; tags take exactly {}.
+	// Entry values are complete and schema-checked per def. Tags take exactly {}.
 	queue.spawn([
 		{ def: Pos, values: { x: 1, y: 2 } },
 		{ def: Frozen, values: {} }
 	]);
 	void spawnEntry(Pos, { x: 1, y: 2 });
 
-	// @ts-expect-error — misspelled field
+	// @ts-expect-error, misspelled field
 	queue.spawn([{ def: Pos, values: { x: 1, yy: 2 } }]);
 
-	// @ts-expect-error — cross-entry mixup: Pos values on Vel
+	// @ts-expect-error, cross-entry mixup: Pos values on Vel
 	queue.spawn([{ def: Vel, values: { x: 1, y: 2 } }]);
 
-	// @ts-expect-error — tag values must be empty
+	// @ts-expect-error, tag values must be empty
 	queue.spawn([{ def: Frozen, values: { x: 1 } }]);
 
-	// @ts-expect-error — junk values on a tag via the singular enqueue
+	// @ts-expect-error, junk values on a tag via the singular enqueue
 	queue.add(e, Frozen, { x: 1 });
 
-	// @ts-expect-error — junk values on a tag via the immediate world API
+	// @ts-expect-error, junk values on a tag via the immediate world API
 	world.addComponent(e, Frozen, { x: 1 });
 }
 
 function noInferAssertions(): void {
-	// The key is the sole source of truth for the payload/resource generic —
+	// The key is the sole source of truth for the payload and resource generic,
 	// a wider value must error at the argument, not silently widen the
 	// inferred type parameter.
 	world.events.emit(ContactEvent, { a: e, b: e });
 
-	// @ts-expect-error — extra payload field must not widen S
+	// @ts-expect-error, extra payload field must not widen S
 	world.events.emit(ContactEvent, { a: e, b: e, c: 1 });
 
-	// @ts-expect-error — missing payload field
+	// @ts-expect-error, missing payload field
 	world.events.emit(ContactEvent, { a: e });
 }
 
 function observeHandleAssertions<S extends ComponentSchema>(genericDef: ComponentDef<S>): void {
-	// `observe` takes `ComponentHandle`, so a GENERIC `ComponentDef<S>` (whose
-	// unresolved schema is not assignable to the erased `ComponentDef` — the
+	// `observe` takes `ComponentHandle`, so a generic `ComponentDef<S>` (whose
+	// unresolved schema is not assignable to the erased `ComponentDef`, the
 	// invariance ComponentHandle exists for) registers without a cast. This is
 	// what the reactive bridge's generic sync functions rely on.
 	void world.observe(genericDef, { onAdd: () => {} });
 	void world.observe(Frozen, { onRemove: () => {} });
 }
 
-// ═══ Compile-time access typing (§typestate, system.ts) ════════════════════
+// ═══ Compile-time access typing (system.ts) ════════════════════
 // The config-form registerSystem narrows `ctx` to the declared access
-// surface; these assertions pin the enforcement AND the conversions that must
+// surface. These assertions pin the enforcement and the conversions that must
 // keep compiling (helpers taking a bare SystemContext, dynamic configs, the
 // explicit-annotation escape hatch).
 
@@ -197,57 +197,57 @@ function typestateEnforcementAssertions(): void {
 			// A narrowed context flows into a permissive helper unchanged.
 			permissiveHelper(ctx);
 
-			// @ts-expect-error — Pos is read-only: not declared in writes
+			// @ts-expect-error, pos is read-only: not declared in writes
 			ctx.setField(e, Pos, "x", 1);
 
-			// @ts-expect-error — Frozen (a tag) is NOT a universal sink: getField
-			// on a component outside reads/writes is rejected even though a tag
+			// @ts-expect-error, frozen (a tag) is not a universal sink: getField
+			// on a component outside reads and writes is rejected even though a tag
 			// appears in the spawn template (the [__schema] slot, component.ts)
 			ctx.getField(e, Frozen, "x");
 
-			// @ts-expect-error — removeComponent needs despawns/transitions.remove
+			// @ts-expect-error, removeComponent needs despawns/transitions.remove
 			ctx.commands.remove(e, Vel);
 
-			// @ts-expect-error — no despawns declared: destroyEntity is blocked
+			// @ts-expect-error, no despawns declared: destroyEntity is blocked
 			ctx.destroyEntity(e);
 
-			// @ts-expect-error — no despawns declared: commands.despawn is blocked
+			// @ts-expect-error, no despawns declared: commands.despawn is blocked
 			ctx.commands.despawn(e);
 
-			// @ts-expect-error — no relation declared: relation writes are blocked
+			// @ts-expect-error, no relation declared: relation writes are blocked
 			ctx.addRelation(e, Rel, e);
 
-			// @ts-expect-error — KeyA is declared read-only: setResource rejected
+			// @ts-expect-error, KeyA is declared read-only: setResource rejected
 			ctx.setResource(KeyA, { v: 1 });
 
-			// @ts-expect-error — KeyB is not declared at all
+			// @ts-expect-error, KeyB is not declared at all
 			void ctx.getResource(KeyB);
 
-			// @ts-expect-error — wrong field on a declared component
+			// @ts-expect-error, wrong field on a declared component
 			ctx.getField(e, Pos, "vx");
 
-			// @ts-expect-error — a tag takes no values argument
+			// @ts-expect-error, a tag takes no values argument
 			ctx.commands.add(e, Frozen, { x: 1 });
 
-			// A bare def is the sanctioned all-zero attach (bundle semantics) —
+			// A bare def is the sanctioned all-zero attach (bundle semantics),
 			// unlike the removed ctx.addComponent, this must compile.
 			ctx.commands.add(e, Vel);
 
-			// @ts-expect-error — the explicit-values form requires complete values
+			// @ts-expect-error, the explicit-values form requires complete values
 			ctx.commands.add(e, Vel, { vx: 1 });
 
-			// Raw-literal cross-field is caught in a DECLARED-ACCESS system (the
+			// Raw-literal cross-field is caught in a declared-access system (the
 			// distributive `DeclaredBundleOrDef`). Vel is declared
-			// (writes), so its values are schema-checked; a permissive ctx stays
+			// (writes), so its values are schema-checked. A permissive ctx stays
 			// loose by design (opted out of narrowing).
-			// @ts-expect-error — 'x' is not a Vel field (raw literal via add)
+			// @ts-expect-error, 'x' is not a Vel field (raw literal via add)
 			ctx.commands.add(e, { def: Vel, values: { x: 1 } });
-			// @ts-expect-error — 'x' is not a Vel field (raw literal via spawn)
+			// @ts-expect-error, 'x' is not a Vel field (raw literal via spawn)
 			void ctx.commands.spawn({ def: Vel, values: { x: 1 } });
 		}
 	});
 
-	// Despawns grant destroy + remove; transitions feed add/remove.
+	// Despawns grant destroy + remove. Transitions feed add/remove.
 	world.registerSystem({
 		reads: [],
 		writes: [],
@@ -261,7 +261,7 @@ function typestateEnforcementAssertions(): void {
 		}
 	});
 
-	// @ts-expect-error — compile-time declared-access lint: query term ∉ reads ∪ writes
+	// @ts-expect-error, compile-time declared-access lint: query term ∉ reads ∪ writes
 	world.registerSystem({ reads: [Pos], writes: [], queries: [[Vel]], fn() {} });
 }
 
@@ -296,11 +296,11 @@ function typestateConversionAssertions(): void {
 function resourceKeyVarianceAssertions(): void {
 	// Keys are invariant in T (resource.ts): a key must not widen, or
 	// setResource could store a mismatched value behind a narrower key.
-	// @ts-expect-error — covariant widening is a write hole
+	// @ts-expect-error, covariant widening is a write hole
 	const widened: ResourceKey<{ v: number | string }> = KeyA;
 	void widened;
 
-	// @ts-expect-error — keys with different T never cross-assign
+	// @ts-expect-error, keys with different T never cross-assign
 	const crossed: ResourceKey<{ other: string }> = KeyA;
 	void crossed;
 
@@ -310,10 +310,10 @@ function resourceKeyVarianceAssertions(): void {
 }
 
 function eventKeyVarianceAssertions(): void {
-	// Event keys/defs are invariant in the payload schema (event.ts): a
+	// Event keys and defs are invariant in the payload schema (event.ts): a
 	// covariantly-widened key would let `emit` under-fill the channel's
-	// columns (the payload check runs against the WIDENED schema).
-	// @ts-expect-error — dropping a field via widening is an emit hole
+	// columns (the payload check runs against the widened schema).
+	// @ts-expect-error, dropping a field via widening is an emit hole
 	const widened: EventKey<{ a: EntityID }> = ContactEvent;
 	void widened;
 
@@ -328,27 +328,27 @@ declare function archHelper(arch: ArchetypeView): void;
 function queryTermAssertions(): void {
 	// Column accessors are constrained to the query's terms.
 	const movers = world.query(Pos, Vel);
-	movers.eachChunk((cols) => {
+	movers.forEachChunk((cols) => {
 		const { x, y } = cols.mut(Pos);
 		const { vx } = cols.read(Vel);
 		void x; void y; void vx;
-		// @ts-expect-error — Health is not a term of this query
+		// @ts-expect-error, health is not a term of this query
 		void cols.read(Health);
-		// @ts-expect-error — mut on a non-term
+		// @ts-expect-error, mut on a non-term
 		void cols.mut(Health);
 	});
 	movers.forEach((arch) => {
 		void arch.getColumnRead(Pos, "x");
 		void arch.getColumnsRead(Vel, "vx", "vy");
-		// @ts-expect-error — Health is not a term of this query
+		// @ts-expect-error, health is not a term of this query
 		void arch.getColumnRead(Health, "hp");
-		// @ts-expect-error — wrong field on a term
+		// @ts-expect-error, wrong field on a term
 		void arch.getColumnRead(Pos, "hp");
 		// A typed view still flows into a permissive helper.
 		archHelper(arch);
 	});
 	// .and() extends the term set.
-	movers.and(Health).eachChunk((cols) => {
+	movers.and(Health).forEachChunk((cols) => {
 		void cols.read(Health);
 		void cols.read(Pos);
 	});
@@ -378,12 +378,12 @@ function relationCardinalityAssertions(): void {
 	void world.relations.rootOf(e, ExclusiveRel);
 	void world.relations.cascadeOf(e, ExclusiveRel);
 
-	// @ts-expect-error — targetOf on a multi relation (use targetsOf)
+	// @ts-expect-error, targetOf on a multi relation (use targetsOf)
 	void world.relations.targetOf(e, MultiRel);
-	// @ts-expect-error — traversal is exclusive-only
+	// @ts-expect-error, traversal is exclusive-only
 	void world.relations.ancestorsOf(e, MultiRel);
 
-	// Cardinality-agnostic surfaces take either; stamped handles erase to the
+	// Cardinality-agnostic surfaces take either. Stamped handles erase to the
 	// bare union (declaration lists, ANY_RELATION).
 	world.relations.add(e, ExclusiveRel, e);
 	world.relations.add(e, MultiRel, e);
@@ -396,14 +396,14 @@ function relationCardinalityAssertions(): void {
 function eventReaderReadonlyAssertions(reader: EventReader<{ a: number }>): void {
 	void reader.a[0];
 	void reader.length;
-	// @ts-expect-error — the reader is the channel's live shared view; a length
+	// @ts-expect-error, the reader is the channel's live shared view. A length
 	// write would desync every other system
 	reader.length = 0;
 }
 
 function facadeCardinalityAssertions(): void {
 	// The grouped facades mirror the typestate cardinality
-	// surface — ecs.relations.register stamps the brand, and the facade's
+	// surface, ecs.relations.register stamps the brand, and the facade's
 	// exclusive-only traversal rejects a multi handle exactly like the flat
 	// forms above. A facade must never be a typestate escape hatch.
 	const fexcl = world.relations.register();
@@ -414,9 +414,9 @@ function facadeCardinalityAssertions(): void {
 
 	void world.relations.targetOf(e, ExclusiveRel);
 	void world.relations.cascadeOf(e, ExclusiveRel);
-	// @ts-expect-error — facade targetOf on a multi relation (use targetsOf)
+	// @ts-expect-error, facade targetOf on a multi relation (use targetsOf)
 	void world.relations.targetOf(e, MultiRel);
-	// @ts-expect-error — facade traversal is exclusive-only
+	// @ts-expect-error, facade traversal is exclusive-only
 	void world.relations.ancestorsOf(e, MultiRel);
 }
 

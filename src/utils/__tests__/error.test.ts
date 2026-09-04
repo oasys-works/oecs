@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../error";
 
-// `AppError` is abstract; exercise it through a minimal concrete subclass.
+// `AppError` is abstract. Exercise it through a minimal concrete subclass.
 // (The ECS-specific `ECSError` is tested next to its definition in
 // `core/ecs/utils/__tests__/error.test.ts`.)
 class TestError extends AppError {

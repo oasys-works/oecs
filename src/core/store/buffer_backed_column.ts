@@ -1,5 +1,5 @@
 /**
- * BufferBackedColumn — `GrowableTypedArray<T>` API over a fixed SAB view.
+ * BufferBackedColumn, `GrowableTypedArray<T>` API over a fixed SAB view.
  *
  * Archetype's per-column storage comes from a single
  * SharedArrayBuffer instead of a per-archetype `new TypedArrayFor[tag](cap)`.
@@ -9,8 +9,8 @@
  *
  * BufferBackedColumn wraps a view at a known `(byte_off, row_capacity)` inside
  * a SAB and tracks a logical length on top of it. Capacity is the view's
- * length; overrun throws. Growth uses a SAB realloc plus a `view_stamp`
- * bump; until that is available, callers must size `row_capacity` for the
+ * length. Overrun throws. Growth uses a SAB realloc plus a `view_stamp`
+ * bump. Until that is available, callers must size `row_capacity` for the
  * worst case at construction time.
  *
  * Surface intentionally mirrors `GrowableTypedArray<T>` so the same archetype
@@ -23,7 +23,7 @@ import type { AnyTypedArray } from "./column_store";
 
 /** Thrown when an operation would grow a fixed-capacity SAB column. The
  * grow path (re-allocate the SAB, bump `view_stamp`, rebuild views) is a
- * separate sub-task; until it lands, hitting capacity is a hard error so
+ * separate sub-task. Until it lands, hitting capacity is a hard error so
  * the symptom surfaces immediately rather than silently corrupting state. */
 export class StoreColumnOverflowError extends Error {
 	public readonly capacity: number;
@@ -42,9 +42,9 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	private _capacity: number;
 	private _len = 0;
 
-	/** `view` MUST be a TypedArray constructed over a SAB at the correct
+	/** `view` must be a TypedArray constructed over a SAB at the correct
 	 * stride alignment (see `createColumnStore`). The column treats
-	 * `view.length` as the immutable capacity for the lifetime of this view —
+	 * `view.length` as the immutable capacity for the lifetime of this view,
 	 * call `refreshView` after a SAB realloc to point at the new view. */
 	constructor(view: T) {
 		this._buf = view;
@@ -54,7 +54,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	/** Swap the backing view to one over a freshly-grown SAB. The caller is
 	 * responsible for having copied the first `length` elements into
 	 * `newView` already (`growColumnStore` does this). The logical length is
-	 * preserved across the swap; capacity becomes `newView.length`.
+	 * preserved across the swap. Capacity becomes `newView.length`.
 	 *
 	 * Used to honour the `view_stamp` invariant after a host-side SAB realloc:
 	 * every cached column view must be rebuilt before
@@ -86,7 +86,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 		return this._buf[--this._len];
 	}
 
-	public get(i: number): number {
+	public getAt(i: number): number {
 		return this._buf[i];
 	}
 
@@ -109,9 +109,9 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	/** Set the logical length directly, declaring that `[0, len)` of the backing
 	 * SAB view already holds valid data. The snapshot-mount path
 	 * (`Archetype.restoreHostRows`) uses this to re-sync the column's
-	 * logical length with the restored `Archetype.length` — the bytes come from
+	 * logical length with the restored `Archetype.length`, the bytes come from
 	 * the restored SAB, but `_len` is host state. Throws on overrun (cannot grow
-	 * a fixed SAB view here — the mount already adopted the restored capacity). */
+	 * a fixed SAB view here, the mount already adopted the restored capacity). */
 	public setLength(len: number): void {
 		if (len > this._capacity) {
 			throw new StoreColumnOverflowError(this._capacity, len);
@@ -119,7 +119,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 		this._len = len;
 	}
 
-	/** Raw backing view. Stable for the lifetime of the SAB; views over a
+	/** Raw backing view. Stable for the lifetime of the SAB. Views over a
 	 * SAB do not invalidate the way a `GrowableTypedArray`'s `buf` does
 	 * after a grow. (`view_stamp` signals "underlying SAB swapped".) */
 	public get buf(): T {
@@ -147,11 +147,11 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 		};
 	}
 
-	/** Throw if the backing view cannot hold `capacity` elements. Mirrors
-	 * `GrowableTypedArray.ensureCapacity` but cannot allocate — a SAB
-	 * grow requires republishing the underlying buffer and rebuilding views
-	 * across every archetype, which is the republish invariant. */
-	public ensureCapacity(capacity: number): void {
+	/** Throw if the view cannot hold `capacity` elements. The column does not own
+	 * its buffer, so it cannot grow: a grow reallocates the store buffer and
+	 * rebuilds the views of every archetype, which is the republish invariant.
+	 * The allocator drives that path, and this method refuses it. */
+	public reserve(capacity: number): void {
 		if (capacity > this._capacity) {
 			throw new StoreColumnOverflowError(this._capacity, capacity);
 		}
@@ -160,8 +160,8 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	/** Append `count` elements from `src[srcOffset..srcOffset+count]`.
 	 * Throws on overrun. */
 	public bulkAppend(src: T, srcOffset: number, count: number): void {
-		this.ensureCapacity(this._len + count);
-		// TypedArray interop: `_buf` and `src` share constructor `T` at runtime;
+		this.reserve(this._len + count);
+		// TypedArray interop: `_buf` and `src` share constructor `T` at runtime
 		// the lib.dom `set()` overloads can't see that, hence the cast.
 		this._buf.set(src.subarray(srcOffset, srcOffset + count) as unknown as T, this._len);
 		this._len += count;
@@ -169,7 +169,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 
 	/** Append `count` zeroes. Throws on overrun. */
 	public bulkAppendZeroes(count: number): void {
-		this.ensureCapacity(this._len + count);
+		this.reserve(this._len + count);
 		this._buf.fill(0, this._len, this._len + count);
 		this._len += count;
 	}
@@ -177,7 +177,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	/** Append `count` copies of `value`. Throws on overrun. Single-pass
 	 * analogue of `bulkAppendZeroes` for a non-zero default. */
 	public bulkAppendValue(value: number, count: number): void {
-		this.ensureCapacity(this._len + count);
+		this.reserve(this._len + count);
 		this._buf.fill(value, this._len, this._len + count);
 		this._len += count;
 	}

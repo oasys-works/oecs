@@ -34,17 +34,17 @@ Each option is optional. `new ECS()` uses good default values.
 Each field becomes its own typed-array column, which makes iteration use the cache well.
 
 ```ts
-// Record syntax — you control the type of each field
+// Record syntax, you control the type of each field
 const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 const Health = ecs.registerComponent({ current: "i32", max: "i32" });
 
-// Array shorthand — one type for each field, "f64" by default
+// Array shorthand, one type for each field, "f64" by default
 const Vel = ecs.registerComponent(["vx", "vy"] as const);
 
 // Change the type of the shorthand
 const Flags = ecs.registerComponent(["a", "b"] as const, "u8");
 
-// Tag — an empty schema; it is part of a query, but it stores no data
+// Tag, an empty schema. It is part of a query, but it stores no data
 const IsEnemy = ecs.registerTag();
 const Dead = ecs.registerTag();
 ```
@@ -70,7 +70,7 @@ const Score = resourceKey<{ value: number }>("Score");
 ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 ecs.resources.register(Score, { value: 0 });
 
-const time = ecs.resources.get(Time);           // { delta: number; elapsed: number }
+const time = ecs.resources.get(Time);           // { delta: number, elapsed: number }
 ecs.resources.set(Score, { value: 100 });
 ecs.resources.has(Time);                    // true
 ```
@@ -102,12 +102,12 @@ ecs.events.emit(GameOver);
 
 const dmg = ecs.events.read(DamageEvent);
 for (let i = 0; i < dmg.length; i++) {
-  const t = dmg.target[i];   // a typed EntityID — the brand survives emit → read
+  const t = dmg.target[i];   // a typed EntityID, the brand survives emit → read
   const a = dmg.amount[i];
 }
 ```
 
-In a system, use `ctx.emit` and `ctx.read` (section 10). The value of an event field is a number,
+In a system, use `ctx.emit` and `ctx.readEvents` (section 10). The value of an event field is a number,
 and this includes a number with a brand such as `EntityID`. For richer data, store it on an entity
 that you keep for that purpose, and refer to that entity by its id.
 
@@ -118,7 +118,7 @@ const player = ecs.spawn();
 ecs.addComponent(player, Pos, { x: 400, y: 300 });
 ecs.addComponent(player, Health, { current: 100, max: 100 });
 
-// addComponents finds the final archetype one time — this costs less when you attach several components
+// addComponents finds the final archetype one time, this costs less when you attach several components
 const enemy = ecs.spawn();
 ecs.addComponents(
   enemy,
@@ -147,7 +147,7 @@ that you did not declare *throws* while you develop. `registerSystem` always giv
 Capture the query one time at module scope with `ecs.query(...)`, then refer to it inside `fn`. The
 `fn` of the config form is `(ctx, dt)`, and it does **not** receive the query. A cached query stays
 live as new archetypes appear. The iteration function for the high-frequency loop that writes is
-`eachChunk` with `cols.mut`.
+`forEachChunk` with `cols.mut`.
 
 ```ts
 const movers = ecs.query(Pos, Vel).without(Dead);
@@ -155,12 +155,12 @@ const movers = ecs.query(Pos, Vel).without(Dead);
 const moveSys = ecs.registerSystem({
   name: "move",
   reads: [Vel],           // read-only components
-  writes: [Pos],          // writable components — a declared write also gives read access
+  writes: [Pos],          // writable components, a declared write also gives read access
   queries: [[Pos, Vel]],  // an optional check: this must be a subset of reads ∪ writes
   fn: (_ctx, dt) => {
-    movers.eachChunk((cols, count) => {
-      const { x, y }   = cols.mut(Pos);    // the full component group; sets the change tick of Pos one time
-      const { vx, vy } = cols.read(Vel);   // a read-only group; no change to the tick
+    movers.forEachChunk((cols, count) => {
+      const { x, y }   = cols.mut(Pos);    // the full component group. Sets the change tick of Pos one time
+      const { vx, vy } = cols.read(Vel);   // a read-only group. No change to the tick
       for (let i = 0; i < count; i++) {
         x[i] += vx[i] * dt;
         y[i] += vy[i] * dt;
@@ -203,17 +203,17 @@ const reportSys = ecs.registerSystem({
 To write one entity at a time, and not a full chunk, take a mutable ref with `ctx.ref(def, id)`
 (section 10). It sets the change tick of the component.
 
-### The bare and builder forms — no declared access
+### The bare and builder forms, no declared access
 
 Two overloads register with **empty** access declarations. So each touch of a component or a
 resource inside them throws while you develop. Use them only for connection code that touches no
 ECS data, for example an increase to an external counter.
 
 ```ts
-// Bare (ctx, dt) — no query.
+// Bare (ctx, dt), no query.
 ecs.registerSystem((ctx, dt) => { frameCount++; });
 
-// A function with a query builder — the engine resolves the query one time, at registration.
+// A function with a query builder, the engine resolves the query one time, at registration.
 ecs.registerSystem(
   (q, ctx, dt) => { q.forEach((arch) => { /* read-only, no component access through ctx */ }); },
   (qb) => qb.with(Pos, Vel).without(Dead),
@@ -312,9 +312,9 @@ So the iterators stay correct. A deferred destroy inside `forEach` is safe: the 
 visible in the current iteration, and the engine removes it at the flush.
 
 ```ts
-ctx.commands.spawn();                     // the id is immediate; the component attaches are deferred
-ctx.commands.add(e, Pos, { x, y });       // deferred — all values (checked at compile time)
-ctx.commands.add(e, Pos({ x }));          // deferred — the bundle form; an absent field becomes zero
+ctx.commands.spawn();                     // the id is immediate. The component attaches are deferred
+ctx.commands.add(e, Pos, { x, y });       // deferred, all values (checked at compile time)
+ctx.commands.add(e, Pos({ x }));          // deferred, the bundle form. An absent field becomes zero
 ctx.commands.remove(e, Vel);              // deferred
 ctx.commands.despawn(e);                  // deferred
 ctx.commands.disable(e);                  // deferred
@@ -331,14 +331,13 @@ values in a column, and never the membership of an archetype.
 Use `ctx.ref` and `ctx.refRead` to read and write the fields of one entity with dot syntax.
 
 ```ts
-const pos = ctx.refRead(Pos, entity);   // ReadonlyComponentRef — reads only
-const vel = ctx.ref(Vel, entity);      // ComponentRef — writable, and it sets the change tick
+const pos = ctx.refRead(Pos, entity);   // ReadonlyComponentRef, reads only
+const vel = ctx.ref(Vel, entity);      // ComponentRef, writable, and it sets the change tick
 vel.vx += 1;
 ```
 
-`ctx.refRead` does not touch the change tick. `ctx.ref` sets the change tick of the component to
-the current `ctx.ecsTick` when you take the ref, and it does this whether or not you write through
-the ref. So, take it only at the point where you mutate. A ref stays valid until the next flush
+`ctx.refRead` does not touch the change tick. `ctx.ref` sets the change tick of the component when
+you take the ref, and it does this whether or not you write through the ref. So, take it only at the point where you mutate. A ref stays valid until the next flush
 at the end of a phase. Do not hold one across `ctx.flush()`, or across a structural change that
 moves the entity to a different archetype.
 
@@ -348,13 +347,13 @@ moves the entity to a different archetype.
 ctx.emit(DamageEvent, { target: id, amount: 25 });
 ctx.emit(GameOver);
 
-const dmg = ctx.read(DamageEvent);
+const dmg = ctx.readEvents(DamageEvent);
 for (let i = 0; i < dmg.length; i++) {
   const target = dmg.target[i];
   const amount = dmg.amount[i];
 }
 
-const t = ctx.getResource(Time);         // a live reference; mutate it in place
+const t = ctx.getResource(Time);         // a live reference. Mutate it in place
 t.delta = dt;
 t.elapsed += dt;
 ctx.setResource(Score, { value: 0 });   // or replace the full value
@@ -366,10 +365,10 @@ A reader is a view with no copy. Iterate to `reader.length`. Do not use `slice`.
 
 Two fields of the `SystemContext` drive change detection:
 
-- `ctx.ecsTick` — the current write tick of the store. This is the tick that a write sets:
-  `cols.mut`, `ctx.ref`, and `ctx.setField`.
-- `ctx.lastRunTick` — the tick at which the most recent dispatch of this system started. It is 0 at
-  the first run.
+- `ctx.ecsTick`, the frame tick, the count of `update()` calls so far. Run conditions read it.
+- `ctx.lastRunTick`, the change tick of the most recent run of this system. It is 0 at the first
+  run. The change tick is a counter that advances before each system run. A write sets it on the
+  archetype: `cols.mut`, `ctx.ref`, `ctx.cursor`, and `ctx.setField`.
 
 `query.changed(...defs)` gives a read-only `ChangedQuery`. It iterates only the archetypes in which
 the engine wrote one of the listed components at or after `ctx.lastRunTick`. Iterate it with
@@ -399,7 +398,7 @@ To make a query more exact, chain the methods. Each method gives a new query, an
 it.
 
 ```ts
-const alive     = ecs.query(Pos).and(Health);                    // include Pos AND Health
+const alive     = ecs.query(Pos).and(Health);                    // include Pos and Health
 const active    = ecs.query(Pos).and(Health).without(Dead);          // remove Dead
 const afflicted = ecs.query(Health).anyOf(Poison, Fire);        // a minimum of one of these
 const targets   = ecs.query(Pos).and(Health).without(Shield).anyOf(IsEnemy, IsBoss);
@@ -440,7 +439,7 @@ ecs.resources.register(Time, { delta: 0, elapsed: 0 });
 const Hit = eventKey<{ target: EntityID; damage: number }>("Hit");
 ecs.events.register(Hit, ["target", "damage"]);
 
-// --- Queries (captured one time at module scope; the store keeps them current) ---
+// --- Queries (captured one time at module scope, the store keeps them current) ---
 const movers     = ecs.query(Pos, Vel).without(Dead);
 const movedPos    = ecs.query(Pos).changed(Pos);
 const withHealth  = ecs.query(Health).without(Dead);
@@ -462,7 +461,7 @@ const moveSys = ecs.registerSystem({
   name: "move",
   reads: [Vel], writes: [Pos],
   fn: (_ctx, dt) => {
-    movers.eachChunk((cols, count) => {
+    movers.forEachChunk((cols, count) => {
       const { x, y }   = cols.mut(Pos);
       const { vx, vy } = cols.read(Vel);
       for (let i = 0; i < count; i++) {
@@ -489,7 +488,7 @@ const applyDamage = ecs.registerSystem({
   name: "applyDamage",
   reads: [], writes: [Health],
   fn: (ctx) => {
-    const hits = ctx.read(Hit);
+    const hits = ctx.readEvents(Hit);
     for (let i = 0; i < hits.length; i++) {
       const target = hits.target[i];
       if (!ctx.isAlive(target)) continue;     // protect against a stale handle
@@ -518,7 +517,7 @@ const markDead = ecs.registerSystem({
 const cleanupDead = ecs.registerSystem({
   name: "cleanupDead",
   reads: [], writes: [],
-  despawns: [Pos, Vel, Health, Dead],   // despawn removes each component — declare the full set
+  despawns: [Pos, Vel, Health, Dead],   // despawn removes each component, declare the full set
   fn: (ctx) => {
     corpses.forEach((arch) => {
       const ids = arch.entityIds;
@@ -556,7 +555,7 @@ for (let i = 0; i < 100; i++) {
 // --- Run ---
 ecs.startup();
 
-// Emit a damage event AFTER startup(). startup() clears each event channel at
+// Emit a damage event after startup(). startup() clears each event channel at
 // its end, so an event from before it would never reach the first update().
 ecs.events.emit(Hit, { target: first, damage: 40 });
 ecs.update(1 / 60);
@@ -572,8 +571,8 @@ console.log("alive entities:", ecs.entityCount);
   [Refs](api/refs.md)
 - [Events](api/events.md), [Resources](api/resources.md), [Systems](api/systems.md),
   [Schedule](api/schedule.md)
-- [Change detection](api/change-detection.md) — the tick model, `ChangedQuery`, and the level of
+- [Change detection](api/change-detection.md), the tick model, `ChangedQuery`, and the level of
   detail of an archetype.
-- [Architecture](ARCHITECTURE.md) — the internal design: the store, the archetypes, and the query
+- [Architecture](ARCHITECTURE.md), the internal design: the store, the archetypes, and the query
   cache.
-- [Best practices](BEST_PRACTICES.md) — performance advice, frequent errors, and idioms.
+- [Best practices](BEST_PRACTICES.md), performance advice, frequent errors, and idioms.

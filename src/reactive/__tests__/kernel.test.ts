@@ -1,13 +1,13 @@
 /**
- * Reactive kernel gate: the signal/effect/batch fundamentals the dependency graph
- * depends on, and the two computed properties every consumer relies on —
- * glitch-freedom (a diamond join recomputes ONCE with consistent inputs) and the
+ * Reactive kernel gate: the signal, effect and batch fundamentals the dependency graph
+ * depends on, and the two computed properties every consumer relies on,
+ * glitch-freedom (a diamond join recomputes once with consistent inputs) and the
  * equal-value cutoff (a recompute to an equal value wakes nobody).
  */
 import { describe, expect, it } from "vitest";
 import { signal, computed, effect, batch, untrack } from "../kernel";
 
-describe("signal / effect", () => {
+describe("signal and effect", () => {
 	it("drops a dynamically-unused dependency (unlink)", () => {
 		const [a, setA] = signal(0);
 		const [toggle, setToggle] = signal(true);
@@ -111,8 +111,8 @@ describe("signal / effect", () => {
 	});
 
 	it("isolates a throwing effect so it does not poison its siblings", () => {
-		// Regression: the flush cleared QUEUED|NOTIFIED per effect as it reached it,
-		// so a throw aborting the loop left the un-reached effects NOTIFIED forever —
+		// Regression: the flush cleared queued|notified per effect as it reached it,
+		// so a throw aborting the loop left the un-reached effects notified forever,
 		// notify() would never re-queue them and they went permanently dead. A throw
 		// must let every sibling run, and still surface to the caller.
 		const [a, setA] = signal(0);
@@ -126,7 +126,7 @@ describe("signal / effect", () => {
 			a();
 		});
 		expect(goodRuns).toBe(1); // both primed
-		// One coalesced flush wakes both; the first throws. The error surfaces...
+		// one coalesced flush wakes both. The first throws. The error surfaces...
 		expect(() => batch(() => setA(1))).toThrow("boom");
 		expect(goodRuns).toBe(2); // ...and the sibling still ran in the same flush
 		setA(2); // a later clean change
@@ -148,7 +148,7 @@ describe("signal / effect", () => {
 	it("keeps a non-consecutively repeated read to a single wake (no duplicate-edge double-run)", () => {
 		// `a(); b(); a()` reads `a` twice non-consecutively. The intrusive-cursor graph
 		// tolerates a redundant edge here (deduping it would cost the hot path or break
-		// endTracking ordering); the NOTIFIED guard keeps it to one run, and `b` must
+		// endTracking ordering); the notified guard keeps it to one run, and `b` must
 		// stay tracked. This pins that harmless behavior so an "optimization" that
 		// regressed it (double-run, or dropping `b`) gets caught.
 		const [a, setA] = signal(0);
@@ -207,7 +207,7 @@ describe("computed", () => {
 			dRuns++;
 			const bv = b();
 			const cv = c();
-			// b and c both derive from the SAME a; a half-updated graph would break bv-cv == -1.
+			// b and c both derive from the same a. A half-updated graph would break bv-cv == -1.
 			if (bv - cv !== -1) sawInconsistent = true;
 			return bv + cv;
 		});
@@ -303,12 +303,12 @@ describe("computed", () => {
 });
 
 // The single symmetric diamond above is the easy case. These are the shapes that
-// actually distinguish a correct glitch-free kernel from a naive one — asymmetric
+// actually distinguish a correct glitch-free kernel from a naive one, asymmetric
 // (short + long path), stacked joins, and an equal-recompute on one arm that must
 // not swallow a real change on the other. Each asserts no half-updated intermediate
-// is ever observed AND the join recomputes exactly once per settled change.
+// is ever observed and the join recomputes exactly once per settled change.
 describe("glitch-free diamonds (discriminating shapes)", () => {
-	it("asymmetric: the join reads the source directly AND through an intermediate", () => {
+	it("asymmetric: the join reads the source directly and through an intermediate", () => {
 		const [a, setA] = signal(2);
 		const b = computed(() => a() + 1);
 		let dRuns = 0;
@@ -317,7 +317,7 @@ describe("glitch-free diamonds (discriminating shapes)", () => {
 			dRuns++;
 			const av = a();
 			const bv = b();
-			if (bv !== av + 1) glitch = true; // b must reflect the SAME a that d just read
+			if (bv !== av + 1) glitch = true; // b must reflect the same a that d read
 			return av * 100 + bv;
 		});
 		let seen = -1;

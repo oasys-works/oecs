@@ -13,15 +13,15 @@ import {
 	pendingCommandCount,
 	popCommand,
 	pushCommand,
-	ringCapacitySlots,
-	ringOverflow,
-	ringReadHead,
-	ringWriteHead
+	commandRingCapacitySlots,
+	commandRingOverflow,
+	commandRingReadHead,
+	commandRingWriteHead
 } from "../command_ring";
 
 // Fabricated, non-game op codes. The engine command ring treats the opCode as
-// an opaque u8 slot prefix — it ships no game opcode enum. These three
-// stand in for whatever a consumer registers; only `0` is reserved
+// an opaque u8 slot prefix. It ships no game opcode enum. These three
+// stand in for whatever a consumer registers. Only `0` is reserved
 // (`COMMAND_OP_EMPTY`, the empty-slot marker).
 const OP_A = 1;
 const OP_B = 2;
@@ -46,7 +46,7 @@ function fill(buf: Uint8Array, value: number): Uint8Array {
 	return buf;
 }
 
-describe("command_ring — constants and sizing", () => {
+describe("command_ring, constants and sizing", () => {
 	it("header is 16 bytes, slot is 16 bytes", () => {
 		expect(COMMAND_RING_HEADER_BYTES).toBe(16);
 		expect(COMMAND_RING_SLOT_BYTES).toBe(16);
@@ -58,7 +58,7 @@ describe("command_ring — constants and sizing", () => {
 	});
 
 	it("reserves op_code 0 as the empty-slot marker (no game opcode enum)", () => {
-		// The engine ships only `COMMAND_OP_EMPTY` — the game opcode enum
+		// The engine ships only `COMMAND_OP_EMPTY`, the game opcode enum
 		// (`OP_A`, …) moved to `@internal/sim`. Every
 		// non-zero u8 is an opaque, consumer-defined code.
 		expect(COMMAND_OP_EMPTY).toBe(0);
@@ -72,13 +72,13 @@ describe("command_ring — constants and sizing", () => {
 	});
 });
 
-describe("command_ring — init", () => {
+describe("command_ring, init", () => {
 	it("zeroes write_head, read_head, overflow; sets capacity", () => {
 		const { view, ringOff } = freshRing(16);
-		expect(ringWriteHead(view, ringOff)).toBe(0);
-		expect(ringReadHead(view, ringOff)).toBe(0);
-		expect(ringCapacitySlots(view, ringOff)).toBe(16);
-		expect(ringOverflow(view, ringOff)).toBe(false);
+		expect(commandRingWriteHead(view, ringOff)).toBe(0);
+		expect(commandRingReadHead(view, ringOff)).toBe(0);
+		expect(commandRingCapacitySlots(view, ringOff)).toBe(16);
+		expect(commandRingOverflow(view, ringOff)).toBe(false);
 	});
 
 	it("rejects non-power-of-two capacity", () => {
@@ -99,7 +99,7 @@ describe("command_ring — init", () => {
 	});
 });
 
-describe("command_ring — SPSC happy path", () => {
+describe("command_ring. SPSC happy path", () => {
 	it("push then pop round-trips op_code and payload", () => {
 		const { view, ringOff } = freshRing(8);
 		const payload = fill(new Uint8Array(15), 42);
@@ -139,10 +139,10 @@ describe("command_ring — SPSC happy path", () => {
 		expect(pendingCommandCount(view, ringOff)).toBe(0);
 	});
 
-	it("interleaved push/pop drains correctly", () => {
+	it("interleaved push and pop drains correctly", () => {
 		const { view, ringOff } = freshRing(4);
 		const out = new Uint8Array(15);
-		// Push 2, pop 1, push 2, pop 3 — verifies head indices stay sane
+		// Push 2, pop 1, push 2, pop 3, verifies head indices stay sane
 		expect(pushCommand(view, ringOff, OP_A, fill(new Uint8Array(15), 1))).toBe(true);
 		expect(pushCommand(view, ringOff, OP_A, fill(new Uint8Array(15), 2))).toBe(true);
 		expect(popCommand(view, ringOff, out)).toBe(OP_A);
@@ -159,15 +159,15 @@ describe("command_ring — SPSC happy path", () => {
 	});
 });
 
-describe("command_ring — overflow", () => {
+describe("command_ring, overflow", () => {
 	it("push beyond capacity returns false and sets overflow flag", () => {
 		const { view, ringOff } = freshRing(4);
 		for (let i = 0; i < 4; i++) {
 			expect(pushCommand(view, ringOff, OP_A, new Uint8Array(15))).toBe(true);
 		}
-		expect(ringOverflow(view, ringOff)).toBe(false);
+		expect(commandRingOverflow(view, ringOff)).toBe(false);
 		expect(pushCommand(view, ringOff, OP_A, new Uint8Array(15))).toBe(false);
-		expect(ringOverflow(view, ringOff)).toBe(true);
+		expect(commandRingOverflow(view, ringOff)).toBe(true);
 	});
 
 	it("after pop, ring accepts a new push (overflow flag stays set as a sticky witness)", () => {
@@ -175,22 +175,22 @@ describe("command_ring — overflow", () => {
 		expect(pushCommand(view, ringOff, OP_C, new Uint8Array(15))).toBe(true);
 		expect(pushCommand(view, ringOff, OP_C, new Uint8Array(15))).toBe(true);
 		expect(pushCommand(view, ringOff, OP_C, new Uint8Array(15))).toBe(false);
-		expect(ringOverflow(view, ringOff)).toBe(true);
+		expect(commandRingOverflow(view, ringOff)).toBe(true);
 		const out = new Uint8Array(15);
 		expect(popCommand(view, ringOff, out)).toBe(OP_C);
 		expect(pushCommand(view, ringOff, OP_C, new Uint8Array(15))).toBe(true);
 		// Flag stays set so the host can detect the prior overflow even after
-		// draining; resetting is the host's responsibility (re-init the ring
+		// draining. Resetting is the host's responsibility (re-init the ring
 		// or zero the flag explicitly).
-		expect(ringOverflow(view, ringOff)).toBe(true);
+		expect(commandRingOverflow(view, ringOff)).toBe(true);
 	});
 });
 
-describe("command_ring — wrap-around", () => {
+describe("command_ring, wrap-around", () => {
 	it("FIFO order survives write_head/read_head wrap across many ticks", () => {
 		const { view, ringOff } = freshRing(4);
-		// 32 pushes interleaved with pops; head indices wrap modulo
-		// capacity (4). The head counters themselves wrap modulo 2^32 —
+		// 32 pushes interleaved with pops. Head indices wrap modulo
+		// capacity (4). The head counters themselves wrap modulo 2^32,
 		// not exercised here, but the slot-index math (`head & 3`) is.
 		const out = new Uint8Array(15);
 		let pushed = 0;
@@ -209,16 +209,16 @@ describe("command_ring — wrap-around", () => {
 				popped++;
 			}
 		}
-		expect(ringWriteHead(view, ringOff)).toBe(pushed);
-		expect(ringReadHead(view, ringOff)).toBe(popped);
+		expect(commandRingWriteHead(view, ringOff)).toBe(pushed);
+		expect(commandRingReadHead(view, ringOff)).toBe(popped);
 		expect(pendingCommandCount(view, ringOff)).toBe(0);
 	});
 
 	it("u32 write_head/read_head wrap at 2^32 keeps FIFO order + pending count exact", () => {
-		// The `(write_head - read_head) >>> 0` slot/count math and the slot
+		// The `(write_head - read_head) >>> 0` slot and count math and the slot
 		// index `head & (capacity - 1)` are only correct across the 2^32
-		// counter boundary because of the `>>> 0` — a regression dropping it
-		// surfaces ONLY near the counter wrap. Seed both heads just below
+		// counter boundary because of the `>>> 0`, a regression dropping it
+		// surfaces only near the counter wrap. Seed both heads immediately below
 		// UINT32_MAX (the grow.test.ts:80 DataView-seed pattern) so the
 		// pushes below carry the counters through 0xffffffff → 0.
 		const { view, ringOff } = freshRing(4);
@@ -238,7 +238,7 @@ describe("command_ring — wrap-around", () => {
 			pushed++;
 			expect(pushCommand(view, ringOff, OP_A, fill(new Uint8Array(15), pushed))).toBe(true);
 			pushed++;
-			// Two pending straddling the wrap — count must stay exact (this is
+			// Two pending straddling the wrap, count must stay exact (this is
 			// the assertion the missing `>>> 0` would break).
 			expect(pendingCommandCount(view, ringOff)).toBe(pushed - popped);
 			while (popped < pushed) {
@@ -249,14 +249,14 @@ describe("command_ring — wrap-around", () => {
 			expect(pendingCommandCount(view, ringOff)).toBe(0);
 		}
 		// The counters genuinely wrapped: seed + 20 ops ≡ 18 (mod 2^32),
-		// which is below the seed — proving we crossed 2^32, not just bumped.
-		expect(ringWriteHead(view, ringOff)).toBe((NEAR_MAX + pushed) >>> 0);
-		expect(ringWriteHead(view, ringOff)).toBeLessThan(NEAR_MAX);
-		expect(ringReadHead(view, ringOff)).toBe((NEAR_MAX + popped) >>> 0);
+		// which is below the seed, proving we crossed 2^32, not only bumped.
+		expect(commandRingWriteHead(view, ringOff)).toBe((NEAR_MAX + pushed) >>> 0);
+		expect(commandRingWriteHead(view, ringOff)).toBeLessThan(NEAR_MAX);
+		expect(commandRingReadHead(view, ringOff)).toBe((NEAR_MAX + popped) >>> 0);
 	});
 });
 
-describe("command_ring — drain", () => {
+describe("command_ring, drain", () => {
 	it("drain visits every pending command in FIFO order and returns the count", () => {
 		const { view, ringOff } = freshRing(8);
 		const expected: { op: number; payload: Uint8Array }[] = [];
@@ -297,7 +297,7 @@ describe("command_ring — drain", () => {
 			captured.push(payload);
 		});
 		expect(captured.length).toBe(2);
-		// Different objects — handler can hold them past the next iteration
+		// Different objects, handler can hold them past the next iteration
 		// without aliasing the drain scratch buffer.
 		expect(captured[0]).not.toBe(captured[1]);
 		expect(captured[0]).toEqual(fill(new Uint8Array(15), 1));
@@ -305,10 +305,10 @@ describe("command_ring — drain", () => {
 	});
 });
 
-describe("command_ring — validation", () => {
+describe("command_ring, validation", () => {
 	// Mirror of event_ring's opCode guard: the command ring's slot
 	// prefix is a u8 and opCode 0 is the reserved empty-slot marker, so the TS
-	// host producer must reject 0, out-of-u8-range, and non-integer codes — a
+	// host producer must reject 0, out-of-u8-range, and non-integer codes, a
 	// corrupt op byte would otherwise be indistinguishable from an empty slot or
 	// would silently truncate via `setUint8`.
 	it("push rejects op_code === 0 (reserved as empty-slot marker)", () => {

@@ -9,16 +9,16 @@
  * alongside the existing static + symbol-propagation scans.
  *
  * Identity model. The engine has no access to source-level binding names
- * (`ContactEvent`, `ConfigRes`) at runtime — `eventKey("Contact")` returns
+ * (`ContactEvent`, `ConfigRes`) at runtime, `eventKey("Contact")` returns
  * `Symbol("Contact")` and the variable name is erased. The tracer records the
  * runtime-available identifier:
  *
- *   - ECS events / resources → the Symbol description (`label`).
+ *   - ECS events and resources → the Symbol description (`label`).
  *   - Actions → the numeric `def.id`.
  *
  * Resolution back to bindings happens in `visual-intel`, which already
- * extracts `{ binding, label }` declarations for events / resources and
- * `{ binding, id_expr }` for actions; the matching there is unambiguous.
+ * extracts `{ binding, label }` declarations for events and resources and
+ * `{ binding, id_expr }` for actions. The matching there is unambiguous.
  *
  * Callsite resolution. `new Error().stack` inside `record()`, walk the
  * frames, drop everything inside `packages/engine/src/core/ecs/` (this
@@ -28,14 +28,14 @@
  * `resolveCallsiteFromStack()` helper so it can be driven by a synthetic
  * stack in tests.
  *
- * Activation. `record()` is *unconditional* — it records on every call. The
+ * Activation. `record()` is *unconditional*. It records on every call. The
  * `isActive()` env-var gate is applied by the *callers* (`ecs.ts` /
  * `query.ts`, all `if (DEV && dispatchTrace.isActive())`), not inside
- * `record()`. This keeps the gate in one place — the dispatch hot path —
+ * `record()`. This keeps the gate in one place, the dispatch hot path,
  * where `DEV === false` dead-code-eliminates the whole branch in prod.
  */
 
-// This module holds only the in-memory tracer — no filesystem access. It is
+// This module holds only the in-memory tracer, no filesystem access. It is
 // transitively reachable from the browser `client` bundle (via core/ecs), so it
 // must stay free of `node:fs` / `node:path`. Persisting a snapshot to disk is a
 // server-only concern and lives in `services/server`.
@@ -46,9 +46,9 @@ export type ActionOp = "send_action" | "handle_action";
 export type ResourceOp = "read" | "write" | "register" | "remove";
 
 export interface DispatchTraceEntry {
-	/** Symbol description (events / resources) or numeric `def.id` (actions). */
+	/** Symbol description (events and resources) or numeric `def.id` (actions). */
 	readonly key: string | number;
-	/** Repo-relative POSIX path of the calling file. */
+	/** Repo-relative posix path of the calling file. */
 	readonly file: string;
 	readonly count: number;
 }
@@ -66,68 +66,68 @@ export interface DispatchTraceSnapshot {
 const ENGINE_FRAME_MARKER = "/packages/engine/src/core/ecs/";
 
 class DispatchTrace {
-	private activeCache: boolean | null = null;
-	private repoRootCache: string | null = null;
-	private buf = new Map<string, number>();
-	private callsiteCache = new Map<string, string | null>();
+	private _activeCache: boolean | null = null;
+	private _repoRootCache: string | null = null;
+	private _counts = new Map<string, number>();
+	private _callsiteCache = new Map<string, string | null>();
 
 	isActive(): boolean {
-		if (this.activeCache !== null) return this.activeCache;
-		// Reading process.env at every dispatch would be wasteful — cache once.
+		if (this._activeCache !== null) return this._activeCache;
+		// Reading process.env at every dispatch would be wasteful, cache once.
 		// `globalThis.process` is checked because the engine is also browser-
-		// reachable; if there's no process (browser bundles never include this
+		// reachable. If there's no process (browser bundles never include this
 		// code, but be defensive) the tracer is inert.
 		const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
 		const envValue = proc?.env?.VISUAL_INTEL_TRACE;
-		return (this.activeCache = envValue === "1" || envValue === "true");
+		return (this._activeCache = envValue === "1" || envValue === "true");
 	}
 
-	private repoRoot(): string {
-		if (this.repoRootCache !== null) return this.repoRootCache;
+	private _repoRoot(): string {
+		if (this._repoRootCache !== null) return this._repoRootCache;
 		const proc = (globalThis as { process?: { cwd?: () => string } }).process;
-		return (this.repoRootCache = proc?.cwd?.() ?? "");
+		return (this._repoRootCache = proc?.cwd?.() ?? "");
 	}
 
-	private resolveCallsite(): string | null {
-		// `new Error().stack` is the cheap-but-not-free part; the walk itself
+	private _resolveCallsite(): string | null {
+		// `new Error().stack` is the cheap-but-not-free part. The walk itself
 		// is the pure helper below so tests can feed a synthetic stack.
 		return resolveCallsiteFromStack(
 			new Error().stack ?? null,
-			this.repoRoot(),
-			this.callsiteCache
+			this._repoRoot(),
+			this._callsiteCache
 		);
 	}
 
-	private record(channel: DispatchChannel, op: string, key: string | number): void {
-		const file = this.resolveCallsite();
+	private _record(channel: DispatchChannel, op: string, key: string | number): void {
+		const file = this._resolveCallsite();
 		if (!file) return;
 		const composite = `${channel}\t${op}\t${key}\t${file}`;
-		this.buf.set(composite, (this.buf.get(composite) ?? 0) + 1);
+		this._counts.set(composite, (this._counts.get(composite) ?? 0) + 1);
 	}
 
-	recordEmit(label: string): void {
-		this.record("ecs-events", "emit", label);
+	recordEventEmit(label: string): void {
+		this._record("ecs-events", "emit", label);
 	}
-	recordRead(label: string): void {
-		this.record("ecs-events", "read", label);
+	recordEventRead(label: string): void {
+		this._record("ecs-events", "read", label);
 	}
 	recordResourceRead(label: string): void {
-		this.record("resources", "read", label);
+		this._record("resources", "read", label);
 	}
 	recordResourceWrite(label: string): void {
-		this.record("resources", "write", label);
+		this._record("resources", "write", label);
 	}
 	recordResourceRegister(label: string): void {
-		this.record("resources", "register", label);
+		this._record("resources", "register", label);
 	}
 	recordResourceRemove(label: string): void {
-		this.record("resources", "remove", label);
+		this._record("resources", "remove", label);
 	}
 	recordSendAction(actId: number): void {
-		this.record("actions", "send_action", actId);
+		this._record("actions", "send_action", actId);
 	}
 	recordHandleAction(actId: number): void {
-		this.record("actions", "handle_action", actId);
+		this._record("actions", "handle_action", actId);
 	}
 
 	snapshot(): DispatchTraceSnapshot {
@@ -136,7 +136,7 @@ class DispatchTrace {
 			actions: { send_action: [], handle_action: [] },
 			resources: { read: [], write: [], register: [], remove: [] }
 		};
-		for (const [composite, count] of this.buf.entries()) {
+		for (const [composite, count] of this._counts.entries()) {
 			const [channel, op, keyStr, file] = composite.split("\t");
 			if (!channel || !op || file === undefined) continue;
 			const key: string | number = channel === "actions" ? Number(keyStr) : (keyStr as string);
@@ -166,10 +166,10 @@ class DispatchTrace {
 	}
 
 	reset(): void {
-		this.buf.clear();
-		this.callsiteCache.clear();
-		this.activeCache = null;
-		this.repoRootCache = null;
+		this._counts.clear();
+		this._callsiteCache.clear();
+		this._activeCache = null;
+		this._repoRootCache = null;
 	}
 }
 
@@ -188,9 +188,9 @@ function parseFrameFile(line: string): string | null {
 
 /**
  * Walk a stack string, drop frames inside the engine ECS package, and return
- * the first non-engine frame as a repo-relative POSIX path (or `null` if the
+ * the first non-engine frame as a repo-relative posix path (or `null` if the
  * stack has no attributable frame). Pure so tests can drive it with a
- * synthetic stack; the optional `cache` memoises per-line results for the hot
+ * synthetic stack. The optional `cache` memoises per-line results for the hot
  * dispatch path. Mutates `cache` when supplied.
  */
 function resolveCallsiteFromStack(
@@ -213,7 +213,7 @@ function resolveCallsiteFromStack(
 			continue;
 		}
 		if (abs.includes(ENGINE_FRAME_MARKER)) {
-			// Engine-internal frame — keep walking. Cache as null so we
+			// Engine-internal frame, keep walking. Cache as null so we
 			// don't reparse this line next time.
 			cache?.set(line, null);
 			continue;
@@ -228,7 +228,7 @@ function resolveCallsiteFromStack(
 function toRepoRelative(abs: string, root: string): string {
 	let p = abs;
 	if (p.startsWith("file://")) {
-		// Strip the URL prefix without pulling in node:url — the Bun /
+		// Strip the URL prefix without pulling in node:url, the Bun /
 		// V8 stack format always uses `file://` + an absolute path.
 		p = p.slice("file://".length);
 	}
@@ -240,7 +240,7 @@ function toRepoRelative(abs: string, root: string): string {
 
 export const dispatchTrace: DispatchTrace = new DispatchTrace();
 
-// Test seam — exposes the parser, the pure callsite walk, and the tracer
+// Test seam, exposes the parser, the pure callsite walk, and the tracer
 // constructor without exposing the singleton's internals to production code.
 export const _dispatchTraceInternals = {
 	parseFrameFile,

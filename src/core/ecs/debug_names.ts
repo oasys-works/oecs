@@ -4,7 +4,7 @@
  * `registerComponent(schema, { name: "Pos" })` records a human label for the
  * def so dev-mode diagnostics can say `'Pos' (component 5)` instead of leaving
  * the user to count registration order. Keyed on the callable def object (a
- * WeakMap), not the numeric id — ids restart per world, so an id-keyed global
+ * WeakMap), not the numeric id, ids restart per world, so an id-keyed global
  * would collide across worlds while the def object is world-unique.
  *
  * Names are diagnostic only: never read on a hot path, no effect on layout,
