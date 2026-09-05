@@ -22,9 +22,17 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { INTERNAL_EXPORTS, ROOT_EXPORTS } from "./public_api_surface";
@@ -32,6 +40,7 @@ import { INTERNAL_EXPORTS, ROOT_EXPORTS } from "./public_api_surface";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const DIST = join(ROOT, "dist");
+const CAPS = join(DIST, "capabilities");
 const PROD = join(DIST, "index.js");
 const DEV_BUILD = join(DIST, "index.development.js");
 
@@ -119,6 +128,94 @@ const out = {};
 console.log(JSON.stringify(out));
 `;
 
+/** A world with every capability installed, and one fault raised from inside
+ * each of three capability modules. Each capability bundle is a separate rollup
+ * graph, so a copied error class would answer `false` to `instanceof` here even
+ * though the same source declared it. */
+const capabilityFaults = (
+	core: string,
+	eventsMod: string,
+	snapshotsMod: string,
+	load: string
+) => `
+const root = ${load}(${JSON.stringify(core)});
+const { events } = ${load}(${JSON.stringify(eventsMod)});
+const { snapshots } = ${load}(${JSON.stringify(snapshotsMod)});
+const w = root.ECS.create({ deterministic: true, plugins: [events(), snapshots()] });
+const caught = (fn) => {
+	try {
+		fn();
+		return undefined;
+	} catch (err) {
+		return err;
+	}
+};
+const emit = caught(() => w.events.emit(root.eventKey("unregistered"), { x: 1 }));
+const restore = caught(() => w.snapshots.restore(new Uint8Array(8)));
+const sparse = caught(() => w.snapshots.restoreSparse(new Uint8Array(8)));
+console.log(JSON.stringify({
+	emitCategory: emit?.category,
+	emitIsECSError: emit instanceof root.ECSError,
+	emitPassesGuard: root.isEcsError(emit),
+	restoreIsECSRestoreError: restore instanceof root.ECSRestoreError,
+	sparseIsSparseRestoreError: sparse instanceof root.SparseRestoreError
+}));
+`;
+
+/** An observer whose declared access covers one tag, writing a second component
+ * from its callback. The world runs the callback inside the same access span a
+ * system gets, so the undeclared write must be refused. A copied `accessCheck`
+ * holds no span, and the write goes through. */
+const observerAccessSpan = `
+const root = await import(${JSON.stringify(DEV_BUILD)});
+const { observers } = await import(${JSON.stringify(join(CAPS, "observers.development.js"))});
+const world = root.ECS.create({ plugins: [observers()] });
+const Tag = world.registerTag();
+const Other = world.registerComponent({ v: "f64" });
+const access = (defs) => ({
+	reads: defs, writes: defs, spawns: [], despawns: [], transitions: [],
+	resourceReads: [], resourceWrites: [], sparseReads: [], sparseWrites: [],
+	relationReads: [], relationWrites: []
+});
+let undeclaredAdd = "no throw";
+let ran = false;
+world.observe(Tag, {
+	access: access([Tag]),
+	onAdd: (eid, ctx) => {
+		ran = true;
+		try {
+			ctx.commands.add(eid, Other);
+		} catch (err) {
+			undeclaredAdd = err.category ?? err.name;
+		}
+	}
+});
+const e = world.spawn();
+world.addSystems(
+	root.SCHEDULE.UPDATE,
+	world.registerSystem({ ...access([Tag]), fn: (ctx) => ctx.commands.add(e, Tag) })
+);
+world.startup();
+world.update(1 / 60);
+console.log(JSON.stringify({ ran, undeclaredAdd }));
+`;
+
+/** Every static specifier one emitted module names. Rollup writes each import
+ * at the start of a line, so a specifier inside a retained doc comment (which
+ * is indented under a `*`) does not match. */
+function staticImports(file: string): string[] {
+	const src = readFileSync(file, "utf8");
+	const found = new Set<string>();
+	for (const re of [
+		/^\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']/gm,
+		/^\s*import\s*["']([^"']+)["']/gm,
+		/\brequire\(\s*["'](\.[^"']+)["']\s*\)/g
+	]) {
+		for (const m of src.matchAll(re)) found.add(m[1]);
+	}
+	return [...found].sort();
+}
+
 describe("the shipped bundle", () => {
 	beforeAll(() => {
 		buildIfStale();
@@ -157,5 +254,76 @@ describe("the shipped bundle", () => {
 		expect(out.singleOfZero).toBe("undefined");
 		expect(out.singleOfOne).toBe("true");
 		expect(out.singleOfTwo).toBe("true");
+	});
+
+	it("throws the root's error classes out of a capability, as ESM", () => {
+		const out = probe(
+			capabilityFaults(
+				PROD,
+				join(CAPS, "events.js"),
+				join(CAPS, "snapshots.js"),
+				"await import"
+			)
+		);
+		expect(out.emitCategory).toBe("EVENT_NOT_REGISTERED");
+		expect(out.emitIsECSError).toBe(true);
+		expect(out.emitPassesGuard).toBe(true);
+		expect(out.restoreIsECSRestoreError).toBe(true);
+		expect(out.sparseIsSparseRestoreError).toBe(true);
+	});
+
+	it("throws the root's error classes out of a capability, as CJS", () => {
+		const prelude = `
+const { createRequire } = await import("node:module");
+const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
+`;
+		const out = probe(
+			prelude +
+				capabilityFaults(
+					join(DIST, "index.cjs"),
+					join(CAPS, "events.cjs"),
+					join(CAPS, "snapshots.cjs"),
+					"req"
+				)
+		);
+		expect(out.emitCategory).toBe("EVENT_NOT_REGISTERED");
+		expect(out.emitIsECSError).toBe(true);
+		expect(out.emitPassesGuard).toBe(true);
+		expect(out.restoreIsECSRestoreError).toBe(true);
+		expect(out.sparseIsSparseRestoreError).toBe(true);
+	});
+
+	it("runs an observer callback inside the core's access span", () => {
+		const out = probe(observerAccessSpan);
+		expect(out.ran).toBe(true);
+		expect(out.undeclaredAdd).toBe("ACCESS_UNDECLARED");
+	});
+
+	it("binds every capability bundle to the core artifact, not to a copy", () => {
+		const files = readdirSync(CAPS)
+			.filter((name) => name.endsWith(".js") || name.endsWith(".cjs"))
+			.map((name) => join(CAPS, name));
+		expect(files.length).toBeGreaterThan(0);
+		const outside: string[] = [];
+		for (const file of files) {
+			for (const spec of staticImports(file)) {
+				const target = relative(DIST, resolve(dirname(file), spec));
+				if (!target.startsWith("capabilities/") && !/^(index|internal)\./.test(target)) {
+					outside.push(`${relative(DIST, file)} -> ${spec}`);
+				}
+			}
+		}
+		expect(outside).toEqual([]);
+	});
+
+	it("leaves the core chunk graph at the three chunks it ships", () => {
+		for (const entry of [PROD, DEV_BUILD]) {
+			const chunks = staticImports(entry).filter((spec) => spec.startsWith("."));
+			expect(chunks.map((spec) => spec.replace(/-[\w-]{8}\.js$/, ".js")).sort()).toEqual([
+				"./host_commands.js",
+				"./shared.js",
+				"./typed_arrays.js"
+			]);
+		}
 	});
 });

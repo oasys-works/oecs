@@ -60,6 +60,7 @@ export const ROOT_EXPORTS: readonly string[] = [
 ];
 
 export const INTERNAL_EXPORTS: readonly string[] = [
+	"AppError",
 	"BUDGET_DEFAULT_ARCHETYPES",
 	"BUDGET_DEFAULT_BYTES_PER_ENTITY",
 	"BUDGET_GROWTH_HEADROOM",
@@ -72,6 +73,10 @@ export const INTERNAL_EXPORTS: readonly string[] = [
 	"MAX_LIVE_GENERATION",
 	"RETIRED_GENERATION",
 	"accessCheck",
+	"capabilityInstalledTwiceError",
+	"capabilityMissingError",
+	"componentDebugName",
+	"componentLabel",
 	"createEntityId",
 	"dispatchTrace",
 	"getEntityGeneration",
@@ -80,5 +85,7 @@ export const INTERNAL_EXPORTS: readonly string[] = [
 	"ringDisableCodec",
 	"ringEnableCodec",
 	"ringRemoveComponentCodec",
-	"ringSetFieldCodec"
+	"ringSetFieldCodec",
+	"setComponentDebugName",
+	"storeOnlyHost"
 ];

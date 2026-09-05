@@ -52,6 +52,11 @@ import type { ComponentSchema } from "./component";
 import { MAX_INDEX } from "./entity";
 import { fieldGids, NO_COLUMN, type AccessorColumns } from "./ref";
 import { writeElem } from "./row_kinds";
+// Declared two directories up, so the snapshot capability's own rollup graph
+// can bind to the same class this module throws instead of copying it.
+import { SparseRestoreError } from "../restore_errors";
+
+export { SparseRestoreError };
 
 /** Sparse-component handle id. A separate id space from `ComponentID`. It
  * indexes `Store`'s `sparseStores`, never the archetype mask, which is the
@@ -340,13 +345,6 @@ export class SparseComponentStore {
 			this.ticks = ticks;
 		}
 		this._cap = cap;
-	}
-}
-
-export class SparseRestoreError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "SparseRestoreError";
 	}
 }
 

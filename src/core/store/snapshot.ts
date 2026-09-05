@@ -32,13 +32,11 @@ import {
 import { readLayoutDescriptorRegion } from "./descriptor";
 import { createArchetypeViews, type ColumnStore } from "./column_store";
 import { DEFAULT_SAB_ALLOCATOR, type BufferAllocator } from "./allocator";
+// Declared one directory up, so the snapshot capability's own rollup graph can
+// bind to the same class this module throws instead of copying it.
+import { StoreRestoreError } from "../restore_errors";
 
-export class StoreRestoreError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "StoreRestoreError";
-	}
-}
+export { StoreRestoreError };
 
 /** Zero-copy `Uint8Array` view over the SAB's used byte range. Length is
  * `header.capacity`, the canonical size, not `buffer.byteLength`. The two

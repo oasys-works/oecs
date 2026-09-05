@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import dts from "vite-plugin-dts";
 import fs from "fs";
 import path from "path";
+import { bindToCoreArtifact, recordCoreGraph } from "./scripts/core_boundary";
 
 // Two production-artifact variants are emitted from one config (see
 // scripts/build.mjs): the default `production` build (`__DEV__:false`, guards
@@ -19,13 +20,29 @@ const DEV_BUILD = process.env.OECS_VARIANT === "development";
 // shipped artifact showed the cost. A separate pass leaves the core chunk graph
 // exactly as it was, at the price of a little duplicated code in the capability
 // bundles, which are small and loaded once.
+//
+// Duplicated code is not always harmless. A module that carries a class, a
+// singleton or a registry must exist once in a program, so the capability pass
+// marks those external and resolves them to the core artifact.
+// `scripts/core_boundary.ts` holds the classification and fails the build on a
+// module it does not name.
 const CAPABILITY_BUILD = process.env.OECS_ENTRIES === "capabilities";
+
+const SRC_DIR = path.resolve(__dirname, "src");
+const VARIANT = DEV_BUILD ? "development" : "production";
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   plugins: [
     ...(command === "build" && !DEV_BUILD && !CAPABILITY_BUILD
       ? [dts({ tsconfigPath: "./tsconfig.build.json" })]
+      : []),
+    ...(command === "build"
+      ? [
+          CAPABILITY_BUILD
+            ? bindToCoreArtifact(SRC_DIR, VARIANT)
+            : recordCoreGraph(SRC_DIR, VARIANT),
+        ]
       : []),
   ],
 

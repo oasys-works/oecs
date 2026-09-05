@@ -15,6 +15,16 @@
  * production pass); `scripts/postbuild.mjs` then fixes them up.
  */
 import { build } from "vite";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+// Where the core pass records its module list and its entry exports, and where
+// the capability pass reads them back. Outside `dist`, because it is a note
+// between two passes and not a shipped file. `scripts/core_boundary.ts` fails
+// the build when this is unset, so the guard cannot be skipped by accident.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "oecs-build-"));
+process.env.OECS_CORE_MANIFEST = path.join(scratch, "core-graph.json");
 
 for (const variant of ["production", "development"]) {
 	process.env.OECS_VARIANT = variant;
@@ -30,4 +40,6 @@ for (const variant of ["production", "development"]) {
 	await build();
 	console.log(`build: ${variant} variant emitted`);
 }
+fs.rmSync(scratch, { recursive: true, force: true });
+delete process.env.OECS_CORE_MANIFEST;
 delete process.env.OECS_ENTRIES;
