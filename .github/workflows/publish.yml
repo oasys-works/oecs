@@ -24,6 +24,10 @@ jobs:
       # bare imports (e.g. solid-js in ./solid) from a physical node_modules,
       # so deps must be installed before publishing.
       - run: pnpm install --frozen-lockfile
+      # A tag is not a review. Gate the publish on the same check the local
+      # release runs, because JSR is immutable and a bad version stays.
+      - name: Verify
+        run: pnpm verify
       - name: Publish to JSR
         run: npx jsr publish
       - name: Create GitHub release
