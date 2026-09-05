@@ -30,10 +30,10 @@
  * integer arithmetic. There is one source of truth and it is deterministic.
  ***/
 
-import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi";
-import type { Archetype } from "../archetype";
-import type { SystemContext } from "../system_context";
-import { ECS_ERROR, ECSError } from "../utils/error";
+import { COMPONENT_MASK_WORDS } from "../../core/store/vendored_abi/abi";
+import type { Archetype } from "../../core/ecs/archetype";
+import type { SystemContext } from "../../core/ecs/system_context";
+import { ECS_ERROR, ECSError } from "../../core/ecs/utils/error";
 import { loadNodeThreads } from "./node_threads";
 import type { ParallelPlan } from "./plan";
 import {
@@ -89,8 +89,8 @@ export interface AttachWorkersOptions {
 	 * one. One worker is always a loss against the sequential body, so a caller
 	 * that wants a split gives more than one. */
 	readonly count?: number;
-	/** Where the engine's worker entry lives. Defaults to the sibling of the
-	 * module this pool ships in, which is `@oasys/oecs/worker`.
+	/** Where the engine's worker entry lives. Defaults to `@oasys/oecs/worker`,
+	 * which the package ships one directory above the module this pool lands in.
 	 *
 	 * A bundler moves the pool into a chunk of its own and leaves the worker
 	 * entry out of the graph, so the default resolves to a file the server does
@@ -136,19 +136,19 @@ function resolveStackBytes(given: number | undefined): number {
 	if (!Number.isInteger(given) || given < 1) {
 		throw new ECSError(
 			ECS_ERROR.WORKERS_COUNT_INVALID,
-			`attachWorkers: stackBytes must be an integer >= 1, got ${String(given)}`
+			`workers.attach: stackBytes must be an integer >= 1, got ${String(given)}`
 		);
 	}
 	if (given % KERNEL_STACK_ALIGN !== 0) {
 		throw new ECSError(
 			ECS_ERROR.WORKERS_COUNT_INVALID,
-			`attachWorkers: stackBytes must be a multiple of ${KERNEL_STACK_ALIGN}, the frame alignment of a wasm shadow stack, got ${given}`
+			`workers.attach: stackBytes must be a multiple of ${KERNEL_STACK_ALIGN}, the frame alignment of a wasm shadow stack, got ${given}`
 		);
 	}
 	if (given < KERNEL_STACK_MIN_BYTES) {
 		throw new ECSError(
 			ECS_ERROR.WORKERS_COUNT_INVALID,
-			`attachWorkers: stackBytes must be at least ${KERNEL_STACK_MIN_BYTES}, one WASM page, got ${given}`
+			`workers.attach: stackBytes must be at least ${KERNEL_STACK_MIN_BYTES}, one WASM page, got ${given}`
 		);
 	}
 	return given;
@@ -197,10 +197,11 @@ function defaultWorkerCount(): number {
 /**
  * Where the worker entry lives, given where this module landed.
  *
- * The build emits the worker beside the package entry, with the same variant
- * and format suffixes: `index.js` and `worker.js`, `index.development.cjs` and
- * `worker.development.cjs`. So the entry is the sibling whose name is `worker`
- * and whose suffixes are this module's own.
+ * The build emits this plugin one directory below the package entry, and the
+ * worker beside that entry, with the same variant and format suffixes:
+ * `plugins/workers.js` and `worker.js`, `plugins/workers.development.cjs` and
+ * `worker.development.cjs`. So the entry is the parent directory's `worker`
+ * file, carrying this module's own suffixes.
  *
  * This holds for the package as it ships, and it does not survive a bundler. A
  * bundler renames the chunk this module lands in and drops the worker entry,
@@ -213,7 +214,9 @@ function defaultWorkerUrl(): URL {
 	const slash = path.lastIndexOf("/");
 	const file = path.slice(slash + 1);
 	const dot = file.indexOf(".");
-	self.pathname = `${path.slice(0, slash + 1)}worker${dot < 0 ? "" : file.slice(dot)}`;
+	const dir = path.slice(0, slash);
+	const parent = dir.slice(0, dir.lastIndexOf("/") + 1);
+	self.pathname = `${parent}worker${dot < 0 ? "" : file.slice(dot)}`;
 	return self;
 }
 
@@ -361,21 +364,21 @@ export class WorkerPool {
 		if (!hostCanPark()) {
 			throw new ECSError(
 				ECS_ERROR.WORKERS_HOST_CANNOT_PARK,
-				"attachWorkers: this host refuses Atomics.wait, so it cannot park while the workers run. Host the world inside a worker and attach the pool from there."
+				"workers.attach: this host refuses Atomics.wait, so it cannot park while the workers run. Host the world inside a worker and attach the pool from there."
 			);
 		}
 		const count = options?.count ?? defaultWorkerCount();
 		if (!Number.isInteger(count) || count < 1) {
 			throw new ECSError(
 				ECS_ERROR.WORKERS_COUNT_INVALID,
-				`attachWorkers: count must be an integer >= 1, got ${String(count)}`
+				`workers.attach: count must be an integer >= 1, got ${String(count)}`
 			);
 		}
 		const joinTimeoutMs = options?.joinTimeoutMs ?? DEFAULT_JOIN_TIMEOUT_MS;
 		if (!Number.isInteger(joinTimeoutMs) || joinTimeoutMs < 1) {
 			throw new ECSError(
 				ECS_ERROR.WORKERS_COUNT_INVALID,
-				`attachWorkers: joinTimeoutMs must be an integer >= 1, got ${String(joinTimeoutMs)}`
+				`workers.attach: joinTimeoutMs must be an integer >= 1, got ${String(joinTimeoutMs)}`
 			);
 		}
 		const stackBytes = resolveStackBytes(options?.stackBytes);
@@ -402,7 +405,7 @@ export class WorkerPool {
 			await Promise.all(workers.map((worker) => worker.terminate()));
 			throw new ECSError(
 				ECS_ERROR.WORKERS_ENTRY_UNREACHABLE,
-				`attachWorkers: worker ${i} did not start from '${String(url)}': ${error}. Pass workerUrl with the URL your bundler emits for the '@oasys/oecs/worker' entry.`
+				`workers.attach: worker ${i} did not start from '${String(url)}': ${error}. Pass workerUrl with the URL your bundler emits for the '@oasys/oecs/worker' entry.`
 			);
 		}
 

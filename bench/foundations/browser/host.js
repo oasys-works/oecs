@@ -7,7 +7,7 @@
  *   `worker-js`     a shared world, three pool workers, a `js` kernel
  *   `worker-wasm`   a wasm world, three pool workers, a `wasm` kernel the
  *                   emitter under `bench/foundations/wasm/` writes byte by byte
- *   `bad-url`       `attachWorkers` with a `workerUrl` the server answers 404
+ *   `bad-url`       `workers.attach` with a `workerUrl` the server answers 404
  *   `grow`          a store grow between two runs of passes
  *
  * Each lane builds the same world twice. One runs the frames with no pool, and
@@ -23,6 +23,7 @@
  */
 
 import { ECS, SCHEDULE } from "../../../dist/index.js";
+import { workers } from "../../../dist/plugins/workers.js";
 import { emitKernelModule } from "../wasm/kernel_module.mjs";
 import { integrateI32 } from "../wasm/engine-kernels.mjs";
 import { regionSpec, storeBuffer } from "../par/world.mjs";
@@ -63,7 +64,12 @@ function buildWorld({ memory, kernel }) {
 	// The region is the public way to the store bytes. The grow lane reads the
 	// buffer length through it, so a run that never grew is a visible failure and
 	// not an assumption about the column capacity.
-	const ecs = ECS.create({ deterministic: true, memory, regions: [regionSpec()] });
+	const ecs = ECS.create({
+		deterministic: true,
+		memory,
+		regions: [regionSpec()],
+		plugins: [workers()]
+	});
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
 	const TagOne = ecs.registerTag();
@@ -162,7 +168,7 @@ async function lane(id, options, growBy = 0) {
 	sequential.ecs.dispose();
 
 	const pooled = buildWorld(options);
-	const pool = await pooled.ecs.attachWorkers({ count: WORKERS });
+	const pool = await pooled.ecs.workers.attach({ count: WORKERS });
 	await pool.settled();
 	const byPool = runFrames(pooled, growBy);
 	const pooledFnRuns = pooled.fnRuns();
@@ -211,13 +217,13 @@ async function badUrlLane() {
 	let ok = false;
 	try {
 		const answer = await Promise.race([
-			world.ecs.attachWorkers({ count: 1, workerUrl: missing }).then(() => "resolved"),
+			world.ecs.workers.attach({ count: 1, workerUrl: missing }).then(() => "resolved"),
 			timeout
 		]);
 		detail =
 			answer === "timeout"
-				? { outcome: `attachWorkers answered nothing within ${ANSWER_TIMEOUT_MS} ms` }
-				: { outcome: "attachWorkers resolved, and the entry does not exist" };
+				? { outcome: `workers.attach answered nothing within ${ANSWER_TIMEOUT_MS} ms` }
+				: { outcome: "workers.attach resolved, and the entry does not exist" };
 	} catch (error) {
 		// `ECSError` carries its code on `category`. A browser that reports the
 		// worker load failure differently lands on another category, or on none.

@@ -213,12 +213,15 @@ const move = ecs.registerSystem({
   fn: (ctx, dt) => { /* the sequential twin */ },
 });
 
-const pool = await ecs.attachWorkers({ count: 4 });
+// The pool ships in a plugin, so the world installs `workers()` from
+// `@oasys/oecs/workers` at construction.
+const pool = await ecs.workers.attach({ count: 4 });
 ```
 
 A parallel system declares `reads`, `writes`, `queries` and its kernel, and nothing else. A sparse,
 relation, resource, spawn, despawn or transition declaration, `exclusive`, `backendHandle` and a
-missing `fn` each throw `PARALLEL_ACCESS` at registration. The query must be dense. The field name
+missing `fn` each throw `PARALLEL_ACCESS` at registration. A world that installed no workers plugin
+checks none of that, because the check ships with the plugin. The query must be dense. The field name
 in each `columns` entry is held to the component's own schema at compile time.
 
 [parallel execution](./parallel.md) documents the kernel signature, the pool, the join stamp, the

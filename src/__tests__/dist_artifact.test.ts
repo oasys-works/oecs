@@ -202,7 +202,12 @@ console.log(JSON.stringify({ ran, undeclaredAdd }));
 
 /** One shared world driven by two workers of the shipped worker entry, against
  * the same world driven by the sequential body. The kernel is written beside
- * the probe, because a worker loads it by URL. */
+ * the probe, because a worker loads it by URL.
+ *
+ * No `workerUrl`, on purpose. The pool derives the entry from where its own
+ * module landed, and the plugin now lands one directory below the entry the
+ * worker sits beside. Every other parallel test passes an explicit URL, so this
+ * is the only place that resolution runs. */
 const POOL_FROM_DIST = `
 const { writeFileSync } = await import("node:fs");
 const kernel = new URL("./kernel.mjs", import.meta.url);
@@ -210,12 +215,13 @@ writeFileSync(kernel, "export function step(x, vx, begin, end, dt) { for (let i 
 
 const { ECS, SCHEDULE } = await import(${JSON.stringify(PROD)});
 const { snapshots } = await import(${JSON.stringify(join(PLUGINS, "snapshots.js"))});
+const { workers } = await import(${JSON.stringify(join(PLUGINS, "workers.js"))});
 
 function build() {
 	const ecs = ECS.create({
 		deterministic: true,
 		memory: { backing: "shared", maxBytes: 16 * 1024 * 1024 },
-		plugins: [snapshots()]
+		plugins: [snapshots(), workers()]
 	});
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: "i32" }, { name: "Vel" });
@@ -255,7 +261,7 @@ const sequential = build();
 for (let f = 0; f < 4; f++) sequential.update(2);
 
 const pooled = build();
-const pool = await pooled.attachWorkers({ count: 2, workerUrl: ${JSON.stringify(join(DIST, "worker.js"))} });
+const pool = await pooled.workers.attach({ count: 2 });
 await pool.settled();
 for (let f = 0; f < 4; f++) pooled.update(2);
 const attached = pool.count;
@@ -304,8 +310,9 @@ console.log(JSON.stringify({ name: named.name, bare }));
 const REFUSED_ATTACH = `
 const { readFileSync } = await import("node:fs");
 const { ECS, SCHEDULE } = await import(${JSON.stringify(PROD)});
+const { workers } = await import(${JSON.stringify(join(PLUGINS, "workers.js"))});
 const module = new WebAssembly.Module(readFileSync(${JSON.stringify(join(ROOT, "src/core/ecs/__tests__/fixtures/kernel_emitted.wasm"))}));
-const ecs = new ECS({ memory: { backing: "shared", maxBytes: 16 * 1024 * 1024 } });
+const ecs = ECS.create({ memory: { backing: "shared", maxBytes: 16 * 1024 * 1024 }, plugins: [workers()] });
 const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
 ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({
@@ -321,11 +328,11 @@ ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({
 }));
 let category = null;
 try {
-	await ecs.attachWorkers({ count: 2, workerUrl: ${JSON.stringify(join(DIST, "worker.js"))} });
+	await ecs.workers.attach({ count: 2, workerUrl: ${JSON.stringify(join(DIST, "worker.js"))} });
 } catch (err) {
 	category = err.category;
 }
-console.log(JSON.stringify({ category, released: ecs.workers === null }));
+console.log(JSON.stringify({ category, released: ecs.workers.pool === null }));
 `;
 
 describe("the shipped bundle", () => {
@@ -429,7 +436,7 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 	});
 
 	it("ships the worker entry as its own bundle, in every variant", () => {
-		// `attachWorkers` resolves the entry as the sibling of the module the pool
+		// `workers.attach` resolves the entry as the sibling of the module the pool
 		// ships in, with the same variant and format suffixes. A missing file, or
 		// one under another name, breaks that resolution and no test that starts a
 		// worker would notice, because the tests start theirs from the source.
@@ -455,6 +462,10 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 			"index.cjs",
 			"index.development.js",
 			"index.development.cjs",
+			"plugins/workers.js",
+			"plugins/workers.cjs",
+			"plugins/workers.development.js",
+			"plugins/workers.development.cjs",
 			"worker.js",
 			"worker.cjs",
 			"worker.development.js",

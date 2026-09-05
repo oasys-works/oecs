@@ -1,7 +1,7 @@
 # Writing a plugin
 
 Write a plugin when a subsystem must cost nothing on a world that does not use it. Relations,
-events, snapshots and observers are plugins, and a plugin of your own uses the same seams.
+events, snapshots, observers and workers are plugins, and a plugin of your own uses the same seams.
 Import `Plugin`, `PluginHost`, `PluginsOf` and `ChangeFeed` from `@oasys/oecs`.
 
 ## What a plugin is
@@ -46,6 +46,7 @@ plugin that watches a component takes it later, through its own facade.
 | `context` | the one system context an observer callback receives | shared with the schedule, so a callback sees the access span a system sees |
 | `onSettle(fn)` | run `fn` at the tail of every `update()` | one call for each hook, for each frame |
 | `installObservers(registry)` | hand the world its observer registry | the observers plugin owns this seam |
+| `installWorkers(hooks)` | hand the world a pool's registration and dispose hooks, and take back the store bytes, the store base, `noteScan` and the route | the workers plugin owns this seam |
 
 `host.world` carries no facade of any plugin, including the one installing. Take it to register a
 system, read a field, build a cursor or reach a resource.
@@ -72,11 +73,11 @@ One install per name. A list that holds one name twice throws `PLUGIN_ALREADY_IN
 
 A facade key must not name a member the world already carries. `Object.assign` overwrites it without
 a word, and the world loses a method it needs. A development build checks each key and throws
-`PLUGIN_SURFACE_COLLISION`. Rename the member the plugin adds. The four reserved slots,
-`relations`, `events`, `observe` and `snapshots`, are the exception, because a plugin is meant
-to fill them.
+`PLUGIN_SURFACE_COLLISION`. Rename the member the plugin adds. The five reserved slots,
+`relations`, `events`, `observe`, `snapshots` and `workers`, are the exception, because a plugin is
+meant to fill them.
 
-A bare world declares those four slots. A JavaScript caller who reaches for one gets a fault that
+A bare world declares those five slots. A JavaScript caller who reaches for one gets a fault that
 names the import. A bare world declares no slot for a plugin of your own. So TypeScript is the
 only guard there, and a JavaScript caller reads `undefined` instead of a fault. Document the import,
 and expect the type to carry the rule.

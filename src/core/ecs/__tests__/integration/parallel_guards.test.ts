@@ -16,8 +16,9 @@ import { ECS } from "../../ecs";
 import { resourceKey } from "../../resource";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, ECSError } from "../../utils/error";
-import { DEFAULT_PARALLEL_MIN_ROWS } from "../../parallel/plan";
-import type { WorkerPool } from "../../parallel/pool";
+import { DEFAULT_PARALLEL_MIN_ROWS, type ParallelPlan } from "../../../../plugins/workers/plan";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
+import { workers } from "../../../../plugins/workers";
 import type { ParallelColumn } from "../../system";
 import { KERNELS_URL, WORKER_URL, buildWorld } from "./parallel_fixture";
 
@@ -28,6 +29,13 @@ afterEach(async () => {
 	pools = [];
 	await Promise.all(open.map((pool) => pool.detach()));
 });
+
+/** The descriptor carries the plan as an opaque field, because the core
+ * neither builds it nor reads inside it. The plugin that built it names the
+ * shape, so a test that checks the shape names the plugin's type. */
+function planOf(system: { readonly parallelPlan?: object }): ParallelPlan | undefined {
+	return system.parallelPlan as ParallelPlan | undefined;
+}
 
 function category(fn: () => unknown): string {
 	try {
@@ -40,9 +48,12 @@ function category(fn: () => unknown): string {
 
 describe("a parallel registration", () => {
 	function fixture() {
+		// The plugin owns every refusal below, so a world without it validates
+		// nothing and registers whatever the caller wrote.
 		const ecs = ECS.create({
 			deterministic: true,
-			memory: { backing: "shared", maxBytes: 8 * 1024 * 1024 }
+			memory: { backing: "shared", maxBytes: 8 * 1024 * 1024 },
+			plugins: [workers()]
 		});
 		const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
 		const Vel = ecs.registerComponent({ vx: "i32" }, { name: "Vel" });
@@ -132,7 +143,8 @@ describe("a parallel registration", () => {
 	it("takes the config with no cast, and holds each field name to its schema", () => {
 		const ecs = ECS.create({
 			deterministic: true,
-			memory: { backing: "shared", maxBytes: 8 * 1024 * 1024 }
+			memory: { backing: "shared", maxBytes: 8 * 1024 * 1024 },
+			plugins: [workers()]
 		});
 		const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 		const Vel = ecs.registerComponent({ vx: "i32" }, { name: "Vel" });
@@ -203,12 +215,12 @@ describe("the minRows default", () => {
 
 	it("reaches the plan when the config names no minRows", () => {
 		const { system } = register(undefined);
-		expect(system.parallelPlan?.minRows).toBe(DEFAULT_PARALLEL_MIN_ROWS);
+		expect(planOf(system)?.minRows).toBe(DEFAULT_PARALLEL_MIN_ROWS);
 	});
 
 	it("gives way to the caller's value", () => {
 		const { system } = register(7);
-		expect(system.parallelPlan?.minRows).toBe(7);
+		expect(planOf(system)?.minRows).toBe(7);
 	});
 
 	it("gives way to a caller's zero, which asks for every frame", () => {
@@ -216,7 +228,7 @@ describe("the minRows default", () => {
 		// tested truth would swap it for the default and dispatch nothing below
 		// that, which is the opposite of what the caller asked for.
 		const { system } = register(0);
-		expect(system.parallelPlan?.minRows).toBe(0);
+		expect(planOf(system)?.minRows).toBe(0);
 	});
 
 	it("keeps a small world on the sequential body, with the pool attached", async () => {
@@ -234,9 +246,9 @@ describe("the minRows default", () => {
 			}
 		} as never);
 		ecs.addSystems(SCHEDULE.UPDATE, counted, system);
-		pools.push(await ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+		pools.push(await ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 
-		expect(system.parallelPlan?.query.entityCount).toBeLessThan(DEFAULT_PARALLEL_MIN_ROWS);
+		expect(planOf(system)?.query.entityCount).toBeLessThan(DEFAULT_PARALLEL_MIN_ROWS);
 		expect(() => ecs.update(1)).not.toThrow();
 		expect(sequentialRuns).toBe(1);
 	});
@@ -246,7 +258,7 @@ describe("the minRows default", () => {
 		// the row count clears. The pool now takes the pass, so the fault appears.
 		const { ecs, system } = register(1, "throwing");
 		ecs.addSystems(SCHEDULE.UPDATE, system);
-		pools.push(await ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+		pools.push(await ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 
 		let caught = "no throw";
 		try {
@@ -258,12 +270,12 @@ describe("the minRows default", () => {
 	});
 });
 
-describe("attachWorkers", () => {
+describe("workers.attach", () => {
 	it("refuses a heap world", async () => {
-		const ecs = ECS.create({ memory: { maxBytes: 4 * 1024 * 1024 } });
+		const ecs = ECS.create({ memory: { maxBytes: 4 * 1024 * 1024 }, plugins: [workers()] });
 		let caught = "no throw";
 		try {
-			pools.push(await ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+			pools.push(await ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 		}
@@ -272,10 +284,10 @@ describe("attachWorkers", () => {
 
 	it("refuses a second pool on one world", async () => {
 		const world = buildWorld({ entities: 16, backing: "shared" });
-		pools.push(await world.ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+		pools.push(await world.ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 		let caught = "no throw";
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 		}
@@ -286,7 +298,7 @@ describe("attachWorkers", () => {
 		const world = buildWorld({ entities: 16, backing: "shared" });
 		let caught = "no throw";
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 0, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 0, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 		}
@@ -303,7 +315,7 @@ describe("attachWorkers", () => {
 		let caught = "no throw";
 		let message = "";
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 1, workerUrl: missing }));
+			pools.push(await world.ecs.workers.attach({ count: 1, workerUrl: missing }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 			message = (error as ECSError).message;
@@ -312,7 +324,7 @@ describe("attachWorkers", () => {
 		expect(message).toContain("no_such_worker.ts");
 		expect(message).toContain("workerUrl");
 		// The world is free to try again with the right URL.
-		pools.push(await world.ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+		pools.push(await world.ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 	});
 });
 
@@ -346,7 +358,7 @@ describe("a kernel that throws", () => {
 			}
 		} as never);
 		ecs.addSystems(SCHEDULE.UPDATE, counter, failing);
-		pools.push(await ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+		pools.push(await ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 
 		let message = "";
 		try {
@@ -384,7 +396,7 @@ describe("a kernel that throws", () => {
 		} as never);
 		let caught = "no throw";
 		try {
-			pools.push(await ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+			pools.push(await ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 		}

@@ -25,7 +25,7 @@ import {
 	COLUMN_DESCRIPTOR_OFFSETS,
 	COMPONENT_MASK_WORDS,
 	STORE_HEADER_OFFSETS
-} from "../../store/vendored_abi/abi.ts";
+} from "../../core/store/vendored_abi/abi.ts";
 
 type ColumnView =
 	| Uint8Array

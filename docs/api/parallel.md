@@ -24,19 +24,33 @@ and no grow can overlap the workers. The engine gives that by construction and n
 
 ## The pool
 
+The pool is a plugin. Install it at construction, and a world that never names it carries neither
+the pool nor the plan builder.
+
 ```ts
-const pool = await ecs.attachWorkers({ count: 4 });
+import { ECS } from "@oasys/oecs";
+import { workers } from "@oasys/oecs/workers";
 
-console.log(pool.count);   // the workers it started
-await pool.settled();      // every kernel registered so far is loaded
+const world = ECS.create({ plugins: [workers()] });
 
-await pool.detach();       // stop every worker, back to the sequential path
+const pool = await world.workers.attach({ count: 4 });
+
+console.log(pool.count);        // the workers it started
+await pool.settled();           // every kernel registered so far is loaded
+world.workers.pool;             // the attached pool, or null
+
+await world.workers.detach();   // stop every worker, back to the sequential path
 ```
 
-`attachWorkers` starts the workers on the package's own entry, `@oasys/oecs/worker`. It hands each
+`workers.attach` starts the workers on the package's own entry, `@oasys/oecs/worker`. It hands each
 one the store bytes, the store base and a control buffer, and it loads the kernel of every parallel
 system registered so far. The promise resolves when every worker parks on the barrier with its
-kernels in hand. `ecs.workers` reports the attached pool, or `null`.
+kernels in hand.
+
+**A world without the plugin validates no `parallel` config.** The refusals below live in the plan
+builder, and the plan builder ships with the plugin. Such a world registers the system, leaves its
+plan unbuilt and runs its `fn`. A mistyped `parallel.columns` surfaces once you install the plugin,
+so install it in the build you develop against.
 
 At the end of a pass every worker adds one to a done word, and the worker that carries the count to
 the worker count wakes the host. So the host wakes once for a pass, whatever the worker count is.
@@ -44,22 +58,22 @@ the worker count wakes the host. So the host wakes once for a pass, whatever the
 | Option | What it says |
 | --- | --- |
 | `count` | Workers to start. Defaults to one below the reported parallelism, floor one |
-| `workerUrl` | Where the worker entry lives. Defaults to the sibling of the package entry. A bundled app passes it |
+| `workerUrl` | Where the worker entry lives. Defaults to `@oasys/oecs/worker` as the package ships it. A bundled app passes it |
 | `joinTimeoutMs` | Milliseconds the host waits at the join before it gives up on the pass |
 | `stackBytes` | Shadow stack one instance of a `wasm` kernel module gets. Omit it and the pool takes the whole reserve, which leaves the module no heap |
 
 Rules the engine holds you to:
 
-- **One pool for each world.** A second `attachWorkers` throws `WORKERS_ATTACHED`.
+- **One pool for each world.** A second `workers.attach` throws `WORKERS_ATTACHED`.
 - **The backing must be shared or WASM.** A worker reads the bytes directly, and a plain
   `ArrayBuffer` crosses no thread boundary. A heap world throws `WORKERS_NEED_SHARED_BACKING`.
-- **The host must be able to park.** `attachWorkers` probes `Atomics.wait` and throws
+- **The host must be able to park.** `workers.attach` probes `Atomics.wait` and throws
   `WORKERS_HOST_CANNOT_PARK` when the host refuses it. A browser main thread refuses it. Host the
   world inside a worker and attach the pool from there.
 - **A system registered after the attach runs `fn` first.** A parked worker runs no message
   callback, so the pool releases the workers, hands them the kernel and parks them again. Await
   `pool.settled()` to know the kernel is loaded.
-- **A worker entry that will not load fails the attach.** `attachWorkers` throws
+- **A worker entry that will not load fails the attach.** `workers.attach` throws
   `WORKERS_ENTRY_UNREACHABLE`, and the message names the URL it tried. A bundled app that kept the
   default URL is the case.
 - **A kernel that will not load fails the attach.** The message names the worker index and the
@@ -74,9 +88,9 @@ Rules the engine holds you to:
 Pass `workerUrl`. The default resolution describes the package as it ships, and a bundler does not
 ship it that way.
 
-`attachWorkers` resolves the worker entry as the sibling of the module the pool lands in. A bundler
-renames that chunk, and it leaves `@oasys/oecs/worker` out of the graph, because no static import
-names it. The default then points at a file the server does not hold, and the attach throws
+`workers.attach` resolves the worker entry from where the plugin module lands, which the package
+ships one directory below the entry the worker sits beside. A bundler renames that chunk, and it
+leaves `@oasys/oecs/worker` out of the graph, because no static import names it. The default then points at a file the server does not hold, and the attach throws
 `WORKERS_ENTRY_UNREACHABLE` with the URL it tried.
 
 Vite emits the entry when you ask for it by URL:
@@ -85,7 +99,7 @@ Vite emits the entry when you ask for it by URL:
 import workerUrl from "@oasys/oecs/worker?worker&url";
 
 // Inside the worker that hosts the world.
-const pool = await ecs.attachWorkers({
+const pool = await world.workers.attach({
   count: 3,
   workerUrl: new URL(workerUrl, self.location.href),
 });
@@ -131,9 +145,10 @@ export function integrate(px, py, vx, vy, begin, end, dt) {
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
+import { workers } from "@oasys/oecs/workers";
 import { integrate } from "./kernels.js";
 
-const ecs = ECS.create({ memory: { backing: "shared" } });
+const ecs = ECS.create({ memory: { backing: "shared" }, plugins: [workers()] });
 const Pos = ecs.registerComponent({ x: "f32", y: "f32" }, { name: "Pos" });
 const Vel = ecs.registerComponent({ vx: "f32", vy: "f32" }, { name: "Vel" });
 const movers = ecs.query(Pos, Vel);
@@ -165,7 +180,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const pool = await ecs.attachWorkers({ count: 4 });
+const pool = await ecs.workers.attach({ count: 4 });
 ecs.update(1 / 60);
 ```
 
@@ -184,6 +199,7 @@ for each toolchain.
 
 ```ts
 import { ECS, SCHEDULE, storeBaseAbove } from "@oasys/oecs";
+import { workers } from "@oasys/oecs/workers";
 
 const WORKERS = 4;
 const STACK_BYTES = 1024 * 1024;
@@ -200,6 +216,7 @@ const ecs = ECS.create({
     // The module's peak run-time heap, plus one stack for each worker.
     storeBase: storeBaseAbove(probe.exports, WORKERS * STACK_BYTES),
   },
+  plugins: [workers()],
 });
 const Pos = ecs.registerComponent({ x: "f32", y: "f32" }, { name: "Pos" });
 const Vel = ecs.registerComponent({ vx: "f32", vy: "f32" }, { name: "Vel" });
@@ -235,7 +252,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const pool = await ecs.attachWorkers({ count: WORKERS, stackBytes: STACK_BYTES });
+const pool = await ecs.workers.attach({ count: WORKERS, stackBytes: STACK_BYTES });
 ```
 
 The TypeScript body beside a module body must compute the same thing. An engine folds a
@@ -309,20 +326,21 @@ export the global whenever the body does any of those.
 **Size the reserve for the workers, and say how much of it is stack.** The regions come out of the
 span `[__heap_base, storeBase)`, and the pool carves them downward from the store base. Worker `i`
 gets the top of its region at `storeBase - i * stackBytes`. So reserve the module's peak run-time
-heap plus one stack for each worker, and pass the same `stackBytes` to `attachWorkers`:
+heap plus one stack for each worker, and pass the same `stackBytes` to `workers.attach`:
 
 ```ts
-const workers = 4;
+const workerCount = 4;
 const stackBytes = 1024 * 1024;      // as deep as your kernel goes
 const heapPeak = 4 * 1024 * 1024;    // what the module allocates while it runs
 
-const ecs = ECS.create({
+const world = ECS.create({
   memory: {
     backing: { wasm: { memory } },
-    storeBase: storeBaseAbove(probe.exports, heapPeak + workers * stackBytes),
+    storeBase: storeBaseAbove(probe.exports, heapPeak + workerCount * stackBytes),
   },
+  plugins: [workers()],
 });
-const pool = await ecs.attachWorkers({ count: workers, stackBytes });
+const pool = await world.workers.attach({ count: workerCount, stackBytes });
 ```
 
 Everything below the lowest region stays the module's heap, and the pool never writes there.
@@ -436,7 +454,7 @@ early. A body that only moves memory needs many more rows before the split pays.
 the second case, because that is the case where a wrong guess costs a frame.
 
 The crossover also rises with the worker count, because the barrier grows while the work for each
-worker shrinks. The engine cannot fold that into the default, because `attachWorkers` runs after
+worker shrinks. The engine cannot fold that into the default, because `workers.attach` runs after
 the system is registered.
 
 Your value always wins, and `0` is a value. It means dispatch at every row count.
@@ -618,3 +636,4 @@ If two systems are independent, do not add an order constraint between them.
 - [schedule](./schedule.md), the phases, the order, system sets, and run conditions
 - [errors](./errors.md), the codes a pool and a parallel registration throw
 - [the host write path](./host-write-seam.md), safe writes from outside the schedule
+- [plugins](./plugins.md), what a world installs at construction, and what a bare world carries

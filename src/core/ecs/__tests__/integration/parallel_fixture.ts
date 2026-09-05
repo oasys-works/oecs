@@ -17,6 +17,7 @@ import type { EntityID } from "../../entity";
 import type { ECSMemoryOptions } from "../../ecs_memory";
 import type { Template } from "../../store";
 import { snapshots } from "../../../../plugins/snapshots";
+import { workers, type WorkersPlugin } from "../../../../plugins/workers";
 
 /** The engine's worker entry, as the tests reach it. */
 export const WORKER_URL = new URL("../../../../worker.ts", import.meta.url);
@@ -32,7 +33,7 @@ export type Backing = "shared" | "wasm";
 type Tag = "i32" | "f32";
 
 export interface ParallelWorld<T extends Tag = Tag> {
-	ecs: ECS & { snapshots: { stateHash(): number } };
+	ecs: ECS & { snapshots: { stateHash(): number } } & WorkersPlugin;
 	Pos: ComponentDef<{ x: T; y: T }>;
 	Vel: ComponentDef<{ vx: T; vy: T }>;
 	Frozen: ComponentDef<Record<string, never>>;
@@ -74,7 +75,7 @@ export function buildWorld(options: WorldOptions): ParallelWorld {
 	const ecs = ECS.create({
 		deterministic,
 		memory: memoryFor(options.backing, options.columnCapacity, options.storeBase),
-		plugins: [snapshots()]
+		plugins: [snapshots(), workers()]
 	});
 	const Pos = ecs.registerComponent({ x: tag, y: tag }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: tag, vy: tag }, { name: "Vel" });

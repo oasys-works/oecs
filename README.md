@@ -213,8 +213,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
 - **A compute backend connection**. `ecs.attachBackend(...)` runs the body of a system on a
   compiled backend, such as WASM, instead of its TypeScript closure. A backend body receives the
   phase `dt` and the frame tick, because neither is in the store bytes.
-- **Parallel systems**. `ecs.attachWorkers({ count })` starts a pool of workers on the package's
-  own entry, `@oasys/oecs/worker`. A bundled app passes `workerUrl` instead, because a bundler
+- **Parallel systems** (the `workers()` plugin). `world.workers.attach({ count })` starts a pool of
+  workers on the package's own entry, `@oasys/oecs/worker`. A bundled app passes `workerUrl` instead, because a bundler
   leaves that entry out of its graph. A system that carries a `parallel` config names a kernel a worker
   can load, either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL,
   and the columns the kernel receives in order. The schedule hands the pass to the pool, parks the
@@ -244,8 +244,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
 The core is `@oasys/oecs`. Each other entry point is optional, and it costs nothing until you
 import it.
 
-Four subsystems are **plugins**: relations, events, snapshots and observers. A world installs
-the ones it uses, and carries no code for the rest.
+Five subsystems are **plugins**: relations, events, snapshots, observers and workers. A world
+installs the ones it uses, and carries no code for the rest.
 
 ```ts
 import { ECS } from "@oasys/oecs";
@@ -259,7 +259,7 @@ world.events.emit(Damaged, { amount: 1 }); // compile error, events is not insta
 
 `ECS.create` returns the world intersected with the facades its plugins contribute, so reaching for
 a plugin you did not install is a compile error rather than a fault at run time. `new ECS()`
-still builds a world, and that world holds none of the four. A class method cannot be removed by a
+still builds a world, and that world holds none of the five. A class method cannot be removed by a
 bundler, which is why these live behind an import you make rather than a member you always carry.
 
 To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
@@ -278,9 +278,10 @@ checks, and the change feed a plugin drains.
 | `@oasys/oecs/events` | the events plugin, host-side channels and signals, and `ctx.emit` |
 | `@oasys/oecs/snapshots` | the snapshots plugin, `capture` and `restore` for a live world |
 | `@oasys/oecs/observers` | the observers plugin, `ecs.observe` for `onAdd`, `onRemove` and `onSet` |
+| `@oasys/oecs/workers` | the workers plugin, `ecs.workers`, one pool of workers for the `parallel` systems |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
 | `@oasys/oecs/solid` | the solid plugin, `solid()`, ECS state into Solid signals off the change feed (`solid-js` is an **optional** peer dependency) |
-| `@oasys/oecs/worker` | the engine's worker entry, which `ecs.attachWorkers` starts. A bundled app imports it for its URL alone, and passes that as `workerUrl`. `@oasys/oecs/worker/dev` is the guarded build |
+| `@oasys/oecs/worker` | the engine's worker entry, which `world.workers.attach` starts. A bundled app imports it for its URL alone, and passes that as `workerUrl`. `@oasys/oecs/worker/dev` is the guarded build |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from, which also operate alone |
 | `@oasys/oecs/internal` | unstable internal parts (codecs, ABI constants, the access checker). There are no semver guarantees |
 
@@ -301,8 +302,9 @@ timestep, the memory options, and the cardinality of a relation).
 (`vite dev` or `webpack --mode development`) selects the build with the guards automatically,
 through the `development` export condition. As an alternative, import `@oasys/oecs/dev` directly.
 Each plugin has the same subpath, `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the plugin from the same
-channel as the world, because a plugin binds to the core build it was made against.
+`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev` and `@oasys/oecs/workers/dev`. Take the
+plugin from the same channel as the world, because a plugin binds to the core build it was made
+against.
 On **JSR and Deno** there is no bundler, because the package is raw source. The default is also
 production (`__DEV__ = false`). To turn the guards on while you develop, set
 `globalThis.__DEV__ = true` before the first import. For the full details, which include the

@@ -1268,3 +1268,31 @@ have called that lane a pass.
 - **No page reload with a pool attached**, so nothing says what a browser does
   with workers parked in `Atomics.wait` when the page goes away.
 - **No float lane.** Every column is `i32`, because the state hash is the oracle.
+
+## Root entry bytes. What the workers plugin takes out of every program
+
+The pool left the `ECS` class and became `workers()` on `@oasys/oecs/workers`.
+The root entry shrinks by the pool, the plan builder, the protocol constants and
+the node threads shim. A program that never attaches a pool now ships none of
+them.
+
+**Method.** esbuild bundles `src/index.ts` as one ESM file, `es2022`, minified,
+with `__DEV__` folded to `false` and `solid-js`, `solid-js/store` and
+`node:worker_threads` external. The same command runs against the tree at the
+checkpoint before the move and against the tree after it. One machine, one
+build.
+
+| tree | minified bytes |
+| --- | --- |
+| the pool on `ECS` | 188086 |
+| the pool in the workers plugin | 175249 |
+| difference | 12837 |
+
+Read the direction and not the ratio. The pool was a small share of the root
+entry, and it was the share every program shipped and almost no program used.
+
+**What this does not say.** It measures one entry, not an application bundle. A
+tree shaker in an app may already have dropped some of the same code through the
+`sideEffects` flag, so an app sees this difference at most and not exactly. It
+also says nothing about run time. The dispatch path did not change, and
+`bench/ab/ref.mjs` against the checkpoint is what holds that claim.

@@ -31,6 +31,8 @@ import type { DrainResult, ObservationFlags, StructuralObserverEvents, Store } f
 import type { SystemContext } from "./system_context";
 import type { ECS } from "./ecs";
 import type { ObserverRegistry } from "./observer";
+import type { ParallelRoute } from "./schedule";
+import type { SystemConfig } from "./system";
 import { ECSError, ECS_ERROR } from "./utils/error";
 
 /** The store's record of what changed, opened to more than one consumer.
@@ -77,6 +79,48 @@ export interface ChangeFeed {
 	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
 }
 
+/** What the world calls into a worker pool it did not build.
+ *
+ * Both hooks are cold. `plan` runs at registration, and only for a system that
+ * declares `parallel`. `dispose` runs once, with the world. */
+export interface WorkerHooks {
+	/** Build what one parallel dispatch reads. The world freezes the result
+	 * onto the descriptor as `parallelPlan` and never looks inside it, so the
+	 * plan's shape belongs to the plugin. The plugin also validates the
+	 * `parallel` config here, which is why a world without the plugin
+	 * validates none. */
+	plan(config: SystemConfig): object;
+	/** Stop the workers. A live worker holds the store bytes and keeps the
+	 * process alive, so it ends with the world. */
+	dispose(): void;
+}
+
+/** What a worker pool reads from the world it runs on.
+ *
+ * The bytes, where the header sits inside them, and the one call that routes
+ * every parallel system. Nothing else crosses. The pool derives its own row
+ * ranges from the published row counts, so the world hands it no plan and no
+ * archetype. */
+export interface WorkerWorld {
+	/** The bytes a worker reaches: the `WebAssembly.Memory` on the wasm
+	 * backing, the `SharedArrayBuffer` on the shared backing, `null` on any
+	 * other. The memory travels and not its current buffer, because the two
+	 * grow differently and a worker survives both. Read at attach. */
+	readonly backing: SharedArrayBuffer | WebAssembly.Memory | null;
+	/** What `memory.backing` resolved to. The refusal on a backing no worker
+	 * can reach names it. */
+	readonly backingSource: string;
+	/** The byte offset of the store header inside the backing. */
+	readonly storeBase: number;
+	/** Tell the store that a component's row ticks changed outside the dirty
+	 * list, so the next entity-level drain scans the plane. A pool stamps a
+	 * whole archetype at the join, which no dirty list saw. */
+	noteScan(componentId: number): void;
+	/** Route every parallel system through `pool`, or with `null` back to the
+	 * sequential body. */
+	route(pool: ParallelRoute | null): void;
+}
+
 /** An optional subsystem, and the facade surface it contributes.
  *
  * `install` receives the store because that is where the seams live: a
@@ -109,6 +153,10 @@ export interface PluginHost {
 	/** Hand the world its observer registry. The world drives it once per
 	 * update and at startup, so it holds the reference, not the store. */
 	installObservers(registry: ObserverRegistry): void;
+	/** Hand the world the hooks a worker pool needs, and take back what the
+	 * pool reads. One call, because the two directions install together and a
+	 * world holds one pool. */
+	installWorkers(hooks: WorkerHooks): WorkerWorld;
 }
 
 export interface Plugin<out X extends object> {
@@ -182,6 +230,13 @@ export function storeOnlyHost(store: Store): PluginHost {
 				ECS_ERROR.PLUGIN_NOT_INSTALLED,
 				"observers need a world, and this plugin was installed on a bare store. " +
 					"Build the world with ECS.create({ plugins: [observers()] }) instead"
+			);
+		},
+		installWorkers(): WorkerWorld {
+			throw new ECSError(
+				ECS_ERROR.PLUGIN_NOT_INSTALLED,
+				"workers need a world, and this plugin was installed on a bare store. " +
+					"Build the world with ECS.create({ plugins: [workers()] }) instead"
 			);
 		}
 	};

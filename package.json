@@ -196,6 +196,28 @@
 				"types": "./dist/plugins/observers.d.cts",
 				"default": "./dist/plugins/observers.development.cjs"
 			}
+		},
+		"./workers": {
+			"import": {
+				"types": "./dist/plugins/workers.d.ts",
+				"development": "./dist/plugins/workers.development.js",
+				"default": "./dist/plugins/workers.js"
+			},
+			"require": {
+				"types": "./dist/plugins/workers.d.cts",
+				"development": "./dist/plugins/workers.development.cjs",
+				"default": "./dist/plugins/workers.cjs"
+			}
+		},
+		"./workers/dev": {
+			"import": {
+				"types": "./dist/plugins/workers.d.ts",
+				"default": "./dist/plugins/workers.development.js"
+			},
+			"require": {
+				"types": "./dist/plugins/workers.d.cts",
+				"default": "./dist/plugins/workers.development.cjs"
+			}
 		}
 	},
 	"main": "./dist/index.cjs",
@@ -300,6 +322,12 @@
 			],
 			"observers/dev": [
 				"./dist/plugins/observers.d.ts"
+			],
+			"workers": [
+				"./dist/plugins/workers.d.ts"
+			],
+			"workers/dev": [
+				"./dist/plugins/workers.d.ts"
 			]
 		}
 	}

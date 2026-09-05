@@ -16,7 +16,7 @@
  * extension.
  ***/
 
-import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi.ts";
+import { COMPONENT_MASK_WORDS } from "../../core/store/vendored_abi/abi.ts";
 
 /** The frame number, and the word every worker sleeps on. */
 export const CTL_EPOCH = 0;

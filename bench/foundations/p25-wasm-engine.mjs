@@ -176,13 +176,17 @@ function kernelsAlone(entities, emitted, zig) {
  */
 async function buildWorld(entities) {
 	const { ECS } = await import(new URL("../../dist/index.js", import.meta.url).href);
+	const { workers } = await import(
+		new URL("../../dist/plugins/workers.js", import.meta.url).href
+	);
 	const ecs = ECS.create({
 		deterministic: true,
 		memory: {
 			backing: { wasm: { maximumPages: MAX_PAGES, initialPages: INITIAL_PAGES } },
 			storeBase: STORE_BASE,
 			columnCapacity: Math.ceil(entities / 4) + 64
-		}
+		},
+		plugins: [workers()]
 	});
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
@@ -321,9 +325,9 @@ async function runOne(entities) {
 	for (const k of KS) {
 		let pool;
 		try {
-			pool = await ecs.attachWorkers({ count: k });
+			pool = await ecs.workers.attach({ count: k });
 		} catch (error) {
-			poolNote = `attachWorkers({ count: ${k} }) failed: ${error.message}`;
+			poolNote = `workers.attach({ count: ${k} }) failed: ${error.message}`;
 			break;
 		}
 		for (const body of BODIES) {

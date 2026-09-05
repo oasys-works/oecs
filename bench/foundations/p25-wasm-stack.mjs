@@ -161,12 +161,12 @@ async function startLane({ module, memory, exportName, count, stackTops }) {
 }
 
 /** One deterministic world, seeded from the row index, over one archetype. */
-async function buildWorld({ ECS, SCHEDULE, snapshots }, module, storeBase, exportName) {
+async function buildWorld({ ECS, SCHEDULE, snapshots, workers }, module, storeBase, exportName) {
 	const memory = new WebAssembly.Memory({ initial: 512, maximum: MAX_PAGES, shared: true });
 	const ecs = ECS.create({
 		deterministic: true,
 		memory: { backing: { wasm: { memory } }, storeBase },
-		plugins: [snapshots()]
+		plugins: [snapshots(), workers()]
 	});
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
@@ -219,7 +219,10 @@ async function engineLane(module, storeBase) {
 	const { snapshots } = await import(
 		new URL("../../dist/plugins/snapshots.js", import.meta.url).href
 	);
-	const deps = { ECS: oecs.ECS, SCHEDULE: oecs.SCHEDULE, snapshots };
+	const { workers } = await import(
+		new URL("../../dist/plugins/workers.js", import.meta.url).href
+	);
+	const deps = { ECS: oecs.ECS, SCHEDULE: oecs.SCHEDULE, snapshots, workers };
 	const rows = [];
 	for (const count of KS) {
 		const sequential = await buildWorld(deps, module, storeBase, "stack_i32");
@@ -229,7 +232,7 @@ async function engineLane(module, storeBase) {
 		const pooled = await buildWorld(deps, module, storeBase, "stack_i32");
 		let got = "threw";
 		try {
-			const pool = await pooled.attachWorkers({ count });
+			const pool = await pooled.workers.attach({ count });
 			pooled.update(DT);
 			got = String(pooled.snapshots.stateHash());
 			await pool.detach();

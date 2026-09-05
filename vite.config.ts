@@ -13,7 +13,7 @@ import { bindToCoreArtifact, recordCoreGraph } from "./scripts/core_boundary";
 // the production pass and `emptyOutDir` clears the dir only on that first pass.
 const DEV_BUILD = process.env.OECS_VARIANT === "development";
 
-// The four plugin entries build in their own pass. Declaring them beside the core entries
+// The five plugin entries build in their own pass. Declaring them beside the core entries
 // put them in one rollup graph, and rollup then split `index.js` into ten small
 // chunks so the plugin bundles could share code with it. Those splits are
 // real module boundaries at run time, and a measurement of `spawn` on the
@@ -100,6 +100,10 @@ export default defineConfig(({ command }) => ({
               __dirname,
               "src/plugins/observers.ts",
             ),
+            "plugins/workers": path.resolve(
+              __dirname,
+              "src/plugins/workers.ts",
+            ),
           }
         : {
             index: path.resolve(__dirname, "src/index.ts"),
@@ -128,7 +132,8 @@ export default defineConfig(({ command }) => ({
       // specifier rollup can see. It is a tripwire. A literal specifier that
       // comes back reaches the emitted file, where the dist test fails on it.
       // Drop it and the same regression turns into a browser stub chunk, which
-      // loads on node and holds no `Worker`.
+      // loads on node and holds no `Worker`. It reaches the workers plugin pass
+      // and the worker pass, and no longer the core one.
       external: ["solid-js", "solid-js/store", "node:worker_threads"],
     },
   },

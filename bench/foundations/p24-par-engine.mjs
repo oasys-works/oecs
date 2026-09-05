@@ -3,7 +3,7 @@
  *
  * `p24-par-split` measured a hand-rolled split: its own worker file, its own
  * barrier, its own bind. This probe measures none of that. It builds a world
- * from `dist/`, calls `ecs.attachWorkers`, registers a system with a `parallel`
+ * from `dist/`, calls `ecs.workers.attach`, registers a system with a `parallel`
  * config, and drives `ecs.update()`. Everything between the frame and the rows
  * is the engine's own code: the dispatch, the plan, the control buffer, the
  * worker entry, the descriptor walk and the join stamp.
@@ -204,9 +204,9 @@ async function runOne({ entities, deterministic }) {
 		for (const k of KS) {
 			let pool;
 			try {
-				pool = await ecs.attachWorkers({ count: k });
+				pool = await ecs.workers.attach({ count: k });
 			} catch (error) {
-				workerEntry = `attachWorkers failed: ${error.message}`;
+				workerEntry = `workers.attach failed: ${error.message}`;
 				break;
 			}
 			restore();

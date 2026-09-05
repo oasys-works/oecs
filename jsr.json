@@ -13,7 +13,8 @@
 		"./snapshots": "./src/plugins/snapshots.ts",
 		"./events": "./src/plugins/events.ts",
 		"./relations": "./src/plugins/relations.ts",
-		"./observers": "./src/plugins/observers.ts"
+		"./observers": "./src/plugins/observers.ts",
+		"./workers": "./src/plugins/workers.ts"
 	},
 	"imports": {
 		"solid-js": "npm:solid-js@^1.9.3"

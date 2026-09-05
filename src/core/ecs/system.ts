@@ -53,7 +53,6 @@ import type { SystemContext } from "./system_context";
 import type { BackendSystemHandle } from "./compute_backend";
 import type { Template } from "./store";
 import type { Query } from "./query";
-import type { ParallelPlan } from "./parallel/plan";
 
 export type SystemID = Brand<number, "system_id">;
 
@@ -478,8 +477,12 @@ export interface SystemDescriptor extends Readonly<SystemConfig> {
 	/** @internal What one parallel dispatch reads, resolved at registration.
 	 * It hangs off the descriptor so the dispatch site resolves it with one
 	 * property load instead of a hash of an object identity. Absent on every
-	 * system that declares no `parallel`. */
-	readonly parallelPlan?: ParallelPlan;
+	 * system that declares no `parallel`, and on every world that installed no
+	 * workers plugin.
+	 *
+	 * Opaque. The plugin that built it is the only reader, so the core carries
+	 * neither the plan's type nor the module that shapes it. */
+	readonly parallelPlan?: object;
 	// Normalized by `_normalizeAccess` at registration: required (never
 	// undefined) and Template-free, so internals consume plain def lists.
 	readonly spawns: readonly (readonly ComponentDef[])[];

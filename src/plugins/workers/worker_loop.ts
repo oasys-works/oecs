@@ -53,7 +53,7 @@ import {
 	readViewStamp,
 	type BoundArchetype
 } from "./worker_bind.ts";
-import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi.ts";
+import { COMPONENT_MASK_WORDS } from "../../core/store/vendored_abi/abi.ts";
 
 type KernelFn = (...args: number[]) => void;
 
@@ -144,7 +144,7 @@ function assignStackRegion(
 	// construction, and a span too small to divide failed above.
 	if (count * region > reserve) {
 		throw new Error(
-			`the kernel export '${exportName}' needs one stack region of ${region} bytes for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} hold fewer. Raise memory.storeBase, or lower attachWorkers stackBytes.`
+			`the kernel export '${exportName}' needs one stack region of ${region} bytes for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} hold fewer. Raise memory.storeBase, or lower stackBytes on workers.attach.`
 		);
 	}
 	try {

@@ -15,9 +15,10 @@ import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
 import { getEntityIndex } from "../../entity";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { observers } from "../../../../plugins/observers";
 import { events } from "../../../../plugins/events";
+import { workers, type WorkersPlugin } from "../../../../plugins/workers";
 import { KERNEL_MARK, SEQUENTIAL_MARK, integrateI32 } from "./parallel_kernels.mjs";
 import { KERNELS_URL, WORKER_URL, buildWorld, readColumns } from "./parallel_fixture";
 
@@ -71,8 +72,8 @@ function integrateWorld(entities: number, minRows: number, exportName = "integra
 	return { ...world, query };
 }
 
-async function attach(ecs: ECS, count: number) {
-	const pool = await ecs.attachWorkers({ count, workerUrl: WORKER_URL });
+async function attach(ecs: WorkersPlugin, count: number) {
+	const pool = await ecs.workers.attach({ count, workerUrl: WORKER_URL });
 	pools.push(pool);
 	return pool;
 }
@@ -183,7 +184,7 @@ describe("the join stamp", () => {
 		const world = ECS.create({
 			deterministic: true,
 			memory: { backing: "shared", columnCapacity: 256, maxBytes: 8 * 1024 * 1024 },
-			plugins: [events(), observers()]
+			plugins: [events(), observers(), workers()]
 		});
 		const Pos = world.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 		const Vel = world.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });

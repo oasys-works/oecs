@@ -17,6 +17,7 @@ import { relations } from "../../../../plugins/relations";
 import { events } from "../../../../plugins/events";
 import { observers } from "../../../../plugins/observers";
 import { snapshots } from "../../../../plugins/snapshots";
+import { workers } from "../../../../plugins/workers";
 
 /** Run `fn` and return the `ECSError` it threw. */
 function thrown(fn: () => unknown): ECSError {
@@ -65,6 +66,41 @@ describe("a bare world names the missing plugin", () => {
 			"ecs.snapshots.capture",
 			"snapshots"
 		);
+	});
+
+	it("workers answers with the import that fixes it", () => {
+		// The pool ships in a plugin, so a JavaScript caller reaching for
+		// `world.workers.attach` on a bare world used to meet a TypeError about a
+		// property of undefined. The slot names the plugin and the import instead.
+		const world = new ECS();
+		const slot = world as unknown as { workers: { attach(): void } };
+		expectMissing(thrown(() => slot.workers.attach), "ecs.workers.attach", "workers");
+	});
+
+	it("registers a parallel system and runs its fn", () => {
+		// The plan builder ships with the plugin. Without it the world builds no
+		// plan, so `parallelPlan` stays undefined and the schedule runs the body.
+		const world = new ECS({ memory: { maxBytes: 4 * 1024 * 1024 } });
+		const Pos = world.registerComponent({ x: "i32" }, { name: "Pos" });
+		let ran = 0;
+		const system = world.registerSystem({
+			reads: [],
+			writes: [Pos],
+			queries: [[Pos]],
+			parallel: {
+				kernel: { js: "file:///nowhere.mjs", export: "step" },
+				columns: [[Pos, "x"]],
+				minRows: 1
+			},
+			fn: () => {
+				ran++;
+			}
+		});
+		expect(system.parallelPlan).toBeUndefined();
+		world.addSystems(SCHEDULE.UPDATE, system);
+		world.startup();
+		world.update(1 / 60);
+		expect(ran).toBe(1);
 	});
 
 	it("inspection and coercion of a reserved slot answer instead of throwing", () => {
@@ -145,5 +181,24 @@ describe("one plugin installs once", () => {
 		const err = thrown(() => ECS.create({ plugins: [snapshots(), snapshots()] }));
 		expect(err.category).toBe(ECS_ERROR.PLUGIN_ALREADY_INSTALLED);
 		expect(err.message).toContain("snapshots is already installed");
+	});
+
+	it("workers faults on the world seam, which holds the one pool", () => {
+		const err = thrown(() => ECS.create({ plugins: [workers(), workers()] }));
+		expect(err.category).toBe(ECS_ERROR.PLUGIN_ALREADY_INSTALLED);
+		expect(err.message).toContain("workers is already installed");
+	});
+});
+
+describe("a plugin fills a slot the constructor already reserved", () => {
+	it("workers adds no own property to the world", () => {
+		// Two shapes at one call site make `spawn` polymorphic, and a measurement
+		// of a bare world showed the cost once a plugin world existed beside it.
+		// The constructor reserves every slot this package ships, so `ECS.create`
+		// assigns into an existing property and never adds one.
+		const bare = Object.keys(new ECS());
+		const pooled = Object.keys(ECS.create({ plugins: [workers()] }));
+		expect(pooled).toEqual(bare);
+		expect(bare).toContain("workers");
 	});
 });

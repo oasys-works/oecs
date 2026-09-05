@@ -37,7 +37,7 @@ import { writeFileSync } from "node:fs";
 import { startServer } from "./server.mjs";
 
 const CASES = [
-	["main-refuses", "main-thread attachWorkers refuses"],
+	["main-refuses", "main-thread workers.attach refuses"],
 	["store-reader", "store_reader.wasm against a live store"],
 	["worker-js", "worker host, shared backing, js kernel"],
 	["worker-wasm", "worker host, wasm backing, wasm kernel"],

@@ -7,9 +7,9 @@ because each old name is gone.
 Most of the work is mechanical. Four changes are not, and you must read them: the plugin
 install, the removed reactive subpaths, the change tick, and the two reserved field names.
 
-1. **Relations, events, snapshots and observers are plugins the world installs**. Build the
-   world with `ECS.create({ plugins: [relations(), events()] })`, and name the ones it uses.
-   `new ECS()` still builds a world, and that world holds none of the four.
+1. **Relations, events, snapshots, observers and workers are plugins the world installs**. Build
+   the world with `ECS.create({ plugins: [relations(), events()] })`, and name the ones it uses.
+   `new ECS()` still builds a world, and that world holds none of the five.
 2. **The change tick reports a write one time**. `changed()` used to report a write on two
    frames when the writer ran before the reader, which is the usual order. It no longer does. A
    system that both writes a component and reads `changed()` on it no longer sees its own stamp on
@@ -200,7 +200,8 @@ width before it reads anything else.
 
 ## Install the plugins the world uses
 
-Relations, events, snapshots and observers moved off `new ECS()`. Install the ones the world uses:
+Relations, events, snapshots and observers moved off `new ECS()`. Workers arrive as a plugin and
+never sat on the class. Install the ones the world uses:
 
 ```ts
 // before
@@ -225,12 +226,13 @@ Only the construction line changes. Every call site is the same.
 | `ecs.events.*`, `ctx.emit`, `ctx.readEvents` | `events()` from `@oasys/oecs/events` |
 | `ecs.snapshots.capture`, `.restore`, `.captureSparse`, `.restoreSparse` | `snapshots()` from `@oasys/oecs/snapshots` |
 | `ecs.observe` | `observers()` from `@oasys/oecs/observers` |
+| `ecs.workers.attach`, `.pool`, `.detach` | `workers()` from `@oasys/oecs/workers` |
 
 `ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` need no plugin. They describe the
 world. The determinism opt-in is unchanged and still separate: `capture` and `restore` throw
 `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`.
 
-A world that installs none of the four carries none of their code, which is the point. A class
+A world that installs none of the five carries none of their code, which is the point. A class
 method cannot be removed by a bundler, so while `ECS` declared `relations` and `snapshots`, every
 program shipped that code whether or not it named them.
 
@@ -342,6 +344,8 @@ page always said it did. `ctx.ref` records the entity when you create the ref, a
 records it on each `at`. `refRead` and `cursorRead` record nothing.
 - **`memory.storeBase` and `storeBaseAbove(exports, extraBytes)`.** The store header sits at a byte
   offset you choose, above everything a module owns. See [WASM](api/wasm.md).
-- **One system across workers.** `ecs.attachWorkers({ count })` starts a pool, and the `parallel`
+- **One system across workers.** `ECS.create({ plugins: [workers()] })` from `@oasys/oecs/workers`
+  gives a world `ecs.workers`. `ecs.workers.attach({ count })` starts a pool, and the `parallel`
   config on `registerSystem` names a kernel from any toolchain that the pool runs over disjoint row
-  ranges. See [parallel execution](api/parallel.md).
+  ranges. A world without the plugin builds no plan, validates no `parallel` config, and runs the
+  system's own `fn`. See [parallel execution](api/parallel.md).

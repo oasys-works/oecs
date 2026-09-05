@@ -70,8 +70,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
 oecs has several import paths. The core is `@oasys/oecs`. Each other path is optional, and it costs
 nothing until you import it.
 
-Four subsystems are **plugins**: relations, events, snapshots and observers. A world installs
-the ones it uses, and carries no code for the rest.
+Five subsystems are **plugins**: relations, events, snapshots, observers and workers. A world
+installs the ones it uses, and carries no code for the rest.
 
 ```ts
 import { ECS, eventKey } from "@oasys/oecs";
@@ -86,7 +86,7 @@ world.events.emit(Damaged, { amount: 1 }); // compile error, events is not insta
 ```
 
 `ECS.create` returns the world intersected with the facades its plugins contribute. `new ECS()`
-still builds a world, and that world holds none of the four. A JavaScript caller that reaches for a
+still builds a world, and that world holds none of the five. A JavaScript caller that reaches for a
 plugin the world did not install gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs
 one plugin two times gets `PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
 
@@ -105,10 +105,11 @@ change feed a plugin drains.
 | `@oasys/oecs/events` | the **events** plugin, host-side channels and signals, and `ctx.emit` |
 | `@oasys/oecs/snapshots` | the **snapshots** plugin, `capture` and `restore` for a live world |
 | `@oasys/oecs/observers` | the **observers** plugin, `ecs.observe` |
+| `@oasys/oecs/workers` | the **workers** plugin, `ecs.workers`, one pool of workers for the `parallel` systems |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
 | `@oasys/oecs/solid` | the **solid** plugin, `solid()`, ECS state into Solid signals off the change feed (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from (`BitSet`, `SparseSet`, and others) |
-| `@oasys/oecs/worker` | the engine's **worker entry**. `ecs.attachWorkers` starts it, and you never import it. On npm the guarded build is `@oasys/oecs/worker/dev` |
+| `@oasys/oecs/worker` | the engine's **worker entry**. `world.workers.attach` starts it, and you never import it. On npm the guarded build is `@oasys/oecs/worker/dev` |
 | `@oasys/oecs/internal` | an **unstable** surface for tools, codecs, ABI constants, memory inspectors, and development singletons. There are no semver guarantees |
 
 ### The parallel and WASM surface
@@ -118,10 +119,14 @@ One system can run across a pool of workers. These are the names that carry it, 
 
 | Name | Where | What it is |
 | --- | --- | --- |
-| `ecs.attachWorkers(options)` | `ECS` | starts the pool, resolves when every kernel is loaded |
-| `ecs.workers` | `ECS` | the attached `WorkerPool`, or `null` |
-| `WorkerPool` | root, type | `count`, `settled()` and `detach()` |
-| `AttachWorkersOptions` | root, type | `count`, `workerUrl`, `joinTimeoutMs` and `stackBytes` |
+| `workers()` | `@oasys/oecs/workers` | the plugin, for `ECS.create({ plugins: [workers()] })` |
+| `ecs.workers.attach(options)` | workers plugin | starts the pool, resolves when every kernel is loaded |
+| `ecs.workers.pool` | workers plugin | the attached `WorkerPool`, or `null` |
+| `ecs.workers.detach()` | workers plugin | stops every worker, back to the sequential path |
+| `WorkerPool` | workers plugin, type | `count`, `settled()` and `detach()` |
+| `AttachWorkersOptions` | workers plugin, type | `count`, `workerUrl`, `joinTimeoutMs` and `stackBytes` |
+| `WorkersPlugin` | workers plugin, type | the surface the plugin adds to the world |
+| `DEFAULT_JOIN_TIMEOUT_MS` | workers plugin | what `joinTimeoutMs` falls back to |
 | `SystemConfig.parallel` | `registerSystem` | `kernel`, `columns`, `minRows` and `query` |
 | `ParallelConfig` | root, type | the shape of that field |
 | `ParallelKernel` | root, type | `{ wasm, export }` or `{ js, export }` |
@@ -178,7 +183,7 @@ Read these pages in this order, to get a model that you can use.
     replay of a command log
 14. [memory](./memory.md), the `memory` option that sets the size, and the storage profiles
 15. [WASM backends](./wasm.md), a shared `WebAssembly.Memory`, `ComputeBackend`, and the FFI ids
-16. [parallel execution](./parallel.md), `attachWorkers`, the `parallel` system form, the kernel
+16. [parallel execution](./parallel.md), the workers plugin, the `parallel` system form, the kernel
     signature, the join stamp, and the limits
 
 ### Integration with a host and a UI
@@ -215,8 +220,8 @@ The build tool **removes these checks from a production build**.
 removed. A bundler in development mode selects the build with the guards automatically, through the
 `development` export condition. As an alternative, import `@oasys/oecs/dev`. Each plugin has
 the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the plugin from the same
-channel as the world. A plugin binds to the core build it was made against. On JSR and Deno the
+`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev` and `@oasys/oecs/workers/dev`. Take the
+plugin from the same channel as the world. A plugin binds to the core build it was made against. On JSR and Deno the
 default is also production. JSR publishes no `/dev` subpath. Set `globalThis.__DEV__ = true`
 before the first import to turn the guards on. The
 [Development guards and production builds](../PRODUCTION.md) guide has the full matrix.

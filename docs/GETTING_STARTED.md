@@ -31,7 +31,7 @@ const ecs = ECS.create({
 
 Each option is optional. `new ECS()` uses good default values, and it installs no plugin.
 `ECS.create` adds the plugins the world uses. This guide uses events, so it installs
-`events()`. Relations, snapshots and observers each have their own plugin.
+`events()`. Relations, snapshots, observers and workers each have their own plugin.
 
 ## 3. Define the components
 

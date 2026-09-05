@@ -104,9 +104,11 @@ export type {
 export type { DeclaredBundleOrDef } from "./system_context";
 
 // Worker execution. A system that names a kernel runs across the pool a world
-// attaches, and its `fn` runs everywhere else.
+// attaches, and its `fn` runs everywhere else. The pool itself ships in the
+// workers plugin, so `WorkerPool` and `AttachWorkersOptions` are exported from
+// `@oasys/oecs/workers` and not from here. These three erase, so a program that
+// never attaches a pool carries none of it.
 export type { ParallelConfig, ParallelKernel, ParallelColumn } from "./system";
-export type { WorkerPool, AttachWorkersOptions } from "./parallel/pool";
 
 // Access check, dev-mode validation singleton.
 export { accessCheck } from "./access_check";

@@ -40,12 +40,24 @@ import type { SystemContext } from "./system_context";
 import type {
 	SystemFn, SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";
-import type { WorkerPool } from "./parallel/pool";
 import type { RunCondition } from "./run_condition";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { STARTUP_DELTA_TIME } from "./utils/constants";
 import { accessCheck } from "./access_check";
 import { DEV } from "../../dev_flag";
+
+/** What the schedule needs of a worker pool, and nothing more.
+ *
+ * The pool ships in the workers plugin, so a class reference here would pull
+ * the pool, the plan builder and the node threads shim into every program.
+ * This interface is structural, and it erases, so the core graph reaches none
+ * of them. `run` answers false below the row threshold, before the kernel is
+ * loaded, and after a failed join. Then the sequential body runs. */
+export interface ParallelRoute {
+	/** `plan` is the opaque value the descriptor carries. The schedule loads
+	 * it and passes it on, and only the pool reads inside it. */
+	run(plan: object, ctx: SystemContext, deltaTime: number, runTick: number): boolean;
+}
 
 export enum SCHEDULE {
 	PRE_STARTUP = "PRE_STARTUP",
@@ -264,7 +276,7 @@ export class Schedule {
 	private _backend: ComputeBackend | null = null;
 	// The attached worker pool, or null (the default). Hoisted in `_runPhase`
 	// exactly as the backend is: `null` means `desc.parallelPlan` is never read.
-	private _workers: WorkerPool | null = null;
+	private _workers: ParallelRoute | null = null;
 
 	/** Dev-diagnostic sink (`ECSOptions.onWarn`); defaults to `console.warn`.
 	 * The only schedule diagnostic today is `_warnDroppedEdge`. */
@@ -417,9 +429,9 @@ export class Schedule {
 	}
 
 	/** Attach (or, with `null`, detach) the worker pool. Driven by
-	 * `ECS.attachWorkers`. Routes any scheduled system carrying a `parallel`
+	 * `world.workers.attach`. Routes any scheduled system carrying a `parallel`
 	 * config across the pool in place of its `fn`. */
-	public setWorkerPool(pool: WorkerPool | null): void {
+	public setWorkerPool(pool: ParallelRoute | null): void {
 		this._workers = pool;
 	}
 

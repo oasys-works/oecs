@@ -18,6 +18,12 @@ export async function loadEcs() {
 	return await import(new URL("../../../dist/index.js", import.meta.url).href);
 }
 
+/** The workers plugin, from the shipped artifact. The pool no longer sits on
+ * `ECS`, so a probe that attaches one installs this. */
+export async function loadWorkers() {
+	return await import(new URL("../../../dist/plugins/workers.js", import.meta.url).href);
+}
+
 /** The buffer the columns live in, reached through the public region seam. */
 export function storeBuffer(ecs) {
 	const handle = ecs.regionHandle(PROBE_REGION);
@@ -48,11 +54,17 @@ export async function buildWorld({
 	maxBytes
 } = {}) {
 	const { ECS } = await loadEcs();
+	const { workers } = await loadWorkers();
 	const cap = columnCapacity ?? Math.ceil(entities * 0.62);
 	const memory = allocator
 		? { backing: { allocator }, columnCapacity: cap, ...(maxBytes ? { maxBytes } : {}) }
 		: { backing, columnCapacity: cap, ...(maxBytes ? { maxBytes } : {}) };
-	const ecs = new ECS({ memory, deterministic, regions: [regionSpec()] });
+	const ecs = ECS.create({
+		memory,
+		deterministic,
+		regions: [regionSpec()],
+		plugins: [workers()]
+	});
 
 	const num = deterministic ? "i32" : "f32";
 	const Pos = ecs.registerComponent({ x: num, y: num, z: num }, { name: "Pos" });

@@ -45,7 +45,7 @@ it is in the list.
 | `p24-par-split.mjs` | no experiment, the parallel study | Does a row-range split across K workers leave the same bytes and the same `stateHash`, and where does it start to pay? |
 | `p24-par-conflict.mjs` | the negative control for `p24-par-split` | Does the byte compare detect a real conflict, or does it detect nothing? |
 | `p24-par-structural.mjs` | no experiment, the parallel study | What does a worker see when a grow or a swap-remove runs beside its pass? |
-| `p24-par-engine.mjs` | no experiment, the shipped pool | Does `ecs.attachWorkers` with a `parallel` system leave the same bytes and the same `stateHash` as the system's own `fn`, and where does it pay? |
+| `p24-par-engine.mjs` | no experiment, the shipped pool | Does `ecs.workers.attach` with a `parallel` system leave the same bytes and the same `stateHash` as the system's own `fn`, and where does it pay? |
 | `p25-wasm-engine.mjs` | no experiment, the `wasm` kernel form | Does a `wasm` kernel on the shipped pool leave the same `stateHash` as the system's own `fn`, and what does it buy against the `js` kernel? |
 | `p25-wasm-stack.mjs` | no experiment, the `wasm` kernel form | Several workers instantiate one module over one memory. What happens to the shadow stack they all address, and what does a region for each instance cost? |
 

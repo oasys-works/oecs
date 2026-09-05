@@ -84,7 +84,7 @@ const CORES = availableParallelism();
 const SIZES = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 125_000, 250_000, 500_000, 1_000_000];
 
 /** Two, four, and one below the machine's parallelism, which is the count
- * `attachWorkers` defaults to. One worker is not a split. */
+ * `workers.attach` defaults to. One worker is not a split. */
 const KS = [...new Set([2, 4, Math.max(2, CORES - 1)])].filter((k) => k <= CORES).sort((a, b) => a - b);
 
 const BACKINGS = ["shared", "wasm"];
@@ -193,6 +193,9 @@ function pair(runSequential, runPooled, rows) {
  */
 async function buildWorld(entities, backing) {
 	const { ECS } = await import(new URL("../../dist/index.js", import.meta.url).href);
+	const { workers } = await import(
+		new URL("../../dist/plugins/workers.js", import.meta.url).href
+	);
 	const columnCapacity = Math.ceil(entities / 4) + 64;
 	const memory =
 		backing === "wasm"
@@ -207,7 +210,8 @@ async function buildWorld(entities, backing) {
 	const ecs = ECS.create({
 		deterministic: true,
 		memory,
-		regions: [{ id: PROBE_REGION, name: "p24-minrows", bytes: 64, init: () => {} }]
+		regions: [{ id: PROBE_REGION, name: "p24-minrows", bytes: 64, init: () => {} }],
+		plugins: [workers()]
 	});
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
@@ -276,7 +280,7 @@ async function sharedWasmRefusal(module) {
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, system);
 	try {
-		const pool = await ecs.attachWorkers({ count: 2 });
+		const pool = await ecs.workers.attach({ count: 2 });
 		await pool.detach();
 		return "attached, which the worker entry was expected to refuse";
 	} catch (error) {
@@ -434,9 +438,9 @@ async function runOne(backing, entities) {
 	for (const k of KS) {
 		let pool;
 		try {
-			pool = await ecs.attachWorkers({ count: k });
+			pool = await ecs.workers.attach({ count: k });
 		} catch (error) {
-			poolNote = `attachWorkers({ count: ${k} }) failed: ${error.message}`;
+			poolNote = `workers.attach({ count: ${k} }) failed: ${error.message}`;
 			break;
 		}
 		for (const body of BODIES) {

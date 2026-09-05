@@ -73,15 +73,15 @@ These are the 60 `ECS_ERROR` values, in groups by area:
 It is easy to confuse a small number of these with a category near them:
 
 - `PLUGIN_NOT_INSTALLED`. The world never installed the subsystem the call needs: relations,
-  events, snapshots, or observers. The message names the API and the import that supplies it, and
-  the remedy is at the construction site, `ECS.create({ plugins: [...] })`. This is different from
+  events, snapshots, observers, or workers. The message names the API and the import that supplies
+  it, and the remedy is at the construction site, `ECS.create({ plugins: [...] })`. This is different from
   `*_NOT_REGISTERED`, which means that the world has the subsystem and not that one component,
   event, or relation. In TypeScript the same mistake is a compile error, because a world carries
   only the members its plugins contribute.
 - `PLUGIN_SURFACE_COLLISION`. A plugin's facade names a member the world already carries.
   `Object.assign` would overwrite it in silence, and the world would lose a method it needs. The
-  remedy is to rename the member the plugin adds. The four slots a plugin is meant to fill,
-  `relations`, `events`, `observe`, and `snapshots`, are exempt. This check is in development builds
+  remedy is to rename the member the plugin adds. The five slots a plugin is meant to fill,
+  `relations`, `events`, `observe`, `snapshots`, and `workers`, are exempt. This check is in development builds
   only.
 - `ACCESS_UNDECLARED`. A system touched a component, a sparse component, a relation, or a resource
   that it did not declare in its access surface. This is different from `*_NOT_REGISTERED`, which
@@ -90,17 +90,17 @@ It is easy to confuse a small number of these with a category near them:
   body. Those mutators are `ecs.despawn`, `ecs.addComponent` and `ecs.removeComponent` with their
   plural forms, `ecs.disable` and `ecs.enable`, and `ecs.batchAddComponent` and
   `ecs.batchRemoveComponent`. In a system, use the deferred `ctx.commands.*` functions instead.
-- `WORKERS_ATTACHED`. `attachWorkers` ran on a world that already holds a pool. There is one pool
+- `WORKERS_ATTACHED`. `workers.attach` ran on a world that already holds a pool. There is one pool
   for each world, because one control buffer carries one barrier. Detach the first pool before you
   attach another. This is in each build.
-- `WORKERS_NEED_SHARED_BACKING`. `attachWorkers` ran on a world whose bytes a worker cannot reach.
+- `WORKERS_NEED_SHARED_BACKING`. `workers.attach` ran on a world whose bytes a worker cannot reach.
   A worker reads the columns directly, and a plain `ArrayBuffer` crosses no thread boundary. Build
   the world with `memory.backing` `"shared"` or `{ wasm }`. The message names the backing you gave.
   This is in each build.
 - `WORKERS_HOST_CANNOT_PARK`. The host refuses `Atomics.wait`, so it cannot park while the workers
   run. A browser main thread is the case. Host the world inside a worker, and attach the pool from
   there. This is in each build.
-- `WORKERS_COUNT_INVALID`. `attachWorkers` was given a number outside its range. The worker `count`,
+- `WORKERS_COUNT_INVALID`. `workers.attach` was given a number outside its range. The worker `count`,
   `joinTimeoutMs` and `stackBytes` are the three, and the message names which one and the value.
   `count` and `joinTimeoutMs` must be positive integers. `stackBytes` must be an integer, a multiple
   of the frame alignment of 16, and at least one WASM page of 65536 bytes. This is in each build.

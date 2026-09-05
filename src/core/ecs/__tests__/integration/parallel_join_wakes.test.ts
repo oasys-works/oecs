@@ -18,8 +18,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
-import { CTL_DONE } from "../../parallel/protocol";
-import type { WorkerPool } from "../../parallel/pool";
+import { CTL_DONE } from "../../../../plugins/workers/protocol";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { WORKER_URL, buildWorld } from "./parallel_fixture";
 
 const KERNELS_URL = new URL("./parallel_join_kernels.mjs", import.meta.url).href;
@@ -103,7 +103,7 @@ function withWait<T>(replacement: (real: Int32Wait) => Int32Wait, frame: () => T
 describe("the host park", () => {
 	it("wakes once for a pass, not once for each worker", async () => {
 		const world = staggeredWorld();
-		pools.push(await world.ecs.attachWorkers({ count: WORKERS, workerUrl: WORKER_URL }));
+		pools.push(await world.ecs.workers.attach({ count: WORKERS, workerUrl: WORKER_URL }));
 
 		let wakes = 0;
 		withWait(
@@ -123,7 +123,7 @@ describe("the host park", () => {
 
 	it("re-reads the count after a wake that carries no worker", async () => {
 		const world = staggeredWorld();
-		pools.push(await world.ecs.attachWorkers({ count: WORKERS, workerUrl: WORKER_URL }));
+		pools.push(await world.ecs.workers.attach({ count: WORKERS, workerUrl: WORKER_URL }));
 
 		let spurious = 0;
 		withWait(

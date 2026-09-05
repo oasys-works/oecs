@@ -78,16 +78,16 @@ export enum ECS_ERROR {
 	 * `Object.assign` would overwrite it without a word, and the world would
 	 * lose a method it needs. Dev-only. */
 	PLUGIN_SURFACE_COLLISION = "PLUGIN_SURFACE_COLLISION",
-	/** `attachWorkers` ran on a world that already holds a pool. One pool per
+	/** `workers.attach` ran on a world that already holds a pool. One pool per
 	 * world, because one control buffer carries one barrier. */
 	WORKERS_ATTACHED = "WORKERS_ATTACHED",
-	/** `attachWorkers` ran on a world whose bytes a worker cannot reach. A
+	/** `workers.attach` ran on a world whose bytes a worker cannot reach. A
 	 * worker needs a `SharedArrayBuffer` or a shared `WebAssembly.Memory`. */
 	WORKERS_NEED_SHARED_BACKING = "WORKERS_NEED_SHARED_BACKING",
 	/** The host cannot block on `Atomics.wait`, so it cannot park while the
 	 * workers run. A browser main thread is the case. */
 	WORKERS_HOST_CANNOT_PARK = "WORKERS_HOST_CANNOT_PARK",
-	/** `attachWorkers` was given a number outside its range. The worker count,
+	/** `workers.attach` was given a number outside its range. The worker count,
 	 * the join timeout and the kernel stack size are the three, and the message
 	 * names which. */
 	WORKERS_COUNT_INVALID = "WORKERS_COUNT_INVALID",

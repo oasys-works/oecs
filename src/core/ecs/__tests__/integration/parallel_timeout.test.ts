@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, ECSError } from "../../utils/error";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { KERNELS_URL, WORKER_URL, buildWorld } from "./parallel_fixture";
 
 const JOIN_MS = 60;
@@ -57,7 +57,7 @@ function spinningWorld() {
 describe("a worker that never reaches the join", () => {
 	it("fails the frame, names the export and the budget, and leaves the world on fn", async () => {
 		const world = spinningWorld();
-		const pool = await world.ecs.attachWorkers({
+		const pool = await world.ecs.workers.attach({
 			count: 1,
 			workerUrl: WORKER_URL,
 			joinTimeoutMs: JOIN_MS
@@ -92,7 +92,7 @@ describe("joinTimeoutMs", () => {
 		const world = buildWorld({ entities: 16, backing: "shared" });
 		try {
 			pools.push(
-				await world.ecs.attachWorkers({
+				await world.ecs.workers.attach({
 					count: 1,
 					workerUrl: WORKER_URL,
 					joinTimeoutMs: value

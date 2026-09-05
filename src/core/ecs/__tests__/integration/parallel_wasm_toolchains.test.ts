@@ -28,7 +28,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
 import { ECS_ERROR, type ECSError } from "../../utils/error";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import {
 	integrateWrapI32,
 	mixI32,
@@ -119,7 +119,7 @@ function kernelWorld({ kernel, body, storeBase = STORE_BASE }: WorldOptions) {
 }
 
 async function attach(world: ReturnType<typeof kernelWorld>, count: number, stackBytes?: number) {
-	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL, stackBytes });
+	const pool = await world.ecs.workers.attach({ count, workerUrl: WORKER_URL, stackBytes });
 	pools.push(pool);
 	return pool;
 }
@@ -290,7 +290,7 @@ describe("a kernel module the pool refuses", () => {
 		});
 		let caught = { category: "no throw", message: "" };
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = { category: (error as ECSError).category, message: (error as Error).message };
 		}
@@ -312,7 +312,7 @@ describe("a kernel module the pool refuses", () => {
 		});
 		let caught = { category: "no throw", message: "" };
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = { category: (error as ECSError).category, message: (error as Error).message };
 		}
@@ -328,7 +328,7 @@ describe("a kernel module the pool refuses", () => {
 		});
 		let caught = { category: "no throw", message: "" };
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = { category: (error as ECSError).category, message: (error as Error).message };
 		}
@@ -343,7 +343,7 @@ describe("a kernel module the pool refuses", () => {
 		});
 		let caught = { category: "no throw", message: "" };
 		try {
-			pools.push(await world.ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+			pools.push(await world.ecs.workers.attach({ count: 2, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = { category: (error as ECSError).category, message: (error as Error).message };
 		}
@@ -360,12 +360,12 @@ describe("a kernel module the pool refuses", () => {
 			storeBase: 65_536
 		});
 		await attach(world, 1);
-		expect(world.ecs.workers?.count).toBe(1);
+		expect(world.ecs.workers.pool?.count).toBe(1);
 	}, 30_000);
 });
 
 /**
- * `attachWorkers` with `stackBytes`, and the module heap it leaves alone.
+ * `workers.attach` with `stackBytes`, and the module heap it leaves alone.
  *
  * The pool carves the stack regions downward from the store base. With
  * `stackBytes` the regions are exactly that size, so everything below the
@@ -450,7 +450,7 @@ describe("the stack the caller sizes", () => {
 		}
 		expect(caught.category).toBe(ECS_ERROR.PARALLEL_KERNEL_FAILED);
 		expect(caught.message).toContain("stack region of 1048576 bytes");
-		expect(caught.message).toContain("lower attachWorkers stackBytes");
+		expect(caught.message).toContain("lower stackBytes on workers.attach");
 	}, 30_000);
 
 	it("refuses a stackBytes the pool cannot carve, at the attach", async () => {

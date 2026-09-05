@@ -2,7 +2,7 @@
  * The page half of the browser matrix. Two cases run here, and the rest run in
  * `host.js`.
  *
- *   `main-refuses`   the main thread calls `attachWorkers` and must be refused,
+ *   `main-refuses`   the main thread calls `workers.attach` and must be refused,
  *                    because it cannot park on `Atomics.wait`
  *   `store-reader`   `store_reader.wasm`, the fixture the vitest suite drives,
  *                    against a live wasm-backed world in the browser
@@ -16,6 +16,7 @@
  */
 
 import { ECS } from "../../../dist/index.js";
+import { workers } from "../../../dist/plugins/workers.js";
 import {
 	collectColumnValues,
 	fnv1aBytes,
@@ -58,13 +59,13 @@ function record(result) {
 /** The main thread must refuse to host a pool. A resolve here is the failure,
  * so the race reports a run that answered nothing as its own outcome. */
 async function mainRefuses() {
-	const ecs = ECS.create({ memory: { backing: "shared" } });
+	const ecs = ECS.create({ memory: { backing: "shared" }, plugins: [workers()] });
 	try {
-		await ecs.attachWorkers({ count: 1 });
+		await ecs.workers.attach({ count: 1 });
 		record({
 			id: "main-refuses",
 			ok: false,
-			detail: { outcome: "attachWorkers resolved on the main thread" }
+			detail: { outcome: "workers.attach resolved on the main thread" }
 		});
 	} catch (error) {
 		// `ECSError` carries its code on `category`.

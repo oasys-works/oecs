@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { integrateI32 } from "./parallel_kernels.mjs";
 import { KERNELS_URL, WORKER_URL, buildWorld, seed, type Backing } from "./parallel_fixture";
 
@@ -111,7 +111,7 @@ describe.each(BACKINGS)("a grow between two frames on the %s backing", (backing)
 });
 
 async function attach(world: ReturnType<typeof integrateWorld>, count: number) {
-	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL });
+	const pool = await world.ecs.workers.attach({ count, workerUrl: WORKER_URL });
 	pools.push(pool);
 	return pool;
 }

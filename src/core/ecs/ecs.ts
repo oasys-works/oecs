@@ -69,7 +69,7 @@ import {
 } from "./observer";
 import type { ColumnStore } from "../store";
 import { ECSResources, ECSSnapshots } from "./facades";
-import type { Plugin, PluginHost, PluginsOf } from "./plugin";
+import type { Plugin, PluginHost, PluginsOf, WorkerHooks, WorkerWorld } from "./plugin";
 import { Schedule, type SCHEDULE } from "./schedule";
 import type { Archetype, ArchetypeID } from "./archetype";
 import { Query, QueryBuilder, QueryCache, type QueryResolver, type QueryTerms } from "./query";
@@ -129,8 +129,6 @@ import {
 } from "./utils/constants";
 import type { StoreLayoutListener } from "./store_layout_listener";
 import type { ComputeBackend } from "./compute_backend";
-import { WorkerPool, type AttachWorkersOptions } from "./parallel/pool";
-import { assertParallelConfig, createParallelPlan, type ParallelPlan } from "./parallel/plan";
 import type { ColumnStoreRegionHandle, StoreRegionSpec } from "../store";
 import {
 	resolveECSMemory,
@@ -238,11 +236,18 @@ function reservePluginSlot(plugin: string): object {
 
 const MISSING_RELATIONS: object = reservePluginSlot("relations");
 const MISSING_EVENTS: object = reservePluginSlot("events");
+const MISSING_WORKERS: object = reservePluginSlot("workers");
 
 /** The world members a plugin is meant to replace. Each one exists on a
  * bare world only to name the plugin that fills it, so a facade landing on
  * one is the design and not a collision. */
-const PLUGIN_RESERVED_SLOTS: readonly string[] = ["relations", "events", "observe", "snapshots"];
+const PLUGIN_RESERVED_SLOTS: readonly string[] = [
+	"relations",
+	"events",
+	"observe",
+	"snapshots",
+	"workers"
+];
 
 /** The reserved `observe` slot. A function, because a caller calls it. */
 function missingObserve(): never {
@@ -380,7 +385,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/** Refuse a facade member that would overwrite something the world already
 	 * carries. `Object.assign` is silent about it, and the loss is a method the
-	 * world needs. The four reserved slots are the exception: a bare world
+	 * world needs. The reserved slots are the exception: a bare world
 	 * declares each one so it can name the missing plugin, and the
 	 * plugin that fills the slot is meant to replace it. Dev-only. */
 	private _checkSurface(plugin: string, surface: object): void {
@@ -415,7 +420,35 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				// The registry is one settle consumer among others, and it takes
 				// its place in install order like any other.
 				this._settleHooks.push((run) => registry.dispatchSet(run));
+			},
+			installWorkers: (hooks) => {
+				if (this._workerHooks !== null) throw pluginInstalledTwiceError("workers");
+				this._workerHooks = hooks;
+				return this._workerWorld();
 			}
+		};
+	}
+
+	/** What the pool reads from this world. Built once, at install.
+	 *
+	 * `backing` is a getter, because an attach can follow a grow, and a grow
+	 * replaces the buffer the world started with. The wasm memory survives a
+	 * grow, so it answers first. Cold path. */
+	private _workerWorld(): WorkerWorld {
+		const memory = this._memory;
+		const store = this._store;
+		const schedule = this._schedule;
+		return {
+			get backing(): SharedArrayBuffer | WebAssembly.Memory | null {
+				if (memory.wasmMemory !== null) return memory.wasmMemory;
+				const buffer = store.columnStore.buffer;
+				const hasShared = typeof SharedArrayBuffer !== "undefined";
+				return hasShared && buffer instanceof SharedArrayBuffer ? buffer : null;
+			},
+			backingSource: memory.source,
+			storeBase: memory.storeBase,
+			noteScan: (componentId: number) => store.noteScan(componentId),
+			route: (pool) => schedule.setWorkerPool(pool)
 		};
 	}
 
@@ -485,11 +518,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// this is set. Otherwise its `fn` runs. Attached via `attachBackend`.
 	private _backend: ComputeBackend | null = null;
 
-	// The attached worker pool, or null (the default). One pool per world.
-	private _workerPool: WorkerPool | null = null;
-	// Every parallel system's plan, in registration order. The pool loads a
-	// kernel for each and clears them all on detach.
-	private readonly _parallelPlans: ParallelPlan[] = [];
+	// What the workers plugin installed, or null (the default). `registerSystem`
+	// reads it only inside `if (config.parallel !== undefined)`, so a world
+	// with no parallel system never touches it, and a world without the plugin
+	// builds no plan and runs the system's `fn`.
+	private _workerHooks: WorkerHooks | null = null;
 
 	private readonly _memory: ResolvedECSMemory;
 
@@ -585,6 +618,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		slots.relations = MISSING_RELATIONS;
 		slots.events = MISSING_EVENTS;
 		slots.observe = missingObserve;
+		slots.workers = MISSING_WORKERS;
 		this._ctx = new SystemContext(this._store);
 		// Observers dispatch through the shared SystemContext + accessCheck. The
 		// store calls the structural hook between fixed-point flush rounds. OnSet
@@ -672,75 +706,6 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				this._schedule.setBackend(null);
 			}
 		};
-	}
-
-	/**
-	 * Start a pool of workers and run this world's parallel systems on it.
-	 *
-	 * Each worker gets the store bytes, the store base and a control buffer, and
-	 * loads the kernel of every parallel system already registered. The promise
-	 * resolves when every worker is parked on the barrier with its kernels in
-	 * hand. A system registered later runs `fn` until `pool.settled()` resolves.
-	 *
-	 * The world's backing must be `shared` or `wasm`, because a worker reads the
-	 * bytes directly. The host must be able to block on `Atomics.wait`, which a
-	 * browser main thread refuses. One pool per world.
-	 *
-	 * The host parks on every pass, so a worker that dies would park it for the
-	 * life of the process. `joinTimeoutMs` bounds that wait, fails the frame
-	 * with `PARALLEL_KERNEL_FAILED`, and leaves every later frame on the
-	 * sequential body until the caller detaches.
-	 *
-	 * Cold path. Call it once, outside any frame.
-	 *
-	 * @example
-	 * const pool = await ecs.attachWorkers({ count: 4 });
-	 * // later
-	 * await pool.detach();
-	 */
-	public async attachWorkers(options?: AttachWorkersOptions): Promise<WorkerPool> {
-		if (this._workerPool !== null) {
-			throw new ECSError(
-				ECS_ERROR.WORKERS_ATTACHED,
-				"attachWorkers: this world already holds a pool. One pool per world, detach it before you attach another."
-			);
-		}
-		const wasmMemory = this._memory.wasmMemory;
-		const buffer = this._store.columnStore.buffer;
-		const hasShared = typeof SharedArrayBuffer !== "undefined";
-		let store: SharedArrayBuffer | WebAssembly.Memory;
-		if (wasmMemory !== null) store = wasmMemory;
-		else if (hasShared && buffer instanceof SharedArrayBuffer) store = buffer;
-		else {
-			throw new ECSError(
-				ECS_ERROR.WORKERS_NEED_SHARED_BACKING,
-				`attachWorkers: this world's backing is '${this._memory.source}', and a worker cannot reach its bytes. Build the world with memory.backing "shared" or { wasm }.`
-			);
-		}
-		const pool = await WorkerPool.attach(
-			{
-				store,
-				storeBase: this._memory.storeBase,
-				noteScan: (componentId: number) => this._store.noteScan(componentId),
-				plans: () => this._parallelPlans,
-				released: () => {
-					this._workerPool = null;
-					this._schedule.setWorkerPool(null);
-				}
-			},
-			options
-		);
-		// A detach that raced this line would leave the schedule holding a dead
-		// pool, so the assignment happens after `attach` resolves and never
-		// before.
-		this._workerPool = pool;
-		this._schedule.setWorkerPool(pool);
-		return pool;
-	}
-
-	/** The attached pool, or `null`. */
-	public get workers(): WorkerPool | null {
-		return this._workerPool;
 	}
 
 	public get fixedTimestep(): number {
@@ -1562,28 +1527,12 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			);
 		}
 
-		// A parallel system resolves its plan here, once. The masks, the column
-		// specs and the row threshold are not diagnostics, so this runs in every
-		// build. Only the refusal is a dev guard.
-		let parallelPlan: ParallelPlan | undefined;
-		if (config.parallel !== undefined) {
-			const parallel = config.parallel;
-			let query = parallel.query;
-			if (query === undefined) {
-				const group = config.queries?.[0];
-				if (group === undefined) {
-					throw new ECSError(
-						ECS_ERROR.PARALLEL_ACCESS,
-						`registerSystem: config${config.name ? ` '${config.name}'` : ""} declares 'parallel' with neither 'parallel.query' nor a first entry in 'queries'. A worker resolves the matched archetypes from a query, so one is required.`
-					);
-				}
-				query = this.query(...(group as ComponentDef[]));
-			}
-			if (DEV) assertParallelConfig(config, query);
-			parallelPlan = createParallelPlan(parallel, query, config.writes, (def, field) =>
-				this._store.fieldIdOf(def, field)
-			);
-		}
+		// A parallel system resolves its plan here, once. The plugin owns the
+		// plan and its validation, so a world that installed no workers plugin
+		// leaves `parallelPlan` undefined and the system runs its `fn`. The hook
+		// is read only inside this branch, and registration is cold in any case.
+		const parallelPlan: object | undefined =
+			config.parallel !== undefined ? this._workerHooks?.plan(config) : undefined;
 
 		const id = asSystemId(this._nextSystemId++);
 		const descriptor: SystemDescriptor = Object.freeze({
@@ -1593,12 +1542,6 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			id
 		});
 		this._systems.add(descriptor);
-		if (parallelPlan !== undefined) {
-			this._parallelPlans.push(parallelPlan);
-			// A pool that is already attached takes the kernel now. The system runs
-			// `fn` until every worker holds it, which `pool.settled()` awaits.
-			this._workerPool?.register(parallelPlan);
-		}
 		return descriptor;
 	}
 
@@ -1775,15 +1718,15 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	public dispose(): void {
 		// The workers hold the store bytes and keep the process alive, so they
-		// stop with the world. `dispose` is synchronous and `detach` is not, so
-		// the stop is started here and awaited by a caller that wants it.
-		void this._workerPool?.detach();
+		// stop with the world. `dispose` is synchronous and the stop is not, so
+		// the plugin starts it here and a caller that wants the end awaits
+		// `world.workers.detach()` instead.
+		this._workerHooks?.dispose();
 		for (const descriptor of this._systems.values()) {
 			descriptor.dispose?.();
 			descriptor.onRemoved?.();
 		}
 		this._systems.clear();
-		this._parallelPlans.length = 0;
 		this._schedule.clear();
 	}
 

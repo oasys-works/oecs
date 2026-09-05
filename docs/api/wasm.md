@@ -16,7 +16,7 @@ simulation needs:
   growth.
 - `ecs.attachBackend(backend)` with `SystemConfig.backendHandle`, send the systems that you select
   to your backend, in place of their TypeScript closure.
-- `SystemConfig.parallel` with `ecs.attachWorkers`, run one export of a compiled module across a
+- `SystemConfig.parallel` with `world.workers.attach`, run one export of a compiled module across a
   pool of workers, over disjoint row ranges of the matched archetypes.
 - `HostCommandDispatcher`, an optional ring transport with fixed slots, for writes from a worker
   or from the wire back into the host ECS.
@@ -186,19 +186,22 @@ shadow stack end. Whatever the module allocates while it runs sits above that, a
 knows how far. Pass its peak. A store based inside that heap fails the same silent way.
 
 **A pool takes its stack regions from the same span.** The span `[__heap_base, storeBase)` is the
-caller's reserve, and `attachWorkers` carves one private shadow stack out of it for each worker,
+caller's reserve, and `workers.attach` carves one private shadow stack out of it for each worker,
 downward from the store base. So a world that runs a `wasm` kernel across a pool adds one stack for
 each worker to the extra bytes, and tells the pool how big one stack is:
 
 ```ts
-const ecs = ECS.create({
+import { workers } from "@oasys/oecs/workers";
+
+const world = ECS.create({
   memory: {
     backing: { wasm: { memory } },
-    storeBase: storeBaseAbove(probe.exports, moduleHeapPeak + workers * stackBytes),
+    storeBase: storeBaseAbove(probe.exports, moduleHeapPeak + workerCount * stackBytes),
   },
+  plugins: [workers()],
 });
 
-const pool = await ecs.attachWorkers({ count: workers, stackBytes });
+const pool = await world.workers.attach({ count: workerCount, stackBytes });
 ```
 
 **Both lines, or neither.** Without `stackBytes` the pool divides the whole span, and
@@ -353,7 +356,7 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 8. Call `ecs.publishRowCounts()` before each run of a module that you drive outside the schedule.
 9. Read the base from the module with `storeBaseAbove(instance.exports, extraBytes)`, and pass the
    module its own peak run-time heap plus one stack for each worker of the pool.
-10. Give `attachWorkers` the same `stackBytes` you reserved, so the pool leaves the heap alone.
+10. Give `workers.attach` the same `stackBytes` you reserved, so the pool leaves the heap alone.
 11. Link a kernel module with `--export=__stack_pointer` when its body spills anything, and keep it
     off the module's heap either way.
 

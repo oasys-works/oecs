@@ -12,11 +12,11 @@
  * rather than a hash of an object identity.
  ***/
 
-import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi";
-import type { ComponentDef } from "../component";
-import type { Query } from "../query";
-import type { ParallelConfig, SystemConfig } from "../system";
-import { ECS_ERROR, ECSError } from "../utils/error";
+import { COMPONENT_MASK_WORDS } from "../../core/store/vendored_abi/abi";
+import type { ComponentDef } from "../../core/ecs/component";
+import type { Query } from "../../core/ecs/query";
+import type { ParallelConfig, SystemConfig } from "../../core/ecs/system";
+import { ECS_ERROR, ECSError } from "../../core/ecs/utils/error";
 
 /**
  * The total matched row count below which a parallel system runs `fn` on the

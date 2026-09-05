@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
 import { ECS_ERROR, type ECSError } from "../../utils/error";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { integrateI32 } from "./parallel_kernels.mjs";
 import { KERNELS_URL, WORKER_URL, buildWorld, readColumns } from "./parallel_fixture";
 
@@ -199,7 +199,7 @@ function integrateWorld(kernel: { js?: string; wasm?: WebAssembly.Module; export
 }
 
 async function attach(world: ReturnType<typeof integrateWorld>, count: number) {
-	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL });
+	const pool = await world.ecs.workers.attach({ count, workerUrl: WORKER_URL });
 	pools.push(pool);
 	return pool;
 }
@@ -245,7 +245,7 @@ describe("a wasm kernel", () => {
 		} as never);
 		let caught = "no throw";
 		try {
-			pools.push(await ecs.attachWorkers({ count: 1, workerUrl: WORKER_URL }));
+			pools.push(await ecs.workers.attach({ count: 1, workerUrl: WORKER_URL }));
 		} catch (error) {
 			caught = (error as ECSError).category;
 		}

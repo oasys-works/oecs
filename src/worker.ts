@@ -1,7 +1,7 @@
 /***
  * The engine's worker entry, `@oasys/oecs/worker`.
  *
- * `attachWorkers` starts this file. It picks the runtime, builds the worker
+ * `world.workers.attach` starts this file. It picks the runtime, builds the worker
  * body, and hands every message to it. It exports nothing, because a worker is
  * started and not imported.
  *
@@ -14,9 +14,9 @@
  * a relative specifier by its extension.
  ***/
 
-import { loadNodeThreads } from "./core/ecs/parallel/node_threads.ts";
-import { createWorkerRuntime, type WorkerRuntime } from "./core/ecs/parallel/worker_loop.ts";
-import type { HostMessage, WorkerReply, WorkerStart } from "./core/ecs/parallel/protocol.ts";
+import { loadNodeThreads } from "./plugins/workers/node_threads.ts";
+import { createWorkerRuntime, type WorkerRuntime } from "./plugins/workers/worker_loop.ts";
+import type { HostMessage, WorkerReply, WorkerStart } from "./plugins/workers/protocol.ts";
 
 interface WorkerScope {
 	postMessage(reply: WorkerReply): void;

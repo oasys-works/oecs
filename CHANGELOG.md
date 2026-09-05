@@ -27,7 +27,15 @@ itself.
 
 ### Added. One system across workers
 
-`ecs.attachWorkers({ count })` starts a persistent pool on the package's own worker entry,
+`workers()` from `@oasys/oecs/workers` is a plugin. `ECS.create({ plugins: [workers()] })` gives a
+world `ecs.workers`, which carries `attach(options)`, `pool` and `detach()`. The pool, the plan
+builder and the shim that reaches the node threads module ship in that subpath, so a world that
+never names it carries none of them. A JavaScript caller reading `world.workers.attach` on a bare
+world gets `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and the message names the import. `AttachWorkersOptions`,
+`WorkerPool`, `WorkersPlugin` and `DEFAULT_JOIN_TIMEOUT_MS` are exported from the same subpath, and
+`ParallelConfig`, `ParallelKernel` and `ParallelColumn` stay on the root, because they erase.
+
+`world.workers.attach({ count })` starts a persistent pool on the package's own worker entry,
 `@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load,
 either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL, and the
 columns the kernel receives in order. The schedule hands the pass to the pool inside the same
@@ -39,8 +47,9 @@ is deterministic. The join stamps every matched archetype for each declared writ
 
 A parallel system declares only `reads`, `writes` and a dense query. Sparse, relation, resource,
 spawn, despawn and transition declarations, `exclusive`, and `backendHandle` are refused at
-registration with `ECS_ERROR.PARALLEL_ACCESS`. Below `parallel.minRows`, and without an attached
-pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
+registration with `ECS_ERROR.PARALLEL_ACCESS`. Those refusals ship with the plugin, so a world that
+installed no workers plugin validates no `parallel` config, builds no plan and runs the system's
+`fn`. Below `parallel.minRows`, and without an attached pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
 backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
 
 The split pays only above a row count that depends on the machine, the kernel and the worker count.
@@ -53,11 +62,11 @@ wins. `bench/` holds the measurements and the tuning method.
 With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
 Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside
 the package as it ships and not inside a bundle. A worker whose script does not load now fails
-`attachWorkers` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
+`workers.attach` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
 resolving with workers that never answer. The node threads module is reached through
 `process.getBuiltinModule`, so a browser build sees no node builtin specifier and prints no warning.
 
-`attachWorkers` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
+`workers.attach` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
 can never report done, and the parked host would wait forever. On timeout the frame throws
 `PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
 `detach` terminates the hung worker.
@@ -99,7 +108,7 @@ The worker now carves one region for each worker out of `[__heap_base, storeBase
 `__stack_pointer` to the top of its own. The regions come off the top of that span, downward from
 the store base, so worker `i` gets its top at `storeBase - i * stackBytes`.
 
-`attachWorkers({ stackBytes })` says how big one region is, and everything below the lowest region
+`workers.attach({ stackBytes })` says how big one region is, and everything below the lowest region
 stays the module's heap. Reserve the module's peak run-time heap plus one stack for each worker with
 `storeBaseAbove`, then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
 span, which leaves the module no heap. That is the default, and it suits a kernel that allocates
@@ -155,7 +164,7 @@ join cost, both of which are worse.
 
 ### Fixed
 
-A kernel that would not load rejected `attachWorkers` and left its workers running, so a node
+A kernel that would not load rejected `workers.attach` and left its workers running, so a node
 process never exited on its own. The pool now ends the workers before the fault leaves.
 
 An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no

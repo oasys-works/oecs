@@ -12,7 +12,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
-import type { WorkerPool } from "../../parallel/pool";
+import type { WorkerPool } from "../../../../plugins/workers/pool";
 import { integrateF32, integrateI32 } from "./parallel_kernels.mjs";
 import {
 	KERNELS_URL,
@@ -79,7 +79,7 @@ function integrateWorld(backing: Backing, deterministic: boolean, exportName: st
 }
 
 async function attach(world: ReturnType<typeof integrateWorld>, count: number) {
-	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL });
+	const pool = await world.ecs.workers.attach({ count, workerUrl: WORKER_URL });
 	pools.push(pool);
 	return pool;
 }

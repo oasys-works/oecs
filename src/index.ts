@@ -87,15 +87,11 @@ export type {
 	SystemAccessDeclaration,
 	SystemTransition
 } from "./core/ecs";
-// Worker execution. `ecs.attachWorkers` starts the pool, and a system carrying
-// a `parallel` config then runs its kernel across it.
-export type {
-	ParallelConfig,
-	ParallelKernel,
-	ParallelColumn,
-	WorkerPool,
-	AttachWorkersOptions
-} from "./core/ecs";
+// Worker execution. `world.workers.attach` starts the pool, and a system
+// carrying a `parallel` config then runs its kernel across it. The pool ships
+// in `@oasys/oecs/workers`, which is where `WorkerPool` and
+// `AttachWorkersOptions` live. These three erase.
+export type { ParallelConfig, ParallelKernel, ParallelColumn } from "./core/ecs";
 // Compile-time access typing (system.ts): the config-form `registerSystem`
 // narrows `ctx` to the declared access surface. `SystemAccess` + the
 // `Declared*` guards are what helper signatures reference. `DeclaredAccess` /
