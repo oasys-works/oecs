@@ -17,8 +17,8 @@ import { getEntityGeneration, getEntityIndex, type EntityID } from "../../entity
 import { eventKey } from "../../event";
 import { ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";
-import { events } from "../../../../capabilities/events";
-import { observers } from "../../../../capabilities/observers";
+import { events } from "../../../../plugins/events";
+import { observers } from "../../../../plugins/observers";
 
 // ============================================================================
 // Phase 1, structural observers (onAdd and onRemove)

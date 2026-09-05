@@ -33,15 +33,18 @@ The **package root** (`@oasys/oecs`) exports `ECSError`, `ECS_ERROR`, and `isEcs
 > and access-check errors, and they are absent from a production build. There the same mistake
 > fails without a signal. These errors occur in **each** build, because they are structural or
 > fatal: `CIRCULAR_SYSTEM_DEPENDENCY`, `STORE_CAP_EXCEEDED`, `INVALID_MEMORY_OPTIONS`,
-> `DETERMINISM_DISABLED`, `INVALID_FRAME_STEP`, `CAPABILITY_NOT_INSTALLED`,
-> `CAPABILITY_ALREADY_INSTALLED`, and the validators that run at construction. Use a
+> `DETERMINISM_DISABLED`, `INVALID_FRAME_STEP`, `PLUGIN_NOT_INSTALLED`,
+> `PLUGIN_ALREADY_INSTALLED`, `WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`,
+> `WORKERS_HOST_CANNOT_PARK`, `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`,
+> `PARALLEL_KERNEL_FAILED`, and the
+> validators that run at construction. Use a
 > development error as a safety net while you develop. Do not use it as a channel for error
 > handling in production. See
 > [development and production](./index.md#dev-vs-prod--read-this-once).
 
 ## Categories
 
-These are the 52 `ECS_ERROR` values, in groups by area:
+These are the 59 `ECS_ERROR` values, in groups by area:
 
 **Entities and components**
 `EID_MAX_INDEX_OVERFLOW`, `EID_MAX_GEN_OVERFLOW`, `ENTITY_NOT_ALIVE`, `ENTITY_NOT_DISABLED`, `COMPONENT_NOT_REGISTERED`, `COMPONENT_LIMIT_EXCEEDED`, `FIELD_NOT_REGISTERED`, `COMPONENT_INDEX_INVARIANT`, `INVALID_TEMPLATE`
@@ -58,20 +61,28 @@ These are the 52 `ECS_ERROR` values, in groups by area:
 **Observers**
 `OBSERVER_NON_CONVERGENT`, `OBSERVER_INVALID_CONFIG`, `OBSERVER_ONSET_EMIT`, `ROW_TICKS_NOT_TRACKED`
 
-**Capabilities**
-`CAPABILITY_NOT_INSTALLED`, `CAPABILITY_ALREADY_INSTALLED`
+**Plugins**
+`PLUGIN_NOT_INSTALLED`, `PLUGIN_ALREADY_INSTALLED`, `PLUGIN_SURFACE_COLLISION`
+
+**Workers and parallel systems**
+`WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`, `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`, `PARALLEL_KERNEL_FAILED`
 
 **Determinism, memory, and the host write path**
 `DETERMINISM_DISABLED`, `NON_DETERMINISTIC_COLUMN_TYPE`, `INVALID_MEMORY_OPTIONS`, `STORE_CAP_EXCEEDED`, `REGION_NOT_DECLARED`, `BACKEND_ALREADY_ATTACHED`, `INVALID_RECORDER_SCHEDULE`, `COMMAND_LOG_TAG_COLLISION`
 
 It is easy to confuse a small number of these with a category near them:
 
-- `CAPABILITY_NOT_INSTALLED`. The world never installed the subsystem the call needs: relations,
+- `PLUGIN_NOT_INSTALLED`. The world never installed the subsystem the call needs: relations,
   events, snapshots, or observers. The message names the API and the import that supplies it, and
   the remedy is at the construction site, `ECS.create({ plugins: [...] })`. This is different from
   `*_NOT_REGISTERED`, which means that the world has the subsystem and not that one component,
   event, or relation. In TypeScript the same mistake is a compile error, because a world carries
   only the members its plugins contribute.
+- `PLUGIN_SURFACE_COLLISION`. A plugin's facade names a member the world already carries.
+  `Object.assign` would overwrite it in silence, and the world would lose a method it needs. The
+  remedy is to rename the member the plugin adds. The four slots a plugin is meant to fill,
+  `relations`, `events`, `observe`, and `snapshots`, are exempt. This check is in development builds
+  only.
 - `ACCESS_UNDECLARED`. A system touched a component, a sparse component, a relation, or a resource
   that it did not declare in its access surface. This is different from `*_NOT_REGISTERED`, which
   means that you never registered the item with the world. The engine also throws
@@ -79,6 +90,32 @@ It is easy to confuse a small number of these with a category near them:
   body. Those mutators are `ecs.despawn`, `ecs.addComponent` and `ecs.removeComponent` with their
   plural forms, `ecs.disable` and `ecs.enable`, and `ecs.batchAddComponent` and
   `ecs.batchRemoveComponent`. In a system, use the deferred `ctx.commands.*` functions instead.
+- `WORKERS_ATTACHED`. `attachWorkers` ran on a world that already holds a pool. There is one pool
+  for each world, because one control buffer carries one barrier. Detach the first pool before you
+  attach another. This is in each build.
+- `WORKERS_NEED_SHARED_BACKING`. `attachWorkers` ran on a world whose bytes a worker cannot reach.
+  A worker reads the columns directly, and a plain `ArrayBuffer` crosses no thread boundary. Build
+  the world with `memory.backing` `"shared"` or `{ wasm }`. The message names the backing you gave.
+  This is in each build.
+- `WORKERS_HOST_CANNOT_PARK`. The host refuses `Atomics.wait`, so it cannot park while the workers
+  run. A browser main thread is the case. Host the world inside a worker, and attach the pool from
+  there. This is in each build.
+- `WORKERS_COUNT_INVALID`. `attachWorkers` was given a number that is not a positive integer. The
+  worker `count` and `joinTimeoutMs` are the two, and the message names which one and the value.
+  This is in each build.
+- `WORKERS_ENTRY_UNREACHABLE`. A worker's script did not load, so the worker answered nothing. A
+  bundled app that kept the default worker URL is the case, because a bundler leaves
+  `@oasys/oecs/worker` out of its graph. Pass `workerUrl` with the URL your bundler emits for that
+  entry. The message names the URL that failed. This is in each build.
+- `PARALLEL_ACCESS`. A system declares `parallel` beside access a worker cannot serve, or a query a
+  worker cannot resolve from the archetype masks. The message names the field and why. Drop the
+  declaration, or run the system sequentially. This is in development builds only, and it throws at
+  registration and not inside a frame.
+- `PARALLEL_KERNEL_FAILED`. A kernel would not load, a kernel threw inside a pass, or a worker
+  missed the join inside `joinTimeoutMs`. The message names the kernel export, and the worker index
+  when a worker reported the fault itself. Fix the kernel, or raise `parallel.minRows` to keep the
+  system sequential. After a join timeout the pool refuses every later pass, so detach it. This is
+  in each build.
 - `ARCHETYPE_ROW_INVARIANT`. The row bookkeeping of an archetype does not agree with its backing
   columns. There are three causes. A reserve did not give the capacity that the engine asked for. A
   restore gave a partition boundary that is out of range. Or a cached row plane points at a buffer

@@ -61,8 +61,9 @@ export interface TailArchetypeLayout {
 }
 
 /** Tail-cursor column placement, the single home for the in-place paths'
- * layout rule and the 2³¹ offset cap. Starting at `startCursor`
- * (the current buffer byteLength), each archetype's columns are placed
+ * layout rule and the 2³¹ offset cap. `startCursor` and every offset it
+ * produces are relative to the store base. Starting at `startCursor`
+ * (the current store span), each archetype's columns are placed
  * `alignUp(cursor, stride)` then advanced by `stride * rowCapacity`. The
  * final tail (last column's advance, not re-aligned) becomes the grown
  * buffer's byteLength and is guarded past `STORE_MAX_BYTE_OFFSET` exactly
@@ -117,17 +118,22 @@ export function growBufferInPlace(
 	old: ColumnStoreInternal,
 	newTotal: number
 ): { grownBuffer: ArrayBufferLike; newView: DataView } {
-	const grownBuffer = old._allocator(newTotal);
-	const newView = grownBuffer !== old.buffer ? new DataView(grownBuffer) : old.view;
+	// `newTotal` is the store span. The allocator sizes the whole backing, so
+	// the base rides along.
+	const grownBuffer = old._allocator(old.storeBase + newTotal);
+	const newView =
+		grownBuffer !== old.buffer ? new DataView(grownBuffer, old.storeBase) : old.view;
 	return { grownBuffer, newView };
 }
 
 /**
- * Byte offset where the next appended column region begins, the tail cursor
- * the in-place grow and extend paths pass to `layoutColumnsAtTail`.
+ * Byte offset where the next appended column region begins, measured from the
+ * store base. This is the tail cursor the in-place grow and extend paths pass
+ * to `layoutColumnsAtTail`.
  *
  * For the growable-SAB and wasm backings the buffer is sized to the live extent,
- * so `buffer.byteLength` is the tail. `SharedArrayBuffer.grow` resizes exactly.
+ * so `buffer.byteLength` minus the base is the tail. `SharedArrayBuffer.grow`
+ * resizes exactly.
  * Wasm rounds up to a page, and its fast path deliberately lands new regions
  * past that page-rounded tail.
  *
@@ -149,7 +155,9 @@ export function tailCursorBytes(old: ColumnStoreInternal): number {
 	if (old._allocator.reservedAtCap === true || old.buffer instanceof ArrayBuffer) {
 		return old.view.getUint32(STORE_HEADER_OFFSETS.capacity, true);
 	}
-	return old.buffer.byteLength;
+	// `byteLength` measures the backing, and the tail cursor measures the store
+	// span, so drop the base.
+	return old.buffer.byteLength - old.storeBase;
 }
 
 /**
@@ -212,6 +220,9 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 	if (isColumnStoreInternal(old) && old._reservedDescriptorBytes > 0) {
 		options.reservedDescriptorBytes = old._reservedDescriptorBytes;
 	}
+	// A realloc must land the new store at the same base. Anything below it
+	// belongs to another owner of the backing.
+	options.storeBase = old.storeBase;
 	return options;
 }
 
@@ -247,7 +258,10 @@ export function snapshotRegions(old: ColumnStore): PrefixRegionSnapshot {
 		// boundary: TypedArray interop. Materialise a Uint8Array view over the
 		// region's byte range, then copy via slice() so the heap copy survives
 		// an allocator-induced detach.
-		mechanism.set(region.headerOff, new Uint8Array(old.buffer, off, bytes).slice());
+		mechanism.set(
+			region.headerOff,
+			new Uint8Array(old.buffer, old.storeBase + off, bytes).slice()
+		);
 	}
 	// Consumer regions: the directory carries each region's offset + byte length
 	// directly, so the snapshot needs no per-region helper (unlike mechanism
@@ -256,7 +270,10 @@ export function snapshotRegions(old: ColumnStore): PrefixRegionSnapshot {
 	const table = readHeaderRegionTable(old.view);
 	for (let i = 0; i < table.length; i++) {
 		const e = table[i];
-		consumer.set(e.regionId, new Uint8Array(old.buffer, e.byteOffset, e.byteLength).slice());
+		consumer.set(
+			e.regionId,
+			new Uint8Array(old.buffer, old.storeBase + e.byteOffset, e.byteLength).slice()
+		);
 	}
 	return { mechanism, consumer };
 }
@@ -270,14 +287,14 @@ export function restoreRegions(newStore: ColumnStore, snap: PrefixRegionSnapshot
 	for (const [headerOff, bytes] of snap.mechanism) {
 		const off = newStore.view.getUint32(STORE_HEADER_OFFSETS[headerOff], true);
 		// boundary: TypedArray interop. Write back at the same offset.
-		const dst = new Uint8Array(newStore.buffer, off, bytes.byteLength);
+		const dst = new Uint8Array(newStore.buffer, newStore.storeBase + off, bytes.byteLength);
 		dst.set(bytes);
 	}
 	for (const [regionId, bytes] of snap.consumer) {
 		const off = findRegionOffset(newStore.view, regionId);
 		if (off === 0) continue; // region absent in the new layout (shouldn't happen)
 		// boundary: TypedArray interop. Write back at the rebuilt offset.
-		const dst = new Uint8Array(newStore.buffer, off, bytes.byteLength);
+		const dst = new Uint8Array(newStore.buffer, newStore.storeBase + off, bytes.byteLength);
 		dst.set(bytes);
 	}
 }

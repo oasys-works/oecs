@@ -9,6 +9,7 @@ import {
 	STORE_HEADER_BYTES,
 	STORE_HEADER_OFFSETS,
 	STORE_MAGIC,
+	SIM_ABI_VERSION,
 	StoreRestoreError,
 	columnStoreBytesView,
 	TYPE_TAG,
@@ -232,6 +233,26 @@ describe("restore_column_store rejection", () => {
 		const snap = new Uint8Array(columnStoreBytesView(store));
 		new DataView(snap.buffer).setUint32(STORE_HEADER_OFFSETS.sim_abi_version, 999, true);
 		expect(() => restoreColumnStore(snap)).toThrow(/incompatible sim_abi_version/);
+	});
+
+	it("accepts a version 0 snapshot and stamps the current version on the restored header", () => {
+		// The published 0.5 line wrote version 0 with this header shape, and every
+		// version 0 store sat at byte 0, so its offsets are offsets from the header.
+		const store = createColumnStore([
+			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
+		]);
+		const col = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		col[0] = 7;
+		col[3] = -9;
+		const snap = new Uint8Array(columnStoreBytesView(store));
+		new DataView(snap.buffer).setUint32(STORE_HEADER_OFFSETS.sim_abi_version, 0, true);
+		const restored = restoreColumnStore(snap);
+		expect(restored.header.simAbiVersion).toBe(SIM_ABI_VERSION);
+		expect(restored.view.getUint32(STORE_HEADER_OFFSETS.sim_abi_version, true)).toBe(
+			SIM_ABI_VERSION
+		);
+		const back = restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		expect([...back]).toEqual([...col]);
 	});
 
 	// The header checks above cover length-for-header + magic + ABI, but the

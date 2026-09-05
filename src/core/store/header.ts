@@ -76,18 +76,22 @@
  *     64 → 52 bytes, the first schema change that narrowed it. The SAB
  *     stays the always-on substrate. Only the game-named shape moves out.
  *
- * SIM_ABI_VERSION carries the pre-publish sentinel `0` (see `abi.zig`), so the
- * v1…v7 labels above are the narrative version log, not the value on the wire
- * the golden fixtures in `__tests__/header.test.ts` catch unintended drift.
+ * The v1…v7 labels above are the narrative log of the shape, not the value on
+ * the wire. `SIM_ABI_VERSION` is that value, and it is 1. The golden fixtures
+ * in `__tests__/header.test.ts` catch unintended drift.
+ *
+ * Every `*_off` field below is measured from the store base, not from buffer
+ * byte 0. The store base is a caller-chosen byte offset, so a WASM module can
+ * own the low addresses of the same memory. `capacity` is the store span in
+ * bytes, measured from the same base.
  */
 
-// The byte-layout constants below are generated from the Zig `extern struct`s
-// in `packages/sim/src/{abi,bindings}.zig` via `bun run gen:abi` (in-house Zig
-// bindgen). The Zig struct is the single source of truth, `@offsetOf`
-// reads the real layout, so a transposed field is impossible. We re-export
-// them here so existing `./header` importers and the `core/buffer` barrel keep
-// the same surface. The rich semantics for each field live on the `StoreHeader`
-// interface and the golden bytes in `__tests__/header.test.ts`.
+// The byte-layout constants below are maintained by hand in this repository.
+// No generator produces them and no upstream source defines them. The golden
+// tests pin them. We re-export them here so existing `./header` importers and
+// the `core/buffer` barrel keep the same surface. The rich semantics for each
+// field live on the `StoreHeader` interface and the golden bytes in
+// `__tests__/header.test.ts`.
 //
 //   - STORE_MAGIC          ASCII 'SIM1' as little-endian u32
 //   - SIM_ABI_VERSION    bumped on any header and descriptor schema change
@@ -102,6 +106,7 @@
 import {
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
+	LEGACY_ABSOLUTE_ABI_VERSION,
 	STORE_HEADER_BYTES,
 	STORE_HEADER_OFFSETS,
 	REGION_TABLE_ENTRY_BYTES,
@@ -111,6 +116,7 @@ import {
 export {
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
+	LEGACY_ABSOLUTE_ABI_VERSION,
 	STORE_HEADER_BYTES,
 	STORE_HEADER_OFFSETS,
 	REGION_TABLE_ENTRY_BYTES,
@@ -127,11 +133,13 @@ export interface StoreHeader {
 	/** Monotonic. Incremented every time the host reallocates the SAB.
 	 * Cached TypedArray views become stale on bump. */
 	readonly viewStamp: number;
-	/** Total SAB size in bytes. */
+	/** Store span in bytes, measured from the store base. The store writes
+	 * only inside `[storeBase, storeBase + capacity)`. */
 	readonly capacity: number;
 	/** Number of archetype regions described by the layout descriptor. */
 	readonly archetypeCount: number;
-	/** Byte offset into the SAB where the layout descriptor region starts. */
+	/** Byte offset of the layout descriptor region, measured from the store
+	 * base. */
 	readonly layoutDescriptorOff: number;
 	/** Byte offset of the WASM→TS command ring header. */
 	readonly commandRingOff: number;
@@ -169,6 +177,9 @@ export interface StoreHeader {
 	readonly bindingsOff: number;
 }
 
+/** Write the header at offset 0 of `view`. The caller passes a `DataView`
+ * whose start is the store base, so every offset the header carries stays
+ * relative to that base. */
 export function writeStoreHeader(view: DataView, h: StoreHeader): void {
 	view.setUint32(STORE_HEADER_OFFSETS.magic, h.magic, true);
 	view.setUint32(STORE_HEADER_OFFSETS.sim_abi_version, h.simAbiVersion, true);
@@ -185,6 +196,8 @@ export function writeStoreHeader(view: DataView, h: StoreHeader): void {
 	view.setUint32(STORE_HEADER_OFFSETS.bindings_off, h.bindingsOff, true);
 }
 
+/** Read the header at offset 0 of `view`. Pass a `DataView` whose start is the
+ * store base. */
 export function readStoreHeader(view: DataView): StoreHeader {
 	return {
 		magic: view.getUint32(STORE_HEADER_OFFSETS.magic, true),

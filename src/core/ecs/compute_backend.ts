@@ -15,8 +15,8 @@
  * backend execution by carrying a `backendHandle` on its `SystemConfig`
  * (`packages/engine/src/core/ecs/system.ts`). When a backend is attached and a
  * scheduled system carries a handle, the `Schedule` dispatches
- * `backend.run(handle)`. Otherwise it runs the system's `fn` closure (the
- * default and fallback path).
+ * `backend.run(handle, deltaTime, tick)`. Otherwise it runs the system's `fn`
+ * closure (the default and fallback path).
  *
  * Prior art. This is descriptor-level routing with a default fallback, the
  * shape every mature system in this space converges on:
@@ -66,6 +66,17 @@ export interface ComputeBackend extends StoreLayoutListener {
 	 *
 	 * `handle` is opaque to the engine. It is one the backend minted and the
 	 * engine merely round-trips from `SystemConfig.backendHandle`.
+	 *
+	 * `deltaTime` is the seconds the phase runs with, the same value a TS body
+	 * receives. A module body needs it, and it is not in the store bytes, so it
+	 * travels as a call argument. `tick` is the world's frame tick, the count of
+	 * `update()` calls so far, and it is not in the bytes either. A backend that
+	 * stamps its own frame state reads it here rather than counting calls, which
+	 * would drift on a frame that runs the phase more than once.
+	 *
+	 * The engine publishes the descriptor row counts before this call when a
+	 * mutation left them stale, so a module that walks the descriptors sees the
+	 * live row count of every archetype.
 	 */
-	run(handle: BackendSystemHandle): void;
+	run(handle: BackendSystemHandle, deltaTime: number, tick: number): void;
 }

@@ -5,16 +5,15 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./primitives": "./src/primitives.ts",
-		"./reactive": "./src/reactive/index.ts",
-		"./reactive-sync": "./src/extensions/reactive/index.ts",
-		"./editor": "./src/extensions/editor/index.ts",
-		"./solid": "./src/extensions/solid/index.ts",
+		"./editor": "./src/plugins/editor/index.ts",
+		"./solid": "./src/plugins/solid/index.ts",
 		"./shared": "./src/shared.ts",
 		"./internal": "./src/internal.ts",
-		"./snapshots": "./src/capabilities/snapshots.ts",
-		"./events": "./src/capabilities/events.ts",
-		"./relations": "./src/capabilities/relations.ts",
-		"./observers": "./src/capabilities/observers.ts"
+		"./worker": "./src/worker.ts",
+		"./snapshots": "./src/plugins/snapshots.ts",
+		"./events": "./src/plugins/events.ts",
+		"./relations": "./src/plugins/relations.ts",
+		"./observers": "./src/plugins/observers.ts"
 	},
 	"imports": {
 		"solid-js": "npm:solid-js@^1.9.3"

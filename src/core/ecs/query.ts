@@ -252,7 +252,7 @@ export interface QueryResolver {
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term
 	 * (`withRelation`) to the membership store the sparse-match path
 	 * already drives. `api` names the query verb the caller used, so a world
-	 * without the relations capability faults with the verb it reached. */
+	 * without the relations plugin faults with the verb it reached. */
 	relationBackingSparseId(def: RelationDef, api: string): SparseComponentID;
 	/** Third query-match path: `(*, T)`, drive iteration from the union of
 	 * every relation's `sourcesOf(target)` (dedup + canonical sort), intersected
@@ -687,6 +687,13 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 		return total;
 	}
+	/** @internal The without-mask as raw words, or `null` when the query has no
+	 * without term. A worker resolves the matched archetypes from the masks
+	 * alone, so the parallel plan carries these words to the pool. */
+	public get excludeWords(): readonly number[] | null {
+		return this._exclude === null ? null : this._exclude.words;
+	}
+
 	public get archetypes(): readonly ArchetypeView<Defs>[] {
 		return this._archetypes;
 	}

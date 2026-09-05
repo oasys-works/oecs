@@ -38,52 +38,28 @@
 				"default": "./dist/primitives.cjs"
 			}
 		},
-		"./reactive": {
-			"import": {
-				"types": "./dist/reactive/index.d.ts",
-				"development": "./dist/reactive/index.development.js",
-				"default": "./dist/reactive/index.js"
-			},
-			"require": {
-				"types": "./dist/reactive/index.d.cts",
-				"development": "./dist/reactive/index.development.cjs",
-				"default": "./dist/reactive/index.cjs"
-			}
-		},
-		"./reactive-sync": {
-			"import": {
-				"types": "./dist/extensions/reactive/index.d.ts",
-				"development": "./dist/extensions/reactive/index.development.js",
-				"default": "./dist/extensions/reactive/index.js"
-			},
-			"require": {
-				"types": "./dist/extensions/reactive/index.d.cts",
-				"development": "./dist/extensions/reactive/index.development.cjs",
-				"default": "./dist/extensions/reactive/index.cjs"
-			}
-		},
 		"./editor": {
 			"import": {
-				"types": "./dist/extensions/editor/index.d.ts",
-				"development": "./dist/extensions/editor/index.development.js",
-				"default": "./dist/extensions/editor/index.js"
+				"types": "./dist/plugins/editor/index.d.ts",
+				"development": "./dist/plugins/editor/index.development.js",
+				"default": "./dist/plugins/editor/index.js"
 			},
 			"require": {
-				"types": "./dist/extensions/editor/index.d.cts",
-				"development": "./dist/extensions/editor/index.development.cjs",
-				"default": "./dist/extensions/editor/index.cjs"
+				"types": "./dist/plugins/editor/index.d.cts",
+				"development": "./dist/plugins/editor/index.development.cjs",
+				"default": "./dist/plugins/editor/index.cjs"
 			}
 		},
 		"./solid": {
 			"import": {
-				"types": "./dist/extensions/solid/index.d.ts",
-				"development": "./dist/extensions/solid/index.development.js",
-				"default": "./dist/extensions/solid/index.js"
+				"types": "./dist/plugins/solid/index.d.ts",
+				"development": "./dist/plugins/solid/index.development.js",
+				"default": "./dist/plugins/solid/index.js"
 			},
 			"require": {
-				"types": "./dist/extensions/solid/index.d.cts",
-				"development": "./dist/extensions/solid/index.development.cjs",
-				"default": "./dist/extensions/solid/index.cjs"
+				"types": "./dist/plugins/solid/index.d.cts",
+				"development": "./dist/plugins/solid/index.development.cjs",
+				"default": "./dist/plugins/solid/index.cjs"
 			}
 		},
 		"./shared": {
@@ -110,93 +86,115 @@
 				"default": "./dist/internal.cjs"
 			}
 		},
+		"./worker": {
+			"import": {
+				"types": "./dist/worker.d.ts",
+				"development": "./dist/worker.development.js",
+				"default": "./dist/worker.js"
+			},
+			"require": {
+				"types": "./dist/worker.d.cts",
+				"development": "./dist/worker.development.cjs",
+				"default": "./dist/worker.cjs"
+			}
+		},
+		"./worker/dev": {
+			"import": {
+				"types": "./dist/worker.d.ts",
+				"default": "./dist/worker.development.js"
+			},
+			"require": {
+				"types": "./dist/worker.d.cts",
+				"default": "./dist/worker.development.cjs"
+			}
+		},
 		"./package.json": "./package.json",
 		"./snapshots": {
 			"import": {
-				"types": "./dist/capabilities/snapshots.d.ts",
-				"development": "./dist/capabilities/snapshots.development.js",
-				"default": "./dist/capabilities/snapshots.js"
+				"types": "./dist/plugins/snapshots.d.ts",
+				"development": "./dist/plugins/snapshots.development.js",
+				"default": "./dist/plugins/snapshots.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/snapshots.d.cts",
-				"development": "./dist/capabilities/snapshots.development.cjs",
-				"default": "./dist/capabilities/snapshots.cjs"
+				"types": "./dist/plugins/snapshots.d.cts",
+				"development": "./dist/plugins/snapshots.development.cjs",
+				"default": "./dist/plugins/snapshots.cjs"
 			}
 		},
 		"./snapshots/dev": {
 			"import": {
-				"types": "./dist/capabilities/snapshots.d.ts",
-				"default": "./dist/capabilities/snapshots.development.js"
+				"types": "./dist/plugins/snapshots.d.ts",
+				"default": "./dist/plugins/snapshots.development.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/snapshots.d.cts",
-				"default": "./dist/capabilities/snapshots.development.cjs"
+				"types": "./dist/plugins/snapshots.d.cts",
+				"default": "./dist/plugins/snapshots.development.cjs"
 			}
 		},
 		"./events": {
 			"import": {
-				"types": "./dist/capabilities/events.d.ts",
-				"development": "./dist/capabilities/events.development.js",
-				"default": "./dist/capabilities/events.js"
+				"types": "./dist/plugins/events.d.ts",
+				"development": "./dist/plugins/events.development.js",
+				"default": "./dist/plugins/events.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/events.d.cts",
-				"development": "./dist/capabilities/events.development.cjs",
-				"default": "./dist/capabilities/events.cjs"
+				"types": "./dist/plugins/events.d.cts",
+				"development": "./dist/plugins/events.development.cjs",
+				"default": "./dist/plugins/events.cjs"
 			}
 		},
 		"./events/dev": {
 			"import": {
-				"types": "./dist/capabilities/events.d.ts",
-				"default": "./dist/capabilities/events.development.js"
+				"types": "./dist/plugins/events.d.ts",
+				"default": "./dist/plugins/events.development.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/events.d.cts",
-				"default": "./dist/capabilities/events.development.cjs"
+				"types": "./dist/plugins/events.d.cts",
+				"default": "./dist/plugins/events.development.cjs"
 			}
 		},
 		"./relations": {
 			"import": {
-				"types": "./dist/capabilities/relations.d.ts",
-				"development": "./dist/capabilities/relations.development.js",
-				"default": "./dist/capabilities/relations.js"
+				"types": "./dist/plugins/relations.d.ts",
+				"development": "./dist/plugins/relations.development.js",
+				"default": "./dist/plugins/relations.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/relations.d.cts",
-				"development": "./dist/capabilities/relations.development.cjs",
-				"default": "./dist/capabilities/relations.cjs"
+				"types": "./dist/plugins/relations.d.cts",
+				"development": "./dist/plugins/relations.development.cjs",
+				"default": "./dist/plugins/relations.cjs"
 			}
 		},
 		"./relations/dev": {
 			"import": {
-				"types": "./dist/capabilities/relations.d.ts",
-				"default": "./dist/capabilities/relations.development.js"
+				"types": "./dist/plugins/relations.d.ts",
+				"default": "./dist/plugins/relations.development.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/relations.d.cts",
-				"default": "./dist/capabilities/relations.development.cjs"
+				"types": "./dist/plugins/relations.d.cts",
+				"default": "./dist/plugins/relations.development.cjs"
 			}
 		},
 		"./observers": {
 			"import": {
-				"types": "./dist/capabilities/observers.d.ts",
-				"development": "./dist/capabilities/observers.development.js",
-				"default": "./dist/capabilities/observers.js"
+				"types": "./dist/plugins/observers.d.ts",
+				"development": "./dist/plugins/observers.development.js",
+				"default": "./dist/plugins/observers.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/observers.d.cts",
-				"development": "./dist/capabilities/observers.development.cjs",
-				"default": "./dist/capabilities/observers.cjs"
+				"types": "./dist/plugins/observers.d.cts",
+				"development": "./dist/plugins/observers.development.cjs",
+				"default": "./dist/plugins/observers.cjs"
 			}
 		},
 		"./observers/dev": {
 			"import": {
-				"types": "./dist/capabilities/observers.d.ts",
-				"default": "./dist/capabilities/observers.development.js"
+				"types": "./dist/plugins/observers.d.ts",
+				"default": "./dist/plugins/observers.development.js"
 			},
 			"require": {
-				"types": "./dist/capabilities/observers.d.cts",
-				"default": "./dist/capabilities/observers.development.cjs"
+				"types": "./dist/plugins/observers.d.cts",
+				"default": "./dist/plugins/observers.development.cjs"
 			}
 		}
 	},
@@ -261,17 +259,11 @@
 			"primitives": [
 				"./dist/primitives.d.ts"
 			],
-			"reactive": [
-				"./dist/reactive/index.d.ts"
-			],
-			"reactive-sync": [
-				"./dist/extensions/reactive/index.d.ts"
-			],
 			"editor": [
-				"./dist/extensions/editor/index.d.ts"
+				"./dist/plugins/editor/index.d.ts"
 			],
 			"solid": [
-				"./dist/extensions/solid/index.d.ts"
+				"./dist/plugins/solid/index.d.ts"
 			],
 			"shared": [
 				"./dist/shared.d.ts"
@@ -279,29 +271,35 @@
 			"internal": [
 				"./dist/internal.d.ts"
 			],
+			"worker": [
+				"./dist/worker.d.ts"
+			],
+			"worker/dev": [
+				"./dist/worker.d.ts"
+			],
 			"snapshots": [
-				"./dist/capabilities/snapshots.d.ts"
+				"./dist/plugins/snapshots.d.ts"
 			],
 			"snapshots/dev": [
-				"./dist/capabilities/snapshots.d.ts"
+				"./dist/plugins/snapshots.d.ts"
 			],
 			"events": [
-				"./dist/capabilities/events.d.ts"
+				"./dist/plugins/events.d.ts"
 			],
 			"events/dev": [
-				"./dist/capabilities/events.d.ts"
+				"./dist/plugins/events.d.ts"
 			],
 			"relations": [
-				"./dist/capabilities/relations.d.ts"
+				"./dist/plugins/relations.d.ts"
 			],
 			"relations/dev": [
-				"./dist/capabilities/relations.d.ts"
+				"./dist/plugins/relations.d.ts"
 			],
 			"observers": [
-				"./dist/capabilities/observers.d.ts"
+				"./dist/plugins/observers.d.ts"
 			],
 			"observers/dev": [
-				"./dist/capabilities/observers.d.ts"
+				"./dist/plugins/observers.d.ts"
 			]
 		}
 	}

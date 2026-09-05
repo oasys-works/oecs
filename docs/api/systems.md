@@ -90,6 +90,7 @@ interface SystemConfig {
   name?: string;                                  // diagnostics
   exclusive?: boolean;                            // full-access bypass (see below)
   backendHandle?: BackendSystemHandle;            // send the body to a compute backend
+  parallel?: ParallelConfig;                      // send the body to a pool of workers
   onAdded?: (ctx) => void;                        // one time, during startup()
   onRemoved?: () => void;                         // on removeSystem
   dispose?: () => void;                           // on ecs.dispose()
@@ -165,7 +166,63 @@ ecs.registerSystem({ exclusive: true, reads: [], writes: [], fn: (ctx) => { /* a
 passes, `reads` and `writes` can be empty, and `ctx` stays the permissive `SystemContext` at the
 type level, with no compile-time limits. Use it only for the systems that truly touch everything:
 the [apply system for host commands](./host-write-seam.md), save and load, and debug tools. The
-schedule is sequential today, so this flag is only the grant that bypasses the access check.
+flag is the grant that bypasses the access check, and nothing else. It is refused beside
+`parallel`, because a system that reaches arbitrary state cannot run on a worker.
+
+<a id="parallel"></a>
+
+### `parallel` systems
+
+```ts
+interface ParallelConfig {
+  readonly kernel: ParallelKernel;                    // { wasm, export } or { js, export }
+  readonly columns: readonly ParallelColumn<D>[];     // the kernel's argument order
+  readonly minRows?: number;                          // below this, `fn` runs on the main thread
+  readonly query?: Query<any>;                        // defaults to the first entry of `queries`
+}
+
+type ParallelKernel =
+  | { readonly wasm: WebAssembly.Module; readonly export: string }
+  | { readonly js: string; readonly export: string };   // an absolute module URL
+
+// a component and one of its own field names
+type ParallelColumn<D> =
+  D extends ComponentDef<infer S> ? readonly [D, Extract<keyof S, string>] : never;
+```
+
+A system that carries `parallel` runs its kernel across a pool of workers when a pool is attached
+and the matched row count clears `minRows`. Otherwise `fn` runs, and the two must compute the same
+thing.
+
+```ts
+const move = ecs.registerSystem({
+  name: "move",
+  reads: [Vel],
+  writes: [Pos],
+  parallel: {
+    kernel: { js: new URL("./kernels.js", import.meta.url).href, export: "integrate" },
+    columns: [
+      [Pos, "x"],
+      [Pos, "y"],
+      [Vel, "vx"],
+      [Vel, "vy"],
+    ],
+    minRows: 20_000,
+    query: movers,
+  },
+  fn: (ctx, dt) => { /* the sequential twin */ },
+});
+
+const pool = await ecs.attachWorkers({ count: 4 });
+```
+
+A parallel system declares `reads`, `writes`, `queries` and its kernel, and nothing else. A sparse,
+relation, resource, spawn, despawn or transition declaration, `exclusive`, `backendHandle` and a
+missing `fn` each throw `PARALLEL_ACCESS` at registration. The query must be dense. The field name
+in each `columns` entry is held to the component's own schema at compile time.
+
+[parallel execution](./parallel.md) documents the kernel signature, the pool, the join stamp, the
+determinism argument and the limits.
 
 ### `SystemTransition`
 
@@ -274,7 +331,7 @@ ecs.removeSystem(move);
 
 If the system carries a `backendHandle` **and** you attached a
 [compute backend](./memory.md#compute-backend) with `ecs.attachBackend(...)`, the schedule runs
-`backend.run(handle)` **in place of** `fn`. Continue to declare `reads` and `writes` correctly,
+`backend.run(handle, dt, tick)` **in place of** `fn`. Continue to declare `reads` and `writes` correctly,
 because they authorize the shared-memory columns that the backend touches. If you attach no
 backend, `fn` runs as the pure-TypeScript alternative.
 

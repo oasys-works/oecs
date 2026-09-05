@@ -1,11 +1,16 @@
 /**
  * ColumnStore, the sizing + layout primitive that turns a set of archetype
- * requirements into a `SharedArrayBuffer` carrying:
- *   1. A locked 32-byte header (see `header.ts`).
+ * requirements into one span of a backing carrying:
+ *   1. A locked header (see `header.ts`).
  *   2. A layout descriptor region (see `descriptor.ts`).
  *   3. Aligned column regions, each addressable via a TypedArray view.
  *
- * `Store.allocate` returns TypedArray views into a single SAB at the
+ * The span starts at `storeBase`, a caller-chosen byte offset, and every offset
+ * the store writes is relative to it. The store writes only inside
+ * `[storeBase, storeBase + capacity)`, which is what lets a WASM module own the
+ * low addresses of the same linear memory. The base defaults to 0.
+ *
+ * `Store.allocate` returns TypedArray views into a single buffer at the
  * right offset. This file builds that mapping, given
  * `{ archetype_id, row_capacity, columns: [{ component_id, field_id,
  * type_tag }] }` for every archetype, it computes byte offsets, writes the
@@ -70,9 +75,10 @@ export interface ArchetypeSpec {
 	readonly columns: readonly ColumnSpec[];
 }
 
-/** A single column's view after allocation. The `byte_off` matches what
- * was recorded in the layout descriptor. `view` is a TypedArray of the
- * right element type, length `row_capacity`, backed by the SAB. */
+/** A single column's view after allocation. `byteOff` matches what the layout
+ * descriptor records, so it is measured from the store base. `view` is a
+ * TypedArray of the right element type, length `row_capacity`, and its
+ * `byteOffset` is `storeBase + byteOff`. */
 export interface ColumnView {
 	readonly componentId: number;
 	readonly fieldId: number;
@@ -108,8 +114,15 @@ export interface ColumnStore {
 	 * Consumers that genuinely require sharing (worker transfer, WASM memory)
 	 * narrow back to `SharedArrayBuffer` at their boundary. */
 	readonly buffer: ArrayBufferLike;
+	/** A `DataView` whose start is the store base, so every relative offset the
+	 * header and the descriptors carry indexes it directly. */
 	readonly view: DataView;
 	readonly header: StoreHeader;
+	/** Byte offset of the header inside `buffer`. Every other offset in the
+	 * store is relative to this. The store writes only inside
+	 * `[storeBase, storeBase + header.capacity)`, which is what lets a WASM
+	 * module own the bytes below the base. */
+	readonly storeBase: number;
 	/** Indexed by `archetype_id`. */
 	readonly archetypes: ReadonlyMap<number, ArchetypeViews>;
 }
@@ -206,10 +219,13 @@ export function alignUp(off: number, align: number): number {
  */
 function createView(
 	buffer: ArrayBufferLike,
+	storeBase: number,
 	typeTag: TypeTagValue,
-	byteOff: number,
+	relOff: number,
 	rowCapacity: number
 ): AnyTypedArray {
+	// The one seam that turns a store-relative offset into a buffer offset.
+	const byteOff = storeBase + relOff;
 	switch (typeTag) {
 		case TYPE_TAG.u8:
 			return new Uint8Array(buffer, byteOff, rowCapacity);
@@ -407,6 +423,40 @@ export interface CreateColumnStoreOptions {
 	 * (= `layout_descriptor_off - bindings_off`), so it survives grow and extend
 	 * without a carried policy field. */
 	readonly bindingsRegionBytes?: number;
+	/** Byte offset inside the backing where the header goes. Default 0.
+	 *
+	 * Every offset the store writes is relative to this base, and the store
+	 * writes only inside `[storeBase, storeBase + capacity)`. A WASM module owns
+	 * the low addresses of its own linear memory, so a store mounted on that
+	 * memory must stand above the module's data segment, its shadow stack and
+	 * its heap base. A safe Zig or Rust build also traps on a read of address 0,
+	 * so a module-hosted store cannot put the header there at all.
+	 *
+	 * Must be a non-negative integer and a multiple of
+	 * `STORE_BASE_ALIGNMENT`, so every column keeps the alignment its type tag
+	 * needs. */
+	readonly storeBase?: number;
+}
+
+/** Every store base must be a multiple of this. The widest column element is 8
+ * bytes, and the entity index wants 16, so 16 keeps both aligned whatever the
+ * base is. */
+export const STORE_BASE_ALIGNMENT = 16;
+
+/** Reject a base the layout math cannot honour. Cold path, one call per store
+ * creation. `resolveECSMemory` rejects the same values earlier with an
+ * `ECS_ERROR` code, so a world never reaches this. A direct store caller does. */
+export function assertStoreBase(storeBase: number): void {
+	if (!Number.isInteger(storeBase) || storeBase < 0) {
+		throw new RangeError(
+			`createColumnStore: storeBase must be an integer >= 0, got ${storeBase}`
+		);
+	}
+	if (storeBase % STORE_BASE_ALIGNMENT !== 0) {
+		throw new RangeError(
+			`createColumnStore: storeBase must be a multiple of ${STORE_BASE_ALIGNMENT}, got ${storeBase}`
+		);
+	}
 }
 
 /** Internal `ColumnStore` extension carrying the descriptor-region byte
@@ -458,12 +508,13 @@ export function isColumnStoreInternal(store: ColumnStore): store is ColumnStoreI
 	);
 }
 
-/** Allocate a SAB sized for `specs`, write the header + layout descriptor,
- * and construct one TypedArray view per column.
+/** Allocate a backing sized for `specs` plus `options.storeBase`, write the
+ * header and the layout descriptor at the base, and construct one TypedArray
+ * view per column.
  *
  * The returned `ColumnStore` is the source of truth for "where every column
- * lives in this SAB". `view_stamp` is initialised to 0, a SAB
- * grow flow bumps it. */
+ * lives". Offsets in the bytes are relative to the base. `view_stamp` is
+ * initialised to 0, and a grow bumps it. */
 export function createColumnStore(
 	specs: readonly ArchetypeSpec[],
 	allocator: BufferAllocator = DEFAULT_SAB_ALLOCATOR,
@@ -475,13 +526,16 @@ export function createColumnStore(
 	// returns a plain ArrayBuffer. So this function is backing-agnostic. It builds
 	// views over whatever `allocator(totalBytes)` hands back.
 	//
-	// Region order in the buffer: header, the engine mechanism prefix regions
+	// Region order inside the store span, all offsets relative to the base:
+	// header, the engine mechanism prefix regions
 	// (STORE_PREFIX_REGIONS, command, entity-index, event and action), the generic
 	// region-table directory + consumer regions, then the always-present
 	// sim-bindings block, then the layout descriptor + column data. Everything
 	// before the descriptor region keeps a stable offset across descriptor /
 	// column growth. STORE_PREFIX_REGIONS (mechanism) + the consumer region table
 	// are both walked again by the realloc snapshot and restore in extend.ts.
+	const storeBase = options.storeBase ?? 0;
+	assertStoreBase(storeBase);
 	const regionOffsets = {} as Record<StoreRegionOffsetField, number>;
 	let cursor = STORE_HEADER_BYTES;
 	for (let i = 0; i < STORE_PREFIX_REGIONS.length; i++) {
@@ -533,8 +587,10 @@ export function createColumnStore(
 		options.reservedDescriptorBytes ?? 0
 	);
 
-	const buffer = allocator(totalBytes);
-	const view = new DataView(buffer);
+	// The allocator reserves the base as well as the span. Everything below the
+	// base belongs to whoever else shares the backing.
+	const buffer = allocator(storeBase + totalBytes);
+	const view = new DataView(buffer, storeBase);
 
 	const header: StoreHeader = {
 		magic: STORE_MAGIC,
@@ -558,7 +614,7 @@ export function createColumnStore(
 	// allocator buffer is already zeroed, but `growableSabAllocator` may hand
 	// back a reused arena slice, zero it so a stale layout's IDs can't bleed
 	// through before the host's first `write_sim_bindings`.
-	if (bindingsBytes > 0) new Uint8Array(buffer, bindingsOff, bindingsBytes).fill(0);
+	if (bindingsBytes > 0) new Uint8Array(buffer, storeBase + bindingsOff, bindingsBytes).fill(0);
 	// Initialise each present region's header. `off !== 0` ⇒ that region's
 	// `sizeFromOptions` returned > 0, so `options` carries the knobs its
 	// `init` reads.
@@ -577,12 +633,13 @@ export function createColumnStore(
 	}
 	writeLayoutDescriptorRegion(view, layoutDescriptorOff, descriptors);
 
-	const archetypes = createArchetypeViews(buffer, descriptors);
+	const archetypes = createArchetypeViews(buffer, storeBase, descriptors);
 
 	const store: ColumnStoreInternal = {
 		buffer,
 		view,
 		header,
+		storeBase,
 		archetypes,
 		_regionBytes: regionBytes,
 		_allocator: allocator,
@@ -606,13 +663,14 @@ export { ENTITY_INDEX_DEFAULT_CAPACITY };
  * its SAB. Re-exported alongside the other defaults. */
 export { EVENT_RING_DEFAULT_CAPACITY_SLOTS };
 
-/** Build the `ArchetypeViews` map from a SAB and its parsed descriptors.
+/** Build the `ArchetypeViews` map from a backing and its parsed descriptors.
  * Shared by `createColumnStore` (fresh allocation, byte_offs only computed)
  * and `restoreColumnStore` (existing allocation, byte_offs read out of the
- * snapshot). Either way the views land at the byte_offs the descriptors
- * already carry. This helper does not plan layout. */
+ * snapshot). Either way each view lands at `storeBase` plus the descriptor's
+ * `byte_off`. This helper does not plan layout. */
 export function createArchetypeViews(
 	buffer: ArrayBufferLike,
+	storeBase: number,
 	descriptors: readonly ArchetypeDescriptor[]
 ): Map<number, ArchetypeViews> {
 	const archetypes = new Map<number, ArchetypeViews>();
@@ -628,7 +686,7 @@ export function createArchetypeViews(
 				typeTag: c.typeTag,
 				byteOff: c.byteOff,
 				stride: c.stride,
-				view: createView(buffer, c.typeTag, c.byteOff, d.rowCapacity)
+				view: createView(buffer, storeBase, c.typeTag, c.byteOff, d.rowCapacity)
 			};
 			columnsInOrder[j] = colView;
 			columns.set(columnKey(c.componentId, c.fieldId), colView);

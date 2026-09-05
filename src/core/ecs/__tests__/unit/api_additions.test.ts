@@ -13,8 +13,8 @@ import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { not, allOf, anyOf, runEveryNTicks, type ConditionContext } from "../../run_condition";
 import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
-import { relations } from "../../../../capabilities/relations";
-import { observers } from "../../../../capabilities/observers";
+import { relations } from "../../../../plugins/relations";
+import { observers } from "../../../../plugins/observers";
 
 function staleOf(e: number): never {
 	return (e + (1 << 20)) as never; // same index, bumped generation, dead

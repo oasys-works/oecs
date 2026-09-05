@@ -1,6 +1,6 @@
 # Events
 
-> This page needs the **events** capability. Install it at construction:
+> This page needs the **events** plugin. Install it at construction:
 >
 > ```ts
 > import { events } from "@oasys/oecs/events";

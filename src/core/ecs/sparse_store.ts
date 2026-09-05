@@ -52,7 +52,7 @@ import type { ComponentSchema } from "./component";
 import { MAX_INDEX } from "./entity";
 import { fieldGids, NO_COLUMN, type AccessorColumns } from "./ref";
 import { writeElem } from "./row_kinds";
-// Declared two directories up, so the snapshot capability's own rollup graph
+// Declared two directories up, so the snapshot plugin's own rollup graph
 // can bind to the same class this module throws instead of copying it.
 import { SparseRestoreError } from "../restore_errors";
 
@@ -143,6 +143,11 @@ export class SparseComponentStore {
 	/** The change tick below which every record was drained. See
 	 * `Store.drainSparseSet`. */
 	public drainTick = 0;
+	/** The `run` of the last `Store.drainSparseSet`. A second drain at the same
+	 * run returns the first one's array, so several consumers of the change
+	 * feed share one drain instead of taking the members away from each
+	 * other. */
+	public lastDrainRun = 0;
 
 	constructor(fieldNames: string[], fieldTypes: TypedArrayTag[]) {
 		this.fieldNames = fieldNames;

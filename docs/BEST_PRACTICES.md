@@ -35,7 +35,7 @@ quick start in the README. The canonical reference for "does this truly operate"
 15. [Determinism](#15-determinism)
 16. [The host write path and the editor](#16-the-host-write-path-and-the-editor)
 17. [Memory size](#17-memory-size)
-18. [The reactive UI connection](#18-the-reactive-ui-connection)
+18. [The UI connection](#18-the-ui-connection)
 19. [Use the type primitives directly](#19-use-the-type-primitives-directly)
 20. [Tests](#20-tests)
 21. [Patterns to avoid](#21-patterns-to-avoid)
@@ -186,7 +186,7 @@ export const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 ```
 
 Then import the key at each place where you emit, read, or use the resource. `ecs.events` needs the
-events capability, and `ecs.resources` needs none:
+events plugin, and `ecs.resources` needs none:
 
 ```ts
 ecs.events.register(DamageEvent, ["target", "amount"]);
@@ -662,7 +662,7 @@ time, and the ECS calls you at the correct moment. Use an observer where you wou
 in each frame, or where you need exact information **for each entity**, which the archetype level of
 detail of `changed()` cannot give.
 
-Observers are a capability. Build the world with `ECS.create({ plugins: [observers()] })`, and
+Observers are a plugin. Build the world with `ECS.create({ plugins: [observers()] })`, and
 import `observers` from `@oasys/oecs/observers`.
 
 ```ts
@@ -774,7 +774,7 @@ A relation links two entities as a `(relation, target)` pair. Use it for hierarc
 targets, and instance-of links. Relations are built on sparse storage. So they cause no archetype
 transition, they use no bit of the dense identity, and each relation operation is **immediate**.
 
-Relations are a capability. Build the world with
+Relations are a plugin. Build the world with
 `ECS.create({ plugins: [relations()] })`, and import `relations` from `@oasys/oecs/relations`.
 
 ```ts
@@ -816,7 +816,7 @@ ecs.relations.sourcesOf(parent, ChildOf);               // [child, …], the rev
 An event and a signal share one lifetime. You emit it during one `update()` call, each later system
 in that call sees it, and the engine clears it before the next call.
 
-Events are a capability. Build the world with `ECS.create({ plugins: [events()] })`, and import
+Events are a plugin. Build the world with `ECS.create({ plugins: [events()] })`, and import
 `events` from `@oasys/oecs/events`. `ecs.events`, `ctx.emit` and `ctx.readEvents` all need it.
 
 The difference between an event and a signal is the payload:
@@ -886,7 +886,7 @@ multiplayer, replay, deterministic debugging, and save and load. The flag contro
 `capture` and `restore`, and the sparse functions `captureSparse` and `restoreSparse`. Each of them
 throws `DETERMINISM_DISABLED` when the flag is off.
 
-`capture` and `restore` also need the snapshots capability, which is separate from the flag. Build
+`capture` and `restore` also need the snapshots plugin, which is separate from the flag. Build
 the world with `ECS.create({ deterministic: true, plugins: [snapshots()] })`, and import
 `snapshots` from `@oasys/oecs/snapshots`. `ecs.snapshots.stateHash()` needs the flag alone.
 
@@ -1004,31 +1004,34 @@ isolation, or stay on the heap profile, which needs neither header.
 
 ---
 
-## 18. The reactive UI connection
+## 18. The UI connection
 
-The ECS does not depend on a framework, and it never imports a UI library. The reactive part is
-three optional entry points. They bring ECS state into a reactive UI, and the UI makes no full
-render in each frame. The three entry points are `@oasys/oecs/reactive`, which is the signals
-kernel. `@oasys/oecs/reactive-sync`, which is the bridge from the ECS, and which publishes only the
-changed entities and columns, and `@oasys/oecs/solid`, which is the SolidJS adapter.
+The ECS does not depend on a framework, and it never imports a UI library. `solid()`, from
+`@oasys/oecs/solid`, is the one path into a UI. It reads the store's change feed and writes Solid
+signals, so the UI makes no full render in each frame. This release ships no other framework path.
 
 ```ts
-import { syncComponentToMap, shallow, batchedUpdate } from "@oasys/oecs/reactive-sync";
+import { ECS } from "@oasys/oecs";
+import { solid } from "@oasys/oecs/solid";
 
-const positions = syncComponentToMap(ecs, Pos, (row) => ({ x: row.field("x"), y: row.field("y") }), { eq: shallow });
-batchedUpdate(ecs, 1 / 60);   // = batch(() => ecs.update(dt)), one tick, one UI flush
+const world = ECS.create({ plugins: [solid()] });
+const points = world.solid.fields(Pos, ["x", "y"]);   // {x, y} for each entity
+world.update(1 / 60);                                 // one tick, one Solid flush
 ```
 
 > [!WARNING]
-> **Give `eq: shallow`, or a scalar projection, when the values are objects.** Under the default
-> `Object.is`, a projection that gives a new object in each tick compares as unequal each time, and
-> it starts each subscriber in each frame. This is the most frequent error with `reactive-sync`.
-> **Key a Solid `<For>` on the stable `EntityID`**, and never on a value object that changes in each
-> tick.
+> **Give an `eq`, or a scalar projection, when the values are objects.** Under Solid's `===`, a new
+> object compares as unequal each time. A projection that returns one wakes each reader in each
+> frame. `fields` supplies its own `eq`. **Key a Solid `<For>` on the stable
+> `EntityID`**, and never on a value object that changes in each tick.
 
-If a projection reads a *second* component, the result becomes out of date. Use `syncJoinToMap`,
-which subscribes to each definition. Wrap each tick in `batchedUpdate`, so that the publications of
-a full frame go together into one UI flush.
+A view subscribes to one component. If a projection reads a *second* component, the result becomes
+stale. No change of that second component republishes the row. Take one view for each component,
+and combine them where you read.
+
+Everything publishes at the settle point, the tail of `update()`. One `update()` is one Solid
+flush, whatever the number of views. Only a deferred structural operation reaches a view, so
+destroy an entity through `ctx.commands.despawn` or through the host command path.
 
 ---
 

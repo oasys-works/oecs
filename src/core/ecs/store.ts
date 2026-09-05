@@ -59,7 +59,7 @@ import {
 	type SparseComponentID
 } from "./sparse_store";
 import type { RelationDef } from "./relation";
-// Type-only. The events capability constructs the registry, so a world that
+// Type-only. The events plugin constructs the registry, so a world that
 // installs none does not carry `event_registry.ts`.
 import type { EventRegistry } from "./event_registry";
 import { ResourceRegistry } from "./resource_registry";
@@ -77,18 +77,19 @@ import {
 	type ArchetypeID
 } from "./archetype";
 import type { Query, QueryHost, QueryTerms } from "./query";
-// Type-only. The relations capability constructs the service, so a world that
+// Type-only. The relations plugin constructs the service, so a world that
 // installs none does not carry `relation_service.ts` or `relation.ts`.
 import type { RelationService, RelationServiceHost } from "./relation_service";
 // Type-only: the per-consumer host seams Store implements. observer.ts /
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
+import type { ChangeFeed } from "./plugin";
 import { ECS_ERROR, ECSError, ECSRestoreError } from "./utils/error";
-import { capabilityMissingError, capabilityInstalledTwiceError } from "./utils/capability_error";
+import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
 // Type-only. The store never constructs a `SnapshotService`, so a world that
-// installs no snapshot capability does not carry `snapshot_service.ts` at all.
+// installs no snapshot plugin does not carry `snapshot_service.ts` at all.
 import type { SnapshotService, SnapshotHost } from "./snapshot_service";
 import { ArchetypeGraph } from "./archetype_graph";
 import { accessCheck } from "./access_check";
@@ -180,6 +181,21 @@ export interface ComponentMeta {
 	/** The change tick of the last `cols.ticks(def)` call. Above `drainTick`, a
 	 * chunk loop stamped rows the list does not hold, so the drain scans. */
 	scanTick: number;
+	/** The `run` of the last `drainSet`. A second drain at the same run returns
+	 * the first one's result, so several consumers of the change feed share one
+	 * drain instead of taking the rows away from each other. */
+	lastDrainRun: number;
+}
+
+/** What one consumer of the change feed asks the store to record for a
+ * component. Each flag maps to one observer hook. `set` is the row grain:
+ * it turns on the row tick plane and the dirty list. */
+export interface ObservationFlags {
+	readonly add: boolean;
+	readonly remove: boolean;
+	readonly disable: boolean;
+	readonly enable: boolean;
+	readonly set: boolean;
 }
 
 /**
@@ -209,10 +225,19 @@ export interface StructuralObserverEvents {
 }
 
 
-/** What `Store.drainSet` hands the entity-level onSet dispatch: the rows a
- * tick-plane scan found, which are alive, members and enabled by construction,
- * and the rows the dirty list held, which the dispatch must check. Reused per
- * component, never reallocated on the drain. */
+/** What `Store.drainSet` hands a consumer of the change feed: the rows a
+ * tick-plane scan found and the rows the dirty list held.
+ *
+ * A `scanned` row is alive, a member and enabled by construction, so a
+ * consumer fires it with no check. A `listed` entity may hold a duplicate, and
+ * it may have died, left the component or been disabled since its record, so a
+ * consumer checks each one.
+ *
+ * Both arrays belong to the store and both are reused. A consumer may sort,
+ * dedupe or truncate them in place, and the observer registry does exactly
+ * that. The drain is memoized on its run, so a second consumer in the same run
+ * sees the arrays as the first consumer left them. Every consumer must plan
+ * around that. */
 export interface DrainResult {
 	scanned: EntityID[];
 	listed: EntityID[];
@@ -323,6 +348,10 @@ export interface StoreOptions {
 	 * or to make index exhaustion reachable. A 1000-entity workload fits
 	 * comfortably in the default. */
 	entityIndexCapacity?: number;
+	/** Byte offset inside the backing where the store header goes. Default 0.
+	 * Forwarded verbatim to `createColumnStore`, and every offset in the bytes
+	 * is relative to it. `ECSOptions.memory.storeBase` resolves to it. */
+	storeBase?: number;
 	/** Consumer-declared SAB regions, forwarded verbatim to
 	 * `createColumnStore`. Each `StoreRegionSpec` carries an opaque `region_id`,
 	 * a precomputed byte size, and an `init` closure. The engine lays them out
@@ -348,12 +377,12 @@ export interface StoreOptions {
 	 * flag: it does not touch the per-tick path, the in-place-allocator invariant
 	 * (a memory-safety requirement that holds regardless), or the
 	 * always-on `enabled_count` partition maintenance. The flag's value is a
-	 * capability gate, not a hot-path switch, `stateHash`/snapshot are never
+	 * plugin gate, not a hot-path switch, `stateHash`/snapshot are never
 	 * called per tick. */
 	deterministic?: boolean;
 }
 
-export class Store implements ObserverHost, QueryHost {
+export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// --- Entity ID management ---
 	// Generational slot allocation (generations view, high-water, free-list,
 	// alive count) lives in `EntityAllocator`. `_entityArchetypes` /
@@ -392,7 +421,7 @@ export class Store implements ObserverHost, QueryHost {
 	// Registry + traversal algorithms live in `RelationService`. The Store's
 	// relation methods below are one-line delegations. Wired in the constructor
 	// through the narrow `RelationServiceHost` seam.
-	// Installed by the relations capability, `null` until then. The destroy
+	// Installed by the relations plugin, `null` until then. The destroy
 	// paths test it before the existing `count > 0` gate, which keeps the
 	// no-relation world on the same branch it already took.
 	private _relations: RelationService | null;
@@ -400,9 +429,9 @@ export class Store implements ObserverHost, QueryHost {
 	// --- Event channels ---
 	// Channel array + key map + per-tick dirty list live in `EventRegistry`
 	// (event_registry.ts); the event methods below delegate.
-	// Installed by the events capability, `null` until then. `ECS.update` clears
+	// Installed by the events plugin, `null` until then. `ECS.update` clears
 	// the channels at the tick tail and checks `hasEvents` first, so a world
-	// without the capability pays one null test per frame.
+	// without the plugin pays one null test per frame.
 	private _events: EventRegistry | null;
 
 	// --- Archetype management ---
@@ -444,7 +473,7 @@ export class Store implements ObserverHost, QueryHost {
 	// and fail-closed validation live in `SnapshotService`. The Store keeps
 	// the DETERMINISM_DISABLED gates and the live-world mutation seams
 	// (`_mountRestoredDense`, `_reconstructHostRows`).
-	// Installed by the snapshot capability, `null` until then. Cold path: every
+	// Installed by the snapshot plugin, `null` until then. Cold path: every
 	// read goes through the `snapshots` accessor, which is never in a loop.
 	private _snapshots: SnapshotService | null;
 
@@ -461,7 +490,7 @@ export class Store implements ObserverHost, QueryHost {
 	// loops, the state digest) still reach `_relationService` through the
 	// private field, so no accessor sits inside a loop.
 	public get relations(): RelationService {
-		if (this._relations === null) throw capabilityMissingError("relations", "ecs.relations");
+		if (this._relations === null) throw pluginMissingError("relations", "ecs.relations");
 		return this._relations;
 	}
 
@@ -472,7 +501,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * seam a user can reach passes its own name here. Error path only. The
 	 * successful read is the same field read the getter makes. */
 	public requireRelations(api: string): RelationService {
-		if (this._relations === null) throw capabilityMissingError("relations", api);
+		if (this._relations === null) throw pluginMissingError("relations", api);
 		return this._relations;
 	}
 
@@ -496,42 +525,42 @@ export class Store implements ObserverHost, QueryHost {
 		};
 	}
 
-	/** Install the relations capability. Called once, by the capability. */
+	/** Install the relations plugin. Called once, by the plugin. */
 	public installRelations(service: RelationService): void {
-		if (this._relations !== null) throw capabilityInstalledTwiceError("relations");
+		if (this._relations !== null) throw pluginInstalledTwiceError("relations");
 		this._relations = service;
 	}
 	public get events(): EventRegistry {
-		if (this._events === null) throw capabilityMissingError("events", "ecs.events");
+		if (this._events === null) throw pluginMissingError("events", "ecs.events");
 		return this._events;
 	}
 
 	/** The event registry, for a caller that is not `ecs.events`. Names the
 	 * seam the user reached, the way `requireRelations` does. */
 	public requireEvents(api: string): EventRegistry {
-		if (this._events === null) throw capabilityMissingError("events", api);
+		if (this._events === null) throw pluginMissingError("events", api);
 		return this._events;
 	}
 
-	/** Whether the events capability is installed. Read once per frame by the
+	/** Whether the events plugin is installed. Read once per frame by the
 	 * tick-tail clear, which must be a no-op on a world without channels. */
 	public get hasEvents(): boolean {
 		return this._events !== null;
 	}
 
-	/** Install the events capability. Called once, by the capability. */
+	/** Install the events plugin. Called once, by the plugin. */
 	public installEvents(registry: EventRegistry): void {
-		if (this._events !== null) throw capabilityInstalledTwiceError("events");
+		if (this._events !== null) throw pluginInstalledTwiceError("events");
 		this._events = registry;
 	}
-	/** Build the host a snapshot capability needs. Only the store can reach
-	 * these fields, so it builds the record and the capability owns the service.
+	/** Build the host a snapshot plugin needs. Only the store can reach
+	 * these fields, so it builds the record and the plugin owns the service.
 	 * The accessors re-read live fields per call: the column store and the
 	 * entity-index views are replaced on a restore. All cold path. */
 	public snapshotHost(): SnapshotHost {
 		return {
 			sparseStores: () => this._sparseStores,
-			// A world with no relation capability has no relation side data, and
+			// A world with no relation plugin has no relation side data, and
 			// an empty section is what the snapshot format already writes for a
 			// world that registered no relation.
 			relationStores: () => (this._relations === null ? [] : this._relations.stores),
@@ -554,20 +583,20 @@ export class Store implements ObserverHost, QueryHost {
 		};
 	}
 
-	/** The allocator, which is its own snapshot seam. Handed to the capability
+	/** The allocator, which is its own snapshot seam. Handed to the plugin
 	 * so the store need not construct the service itself. */
 	public get entityAllocator(): EntityAllocator {
 		return this._entityAllocator;
 	}
 
-	/** Install the snapshot capability. Called once, by the capability. */
+	/** Install the snapshot plugin. Called once, by the plugin. */
 	public installSnapshots(service: SnapshotService): void {
-		if (this._snapshots !== null) throw capabilityInstalledTwiceError("snapshots");
+		if (this._snapshots !== null) throw pluginInstalledTwiceError("snapshots");
 		this._snapshots = service;
 	}
 
 	public get snapshots(): SnapshotService {
-		if (this._snapshots === null) throw capabilityMissingError("snapshots", "snapshot()");
+		if (this._snapshots === null) throw pluginMissingError("snapshots", "snapshot()");
 		return this._snapshots;
 	}
 	public get resources(): ResourceRegistry {
@@ -613,6 +642,15 @@ export class Store implements ObserverHost, QueryHost {
 	 * (with `_structuralObserverCount` also 0), `flushStructural` takes the
 	 * byte-for-byte fast path and the toggle drain skips event collection. */
 	private _toggleObserverCount = 0;
+	/** One flag record for each consumer of the change feed, keyed by the
+	 * plugin name, each array indexed by component id and sparse. The
+	 * store merges by OR across the records, so the flags a component carries
+	 * are the union of what every consumer asked for. Cold: written when a
+	 * consumer gains or loses an observer, read on the same call. */
+	private readonly _observationFlags = new Map<string, ObservationFlags[]>();
+	/** The sparse half of the record above, one boolean for each sparse
+	 * component a consumer wants the entity grain of. */
+	private readonly _sparseObservationFlags = new Map<string, boolean[]>();
 	/** Reused effective-event scratch for the current flush round. */
 	private readonly _obsEvents: StructuralObserverEvents = {
 		addComp: [],
@@ -628,16 +666,18 @@ export class Store implements ObserverHost, QueryHost {
 		enaEid: [],
 		enaLen: 0
 	};
-	/** Installed via `setStructuralObserverHook`, dispatches a round's collected
-	 * events to the observer registry (ordering + callbacks), which may enqueue
-	 * further structural ops. */
-	private _structuralObserverHook: ((ev: StructuralObserverEvents) => void) | null = null;
+	/** Installed via `addStructuralHook`, each one dispatches a round's
+	 * collected events to one consumer of the change feed, which may enqueue
+	 * further structural ops. Empty on a world that installed no consumer, and
+	 * the flush reads it once per round. */
+	private readonly _structuralHooks: ((ev: StructuralObserverEvents) => void)[] = [];
 
-	/** Install the structural-observer dispatch hook (called once by `ECS`
-	 * during construction), the named seam replacing direct writes to the
-	 * previously-public field. */
-	public setStructuralObserverHook(fn: (ev: StructuralObserverEvents) => void): void {
-		this._structuralObserverHook = fn;
+	/** Add a consumer of the structural event batches. Each round of the
+	 * observed flush hands its effective events to every hook, in install
+	 * order. The events scratch is store-owned and reused, so a hook reads it
+	 * during the call and copies whatever it keeps. Cold path. */
+	public addStructuralHook(fn: (ev: StructuralObserverEvents) => void): void {
+		this._structuralHooks.push(fn);
 	}
 
 	// Destroy fires onRemove for every component the entity carried (a destroy is
@@ -923,6 +963,7 @@ export class Store implements ObserverHost, QueryHost {
 		// typical ~3 columns and archetype, comfortable headroom for runtime
 		// archetype discovery without bloating empty stores.
 		this._entityIndexCapacity = opts.entityIndexCapacity ?? ENTITY_INDEX_DEFAULT_CAPACITY;
+		this._storeBase = opts.storeBase ?? 0;
 		this._regions = opts.regions;
 		this._bindingsRegionBytes = opts.bindingsRegionBytes ?? 0;
 		this._deterministic = opts.deterministic ?? false;
@@ -937,7 +978,7 @@ export class Store implements ObserverHost, QueryHost {
 				applyToggles: () => this._flushToggles(),
 				structuralObserverCount: () => this._structuralObserverCount,
 				toggleObserverCount: () => this._toggleObserverCount,
-				structuralObserverHook: () => this._structuralObserverHook
+				structuralHooks: () => this._structuralHooks
 			},
 			this._obsEvents
 		);
@@ -964,6 +1005,7 @@ export class Store implements ObserverHost, QueryHost {
 		// default capacity (like the command and event rings), so the public surface
 		// carries no ring-sizing knob. The TS→WASM action drain finds it present.
 		this._columnStore = createColumnStore([], this._bufferAllocator, {
+			storeBase: this._storeBase,
 			reservedDescriptorBytes: 64 * 1024,
 			entityIndexCapacity: this._entityIndexCapacity,
 			eventRingCapacitySlots: EVENT_RING_DEFAULT_CAPACITY_SLOTS,
@@ -977,7 +1019,7 @@ export class Store implements ObserverHost, QueryHost {
 		// inside `_handleBufferResized` after extend/grow.
 		const views = createEntityIndexViews(
 			this._columnStore.buffer,
-			this._columnStore.header.entityIndexOff,
+			this._storeBase + this._columnStore.header.entityIndexOff,
 			this._entityIndexCapacity
 		);
 		this._entityArchetypes = views.archetypes;
@@ -990,7 +1032,9 @@ export class Store implements ObserverHost, QueryHost {
 			views.generations,
 			new Uint32Array(
 				this._columnStore.buffer,
-				this._columnStore.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
+				this._storeBase +
+					this._columnStore.header.entityIndexOff +
+					ENTITY_INDEX_HEADER_OFFSETS.length,
 				1
 			)
 		);
@@ -1015,6 +1059,9 @@ export class Store implements ObserverHost, QueryHost {
 	 * follow-up will grow it via `growColumnStore` when `entityHighWater`
 	 * hits the cap. */
 	private readonly _entityIndexCapacity: number;
+	/** Byte offset of the store header inside the backing. Fixed at
+	 * construction, and every offset in the bytes is relative to it. */
+	private readonly _storeBase: number;
 	/** Consumer-declared SAB regions, captured so the realloc path
 	 * re-lays them out. `undefined` when no consumer regions were declared.
 	 * The region contents survive a grow via the self-describing region table
@@ -1113,12 +1160,21 @@ export class Store implements ObserverHost, QueryHost {
 		// scope. The new region's bytes were either preserved (slow path
 		// via snapshot+restore in extend and grow) or untouched (in-place fast
 		// path). Re-derive the views from the new SAB.
-		const views = createEntityIndexViews(this._columnStore.buffer, off, this._entityIndexCapacity);
+		const base = this._columnStore.storeBase;
+		const views = createEntityIndexViews(
+			this._columnStore.buffer,
+			base + off,
+			this._entityIndexCapacity
+		);
 		this._entityArchetypes = views.archetypes;
 		this._entityRows = views.rows;
 		this._entityAllocator.replantViews(
 			views.generations,
-			new Uint32Array(this._columnStore.buffer, off + ENTITY_INDEX_HEADER_OFFSETS.length, 1)
+			new Uint32Array(
+				this._columnStore.buffer,
+				base + off + ENTITY_INDEX_HEADER_OFFSETS.length,
+				1
+			)
 		);
 	}
 
@@ -1149,7 +1205,11 @@ export class Store implements ObserverHost, QueryHost {
 	 * its own region module (e.g. `@internal/sim`'s region helpers) to
 	 * materialise a typed view. TS twin of Zig `abi.find_region`. */
 	public regionOffset(regionId: number): number {
-		return findRegionOffset(this._columnStore.view, regionId);
+		const rel = findRegionOffset(this._columnStore.view, regionId);
+		// The bytes carry a store-relative offset. A JS caller pairs the result
+		// with `columnStore.buffer`, so add the base back. 0 stays the "absent"
+		// answer at any base.
+		return rel === 0 ? 0 : this._columnStore.storeBase + rel;
 	}
 
 	/** A handle to a consumer-declared SAB region resolved by `region_id`, or
@@ -1163,7 +1223,10 @@ export class Store implements ObserverHost, QueryHost {
 		return {
 			buffer: this._columnStore.buffer,
 			view: this._columnStore.view,
-			offset: entry.byteOffset,
+			// Buffer-absolute, so `new Uint8Array(handle.buffer, handle.offset,
+			// handle.bytes)` reads the region. `view` starts at the store base,
+			// so a read through it uses `offset - view.byteOffset`.
+			offset: this._columnStore.storeBase + entry.byteOffset,
 			bytes: entry.byteLength
 		};
 	}
@@ -2576,11 +2639,43 @@ export class Store implements ObserverHost, QueryHost {
 	// (`flushStructural`), and the per-row dirty list for per-entity onSet. All
 	// of this is a scheduling artifact, never folded into `stateHash`/snapshot.
 
-	/** Set the per-component observation flags from the registry's aggregate of
-	 * live observers for `cid`. Maintains `_structuralObserverCount` and
+	/** Record what one consumer of the change feed asks the store to collect
+	 * for `cid`, then apply the OR of every consumer's ask.
+	 *
+	 * `consumer` is the plugin name. The observer registry passes
+	 * `"observers"`. One consumer dropping a flag never takes that flag away
+	 * from another, which is why the merge sits in front of the transition
+	 * logic. All-false is the same as absent. Cold path: a consumer calls this
+	 * when it gains or loses an observer. */
+	public configureObservation(consumer: string, cid: number, flags: ObservationFlags): void {
+		let byCid = this._observationFlags.get(consumer);
+		if (byCid === undefined) {
+			byCid = [];
+			this._observationFlags.set(consumer, byCid);
+		}
+		byCid[cid] = flags;
+		let add = false;
+		let remove = false;
+		let disable = false;
+		let enable = false;
+		let set = false;
+		for (const rec of this._observationFlags.values()) {
+			const f = rec[cid];
+			if (f === undefined) continue;
+			if (f.add) add = true;
+			if (f.remove) remove = true;
+			if (f.disable) disable = true;
+			if (f.enable) enable = true;
+			if (f.set) set = true;
+		}
+		this._applyObservation(cid, add, remove, disable, enable, set);
+	}
+
+	/** Set the per-component observation flags from the merged ask of every
+	 * consumer for `cid`. Maintains `_structuralObserverCount` and
 	 * `_toggleObserverCount` (the fast-path gates) and lazily allocates the
 	 * dirty list when per-entity onSet tracking turns on. */
-	public configureObservation(
+	private _applyObservation(
 		cid: number,
 		hasAdd: boolean,
 		hasRem: boolean,
@@ -2656,10 +2751,24 @@ export class Store implements ObserverHost, QueryHost {
 		this._trackRowsById(cid);
 	}
 
-	/** The observer registry's seam for an entity-level onSet on a sparse
-	 * component: row ticks on, or the pending records dropped when the last
-	 * observer leaves. */
-	public configureSparseObservation(sid: number, hasSet: boolean): void {
+	/** Record what one consumer of the change feed asks the store to collect
+	 * for sparse component `sid`, then apply the OR of every consumer's ask.
+	 * Same merge rule as the dense form. Cold path. */
+	public configureSparseObservation(consumer: string, sid: number, hasSet: boolean): void {
+		let bySid = this._sparseObservationFlags.get(consumer);
+		if (bySid === undefined) {
+			bySid = [];
+			this._sparseObservationFlags.set(consumer, bySid);
+		}
+		bySid[sid] = hasSet;
+		let set = false;
+		for (const rec of this._sparseObservationFlags.values()) if (rec[sid] === true) set = true;
+		this._applySparseObservation(sid, set);
+	}
+
+	/** Row ticks on for sparse component `sid`, or the pending records dropped
+	 * when the last consumer of its change feed leaves. */
+	private _applySparseObservation(sid: number, hasSet: boolean): void {
 		const st = this._sparseStores[sid];
 		if (st === undefined) {
 			throw new ECSError(
@@ -2685,6 +2794,10 @@ export class Store implements ObserverHost, QueryHost {
 	public drainSparseSet(sid: number, run: number): EntityID[] {
 		const st = this._sparseStores[sid];
 		const out = this._sparseDrains[sid]!;
+		// One drain per run. A second consumer at the same run takes the array
+		// the first one left, because a fresh walk would find the records gone.
+		if (st.lastDrainRun === run) return out;
+		st.lastDrainRun = run;
 		out.length = 0;
 		const since = st.drainTick;
 		st.drainTick = run - 1;
@@ -2826,6 +2939,10 @@ export class Store implements ObserverHost, QueryHost {
 	public drainSet(cid: number, run: number): DrainResult {
 		const meta = this._componentMetas[cid];
 		const res = this._drainResults[cid]!;
+		// One drain per run. A second consumer at the same run takes the result
+		// the first one left, because a fresh walk would find the records gone.
+		if (meta.lastDrainRun === run) return res;
+		meta.lastDrainRun = run;
 		res.scanned.length = 0;
 		res.listed.length = 0;
 		const since = meta.drainTick;
@@ -2958,7 +3075,8 @@ export class Store implements ObserverHost, QueryHost {
 			trackDirty: false,
 			drainTick: 0,
 			scanTick: 0,
-			listCap: 0
+			listCap: 0,
+			lastDrainRun: 0
 		});
 		const def = createComponentDef<S>(id);
 		if (name !== undefined) setComponentDebugName(def, name);

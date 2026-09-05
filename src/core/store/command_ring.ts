@@ -171,7 +171,13 @@ export function pushCommand(
 	// caller. Reads and writes through the slot's own DataView would work but
 	// would require a fresh DataView per slot, so we use Uint8Array.set
 	// which V8 specialises well.
-	const dest = new Uint8Array(view.buffer, slotOff + 1, COMMAND_RING_SLOT_BYTES - 1);
+	// `slotOff` indexes `view`, which starts at the store base, so the copy
+	// view has to add that base back.
+	const dest = new Uint8Array(
+		view.buffer,
+		view.byteOffset + slotOff + 1,
+		COMMAND_RING_SLOT_BYTES - 1
+	);
 	dest.set(payload);
 	view.setUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.write_head, (writeHead + 1) >>> 0, true);
 	return true;
@@ -193,7 +199,11 @@ export function popCommand(view: DataView, ringOff: number, outPayload: Uint8Arr
 	const slotIdx = readHead & (capacity - 1);
 	const slotOff = ringOff + COMMAND_RING_HEADER_BYTES + slotIdx * COMMAND_RING_SLOT_BYTES;
 	const opCode = view.getUint8(slotOff);
-	const src = new Uint8Array(view.buffer, slotOff + 1, COMMAND_RING_SLOT_BYTES - 1);
+	const src = new Uint8Array(
+		view.buffer,
+		view.byteOffset + slotOff + 1,
+		COMMAND_RING_SLOT_BYTES - 1
+	);
 	outPayload.set(src);
 	view.setUint32(ringOff + COMMAND_RING_HEADER_OFFSETS.read_head, (readHead + 1) >>> 0, true);
 	return opCode;

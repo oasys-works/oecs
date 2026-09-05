@@ -15,7 +15,7 @@ import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 /** Empty dense access declaration. Spread and override the sparse and relation
  * terms per test. */

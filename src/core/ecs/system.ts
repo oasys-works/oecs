@@ -52,6 +52,8 @@ import type { ResourceKey } from "./resource";
 import type { SystemContext } from "./system_context";
 import type { BackendSystemHandle } from "./compute_backend";
 import type { Template } from "./store";
+import type { Query } from "./query";
+import type { ParallelPlan } from "./parallel/plan";
 
 export type SystemID = Brand<number, "system_id">;
 
@@ -140,6 +142,58 @@ export interface SystemAccessDeclaration extends SystemAccessConfig {
 	readonly resourceWrites: readonly ResourceKey<any>[];
 }
 
+/** A kernel body a worker can load. A worker cannot receive a closure, so a
+ * kernel is addressed by a module and an export name. */
+export type ParallelKernel =
+	| {
+			/** A compiled module. It is structured-clone safe, so one module object
+			 * is shared with every worker. It imports the world's memory as
+			 * `env.memory`, which the wasm backing supplies. */
+			readonly wasm: WebAssembly.Module;
+			readonly export: string;
+			readonly js?: never;
+	  }
+	| {
+			/** An absolute module URL each worker imports. */
+			readonly js: string;
+			readonly export: string;
+			readonly wasm?: never;
+	  };
+
+/** One `(component, field)` pair a kernel takes, with the field name held to
+ * the component's own schema. */
+export type ParallelColumn<D> =
+	D extends ComponentDef<infer S> ? readonly [D, Extract<keyof S, string>] : never;
+
+/**
+ * How a system runs across a pool of workers.
+ *
+ * The kernel receives, per matched archetype, one argument per declared column,
+ * then `begin`, `end` and `dt`. A js kernel takes a typed array spanning the
+ * whole column and indexes `begin` to `end`. A wasm kernel takes the absolute
+ * byte offset of the column's first row and addresses row `r` at
+ * `ptr + r * stride`, with the stride it knows from the field type.
+ *
+ * A parallel system stays a normal system: the same ordering, the same run
+ * conditions, the same sets. Its `fn` runs below the row threshold, on a world
+ * with no pool, and on a heap world.
+ */
+export interface ParallelConfig<D extends ComponentDef<any> = ComponentDef<any>> {
+	readonly kernel: ParallelKernel;
+	/** The kernel's argument order, one component and field for each. Every
+	 * component named must be in `reads` or `writes` and in the query, and every
+	 * component in `writes` must appear here. */
+	readonly columns: readonly ParallelColumn<D>[];
+	/** The total matched row count below which the system runs `fn` on the main
+	 * thread. The default is a placeholder, and the caller must tune it: the
+	 * probes show the crossover is a property of the machine and of the kernel. */
+	readonly minRows?: number;
+	/** The query the kernel runs over. Defaults to the first entry of `queries`,
+	 * resolved as a with-only query. Pass one built with `without` to get a
+	 * with-and-without match. */
+	readonly query?: Query<any>;
+}
+
 export interface SystemConfig extends SystemAccessConfig {
 	// Method syntax (not `fn: SystemFn`), deliberately: methods relate
 	// bivariantly under strictFunctionTypes, which is what lets a config whose
@@ -183,6 +237,12 @@ export interface SystemConfig extends SystemAccessConfig {
 	 * around the backend call authorises the shared-memory it touches, and so the
 	 * scheduler can order it. See `ComputeBackend`. */
 	backendHandle?: BackendSystemHandle;
+
+	/** Opt this system into worker execution. When set **and** a pool is
+	 * attached **and** the matched row count clears `parallel.minRows`, the
+	 * schedule runs the kernel across the pool in place of `fn`. Otherwise `fn`
+	 * runs, and the two must compute the same thing. See `ParallelConfig`. */
+	parallel?: ParallelConfig;
 }
 
 // ═══ Compile-time access typing ═══════════════════════════════
@@ -408,10 +468,18 @@ export interface TypedSystemConfig<
 	 * overload first by declaration order. */
 	exclusive?: boolean;
 	backendHandle?: BackendSystemHandle;
+	/** The column list is held to `reads ∪ writes` at the type layer, the same
+	 * mirror `queries` carries, and each field name to its component's schema. */
+	readonly parallel?: ParallelConfig<R[number] | W[number]>;
 }
 
 export interface SystemDescriptor extends Readonly<SystemConfig> {
 	readonly id: SystemID;
+	/** @internal What one parallel dispatch reads, resolved at registration.
+	 * It hangs off the descriptor so the dispatch site resolves it with one
+	 * property load instead of a hash of an object identity. Absent on every
+	 * system that declares no `parallel`. */
+	readonly parallelPlan?: ParallelPlan;
 	// Normalized by `_normalizeAccess` at registration: required (never
 	// undefined) and Template-free, so internals consume plain def lists.
 	readonly spawns: readonly (readonly ComponentDef[])[];

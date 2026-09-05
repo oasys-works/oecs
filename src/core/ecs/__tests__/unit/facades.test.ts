@@ -10,10 +10,10 @@ import { describe, expect, it } from "vitest";
 import { ECS, eventKey, resourceKey, signalKey } from "../../index";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 import { Store } from "../../store";
-import { snapshots } from "../../../../capabilities/snapshots";
-import { events } from "../../../../capabilities/events";
-import { relations } from "../../../../capabilities/relations";
-import { storeOnlyHost } from "../../capability";
+import { snapshots } from "../../../../plugins/snapshots";
+import { events } from "../../../../plugins/events";
+import { relations } from "../../../../plugins/relations";
+import { storeOnlyHost } from "../../plugin";
 
 
 
@@ -99,14 +99,14 @@ describe("ECS grouped facades", () => {
 		expect(ecs.snapshots.stateHash()).toBe(hashBefore);
 	});
 
-	it("a world without the capability fails closed, naming the remedy", () => {
+	it("a world without the plugin fails closed, naming the remedy", () => {
 		// Two distinct failures, and both matter.
 		//
 		// On the world, `capture` is absent from the type, which is the primary
 		// guard, and present on the prototype, so a JavaScript caller meets the
 		// fault instead of a `TypeError` about a missing method. The core half of
 		// the facade still answers, because determinism is a property of the
-		// world and not of the capability.
+		// world and not of the plugin.
 		const bare = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		expect(bare.snapshots.deterministic).toBe(true);
 		expect(typeof bare.snapshots.stateHash()).toBe("number");
@@ -114,11 +114,11 @@ describe("ECS grouped facades", () => {
 		for (const method of ["capture", "restore", "captureSparse", "restoreSparse"]) {
 			try {
 				bareSnapshots[method]();
-				expect.unreachable(`ecs.snapshots.${method} must throw without the capability`);
+				expect.unreachable(`ecs.snapshots.${method} must throw without the plugin`);
 			} catch (e) {
 				const err = e as ECSError;
 				expect(err).toBeInstanceOf(ECSError);
-				expect(err.category).toBe(ECS_ERROR.CAPABILITY_NOT_INSTALLED);
+				expect(err.category).toBe(ECS_ERROR.PLUGIN_NOT_INSTALLED);
 				expect(err.message).toContain(`ecs.snapshots.${method}`);
 				expect(err.message).toContain("@oasys/oecs/snapshots");
 			}
@@ -126,15 +126,15 @@ describe("ECS grouped facades", () => {
 
 		// Below the world, the store's own entry point is reachable, and that is
 		// where the fault has to name the remedy: the fix is a construction-site
-		// edit, so the message names the capability and the import.
+		// edit, so the message names the plugin and the import.
 		const store = new Store({ deterministic: true });
 		try {
 			store.snapshot();
-			expect.unreachable("Store.snapshot() must throw without the capability");
+			expect.unreachable("Store.snapshot() must throw without the plugin");
 		} catch (e) {
 			const err = e as ECSError;
 			expect(err).toBeInstanceOf(ECSError);
-			expect(err.category).toBe(ECS_ERROR.CAPABILITY_NOT_INSTALLED);
+			expect(err.category).toBe(ECS_ERROR.PLUGIN_NOT_INSTALLED);
 			expect(err.message).toContain("snapshots");
 			expect(err.message).toContain("ECS.create");
 		}

@@ -23,7 +23,8 @@
  * four enumerations into one ordered list. Each consumer is now a loop over it.
  *
  * Order is load-bearing. The array order is the byte order of the regions in
- * the SAB: each region's offset is `STORE_HEADER_BYTES + Σ(prior region bytes)`.
+ * the store span: each region's offset, measured from the store base, is
+ * `STORE_HEADER_BYTES + Σ(prior region bytes)`.
  * Reordering entries changes every downstream offset, the header golden
  * tests (`header.test.ts`) pin the result, but treat a reorder as an ABI
  * change.

@@ -69,7 +69,7 @@ import {
 } from "./observer";
 import type { ColumnStore } from "../store";
 import { ECSResources, ECSSnapshots } from "./facades";
-import type { Capability, CapabilityHost, CapsOf } from "./capability";
+import type { Plugin, PluginHost, PluginsOf } from "./plugin";
 import { Schedule, type SCHEDULE } from "./schedule";
 import type { Archetype, ArchetypeID } from "./archetype";
 import { Query, QueryBuilder, QueryCache, type QueryResolver, type QueryTerms } from "./query";
@@ -120,7 +120,7 @@ import { accessCheck } from "./access_check";
 import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
 import { BitSet, type TypedArrayTag } from "../../type_primitives";
 import { ECSError, ECS_ERROR } from "./utils/error";
-import { capabilityMissingError, capabilityInstalledTwiceError } from "./utils/capability_error";
+import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
 import {
 	DEFAULT_FIXED_TIMESTEP,
 	DEFAULT_MAX_FIXED_STEPS,
@@ -129,6 +129,8 @@ import {
 } from "./utils/constants";
 import type { StoreLayoutListener } from "./store_layout_listener";
 import type { ComputeBackend } from "./compute_backend";
+import { WorkerPool, type AttachWorkersOptions } from "./parallel/pool";
+import { assertParallelConfig, createParallelPlan, type ParallelPlan } from "./parallel/plan";
 import type { ColumnStoreRegionHandle, StoreRegionSpec } from "../store";
 import {
 	resolveECSMemory,
@@ -204,19 +206,19 @@ export interface ECSOptions {
 	deterministic?: boolean;
 }
 
-/** What a world puts in the reserved slot of a capability it never installed.
+/** What a world puts in the reserved slot of a plugin it never installed.
  *
  * The slot has to hold something. Left `undefined`, a JavaScript caller reading
  * `ecs.relations.add` meets a `TypeError` about a property of undefined. That
- * fault names neither the capability nor the import that supplies it. The proxy
+ * fault names neither the plugin nor the import that supplies it. The proxy
  * turns every named read into the fault the world defines.
  *
  * A symbol read and a key that `Object.prototype` answers behave as a plain
  * object does. The `toJSON` and `then` protocol keys do the same. So
  * `console.log`, `JSON.stringify`, a string coercion and an `await` inspect the
  * slot without a fault. Only a member read reaches the throw. Frozen and built
- * once per capability, because a world holds the shared instance. */
-function reserveCapabilitySlot(capability: string): object {
+ * once per plugin, because a world holds the shared instance. */
+function reservePluginSlot(plugin: string): object {
 	return Object.freeze(
 		new Proxy(Object.freeze({}), {
 			get(_target: object, key: string | symbol): unknown {
@@ -228,18 +230,23 @@ function reserveCapabilitySlot(capability: string): object {
 				) {
 					return Reflect.get(Object.prototype, key);
 				}
-				throw capabilityMissingError(capability, `ecs.${capability}.${key}`);
+				throw pluginMissingError(plugin, `ecs.${plugin}.${key}`);
 			}
 		})
 	);
 }
 
-const MISSING_RELATIONS: object = reserveCapabilitySlot("relations");
-const MISSING_EVENTS: object = reserveCapabilitySlot("events");
+const MISSING_RELATIONS: object = reservePluginSlot("relations");
+const MISSING_EVENTS: object = reservePluginSlot("events");
+
+/** The world members a plugin is meant to replace. Each one exists on a
+ * bare world only to name the plugin that fills it, so a facade landing on
+ * one is the design and not a collision. */
+const PLUGIN_RESERVED_SLOTS: readonly string[] = ["relations", "events", "observe", "snapshots"];
 
 /** The reserved `observe` slot. A function, because a caller calls it. */
 function missingObserve(): never {
-	throw capabilityMissingError("observers", "ecs.observe");
+	throw pluginMissingError("observers", "ecs.observe");
 }
 
 /** The fixed-timestep drives the `while (accumulator >= dt)` catch-up loop in
@@ -317,18 +324,18 @@ function assertTemplate(value: unknown, op: string): void {
 	);
 }
 
-/** The capabilities installed on a world. Each optional subsystem contributes
+/** The plugins installed on a world. Each optional subsystem contributes
  * its facade property here, so a world that never installed one cannot name it.
  * The empty default keeps `ECS` usable unparameterised. */
-export type Caps = object;
+export type Plugins = object;
 
-export class ECS<C extends Caps = object> implements QueryResolver {
-	/** Phantom. Carries the installed-capability surface so `C` is measurable
+export class ECS<C extends Plugins = object> implements QueryResolver {
+	/** Phantom. Carries the installed-plugin surface so `C` is measurable
 	 * to the compiler. Declared, never assigned, and erased from the emitted
 	 * JavaScript, so it costs a world nothing. */
-	declare readonly __caps?: C;
+	declare readonly __plugins?: C;
 
-	/** Build a world with capabilities installed.
+	/** Build a world with plugins installed.
 	 *
 	 * The returned type is the world intersected with the facades its plugins
 	 * contribute, so `ECS.create({ plugins: [relations()] }).relations` type-checks
@@ -341,29 +348,73 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	 * const world = ECS.create({ plugins: [relations()] });
 	 * world.relations.register();
 	 */
-	public static create<const P extends readonly Capability<object>[]>(
+	public static create<const P extends readonly Plugin<object>[]>(
 		options?: ECSOptions & { readonly plugins?: P }
-	): ECS<CapsOf<P>> & CapsOf<P> {
-		const world = new ECS<CapsOf<P>>(options);
+	): ECS<PluginsOf<P>> & PluginsOf<P> {
+		const world = new ECS<PluginsOf<P>>(options);
 		const plugins = options?.plugins;
 		if (plugins !== undefined) {
+			// The list is walked in order, so a plugin that names a
+			// dependency has to come after it. Order is the whole check: a
+			// later plugin can read what an earlier one installed, never the
+			// reverse.
+			const installed = new Set<string>();
 			for (let i = 0; i < plugins.length; i++) {
-				const cap = plugins[i] as unknown as Capability<object>;
-				Object.assign(world, cap.install(world._capabilityHost()));
+				const plugin = plugins[i] as unknown as Plugin<object>;
+				const requires = plugin.requires;
+				if (requires !== undefined) {
+					for (let r = 0; r < requires.length; r++) {
+						if (!installed.has(requires[r]))
+							throw pluginMissingError(requires[r], `${plugin.name} plugin`);
+					}
+				}
+				if (installed.has(plugin.name)) throw pluginInstalledTwiceError(plugin.name);
+				installed.add(plugin.name);
+				const surface = plugin.install(world._pluginHost());
+				if (DEV) world._checkSurface(plugin.name, surface);
+				Object.assign(world, surface);
 			}
 		}
-		return world as ECS<CapsOf<P>> & CapsOf<P>;
+		return world as ECS<PluginsOf<P>> & PluginsOf<P>;
 	}
 
-	/** The host a capability installs through. Built per world, once per
+	/** Refuse a facade member that would overwrite something the world already
+	 * carries. `Object.assign` is silent about it, and the loss is a method the
+	 * world needs. The four reserved slots are the exception: a bare world
+	 * declares each one so it can name the missing plugin, and the
+	 * plugin that fills the slot is meant to replace it. Dev-only. */
+	private _checkSurface(plugin: string, surface: object): void {
+		const keys = Object.keys(surface);
+		for (let k = 0; k < keys.length; k++) {
+			const key = keys[k];
+			if (PLUGIN_RESERVED_SLOTS.indexOf(key) >= 0) continue;
+			if (key in this) {
+				throw new ECSError(
+					ECS_ERROR.PLUGIN_SURFACE_COLLISION,
+					`the ${plugin} plugin contributes ${key}, and the world already carries that member. Rename the member the plugin adds`,
+					{ plugin, key }
+				);
+			}
+		}
+	}
+
+	/** The host a plugin installs through. Built per world, once per
 	 * install. Cold path. */
-	private _capabilityHost(): CapabilityHost {
+	private _pluginHost(): PluginHost {
 		return {
 			store: this._store,
+			changes: this._store,
+			world: this,
 			context: this._ctx,
+			onSettle: (fn) => {
+				this._settleHooks.push(fn);
+			},
 			installObservers: (registry) => {
-				if (this._observers !== null) throw capabilityInstalledTwiceError("observers");
+				if (this._observers !== null) throw pluginInstalledTwiceError("observers");
 				this._observers = registry;
+				// The registry is one settle consumer among others, and it takes
+				// its place in install order like any other.
+				this._settleHooks.push((run) => registry.dispatchSet(run));
 			}
 		};
 	}
@@ -373,11 +424,15 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	private readonly _ctx: SystemContext;
 	/** Component observers. Inert until `observe(...)` is
 	 * called, the structural-flush fast path is byte-for-byte unchanged. */
-	// Installed by the observers capability, `null` until then. The store's
+	// Installed by the observers plugin, `null` until then. The store's
 	// structural-flush fast path is gated on its own observer counts, so a world
-	// without the capability runs the flush loops it ran before. The world checks
+	// without the plugin runs the flush loops it ran before. The world checks
 	// this once per `update()` and once at startup, both cold.
 	private _observers: ObserverRegistry | null = null;
+	/** The consumers of the tick-tail detection point, in install order. Each
+	 * one runs once per `update()` with the change tick of the point. Empty on
+	 * a world that installed no consumer, and the tail reads the length once. */
+	private readonly _settleHooks: ((run: number) => void)[] = [];
 
 	// --- Grouped facades ---
 	// Cohesive secondary surfaces, each wrapping the same Store entry points
@@ -387,7 +442,7 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	public readonly resources: ECSResources;
 	/** Determinism: `stateHash()` and the `deterministic` flag, both properties
 	 * of the world itself. Capture and restore are not here. They arrive with
-	 * the snapshot capability, which replaces this with a widened facade, so a
+	 * the snapshot plugin, which replaces this with a widened facade, so a
 	 * world that never installs it carries no serialization code. */
 	public readonly snapshots: ECSSnapshots;
 
@@ -429,6 +484,12 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	// system carrying a `backendHandle` is routed here by the `Schedule` when
 	// this is set. Otherwise its `fn` runs. Attached via `attachBackend`.
 	private _backend: ComputeBackend | null = null;
+
+	// The attached worker pool, or null (the default). One pool per world.
+	private _workerPool: WorkerPool | null = null;
+	// Every parallel system's plan, in registration order. The pool loads a
+	// kernel for each and clears them all on detach.
+	private readonly _parallelPlans: ParallelPlan[] = [];
 
 	private readonly _memory: ResolvedECSMemory;
 
@@ -494,10 +555,11 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 				intentLabel: memory.intentLabel,
 				budgetEntities: memory.budgetEntities
 			},
+			storeBase: memory.storeBase,
 			onBufferReplaced: () => {
 				const subs = this._layoutSubscribers;
 				for (let i = 0; i < subs.length; i++) {
-					subs[i].setLayout(0);
+					subs[i].setLayout(memory.storeBase);
 				}
 			},
 			regions: options?.regions,
@@ -507,16 +569,16 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 		this._schedule = new Schedule(options?.onWarn);
 		this.resources = new ECSResources(this._store);
 		this.snapshots = new ECSSnapshots(this._store);
-		// Reserve a slot for every capability facade this package ships, filled
+		// Reserve a slot for every plugin facade this package ships, filled
 		// or not. `ECS.create` then assigns into an existing property instead of
-		// adding one, so a world with capabilities and a world without share one
+		// adding one, so a world with plugins and a world without share one
 		// hidden shape. Measured: without this, `spawn` on a bare world slowed
-		// once a capability world existed in the same process, because the call
+		// once a plugin world existed in the same process, because the call
 		// site saw two shapes. The names cost no import, so the core still
-		// carries none of the capability code. A capability outside this package
+		// carries none of the plugin code. A plugin outside this package
 		// adds a slot and pays that cost.
 		//
-		// Each slot holds a reader that names the missing capability, not
+		// Each slot holds a reader that names the missing plugin, not
 		// `undefined`. `ECS.create` overwrites the value, so the shape is the
 		// same either way.
 		const slots = this as unknown as Record<string, unknown>;
@@ -558,10 +620,12 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 		return out;
 	}
 
-	/** Subscribe to SAB-layout publications. `listener.setLayout(0)` is
-	 * called immediately to seed the initial layout, then again after
-	 * every SAB grow and extend (the `view_stamp` republish protocol).
-	 * Returns an unsubscribe function.
+	/** Subscribe to store-layout publications. `listener.setLayout(storeBase)`
+	 * is called immediately to seed the initial layout, then again after every
+	 * grow and extend (the `view_stamp` republish protocol). The argument is the
+	 * byte offset of the header inside the backing, and every offset the
+	 * listener then reads from the bytes is relative to it. Returns an
+	 * unsubscribe function.
 	 *
 	 * The engine has no concept of what subscribes. It publishes SAB layouts
 	 * and walks away. A consumer subscribes whatever wrapper it owns (a compute
@@ -570,7 +634,7 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	 * so most consumers call that rather than this directly. */
 	public subscribeLayout(listener: StoreLayoutListener): () => void {
 		this._layoutSubscribers.push(listener);
-		listener.setLayout(0);
+		listener.setLayout(this._memory.storeBase);
 		return () => {
 			const i = this._layoutSubscribers.indexOf(listener);
 			if (i >= 0) this._layoutSubscribers.splice(i, 1);
@@ -608,6 +672,75 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 				this._schedule.setBackend(null);
 			}
 		};
+	}
+
+	/**
+	 * Start a pool of workers and run this world's parallel systems on it.
+	 *
+	 * Each worker gets the store bytes, the store base and a control buffer, and
+	 * loads the kernel of every parallel system already registered. The promise
+	 * resolves when every worker is parked on the barrier with its kernels in
+	 * hand. A system registered later runs `fn` until `pool.settled()` resolves.
+	 *
+	 * The world's backing must be `shared` or `wasm`, because a worker reads the
+	 * bytes directly. The host must be able to block on `Atomics.wait`, which a
+	 * browser main thread refuses. One pool per world.
+	 *
+	 * The host parks on every pass, so a worker that dies would park it for the
+	 * life of the process. `joinTimeoutMs` bounds that wait, fails the frame
+	 * with `PARALLEL_KERNEL_FAILED`, and leaves every later frame on the
+	 * sequential body until the caller detaches.
+	 *
+	 * Cold path. Call it once, outside any frame.
+	 *
+	 * @example
+	 * const pool = await ecs.attachWorkers({ count: 4 });
+	 * // later
+	 * await pool.detach();
+	 */
+	public async attachWorkers(options?: AttachWorkersOptions): Promise<WorkerPool> {
+		if (this._workerPool !== null) {
+			throw new ECSError(
+				ECS_ERROR.WORKERS_ATTACHED,
+				"attachWorkers: this world already holds a pool. One pool per world, detach it before you attach another."
+			);
+		}
+		const wasmMemory = this._memory.wasmMemory;
+		const buffer = this._store.columnStore.buffer;
+		const hasShared = typeof SharedArrayBuffer !== "undefined";
+		let store: SharedArrayBuffer | WebAssembly.Memory;
+		if (wasmMemory !== null) store = wasmMemory;
+		else if (hasShared && buffer instanceof SharedArrayBuffer) store = buffer;
+		else {
+			throw new ECSError(
+				ECS_ERROR.WORKERS_NEED_SHARED_BACKING,
+				`attachWorkers: this world's backing is '${this._memory.source}', and a worker cannot reach its bytes. Build the world with memory.backing "shared" or { wasm }.`
+			);
+		}
+		const pool = await WorkerPool.attach(
+			{
+				store,
+				storeBase: this._memory.storeBase,
+				noteScan: (componentId: number) => this._store.noteScan(componentId),
+				plans: () => this._parallelPlans,
+				released: () => {
+					this._workerPool = null;
+					this._schedule.setWorkerPool(null);
+				}
+			},
+			options
+		);
+		// A detach that raced this line would leave the schedule holding a dead
+		// pool, so the assignment happens after `attach` resolves and never
+		// before.
+		this._workerPool = pool;
+		this._schedule.setWorkerPool(pool);
+		return pool;
+	}
+
+	/** The attached pool, or `null`. */
+	public get workers(): WorkerPool | null {
+		return this._workerPool;
 	}
 
 	public get fixedTimestep(): number {
@@ -1429,13 +1562,43 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 			);
 		}
 
+		// A parallel system resolves its plan here, once. The masks, the column
+		// specs and the row threshold are not diagnostics, so this runs in every
+		// build. Only the refusal is a dev guard.
+		let parallelPlan: ParallelPlan | undefined;
+		if (config.parallel !== undefined) {
+			const parallel = config.parallel;
+			let query = parallel.query;
+			if (query === undefined) {
+				const group = config.queries?.[0];
+				if (group === undefined) {
+					throw new ECSError(
+						ECS_ERROR.PARALLEL_ACCESS,
+						`registerSystem: config${config.name ? ` '${config.name}'` : ""} declares 'parallel' with neither 'parallel.query' nor a first entry in 'queries'. A worker resolves the matched archetypes from a query, so one is required.`
+					);
+				}
+				query = this.query(...(group as ComponentDef[]));
+			}
+			if (DEV) assertParallelConfig(config, query);
+			parallelPlan = createParallelPlan(parallel, query, config.writes, (def, field) =>
+				this._store.fieldIdOf(def, field)
+			);
+		}
+
 		const id = asSystemId(this._nextSystemId++);
 		const descriptor: SystemDescriptor = Object.freeze({
 			...config,
 			..._normalizeAccess(config),
+			parallelPlan,
 			id
 		});
 		this._systems.add(descriptor);
+		if (parallelPlan !== undefined) {
+			this._parallelPlans.push(parallelPlan);
+			// A pool that is already attached takes the kernel now. The system runs
+			// `fn` until every worker holds it, which `pool.settled()` awaits.
+			this._workerPool?.register(parallelPlan);
+		}
 		return descriptor;
 	}
 
@@ -1580,12 +1743,12 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 			// because it excludes event state. Any structural ops an onSet observer enqueues flush at the next
 			// tick's first phase boundary.
 			const evBefore = DEV && this._store.hasEvents ? this._store.events.devBufferedCount() : 0;
-			// The tick advances whether or not an observer registry exists. It
-			// marks the detection point, which a `changed()` query reads on a
-			// world that installed no observer capability. Only the dispatch is
-			// conditional.
+			// The tick advances whether or not a consumer exists. It marks the
+			// detection point, which a `changed()` query reads on a world that
+			// installed no plugin. Only the dispatch is conditional.
 			const setTick = this._store.advanceChangeTick();
-			if (this._observers !== null) this._observers.dispatchSet(setTick);
+			const settle = this._settleHooks;
+			for (let i = 0; i < settle.length; i++) settle[i](setTick);
 			if (DEV && this._store.hasEvents && this._store.events.devBufferedCount() !== evBefore) {
 				// An onSet observer emitted: `clearEvents` below would wipe it before
 				// any reader, so it is silently dropped, and would break snapshot/
@@ -1611,11 +1774,16 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 	}
 
 	public dispose(): void {
+		// The workers hold the store bytes and keep the process alive, so they
+		// stop with the world. `dispose` is synchronous and `detach` is not, so
+		// the stop is started here and awaited by a caller that wants it.
+		void this._workerPool?.detach();
 		for (const descriptor of this._systems.values()) {
 			descriptor.dispose?.();
 			descriptor.onRemoved?.();
 		}
 		this._systems.clear();
+		this._parallelPlans.length = 0;
 		this._schedule.clear();
 	}
 

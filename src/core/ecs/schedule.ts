@@ -40,6 +40,7 @@ import type { SystemContext } from "./system_context";
 import type {
 	SystemFn, SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";
+import type { WorkerPool } from "./parallel/pool";
 import type { RunCondition } from "./run_condition";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { STARTUP_DELTA_TIME } from "./utils/constants";
@@ -152,12 +153,20 @@ function toArray<T>(value: T | readonly T[] | undefined): readonly T[] {
  * such as `makeMover(component)`, or a world with a single system, the
  * dispatch site in `_runPhase` sees one target and TurboFan inlines the system
  * body, with its `forEachChunk` callback and its hot loop, into the scheduler's
- * own loop over the systems. Measured, that inlined loop runs much slower than
- * the same loop compiled on its own: the scheduler keeps many values live
- * across it, and the loop code pays for that. A world whose systems come from
- * two or more literals never hits this, because the site is then megamorphic
- * and nothing is inlined. So the factory case ran slower than the plain case,
- * and nothing in the user's code said why.
+ * own loop over the systems. Measured, that inlined loop runs slower than the
+ * same loop compiled on its own: the scheduler keeps many values live across
+ * it, and the loop code pays for that. A world whose systems come from two or
+ * more literals never hits this, because the site is then megamorphic and
+ * nothing is inlined. So the factory case ran slower than the plain case, and
+ * nothing in the user's code said why.
+ *
+ * What the effect is worth, from a later run. It is a per-system cost in each
+ * phase, so it shows up when the scheduler's own work is a visible share of the
+ * frame: a small world, or many systems with short bodies. It disappears once
+ * the system body dominates the frame. It appears on V8 and not on
+ * JavaScriptCore. Twenty closures made from one literal are already enough
+ * targets to keep the site polymorphic, so the seed guards the single-system
+ * world and the true factory, and not every world that looks repetitive.
  *
  * The remedy is to give the site many targets on purpose. `seedDispatchSite`
  * calls this trampoline with several distinct no-op literals when the module
@@ -253,6 +262,9 @@ export class Schedule {
 	// hoists this to a local and only reads `desc.backendHandle` when non-null,
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
+	// The attached worker pool, or null (the default). Hoisted in `_runPhase`
+	// exactly as the backend is: `null` means `desc.parallelPlan` is never read.
+	private _workers: WorkerPool | null = null;
 
 	/** Dev-diagnostic sink (`ECSOptions.onWarn`); defaults to `console.warn`.
 	 * The only schedule diagnostic today is `_warnDroppedEdge`. */
@@ -404,6 +416,13 @@ export class Schedule {
 		this._backend = backend;
 	}
 
+	/** Attach (or, with `null`, detach) the worker pool. Driven by
+	 * `ECS.attachWorkers`. Routes any scheduled system carrying a `parallel`
+	 * config across the pool in place of its `fn`. */
+	public setWorkerPool(pool: WorkerPool | null): void {
+		this._workers = pool;
+	}
+
 	// The three drive entry points each bracket their phases with `_driveDepth`,
 	// so `_assignLastRunSlot` will not recycle a `_lastRunTicks` slot that a phase
 	// plan captured by `_runPhase`'s loop may still write to, see the guard there
@@ -552,6 +571,21 @@ export class Schedule {
 		// dispatch shows that this branch is free against the baseline, and that a
 		// Null-Object default makes this no-backend path slower.
 		const backend = this._backend;
+		// Hoisted for the same reason the backend is. A world with no pool never
+		// reads `parallelPlan`.
+		const workers = this._workers;
+		// One test for both routes. A world with neither a backend nor a pool, the
+		// common case, reads neither routing field and takes one predicted branch
+		// to the plain call. Two independent tests slow this loop on a schedule of
+		// short bodies, which is where the dispatch is a visible share of the
+		// frame. A comparison of the dispatch against the sequential baseline
+		// shows it.
+		const routed = backend !== null || workers !== null;
+		// The frame tick travels to a backend as a call argument, because it is not
+		// in the store bytes. It is constant across a phase, because `ECS.update`
+		// writes it once before the first phase. Read it once here, and not for
+		// each dispatch. A world with no backend reads nothing.
+		const frameTick = backend !== null ? ctx.ecsTick : 0;
 		// A SystemSet's run conditions gate the set as a unit. Evaluate each
 		// set's conditions at most once per phase and reuse the verdict for every
 		// member, instead of re-evaluating per member. Run conditions are pure reads
@@ -583,16 +617,46 @@ export class Schedule {
 			// not. One counter for the frame could not tell those apart.
 			ctx.lastRunTick = this._lastRunTicks[slots[i]];
 			const run = ctx.advanceChangeTick();
-			// Route to the compute backend only when one is attached and this
-			// system opted in via `backendHandle`. Otherwise run the TS closure. The
-			// access span wraps either path identically, so the system's declared
-			// `writes` authorise whatever shared memory the backend touches.
-			const handle = backend !== null ? desc.backendHandle : undefined;
 			if (DEV) accessCheck.enter(desc);
 			if (DEV) ctx.trace?.systemBegin(desc, phase);
 			try {
-				if (handle !== undefined) backend!.run(handle);
-				else if (desc.fn !== undefined) invokeSystem(desc.fn, ctx, deltaTime);
+				// Route to the pool or to the compute backend only when one is
+				// attached and this system opted in. Otherwise run the TS closure.
+				// The access span wraps every path identically, so the system's
+				// declared `writes` authorise whatever shared memory a worker or a
+				// backend touches.
+				if (routed) {
+					// The dispatch sits inside the same access span a TypeScript body
+					// gets, and the host parks on `Atomics.wait` for the length of the
+					// pass. Nothing else runs on the main thread while it is parked, so
+					// no spawn, no despawn and no grow can overlap the workers. A grow
+					// relocates columns and a swap-remove moves rows, and a worker inside
+					// a pass would see neither. The engine gives that guarantee by
+					// construction. `run` answers false below the row threshold and
+					// before the kernel is loaded, and then the sequential body runs.
+					const parallel = workers !== null ? desc.parallelPlan : undefined;
+					if (parallel !== undefined && workers!.run(parallel, ctx, deltaTime, run)) {
+						// The pool ran the body and the join stamped what it wrote.
+					} else {
+						const handle = backend !== null ? desc.backendHandle : undefined;
+						if (handle !== undefined) {
+							// A backend body reads `row_count` and `enabled_count` out of the
+							// descriptors, and those are copies. Work earlier in the phase
+							// leaves them stale. Three ways in:
+							//   - a host spawn before `startup()`, whose first phase has no
+							//     publish ahead of it
+							//   - a spawn from a run condition, which runs outside the access
+							//     span
+							//   - an immediate mutation from an `exclusive` system, which a
+							//     dev build refuses and a production build allows
+							// The phase flush publishes at its tail, too late for a system in
+							// the same phase. The store gates the walk on a dirty flag, so a
+							// clean world pays one flag read for each dispatch.
+							ctx.publishRowCounts();
+							backend!.run(handle, deltaTime, frameTick);
+						} else if (desc.fn !== undefined) invokeSystem(desc.fn, ctx, deltaTime);
+					}
+				} else if (desc.fn !== undefined) invokeSystem(desc.fn, ctx, deltaTime);
 			} finally {
 				if (DEV) ctx.trace?.systemEnd(desc);
 				if (DEV) accessCheck.leave();

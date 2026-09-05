@@ -2,7 +2,7 @@
  * World snapshot and resume, mount a captured world onto a live, ticking ECS and
  * keep ticking identically. Where `sparse_determinism.test.ts`
  * pins the *fidelity* round-trip (snapshot → restore reproduces the same bytes),
- * these pin the *resume* capability the engine previously lacked:
+ * these pin the *resume* plugin the engine previously lacked:
  *
  *   - **mount + tick**, restore a snapshot onto a live world. It queries + ticks.
  *   - **host-state reconstruction**, `Archetype.length` / `enabledCount`, the
@@ -30,16 +30,16 @@ import {
 	ECSRestoreError,
 	type HostState
 } from "../../resume";
-import { heapArrayBufferAllocator } from "../../../store";
-import { snapshots, type SnapshotsCapability } from "../../../../capabilities/snapshots";
+import { heapArrayBufferAllocator, STORE_HEADER_OFFSETS } from "../../../store";
+import { snapshots, type SnapshotsPlugin } from "../../../../plugins/snapshots";
 
 const HEAP: ECSOptions = { deterministic: true, memory: { backing: "heap" } };
 const SAB: ECSOptions = { deterministic: true };
 
 interface World {
-	// The capability the fixture installs is part of the world's type: the whole
+	// The plugin the fixture installs is part of the world's type: the whole
 	// point of `ECS.create` is that `capture` is unreachable without it.
-	world: ECS<SnapshotsCapability> & SnapshotsCapability;
+	world: ECS<SnapshotsPlugin> & SnapshotsPlugin;
 	Pos: ComponentDef;
 	Life: ComponentDef;
 	Mark: SparseComponentDef;
@@ -196,6 +196,25 @@ describe("restore, mount + reconstruction", () => {
 		}
 	});
 
+	it("restores a frame whose dense section carries the version the 0.5 line wrote", () => {
+		// Every version 0 store sat at byte 0, so its offsets are offsets from the
+		// header, which is what the current version reads. The frame header is five
+		// u32 words, then the dense section starts with the store header.
+		const src = build(SAB);
+		for (let i = 0; i < 8; i++) step(src, i);
+		const snap = src.world.snapshots.capture();
+		const denseStart = 4 * 5;
+		new DataView(snap.buffer, snap.byteOffset).setUint32(
+			denseStart + STORE_HEADER_OFFSETS.sim_abi_version,
+			0,
+			true
+		);
+
+		const dst = build(SAB);
+		dst.world.snapshots.restore(snap);
+		expect(dst.world.snapshots.stateHash()).toBe(src.world.snapshots.stateHash());
+	});
+
 	it("reconstructs the entity recycle free-list in exact LIFO order", () => {
 		const src = build(SAB);
 		for (let i = 0; i < 8; i++) step(src, i);
@@ -233,7 +252,7 @@ describe("restore, fails closed", () => {
 	 * in-place backing, so a rejected restore corrupted the target, the throw
 	 * passed but `stateHash` had already changed.) */
 	function expectRejectedLeavesIntact(
-		world: ECS<SnapshotsCapability> & SnapshotsCapability,
+		world: ECS<SnapshotsPlugin> & SnapshotsPlugin,
 		bad: Uint8Array,
 		err?: typeof ECSRestoreError
 	): void {

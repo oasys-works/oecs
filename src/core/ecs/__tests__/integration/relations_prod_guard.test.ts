@@ -38,8 +38,8 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STORE = resolve(HERE, "../../store.ts");
-const RELATIONS = resolve(HERE, "../../../../capabilities/relations.ts");
-const CAPABILITY = resolve(HERE, "../../capability.ts");
+const RELATIONS = resolve(HERE, "../../../../plugins/relations.ts");
+const CAPABILITY = resolve(HERE, "../../plugin.ts");
 
 type Outcome = { threw: boolean; leaked: number[] };
 

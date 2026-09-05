@@ -9,8 +9,8 @@
  *   - the full vocabulary applies (spawn, despawn, add, remove, set, disable and enable
  *   - `onSpawned` reports the deferred id
  *   - the PRE_STARTUP drain applies seed-time edits at `startup()`.
- * Coalescing into one reactive commit and tick is the read bridge's property
- * (`engine-extensions/reactive` ecs_sync.test.ts). The seam only funnels into the
+ * Coalescing a tick into one commit is the read side's property, which
+ * `solid.test.ts` under the Solid plugin covers. The seam only funnels into the
  * same deferred flush.
  */
 import { beforeEach, describe, expect, it } from "vitest";

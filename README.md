@@ -13,7 +13,8 @@ has:
 - templates
 - deterministic hashing, with snapshot and restore
 - a typed write path from the host into the ECS
-- an optional reactive UI bridge
+- one system across a pool of workers, with a WASM or a JavaScript kernel
+- an optional Solid plugin, for a UI
 
 The package is **pure TypeScript, and it has no dependencies by default**. It runs over one plain
 `ArrayBuffer`. So it does not need a `SharedArrayBuffer`, and it does not need cross-origin
@@ -155,14 +156,14 @@ ecs.getField(e, Pos, "x"); // about 1.667
 
 **Reactions and relationships**
 
-- **Observers** (the `observers()` capability). `ecs.observe(...)` registers `onAdd`, `onRemove`,
+- **Observers** (the `observers()` plugin). `ecs.observe(...)` registers `onAdd`, `onRemove`,
   `onSet`, `onEnable`, and `onDisable` callbacks, for a structure or for one entity. A sparse
   component takes the entity-level `onSet`.
 - **Change detection at the row grain**. `ecs.trackRows(def)` keeps a change tick for each row.
   A chunk loop records a row with one store into `cols.ticks(def)`, a reader compares
   `cols.ticksRead(def)` with `cols.since` inside `changed(def).forEachChunk`, and
   `ctx.sparseChanged(def, e)` asks the same of a sparse component.
-- **Relations** (the `relations()` capability). A relation is a `(relation, target)` pair. The
+- **Relations** (the `relations()` plugin). A relation is a `(relation, target)` pair. The
   presets are `ChildOf` and `IsA`.
   A relation is exclusive or multi. Queries go in both directions (`targetOf`, `sourcesOf`,
   `ancestorsOf`, `rootOf`, and `cascadeOf`). The cleanup policy for a deleted target is
@@ -174,7 +175,7 @@ ecs.getField(e, Pos, "x"); // about 1.667
   the engine has. Sparse storage is correct for data that a system reads by id, that changes
   frequently, or that is rare, because it causes no archetype transition.
 - **Resources**. A resource is a typed global value, keyed with `resourceKey<T>`. It needs no
-  capability. **Events** (the `events()` capability) are send-and-forget channels in
+  plugin. **Events** (the `events()` plugin) are send-and-forget channels in
   struct-of-arrays form, keyed with `eventKey<F>` or `signalKey`. The ECS clears the events at the
   end of each `update`.
 - **Cached refs**. `ctx.ref(def, e)` gives you a writable ref, and it sets the change tick.
@@ -196,21 +197,34 @@ ecs.getField(e, Pos, "x"); // about 1.667
   bytes, the sparse stores, and the target sets of multi relations. The hash is independent of the
   storage type: a heap ECS and a shared ECS with the same history give the same hash.
   `ecs.snapshots.capture()`, `ecs.snapshots.restore(...)`, and the equivalent functions for sparse
-  data need the `snapshots()` capability beside the flag.
+  data need the `snapshots()` plugin beside the flag.
 - **A write path from the host into the ECS**. `installHostCommandSeam(ecs)` applies typed
   `HostCommand` values from outside the schedule, through one approved `exclusive` system. It
   supports record and replay (`HostCommandRecorder` and `replayCommandLog`), and a ring transport
   between threads.
-- **A reactive UI connection** (optional). There are three parts. `@oasys/oecs/reactive` is a
-  signals kernel with no dependencies. `@oasys/oecs/reactive-sync` is a bridge from the ECS to that
-  kernel, and it publishes only the changed entities and columns. `@oasys/oecs/solid` is a SolidJS
-  adapter.
+- **A UI connection** (optional). A Solid app installs the `solid()` plugin from
+  `@oasys/oecs/solid`. It projects ECS state into Solid signals, straight off the change feed, and
+  a row is one signal. It is the one path into a UI, and this release ships no other framework
+  path.
 - **An editor layer**. It adds undo, redo, and field handles above the host write path
   (`@oasys/oecs/editor`).
 - **Frame traces**. `ecs.setTrace(sink)` with `FrameTraceRecorder` gives you a structured stream
   of the events in each frame. It is available in development builds only.
 - **A compute backend connection**. `ecs.attachBackend(...)` runs the body of a system on a
-  compiled backend, such as WASM, instead of its TypeScript closure.
+  compiled backend, such as WASM, instead of its TypeScript closure. A backend body receives the
+  phase `dt` and the frame tick, because neither is in the store bytes.
+- **Parallel systems**. `ecs.attachWorkers({ count })` starts a pool of workers on the package's
+  own entry, `@oasys/oecs/worker`. A bundled app passes `workerUrl` instead, because a bundler
+  leaves that entry out of its graph. A system that carries a `parallel` config names a kernel a worker
+  can load, either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL,
+  and the columns the kernel receives in order. The schedule hands the pass to the pool, parks the
+  host, and joins before the phase flush, so no structural change can overlap the workers. Every
+  worker computes its own row range, so the result is deterministic. Below `parallel.minRows`, and
+  with no pool, the system runs its own `fn`.
+- **A store that starts anywhere in its memory**. `memory.storeBase` places the header at a byte
+  offset you choose, and the store writes nothing below it. `storeBaseAbove(exports, extraBytes)`
+  reads that offset from a module's `__heap_base`, so a WASM-backed world never lands on the
+  addresses the module owns.
 
 **Reference**
 
@@ -224,7 +238,7 @@ ecs.getField(e, Pos, "x"); // about 1.667
 The core is `@oasys/oecs`. Each other entry point is optional, and it costs nothing until you
 import it.
 
-Four subsystems are **capabilities**: relations, events, snapshots and observers. A world installs
+Four subsystems are **plugins**: relations, events, snapshots and observers. A world installs
 the ones it uses, and carries no code for the rest.
 
 ```ts
@@ -238,28 +252,29 @@ world.events.emit(Damaged, { amount: 1 }); // compile error, events is not insta
 ```
 
 `ECS.create` returns the world intersected with the facades its plugins contribute, so reaching for
-a capability you did not install is a compile error rather than a fault at run time. `new ECS()`
+a plugin you did not install is a compile error rather than a fault at run time. `new ECS()`
 still builds a world, and that world holds none of the four. A class method cannot be removed by a
 bundler, which is why these live behind an import you make rather than a member you always carry.
 
-To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
-from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
-plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
-gains. `CapsOf` is the surface a plugin list adds to the world.
+To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
+from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
+gains. `PluginsOf` is the surface a plugin list adds to the world. The
+[plugins](./docs/api/plugins.md) page documents every host member, the rules `ECS.create`
+checks, and the change feed a plugin drains.
 
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default (a production build, with the development guards removed) |
 | `@oasys/oecs/dev` | the same ECS with the development guards on. Import this to get the guards directly. See [Development and production](#dev-vs-prod) |
 | `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, for worker offload or a WASM backend (this needs COOP and COEP) |
-| `@oasys/oecs/relations` | the relations capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
-| `@oasys/oecs/events` | the events capability, host-side channels and signals, and `ctx.emit` |
-| `@oasys/oecs/snapshots` | the snapshot capability, `capture` and `restore` for a live world |
-| `@oasys/oecs/observers` | the observers capability, `ecs.observe` for `onAdd`, `onRemove` and `onSet` |
-| `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies (`signal`, `computed`, `effect`, and reactive collections) |
-| `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel, and it publishes only the changed entities and columns |
+| `@oasys/oecs/relations` | the relations plugin, `(relation, target)` pairs, wildcards and hierarchy traversal |
+| `@oasys/oecs/events` | the events plugin, host-side channels and signals, and `ctx.emit` |
+| `@oasys/oecs/snapshots` | the snapshots plugin, `capture` and `restore` for a live world |
+| `@oasys/oecs/observers` | the observers plugin, `ecs.observe` for `onAdd`, `onRemove` and `onSet` |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
-| `@oasys/oecs/solid` | the SolidJS adapter (`solid-js` is an **optional** peer dependency) |
+| `@oasys/oecs/solid` | the solid plugin, `solid()`, ECS state into Solid signals off the change feed (`solid-js` is an **optional** peer dependency) |
+| `@oasys/oecs/worker` | the engine's worker entry, which `ecs.attachWorkers` starts. A bundled app imports it for its URL alone, and passes that as `workerUrl`. `@oasys/oecs/worker/dev` is the guarded build |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from, which also operate alone |
 | `@oasys/oecs/internal` | unstable internal parts (codecs, ABI constants, the access checker). There are no semver guarantees |
 
@@ -279,9 +294,9 @@ timestep, the memory options, and the cardinality of a relation).
 `@oasys/oecs` is the production build, with the guards removed. A bundler in development mode
 (`vite dev` or `webpack --mode development`) selects the build with the guards automatically,
 through the `development` export condition. As an alternative, import `@oasys/oecs/dev` directly.
-Each capability has the same subpath, `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the capability from the same
-channel as the world, because a capability binds to the core build it was made against.
+Each plugin has the same subpath, `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
+`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the plugin from the same
+channel as the world, because a plugin binds to the core build it was made against.
 On **JSR and Deno** there is no bundler, because the package is raw source. The default is also
 production (`__DEV__ = false`). To turn the guards on while you develop, set
 `globalThis.__DEV__ = true` before the first import. For the full details, which include the
@@ -293,8 +308,9 @@ browser, CDN, and manual paths, read the
 - **If oecs is new to you**, start with the [Getting started](docs/GETTING_STARTED.md) tutorial.
   Then read [Best practices](docs/BEST_PRACTICES.md) and the
   [Architecture](docs/ARCHITECTURE.md) overview.
-- **If you use the optional extensions**, read the [Extensions guide](docs/EXTENSIONS.md) for the
-  reactive UI, the editor, Solid, shared memory, and the primitives.
+- **If you use the optional entry points**, read the
+  [Integration guide](docs/INTEGRATION.md) for Solid, the editor, shared memory, and the
+  primitives.
 - **If you upgrade from 0.5**, read the
   [Migration guide (0.5 to 0.6)](docs/MIGRATION-0.5-to-0.6.md) and the [CHANGELOG](CHANGELOG.md).
 - **If you upgrade from 0.4**, read the
@@ -317,13 +333,14 @@ browser, CDN, and manual paths, read the
   - [determinism](docs/api/determinism.md)
   - [memory](docs/api/memory.md)
   - [WASM backends](docs/api/wasm.md)
-  - [parallel execution](docs/api/parallel.md)
+  - [parallel execution](docs/api/parallel.md), the worker pool and the `parallel` system form
   - [the host write path](docs/api/host-write-seam.md)
-  - [reactive](docs/api/reactive.md)
+  - [solid](docs/api/solid.md)
   - [editor](docs/api/editor.md)
   - [traces](docs/api/tracing.md)
   - [primitives](docs/api/primitives.md)
   - [errors](docs/api/errors.md)
+  - [plugins](docs/api/plugins.md)
 
 ## Development
 

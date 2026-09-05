@@ -18,7 +18,7 @@ import type { SystemContext } from "../../system_context";
 import { SCHEDULE } from "../../schedule";
 import { ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 /** Run `fn` once inside a system with the supplied declaration. */
 function inSystem(ecs: ECS, access: ReturnType<typeof openAccess>, fn: (ctx: SystemContext) => void): void {

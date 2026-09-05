@@ -315,9 +315,9 @@ function extendColumnStoreInPlace(
 		descOff = writeArchetypeDescriptor(newView, descOff, newDescriptors[i]);
 	}
 
-	// 4. Update header fields. The header sits at the very start of the
-	//    SAB. Writes via `newView` (over the live SAB ref) are always
-	//    in-bounds regardless of which `isInPlace` variant we took.
+	// 4. Update header fields. The header sits at the store base, which is
+	//    where `newView` starts. Writes through it are always in-bounds
+	//    regardless of which `isInPlace` variant we took.
 	const oldViewStamp = newView.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 	const newArchetypeCount = old.archetypes.size + newArchetypes.length;
 	newView.setUint32(STORE_HEADER_OFFSETS.archetype_count, newArchetypeCount, true);
@@ -331,7 +331,7 @@ function extendColumnStoreInPlace(
 	//    (the post-grow ref) because their byte ranges live past the
 	//    pre-grow tail. Under wasm memory the old ref's frozen
 	//    `byteLength` would refuse them.
-	const newViewsMap = createArchetypeViews(grownBuffer, newDescriptors);
+	const newViewsMap = createArchetypeViews(grownBuffer, old.storeBase, newDescriptors);
 
 	// 6. Append the new archetypes to the old map, in place. The old record and
 	//    the new one then share one map. That is correct here and not only
@@ -355,6 +355,7 @@ function extendColumnStoreInPlace(
 			capacity: newTotal,
 			archetypeCount: newArchetypeCount
 		},
+		storeBase: old.storeBase,
 		archetypes: mergedArchetypes,
 		_regionBytes: old._regionBytes,
 		_allocator: old._allocator,

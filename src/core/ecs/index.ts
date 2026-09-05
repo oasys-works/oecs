@@ -12,6 +12,8 @@ export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./faca
 export {
 	resolveECSMemory,
 	DEFAULT_ECS_CAP_BYTES,
+	WASM_STORE_BASE_BYTES,
+	storeBaseAbove,
 	BUDGET_GROWTH_HEADROOM,
 	BUDGET_DEFAULT_BYTES_PER_ENTITY,
 	BUDGET_DEFAULT_ARCHETYPES,
@@ -101,6 +103,11 @@ export type {
 } from "./system";
 export type { DeclaredBundleOrDef } from "./system_context";
 
+// Worker execution. A system that names a kernel runs across the pool a world
+// attaches, and its `fn` runs everywhere else.
+export type { ParallelConfig, ParallelKernel, ParallelColumn } from "./system";
+export type { WorkerPool, AttachWorkersOptions } from "./parallel/pool";
+
 // Access check, dev-mode validation singleton.
 export { accessCheck } from "./access_check";
 
@@ -119,8 +126,8 @@ export type {
 	ArchetypeSetObserverConfig
 } from "./observer";
 
-// Host → ECS write seam, the write-symmetric counterpart to the
-// reactive read bridge. A host, UI or editor enqueues typed `HostCommand`s
+// Host → ECS write seam, the write-symmetric counterpart to the Solid
+// plugin's read side. A host, UI or editor enqueues typed `HostCommand`s
 // off-schedule into a `HostCommandQueue`. A blessed `exclusive` apply system
 // drains them at the schedule head through `applyHostCommand` into the existing
 // deferred buffers. `installHostCommandSeam(world)` wires it and returns the
@@ -332,10 +339,15 @@ export {
 // (a plain `Error`, not an `ECSError`) stays exported separately above.
 export { ECSError, ECS_ERROR, isEcsError } from "./utils/error";
 
-// Capability, the plugin seam `ECS.create` drives. These are type-only at the
-// root. A third-party capability needs the shape of the host it installs
-// through and the surface it contributes. `CapsOf` types the world a plugin
+// The plugin seam `ECS.create` drives. These are type-only at the
+// root. A third-party plugin needs the shape of the host it installs
+// through and the surface it contributes. `PluginsOf` types the world a plugin
 // list builds. `storeOnlyHost` is a value, and it stays on `/internal` with the
 // rest of the tooling surface.
-export type { Capability, CapabilityHost, CapsOf } from "./capability";
-export { storeOnlyHost } from "./capability";
+export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./plugin";
+export { storeOnlyHost } from "./plugin";
+
+// The change feed a plugin drains: what it asks the store to record, what
+// one drain hands back, and the structural batch a hook takes. Type-only, and
+// the store implements every one of them.
+export type { ObservationFlags, DrainResult, StructuralObserverEvents } from "./store";

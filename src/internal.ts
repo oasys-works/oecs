@@ -17,6 +17,7 @@
 export {
 	resolveECSMemory,
 	DEFAULT_ECS_CAP_BYTES,
+	WASM_STORE_BASE_BYTES,
 	BUDGET_GROWTH_HEADROOM,
 	BUDGET_DEFAULT_BYTES_PER_ENTITY,
 	BUDGET_DEFAULT_ARCHETYPES
@@ -61,14 +62,14 @@ export {
 	MAX_ENTITY_ID
 } from "./core/ecs";
 
-// The capability host for a bare `Store`, with no world around it. A test or a
-// tool driving a raw store installs a store-only capability through this. The
+// The plugin host for a bare `Store`, with no world around it. A test or a
+// tool driving a raw store installs a store-only plugin through this. The
 // two world-level members throw, because a bare store has neither.
 export { storeOnlyHost } from "./core/ecs";
 
-// The modules a capability bundle binds to instead of copying.
+// The modules a plugin bundle binds to instead of copying.
 //
-// Each capability ships in its own rollup graph. A module it reaches is
+// Each plugin ships in its own rollup graph. A module it reaches is
 // compiled into it a second time. The build marks the module external to stop
 // that. A second copy of a class breaks `instanceof`. A second copy of a
 // registry holds none of what the core put in it. The build resolves such a
@@ -76,12 +77,12 @@ export { storeOnlyHost } from "./core/ecs";
 // list, which is why every name below is here. `scripts/core_boundary.ts` holds
 // the mapping and fails the build on a name this entry does not carry.
 
-// The two capability faults. The error classes a consumer catches are at the
+// The two plugin faults. The error classes a consumer catches are at the
 // package root, and these build one of them.
 export {
-	capabilityMissingError,
-	capabilityInstalledTwiceError
-} from "./core/ecs/utils/capability_error";
+	pluginMissingError,
+	pluginInstalledTwiceError
+} from "./core/ecs/utils/plugin_error";
 
 // The base class every `ECSError` extends.
 export { AppError } from "./utils/error";

@@ -52,11 +52,14 @@ export interface StoreRegionSpec {
 	/** Byte size to allocate for this region (consumer computes from its knobs).
 	 * Must be > 0. */
 	readonly bytes: number;
-	/** Initialise the region header + seed bytes at absolute byte offset `off`. */
+	/** Initialise the region header and seed bytes at `off`, which indexes
+	 * `view`. `view` starts at the store base, so a consumer that needs a
+	 * TypedArray builds it at `view.byteOffset + off`. */
 	readonly init: (view: DataView, off: number) => void;
 }
 
-/** One decoded directory record. */
+/** One decoded directory record. `byteOffset` is measured from the store base,
+ * the same as every other offset in the bytes. */
 export interface RegionTableEntry {
 	readonly regionId: number;
 	readonly byteOffset: number;
@@ -74,7 +77,10 @@ export interface ColumnStoreRegionHandle {
 	 * regions are declared. The type is widened only because it flows from the
 	 * backing-agnostic store. */
 	readonly buffer: ArrayBufferLike;
+	/** Starts at the store base, so `view.byteOffset` is that base. */
 	readonly view: DataView;
+	/** Buffer-absolute, so `new Uint8Array(buffer, offset, bytes)` reads the
+	 * region. Read it through `view` at `offset - view.byteOffset`. */
 	readonly offset: number;
 	readonly bytes: number;
 }
@@ -182,10 +188,11 @@ export function readHeaderRegionTable(view: DataView): RegionTableEntry[] {
 	return readRegionTable(view, tableOff, count);
 }
 
-/** Resolve a consumer region's byte offset by `region_id`, or 0 when absent
- * (no directory, or no matching entry). The TS twin of Zig
+/** Resolve a consumer region's store-relative byte offset by `region_id`, or 0
+ * when absent (no directory, or no matching entry). The TS twin of Zig
  * `abi.find_region(header_addr, region_id)`. 0 is an unambiguous "absent"
- * sentinel because a real region never starts at SAB byte 0 (the header does). */
+ * sentinel because a real region never starts at relative offset 0, which the
+ * header occupies. */
 export function findRegionOffset(view: DataView, regionId: number): number {
 	const tableOff = view.getUint32(STORE_HEADER_OFFSETS.region_table_off, true);
 	if (tableOff === 0) return 0;

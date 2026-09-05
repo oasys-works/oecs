@@ -11,6 +11,11 @@
  * If this fails after an intentional layout change, re-capture the fixture
  * (see layout_scenarios.ts's header) and justify the diff in review, a
  * silent relocation of a column is exactly the bug class this pins down.
+ *
+ * Store base: every scenario here runs at base 0. At base 0 the store writes
+ * the same bytes it wrote before offsets became store relative, apart from the
+ * `sim_abi_version` field, and this fixture records no version field, so it is
+ * unchanged by that move. `store_base.test.ts` covers a nonzero base.
  */
 import { describe, expect, it } from "vitest";
 import { runAllScenarios } from "./layout_scenarios";

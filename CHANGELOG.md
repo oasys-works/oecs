@@ -5,12 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added. The store can start anywhere in its memory
+
+`memory.storeBase` places the store header at a caller-chosen byte offset. Every offset the store
+writes, in the header, in the column descriptors, in the region table and in the rings, is now
+relative to that base, and `capacity` is the span from it. The store writes nothing below the base.
+A wasm-backed world defaults to one page and refuses zero, because a compiled module owns the low
+addresses of its own linear memory and a safe Zig or Rust build cannot read address 0. A caller
+places the base above the module's `__heap_base` and its run-time heap. `memoryPlan.storeBase`
+reports the value. `WASM_STORE_BASE_BYTES` is exported.
+
+`storeBaseAbove(exports, extraBytes)` reads a module's `__heap_base` export, adds the run-time heap
+the caller reserves, and rounds up to a whole page, so the base clears everything the module owns.
+
+A checked-in WebAssembly module, built with no toolchain, now reads a live store in the test suite
+and agrees with the TypeScript side on the layout walk, the byte digest, an f32 kernel and the
+deterministic state hash. The layout is a tested ABI, not a fixture that TypeScript compares with
+itself.
+
+### Added. One system across workers
+
+`ecs.attachWorkers({ count })` starts a persistent pool on the package's own worker entry,
+`@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load,
+either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL, and the
+columns the kernel receives in order. The schedule hands the pass to the pool inside the same
+access span a TypeScript body gets, parks the host on `Atomics.wait`, and joins before the phase
+flush. No spawn, no despawn and no grow can overlap the workers, because nothing else runs on the
+main thread while it is parked. Every worker computes its own row range per archetype from the
+descriptor row counts, its index and the worker count, so no plan crosses the wire and the result
+is deterministic. The join stamps every matched archetype for each declared write.
+
+A parallel system declares only `reads`, `writes` and a dense query. Sparse, relation, resource,
+spawn, despawn and transition declarations, `exclusive`, and `backendHandle` are refused at
+registration with `ECS_ERROR.PARALLEL_ACCESS`. Below `parallel.minRows`, and without an attached
+pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
+backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
+
+The split pays only above a row count that depends on the machine and the kernel, so `minRows` has
+a placeholder default the caller must tune. `bench/` holds the measurements.
+
+With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
+Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside
+the package as it ships and not inside a bundle. A worker whose script does not load now fails
+`attachWorkers` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
+resolving with workers that never answer. The node threads module is reached through
+`process.getBuiltinModule`, so a browser build sees no node builtin specifier and prints no warning.
+
+`attachWorkers` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
+can never report done, and the parked host would wait forever. On timeout the frame throws
+`PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
+`detach` terminates the hung worker.
+
+### Changed (breaking for a module that reads the layout). `SIM_ABI_VERSION` is 1
+
+A reader that carries version 0 measured every offset from buffer byte 0. A module that treated a
+`byte_off` as a buffer address must add the store base it receives through `setLayout`. Restore and
+resume accept a version 0 snapshot, because every version 0 store sat at byte 0 and its offsets read
+correctly as offsets from the header, so a snapshot the 0.5 line wrote still restores. Any other
+version is refused.
+
+### Changed. `ComputeBackend.run` takes `dt` and the tick
+
+`ComputeBackend.run(handle, deltaTime, tick)` replaces `run(handle)`. A backend that still declares
+`run(handle)` keeps compiling and keeps running, because the extra arguments are ignored. Only code
+that calls `run` itself sees the new shape. A module body needs `dt`, and
+neither `dt` nor the frame tick lives in the bytes. The schedule also publishes the descriptor row
+counts before every backend dispatch, so a module never reads a stale count after a host spawn
+before `startup()` or a spawn from a run condition.
+
+A caller-supplied `WebAssembly.Memory` may now carry `maxBytes`. The store needs a cap to promise
+its span, so the cap is `maxBytes` or the default ceiling.
+
+### Fixed
+
+The command, event and action rings copied slot payloads through a view built from buffer byte 0.
+At a nonzero base they wrote below the store. The rings now add the view offset.
+
+`wasmMemoryAllocator` predicted the JavaScriptCore write cost of a growable `SharedArrayBuffer`. A
+shared `WebAssembly.Memory` does not pay it. The comment now says so, and `bench/` holds the
+measurement.
+
 ## [0.6.0] - 2026-09-05
 
-### Changed (breaking). Four subsystems became capabilities a world installs
+### Changed (breaking). Four subsystems became plugins a world installs
 
 `new ECS()` no longer carries relations, events, snapshot and restore, or observers. Each is a
-capability on its own subpath, installed at construction:
+plugin on its own subpath, installed at construction:
 
 ```ts
 import { ECS } from "@oasys/oecs";
@@ -22,45 +104,158 @@ world.relations.register();
 ```
 
 `ECS.create` returns the world intersected with the facades its plugins contribute. A world that
-did not install a capability has no member to reach for, so `ecs.relations` on a bare world is a
+did not install a plugin has no member to reach for, so `ecs.relations` on a bare world is a
 compile error and not a fault at run time. `new ECS()` still builds a world, and that world holds
 none of the four.
 
 The reason is that a class method cannot be removed by a bundler. While `ECS` declared `relations`
 and `snapshots`, every program carried the relation and snapshot code whether or not it named them.
-A capability the construction site imports is a reference a bundler can follow, and one it can drop.
+A plugin the construction site imports is a reference a bundler can follow, and one it can drop.
 A program that installs none of the four now ships far less code. `bench/` holds the measurement.
 
-Each capability keeps its call sites unchanged. Only construction moves.
+Each plugin keeps its call sites unchanged. Only construction moves.
 
 - `@oasys/oecs/relations`, `relations()`, gives `ecs.relations` and the relation terms on a query.
 - `@oasys/oecs/events`, `events()`, gives `ecs.events`, `ctx.emit` and `ctx.readEvents`.
 - `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
 - `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
 
-On npm, each capability also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the three others
-serve the build with the development guards on. JSR publishes no `/dev` subpath. A capability binds
-to the core build it was made against. Take the capability and the world from the same channel.
+On npm, each plugin also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the three others
+serve the build with the development guards on. JSR publishes no `/dev` subpath. A plugin binds
+to the core build it was made against. Take the plugin and the world from the same channel.
 
 `ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` stay on every world. They describe the
-world, not the capability, and the determinism opt-in is still separate: `capture` and `restore`
+world, not the plugin, and the determinism opt-in is still separate: `capture` and `restore`
 throw `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`, installed or not.
 
-In TypeScript, reaching for a capability the world did not install is a compile error. In JavaScript
-nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`. The message names
+In TypeScript, reaching for a plugin the world did not install is a compile error. In JavaScript
+nothing stops the call, so the world throws `ECS_ERROR.PLUGIN_NOT_INSTALLED`. The message names
 the API and the import that supplies it. The fix is at the construction site. On a bare world every
 member of `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the
 four members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The
 system-side seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`,
 `query.withRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among them.
 
-Installing one capability two times throws the new `ECS_ERROR.CAPABILITY_ALREADY_INSTALLED`.
+Installing one plugin two times throws the new `ECS_ERROR.PLUGIN_ALREADY_INSTALLED`.
 
-The types `Capability`, `CapabilityHost` and `CapsOf` are exported from `@oasys/oecs`. A
-third-party capability is typed the way the four built-in ones are. `Capability<X>` is what a
+The types `Plugin`, `PluginHost` and `PluginsOf` are exported from `@oasys/oecs`. A
+third-party plugin is typed the way the four built-in plugins are. `Plugin<X>` is what a
 factory such as `relations()` returns, and what a plugin list holds. Its `install` takes a
-`CapabilityHost` and returns `X`, the surface the world gains. `CapsOf` is the surface a plugin
+`PluginHost` and returns `X`, the surface the world gains. `PluginsOf` is the surface a plugin
 list adds to the world.
+
+### Added. A change feed more than one plugin reads, and a richer plugin host
+
+The store's record of what changed is now a seam any plugin drains. `ChangeFeed` names it,
+`Store` implements it, and `PluginHost.changes` hands it out. A consumer asks for a grain with
+`configureObservation` or `configureSparseObservation`, keyed by its plugin name. It drains with
+`drainSet` or `drainSparseSet`. The store merges every consumer's ask by OR. So one consumer dropping
+a flag never takes that flag from another. Each drain is memoized on its run. A second consumer of
+one run gets the result the first one got. A consumer also takes each structural round through
+`addStructuralHook`, and the feed carries `forEachChangedArchetype`, `collectEnabledWith`, `isAlive`,
+`isDisabled` and `hasComponent`.
+
+`PluginHost` gains three members. `host.world` is the bare world. Take it to register a system,
+read a field, build a cursor or reach a resource. `host.changes` is the change feed.
+`host.onSettle(fn)` runs `fn` at the tail of every `update()`, after every system and every flush of
+the frame. Hooks run in install order. The `run` argument sits above every stamp the frame made.
+
+`Plugin` gains `requires`, the plugins this one reads through, by name. `ECS.create` walks
+the plugin list in order, so a dependency comes earlier in the list. A missing one throws
+`PLUGIN_NOT_INSTALLED` at construction, and the message names the plugin that asked.
+
+`ECS.create` now checks the facade a plugin returns. A key that names a member the world already
+carries throws the new `ECS_ERROR.PLUGIN_SURFACE_COLLISION`. `Object.assign` would overwrite that
+member without a word. The four reserved slots, `relations`, `events`, `observe` and
+`snapshots`, are the exception. The check is development-only.
+
+Four types are exported from `@oasys/oecs`: `ChangeFeed`, `ObservationFlags`, `DrainResult` and
+`StructuralObserverEvents`. The new [plugins](docs/api/plugins.md) page documents the host,
+the rules and the feed for an author.
+
+### Added. `solid()`, a plugin that writes one Solid signal per row off the change feed
+
+`@oasys/oecs/solid` now exports `solid()`, for `ECS.create({ plugins: [solid()] })`. A world that
+installs it carries `ecs.solid`, which projects ECS state into Solid signals. It reads the change
+feed and writes Solid, with nothing in between. The observers plugin is out of that path. This is
+the one path from ECS state into a UI.
+
+`ecs.solid` has three entry points, and each view carries `dispose()`. `component(def, project)`
+projects one dense component, and `cell(id)` is that row's value as one Solid signal. The first call
+for an id makes the signal and every later call returns the same accessor, so bind it once for each
+row. A `keys()` signal beside it drives a keyed `<For>`. `fields(def, fields)` is sugar that
+publishes a fixed field list as a record, with an `eq` that compares those fields.
+`singleton(def, eid, fields)` publishes one entity's fields into a keyless Solid store, where a fixed
+key set earns the store's cost. A remove or a disable of the target resets them. `grain` is
+`"entity"`, the default, or `"column"`. `eq` is each cell's value equality, handed to Solid as the
+signal's `equals`, and it defaults to Solid's `===`. `seedExisting` publishes the current enabled
+members at creation, and defaults to true.
+
+The first design published into a Solid store keyed by entity id. `bench/foundations/p23-solid.mjs`
+measured that store's publish above the publish that ships, at every density, so a row became a
+signal before this release.
+
+Everything publishes at the settle point, the tail of `update()`. A structural event arrives mid-tick
+and records an entity id. Nothing reaches Solid inside the flush. The plugin then publishes
+inside one Solid `batch`. One `update()` is one Solid flush, whatever the number of views. An entity
+spawned and despawned in one tick never appears. A published value is the final value of the tick.
+Only a deferred structural operation reaches a view. The observers carry the same limit, because both
+read structural events from one flush.
+
+This plugin and the observers plugin are two consumers of one feed. Install both, in either
+order, and each one sees the same by-id write.
+
+What it refuses. Dense components only. A sparse definition throws a `TypeError` that names the call.
+No join. A view subscribes to one component, so a projection that reads a second component goes
+stale. An entity that leaves the component and rejoins inside one tick projects twice. The value is
+the final one. A cell carries the whole projected value, so a field read does not track that field
+alone. A projection must not return a function, which a Solid setter reads as an updater. A cell is
+kept for the life of the view.
+
+Measured against the path it replaces. `bench/foundations/p23-solid.mjs` times a whole tick on both
+paths with one effect per entity. Once the path is warm, the plugin is the cheaper of the two at
+every dense density the probe measures, and the gap widens with density. Its publish alone, with no
+subscriber, costs less as well. On a tick that moves one row or no row the older path measures
+lower.
+
+What is untested. Under the test runner, `solid-js` resolves to its server build, where a signal
+holds a value, consults no comparator and schedules no effect. The tests assert the value, and they
+assert that `eq` reaches the signal and then run it by hand. The suite renders no component. It
+proves nothing about a `<For>` re-render.
+
+`src/plugins/solid/__tests__/solid.test.ts` locks the seed, the by-id publish, and the spawn and
+the despawn. It locks the disable and the enable, the column grain, and one batch for each update.
+It locks the cell identity across a delete, the `eq` the cell carries, coexistence with observers,
+the singleton reset and the sparse refusal.
+
+### Removed (breaking). The signals kernel, its ECS bridge, and the kernel-to-Solid adapter
+
+`@oasys/oecs/reactive` and `@oasys/oecs/reactive-sync` are gone. So are the adapter functions on
+`@oasys/oecs/solid`: `fromKernel`, `fromKernelMap`, `fromKernelStruct` and `fromKernelArray`.
+`@oasys/oecs/solid` now exports the `solid()` plugin alone.
+
+The `solid()` plugin is the one path from ECS state into a UI. It reads the change feed and writes
+Solid. The kernel and its mirror were a second path to the same place. They put two more graphs in
+between. `component`, `fields` and `singleton` replace `syncComponentToMap`, `syncFieldsToMap` and
+the two singleton bridges. `batchedUpdate` has no replacement, because a view publishes inside one
+Solid `batch` at the settle point of `update()`.
+
+There is **no React path in this release**, and no framework-free reactive path. A consumer that is
+not a Solid app polls the world. Take `ecs.getField`, a cursor, or a `changed()` query.
+`syncJoinToMap` also has no replacement. A view subscribes to one component, so take one view for
+each component and combine them where you read.
+
+### Changed. The store's observation seam takes a consumer name
+
+`Store.configureObservation` and `Store.configureSparseObservation` take the consumer name first, and
+the store merges every consumer's record instead of holding one. The structural hook seam is now a
+list that every consumer joins. It was one dispatch bound to the observer registry. The registry is
+now one consumer among others, named `observers`.
+
+The observers plugin behaves as it did. It still owns the access-topological order, the radix
+entity order, the access span of each callback and `yieldExisting`.
+`src/core/ecs/__tests__/unit/change_feed.test.ts` locks the flag merge, the drain memo, and the
+install order of both hook lists.
 
 ### Changed (breaking). The store no longer forwards to its collaborators
 
@@ -84,9 +279,9 @@ that declares no such term shares one frozen record. Adding a term is one edit i
 
 ### Fixed. The build no longer splits the core entry into small chunks
 
-Declaring the capability entries beside the core entries put them in one rollup graph, and rollup
+Declaring the plugin entries beside the core entries put them in one rollup graph, and rollup
 then split `index.js` into ten small shared chunks. Those splits are real module boundaries at run
-time, and a measurement of `spawn` against the shipped artifact showed the cost. The capabilities
+time, and a measurement of `spawn` against the shipped artifact showed the cost. The plugins
 build in their own pass now, and the core chunk graph is unchanged.
 
 
@@ -108,14 +303,12 @@ The public surface:
 | `ecs.publishArchetypeRowCounts()` | `ecs.publishRowCounts()` |
 | `queue.pending` | `queue.pendingCount` |
 | `FrameTraceSink.systemStart` | `FrameTraceSink.systemBegin` |
-| `view.cell(id)`, on `/solid` | `view.bindCell(id)` |
 | `column.get(i)`, on `/primitives` | `column.getAt(i)` |
 | `column.ensureCapacity(n)`, on `/primitives` | `column.reserve(n)` |
 
 `ctx.read` moves because `cols.read(def)` in the same walk returns a column group, so one verb
 carried two shapes. `forEachUntil` returns whether a callback accepted, thus it is a predicate and
-now reads as one. `cell` mints a signal, a kernel effect and an owner cleanup on each call, and
-`bindCell` says so. `reserve` is the contract of `ColumnBacking`: guarantee room for the count, or
+now reads as one. `reserve` is the contract of `ColumnBacking`: guarantee room for the count, or
 throw. A heap column grows to keep it. A buffer-backed column cannot grow, so it throws, and each
 doc states which.
 

@@ -271,6 +271,16 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		return this._store.advanceChangeTick();
 	}
 
+	/** @internal Copy every archetype's live row count into its descriptor.
+	 * The schedule calls it before it dispatches a system to a compute backend,
+	 * because a module reads the copy and a mutation earlier in the phase leaves
+	 * it stale. The store returns on a flag when nothing is dirty, so a phase
+	 * with no mutation pays that flag read for each dispatch. Not for a system
+	 * body, a host outside the schedule calls `ecs.publishRowCounts()`. */
+	public publishRowCounts(): void {
+		this._store.publishRowCounts();
+	}
+
 	/** The world's frame-trace sink, or `null`. Lets the schedule
 	 * fire `systemBegin` and `flush*` without reaching into the private store.
 	 * Read only under `if (DEV)`. The seam is dead-code-eliminated in prod. */

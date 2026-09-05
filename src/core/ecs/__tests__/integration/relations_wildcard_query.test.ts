@@ -21,7 +21,7 @@ import { SCHEDULE } from "../../schedule";
 import type { EntityID } from "../../entity";
 import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;

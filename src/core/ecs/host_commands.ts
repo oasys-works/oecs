@@ -1,6 +1,6 @@
 /**
- * Host → ECS write seam. The write-symmetric counterpart to the reactive
- * read bridge (`engine-extensions/reactive`): a sanctioned path for
+ * Host → ECS write seam. The write-symmetric counterpart to the Solid
+ * plugin's read side (`@oasys/oecs/solid`): a sanctioned path for
  * host and UI code, a level editor, a local sim's controls, dev tools, an
  * inspector, or (as one consumer among others) a server applying validated
  * commands, to mutate the world from outside the system schedule.
@@ -13,8 +13,8 @@
  *     schedule HEAD (PRE_STARTUP for seed-time, PRE_UPDATE every frame) through
  *     one dispatch (`applyHostCommand`), issuing `SystemContext` deferred ops
  *     so every change lands at the existing phase-tail flush.
- *   - Observers then fire and the reactive read bridge publishes, one batched
- *     commit per tick closes the loop.
+ *   - Observers then fire and the Solid plugin publishes at the settle point,
+ *     and one commit per tick closes the loop.
  *
  * Why a queue and not direct mutation: structural safety (the deferred-flush
  * apply point is the same one systems use), and a reified command stream that a
@@ -195,7 +195,7 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
  * nothing reaches the world until the apply system drains it at the next
  * schedule head. Mirrors Bevy's `Commands` ergonomics over the flat `HostCommand`
  * vocabulary. The returned-from-`installHostCommandSeam` instance is the
- * write counterpart to the reactive bridge's returned `reactiveMap`.
+ * write counterpart to a read view the Solid plugin returns.
  */
 export class HostCommandQueue {
 	private readonly _pending: HostCommand[] = [];
@@ -616,8 +616,8 @@ export interface HostCommandSeamOptions {
  * of its phase (the schedule has no dedicated "first" slot), and the PRE_STARTUP
  * drain only fires if it exists before startup.
  *
- * Lives in engine core (not extensions): unlike the read bridge there is no
- * external reactive kernel to quarantine. This is pure ECS plumbing over the
+ * Lives in the world core, and not in a plugin: unlike the read side there is
+ * no framework dependency to quarantine. This is pure ECS plumbing over the
  * deferred buffers and `SystemContext` the core already owns.
  */
 // queue → the apply-system descriptors its seam registered, for uninstall.

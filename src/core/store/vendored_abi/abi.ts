@@ -1,26 +1,34 @@
-// Vendored ABI layout constants for the column store's binary header,
-// descriptor, and rings, re-export points are `header.ts` and `descriptor.ts`.
+// ABI layout constants for the column store's binary header, descriptor and
+// rings. The re-export points are `header.ts` and `descriptor.ts`.
 //
-// **This is a hand-maintained vendored snapshot, not generated output.**
-// Upstream (the oasys engine, `packages/sim/src/abi.zig`) these constants are
-// machine-generated from a Zig `extern struct` source via `@offsetOf`, real
-// layout, padding included. oecs carries no Zig source and no codegen step
-// the exact byte offsets below were copied by hand. Sync provenance:
-// unverified, re-check against upstream before the next ABI-dependent change.
+// This repository maintains these constants by hand. No generator produces
+// them, and no upstream source defines them. The golden tests under
+// `src/core/store/__tests__/` pin every byte they imply, so a transposed field
+// changes a fixture and fails there.
 //
-// To update: copy the constants from the upstream engine's generated
-// `abi.ts` (or re-derive from `abi.zig`'s `@offsetOf` output), keep the
-// `SIM_ABI_VERSION` in lockstep, then run the column-store header,
-// descriptor, and state-hash round-trip suites under
-// `src/core/store/__tests__/`.
+// To change one: edit the constant, then rebuild the golden fixtures from the
+// contract and bump `SIM_ABI_VERSION` in the same commit. A reader that carries
+// a different version must refuse the bytes.
 //
-// Known test gap: those round-trip tests verify TS-internal
-// self-consistency only, the same constants on the read and write side.
-// Not agreement with the real upstream ABI. Cross-checking against the
-// engine remains a manual step.
+// Two kinds of test pin these constants. The round-trip tests verify the read
+// side against the write side in this repository. The `wasm_store_reader`
+// integration test drives a checked-in WebAssembly module, built with no
+// toolchain, against a live store and compares its walk, its digest and its
+// kernel output with the TypeScript side.
 
 export const STORE_MAGIC = 0x314d4953;
-export const SIM_ABI_VERSION = 0;
+/** Schema version of the header, the descriptors and the region table.
+ *
+ * Version 1 makes every `*_off` in the header, every `byte_off` in a column
+ * descriptor and every region-table offset relative to the store base, and
+ * makes `capacity` the store span measured from that base. Version 0 measured
+ * all of them from buffer byte 0. Restore and resume reject a version they do
+ * not know, because the two readings of one offset disagree. */
+export const SIM_ABI_VERSION = 1;
+/** The version the published 0.5 line wrote. Every store of that version sat
+ * at buffer byte 0, so its offsets read correctly as version 1 offsets from the
+ * header. Restore and resume accept it and stamp the current version. */
+export const LEGACY_ABSOLUTE_ABI_VERSION = 0;
 export const COMPONENT_MASK_WORDS = 4;
 
 export const STORE_HEADER_BYTES = 52;

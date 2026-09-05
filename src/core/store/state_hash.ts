@@ -23,9 +23,10 @@
  * `>>> 0` on the result keeps the unsigned interpretation that callers
  * (test goldens, log lines, equality compares) expect.
  *
- * Determinism: this function reads only the snapshot bytes. The SAB header
- * field `view_stamp` is part of the snapshot, two stores at the same
- * logical state but different realloc generations will hash differently.
+ * Determinism: this function reads only the snapshot bytes, which start at the
+ * store base and carry no absolute offset, so the digest is the same at any
+ * base. The header field `view_stamp` is part of the snapshot, so two stores at
+ * the same logical state but different realloc generations hash differently.
  * That matches the cross-replay model where both replays share the same
  * grow trajectory. If you need a logical-only hash, slice the snapshot to
  * skip the header before passing it in.

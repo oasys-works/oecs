@@ -4,10 +4,10 @@ Version 0.6 makes every name state the act it performs, and it fixes the change 
 write is reported one time. There is **no alias for an old name**. The compiler finds every rename,
 because each old name is gone.
 
-Most of the work is mechanical. Three changes are not, and you must read them: the capability
-install, the change tick, and the two reserved field names.
+Most of the work is mechanical. Four changes are not, and you must read them: the plugin
+install, the removed reactive subpaths, the change tick, and the two reserved field names.
 
-1. **Relations, events, snapshots and observers are capabilities the world installs**. Build the
+1. **Relations, events, snapshots and observers are plugins the world installs**. Build the
    world with `ECS.create({ plugins: [relations(), events()] })`, and name the ones it uses.
    `new ECS()` still builds a world, and that world holds none of the four.
 2. **The change tick reports a write one time**. `changed()` used to report a write on two
@@ -23,6 +23,8 @@ install, the change tick, and the two reserved field names.
    used to keep the number you gave.
 7. **`for..in` over a ref no longer lists a component's fields**.
 8. **`memory` is two fields, and not one union**.
+9. **The signals kernel, its bridge and the kernel-to-Solid adapter are gone**. The `solid()`
+   plugin is the one path into a UI.
 
 Everything else did not change. That includes the component operations, the query verbs, the
 schedule, the resources, the determinism surface, and the snapshot format. The observer, the
@@ -79,7 +81,6 @@ registration.
 | `ecs.publishArchetypeRowCounts()` | `ecs.publishRowCounts()` |
 | `queue.pending` | `queue.pendingCount` |
 | `FrameTraceSink.systemStart` | `FrameTraceSink.systemBegin` |
-| `view.cell(id)`, on `/solid` | `view.bindCell(id)` |
 | `column.get(i)`, on `/primitives` | `column.getAt(i)` |
 | `column.ensureCapacity(n)`, on `/primitives` | `column.reserve(n)` |
 
@@ -88,7 +89,6 @@ Why each one moved:
 - `ctx.read` collided with `cols.read(def)` in the same walk, where one verb returned a column
   group and the other an event reader.
 - `forEachUntil` returns whether a callback accepted, so it is a predicate and now reads as one.
-- `cell` mints a signal, a kernel effect and an owner cleanup on each call. `bindCell` says so.
 - `reserve` is the contract of `ColumnBacking`: guarantee room for the count, or throw. A heap
   column grows to keep it. A buffer-backed column cannot grow, so it throws.
 
@@ -175,7 +175,7 @@ the new field `sizing` names the size axis.
 
 ---
 
-## Install the capabilities the world uses
+## Install the plugins the world uses
 
 Relations, events, snapshots and observers moved off `new ECS()`. Install the ones the world uses:
 
@@ -203,7 +203,7 @@ Only the construction line changes. Every call site is the same.
 | `ecs.snapshots.capture`, `.restore`, `.captureSparse`, `.restoreSparse` | `snapshots()` from `@oasys/oecs/snapshots` |
 | `ecs.observe` | `observers()` from `@oasys/oecs/observers` |
 
-`ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` need no capability. They describe the
+`ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` need no plugin. They describe the
 world. The determinism opt-in is unchanged and still separate: `capture` and `restore` throw
 `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`.
 
@@ -211,30 +211,91 @@ A world that installs none of the four carries none of their code, which is the 
 method cannot be removed by a bundler, so while `ECS` declared `relations` and `snapshots`, every
 program shipped that code whether or not it named them.
 
-If you miss one, the compiler says so. In TypeScript, a world built without a capability has no
+If you miss one, the compiler says so. In TypeScript, a world built without a plugin has no
 member to reach for, so the mistake is a compile error.
 
-In JavaScript nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and
+In JavaScript nothing stops the call, so the world throws `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and
 the message names the API and the import that supplies it. On a bare world, every member of
 `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the four
 members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The system-side
 seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`, `query.withRelation`,
 `query.hierarchy` and `query.forEachRelatedTo` are among them.
 
-Install one capability two times and the world throws `ECS_ERROR.CAPABILITY_ALREADY_INSTALLED`.
+Install one plugin two times and the world throws `ECS_ERROR.PLUGIN_ALREADY_INSTALLED`.
 
-A world type that must carry a capability spells it out:
+A world type that must carry a plugin spells it out:
 
 ```ts
-import type { RelationsCapability } from "@oasys/oecs/relations";
+import type { RelationsPlugin } from "@oasys/oecs/relations";
 
-type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
+type RelationalWorld = ECS<RelationsPlugin> & RelationsPlugin;
 ```
 
-To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
-from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
-plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
-gains. `CapsOf` is the surface a plugin list adds to the world.
+To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
+from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
+gains. `PluginsOf` is the surface a plugin list adds to the world.
+
+## The reactive subpaths are gone, take the Solid plugin
+
+`@oasys/oecs/reactive` and `@oasys/oecs/reactive-sync` no longer exist. The adapter functions on
+`@oasys/oecs/solid`, `fromKernel`, `fromKernelMap`, `fromKernelStruct` and `fromKernelArray`, no
+longer exist either. `@oasys/oecs/solid` exports the `solid()` plugin alone, and that plugin is the
+one path from ECS state into a UI.
+
+A Solid app installs the plugin and takes a view. The plugin reads the store's change feed and
+writes Solid, so no kernel and no mirror sit in the path.
+
+```ts
+// before
+import { syncFieldsToMap, batchedUpdate } from "@oasys/oecs/reactive-sync";
+import { fromKernelMap } from "@oasys/oecs/solid";
+
+const ecs = new ECS();
+const sync = syncFieldsToMap(ecs, Pos, ["x", "y"] as const);
+const view = fromKernelMap(sync.map);
+batchedUpdate(ecs, 1 / 60);
+
+// after
+import { ECS } from "@oasys/oecs";
+import { solid } from "@oasys/oecs/solid";
+
+const ecs = ECS.create({ plugins: [solid()] });
+const view = ecs.solid.fields(Pos, ["x", "y"] as const);
+ecs.update(1 / 60);
+```
+
+| You called | You call |
+| --- | --- |
+| `syncComponentToMap(ecs, def, project, opts)` | `ecs.solid.component(def, project, opts)` |
+| `syncFieldsToMap(ecs, def, fields, opts)` | `ecs.solid.fields(def, fields, opts)` |
+| `syncSingletonToStruct(ecs, def, eid, fields)` | `ecs.solid.singleton(def, eid, fields)` |
+| `syncSingletonToArray(ecs, def, eid, fields)` | `ecs.solid.singleton(def, eid, fields)` |
+| `fromKernelMap(sync.map)` and `view.bindCell(id)` | the view itself, and `view.cell(id)` |
+| `fromKernel`, `fromKernelStruct`, `fromKernelArray` | the view the entry point returns |
+| `batchedUpdate(ecs, dt)` | `ecs.update(dt)` |
+| `shallow` as the `eq` of a field projection | `fields`, which supplies its own `eq` |
+
+`grain`, `seedExisting`, `eq` and `dispose()` keep their meaning. `keys()` is a signal of the ids
+the view holds, and `cell(id)` is one row's value as one Solid signal. Bind `cell(id)` once for each
+row, in the row's own scope.
+
+Three things have no replacement in this release:
+
+- **A React consumer, and a consumer with no framework.** The kernel carried `toExternalStore` for
+  `useSyncExternalStore`, and the plugin writes Solid alone. Poll the world with `ecs.getField`,
+  with a cursor, or with a `changed()` query until a path lands.
+- **`syncJoinToMap`.** A view subscribes to one component. Take one view for each component of the
+  join, and combine them where you read.
+- **The kernel by itself**, which is `signal`, `computed`, `effect`, `batch`, `untrack`, `root`,
+  `onCleanup` and the reactive collections. Take a signals library of your own.
+
+Everything now publishes at the settle point, the tail of `update()`. One `update()` is one Solid
+flush, whatever the number of views, so no wrapper around the frame is needed. As before, only a
+deferred structural operation reaches a view. Destroy an entity through `ctx.commands.despawn` or
+through the host command path.
+
+See [solid](api/solid.md) for the full surface, the refusals, and what the suite does not test.
 
 ## What is new in 0.6
 

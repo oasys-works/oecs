@@ -6,6 +6,10 @@
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",
+    // The worker entry's import chain names each file with its `.ts`
+    // extension, so plain node can load the source in a worker. Declarations
+    // are the only emit, and `scripts/postbuild.mjs` rewrites the specifier.
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
 

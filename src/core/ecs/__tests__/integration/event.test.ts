@@ -5,7 +5,7 @@ import type { SystemContext } from "../../system_context";
 import { eventKey, signalKey, type EventReader } from "../../event";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
-import { events } from "../../../../capabilities/events";
+import { events } from "../../../../plugins/events";
 
 describe("Event system", () => {
 	// ==== Event key registration and emit and read ====

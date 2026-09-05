@@ -20,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 
 // Where the core pass records its module list and its entry exports. The
-// capability pass reads them back. Outside `dist`, because it is a note between
+// plugin pass reads them back. Outside `dist`, because it is a note between
 // two passes and not a shipped file. `scripts/core_boundary.ts` fails the build
 // when this is unset, so the guard cannot be skipped by accident.
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "oecs-build-"));
@@ -32,11 +32,17 @@ for (const variant of ["production", "development"]) {
 	// alone, and the declarations are emitted there.
 	process.env.OECS_ENTRIES = "core";
 	await build();
-	// Then the capabilities, in their own rollup graph. Declaring them beside
+	// Then the plugins, in their own rollup graph. Declaring them beside
 	// the core entries let rollup split `index.js` into small shared chunks, and
 	// those splits cost real time at run time. `vite.config.ts` carries the
 	// measurement note.
-	process.env.OECS_ENTRIES = "capabilities";
+	process.env.OECS_ENTRIES = "plugins";
+	await build();
+	// Then the worker entry, in a third graph. It shares no module instance with
+	// anything, because it runs in another thread, so it needs no binding pass.
+	// Declared beside the core entries it would split `index.js` the same way the
+	// plugins did.
+	process.env.OECS_ENTRIES = "worker";
 	await build();
 	console.log(`build: ${variant} variant emitted`);
 }

@@ -21,7 +21,7 @@ import type { SystemContext } from "../../system_context";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { resourceKey } from "../../resource";
 import { eventKey } from "../../event";
-import { events } from "../../../../capabilities/events";
+import { events } from "../../../../plugins/events";
 
 describe("component debug names", () => {
 	it("names the component in access-violation messages", () => {

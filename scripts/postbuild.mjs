@@ -26,8 +26,13 @@ const dtsFiles = [];
 /** Append an explicit extension to one relative specifier, checking what the
  * bare path actually names in the declaration tree. */
 function fixSpecifier(fromDir, spec, ext) {
-	if (fs.existsSync(path.join(fromDir, spec + ".d.ts"))) return spec + ext;
-	if (fs.existsSync(path.join(fromDir, spec, "index.d.ts"))) return spec + "/index" + ext;
+	// The worker entry's own chain names each file with its `.ts` extension, so
+	// plain node can load the source in a worker. A declaration keeps that
+	// spelling, and no `.ts` file ships, so it resolves to the emitted sibling
+	// here like every other relative specifier.
+	const base = spec.endsWith(".ts") ? spec.slice(0, -3) : spec;
+	if (fs.existsSync(path.join(fromDir, base + ".d.ts"))) return base + ext;
+	if (fs.existsSync(path.join(fromDir, base, "index.d.ts"))) return base + "/index" + ext;
 	return spec; // already extensioned or external, leave untouched
 }
 

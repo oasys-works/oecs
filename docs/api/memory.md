@@ -136,11 +136,11 @@ There are three kinds of storage above one core. The archetypes are the same, an
 > world pays the same multiple as a large one. V8 shows no such difference. Safari and Bun are
 > JavaScriptCore.
 >
-> Use `fixedSabAllocator` if you need a shared buffer and your code runs on JavaScriptCore. It
-> reserves the limit at construction, keeps the fast store path on both engine families, and gives
-> up only the growth. A WASM `Memory` gives a growable `SharedArrayBuffer` and can give nothing
-> else, so the WASM profile should pay the same cost there. That last point is reasoning, and not
-> measurement.
+> Two profiles keep the fast store path on JavaScriptCore. `fixedSabAllocator` reserves the limit
+> at construction and gives up growth. The WASM profile grows, and it pays no write cost either,
+> because a `WebAssembly.Memory` replaces its buffer object on growth instead of resizing it in
+> place, which is the shape JavaScriptCore keeps fast. So a worker world on Bun or Safari picks the
+> WASM profile even with no module, and `bench/` holds the measurement.
 
 ```ts
 // the optional shared and WASM allocators are behind a separate entry point:
@@ -153,6 +153,40 @@ new ECS({ memory: { maxBytes: 64 * 1024 * 1024,                          // a sh
 new ECS({ memory: { backing: { wasm: { maximumPages: 4096 } } } });       // the engine builds the Memory
 new ECS({ memory: { backing: { wasm: { memory: myWasmMemory } } } });     // supply your own (it must have shared: true)
 ```
+
+### `storeBase`, where the store starts inside the backing
+
+`memory.storeBase` is the byte offset of the store header inside the backing. Every offset the
+store writes is measured from it, and the store writes nothing below it. `ecs.memoryPlan.storeBase`
+reports the resolved value, and the `derivation` trace names it.
+
+```ts
+import { ECS, storeBaseAbove } from "@oasys/oecs";
+
+const ecs = new ECS({
+  memory: {
+    backing: { wasm: { memory } },
+    storeBase: storeBaseAbove(instance.exports, 4 * 1024 * 1024),
+  },
+});
+
+ecs.memoryPlan.storeBase; // the value the engine resolved
+```
+
+- The heap, shared and allocator backings default it to 0.
+- The WASM backing defaults it to `WASM_STORE_BASE_BYTES`, one page, and **refuses 0**. A compiled
+  module owns the low addresses of its own linear memory, and a safe Zig or Rust build cannot read
+  address 0.
+- It must be an integer and a multiple of the store base alignment, which keeps every column on its
+  element boundary. Anything else throws `INVALID_MEMORY_OPTIONS`.
+- **The default clears nothing on its own.** A default link places a module's data far above one
+  page. Read `__heap_base` from the module with `storeBaseAbove(exports, extraBytes)`, which rounds
+  up to a whole WASM page, or pass the base by hand.
+- The base never reaches a digest. A heap world and a module-hosted world with the same history
+  agree on `stateHash` and on a snapshot.
+
+`WASM_STORE_BASE_BYTES` is on `@oasys/oecs/internal`. `storeBaseAbove` is on the package root.
+[WASM backends](./wasm.md#the-store-base) has the full argument.
 
 > [!WARNING]
 > A shared or WASM allocator throws `SabUnavailableError` at construction when `SharedArrayBuffer`
@@ -172,6 +206,8 @@ get wasmMemory(): WebAssembly.Memory | null;
 - the column capacity
 - the reservation of the entity index
 - the byte limit
+- the store base, the byte offset the header sits at
+- the WASM `Memory` when the wasm backing built one, or supplied one
 - a `derivation` trace that a person can read, with one line for each decision about the size.
 
 It is useful when an error about a limit surprises you.
@@ -230,15 +266,17 @@ subscribeLayout(listener: StoreLayoutListener): () => void; // called on each gr
 ### Compute backend
 
 ```ts
-interface ComputeBackend extends StoreLayoutListener { run(handle: BackendSystemHandle): void; }
+interface ComputeBackend extends StoreLayoutListener {
+  run(handle: BackendSystemHandle, dt: number, tick: number): void;
+}
 type BackendSystemHandle = /* an opaque branded number that the backend makes */;
 ```
 
 `ecs.attachBackend(backend)` selects the backend to run the body of a system, in place of its
 TypeScript closure. A system that carries a `backendHandle` on its
-[`SystemConfig`](./systems.md#systemconfig) runs as `backend.run(handle)`. A system with no handle
-is not affected. `run` executes inside the access span of the system, so its declared `writes`
-authorize the shared columns that the backend mutates. There is no backend by default: a plain
+[`SystemConfig`](./systems.md#systemconfig) runs as `backend.run(handle, dt, tick)`. A system with
+no handle is not affected. `run` executes inside the access span of the system, so its declared
+`writes` authorize the shared columns that the backend mutates. There is no backend by default: a plain
 `ECS` is pure TypeScript, and it costs nothing.
 
 > [!NOTE]
@@ -253,6 +291,6 @@ authorize the shared columns that the backend mutates. There is no backend by de
   two instances for a restore
 - [WASM backends](./wasm.md), how to connect `WebAssembly.Memory`, `ComputeBackend`, and the FFI
   ids
-- [parallel execution](./parallel.md), what shared memory and worker support give you today
+- [parallel execution](./parallel.md), the worker pool and the `parallel` system form
 - [systems](./systems.md), `backendHandle` on a system config
 - [components](./components.md), `columnCapacity`, and the field ids that `fieldId` gives

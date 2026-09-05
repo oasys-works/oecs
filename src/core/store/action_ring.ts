@@ -197,7 +197,13 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
 	view.setUint8(slotOff, len);
 	// boundary: TypedArray interop. The DataView is owned by the caller
 	// `Uint8Array.set` is the V8-fastpath bulk copy at this seam.
-	const dest = new Uint8Array(view.buffer, slotOff + 1, ACTION_RING_MAX_PAYLOAD_BYTES);
+	// `slotOff` indexes `view`, which starts at the store base, so the copy
+	// view has to add that base back.
+	const dest = new Uint8Array(
+		view.buffer,
+		view.byteOffset + slotOff + 1,
+		ACTION_RING_MAX_PAYLOAD_BYTES
+	);
 	dest.set(payload);
 	// Bytes past `len` in the slot are left as-is. The consumer reads
 	// only `[0..length)` so any trailing stale bytes are inert.
@@ -238,7 +244,11 @@ export function popAction(view: DataView, ringOff: number, outPayload: Uint8Arra
 	const slotOff = ringOff + ACTION_RING_HEADER_BYTES + slotIdx * ACTION_RING_SLOT_BYTES;
 	const len = view.getUint8(slotOff);
 	// boundary: TypedArray interop, same shape as `pushAction`.
-	const src = new Uint8Array(view.buffer, slotOff + 1, ACTION_RING_MAX_PAYLOAD_BYTES);
+	const src = new Uint8Array(
+		view.buffer,
+		view.byteOffset + slotOff + 1,
+		ACTION_RING_MAX_PAYLOAD_BYTES
+	);
 	outPayload.set(src);
 	// Release store of read_head: publishes the freed slot to the
 	// producer's acquire load in `pushAction`.

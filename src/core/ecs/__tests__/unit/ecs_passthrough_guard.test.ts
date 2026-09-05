@@ -197,7 +197,7 @@ describe("ECS pass-through band", () => {
 			bandMembers.map((m) => (m.name && ts.isIdentifier(m.name) ? m.name.text : "?"))
 		);
 		// Spot-check members that must live in the band today. `observe` used to
-		// be here and is not any more: it arrives with the observers capability,
+		// be here and is not any more: it arrives with the observers plugin,
 		// so a world that never installs one has no such member to delegate.
 		for (const expected of ["archetypeCount", "registerTag", "flush", "addSystems"]) {
 			expect(names.has(expected), `expected ${expected} in the band`).toBe(true);

@@ -18,7 +18,7 @@
  * build dead-code-eliminates the whole branch, byte-identical to the existing
  * `if (DEV) accessCheck.enter(desc)` wrap it sits beside. The only un-gated
  * residue is the one nullable `Store._trace` field (a pointer, like
- * `_structuralObserverHook`). The seam only *reads*. It never perturbs
+ * `Store._relations`). The seam only *reads*. It never perturbs
  * `stateHash`, ordering, or any observable behaviour.
  *
  * In-memory only, no `node:fs` / `node:path`. This module is transitively

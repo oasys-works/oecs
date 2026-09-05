@@ -69,11 +69,40 @@ export enum ECS_ERROR {
 	/** An optional subsystem was used on a world that never installed it.
 	 * Distinct from `*_NOT_REGISTERED`, which means the world has the
 	 * subsystem but not that particular component, event or relation. */
-	CAPABILITY_NOT_INSTALLED = "CAPABILITY_NOT_INSTALLED",
-	/** One capability reached an install seam twice. The second service would
+	PLUGIN_NOT_INSTALLED = "PLUGIN_NOT_INSTALLED",
+	/** One plugin reached an install seam twice. The second service would
 	 * replace the first, and every handle the caller took from the first would
 	 * then address state the world no longer reads. */
-	CAPABILITY_ALREADY_INSTALLED = "CAPABILITY_ALREADY_INSTALLED"
+	PLUGIN_ALREADY_INSTALLED = "PLUGIN_ALREADY_INSTALLED",
+	/** A plugin's facade names a member the world already carries.
+	 * `Object.assign` would overwrite it without a word, and the world would
+	 * lose a method it needs. Dev-only. */
+	PLUGIN_SURFACE_COLLISION = "PLUGIN_SURFACE_COLLISION",
+	/** `attachWorkers` ran on a world that already holds a pool. One pool per
+	 * world, because one control buffer carries one barrier. */
+	WORKERS_ATTACHED = "WORKERS_ATTACHED",
+	/** `attachWorkers` ran on a world whose bytes a worker cannot reach. A
+	 * worker needs a `SharedArrayBuffer` or a shared `WebAssembly.Memory`. */
+	WORKERS_NEED_SHARED_BACKING = "WORKERS_NEED_SHARED_BACKING",
+	/** The host cannot block on `Atomics.wait`, so it cannot park while the
+	 * workers run. A browser main thread is the case. */
+	WORKERS_HOST_CANNOT_PARK = "WORKERS_HOST_CANNOT_PARK",
+	/** `attachWorkers` was given a number that is not a positive integer. The
+	 * worker count and the join timeout are the two, and the message names
+	 * which. */
+	WORKERS_COUNT_INVALID = "WORKERS_COUNT_INVALID",
+	/** A worker's script did not load, so the worker answered nothing. A
+	 * `workerUrl` that points at no file is the case, and a bundled app that
+	 * kept the default is where that happens. */
+	WORKERS_ENTRY_UNREACHABLE = "WORKERS_ENTRY_UNREACHABLE",
+	/** A parallel system declares access a worker cannot serve, or a query a
+	 * worker cannot resolve from the archetype masks. Dev-only, at
+	 * registration. */
+	PARALLEL_ACCESS = "PARALLEL_ACCESS",
+	/** A kernel would not load, it threw inside a pass, or a worker missed the
+	 * join inside `joinTimeoutMs`. The message names the kernel export, and the
+	 * worker index when a worker reported the fault itself. */
+	PARALLEL_KERNEL_FAILED = "PARALLEL_KERNEL_FAILED"
 }
 
 export class ECSError extends AppError {

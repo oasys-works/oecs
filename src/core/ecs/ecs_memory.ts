@@ -21,6 +21,11 @@
  *   { memory: { backing: { wasm: { maximumPages: 4096 } } } }
  *   { memory: { backing: { allocator: heapArrayBufferAllocator(cap) } } }
  *
+ * `storeBase` is the third field, and it answers a third question: where inside
+ * the backing does the store start. It matters for the wasm backing, because a
+ * module owns the low addresses of its own linear memory. Every other backing
+ * leaves it at 0.
+ *
  * `columnCapacity` pins the exact rows per archetype column on any combination.
  * Benches and tests want that. A caller who gives `entities` gets a derived one.
  *
@@ -47,6 +52,7 @@ import {
 	wasmMemoryAllocator,
 	heapArrayBufferAllocator,
 	alignUp,
+	STORE_BASE_ALIGNMENT,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
 	ENTITY_INDEX_BYTES_PER_SLOT,
 	type InPlaceBufferAllocator
@@ -57,6 +63,67 @@ import { ECSError, ECS_ERROR } from "./utils/error";
 const KiB = 1024;
 const MiB = 1024 * KiB;
 const WASM_PAGE_BYTES = 64 * KiB;
+
+/** Default store base for the wasm backing, one WASM page. It clears nothing on
+ * its own. It is the smallest base that keeps the header off address 0, which a
+ * safe Zig or Rust build cannot read. A caller whose module reaches higher
+ * passes a base above that module's `__heap_base`. */
+export const WASM_STORE_BASE_BYTES = WASM_PAGE_BYTES;
+
+/**
+ * A store base that clears a module's own memory, read from the module.
+ *
+ * A compiled module owns the low addresses of its linear memory. Its data
+ * segment, its shadow stack and its heap all start there, and `__heap_base` is
+ * the first address above the segment and the stack. A store based below that
+ * overlaps the module. The loss is silent, because the region that lands under
+ * a module is the entity index and no digest folds it.
+ *
+ * `extraBytes` is the run-time heap the module allocates above `__heap_base`.
+ * Only the module can bound it, so the caller passes it. Pass the module's own
+ * peak, not a guess, because a store based inside the heap fails the same
+ * silent way.
+ *
+ * The result rounds up to a whole WASM page, so a grow of the module's memory
+ * never lands in the middle of the store's first page. Cold path, and a caller
+ * runs it once, between instantiation and `ECS.create`.
+ *
+ * @example
+ * const instance = await WebAssembly.instantiate(module, { env: { memory } });
+ * const ecs = ECS.create({
+ *   memory: {
+ *     backing: { wasm: { memory } },
+ *     storeBase: storeBaseAbove(instance.exports, 4 * 1024 * 1024)
+ *   }
+ * });
+ */
+export function storeBaseAbove(exports: Record<string, unknown>, extraBytes = 0): number {
+	if (!Number.isFinite(extraBytes) || extraBytes < 0) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_MEMORY_OPTIONS,
+			`storeBaseAbove: extraBytes must be a finite number >= 0, got ${String(extraBytes)}`
+		);
+	}
+	const exported = exports?.__heap_base;
+	// A toolchain exports the base as a `WebAssembly.Global`, and a hand-emitted
+	// module can export a plain number instead. Both are the same address.
+	const raw =
+		typeof exported === "object" && exported !== null && "value" in exported
+			? (exported as { value: unknown }).value
+			: exported;
+	if (typeof raw !== "number" || !Number.isFinite(raw)) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_MEMORY_OPTIONS,
+			`storeBaseAbove: the module exports no numeric '__heap_base', got ${String(raw)}. Link with --export=__heap_base, or pass memory.storeBase by hand.`
+		);
+	}
+	// Arithmetic and not a bitwise round, because a linear memory reaches past
+	// the range a 32-bit mask keeps.
+	const above = Math.ceil((raw + extraBytes) / WASM_PAGE_BYTES) * WASM_PAGE_BYTES;
+	// A base of 0 is unreadable from a safe Zig or Rust build, so one page is the
+	// floor whatever the module reports.
+	return Math.max(WASM_STORE_BASE_BYTES, above);
+}
 
 /** Default byte ceiling of every backing, mirrors `growableSabAllocator`'s
  * default (see its doc comment for the measured footprint analysis that makes
@@ -151,6 +218,18 @@ export interface ECSMemoryOptions {
 	readonly columnCapacity?: number;
 	/** What holds the bytes. Default `"heap"`. */
 	readonly backing?: MemoryBacking;
+	/** Byte offset inside the backing where the store header goes. Every offset
+	 * the store writes is relative to it, and the store writes only inside
+	 * `[storeBase, storeBase + capacity)`.
+	 *
+	 * Default 0 for the heap, shared and allocator backings. Default
+	 * `WASM_STORE_BASE_BYTES` for the wasm backing, because a module owns the
+	 * low addresses of its own linear memory and a safe Zig or Rust build traps
+	 * on a read of address 0. Raise it above the module's `__heap_base` plus
+	 * whatever the module allocates at run time.
+	 *
+	 * Must be an integer >= 0 and a multiple of `STORE_BASE_ALIGNMENT`. */
+	readonly storeBase?: number;
 }
 
 /** What the caller's intent resolved to. Exposed as `ECS.memoryPlan` for
@@ -176,6 +255,8 @@ export interface ResolvedECSMemory {
 	readonly budgetEntities: number | null;
 	/** How each derived number was arrived at, one line per decision. */
 	readonly derivation: readonly string[];
+	/** Byte offset of the store header inside the backing. */
+	readonly storeBase: number;
 	/** The backing `WebAssembly.Memory` when the wasm backing was used (both
 	 * bring-your-own and engine-constructed), the consumer hands this to its
 	 * WASM `ComputeBackend` so the sim and the columns share bytes. */
@@ -196,6 +277,34 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 
 const fmtBytes = (n: number): string =>
 	n >= MiB ? `${(n / MiB).toFixed(1)} MiB` : n >= KiB ? `${(n / KiB).toFixed(0)} KiB` : `${n} B`;
+
+/** Validate a caller-given `storeBase`. `wasmBacking` decides whether 0 is an
+ * answer, because a module cannot read a header at address 0. */
+function resolveStoreBase(given: number | undefined, wasmBacking: boolean): number {
+	if (given === undefined) return wasmBacking ? WASM_STORE_BASE_BYTES : 0;
+	if (!Number.isInteger(given) || given < 0) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_MEMORY_OPTIONS,
+			`memory.storeBase must be an integer >= 0, got ${given}`
+		);
+	}
+	if (given % STORE_BASE_ALIGNMENT !== 0) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_MEMORY_OPTIONS,
+			`memory.storeBase must be a multiple of ${STORE_BASE_ALIGNMENT}, got ${given}. ` +
+				`The alignment keeps every column on its element boundary.`
+		);
+	}
+	if (wasmBacking && given === 0) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_MEMORY_OPTIONS,
+			`memory.storeBase is 0, and a header at address 0 is unreadable from a safe build ` +
+				`of a WASM module. Pass a storeBase of at least one page (${WASM_STORE_BASE_BYTES}), ` +
+				`above the module's own data.`
+		);
+	}
+	return given;
+}
 
 function assertPositiveInt(name: string, n: number): void {
 	if (!Number.isInteger(n) || n <= 0) {
@@ -248,6 +357,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 	const declaredCap = opts?.maxBytes;
 	const pinnedColumns = opts?.columnCapacity;
 	const backing = opts?.backing ?? "heap";
+	const isWasmBacking = typeof backing === "object" && backing.wasm !== undefined;
+	const storeBase = resolveStoreBase(opts?.storeBase, isWasmBacking);
 
 	if (pinnedColumns !== undefined) assertPositiveInt("columnCapacity", pinnedColumns);
 	if (declaredCap !== undefined) assertPositiveInt("maxBytes", declaredCap);
@@ -356,10 +467,14 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			columnCapacity,
 			entityIndexCapacity,
 			capBytes: cap,
+			storeBase,
 			intentLabel,
 			budgetEntities: entities ?? null,
 			derivation: [
 				...backingTrace,
+				...(storeBase > 0
+					? [`storeBase = ${fmtBytes(storeBase)}, the store writes nothing below it`]
+					: []),
 				...sizeTrace,
 				entities === undefined
 					? `entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
@@ -386,31 +501,33 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 						"substrate requires a SharedArrayBuffer-backed WebAssembly.Memory"
 				);
 			}
-			if (declaredCap !== undefined) {
-				throw new ECSError(
-					ECS_ERROR.INVALID_MEMORY_OPTIONS,
-					"memory.maxBytes cannot be given beside a caller-supplied WebAssembly.Memory, " +
-						"the Memory declares its own ceiling through its `maximum`, which JS cannot read back."
-				);
+			// The store promises to write only inside its span, so this arm needs a
+			// cap. The Memory's own `maximum` is not readable from JS, so the cap
+			// is the caller's `maxBytes` or the default. The caller must build the
+			// Memory large enough for `storeBase` plus that cap.
+			const callerCap = declaredCap ?? DEFAULT_ECS_CAP_BYTES;
+			if (entities === undefined) {
+				entityIndexCapacity = indexFromCap(Math.max(callerCap - storeBase, 0));
 			}
-			// The ceiling is unknowable, so the index falls back to the default
-			// unless an entity count sized it. Before 0.6 it was always the default
-			// here, which reserved the full EntityID space for every WASM world.
 			return {
 				source: "wasm",
 				sizing,
 				allocator: wasmMemoryAllocator(arm.memory),
 				columnCapacity,
 				entityIndexCapacity,
-				capBytes: null,
-				intentLabel: "caller-supplied WebAssembly.Memory",
+				capBytes: callerCap,
+				storeBase,
+				intentLabel: `caller-supplied WebAssembly.Memory (declared cap ${fmtBytes(callerCap)})`,
 				budgetEntities: entities ?? null,
 				derivation: [
 					"backing = wasm_memory_allocator(memory), zero-copy with the sim (is_in_place ✓)",
-					"cap = the Memory's own `maximum` (declared by the caller; not readable from JS)",
+					declaredCap !== undefined
+						? `cap = ${fmtBytes(callerCap)} (caller-declared maxBytes; the Memory's own maximum is not readable from JS)`
+						: `cap = ${fmtBytes(callerCap)} (default; the Memory's own maximum is not readable from JS)`,
+					`storeBase = ${fmtBytes(storeBase)}, the module owns every byte below it`,
 					...sizeTrace,
 					entities === undefined
-						? `entityIndex = ${entityIndexCapacity} slots (default, no entity count and no readable cap)`
+						? `entityIndex = floor_pow2((cap - storeBase)/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
 						: `entityIndex sized from the entity count above`
 				],
 				wasmMemory: arm.memory
@@ -440,7 +557,9 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			shared: true
 		});
 		const capBytes = arm.maximumPages * WASM_PAGE_BYTES;
-		if (entities === undefined) entityIndexCapacity = indexFromCap(capBytes);
+		if (entities === undefined) {
+			entityIndexCapacity = indexFromCap(Math.max(capBytes - storeBase, 0));
+		}
 		return {
 			source: "wasm",
 			sizing,
@@ -448,14 +567,16 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			columnCapacity,
 			entityIndexCapacity,
 			capBytes,
+			storeBase,
 			intentLabel: `engine-constructed WebAssembly.Memory (max ${arm.maximumPages} pages)`,
 			budgetEntities: entities ?? null,
 			derivation: [
 				`cap = ${arm.maximumPages} pages × 64 KiB = ${fmtBytes(capBytes)} (Memory maximum)`,
 				`initial = ${initialPages} pages (${arm.initialPages !== undefined ? "declared" : "default"})`,
+				`storeBase = ${fmtBytes(storeBase)}, the module owns every byte below it`,
 				...sizeTrace,
 				entities === undefined
-					? `entityIndex = floor_pow2(cap/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
+					? `entityIndex = floor_pow2((cap - storeBase)/4 ÷ ${ENTITY_INDEX_BYTES_PER_SLOT} B) = ${entityIndexCapacity} slots`
 					: `entityIndex sized from the entity count above`
 			],
 			wasmMemory: memory
@@ -490,6 +611,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			columnCapacity,
 			entityIndexCapacity,
 			capBytes: cap,
+			storeBase,
 			intentLabel:
 				cap !== null
 					? `custom in-place allocator (declared cap ${fmtBytes(cap)})`

@@ -1,6 +1,6 @@
 # Determinism
 
-> This page needs the **snapshots** capability. Install it at construction:
+> This page needs the **snapshots** plugin. Install it at construction:
 >
 > ```ts
 > import { snapshots } from "@oasys/oecs/snapshots";
@@ -41,13 +41,13 @@ ecs.snapshots.stateHash();   // the same number on both, at the same tick bounda
 
 ```ts
 new ECS();                              // deterministic is false by default
-new ECS({ deterministic: true });       // the flag, on a world with no capabilities
+new ECS({ deterministic: true });       // the flag, on a world with no plugins
 ECS.create({ deterministic: true, plugins: [snapshots()] }); // the flag, and capture and restore
 ecs.snapshots.deterministic;            // read the flag, a getter on the facade
 ```
 
-The flag and the capability are independent. The flag buys the canonical order. The capability buys
-`capture` and `restore`. `stateHash` needs the flag and no capability.
+The flag and the plugin are independent. The flag buys the canonical order. The plugin buys
+`capture` and `restore`. `stateHash` needs the flag and no plugin.
 
 The flag controls exactly the surface that has a canonical order: `stateHash`, `capture` and
 `restore`, and `captureSparse` and `restoreSparse`. If you call one of them without the flag, you

@@ -14,8 +14,8 @@ queue at the **head of a phase**: `PRE_STARTUP` for the initial values, and `PRE
 frame. It drains through one dispatch function, `applyHostCommand`, which issues the usual deferred
 structural operations on `ctx`. The one exception is `setField`, which applies immediately during
 the drain and sets the change tick. The structural writes then land at the usual flush at the end of
-the phase, the observers run, and, if you connected it, the reactive bridge publishes one batched
-commit.
+the phase, the observers run, and, if you installed it, the Solid plugin publishes at the settle
+point.
 
 ```ts
 import { SCHEDULE, installHostCommandSeam, spawnEntry } from "@oasys/oecs";
@@ -220,5 +220,5 @@ use the typed transport only. Exactly one dispatcher must drain each ring.
 
 - [determinism](./determinism.md), the guarantee of fidelity for a replay
 - [editor](./editor.md), undo and redo, which are built on this queue
-- [reactive](./reactive.md), the read side (ECS to UI) that pairs with this write side
+- [solid](./solid.md), the read side (ECS to UI) that pairs with this write side
 - [systems](./systems.md), `exclusive` systems, which the apply system is

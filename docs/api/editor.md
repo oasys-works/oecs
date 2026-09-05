@@ -86,7 +86,7 @@ the default read for `fieldHandle` when you give no read function.
 
 ## Field handles
 
-`fieldHandle` makes one field into a value that operates in two directions: a reactive read, and a
+`fieldHandle` makes one field into a value that operates in two directions: a tracked read, and a
 write that you can undo. This is correct for an input in an inspector.
 
 ```ts
@@ -94,17 +94,17 @@ fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: 
                read?: () => number | undefined): FieldHandle;   // absent → it uses editor.committedField
 
 interface FieldHandle {
-  readonly value: number | undefined;    // a reactive read of the channel (tracked in a tracking scope)
+  readonly value: number | undefined;    // a read of the channel (tracked in a tracking scope)
   set(value: number): void;               // adds a setField that you can undo. Applies in the next tick
-  readonly pending: number | undefined;   // a NON-reactive optimistic copy of the shadow value of the editor
+  readonly pending: number | undefined;   // an UNTRACKED optimistic copy of the shadow value of the editor
 }
 ```
 
-`read` is a function that you supply, and it reads from your
-[reactive read channel](./reactive.md). So the handle does not depend on a framework:
+`read` is a function that you supply, and it reads from your own read channel, such as a
+[Solid](./solid.md) view. So the handle does not depend on a framework:
 
 ```ts
-const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.get(player)?.hp);
+const hpHandle = fieldHandle(editor, player, Health, "hp", () => hud.value.hp);
 // in a Solid input: value={hpHandle.value} onInput={(e) => hpHandle.set(+e.target.value)}
 ```
 
@@ -115,4 +115,4 @@ const hpHandle = fieldHandle(editor, player, Health, "hp", () => healthSync.map.
 ## See also
 
 - [the host write path](./host-write-seam.md), the command queue that undo and redo use
-- [reactive](./reactive.md), the read channel that a `FieldHandle` reads from
+- [solid](./solid.md), the read channel that a `FieldHandle` reads from

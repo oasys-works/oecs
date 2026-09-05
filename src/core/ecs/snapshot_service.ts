@@ -230,7 +230,11 @@ export class SnapshotService {
 		// --- Mount: build the restored dense store (now safe to overwrite the
 		//     live backing) and hand it to the Store to adopt (view refresh +
 		//     high-water recovery + republish, the grow tail). ---
-		const restored = restoreColumnStore(sections.dense, this._host.bufferAllocator());
+		// Restore at the live world's base. The snapshot carries none, so a world
+		// hosted inside a WASM memory reads a heap world's bytes and the reverse.
+		const restored = restoreColumnStore(sections.dense, this._host.bufferAllocator(), {
+			storeBase: this._host.columnStore().storeBase
+		});
 		this._host.mountRestoredDense(restored);
 
 		// --- Reconstruct host-side row bookkeeping + allocator state + tick ---

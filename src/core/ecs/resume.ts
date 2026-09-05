@@ -5,9 +5,12 @@
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
  * snapshot is three sections:
  *
- *   1. **dense**, the SAB column bytes (`columnStoreBytesView`): every component
- *      column, the entity-index region (generations, archetype and row per slot,
- *      plus the high-water `length` header), and the layout descriptors.
+ *   1. **dense**, the store column bytes (`columnStoreBytesView`): every
+ *      component column, the entity-index region (generations, archetype and row
+ *      per slot, plus the high-water `length` header), and the layout
+ *      descriptors. The section starts at the store's header and every offset
+ *      inside it is relative, so it carries no store base. A world at one base
+ *      therefore mounts a world captured at another.
  *   2. **sparse**, out-of-identity components + relations (`snapshotSparse`).
  *   3. **host-state**, the host-side bookkeeping the SAB does not carry: the
  *      world tick, the entity recycle free-list (in live LIFO order. There is no
@@ -40,6 +43,7 @@ import {
 	STORE_HEADER_OFFSETS,
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
+	LEGACY_ABSOLUTE_ABI_VERSION,
 	type ArchetypeDescriptor,
 	type ArchetypeViews
 } from "../store";
@@ -56,7 +60,7 @@ export const ECS_SNAPSHOT_VERSION = 1;
 // `ECSRestoreError` lives in `utils/error.ts` and is re-exported here.
 // The store's restore-time host-row rebuild throws it, and a value import of
 // this module from the store would pin the framing and serialization code into
-// every world, including one that installs no snapshot capability.
+// every world, including one that installs no snapshot plugin.
 import { ECSRestoreError } from "./utils/error";
 export { ECSRestoreError };
 
@@ -272,7 +276,9 @@ export function assertDenseMatchesLive(
 		);
 	}
 	const abi = view.getUint32(STORE_HEADER_OFFSETS.sim_abi_version, true);
-	if (abi !== SIM_ABI_VERSION) {
+	// Version 0 reads as version 1: a version 0 store always sat at byte 0, so
+	// its offsets are offsets from the header. The 0.5 line wrote version 0.
+	if (abi !== SIM_ABI_VERSION && abi !== LEGACY_ABSOLUTE_ABI_VERSION) {
 		throw new ECSRestoreError(
 			`dense section incompatible sim_abi_version: snapshot=${abi}, build=${SIM_ABI_VERSION}`
 		);

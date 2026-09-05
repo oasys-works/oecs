@@ -27,16 +27,25 @@ import {
 	STORE_HEADER_OFFSETS,
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
+	LEGACY_ABSOLUTE_ABI_VERSION,
 	readStoreHeader
 } from "./header";
 import { readLayoutDescriptorRegion } from "./descriptor";
-import { createArchetypeViews, type ColumnStore } from "./column_store";
+import { assertStoreBase, createArchetypeViews, type ColumnStore } from "./column_store";
 import { DEFAULT_SAB_ALLOCATOR, type BufferAllocator } from "./allocator";
-// Declared one directory up, so the snapshot capability's own rollup graph can
+// Declared one directory up, so the snapshot plugin's own rollup graph can
 // bind to the same class this module throws instead of copying it.
 import { StoreRestoreError } from "../restore_errors";
 
 export { StoreRestoreError };
+
+/** Options for `restoreColumnStore`. */
+export interface RestoreColumnStoreOptions {
+	/** Byte offset inside the fresh backing where the restored header goes.
+	 * Default 0. A snapshot carries no base, so a store taken at one base
+	 * restores at any other. */
+	readonly storeBase?: number;
+}
 
 /** Zero-copy `Uint8Array` view over the SAB's used byte range. Length is
  * `header.capacity`, the canonical size, not `buffer.byteLength`. The two
@@ -52,12 +61,16 @@ export { StoreRestoreError };
  * `store.header`, the in-place grow path bumps the header fields in the
  * view but leaves `store.header` a stale snapshot (see `grow.ts`).
  *
- * The view shares storage with the SAB. Subsequent writes to columns are
+ * The span starts at `store.storeBase`, so the bytes are base free: two stores
+ * with the same history at different bases give the same snapshot and the same
+ * digest.
+ *
+ * The view shares storage with the backing. Subsequent writes to columns are
  * visible through it. Callers that need a stable snapshot should slice
  * (`new Uint8Array(view)`) before mutating the store further. */
 export function columnStoreBytesView(store: ColumnStore): Uint8Array {
 	const capacity = store.view.getUint32(STORE_HEADER_OFFSETS.capacity, true);
-	return new Uint8Array(store.buffer, 0, capacity);
+	return new Uint8Array(store.buffer, store.storeBase, capacity);
 }
 
 /** Allocate a fresh backing buffer of `bytes.byteLength`, copy the snapshot
@@ -76,12 +89,19 @@ export function columnStoreBytesView(store: ColumnStore): Uint8Array {
  * subarray that doesn't start at offset 0 of its backing buffer is
  * supported.
  *
+ * `options.storeBase` places the restored header at that byte offset in the
+ * fresh backing, default 0. The snapshot itself carries no base, so a store
+ * taken at one base restores at any other and both digests agree.
+ *
  * Throws `StoreRestoreError` if the bytes are too short for the header,
  * have the wrong magic, or carry an incompatible `sim_abi_version`. */
 export function restoreColumnStore(
 	bytes: Uint8Array,
-	allocator: BufferAllocator = DEFAULT_SAB_ALLOCATOR
+	allocator: BufferAllocator = DEFAULT_SAB_ALLOCATOR,
+	options: RestoreColumnStoreOptions = {}
 ): ColumnStore {
+	const storeBase = options.storeBase ?? 0;
+	assertStoreBase(storeBase);
 	// Validate via a DataView over the input. We do this before allocating
 	// so a malformed input doesn't waste a SAB allocation.
 	const inputView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -100,19 +120,25 @@ export function restoreColumnStore(
 	}
 
 	const abi = inputView.getUint32(STORE_HEADER_OFFSETS.sim_abi_version, true);
-	if (abi !== SIM_ABI_VERSION) {
+	// Version 0 is accepted as version 1. A version 0 store always sat at buffer
+	// byte 0, so every offset it wrote is also an offset from its header, which
+	// is what version 1 means. The published 0.5 line wrote version 0 with this
+	// header shape, and its snapshots stay restorable. The restored header is
+	// stamped with the current version below.
+	if (abi !== SIM_ABI_VERSION && abi !== LEGACY_ABSOLUTE_ABI_VERSION) {
 		throw new StoreRestoreError(
-			`incompatible sim_abi_version: snapshot=${abi}, build=${SIM_ABI_VERSION}`
+			`incompatible sim_abi_version: snapshot=, build=`
 		);
 	}
 
 	// Allocate the new backing at exactly the snapshot's byte length and copy
 	// the snapshot into it. `Uint8Array.set` is the same memcpy the spec gives
 	// us, bytes are bytes, shared or not.
-	const buffer = allocator(bytes.byteLength);
-	new Uint8Array(buffer).set(bytes);
+	const buffer = allocator(storeBase + bytes.byteLength);
+	new Uint8Array(buffer, storeBase, bytes.byteLength).set(bytes);
 
-	const view = new DataView(buffer);
+	const view = new DataView(buffer, storeBase);
+	view.setUint32(STORE_HEADER_OFFSETS.sim_abi_version, SIM_ABI_VERSION, true);
 	const header = readStoreHeader(view);
 
 	// Bound the descriptor-region start, then reconstruct under a guard. The header
@@ -124,9 +150,9 @@ export function restoreColumnStore(
 	// snapshot both run past the buffer end and throw a raw `RangeError`. Surface a
 	// typed `StoreRestoreError` instead so callers see one error class for all
 	// malformed input.
-	if (header.layoutDescriptorOff < 0 || header.layoutDescriptorOff > buffer.byteLength) {
+	if (header.layoutDescriptorOff < 0 || header.layoutDescriptorOff > bytes.byteLength) {
 		throw new StoreRestoreError(
-			`layout_descriptor_off ${header.layoutDescriptorOff} is outside the snapshot (${buffer.byteLength} bytes)`
+			`layout_descriptor_off ${header.layoutDescriptorOff} is outside the snapshot (${bytes.byteLength} bytes)`
 		);
 	}
 	try {
@@ -135,13 +161,13 @@ export function restoreColumnStore(
 			header.layoutDescriptorOff,
 			header.archetypeCount
 		);
-		const archetypes = createArchetypeViews(buffer, descriptors);
-		return { buffer, view, header, archetypes };
+		const archetypes = createArchetypeViews(buffer, storeBase, descriptors);
+		return { buffer, view, header, storeBase, archetypes };
 	} catch (e) {
 		if (e instanceof RangeError) {
 			throw new StoreRestoreError(
 				`snapshot layout is corrupt or truncated: a descriptor offset or column ` +
-					`extent reads past the ${buffer.byteLength}-byte buffer (${e.message})`
+					`extent reads past the ${bytes.byteLength}-byte span (${e.message})`
 			);
 		}
 		throw e;

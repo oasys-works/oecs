@@ -4,12 +4,12 @@
  * A caller catches a restore failure by class, so there must be exactly one
  * `StoreRestoreError` and one `SparseRestoreError` in a program. The dense
  * half throws from `core/store`, the sparse half throws from `core/ecs`, and
- * the snapshot capability ships in its own rollup graph. A class declared
+ * the snapshot plugin ships in its own rollup graph. A class declared
  * beside either thrower would be copied into that graph. `err instanceof
  * StoreRestoreError` would then answer `false` against the class the package
  * root exports.
  *
- * One module holding both is what the capability build marks external and
+ * One module holding both is what the plugin build marks external and
  * resolves to the core artifact. Keep it free of imports, so the mapping stays
  * a leaf and the module carries no state beyond the two classes.
  *

@@ -85,8 +85,7 @@ two updates, is the correct use.
 The change to immediate also changes what an observer sees. An observer runs only for a
 **deferred** operation. So a `despawn` call on the host no longer reaches `onRemove`. In 0.4, the
 deferred destroy on the host drained through the flush, and it sent `onRemove` as each other remove
-did. Anything that depends on `onRemove`, and this includes the map bridges in `reactive-sync`, does
-not see an entity that the host destroyed. Where that is important, destroy the entity through
+did. Anything that depends on `onRemove` does not see an entity that the host destroyed. Where that is important, destroy the entity through
 `ctx.commands.despawn` or through the host command path.
 
 ---
@@ -356,5 +355,5 @@ You can find each 0.4 name below with a text search. None of them has an alias i
 - [ ] Each import from the root of `HostCommandDispatcher`, a ring codec, `resolveECSMemory`, the
       codec for a packed `EntityID`, `accessCheck`, or `dispatchTrace` → `@oasys/oecs/internal`
       (§5).
-- [ ] Examine each `onRemove` observer, and each `reactive-sync` bridge, for an entity that the host
-      destroyed. An immediate `despawn` no longer runs `onRemove` (§1).
+- [ ] Examine each `onRemove` observer for an entity that the host destroyed. An immediate
+      `despawn` no longer runs `onRemove` (§1).

@@ -21,7 +21,7 @@ import { SCHEDULE } from "../../schedule";
 import type { SystemDescriptor } from "../../system";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 /** A system that bumps the changed tick of `def`'s column on every archetype
  * that `q` matches. Ordered before the reader in each test below. */

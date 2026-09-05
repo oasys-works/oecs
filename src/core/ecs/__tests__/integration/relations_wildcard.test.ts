@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { EntityID } from "../../entity";
-import { relations, type RelationsCapability } from "../../../../capabilities/relations";
+import { relations, type RelationsPlugin } from "../../../../plugins/relations";
 
-/** The fixture installs the capability, so its type carries it. A bare `ECS`
+/** The fixture installs the plugin, so its type carries it. A bare `ECS`
  * here would erase the surface the cases reach for. */
-type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
+type RelationalWorld = ECS<RelationsPlugin> & RelationsPlugin;
 
 /** Spin up an ECS and a handful of live entities for relation wiring. */
 function makeWorld(n: number): { ecs: RelationalWorld; ents: EntityID[] } {

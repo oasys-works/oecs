@@ -34,7 +34,7 @@ import { SCHEDULE } from "../../schedule";
 import type { EntityID } from "../../entity";
 import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 /** Collect a hierarchy query's yielded entities in order (order is the point,
  * do not sort). */

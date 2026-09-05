@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import { _INTERNAL_EMPTY_ACCESS } from "../../system";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 const Pos = { x: "i32", y: "i32" } as const;
 const Vel = { vx: "i32", vy: "i32" } as const;

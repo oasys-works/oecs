@@ -13,8 +13,8 @@ import { SCHEDULE } from "../../schedule";
 import { eventKey } from "../../event";
 import { FrameTraceRecorder, type FrameTraceEvent } from "../../frame_trace";
 import { openAccess } from "../test_helpers";
-import { events } from "../../../../capabilities/events";
-import { observers } from "../../../../capabilities/observers";
+import { events } from "../../../../plugins/events";
+import { observers } from "../../../../plugins/observers";
 
 /** Index of the first event matching `pred`, or -1. */
 function find(events: readonly FrameTraceEvent[], pred: (e: FrameTraceEvent) => boolean): number {

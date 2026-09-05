@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { snapshots } from "../../../../capabilities/snapshots";
+import { snapshots } from "../../../../plugins/snapshots";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import type { SystemContext } from "../../system_context";

@@ -40,7 +40,7 @@ import { INTERNAL_EXPORTS, ROOT_EXPORTS } from "./public_api_surface";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const DIST = join(ROOT, "dist");
-const CAPS = join(DIST, "capabilities");
+const PLUGINS = join(DIST, "plugins");
 const PROD = join(DIST, "index.js");
 const DEV_BUILD = join(DIST, "index.development.js");
 
@@ -128,11 +128,11 @@ const out = {};
 console.log(JSON.stringify(out));
 `;
 
-/** A world with every capability installed, and one fault raised from inside
- * each of three capability modules. Each capability bundle is a separate rollup
+/** A world with every plugin installed, and one fault raised from inside
+ * each of three plugin modules. Each plugin bundle is a separate rollup
  * graph. A copied error class would answer `false` to `instanceof` here, even
  * though the same source declared it. */
-const capabilityFaults = (
+const pluginFaults = (
 	core: string,
 	eventsMod: string,
 	snapshotsMod: string,
@@ -168,7 +168,7 @@ console.log(JSON.stringify({
  * holds no span, and the write goes through. */
 const observerAccessSpan = `
 const root = await import(${JSON.stringify(DEV_BUILD)});
-const { observers } = await import(${JSON.stringify(join(CAPS, "observers.development.js"))});
+const { observers } = await import(${JSON.stringify(join(PLUGINS, "observers.development.js"))});
 const world = root.ECS.create({ plugins: [observers()] });
 const Tag = world.registerTag();
 const Other = world.registerComponent({ v: "f64" });
@@ -198,6 +198,74 @@ world.addSystems(
 world.startup();
 world.update(1 / 60);
 console.log(JSON.stringify({ ran, undeclaredAdd }));
+`;
+
+/** One shared world driven by two workers of the shipped worker entry, against
+ * the same world driven by the sequential body. The kernel is written beside
+ * the probe, because a worker loads it by URL. */
+const POOL_FROM_DIST = `
+const { writeFileSync } = await import("node:fs");
+const kernel = new URL("./kernel.mjs", import.meta.url);
+writeFileSync(kernel, "export function step(x, vx, begin, end, dt) { for (let i = begin; i < end; i++) x[i] = x[i] + vx[i] * dt; }");
+
+const { ECS, SCHEDULE } = await import(${JSON.stringify(PROD)});
+const { snapshots } = await import(${JSON.stringify(join(PLUGINS, "snapshots.js"))});
+
+function build() {
+	const ecs = ECS.create({
+		deterministic: true,
+		memory: { backing: "shared", maxBytes: 16 * 1024 * 1024 },
+		plugins: [snapshots()]
+	});
+	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
+	const Vel = ecs.registerComponent({ vx: "i32" }, { name: "Vel" });
+	const template = ecs.template(Pos({ x: 0 }), Vel({ vx: 0 }));
+	ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({
+		reads: [Vel],
+		writes: [Pos],
+		queries: [[Pos, Vel]],
+		parallel: {
+			kernel: { js: kernel.href, export: "step" },
+			columns: [[Pos, "x"], [Vel, "vx"]],
+			minRows: 1
+		},
+		fn: (ctx, dt) => {
+			ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+				const p = cols.mut(Pos);
+				const v = cols.read(Vel);
+				for (let i = 0; i < count; i++) p.x[i] = p.x[i] + v.vx[i] * dt;
+			});
+		}
+	}));
+	ecs.startup();
+	for (let i = 0; i < 512; i++) ecs.spawn(template);
+	let n = 0;
+	ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+		const p = cols.mut(Pos);
+		const v = cols.mut(Vel);
+		for (let i = 0; i < count; i++, n++) {
+			p.x[i] = n % 97;
+			v.vx[i] = (n % 13) - 6;
+		}
+	});
+	return ecs;
+}
+
+const sequential = build();
+for (let f = 0; f < 4; f++) sequential.update(2);
+
+const pooled = build();
+const pool = await pooled.attachWorkers({ count: 2, workerUrl: ${JSON.stringify(join(DIST, "worker.js"))} });
+await pool.settled();
+for (let f = 0; f < 4; f++) pooled.update(2);
+const attached = pool.count;
+await pool.detach();
+
+console.log(JSON.stringify({
+	attached,
+	sequentialHash: sequential.snapshots.stateHash(),
+	parallelHash: pooled.snapshots.stateHash()
+}));
 `;
 
 /** Every static specifier one emitted module names. Rollup writes each import
@@ -256,12 +324,12 @@ describe("the shipped bundle", () => {
 		expect(out.singleOfTwo).toBe("true");
 	});
 
-	it("throws the root's error classes out of a capability, as ESM", () => {
+	it("throws the root's error classes out of a plugin, as ESM", () => {
 		const out = probe(
-			capabilityFaults(
+			pluginFaults(
 				PROD,
-				join(CAPS, "events.js"),
-				join(CAPS, "snapshots.js"),
+				join(PLUGINS, "events.js"),
+				join(PLUGINS, "snapshots.js"),
 				"await import"
 			)
 		);
@@ -272,17 +340,17 @@ describe("the shipped bundle", () => {
 		expect(out.sparseIsSparseRestoreError).toBe(true);
 	});
 
-	it("throws the root's error classes out of a capability, as CJS", () => {
+	it("throws the root's error classes out of a plugin, as CJS", () => {
 		const prelude = `
 const { createRequire } = await import("node:module");
 const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 `;
 		const out = probe(
 			prelude +
-				capabilityFaults(
+				pluginFaults(
 					join(DIST, "index.cjs"),
-					join(CAPS, "events.cjs"),
-					join(CAPS, "snapshots.cjs"),
+					join(PLUGINS, "events.cjs"),
+					join(PLUGINS, "snapshots.cjs"),
 					"req"
 				)
 		);
@@ -299,21 +367,77 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 		expect(out.undeclaredAdd).toBe("ACCESS_UNDECLARED");
 	});
 
-	it("binds every capability bundle to the core artifact, not to a copy", () => {
-		const files = readdirSync(CAPS)
+	it("binds every plugin bundle to the core artifact, not to a copy", () => {
+		const files = readdirSync(PLUGINS)
 			.filter((name) => name.endsWith(".js") || name.endsWith(".cjs"))
-			.map((name) => join(CAPS, name));
+			.map((name) => join(PLUGINS, name));
 		expect(files.length).toBeGreaterThan(0);
 		const outside: string[] = [];
 		for (const file of files) {
 			for (const spec of staticImports(file)) {
 				const target = relative(DIST, resolve(dirname(file), spec));
-				if (!target.startsWith("capabilities/") && !/^(index|internal)\./.test(target)) {
+				if (!target.startsWith("plugins/") && !/^(index|internal)\./.test(target)) {
 					outside.push(`${relative(DIST, file)} -> ${spec}`);
 				}
 			}
 		}
 		expect(outside).toEqual([]);
+	});
+
+	it("ships the worker entry as its own bundle, in every variant", () => {
+		// `attachWorkers` resolves the entry as the sibling of the module the pool
+		// ships in, with the same variant and format suffixes. A missing file, or
+		// one under another name, breaks that resolution and no test that starts a
+		// worker would notice, because the tests start theirs from the source.
+		const entries = ["worker.js", "worker.cjs", "worker.development.js", "worker.development.cjs"];
+		for (const entry of entries) {
+			expect(existsSync(join(DIST, entry))).toBe(true);
+		}
+		// A worker is another thread, so it shares no module instance with the
+		// core. It must carry its own copy and import nothing at all.
+		for (const entry of entries) {
+			expect(staticImports(join(DIST, entry))).toEqual([]);
+		}
+	});
+
+	it("names no node builtin in a specifier a bundler resolves", () => {
+		// The pool and the worker entry both reach `node:worker_threads`, and both
+		// ship in a bundle an app may compile for the browser. A specifier a
+		// bundler can resolve makes it report an externalized node builtin and
+		// ship a stub for a branch the browser never runs. `node_threads.ts` keeps
+		// the specifier out of reach, and the emitted files are where that shows.
+		const entries = [
+			"index.js",
+			"index.cjs",
+			"index.development.js",
+			"index.development.cjs",
+			"worker.js",
+			"worker.cjs",
+			"worker.development.js",
+			"worker.development.cjs"
+		];
+		const reachable: string[] = [];
+		for (const entry of entries) {
+			const src = readFileSync(join(DIST, entry), "utf8");
+			for (const m of src.matchAll(/\b(?:import|require)\s*\(\s*["'`](node:[^"'`]+)["'`]/g)) {
+				reachable.push(`${entry} -> ${m[1]}`);
+			}
+			// The other half of the same regression. A specifier this build does
+			// not list as external is replaced by a stub that holds nothing, and
+			// node then loads the stub instead of the builtin.
+			if (src.includes("__vite-browser-external")) reachable.push(`${entry} -> browser stub`);
+		}
+		expect(reachable).toEqual([]);
+	});
+
+	it("starts a pool of workers out of the shipped artifact", () => {
+		// The bundles reach the node threads module through a call, not through a
+		// specifier, and rollup rewrites a dynamic import in both output formats.
+		// Every other parallel test runs the source, so this is the only place
+		// the emitted form of that call is exercised.
+		const out = probe(POOL_FROM_DIST);
+		expect(out.attached).toBe(2);
+		expect(out.parallelHash).toBe(out.sequentialHash);
 	});
 
 	it("leaves the core chunk graph at the three chunks it ships", () => {

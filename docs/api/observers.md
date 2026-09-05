@@ -1,6 +1,6 @@
 # Observers
 
-> This page needs the **observers** capability. Install it at construction:
+> This page needs the **observers** plugin. Install it at construction:
 >
 > ```ts
 > import { observers } from "@oasys/oecs/observers";
@@ -125,9 +125,9 @@ ecs.observe(HexPos, {
 >
 > **This includes `ecs.despawn`**, which is immediate since 0.5.0. A despawn on the host runs no
 > `onRemove` for the components of the entity. It also runs none for the entities that a relation
-> cascade with the `delete` policy destroys as a result. Anything that an observer drives, which
-> includes the `@oasys/oecs/reactive-sync` bridges, sees only a despawn that goes through
-> `ctx.commands.despawn` or through the host command path.
+> cascade with the `delete` policy destroys as a result. Anything that reads the structural events,
+> which includes the Solid plugin, sees only a despawn that goes through `ctx.commands.despawn` or
+> through the host command path.
 >
 > Register the observers at build time, **before `startup()`**, so that the engine prepares the
 > archetypes that they create entities in.

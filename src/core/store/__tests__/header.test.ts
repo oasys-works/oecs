@@ -7,16 +7,13 @@
  * field order, width, or endianness will flip them and fail this test. Treat
  * it the same as `wire_fingerprint.test.ts` treats the wire codec.
  *
- * Pre-publish sentinel: `sim_abi_version` is currently 0 ("not yet
- * published", see `abi.zig`). While it is 0 we do not bump on layout
- * changes. This golden only guards against *unintended* drift.
+ * `sim_abi_version` is 1. Version 1 makes every `*_off` relative to the store
+ * base and `capacity` the store span from that base.
  *
  * If you intentionally change the schema:
- *   1. Update `GOLDEN_HEX` to the new bytes.
- *   2. Post-publish only (version >= 1): also bump `SIM_ABI_VERSION` in the
- *      same PR, the version bump is part of the "old WASM can't read new
- *      SAB" contract. Pre-publish (version 0) the bump is intentionally
- *      skipped.
+ *   1. Derive the new `GOLDEN_HEX` from the field table, not from a run.
+ *   2. Bump `SIM_ABI_VERSION` in the same commit. The bump is what stops an
+ *      older reader from reading the new bytes.
  */
 
 import { describe, expect, it } from "vitest";
@@ -53,7 +50,7 @@ const FIXTURE: StoreHeader = {
 
 const GOLDEN_HEX = [
 	"53494d31", // magic ('SIM1' as bytes on disk; LE u32 = 0x314D4953)
-	"00000000", // sim_abi_version = 0  (pre-publish sentinel; bumps start at 1 on release)
+	"01000000", // sim_abi_version = 1  (store-relative offsets)
 	"00000000", // view_stamp = 0
 	"00100000", // capacity = 4096
 	"03000000", // archetype_count = 3

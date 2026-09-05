@@ -113,8 +113,8 @@ export type ComponentRef<S extends ComponentSchema> = {
  * at the type layer, but the shared prototype installs working get and set for
  * both `ref()` and `refRead()`, so a deliberate cast can still write through
  * (and would skip the change-tick bump `ref()` performs). Treat it as "I
- * promise I am only reading," enforced by the escape-hatch lint
- * (`bun run lint:escape-hatches`), not by the runtime.
+ * promise I am only reading". The typechecker holds the promise. Nothing else
+ * does: no lint and no runtime check enforces it.
  */
 export type ReadonlyComponentRef<S extends ComponentSchema> = {
 	readonly [K in keyof S]: number;
@@ -418,14 +418,22 @@ const EMPTY_COLS: AccessorColumns = [];
  * A dense cursor reassigns `__cols` on every `at()`. A ref and a sparse cursor
  * never do. So the first dense `at()` in a process changes the field from
  * constant to mutable, and every optimized function that read `__cols` under
- * the constant assumption is thrown away and compiled again. Measured, the
- * code compiled after that change ran a sparse cursor several times slower,
+ * the constant assumption is thrown away and compiled again. When this was
+ * written, the code compiled after that change ran a sparse cursor far slower,
  * and which kind of cursor ran first decided the speed of the other.
  *
  * Reassigning both fields on one throwaway object of each shape, here, makes
  * them mutable from the start. Nothing then compiles under the constant
  * assumption, and nothing is thrown away. The cost is two small objects at
  * module load.
+ *
+ * The correction, from a later run: the effect no longer reproduces. A sparse
+ * cursor measures the same with and without this call, on both V8 runtimes and
+ * on JavaScriptCore, whether or not a dense cursor ran first. Constness
+ * tracking is the engine's private business and it changes between versions.
+ * The call stays because two objects at module load cost nothing and the
+ * mechanism can come back. Do not read the paragraph above as a live
+ * measurement.
  */
 function primeAccessorShapes(): void {
 	const other: AccessorColumns = [];

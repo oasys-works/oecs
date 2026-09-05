@@ -29,7 +29,7 @@ import type {
 	SignalKey
 } from "./event";
 import { accessCheck } from "./access_check";
-import { capabilityMissingError } from "./utils/capability_error";
+import { pluginMissingError } from "./utils/plugin_error";
 import { dispatchTrace } from "./dispatch_trace";
 import { unsafeCast } from "../../type_primitives";
 import { DEV } from "../../dev_flag";
@@ -279,7 +279,7 @@ export class ECSResources {
  * `{ deterministic: true }`. All cold-path, take captures at tick
  * boundaries (between `update()`s). */
 export class ECSSnapshots {
-	// Protected, not private: the snapshot capability subclasses this to add
+	// Protected, not private: the snapshot plugin subclasses this to add
 	// `capture` / `restore`, and reaches the store the same way.
 	protected readonly _store: Store;
 	/** @internal constructed by `ECS`. */
@@ -303,12 +303,12 @@ export class ECSSnapshots {
 
 /** The capture and restore surface, present at run time and absent from the
  * type. A bare world must fail to compile on `ecs.snapshots.capture`. The
- * method cannot appear in the class body, so the snapshot capability's subclass
+ * method cannot appear in the class body, so the snapshot plugin's subclass
  * declares it. A JavaScript caller has no compiler. The prototype answers with
  * the fault that names the import, not with a `TypeError` about a missing
  * method. `ECSSnapshotsFull` overrides all four. */
 for (const method of ["capture", "restore", "captureSparse", "restoreSparse"]) {
 	(ECSSnapshots.prototype as unknown as Record<string, () => never>)[method] = function (): never {
-		throw capabilityMissingError("snapshots", `ecs.snapshots.${method}`);
+		throw pluginMissingError("snapshots", `ecs.snapshots.${method}`);
 	};
 }

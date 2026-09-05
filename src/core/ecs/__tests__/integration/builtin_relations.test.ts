@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { registerChildOf, registerIsA } from "../../builtin_relations";
 import { getEntityIndex, type EntityID } from "../../entity";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 const idx = (es: EntityID[]): number[] => es.map(getEntityIndex).sort((a, b) => a - b);
 

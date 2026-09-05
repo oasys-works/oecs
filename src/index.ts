@@ -23,15 +23,23 @@
 export { ECS, type ECSOptions } from "./core/ecs";
 export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
 
-// Capability, the plugin seam. These are type-only. The capability modules ship
-// on their own subpaths, and a capability outside this package implements these
-// types. `CapsOf` computes the world type a plugin list builds.
-export type { Capability, CapabilityHost, CapsOf } from "./core/ecs";
+// The plugin seam. These are type-only. Each plugin module ships on its own
+// subpath, and a plugin outside this package implements these types.
+// `PluginsOf` computes the world type a plugin list builds.
+export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./core/ecs";
+
+// The change feed a plugin drains. `ChangeFeed` above names the seam.
+// These are the records that cross it.
+export type { ObservationFlags, DrainResult, StructuralObserverEvents } from "./core/ecs";
 
 // ECS memory sizing, the intent surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). The resolver + derivation constants are
 // tooling, at `@oasys/oecs/internal`.
 export type { ECSMemoryOptions, MemoryBacking, WasmMemoryArm } from "./core/ecs";
+
+// The one memory helper a consumer runs, and not an inspector: it reads a
+// module's `__heap_base` and gives back a `memory.storeBase` that clears it.
+export { storeBaseAbove } from "./core/ecs";
 
 // Template / direct-create, opaque archetype template from `ECS.template`,
 // consumed by `ECS.spawn` / `ECS.spawnMany`.
@@ -78,6 +86,15 @@ export type {
 	SystemAccessConfig,
 	SystemAccessDeclaration,
 	SystemTransition
+} from "./core/ecs";
+// Worker execution. `ecs.attachWorkers` starts the pool, and a system carrying
+// a `parallel` config then runs its kernel across it.
+export type {
+	ParallelConfig,
+	ParallelKernel,
+	ParallelColumn,
+	WorkerPool,
+	AttachWorkersOptions
 } from "./core/ecs";
 // Compile-time access typing (system.ts): the config-form `registerSystem`
 // narrows `ctx` to the declared access surface. `SystemAccess` + the

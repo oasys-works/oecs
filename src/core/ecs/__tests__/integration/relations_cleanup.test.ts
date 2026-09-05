@@ -20,10 +20,10 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { Store } from "../../store";
 import type { EntityID } from "../../entity";
-import { relations } from "../../../../capabilities/relations";
-import { storeOnlyHost } from "../../../../core/ecs/capability";
+import { relations } from "../../../../plugins/relations";
+import { storeOnlyHost } from "../../../../core/ecs/plugin";
 
-/** A store with the capabilities these cases drive installed.
+/** A store with the plugins these cases drive installed.
  * `ECS.create({ plugins: [relations()] })` is the same
  * wiring one layer up. */
 function capStore(...args: ConstructorParameters<typeof Store>): Store {

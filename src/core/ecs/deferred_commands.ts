@@ -46,9 +46,10 @@ export interface DeferredCommandHost {
 	 * While both are 0 the flush takes the byte-for-byte fast path. */
 	readonly structuralObserverCount: () => number;
 	readonly toggleObserverCount: () => number;
-	/** The observer-registry dispatch hook, or null (ECS installs it after
-	 * construction, so it is re-read per flush). */
-	readonly structuralObserverHook: () => ((ev: StructuralObserverEvents) => void) | null;
+	/** The consumers of the structural event batches, in install order, empty
+	 * until one arrives (a plugin installs after construction, so the list
+	 * is re-read per flush). */
+	readonly structuralHooks: () => readonly ((ev: StructuralObserverEvents) => void)[];
 }
 
 export class DeferredCommandBuffer {
@@ -157,7 +158,8 @@ export class DeferredCommandBuffer {
 		// never see a torn state. They fire only after the commit.
 		this._flushing = true;
 		const ev = this._observerEvents;
-		const hook = this._host.structuralObserverHook();
+		const hooks = this._host.structuralHooks();
+		const hookCount = hooks.length;
 		try {
 			let rounds = 0;
 			// Joint fixed point over adds and removes, destroys, and toggles.
@@ -209,8 +211,8 @@ export class DeferredCommandBuffer {
 				// `break` here, another buffer may still hold work, so let the
 				// `while` re-check own termination. Each pass fully drains at
 				// least one buffer.
-				if (hook !== null && (ev.addLen > 0 || ev.remLen > 0 || ev.disLen > 0 || ev.enaLen > 0))
-					hook(ev);
+				if (hookCount > 0 && (ev.addLen > 0 || ev.remLen > 0 || ev.disLen > 0 || ev.enaLen > 0))
+					for (let h = 0; h < hookCount; h++) hooks[h](ev);
 			}
 		} finally {
 			this._flushing = false;

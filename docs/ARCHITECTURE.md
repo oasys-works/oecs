@@ -36,7 +36,7 @@ claim in the source, search for the name of the symbol next to the reference.
 17. [The host write path](#17-the-host-write-path)
 18. [Memory size](#18-memory-size)
 19. [Traces](#19-traces)
-20. [The reactive and editor connections](#20-the-reactive-and-editor-connections)
+20. [The Solid and editor connections](#20-the-solid-and-editor-connections)
 21. [Type primitives](#21-type-primitives)
 22. [Development mode](#22-development-mode)
 23. [Invariants](#23-invariants)
@@ -105,17 +105,19 @@ through a deferred buffer, so that live iteration stays correct.
 ### Entry points
 
 The package has several import paths. Each one past the core is optional, and it costs nothing
-until you import it (`index.ts`, `primitives.ts`, `shared.ts`, `extensions/*`).
+until you import it (`index.ts`, `primitives.ts`, `shared.ts`, `plugins/*`).
 
 | Import | Source | What it is |
 | --- | --- | --- |
 | `@oasys/oecs` | `core/ecs` | the ECS, the pure-TS heap profile by default |
 | `@oasys/oecs/primitives` | `primitives.ts` | the data structures that operate alone (`BitSet`, `SparseSet`, and others) |
 | `@oasys/oecs/shared` | `shared.ts` | the `SharedArrayBuffer` and WASM allocators (these need COOP and COEP) |
-| `@oasys/oecs/reactive` | `reactive` | the reactive kernel, which has no dependencies |
-| `@oasys/oecs/reactive-sync` | `extensions/reactive` | the bridge from the ECS to the kernel (it publishes only the changed data) |
-| `@oasys/oecs/editor` | `extensions/editor` | undo, redo, and field handles |
-| `@oasys/oecs/solid` | `extensions/solid` | the SolidJS adapter (`solid-js` is an optional peer dependency) |
+| `@oasys/oecs/relations` | `plugins/relations` | the relations plugin, `(relation, target)` pairs and hierarchy traversal |
+| `@oasys/oecs/events` | `plugins/events` | the events plugin, host-side channels and signals |
+| `@oasys/oecs/snapshots` | `plugins/snapshots` | the snapshots plugin, `capture` and `restore` |
+| `@oasys/oecs/observers` | `plugins/observers` | the observers plugin, `ecs.observe` |
+| `@oasys/oecs/editor` | `plugins/editor` | undo, redo, and field handles |
+| `@oasys/oecs/solid` | `plugins/solid` | the solid plugin, ECS state into Solid signals (`solid-js` is an optional peer dependency) |
 | `@oasys/oecs/internal` | `internal.ts` | the unstable internal parts (codecs, ABI constants, the access checker) |
 
 ---
@@ -864,13 +866,28 @@ Source: `src/core/ecs/observer.ts`.
 
 An observer runs a callback when the engine adds, removes, or sets a component, or when it enables
 or disables the entity of that component. It is the push equivalent of a `changed()` query, which
-you must poll. Observers are a capability, so a world installs them with
+you must poll. Observers are a plugin, so a world installs them with
 `ECS.create({ plugins: [observers()] })` and imports `observers` from `@oasys/oecs/observers`.
-`ecs.observe(def, config)` (`capabilities/observers.ts`) registers one, and it gives a handle
+`ecs.observe(def, config)` (`plugins/observers.ts`) registers one, and it gives a handle
 that you can dispose of. The shape of the config selects the kind: structural (`onAdd`, `onRemove`,
 `onDisable`, and `onEnable`), `onSet` with archetype granularity (the default), or `onSet` with
 entity granularity. The declared `access` of each observer builds a `SystemDescriptor`. So the
 access checker validates its callbacks exactly as it validates a system.
+
+### The registry is one consumer of the change feed
+
+The store owns the record of what changed, and the registry reads it like any other plugin. That
+seam is `ChangeFeed` (`core/ecs/plugin.ts`), which `Store` implements and `PluginHost.changes`
+hands out. The registry asks for the flags its live observers need, under the consumer name
+`observers` (`store.configureObservation`, `store.configureSparseObservation`). The store merges
+every consumer's ask by OR. So one consumer dropping a flag never takes that flag from another. The
+registry takes the structural rounds through `store.addStructuralHook`. It drains at settle through
+`host.onSettle`. Both are lists that run in install order. `drainSet` and `drainSparseSet` are
+memoized on the run. A second consumer of one run gets the result the first one got. The registry's
+own work sits above the feed. That is the access-topological order, the radix entity order, the
+access span of each callback, and `yieldExisting`.
+`core/ecs/__tests__/unit/change_feed.test.ts` locks the merge, the memo and the two hook orders. The
+author-facing form is in [plugins](./api/plugins.md).
 
 ### When each callback runs
 
@@ -1045,8 +1062,9 @@ through an index, and it makes no lookup by object identity.
 
 `_runPhase` is the high-frequency loop. For each sorted system, it tests the gate, sets
 `ctx.lastRunTick` to the change tick of the *previous* run of that system, advances the change
-tick, and runs `fn` inside an access span. It runs `backend.run(handle)` instead, when a compute
-backend is attached and the system carries a `backendHandle`. It then records the change tick of
+tick, and runs `fn` inside an access span. It runs `backend.run(handle, dt, tick)` instead, when a
+compute backend is attached and the system carries a `backendHandle`. It publishes the descriptor
+row counts before that call, so a module reads the live count of every archetype. It then records the change tick of
 this run as the last run of that system. After the phase, it advances the change tick again, so
 that the flush stamps above every run of the phase, and it calls `ctx.flush()`. In development, it
 then calls the `phaseBoundary` trace hook. A
@@ -1305,39 +1323,29 @@ sites from stack traces, and it caches the result for each line. It is in memory
 
 ---
 
-## 20. The reactive and editor connections
+## 20. The Solid and editor connections
 
-These are optional extension entry points. The core ECS never imports a UI library.
+These are optional entry points. The core ECS never imports a UI library.
 
-**The reactive kernel** (`@oasys/oecs/reactive`, `reactive/`) is a fine-grained, glitch-free
-machine for signals, and it has no dependencies. It has `signal`, `computed`, `effect`, `batch`,
-`untrack`, `root`, and `onCleanup` (`reactive/kernel.ts`). It pulls each value when a reader needs
-it, through a dependency graph of intrusive doubly-linked lists. A `computed` value increases its
-version only when its `eq` function reports a change. So a recompute that gives an equal value
-stops the propagation. A flush that continues past `MAX_CASCADE = 100_000` reruns throws "did not
-settle" (`reactive/kernel.ts`). The reactive collections (`reactiveMap`, `reactiveStruct`, and
-`reactiveArray`, in `reactive/{map,struct,array}.ts`) give a channel for each key, each field, or
-each slot. So a reader subscribes to one key alone, which is `O(changed)`, and not `O(all)`.
+**The Solid plugin** (`@oasys/oecs/solid`, `src/plugins/solid/solid.ts`) is the one path from ECS
+state into a UI. `solid()` installs `ecs.solid`, and each view reads the store's change feed and
+writes Solid. Nothing sits between them. A row is one Solid signal, made on the first `cell(id)`
+and kept, so a publish costs one setter call and a reader tracks the whole row. `component` drains
+the row grain of one dense component. `fields` is sugar that publishes a fixed field list with an
+`eq` over those fields, and `singleton` publishes one entity into a keyless Solid store. The
+`"column"` grain swaps the row drain for a sweep of the archetypes whose column changed, and it
+costs the write path nothing. Every view publishes at the settle point, inside one Solid `batch`, so one
+`update()` is one Solid flush whatever the number of views. `solid-js` is an optional peer
+dependency, and only this entry point imports it. The refusals and the untested claims are in
+[solid](./api/solid.md).
 
-**The bridge from the ECS to the kernel** (`@oasys/oecs/reactive-sync`,
-`src/extensions/reactive/ecs_sync.ts`) drains the ECS observers into the reactive collections, and
-in each tick it publishes only the changed entities and columns. `syncComponentToMap`
-(`extensions/reactive/ecs_sync.ts`) is the primary function. With `grain: "entity"` it drains the
-dirty list of each row. With `grain: "column"` it examines the struct-of-arrays storage of the
-archetype, which is better for a component that changes frequently. `batchedUpdate` puts
-`ecs.update(dt)` inside a `batch()` call, so that the publications of a full tick go together into
-one UI flush (`extensions/reactive/ecs_sync.ts`).
-
-**The editor** (`@oasys/oecs/editor`, `src/extensions/editor/`) adds undo, redo, and field handles
+**The editor** (`@oasys/oecs/editor`, `src/plugins/editor/`) adds undo, redo, and field handles
 that operate in two directions, above the host write path. Each edit is a transaction with a
 forward list of `HostCommand` values and an inverse list, on the one queue. Undo puts the inverse
 list in the queue, and redo puts the forward list in the queue again. So undo is only one more
-command that the engine applies at the next phase head (`extensions/editor/editor.ts`).
-`fieldHandle` makes one field into a reactive read plus a write that you can undo, for an input in
-an inspector (`extensions/editor/field_handle.ts`).
-
-**The SolidJS adapter** (`@oasys/oecs/solid`, `src/extensions/solid/`) brings the values of the
-kernel into Solid. `solid-js` is an optional peer dependency, and only this entry point imports it.
+command that the engine applies at the next phase head (`plugins/editor/editor.ts`).
+`fieldHandle` makes one field into a tracked read plus a write that you can undo, for an input in
+an inspector (`plugins/editor/field_handle.ts`).
 
 ---
 

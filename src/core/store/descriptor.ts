@@ -109,7 +109,8 @@ export interface ColumnDescriptor {
 	readonly componentId: number;
 	readonly fieldId: number;
 	readonly typeTag: TypeTagValue;
-	/** Byte offset of the column's first row, measured from SAB byte 0. */
+	/** Byte offset of the column's first row, measured from the store base.
+	 * A reader adds the base it mounted the store at. */
 	readonly byteOff: number;
 	/** Element width in bytes. Should always equal `TYPE_TAG_STRIDE[type_tag]`. */
 	readonly stride: number;

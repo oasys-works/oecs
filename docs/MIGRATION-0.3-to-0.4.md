@@ -354,10 +354,11 @@ increase of the major version. Use them as they help you:
 | `@oasys/oecs` | the ECS (the default, a pure-TS heap) |
 | `@oasys/oecs/shared` | the `SharedArrayBuffer` and WASM allocators (they need COOP and COEP) |
 | `@oasys/oecs/primitives` | `BitSet`, `SparseSet`, `SparseMap`, the growable typed arrays, `BinaryHeap`, and `topologicalSort` |
-| `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies |
-| `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel (it publishes only the changed data, in O(changed)) |
-| `@oasys/oecs/solid` | the SolidJS adapter (`solid-js` is an optional peer dependency) |
+| `@oasys/oecs/solid` | the SolidJS read path (`solid-js` is an optional peer dependency) |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
+
+0.4 also published a signals kernel and a bridge from the ECS to it. 0.6 removed both. Read the
+[migration guide (0.5 to 0.6)](./MIGRATION-0.5-to-0.6.md) before you take that path.
 
 ---
 

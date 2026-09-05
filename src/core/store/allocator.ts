@@ -455,12 +455,13 @@ export function fixedSabAllocator(
  * live SAB *be* a WASM module's `WebAssembly.Memory`. Grows the memory in
  * 64 KiB page increments when `bytes` exceeds the current buffer.
  *
- * This backing is growable by nature. A shared `WebAssembly.Memory`
- * gives a growable `SharedArrayBuffer` and can give nothing else. A WASM-backed
- * world on JavaScriptCore should thus pay the column-write cost that
- * `growableSabAllocator` warns about above. `fixedSabAllocator` is not a remedy
- * here, because the WASM module must own the memory. This is not measured: no
- * WASM backend ships yet to measure it with.
+ * This backing is growable by nature. A shared `WebAssembly.Memory` gives a
+ * growable `SharedArrayBuffer` and can give nothing else. That looks like the
+ * shape `growableSabAllocator` warns about, and it is not. A probe measured a
+ * column write through a shared `WebAssembly.Memory` against the growable
+ * `SharedArrayBuffer` on JavaScriptCore and found no such cost. A WASM-backed
+ * world costs what the heap profile costs on every runtime tested, so
+ * `fixedSabAllocator` is no remedy here and none is needed.
  *
  * This is the **opt-in storage backing for the WASM path**. A consumer
  * that attaches a WASM `ComputeBackend` passes

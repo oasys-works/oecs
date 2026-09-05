@@ -1,6 +1,6 @@
 # Relations
 
-> This page needs the **relations** capability. Install it at construction:
+> This page needs the **relations** plugin. Install it at construction:
 >
 > ```ts
 > import { relations } from "@oasys/oecs/relations";

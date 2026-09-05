@@ -13,8 +13,8 @@ import {
 import type { ComponentDef, ComponentID } from "../../component";
 import { BitSet } from "../../../../type_primitives";
 import { ECSError, ECS_ERROR } from "../../utils/error";
-import { events } from "../../../../capabilities/events";
-import { storeOnlyHost } from "../../../../core/ecs/capability";
+import { events } from "../../../../plugins/events";
+import { storeOnlyHost } from "../../../../core/ecs/plugin";
 
 function makeMask(...ids: (number | ComponentID)[]): BitSet {
 	const mask = new BitSet();
@@ -706,7 +706,7 @@ describe("Store", () => {
 	// walk the channel twice, breaking the at-most-once-per-tick invariant.
 
 	it("a thrown emit does not double-register the channel in the dirty list", () => {
-		// A raw store drives the registry directly, so it installs the capability
+		// A raw store drives the registry directly, so it installs the plugin
 		// the same way `ECS.create({ plugins: [events()] })` does one layer up.
 		const store = new Store();
 		events().install(storeOnlyHost(store));

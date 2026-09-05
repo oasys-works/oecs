@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { RelationDef } from "../../relation";
 import { getEntityIndex, type EntityID } from "../../entity";
-import { relations } from "../../../../capabilities/relations";
+import { relations } from "../../../../plugins/relations";
 
 const ids = (es: EntityID[]): number[] => es.map((e) => e as number);
 const getIndex = (e: EntityID): number => getEntityIndex(e);

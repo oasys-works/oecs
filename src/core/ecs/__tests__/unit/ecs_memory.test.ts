@@ -160,11 +160,17 @@ describe("resolve_ecs_memory, axis B: what backs it", () => {
 		expect(plan.allocator.isInPlace).toBe(true);
 	});
 
-	it("wasm (bring-your-own): accepts a shared Memory, cap unknowable", () => {
+	// The Memory hides its own `maximum` from JS, and the store must still
+	// promise it writes only inside its span. So this arm takes a declared cap
+	// and falls back to the default.
+	it("wasm (bring-your-own): accepts a shared Memory and takes maxBytes as the cap", () => {
 		const memory = new WebAssembly.Memory({ initial: 2, maximum: 64, shared: true });
 		const plan = resolveECSMemory({ backing: { wasm: { memory } } });
 		expect(plan.wasmMemory).toBe(memory);
-		expect(plan.capBytes).toBeNull();
+		expect(plan.capBytes).toBe(DEFAULT_ECS_CAP_BYTES);
+
+		const declared = resolveECSMemory({ maxBytes: 8 * MiB, backing: { wasm: { memory } } });
+		expect(declared.capBytes).toBe(8 * MiB);
 	});
 
 	it("wasm (bring-your-own): rejects a non-shared Memory at construction", () => {
@@ -179,18 +185,14 @@ describe("resolve_ecs_memory, axis B: what backs it", () => {
 		);
 	});
 
-	// The one place the two axes really do collide: a WASM Memory's page maximum
-	// is the ceiling, so a second ceiling beside it would be two answers to one
-	// question. Named as a conflict rather than silently ignored.
+	// An engine-constructed Memory declares its page maximum, and that IS the
+	// ceiling, so a second ceiling beside it would be two answers to one
+	// question. A caller-supplied Memory hides its maximum, so there `maxBytes`
+	// is the only ceiling available and it is accepted.
 	it("wasm: rejects a maxBytes beside the page maximum", () => {
 		expectInvalid(
 			() => resolveECSMemory({ maxBytes: 8 * MiB, backing: { wasm: { maximumPages: 256 } } }),
 			"Declare it once, in pages"
-		);
-		const memory = new WebAssembly.Memory({ initial: 2, maximum: 64, shared: true });
-		expectInvalid(
-			() => resolveECSMemory({ maxBytes: 8 * MiB, backing: { wasm: { memory } } }),
-			"declares its own ceiling"
 		);
 	});
 

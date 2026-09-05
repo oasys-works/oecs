@@ -14,11 +14,11 @@
  *
  * The caller is responsible for two things:
  *   1. **Telling us how many live rows each archetype has.** Descriptors
- *      carry a `row_count` field but no live code currently writes it. The
- *      authoritative row count is held by the Archetype on the TS side. The
- *      `GrowPlan` shape below makes the caller pass it explicitly so this
- *      primitive doesn't need to dig through the old descriptor's
- *      potentially-stale `row_count`.
+ *      carry a `row_count` field, and `Store.publishRowCounts` writes it at
+ *      tick start and at each phase flush. It is therefore a copy that goes
+ *      stale between those points. The authoritative row count is held by the
+ *      Archetype on the TS side. The `GrowPlan` shape below makes the caller
+ *      pass it explicitly so this primitive never reads the stale copy.
  *   2. **Picking the new capacities.** Doubling is the default but the
  *      caller chooses, different archetypes may pick different growth
  *      multipliers, or some may stay the same.
@@ -155,7 +155,8 @@ function growColumnStoreInPlace(
 	//    the new tail ranges. Byte-level copy handles any column type. Src
 	//    (< pre-grow byteLength) and dst (>= pre-grow byteLength) never
 	//    overlap.
-	const bytes = new Uint8Array(grownBuffer);
+	// Based at the store, so a descriptor's relative `byte_off` indexes it.
+	const bytes = new Uint8Array(grownBuffer, old.storeBase, newTotal);
 	for (let t = 0; t < growTargets.length; t++) {
 		const target = growTargets[t];
 		const oldArch = old.archetypes.get(target.archetypeId)!;
@@ -205,7 +206,9 @@ function growColumnStoreInPlace(
 
 	// 6. Build views for the grown archetypes only. Carry the rest forward
 	//    verbatim (their views still read the same valid memory).
-	const grownViews = createArchetypeViews(grownBuffer, [...newDescriptors.values()]);
+	const grownViews = createArchetypeViews(grownBuffer, old.storeBase, [
+		...newDescriptors.values()
+	]);
 	const merged = new Map<number, ArchetypeViews>();
 	for (const [archetypeId, arch] of old.archetypes) {
 		const rebuilt = grownViews.get(archetypeId);
@@ -216,6 +219,7 @@ function growColumnStoreInPlace(
 		buffer: grownBuffer,
 		view: newView,
 		header: { ...old.header, viewStamp: newViewStamp, capacity: newTotal },
+		storeBase: old.storeBase,
 		archetypes: merged,
 		_regionBytes: old._regionBytes,
 		_allocator: old._allocator,

@@ -4,7 +4,7 @@
  *
  * onDisable and onEnable extend the structural model to the entity enable and disable transition:
  * the partition swap (`disableRow` and `enableRow`) fires no `onAdd` or `onRemove`, so a
- * consumer (the reactive bridge) was blind to it. onDisable and onEnable fire at
+ * consumer that reads the change feed was blind to it. onDisable and onEnable fire at
  * the *deferred* toggle drain in `flushStructural`, like onAdd and onRemove, an
  * *immediate* host-side `ecs.disable()` does not fire, for *every component
  * the entity carries* (a disable is a soft remove of the whole mask from default
@@ -51,6 +51,7 @@
 
 import { unsafeCast } from "../../type_primitives";
 import type { ArchetypeView } from "./archetype";
+import type { ChangeFeed } from "./plugin";
 import type { ComponentDef, ComponentHandle } from "./component";
 import type { SparseComponentDef } from "./sparse_store";
 import type { EntityID } from "./entity";
@@ -68,40 +69,18 @@ import { componentDebugName } from "./debug_names";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { DEV } from "../../dev_flag";
 
-/** What the observer registry needs from `Store`, the typed seam replacing
- * bare underscore-convention reach-through. `Store` implements this. The
+/** What the observer registry needs from `Store`: the change feed every
+ * consumer shares, plus the dev-only trace sink. `Store` implements this. The
  * registry holds only this view, so the compiler bounds what observer dispatch
- * can touch. Underscore names are kept so `Store`'s members stay one
- * declaration (they read as "internal" at every other call site). */
-export interface ObserverHost {
+ * can touch, and the registry is one consumer of the feed among others. */
+export interface ObserverHost extends ChangeFeed {
 	/** Dev-only frame-trace sink (`null` when unset, always null in prod). */
 	readonly trace: FrameTraceSink | null;
-	/** Sync a component's observation flags (add, remove, disable, enable and dirty). */
-	configureObservation(
-		cid: number,
-		hasAdd: boolean,
-		hasRem: boolean,
-		hasDisable: boolean,
-		hasEnable: boolean,
-		trackDirty: boolean
-	): void;
-	/** Collect the rows recorded for `cid` since the last drain. `run` is the
-	 * change tick of this dispatch. See `Store.drainSet`. */
-	drainSet(cid: number, run: number): DrainResult;
-	/** Give sparse component `sid` row ticks, for an entity-level onSet. */
-	configureSparseObservation(sid: number, hasSet: boolean): void;
-	/** Collect the members of sparse component `sid` recorded since the last
-	 * drain, alive and enabled, in member order. See `Store.drainSparseSet`. */
-	drainSparseSet(sid: number, run: number): EntityID[];
-	/** Visit archetypes whose `cid` column changed since `baseline`, in
-	 * canonical (creation-id) order. */
-	forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
-	/** Every live entity currently holding `cid` (dispose-on-disable sweep). */
-	collectEnabledWith(cid: number): EntityID[];
-	isAlive(id: EntityID): boolean;
-	isDisabled(id: EntityID): boolean;
-	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
 }
+
+/** This registry's key in the store's per-consumer observation records. It is
+ * the plugin name, which is what keeps two consumers apart. */
+const OBSERVERS_CONSUMER = "observers";
 
 /** Per-entity observer callback (onAdd, onRemove, onDisable and onEnable, and
  * per-entity onSet). */
@@ -470,7 +449,7 @@ export class ObserverRegistry {
 			disposed: false
 		};
 		this._sparseEntries.push(entry);
-		this._store.configureSparseObservation(sid, true);
+		this._store.configureSparseObservation(OBSERVERS_CONSUMER, sid, true);
 		const dispose = (): void => {
 			if (entry.disposed) return;
 			entry.disposed = true;
@@ -478,7 +457,7 @@ export class ObserverRegistry {
 			if (i >= 0) this._sparseEntries.splice(i, 1);
 			let left = false;
 			for (let k = 0; k < this._sparseEntries.length; k++) if (this._sparseEntries[k].sid === sid) left = true;
-			if (!left) this._store.configureSparseObservation(sid, false);
+			if (!left) this._store.configureSparseObservation(OBSERVERS_CONSUMER, sid, false);
 		};
 		return { dispose, [DISPOSE]: dispose };
 	}
@@ -518,14 +497,13 @@ export class ObserverRegistry {
 				if (e.onSetEntity !== undefined) trackDirty = true;
 			}
 		}
-		this._store.configureObservation(
-			cid,
-			hasAdd,
-			hasRem,
-			hasDisable,
-			hasEnable,
-			trackDirty
-		);
+		this._store.configureObservation(OBSERVERS_CONSUMER, cid, {
+			add: hasAdd,
+			remove: hasRem,
+			disable: hasDisable,
+			enable: hasEnable,
+			set: trackDirty
+		});
 	}
 
 	private _getTopo(): ObserverEntry[] {

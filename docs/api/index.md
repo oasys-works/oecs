@@ -70,7 +70,7 @@ ecs.getField(e, Pos, "x"); // about 1.667
 oecs has several import paths. The core is `@oasys/oecs`. Each other path is optional, and it costs
 nothing until you import it.
 
-Four subsystems are **capabilities**: relations, events, snapshots and observers. A world installs
+Four subsystems are **plugins**: relations, events, snapshots and observers. A world installs
 the ones it uses, and carries no code for the rest.
 
 ```ts
@@ -87,28 +87,55 @@ world.events.emit(Damaged, { amount: 1 }); // compile error, events is not insta
 
 `ECS.create` returns the world intersected with the facades its plugins contribute. `new ECS()`
 still builds a world, and that world holds none of the four. A JavaScript caller that reaches for a
-capability the world did not install gets `CAPABILITY_NOT_INSTALLED`. A plugin list that installs
-one capability two times gets `CAPABILITY_ALREADY_INSTALLED`. See [errors](./errors.md).
+plugin the world did not install gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs
+one plugin two times gets `PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
 
-To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
-from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
-plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
-gains. `CapsOf` is the surface a plugin list adds to the world.
+To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
+from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
+gains. `PluginsOf` is the surface a plugin list adds to the world. The
+[plugins](./plugins.md) page documents the host, the rules `ECS.create` checks, and the
+change feed a plugin drains.
 
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default |
 | `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, for worker offload or a WASM backend (this needs COOP and COEP) |
-| `@oasys/oecs/relations` | the **relations** capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
-| `@oasys/oecs/events` | the **events** capability, host-side channels and signals, and `ctx.emit` |
-| `@oasys/oecs/snapshots` | the **snapshots** capability, `capture` and `restore` for a live world |
-| `@oasys/oecs/observers` | the **observers** capability, `ecs.observe` |
-| `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies (`signal`, `computed`, `effect`, and reactive collections) |
-| `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel, it publishes only the changed entities and columns |
+| `@oasys/oecs/relations` | the **relations** plugin, `(relation, target)` pairs, wildcards and hierarchy traversal |
+| `@oasys/oecs/events` | the **events** plugin, host-side channels and signals, and `ctx.emit` |
+| `@oasys/oecs/snapshots` | the **snapshots** plugin, `capture` and `restore` for a live world |
+| `@oasys/oecs/observers` | the **observers** plugin, `ecs.observe` |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
-| `@oasys/oecs/solid` | the SolidJS adapter (`solid-js` is an **optional** peer dependency) |
+| `@oasys/oecs/solid` | the **solid** plugin, `solid()`, ECS state into Solid signals off the change feed (`solid-js` is an **optional** peer dependency) |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from (`BitSet`, `SparseSet`, and others) |
+| `@oasys/oecs/worker` | the engine's **worker entry**. `ecs.attachWorkers` starts it, and you never import it. On npm the guarded build is `@oasys/oecs/worker/dev` |
 | `@oasys/oecs/internal` | an **unstable** surface for tools, codecs, ABI constants, memory inspectors, and development singletons. There are no semver guarantees |
+
+### The parallel and WASM surface
+
+One system can run across a pool of workers. These are the names that carry it, and
+[parallel execution](./parallel.md) with [WASM backends](./wasm.md) documents each one.
+
+| Name | Where | What it is |
+| --- | --- | --- |
+| `ecs.attachWorkers(options)` | `ECS` | starts the pool, resolves when every kernel is loaded |
+| `ecs.workers` | `ECS` | the attached `WorkerPool`, or `null` |
+| `WorkerPool` | root, type | `count`, `settled()` and `detach()` |
+| `AttachWorkersOptions` | root, type | `count`, `workerUrl` and `joinTimeoutMs` |
+| `SystemConfig.parallel` | `registerSystem` | `kernel`, `columns`, `minRows` and `query` |
+| `ParallelConfig` | root, type | the shape of that field |
+| `ParallelKernel` | root, type | `{ wasm, export }` or `{ js, export }` |
+| `ParallelColumn` | root, type | one `[component, field]` pair, held to the component's schema |
+| `memory.storeBase` | `ECSMemoryOptions` | the byte offset the store header sits at |
+| `ecs.memoryPlan.storeBase` | `ResolvedECSMemory` | the value the engine resolved |
+| `storeBaseAbove(exports, extraBytes)` | root | a base read from a module's `__heap_base` |
+| `WASM_STORE_BASE_BYTES` | `@oasys/oecs/internal` | the default base for the wasm backing, one page |
+| `ComputeBackend.run(handle, dt, tick)` | root, type | a backend body, with the phase `dt` and the frame tick |
+| `ecs.publishRowCounts()` | `ECS` | refresh the descriptor row counts for a module you drive yourself |
+
+The errors are `WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`,
+`WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS` and
+`PARALLEL_KERNEL_FAILED`. See [errors](./errors.md).
 
 The root also exports **`VERSION`**, which is the package version as a string constant that you can
 read at run time (`import { VERSION } from "@oasys/oecs"`). It is a literal in the source, and not
@@ -151,17 +178,15 @@ Read these pages in this order, to get a model that you can use.
     replay of a command log
 14. [memory](./memory.md), the `memory` option that sets the size, and the storage profiles
 15. [WASM backends](./wasm.md), a shared `WebAssembly.Memory`, `ComputeBackend`, and the FFI ids
-16. [parallel execution](./parallel.md), the connections for shared memory and workers, and the
-    contract of the sequential scheduler
+16. [parallel execution](./parallel.md), `attachWorkers`, the `parallel` system form, the kernel
+    signature, the join stamp, and the limits
 
 ### Integration with a host and a UI
 
-17. [extensions overview](../EXTENSIONS.md), how the optional entry points fit together in a real
-    application
+17. [the optional entry points](../INTEGRATION.md), how they fit together in a real application
 18. [the host write path](./host-write-seam.md), how to queue typed writes from a host, a UI, or
     an editor
-19. [reactive](./reactive.md), the optional reactive UI connection (`reactive`, `reactive-sync`,
-    and `solid`)
+19. [solid](./solid.md), the `solid()` plugin, which is the one path from ECS state into a UI
 20. [editor](./editor.md), undo, redo, and field handles
 21. [traces](./tracing.md), the frame trace and the dispatch trace (development builds only)
 
@@ -170,6 +195,8 @@ Read these pages in this order, to get a model that you can use.
 22. [primitives](./primitives.md), the data structures under `@oasys/oecs/primitives` that you can
     use again
 23. [errors](./errors.md), the `ECSError` taxonomy
+24. [plugins](./plugins.md), for a plugin author: `Plugin`, `PluginHost`, the
+    rules `ECS.create` checks, and the change feed a plugin drains
 
 <a id="dev-vs-prod--read-this-once"></a>
 
@@ -186,10 +213,10 @@ The build tool **removes these checks from a production build**.
 
 **Production is the default.** On npm, `@oasys/oecs` is the production build, with the guards
 removed. A bundler in development mode selects the build with the guards automatically, through the
-`development` export condition. As an alternative, import `@oasys/oecs/dev`. Each capability has
+`development` export condition. As an alternative, import `@oasys/oecs/dev`. Each plugin has
 the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the capability from the same
-channel as the world. A capability binds to the core build it was made against. On JSR and Deno the
+`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the plugin from the same
+channel as the world. A plugin binds to the core build it was made against. On JSR and Deno the
 default is also production. JSR publishes no `/dev` subpath. Set `globalThis.__DEV__ = true`
 before the first import to turn the guards on. The
 [Development guards and production builds](../PRODUCTION.md) guide has the full matrix.

@@ -23,12 +23,12 @@
  ***/
 
 import type { ECS } from "./ecs";
-import type { RelationsCapability } from "../../capabilities/relations";
+import type { RelationsPlugin } from "../../plugins/relations";
 
-/** A world with the relations capability installed. These helpers register a
+/** A world with the relations plugin installed. These helpers register a
  * relation, so they need it. The import is type-only: this module stays part of
- * the core and pins no capability code into a world that installs none. */
-type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
+ * the core and pins no plugin code into a world that installs none. */
+type RelationalWorld = ECS<RelationsPlugin> & RelationsPlugin;
 import type { OnDeleteTarget, RelationDef } from "./relation";
 
 /** Options for a built-in relation. `exclusive` / `multi` are fixed (always

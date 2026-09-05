@@ -29,9 +29,9 @@ const ecs = ECS.create({
 });
 ```
 
-Each option is optional. `new ECS()` uses good default values, and it installs no capability.
-`ECS.create` adds the capabilities the world uses. This guide uses events, so it installs
-`events()`. Relations, snapshots and observers each have their own capability.
+Each option is optional. `new ECS()` uses good default values, and it installs no plugin.
+`ECS.create` adds the plugins the world uses. This guide uses events, so it installs
+`events()`. Relations, snapshots and observers each have their own plugin.
 
 ## 3. Define the components
 
@@ -347,7 +347,7 @@ moves the entity to a different archetype.
 
 ### Events and resources
 
-`ctx.emit` and `ctx.readEvents` need the events capability. Resources need none.
+`ctx.emit` and `ctx.readEvents` need the events plugin. Resources need none.
 
 ```ts
 ctx.emit(DamageEvent, { target: id, amount: 25 });

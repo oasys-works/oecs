@@ -13,20 +13,28 @@ import { bindToCoreArtifact, recordCoreGraph } from "./scripts/core_boundary";
 // the production pass and `emptyOutDir` clears the dir only on that first pass.
 const DEV_BUILD = process.env.OECS_VARIANT === "development";
 
-// Capabilities build in their own pass. Declaring them beside the core entries
+// The four plugin entries build in their own pass. Declaring them beside the core entries
 // put them in one rollup graph, and rollup then split `index.js` into ten small
-// chunks so the capability bundles could share code with it. Those splits are
+// chunks so the plugin bundles could share code with it. Those splits are
 // real module boundaries at run time, and a measurement of `spawn` on the
 // shipped artifact showed the cost. A separate pass leaves the core chunk graph
-// exactly as it was, at the price of a little duplicated code in the capability
+// exactly as it was, at the price of a little duplicated code in the plugin
 // bundles, which are small and loaded once.
 //
 // Duplicated code is not always harmless. A module that carries a class, a
-// singleton or a registry must exist once in a program. The capability pass
+// singleton or a registry must exist once in a program. The plugin pass
 // marks those external and resolves them to the core artifact.
 // `scripts/core_boundary.ts` holds the classification and fails the build on a
 // module it does not name.
-const CAPABILITY_BUILD = process.env.OECS_ENTRIES === "capabilities";
+const PLUGIN_BUILD = process.env.OECS_ENTRIES === "plugins";
+
+// The worker entry builds in a third pass, for the same reason the plugins do:
+// declared beside the core entries it would split `index.js` into shared
+// chunks, and the dist test locks that chunk graph. It needs no classification
+// pass either. A worker is another realm, so every module it compiles is a
+// second copy by definition, and no `instanceof`, singleton or registry crosses
+// the thread boundary.
+const WORKER_BUILD = process.env.OECS_ENTRIES === "worker";
 
 const SRC_DIR = path.resolve(__dirname, "src");
 const VARIANT = DEV_BUILD ? "development" : "production";
@@ -34,12 +42,12 @@ const VARIANT = DEV_BUILD ? "development" : "production";
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   plugins: [
-    ...(command === "build" && !DEV_BUILD && !CAPABILITY_BUILD
+    ...(command === "build" && !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD
       ? [dts({ tsconfigPath: "./tsconfig.build.json" })]
       : []),
-    ...(command === "build"
+    ...(command === "build" && !WORKER_BUILD
       ? [
-          CAPABILITY_BUILD
+          PLUGIN_BUILD
             ? bindToCoreArtifact(SRC_DIR, VARIANT)
             : recordCoreGraph(SRC_DIR, VARIANT),
         ]
@@ -67,49 +75,43 @@ export default defineConfig(({ command }) => ({
     target: "es2022",
     // production pass wipes dist. The development pass adds its `*.development.*`
     // artifacts alongside without clearing the production output.
-    emptyOutDir: !DEV_BUILD && !CAPABILITY_BUILD,
+    emptyOutDir: !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD,
     lib: {
       // Multi-entry, one per published subpath. Keys are src-relative paths so
       // the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
       // land at matching paths, the `exports` map points both at the same path.
-      entry: CAPABILITY_BUILD
+      entry: WORKER_BUILD
+        ? { worker: path.resolve(__dirname, "src/worker.ts") }
+        : PLUGIN_BUILD
         ? {
-            "capabilities/snapshots": path.resolve(
+            "plugins/snapshots": path.resolve(
               __dirname,
-              "src/capabilities/snapshots.ts",
+              "src/plugins/snapshots.ts",
             ),
-            "capabilities/events": path.resolve(
+            "plugins/events": path.resolve(
               __dirname,
-              "src/capabilities/events.ts",
+              "src/plugins/events.ts",
             ),
-            "capabilities/relations": path.resolve(
+            "plugins/relations": path.resolve(
               __dirname,
-              "src/capabilities/relations.ts",
+              "src/plugins/relations.ts",
             ),
-            "capabilities/observers": path.resolve(
+            "plugins/observers": path.resolve(
               __dirname,
-              "src/capabilities/observers.ts",
+              "src/plugins/observers.ts",
             ),
           }
         : {
-        index: path.resolve(__dirname, "src/index.ts"),
-        shared: path.resolve(__dirname, "src/shared.ts"),
-        "reactive/index": path.resolve(
-          __dirname,
-          "src/reactive/index.ts",
-        ),
-        "extensions/reactive/index": path.resolve(
-          __dirname,
-          "src/extensions/reactive/index.ts",
-        ),
-        "extensions/editor/index": path.resolve(
-          __dirname,
-          "src/extensions/editor/index.ts",
-        ),
-        "extensions/solid/index": path.resolve(
-          __dirname,
-          "src/extensions/solid/index.ts",
-        ),
+            index: path.resolve(__dirname, "src/index.ts"),
+            shared: path.resolve(__dirname, "src/shared.ts"),
+            "plugins/editor/index": path.resolve(
+              __dirname,
+              "src/plugins/editor/index.ts",
+            ),
+            "plugins/solid/index": path.resolve(
+              __dirname,
+              "src/plugins/solid/index.ts",
+            ),
             primitives: path.resolve(__dirname, "src/primitives.ts"),
             internal: path.resolve(__dirname, "src/internal.ts"),
           },
@@ -118,8 +120,16 @@ export default defineConfig(({ command }) => ({
         `${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`,
     },
     rollupOptions: {
-      // solid-js is an optional peerDependency, never bundle it.
-      external: ["solid-js"],
+      // solid-js is an optional peerDependency, never bundle it. `solid-js/store`
+      // is a separate specifier, and it resolves to its own module, so leaving it
+      // off this list compiles a second copy of the store into the solid plugin.
+      //
+      // `node:worker_threads` stays here even though `node_threads.ts` names no
+      // specifier rollup can see. It is a tripwire. A literal specifier that
+      // comes back reaches the emitted file, where the dist test fails on it.
+      // Drop it and the same regression turns into a browser stub chunk, which
+      // loads on node and holds no `Worker`.
+      external: ["solid-js", "solid-js/store", "node:worker_threads"],
     },
   },
 }));

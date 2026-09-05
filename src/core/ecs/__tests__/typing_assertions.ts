@@ -13,7 +13,7 @@
  ***/
 
 import { ECS } from "../ecs";
-import { snapshots, type SnapshotsCapability } from "../../../capabilities/snapshots";
+import { snapshots, type SnapshotsPlugin } from "../../../plugins/snapshots";
 import type { ArchetypeView } from "../archetype";
 import type { ComponentDef, ComponentSchema } from "../component";
 import type { EntityID } from "../entity";
@@ -27,20 +27,20 @@ import type { SparseComponentDef } from "../sparse_store";
 import type { RelationDef, RelationCardinality } from "../relation";
 import type { ResourceKey } from "../resource";
 import type { Template } from "../store";
-import { events, type EventsCapability } from "../../../capabilities/events";
-import { relations, type RelationsCapability } from "../../../capabilities/relations";
-import { observers, type ObserversCapability } from "../../../capabilities/observers";
+import { events, type EventsPlugin } from "../../../plugins/events";
+import { relations, type RelationsPlugin } from "../../../plugins/relations";
+import { observers, type ObserversPlugin } from "../../../plugins/observers";
 
-// The ambient world carries every capability these assertions reach for. The
-// gate itself is asserted in `capabilityGateAssertions`, against worlds built
+// The ambient world carries every plugin these assertions reach for. The
+// gate itself is asserted in `pluginGateAssertions`, against worlds built
 // with and without one.
 declare const world: ECS<
-	EventsCapability & SnapshotsCapability & RelationsCapability & ObserversCapability
+	EventsPlugin & SnapshotsPlugin & RelationsPlugin & ObserversPlugin
 > &
-	EventsCapability &
-	SnapshotsCapability &
-	RelationsCapability &
-	ObserversCapability;
+	EventsPlugin &
+	SnapshotsPlugin &
+	RelationsPlugin &
+	ObserversPlugin;
 declare const e: EntityID;
 declare const Pos: ComponentDef<{ x: "f64"; y: "f64" }>;
 declare const Vel: ComponentDef<{ vx: "f64"; vy: "f64" }>;
@@ -163,7 +163,7 @@ function observeHandleAssertions<S extends ComponentSchema>(genericDef: Componen
 	// `observe` takes `ComponentHandle`, so a generic `ComponentDef<S>` (whose
 	// unresolved schema is not assignable to the erased `ComponentDef`, the
 	// invariance ComponentHandle exists for) registers without a cast. This is
-	// what the reactive bridge's generic sync functions rely on.
+	// what a plugin's generic sync functions rely on.
 	void world.observe(genericDef, { onAdd: () => {} });
 	void world.observe(Frozen, { onRemove: () => {} });
 }
@@ -436,8 +436,8 @@ function facadeCardinalityAssertions(): void {
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
-function capabilityGateAssertions(): void {
-	// The capability surface is a compile-time gate, not a convention. A world
+function pluginGateAssertions(): void {
+	// The plugin surface is a compile-time gate, not a convention. A world
 	// built without a plugin has no member to reach, and a world built with one
 	// carries the widened facade. This is the whole reason `ECS.create` returns
 	// an intersection rather than a plain `ECS`.
@@ -448,15 +448,15 @@ function capabilityGateAssertions(): void {
 	void bare.snapshots.stateHash();
 	void withSnap.snapshots.stateHash();
 
-	// Capture and restore arrive with the capability.
+	// Capture and restore arrive with the plugin.
 	void withSnap.snapshots.capture();
-	// @ts-expect-error, capture() needs the snapshots capability installed
+	// @ts-expect-error, capture() needs the snapshots plugin installed
 	void bare.snapshots.capture();
-	// @ts-expect-error, restore() needs the snapshots capability installed
+	// @ts-expect-error, restore() needs the snapshots plugin installed
 	void bare.snapshots.restore(new Uint8Array());
 
 	// An installed world is still assignable where a bare world is expected:
-	// the capability widens the surface and narrows nothing.
+	// the plugin widens the surface and narrows nothing.
 	const asBare: ECS = withSnap;
 	void asBare;
 }
@@ -473,4 +473,4 @@ void eventReaderReadonlyAssertions;
 void relationCardinalityAssertions;
 void queryTermAssertions;
 void facadeCardinalityAssertions;
-void capabilityGateAssertions;
+void pluginGateAssertions;

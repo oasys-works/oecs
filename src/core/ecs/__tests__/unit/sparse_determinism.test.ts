@@ -20,11 +20,11 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../../store";
 import { SparseRestoreError } from "../../sparse_store";
 import { MAX_INDEX } from "../../entity";
-import { snapshots } from "../../../../capabilities/snapshots";
-import { relations } from "../../../../capabilities/relations";
-import { storeOnlyHost } from "../../../../core/ecs/capability";
+import { snapshots } from "../../../../plugins/snapshots";
+import { relations } from "../../../../plugins/relations";
+import { storeOnlyHost } from "../../../../core/ecs/plugin";
 
-/** A store with the capabilities these cases drive installed.
+/** A store with the plugins these cases drive installed.
  * `ECS.create({ plugins: [relations(), snapshots()] })` is the same
  * wiring one layer up. */
 function capStore(...args: ConstructorParameters<typeof Store>): Store {

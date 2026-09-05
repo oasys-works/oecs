@@ -32,7 +32,7 @@ import { openAccess } from "../test_helpers";
 import { BitSet } from "../../../../type_primitives";
 import { asComponentId, createComponentDef } from "../../component";
 import type { ComponentDef, SystemDescriptor } from "../..";
-import { observers } from "../../../../capabilities/observers";
+import { observers } from "../../../../plugins/observers";
 
 function viewStamp(world: ECS): number {
 	return world.columnStore.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);

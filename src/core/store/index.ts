@@ -1,6 +1,7 @@
 export {
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
+	LEGACY_ABSOLUTE_ABI_VERSION,
 	STORE_HEADER_BYTES,
 	STORE_HEADER_OFFSETS,
 	REGION_TABLE_ENTRY_BYTES,
@@ -68,6 +69,8 @@ export {
 	createColumnStore,
 	StoreLayoutOverflowError,
 	STORE_MAX_BYTE_OFFSET,
+	STORE_BASE_ALIGNMENT,
+	assertStoreBase,
 	COMMAND_RING_DEFAULT_CAPACITY_SLOTS,
 	ENTITY_INDEX_DEFAULT_CAPACITY,
 	EVENT_RING_DEFAULT_CAPACITY_SLOTS
@@ -162,7 +165,12 @@ export {
 	fixedSabAllocator
 } from "./allocator";
 
-export { StoreRestoreError, columnStoreBytesView, restoreColumnStore } from "./snapshot";
+export {
+	StoreRestoreError,
+	type RestoreColumnStoreOptions,
+	columnStoreBytesView,
+	restoreColumnStore
+} from "./snapshot";
 
 export {
 	FNV1A_OFFSET_BASIS,

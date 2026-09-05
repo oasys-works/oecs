@@ -1,7 +1,7 @@
 /**
  * onDisable and onEnable observers, the entity enable and disable
  * transition surfaced as a structural-style observer signal so a consumer
- * (the reactive bridge) can drain it.
+ * of the change feed can drain it.
  *
  * Discipline mirrors onAdd and onRemove: fires at the deferred toggle
  * drain in `flushStructural`, in canonical order, for every component the entity
@@ -16,7 +16,7 @@ import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import { getEntityIndex, type EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
-import { observers } from "../../../../capabilities/observers";
+import { observers } from "../../../../plugins/observers";
 
 const Pos = { x: "i32", y: "i32" } as const;
 const Vel = { vx: "i32", vy: "i32" } as const;
