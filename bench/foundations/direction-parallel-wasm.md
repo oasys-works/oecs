@@ -113,9 +113,10 @@ The state hash of a deterministic world is the oracle for every step.
   a large one, and a heavy kernel crosses earlier than a memory-bound one. The
   threshold is a machine and kernel property, never a constant in the engine.
 - Adding workers stops paying before the core count on a memory-bound kernel.
-- An `Atomics` release and join beats `postMessage`. The join grows faster than
-  the worker count because every worker hits one done word. A tree join is
-  **open**.
+- An `Atomics` release and join beats `postMessage`. The join is not where the
+  barrier cost sits. `p24-par-join.mjs` shows the release side grows with the
+  worker count, a per-worker done word ties the shared word, and a tree join
+  loses above two workers. One worker now notifies the host.
 - Park the host on `Atomics.wait`. A spin wins on V8 and loses on JavaScriptCore.
   A browser main thread cannot park, and its policy is **open**.
 - The engine frame costs nothing against the kernel.
@@ -248,10 +249,13 @@ meaning the docs reserve becomes an engine fact.
 
 ## Open, each one a probe someone still has to write
 
-- A tree join or one done word per worker.
-- A browser host that cannot park.
-- Two different systems at once under a conflict graph.
-- A finer change stamp than every matched row at join.
+- A browser host that cannot park. The browser matrix in `findings-parallel.md`
+  shows Blink, Gecko and WebKit all refuse the park, and a worker host runs the
+  pool on all three. A main thread policy for level 2 is still open.
+- Two different systems at once under a conflict graph. The design is in
+  `direction-level2.md`, and its probe `p26-par-level2.mjs` is still open.
+- A finer change stamp than every matched row at join. `direction-level2.md`
+  keeps the coarse stamp, because a full pass writes every row.
 - A digest for float columns, so the float lane gets an engine oracle.
 - The deno crossover anomaly.
 - A Rust, Go or AssemblyScript module against a nonzero `storeBase`, once the
