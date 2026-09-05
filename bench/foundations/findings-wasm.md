@@ -25,6 +25,7 @@ must read `__heap_base` and pass a base above it.
 | `p25-wasm-growth.mjs` | done, the view check runs on all three | `node bench/foundations/p25-wasm-growth.mjs` |
 | `p25-wasm-crossing.mjs` | done, all three runtimes | `node bench/foundations/p25-wasm-crossing.mjs` |
 | `p25-wasm-backing-cost.mjs` | done, all three runtimes | `node bench/foundations/p25-wasm-backing-cost.mjs` |
+| `p25-wasm-stack.mjs` | done, node only, needs zig | `node bench/foundations/p25-wasm-stack.mjs` |
 
 Every probe reads `dist/`. Build it before a run. `p25-wasm-crossing.mjs` and
 `p25-wasm-backing-cost.mjs` start one process for each variant, so they take a
@@ -35,12 +36,19 @@ store writes each one measured from the header.
 
 Helpers, all under `bench/foundations/wasm/`:
 
-- `emit.mjs`, a WebAssembly binary emitter, no toolchain.
+- `emit.mjs`, a WebAssembly binary emitter, no toolchain. It writes globals and
+  a data segment, so a module from no toolchain can follow the stack rule.
 - `abi_module.mjs`, the toolchain-free reader of the store, built with `emit.mjs`.
 - `abi.zig`, the same reader in Zig.
 - `squatter.zig`, a module with a data segment and a stack, used by the
   ownership probe.
+- `kernel_module.mjs`, `kernel.zig`, `kernel.rs`, `kernel.c` and `kernel_as.ts`,
+  the same kernel bodies from five toolchains.
+- `engine-kernels.mjs`, the JavaScript twin of each body.
 - `build_zig.mjs`, the compiler call. It writes to `wasm/build/`.
+- `gen_kernel_fixtures.mjs`, which builds every kernel module, checks each body
+  against its twin, and writes the binaries the unit suite runs. It holds the
+  exact build line for each toolchain.
 - `world.mjs`, the world every probe shares, and the descriptor readers.
 
 `src/` is unchanged. There is no patch to apply.
@@ -723,3 +731,103 @@ for it.
 - **One world shape, one column capacity and one row count.**
 - **No timing.** The harness compares values and measures nothing.
 - **No growth lane inside the browser.** The store never grows during this case.
+
+## Probe 7, one shadow stack under several instances
+
+**Every worker of the pool shared one shadow stack, and a kernel that spilled
+anything read back another worker's frame.** The corruption is total on the
+first run and it needs no shared column. Giving each instance its own region
+removes it, and the region lane is also the faster of the two, because the
+shared stack puts every worker on one cache line.
+
+**Question.** Probe 6 ran a `wasm` kernel on the shipped pool and every lane
+agreed with the sequential body. Its kernels hold every value in a wasm local,
+so no frame ever reaches memory. What happens to a kernel that spills?
+
+**Method.** `node bench/foundations/p25-wasm-stack.mjs`. One Zig module, built
+with `--export=__heap_base --export=__stack_pointer`. Two bodies. `stack_i32`
+fills a scratch array for each row, then gathers from it with an index the
+scratch itself decides, so no compiler folds the array into registers.
+`table_i32` reads a constant table out of the module's data segment and spills
+nothing, and it is the control.
+
+Three lanes. The **shared** lane starts workers that leave `__stack_pointer`
+where the link put it. The **private** lane gives each worker the top of its own
+slice of `[__heap_base, storeBase)`. Both drive `node:worker_threads` directly
+over four flat columns, so neither lane holds any engine code. The **engine**
+lane registers the same module and the same export on `ecs.attachWorkers` and
+compares `snapshots.stateHash()` against the sequential `fn` of the same world.
+
+The reference is the JavaScript twin of the body, run on one thread.
+
+### Runs that disagree with the one-thread reference, node
+
+| body | workers | lane | wrong |
+| --- | --- | --- | --- |
+| stack | 2 | shared | 5 of 5 |
+| stack | 2 | private | 0 of 5 |
+| stack | 4 | shared | 5 of 5 |
+| stack | 4 | private | 0 of 5 |
+| stack | 8 | shared | 5 of 5 |
+| stack | 8 | private | 0 of 5 |
+| table | 2 | shared | 0 of 5 |
+| table | 2 | private | 0 of 5 |
+| table | 4 | shared | 0 of 5 |
+| table | 4 | private | 0 of 5 |
+| table | 8 | shared | 0 of 5 |
+| table | 8 | private | 0 of 5 |
+
+### Median milliseconds for one pass, node
+
+| body | workers | shared | private |
+| --- | --- | --- | --- |
+| stack | 2 | 1.7688 | 0.5957 |
+| stack | 4 | 1.4565 | 0.3484 |
+| stack | 8 | 3.6275 | 0.3144 |
+| table | 2 | 0.0527 | 0.0532 |
+| table | 4 | 0.0364 | 0.0267 |
+| table | 8 | 0.0657 | 0.0580 |
+
+### The engine lane
+
+Before the fix the shipped pool disagreed with the sequential body at two, four
+and eight workers, and each worker count gave a different hash. After the fix
+every worker count leaves the hash the sequential body leaves.
+
+### What it shows
+
+- **A shadow stack under several instances is a correctness bug, not a race
+  that sometimes fires.** Every run of the shared lane disagrees, at every
+  worker count. The instances collide on exactly the same bytes, because every
+  copy of `__stack_pointer` starts at the address the linker chose.
+- **The fix costs nothing inside a pass.** The assignment happens once for each
+  kernel load. The `table` body, which spills nothing, is inside the spread on
+  both lanes at every worker count.
+- **The shared lane is far slower as well as wrong.** Every worker writes the
+  same frame addresses, so the line ping-pongs between cores. That cost grows
+  with the worker count while the private lane's falls.
+- **A data segment is safe above the store base.** The `table` body agrees on
+  both lanes and at every worker count. The segment and the guard word the
+  linker places beside it both sit below `__heap_base`, and the store starts
+  above that.
+- **The Zig layout puts the stack first.** `__stack_pointer` links below
+  `__data_end`, and `__heap_base` sits above both. Rust and C through `zig cc`
+  land on the same three addresses. So the reserve above `__heap_base` is the
+  only span the engine can hand out.
+
+### What this probe does not cover
+
+- Node only. It drives `node:worker_threads` itself, so deno and bun run
+  nothing here.
+- One module and one compiler. The unit suite runs the same bodies from Zig,
+  from Rust, from C and from a hand emitter, and that is where the
+  any-toolchain claim is tested.
+- One scratch size, one row count and one store base.
+- No kernel that overruns its region. A wasm stack has no guard page, so an
+  overrun writes into the neighbour's region and nothing reports it. The engine
+  cannot size a stack, and this probe does not measure what happens when the
+  caller sizes it wrong.
+- No module whose `__stack_pointer` is immutable, and none that exports the
+  stack pointer without `__heap_base`. Both paths throw, and only the unit suite
+  covers them.
+- Cold start. The module compiles and the pool attaches before the timing.

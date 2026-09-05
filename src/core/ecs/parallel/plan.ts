@@ -51,6 +51,55 @@ export interface ParallelPlan {
 	readonly kernel: ParallelConfig["kernel"];
 }
 
+/**
+ * Refuse a `wasm` kernel module the pool cannot serve.
+ *
+ * A worker instantiates the module with one import, the world's memory as
+ * `env.memory`. Every other import fails inside the worker, where the fault
+ * names a worker and not the system, so the check runs here instead.
+ *
+ * A module that imports no memory is the quiet case. It addresses its own
+ * linear memory, writes rows nothing reads, and reports success.
+ *
+ * The parameter count is not checked here. The JS API reports no signature for
+ * a module export, so the worker checks the arity once it holds the function.
+ *
+ * Dev guard, at registration.
+ */
+function assertKernelModule(who: string, module: WebAssembly.Module, exportName: string): void {
+	const imports = WebAssembly.Module.imports(module);
+	let memory = false;
+	for (const entry of imports) {
+		if (entry.module === "env" && entry.name === "memory" && entry.kind === "memory") {
+			memory = true;
+			continue;
+		}
+		throw new ECSError(
+			ECS_ERROR.PARALLEL_KERNEL_MODULE,
+			`${who} names a wasm kernel that imports '${entry.module}.${entry.name}' as a ${entry.kind}, and a worker supplies only 'env.memory'. Drop the import, or move what it does into the kernel.`
+		);
+	}
+	if (!memory) {
+		throw new ECSError(
+			ECS_ERROR.PARALLEL_KERNEL_MODULE,
+			`${who} names a wasm kernel that imports no 'env.memory', so it addresses a linear memory of its own and never the store. Link the module with --import-memory.`
+		);
+	}
+	const exported = WebAssembly.Module.exports(module).find((entry) => entry.name === exportName);
+	if (exported === undefined) {
+		throw new ECSError(
+			ECS_ERROR.PARALLEL_KERNEL_MODULE,
+			`${who} names the wasm kernel export '${exportName}' and the module exports no such name. Name an export the module carries.`
+		);
+	}
+	if (exported.kind !== "function") {
+		throw new ECSError(
+			ECS_ERROR.PARALLEL_KERNEL_MODULE,
+			`${who} names the wasm kernel export '${exportName}', and the module exports it as a ${exported.kind}. A kernel must be a function.`
+		);
+	}
+}
+
 function maskWords(words: readonly number[]): Uint32Array {
 	const out = new Uint32Array(COMPONENT_MASK_WORDS);
 	for (let w = 0; w < COMPONENT_MASK_WORDS && w < words.length; w++) out[w] = words[w] >>> 0;
@@ -190,6 +239,7 @@ export function assertParallelConfig(config: SystemConfig, query: Query<any>): v
 			`${who} declares a parallel.kernel with neither 'wasm' nor 'js'. Give a compiled WebAssembly.Module, or an absolute module URL a worker can import.`
 		);
 	}
+	if (kernel.wasm !== undefined) assertKernelModule(who, kernel.wasm, kernel.export);
 }
 
 /**

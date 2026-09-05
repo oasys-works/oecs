@@ -58,3 +58,56 @@ export function mixI32(px, py, vx, vy, begin, end, dt) {
 		py[i] = (py[i] + (h & 255)) | 0;
 	}
 }
+
+/** The slot count of the scratch array and of the constant table. One power of
+ * two, so a mask picks a slot and no branch does. Keep in step with `SLOTS` in
+ * every module source, or the lanes stop computing one function. */
+export const SLOTS = 64;
+
+/** The scratch the JavaScript twin gathers from. A module puts this array on
+ * its shadow stack, and that is the whole point of the body below. This file
+ * runs on one thread for each worker, so one array serves every call. */
+const scratch = new Int32Array(SLOTS);
+
+/**
+ * A body that a compiled module must spill to its shadow stack.
+ *
+ * Each row fills a scratch array, then gathers from it with an index the
+ * scratch itself decides. A compiler cannot fold that array into registers, so
+ * a module addresses it in linear memory below `__stack_pointer`. Two instances
+ * of one module over one memory with one stack pointer overwrite each other,
+ * and the rows both touched come out wrong.
+ */
+export function stackI32(px, py, vx, vy, begin, end, dt) {
+	for (let i = begin; i < end; i++) {
+		const by = vy[i];
+		let h = (px[i] + Math.imul(vx[i], dt)) | 0;
+		for (let k = 0; k < SLOTS; k++) {
+			h = (Math.imul(h, 1103515245) + 12345) | 0;
+			scratch[k] = h;
+		}
+		let acc = 0;
+		for (let k = 0; k < SLOTS; k++) acc = (acc + scratch[(scratch[k] ^ by) & 63]) | 0;
+		px[i] = acc;
+		py[i] = (py[i] + (acc & 255)) | 0;
+	}
+}
+
+/** The constant table a module carries in a data segment. Every module source
+ * computes the same values at build time. */
+export const TABLE = (() => {
+	const t = new Int32Array(SLOTS);
+	for (let k = 0; k < SLOTS; k++) t[k] = (Math.imul(k, 2654435761) ^ (k << 3)) | 0;
+	return t;
+})();
+
+/** A body that reads the module's own data segment, one slot for each row. */
+export function tableI32(px, py, vx, vy, begin, end, dt) {
+	for (let i = begin; i < end; i++) {
+		const by = vy[i];
+		let h = (px[i] + Math.imul(vx[i], dt)) | 0;
+		h = (h + TABLE[(h ^ by) & 63]) | 0;
+		px[i] = h;
+		py[i] = (py[i] + (h & 255)) | 0;
+	}
+}

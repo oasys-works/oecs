@@ -99,9 +99,14 @@ export enum ECS_ERROR {
 	 * worker cannot resolve from the archetype masks. Dev-only, at
 	 * registration. */
 	PARALLEL_ACCESS = "PARALLEL_ACCESS",
+	/** A parallel system names a `wasm` kernel whose module the pool cannot
+	 * serve: an import the workers do not supply, a missing memory import, or an
+	 * export that is missing or is not a function. Dev-only, at registration. */
+	PARALLEL_KERNEL_MODULE = "PARALLEL_KERNEL_MODULE",
 	/** A kernel would not load, it threw inside a pass, or a worker missed the
 	 * join inside `joinTimeoutMs`. The message names the kernel export, and the
-	 * worker index when a worker reported the fault itself. */
+	 * worker index when a worker reported the fault itself. A module that cannot
+	 * be given one stack region for each worker fails to load here. */
 	PARALLEL_KERNEL_FAILED = "PARALLEL_KERNEL_FAILED"
 }
 

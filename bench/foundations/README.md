@@ -47,16 +47,18 @@ it is in the list.
 | `p24-par-structural.mjs` | no experiment, the parallel study | What does a worker see when a grow or a swap-remove runs beside its pass? |
 | `p24-par-engine.mjs` | no experiment, the shipped pool | Does `ecs.attachWorkers` with a `parallel` system leave the same bytes and the same `stateHash` as the system's own `fn`, and where does it pay? |
 | `p25-wasm-engine.mjs` | no experiment, the `wasm` kernel form | Does a `wasm` kernel on the shipped pool leave the same `stateHash` as the system's own `fn`, and what does it buy against the `js` kernel? |
+| `p25-wasm-stack.mjs` | no experiment, the `wasm` kernel form | Several workers instantiate one module over one memory. What happens to the shadow stack they all address, and what does a region for each instance cost? |
 
 The six `p24-par-*` probes report into `findings-parallel.md` beside this
 file, not into the Results section below. They study running one system on
 several workers, which is a question the substrate study never asked. Five of
 them measure hand-rolled code. `p24-par-engine.mjs` measures the shipped pool.
 
-`p25-wasm-engine.mjs` reports into `findings-wasm.md` beside the other `p25`
-probes. It needs a `wasm`-backed world, because a worker imports the world's
-memory as the module's own. Zig builds a second module lane when the compiler
-is present, and the probe prints a skip when it is not.
+`p25-wasm-engine.mjs` and `p25-wasm-stack.mjs` report into `findings-wasm.md`
+beside the other `p25` probes. Both need a `wasm`-backed world, because a worker
+imports the world's memory as the module's own. Zig builds a second module lane
+in the first and the only module lane in the second, and each probe prints a
+skip when the compiler is missing.
 
 ## Results
 

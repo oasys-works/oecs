@@ -177,8 +177,15 @@ structured-clone safe, so one module is shared with every worker, and each worke
 against the world's own memory as `env.memory`. So a `wasm` kernel needs the WASM backing. A
 `SharedArrayBuffer` cannot be imported as a module memory.
 
+Read [the module contract](#the-module-contract) before you build the module. It lists the import,
+the export, the store base, the stack rule, the data rule and the heap rule, with one build line
+for each toolchain.
+
 ```ts
 import { ECS, SCHEDULE, storeBaseAbove } from "@oasys/oecs";
+
+const WORKERS = 4;
+const STACK_BYTES = 1024 * 1024;
 
 const memory = new WebAssembly.Memory({ initial: 256, maximum: 4096, shared: true });
 const module = await WebAssembly.compileStreaming(fetch("./kernels.wasm"));
@@ -189,7 +196,8 @@ const probe = new WebAssembly.Instance(module, { env: { memory } });
 const ecs = ECS.create({
   memory: {
     backing: { wasm: { memory } },
-    storeBase: storeBaseAbove(probe.exports, 4 * 1024 * 1024),
+    // The module's peak run-time heap, plus one stack for each worker.
+    storeBase: storeBaseAbove(probe.exports, WORKERS * STACK_BYTES),
   },
 });
 const Pos = ecs.registerComponent({ x: "f32", y: "f32" }, { name: "Pos" });
@@ -226,7 +234,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const pool = await ecs.attachWorkers({ count: 4 });
+const pool = await ecs.attachWorkers({ count: WORKERS });
 ```
 
 The TypeScript body beside a module body must compute the same thing. An engine folds a
@@ -245,7 +253,7 @@ archetype, with the element type the field declares. Index it from `begin` to `e
 **A `wasm` kernel takes byte offsets.** Each column argument is the absolute byte offset of the
 column's first row inside the shared memory, as an `i32`. The kernel addresses row `r` at
 `ptr + r * stride`, with the stride it knows from the field type it declared. `begin` and `end` are
-`i32`, and `dt` is `f64`.
+`i32`.
 
 ```wat
 (func (export "integrate")
@@ -254,12 +262,122 @@ column's first row inside the shared memory, as an `i32`. The kernel addresses r
   ...)
 ```
 
+The parameter count is fixed. It is one for each entry of `parallel.columns`, plus three. A worker
+reads the count off the export and refuses a mismatch with `PARALLEL_KERNEL_FAILED`, and the
+message gives both numbers.
+
+**`dt` takes the type the module declares.** The engine passes a JavaScript number, and the
+WebAssembly JS API converts it to the declared parameter type. `f64` carries the value exactly.
+`f32` rounds. `i32` truncates toward zero and wraps to 32 bits, which is what an integer world
+wants, because a deterministic world takes an integer step. So an `i32` `dt` is a conversion the
+contract allows and not a violation, and the TypeScript body beside it must do the same thing.
+
 A kernel reads no header, resolves no query and names no entity. It receives addresses, a range and
-a time step, and nothing else. Any toolchain that exports a function over `i32` and `f64` arguments
-qualifies.
+a time step, and nothing else.
 
 **Every row must be independent of every other row.** A kernel that reads a neighbouring row gives
 a different answer under a split, and no oracle in this engine catches it for you.
+
+## The module contract
+
+A `wasm` kernel is one module and one export, and every worker instantiates that module over the
+world's memory. Follow the six rules below and a module from any toolchain runs. The rules are
+about the memory, and they exist because every instance shares one.
+
+**One import: `env.memory`.** A worker supplies the world's memory and nothing else. The engine
+refuses any other import at registration with `PARALLEL_KERNEL_MODULE`, and it names the import. It
+also refuses a module that imports no memory, because such a module writes into a linear memory of
+its own and reports success.
+
+**The export is a function with the right arity.** The engine refuses a missing export and an
+export that is a global at registration. The worker refuses a wrong parameter count at load.
+
+**The store base clears everything the module owns.** A compiled module owns the low addresses: its
+data segment, its shadow stack and its heap base all start there. Read `__heap_base` from the
+module and pass a store base above it with `storeBaseAbove`. See [the store base](./wasm.md#the-store-base).
+
+**The stack.** Export `__stack_pointer` as a mutable global, or use no stack at all. Every worker
+instantiates the same module over one memory, and a wasm global is per-instance, so every worker's
+`__stack_pointer` starts at the address the linker chose. Every worker would then write its frames
+to the same bytes. When the module exports the global the pool gives each worker its own region,
+carved from the span between `__heap_base` and the store base. When the module does not export it
+the engine cannot find the stack and cannot protect it, so a kernel from such a module may not use
+one. An LLVM build spills a local array, a struct passed by pointer, or the address of a local, so
+export the global whenever the body does any of those.
+
+**Size the reserve for the workers.** The pool divides `[__heap_base, storeBase)` evenly among the
+workers, so the reserve you pass decides the stack each worker gets. Pass the module's peak
+run-time heap plus one stack for each worker:
+
+```ts
+const workers = 4;
+const stackBytes = 1024 * 1024;      // as deep as your kernel goes
+
+const ecs = ECS.create({
+  memory: {
+    backing: { wasm: { memory } },
+    storeBase: storeBaseAbove(probe.exports, workers * stackBytes),
+  },
+});
+const pool = await ecs.attachWorkers({ count: workers });
+```
+
+A region below one WASM page fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message
+names the span, the worker count and the bytes to reserve. A wasm stack has no guard page, so a
+kernel that runs deeper than its region writes into the region below it and nothing reports the
+overrun. Only you can size it. One worker needs no region, because one instance owns the linked
+stack alone.
+
+**The data segment is shared, and the heap is shared.** A module built for shared memory
+initialises its data segment once, behind a guard word the linker places in the same memory, so
+every instance reads the same constants. That works, and the checked-in fixture kernels prove it
+across several workers. Two things follow. A static the kernel writes is one variable for every
+worker, not one for each. And a kernel does not allocate: `malloc`, `new` and a garbage collector
+all draw from one heap that every instance shares, and nothing serialises them.
+
+### Build lines that work
+
+Each of these produces a module the pool runs. `<bytes>` is the maximum of the world's memory in
+bytes, and the module must declare the same maximum or the instantiation fails.
+
+```sh
+# Zig
+zig build-exe kernel.zig -target wasm32-freestanding \
+  -mcpu=generic+atomics+bulk_memory -fno-entry -O ReleaseFast -rdynamic \
+  --import-memory --shared-memory --max-memory=<bytes> \
+  --export=__heap_base --export=__stack_pointer
+
+# Rust, a no_std crate
+rustc kernel.rs --target wasm32-unknown-unknown --edition 2021 \
+  --crate-type cdylib -C opt-level=3 -C panic=abort \
+  -C target-feature=+atomics,+bulk-memory,+mutable-globals \
+  -C link-arg=--import-memory -C link-arg=--shared-memory \
+  -C link-arg=--max-memory=<bytes> -C link-arg=--no-entry \
+  -C link-arg=--export=__heap_base -C link-arg=--export=__stack_pointer \
+  -o kernel.wasm
+
+# C, through zig cc, because apple clang has no wasm32 target
+zig cc -target wasm32-freestanding -O3 -nostdlib \
+  -matomics -mbulk-memory -mmutable-globals \
+  -Wl,--no-entry -Wl,--import-memory -Wl,--shared-memory \
+  -Wl,--max-memory=<bytes> \
+  -Wl,--export=<each kernel> \
+  -Wl,--export=__heap_base -Wl,--export=__stack_pointer \
+  -o kernel.wasm kernel.c
+
+# AssemblyScript
+asc kernel.ts --outFile kernel.wasm --optimize --runtime stub \
+  --importMemory --sharedMemory --initialMemory 1 --maximumMemory <pages> \
+  --noAssert --enable threads,bulk-memory,mutable-globals
+```
+
+AssemblyScript is the one with a narrower contract. It exports no `__stack_pointer` a host can
+move, and its constants live on the heap of its runtime, which every instance shares. So an
+AssemblyScript kernel keeps every value in a wasm local and allocates nothing.
+
+A module needs no toolchain at all. One of the checked-in fixture kernels is emitted byte by byte,
+carries its own `__heap_base` and `__stack_pointer`, pushes a frame and reads a data segment, and
+runs beside the compiled ones.
 
 ## What a parallel system may declare
 
@@ -358,6 +476,11 @@ Name these before you plan around them.
   WebKit all refuse the park, so this is a browser rule and not one engine's behaviour.
 - **No watchdog beyond the join timeout.** The engine notices a worker that misses the join. It
   notices nothing about a worker that answers with wrong bytes.
+- **No stack guard.** The pool gives each worker a region and sets `__stack_pointer` to its top. A
+  kernel that runs deeper than its region writes into the region below, and nothing reports it.
+- **No stack for a module that hides it.** A module that exports no mutable `__stack_pointer` keeps
+  the stack the linker gave it, and every worker shares it. Such a kernel uses no stack.
+- **No allocation from a module.** Every instance draws from one heap, and nothing serialises them.
 - **No reduction, and no work stealing.** The partition is fixed before the release.
 - **The change stamp is per archetype and per component**, not per row the kernel touched.
 

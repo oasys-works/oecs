@@ -17,9 +17,16 @@
  * the worker reads `memory.buffer` again on every release. Either way the bind
  * is rebuilt only when the buffer object changed or `view_stamp` moved.
  *
- * This module imports the ABI constants, the protocol and the bind walk. The
- * worker entry runs outside the bundler, so every import in its chain names the
- * file with its extension.
+ * Every worker instantiates the same module over one memory, so the shadow
+ * stack is a shared resource and the worker has to split it. `loadKernel`
+ * carries that split, and the comment above `assignStackRegion` says why.
+ *
+ * This module imports the ABI constants, the protocol and the bind walk. It
+ * cannot import `ECSError`, because the enum beside it does not survive the
+ * type stripping a plain runtime does on this file. So a fault here is a plain
+ * `Error`, and the pool reports it under `PARALLEL_KERNEL_FAILED`. The worker
+ * entry runs outside the bundler, so every import in its chain names the file
+ * with its extension.
  ***/
 
 import {
@@ -47,6 +54,98 @@ import {
 import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi.ts";
 
 type KernelFn = (...args: number[]) => void;
+
+/**
+ * The frame alignment an LLVM wasm target keeps for its shadow stack. A region
+ * that is a multiple of this needs no rounding at its top.
+ */
+const STACK_ALIGN = 16;
+
+/**
+ * The smallest stack region a worker accepts, one WASM page.
+ *
+ * A wasm stack has no guard page, so a kernel that runs past the bottom of its
+ * region writes into the region below it and nothing reports the overrun. The
+ * floor here catches a caller who reserved nothing. It does not size the stack
+ * of a deep kernel, and no engine can: the caller reserves the span, and the
+ * worker divides what it finds.
+ */
+const STACK_MIN_BYTES = 65_536;
+
+/**
+ * A module's `__heap_base` or `__stack_pointer`, whichever form it exports.
+ *
+ * A toolchain exports an address as a `WebAssembly.Global`, and a hand-emitted
+ * module can export a plain number for an immutable one. Both name the same
+ * address, and only the `Global` form can be moved.
+ */
+function globalObject(exported: unknown): WebAssembly.Global | null {
+	return typeof exported === "object" && exported !== null && "value" in exported
+		? (exported as WebAssembly.Global)
+		: null;
+}
+
+function globalNumber(exported: unknown): number | null {
+	const global = globalObject(exported);
+	const raw = global === null ? exported : (global.value as unknown);
+	return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+/**
+ * Give this worker's instance a stack region of its own.
+ *
+ * Every worker instantiates one module over one memory. A wasm global is
+ * per-instance, so each worker holds its own `__stack_pointer`, and every one
+ * of them starts at the address the linker chose. So every worker writes its
+ * frames to the same bytes, and a kernel that spills a local reads back what
+ * another worker wrote. The corruption is silent and it needs no shared column.
+ *
+ * The regions come from `[__heap_base, storeBase)`, which is the span the
+ * caller reserves above everything the module owns. Worker `i` takes the `i`th
+ * slice and the stack grows down from its top.
+ *
+ * A module that exports no `__stack_pointer` is left alone. The engine cannot
+ * find its stack, so the contract says such a kernel may not use one.
+ *
+ * One worker needs no split, because one instance owns the linked stack alone.
+ *
+ * Cold path, once for each kernel load. A pass pays nothing.
+ */
+function assignStackRegion(
+	instance: WebAssembly.Instance,
+	exportName: string,
+	storeBase: number,
+	index: number,
+	count: number
+): void {
+	const pointer = globalObject(instance.exports.__stack_pointer);
+	if (pointer === null || count === 1) return;
+
+	const heapBase = globalNumber(instance.exports.__heap_base);
+	if (heapBase === null) {
+		throw new Error(
+			`the kernel export '${exportName}' comes from a module with a '__stack_pointer' and no numeric '__heap_base', so the worker cannot find the span its stack may use. Link with --export=__heap_base.`
+		);
+	}
+	// Every region top has to land on the frame alignment, so the first one does
+	// too. A linker aligns `__heap_base` already, and this costs nothing when it
+	// did.
+	const floor = Math.ceil(heapBase / STACK_ALIGN) * STACK_ALIGN;
+	const reserve = storeBase - floor;
+	const region = Math.floor(reserve / count / STACK_ALIGN) * STACK_ALIGN;
+	if (region < STACK_MIN_BYTES) {
+		throw new Error(
+			`the kernel export '${exportName}' needs one stack region for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} leave ${region} for each. Raise memory.storeBase to reserve at least ${count * STACK_MIN_BYTES} bytes above the module's heap.`
+		);
+	}
+	try {
+		pointer.value = floor + (index + 1) * region;
+	} catch {
+		throw new Error(
+			`the kernel export '${exportName}' comes from a module whose '__stack_pointer' is immutable, so every worker would share one stack. Build with mutable globals, or give the kernel a body that uses no stack.`
+		);
+	}
+}
 
 interface Kernel {
 	readonly call: KernelFn;
@@ -135,6 +234,16 @@ export function createWorkerRuntime(
 				if (typeof call !== "function") {
 					throw new Error(`the wasm kernel exports no function named ${message.exportName}`);
 				}
+				// One byte offset for each column, then begin, end and dt. A wrong
+				// parameter count is the one signature fault a worker can see, because
+				// the JS API reports no parameter types.
+				const arity = (specs.length >> 1) + 3;
+				if (call.length !== arity) {
+					throw new Error(
+						`the wasm kernel export '${message.exportName}' takes ${call.length} parameters and the system declares ${specs.length >> 1} columns, which needs ${arity}. Give the kernel one parameter for each column, then begin, end and dt.`
+					);
+				}
+				assignStackRegion(instance, message.exportName, storeBase, index, count);
 				settle(call as KernelFn, false);
 				return;
 			}

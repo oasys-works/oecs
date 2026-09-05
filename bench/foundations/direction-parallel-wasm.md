@@ -49,6 +49,24 @@ The state hash of a deterministic world is the oracle for every step.
   may not be null. Rust has the same rule. A header at byte 0 is unreadable
   from a safe build of two major toolchains.
 
+### One module, several instances, one shadow stack (`p25-wasm-stack`)
+
+- Every worker instantiates the same module over one memory. A wasm global is
+  per-instance, and every copy of `__stack_pointer` starts where the linker put
+  it, so every worker writes its frames to the same bytes. A kernel that spills
+  anything reads back another worker's frame. Every run disagrees, at every
+  worker count. The earlier probes missed it because their kernels hold every
+  value in a wasm local.
+- The fix is a region for each instance, carved from `[__heap_base, storeBase)`,
+  which is the span the caller already reserves. It costs nothing inside a pass,
+  and the shared-stack lane is far slower as well as wrong.
+- The engine cannot find the stack of a module that exports no
+  `__stack_pointer`, so the contract says such a kernel uses none.
+- A data segment above the store base is safe. The segment and the guard word
+  the linker places beside it both sit below `__heap_base`.
+- Zig, Rust and C through `zig cc` all link the stack first, below the data, and
+  put `__heap_base` above both.
+
 ### The crossing is cheap and per-archetype dispatch is free (`p25-wasm-crossing`)
 
 - An empty module body costs about what an empty frame costs, and one call per
@@ -258,7 +276,13 @@ meaning the docs reserve becomes an engine fact.
   keeps the coarse stamp, because a full pass writes every row.
 - A digest for float columns, so the float lane gets an engine oracle.
 - The deno crossover anomaly.
-- A Rust, Go or AssemblyScript module against a nonzero `storeBase`, once the
-  option exists.
-- A second module instance in a worker racing the same data-segment guard.
+- A Go module against a nonzero `storeBase`. Rust, C and AssemblyScript are
+  closed: each builds the kernel bodies, each runs on the pool, and each binary
+  is checked into the unit suite.
 - The `shared` profile over a `WebAssembly.Memory` with no module.
+- A kernel that overruns its stack region. A wasm stack has no guard page, so
+  the overrun writes into the neighbouring region and nothing reports it. Only
+  the caller can size the reserve.
+- A module whose kernel allocates. Every instance draws from one heap and
+  nothing serialises them, so the docs refuse it and no probe measures it.
+- SIMD in a kernel, and threads inside a module.

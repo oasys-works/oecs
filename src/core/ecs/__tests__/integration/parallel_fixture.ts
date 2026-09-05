@@ -44,11 +44,22 @@ interface WorldOptions {
 	backing: Backing;
 	deterministic?: boolean;
 	columnCapacity?: number;
+	/** Where the store header sits. A compiled kernel module owns the low
+	 * addresses, so a world that runs one puts the store above them. */
+	storeBase?: number;
 }
 
-function memoryFor(backing: Backing, columnCapacity?: number): ECSMemoryOptions {
+/** The maximum every checked-in kernel module declares. A world that runs one
+ * must declare the same, or the instantiation inside the worker fails. */
+export const KERNEL_MAX_PAGES = 512;
+
+function memoryFor(
+	backing: Backing,
+	columnCapacity?: number,
+	storeBase?: number
+): ECSMemoryOptions {
 	if (backing === "wasm") {
-		return { backing: { wasm: { maximumPages: 512 } }, columnCapacity };
+		return { backing: { wasm: { maximumPages: KERNEL_MAX_PAGES } }, columnCapacity, storeBase };
 	}
 	return { backing: "shared", columnCapacity, maxBytes: 64 * 1024 * 1024 };
 }
@@ -62,7 +73,7 @@ export function buildWorld(options: WorldOptions): ParallelWorld {
 	const tag: Tag = deterministic ? "i32" : "f32";
 	const ecs = ECS.create({
 		deterministic,
-		memory: memoryFor(options.backing, options.columnCapacity),
+		memory: memoryFor(options.backing, options.columnCapacity, options.storeBase),
 		plugins: [snapshots()]
 	});
 	const Pos = ecs.registerComponent({ x: tag, y: tag }, { name: "Pos" });

@@ -44,7 +44,7 @@ The **package root** (`@oasys/oecs`) exports `ECSError`, `ECS_ERROR`, and `isEcs
 
 ## Categories
 
-These are the 59 `ECS_ERROR` values, in groups by area:
+These are the 60 `ECS_ERROR` values, in groups by area:
 
 **Entities and components**
 `EID_MAX_INDEX_OVERFLOW`, `EID_MAX_GEN_OVERFLOW`, `ENTITY_NOT_ALIVE`, `ENTITY_NOT_DISABLED`, `COMPONENT_NOT_REGISTERED`, `COMPONENT_LIMIT_EXCEEDED`, `FIELD_NOT_REGISTERED`, `COMPONENT_INDEX_INVARIANT`, `INVALID_TEMPLATE`
@@ -65,7 +65,7 @@ These are the 59 `ECS_ERROR` values, in groups by area:
 `PLUGIN_NOT_INSTALLED`, `PLUGIN_ALREADY_INSTALLED`, `PLUGIN_SURFACE_COLLISION`
 
 **Workers and parallel systems**
-`WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`, `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`, `PARALLEL_KERNEL_FAILED`
+`WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`, `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`, `PARALLEL_KERNEL_MODULE`, `PARALLEL_KERNEL_FAILED`
 
 **Determinism, memory, and the host write path**
 `DETERMINISM_DISABLED`, `NON_DETERMINISTIC_COLUMN_TYPE`, `INVALID_MEMORY_OPTIONS`, `STORE_CAP_EXCEEDED`, `REGION_NOT_DECLARED`, `BACKEND_ALREADY_ATTACHED`, `INVALID_RECORDER_SCHEDULE`, `COMMAND_LOG_TAG_COLLISION`
@@ -111,11 +111,25 @@ It is easy to confuse a small number of these with a category near them:
   worker cannot resolve from the archetype masks. The message names the field and why. Drop the
   declaration, or run the system sequentially. This is in development builds only, and it throws at
   registration and not inside a frame.
+- `PARALLEL_KERNEL_MODULE`. A system names a `wasm` kernel whose module the pool cannot serve.
+  A worker instantiates the module with one import, the world memory as `env.memory`, so every
+  other import is refused and the message names it. A module that imports no memory is refused as
+  well, because it addresses a linear memory of its own and never reaches the store. An export name
+  the module does not carry, and an export that is not a function, are the other two. This is in
+  development builds only, and it throws at registration and not inside a frame.
 - `PARALLEL_KERNEL_FAILED`. A kernel would not load, a kernel threw inside a pass, or a worker
   missed the join inside `joinTimeoutMs`. The message names the kernel export, and the worker index
   when a worker reported the fault itself. Fix the kernel, or raise `parallel.minRows` to keep the
   system sequential. After a join timeout the pool refuses every later pass, so detach it. This is
-  in each build.
+  in each build. Four load faults are worth naming on their own, and the message states each fact
+  and its remedy:
+  - the export takes the wrong number of parameters, and the message gives both counts,
+  - the module exports a `__stack_pointer` and the span between its `__heap_base` and the store
+    base leaves no stack region for each worker, so raise `memory.storeBase`,
+  - the module exports a `__stack_pointer` and no numeric `__heap_base`, so link with
+    `--export=__heap_base`,
+  - the module's `__stack_pointer` is immutable, so no host can give a worker its own stack. Build
+    with mutable globals, or give the kernel a body that uses no stack.
 - `ARCHETYPE_ROW_INVARIANT`. The row bookkeeping of an archetype does not agree with its backing
   columns. There are three causes. A reserve did not give the capacity that the engine asked for. A
   restore gave a partition boundary that is out of range. Or a cached row plane points at a buffer

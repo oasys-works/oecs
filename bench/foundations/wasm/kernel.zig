@@ -69,3 +69,69 @@ export fn mix_i32(px: u32, py: u32, vx: u32, vy: u32, begin: u32, end: u32, dt: 
         store(py + o, load(py + o) +% (h & 255));
     }
 }
+
+/// The slot count of the scratch array and of the constant table. One power of
+/// two, so a mask picks a slot and no branch does.
+const SLOTS: u32 = 64;
+
+/// A constant table, so the module carries a data segment.
+///
+/// A build for shared memory turns a data segment passive and initialises it
+/// once, behind a guard word the linker places in the same memory. Every
+/// instance over one memory must then read the same bytes. The table sits below
+/// `__heap_base`, so a store based above that address never overlaps it.
+const TABLE: [SLOTS]i32 = blk: {
+    var t: [SLOTS]i32 = undefined;
+    for (&t, 0..) |*slot, k| {
+        const kk: u32 = @intCast(k);
+        slot.* = @bitCast((kk *% 2654435761) ^ (kk << 3));
+    }
+    break :blk t;
+};
+
+/// A body that spills to the shadow stack, on purpose.
+///
+/// `scratch` is addressed by a value the compiler cannot know, so it lands in
+/// linear memory below `__stack_pointer` and never in a wasm local. Two
+/// instances of this module over one memory with one stack pointer overwrite
+/// each other's frames, and every row both touched comes out wrong.
+export fn stack_i32(px: u32, py: u32, vx: u32, vy: u32, begin: u32, end: u32, dt: i32) void {
+    var i: u32 = begin;
+    while (i < end) : (i += 1) {
+        const o = i * 4;
+        const bx = load(vx + o);
+        const by = load(vy + o);
+        var h: i32 = load(px + o) +% bx *% dt;
+        var scratch: [SLOTS]i32 = undefined;
+        var k: u32 = 0;
+        while (k < SLOTS) : (k += 1) {
+            h = h *% 1103515245 +% 12345;
+            scratch[k] = h;
+        }
+        var acc: i32 = 0;
+        k = 0;
+        while (k < SLOTS) : (k += 1) {
+            // The gather index comes from the bytes just written, so no compiler
+            // folds the array into locals and no reader predicts the order.
+            const idx: u32 = @intCast((scratch[k] ^ by) & 63);
+            acc = acc +% scratch[idx];
+        }
+        store(px + o, acc);
+        store(py + o, load(py + o) +% (acc & 255));
+    }
+}
+
+/// A body that reads the module's own data segment.
+export fn table_i32(px: u32, py: u32, vx: u32, vy: u32, begin: u32, end: u32, dt: i32) void {
+    var i: u32 = begin;
+    while (i < end) : (i += 1) {
+        const o = i * 4;
+        const bx = load(vx + o);
+        const by = load(vy + o);
+        var h: i32 = load(px + o) +% bx *% dt;
+        const idx: u32 = @intCast((h ^ by) & 63);
+        h = h +% TABLE[idx];
+        store(px + o, h);
+        store(py + o, load(py + o) +% (h & 255));
+    }
+}

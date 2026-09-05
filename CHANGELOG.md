@@ -58,6 +58,49 @@ can never report done, and the parked host would wait forever. On timeout the fr
 `PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
 `detach` terminates the hung worker.
 
+### Added. A kernel module contract that holds for any toolchain
+
+Every worker of the pool instantiates one module over one memory. `docs/api/parallel.md` now states
+what that costs a module and what a build has to do about it: the one import, the export and its
+arity, the store base, the stack, the data segment and the heap. It carries one build line for Zig,
+for Rust, for C through `zig cc` and for AssemblyScript.
+
+`registerSystem` refuses a `wasm` kernel module the pool cannot serve, with the new
+`ECS_ERROR.PARALLEL_KERNEL_MODULE`. An import other than `env.memory` is named in the message. A
+module that imports no memory is refused as well, because it addresses a linear memory of its own,
+writes rows nothing reads, and reports success. An export name the module does not carry, and an
+export that is not a function, are the other two. Development builds only, at registration.
+
+A worker now checks the export's parameter count against the column count plus three, and fails the
+kernel load with both numbers when they disagree.
+
+Five modules are checked into the test suite, built by the four toolchains above and by a
+hand-written emitter that uses no toolchain. Each carries the same bodies, and each runs on the real
+pool across several workers and must leave the bytes the sequential TypeScript body leaves. Five
+more carry one fault each, so every refusal above has a real module behind it. The suite proves the
+contract on a machine with no compiler installed.
+
+### Fixed. Every worker had the same shadow stack
+
+A worker gives each instance of a `wasm` kernel module its own shadow stack.
+
+An LLVM build, which is Zig, Rust, C and others, keeps a shadow stack in linear memory and addresses
+it through the mutable global `__stack_pointer`. A wasm global is per-instance, and every instance
+starts at the address the linker chose, so every worker wrote its frames to the same bytes. A kernel
+that spilled a local array, a struct passed by pointer, or the address of a local read back what
+another worker wrote. The corruption was silent, it needed no shared column, and no probe before
+this one caught it, because the earlier kernels held every value in a wasm local.
+
+The worker now carves `[__heap_base, storeBase)` into one region for each worker and moves
+`__stack_pointer` to the top of its own. The reserve you pass to `storeBaseAbove` decides the stack
+each worker gets, so add one stack for each worker to it. A region below one WASM page fails the
+kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the span, the worker count and the
+bytes to reserve. A module that exports no `__stack_pointer` is left alone, and the docs say such a
+kernel may not use a stack. One worker needs no region, because one instance owns the linked stack
+alone.
+
+The assignment runs once for each kernel load, so a pass pays nothing for it.
+
 ### Changed (breaking for a module that reads the layout). `SIM_ABI_VERSION` is 1
 
 A reader that carries version 0 measured every offset from buffer byte 0. A module that treated a

@@ -72,14 +72,25 @@ store base below.
 
 There is a third path, and it is not a backend at all. A `parallel` system carries a compiled
 module and an export name, and the engine runs that export across a pool of workers over disjoint
-row ranges. It is the kernel contract below, with the dispatch done for you. See
-[parallel execution](./parallel.md).
+row ranges. It is the kernel contract below, with the dispatch done for you, and
+[the module contract](./parallel.md#the-module-contract) states every rule a toolchain has to
+follow. See [parallel execution](./parallel.md).
 
 **A kernel over pointers.** The host resolves the query, and calls the module once for each matched
 archetype. It passes the byte offset of each declared column, the row count and `dt`. Take each
 offset from `forEachChunk`, where every typed array carries its own `byteOffset`. The module knows
 nothing about the header, the descriptors or the row counts. So any toolchain that exports a
 function over `i32` and `f32` arguments qualifies. Start here.
+
+Three rules follow from one memory shared by every instance of the module, and they hold on both
+paths:
+
+- **The stack.** Export `__stack_pointer` as a mutable global, or use no stack. A pool then gives
+  each worker a region of its own. Without the export every instance keeps one stack.
+- **The data.** A data segment is initialised once and every instance reads it. A static the module
+  writes is one variable for every instance, not one for each.
+- **The heap.** A module does not allocate while a pool runs it, because every instance draws from
+  one heap and nothing serialises them.
 
 **A walker.** The module reads the header and the archetype descriptors itself, resolves its own
 columns by `(componentId, fieldId)`, and loops over the rows of every archetype it matches. It
@@ -132,7 +143,9 @@ region that lands under a module is the entity index, and `stateHash` never fold
 
 A module built for shared memory fails worse. It initialises its data segment once, behind a guard
 word inside the memory. Inside a store that word belongs to the entity index. So whether the
-module's constants survive depends on what the world holds.
+module's constants survive depends on what the world holds. Above the base the same mechanism
+works: the guard word and the segment both sit below `__heap_base`, every instance reads the same
+constants, and the store never writes there.
 
 The default base clears nothing on its own. It keeps the header off address 0. A safe Zig or Rust
 build cannot read address 0, because a non-optional pointer may not be null. A default link places
@@ -161,6 +174,17 @@ exports no `__heap_base`, and the message names the link flag `--export=__heap_b
 **The extra bytes are yours to bound.** `__heap_base` is where the module's data segment and its
 shadow stack end. Whatever the module allocates while it runs sits above that, and only the module
 knows how far. Pass its peak. A store based inside that heap fails the same silent way.
+
+**A pool takes its stack regions from the same span.** The span `[__heap_base, storeBase)` is the
+caller's reserve, and `attachWorkers` divides it evenly among the workers to give each instance a
+private shadow stack. So a world that runs a `wasm` kernel across a pool adds one stack for each
+worker to the extra bytes:
+
+```ts
+storeBase: storeBaseAbove(probe.exports, moduleHeapPeak + workers * stackBytes),
+```
+
+See [the module contract](./parallel.md#the-module-contract).
 
 `WASM_STORE_BASE_BYTES` is the default base for the wasm backing, one page. It is on
 `@oasys/oecs/internal`.
@@ -308,7 +332,9 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
    ECS directly.
 8. Call `ecs.publishRowCounts()` before each run of a module that you drive outside the schedule.
 9. Read the base from the module with `storeBaseAbove(instance.exports, extraBytes)`, and pass the
-   module its own peak run-time heap.
+   module its own peak run-time heap plus one stack for each worker of the pool.
+10. Link a kernel module with `--export=__stack_pointer` when its body spills anything, and keep it
+    off the module's heap either way.
 
 ## See also
 

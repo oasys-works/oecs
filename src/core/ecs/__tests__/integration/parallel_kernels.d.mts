@@ -30,3 +30,20 @@ export declare function markKernel(
 ): void;
 export declare function throwing(): void;
 export declare function spinning(): void;
+export declare const SLOTS: number;
+export declare const TABLE: Int32Array;
+/** The twin of one module body. Every step is an i32 operation, so the two
+ * lanes agree bit for bit. */
+export type KernelBody = (
+	px: Int32Array,
+	py: Int32Array,
+	vx: Int32Array,
+	vy: Int32Array,
+	begin: number,
+	end: number,
+	dt: number
+) => void;
+export declare const integrateWrapI32: KernelBody;
+export declare const mixI32: KernelBody;
+export declare const stackI32: KernelBody;
+export declare const tableI32: KernelBody;
