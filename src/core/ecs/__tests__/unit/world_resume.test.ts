@@ -30,7 +30,8 @@ import {
 	ECSRestoreError,
 	type HostState
 } from "../../resume";
-import { heapArrayBufferAllocator, STORE_HEADER_OFFSETS } from "../../../store";
+import { heapArrayBufferAllocator } from "../../../store";
+import { toLegacyDenseSection } from "../../../store/__tests__/legacy_dense";
 import { snapshots, type SnapshotsPlugin } from "../../../../plugins/snapshots";
 
 const HEAP: ECSOptions = { deterministic: true, memory: { backing: "heap" } };
@@ -198,21 +199,28 @@ describe("restore, mount + reconstruction", () => {
 
 	it("restores a frame whose dense section carries the version the 0.5 line wrote", () => {
 		// Every version 0 store sat at byte 0, so its offsets are offsets from the
-		// header, which is what the current version reads. The frame header is five
-		// u32 words, then the dense section starts with the store header.
+		// header, which is what the current version reads. Its archetype descriptor
+		// header is four bytes narrower, so the fixture rewrites the whole dense
+		// section in the narrow shape and re-frames it at the new length.
 		const src = build(SAB);
 		for (let i = 0; i < 8; i++) step(src, i);
-		const snap = src.world.snapshots.capture();
-		const denseStart = 4 * 5;
-		new DataView(snap.buffer, snap.byteOffset).setUint32(
-			denseStart + STORE_HEADER_OFFSETS.sim_abi_version,
-			0,
-			true
+		const sections = unframeWorldSnapshot(src.world.snapshots.capture());
+		const legacy = frameWorldSnapshot(
+			toLegacyDenseSection(sections.dense),
+			sections.sparse,
+			sections.host
 		);
 
 		const dst = build(SAB);
-		dst.world.snapshots.restore(snap);
+		dst.world.snapshots.restore(legacy);
 		expect(dst.world.snapshots.stateHash()).toBe(src.world.snapshots.stateHash());
+		// The world's state hash never folds descriptors, so the widened header
+		// leaves it alone. The restored world keeps ticking with the same values.
+		for (let i = 8; i < 12; i++) {
+			step(src, i);
+			step(dst, i);
+			expect(dst.world.snapshots.stateHash()).toBe(src.world.snapshots.stateHash());
+		}
 	});
 
 	it("reconstructs the entity recycle free-list in exact LIFO order", () => {

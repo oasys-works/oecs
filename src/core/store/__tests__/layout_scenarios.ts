@@ -42,6 +42,7 @@ interface StoreLayout {
 	headerCapacity: number;
 	headerViewStamp: number;
 	headerArchetypeCount: number;
+	headerLayoutDescriptorOff: number;
 	archetypes: ArchetypeLayout[];
 }
 
@@ -77,6 +78,10 @@ function dumpLayout(store: ColumnStore): StoreLayout {
 		headerCapacity: store.header.capacity,
 		headerViewStamp: store.header.viewStamp,
 		headerArchetypeCount: store.header.archetypeCount,
+		// The descriptor region start, so a reader of the fixture can check each
+		// column against the region it must clear. Without it the capture says
+		// where the columns are but not what they had to clear.
+		headerLayoutDescriptorOff: store.header.layoutDescriptorOff,
 		archetypes
 	};
 }

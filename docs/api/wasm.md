@@ -101,6 +101,16 @@ A walker reads a column at `storeBase + byte_off`, and the descriptor region at 
 layout_descriptor_off`. Every offset the store writes is measured from the header, so a module that
 treats one as a buffer address is wrong at any base but zero.
 
+Each archetype descriptor starts with a 40-byte header, then one 16-byte column descriptor per
+column. The header holds, in order, `archetype_id`, a component mask of 4 words, `row_count`,
+`row_capacity`, `column_count`, `enabled_count` and `entity_ids_off`. A walker steps to the next
+record by `40 + column_count * 16`.
+
+`entity_ids_off` is reserved. It will hold the offset of the archetype's row-to-entity table, so a
+module can name the entity a row belongs to. The store writes zero today, which says the archetype
+carries no such table, and a walker that ignores the field reads every other field as before.
+`descriptor.test.ts` locks the offset, the header width and the zero.
+
 A walker re-walks on every call. A store grow relocates a column inside the buffer. It abandons the
 block the column sat in. A module that kept the old address writes into that block, reports success
 and changes nothing the world reads. `wasm_store_reader.test.ts` pins that silence.

@@ -43,6 +43,9 @@ export interface ArchetypeDescriptor {
 	readonly rowCount: number;
 	readonly rowCapacity: number;
 	readonly enabledCount: number;
+	/** The reserved row-to-entity offset. Zero says the archetype carries no
+	 * such table, which is what the store writes today. */
+	readonly entityIdsOff: number;
 	/** Where this descriptor starts in the buffer. */
 	readonly descriptorAddress: number;
 	readonly columns: readonly ColumnDescriptor[];
@@ -99,6 +102,7 @@ export function readDescriptors(view: DataView, headerOff: number): ArchetypeDes
 			rowCount: view.getUint32(addr + ARCHETYPE_DESCRIPTOR_OFFSETS.row_count, true),
 			rowCapacity: view.getUint32(addr + ARCHETYPE_DESCRIPTOR_OFFSETS.row_capacity, true),
 			enabledCount: view.getUint32(addr + ARCHETYPE_DESCRIPTOR_OFFSETS.enabled_count, true),
+			entityIdsOff: view.getUint32(addr + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true),
 			descriptorAddress: addr,
 			columns
 		});
@@ -121,8 +125,9 @@ function fold(hash: number, word: number): number {
 /**
  * The layout fold, field by field, in the order the module folds them: the
  * archetype count, then for each archetype its id, column count, row count,
- * enabled count and first mask word, then for each column its component id,
- * field id, type tag, stored byte offset and stride.
+ * enabled count, first mask word and reserved row-to-entity offset, then for
+ * each column its component id, field id, type tag, stored byte offset and
+ * stride.
  *
  * It folds the stored offset and not the address, so a world at any base folds
  * to the same value.
@@ -137,6 +142,7 @@ export function foldLayout(view: DataView, headerOff: number): number {
 		hash = fold(hash, d.rowCount);
 		hash = fold(hash, d.enabledCount);
 		hash = fold(hash, d.mask[0]);
+		hash = fold(hash, d.entityIdsOff);
 		for (const c of d.columns) {
 			hash = fold(hash, c.componentId);
 			hash = fold(hash, c.fieldId);

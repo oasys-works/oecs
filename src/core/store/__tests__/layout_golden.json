@@ -3,10 +3,11 @@
 		{
 			"label": "growable_sab/A/create",
 			"layout": {
-				"byteLength": 544,
-				"headerCapacity": 544,
+				"byteLength": 552,
+				"headerCapacity": 552,
 				"headerViewStamp": 0,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -16,14 +17,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -36,7 +37,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -47,10 +48,11 @@
 		{
 			"label": "growable_sab/A/extend",
 			"layout": {
-				"byteLength": 800,
-				"headerCapacity": 800,
+				"byteLength": 808,
+				"headerCapacity": 808,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -60,14 +62,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -80,7 +82,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -93,21 +95,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 544,
+								"byteOff": 552,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 608,
+								"byteOff": 616,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 736,
+								"byteOff": 744,
 								"stride": 4
 							}
 						]
@@ -127,10 +129,11 @@
 		{
 			"label": "growable_sab/A/grow",
 			"layout": {
-				"byteLength": 1184,
-				"headerCapacity": 1184,
+				"byteLength": 1192,
+				"headerCapacity": 1192,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -140,14 +143,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 800,
+								"byteOff": 808,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 928,
+								"byteOff": 936,
 								"stride": 8
 							}
 						]
@@ -160,7 +163,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -173,21 +176,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 544,
+								"byteOff": 552,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 608,
+								"byteOff": 616,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 736,
+								"byteOff": 744,
 								"stride": 4
 							}
 						]
@@ -207,10 +210,11 @@
 		{
 			"label": "growable_sab/B/extend-realloc",
 			"layout": {
-				"byteLength": 384,
-				"headerCapacity": 384,
+				"byteLength": 392,
+				"headerCapacity": 392,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -220,14 +224,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 188,
+								"byteOff": 196,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 224,
+								"byteOff": 232,
 								"stride": 8
 							}
 						]
@@ -240,14 +244,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 288,
+								"byteOff": 296,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 320,
+								"byteOff": 328,
 								"stride": 8
 							}
 						]
@@ -268,10 +272,11 @@
 		{
 			"label": "growable_sab/B/extend-existing-rows",
 			"layout": {
-				"byteLength": 448,
-				"headerCapacity": 448,
+				"byteLength": 464,
+				"headerCapacity": 464,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -281,14 +286,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 240,
+								"byteOff": 252,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 272,
+								"byteOff": 288,
 								"stride": 8
 							}
 						]
@@ -301,14 +306,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 336,
+								"byteOff": 352,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 368,
+								"byteOff": 384,
 								"stride": 8
 							}
 						]
@@ -321,7 +326,7 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 432,
+								"byteOff": 448,
 								"stride": 4
 							}
 						]
@@ -341,10 +346,11 @@
 		{
 			"label": "growable_sab/C/grow-no-targets",
 			"layout": {
-				"byteLength": 136,
-				"headerCapacity": 136,
+				"byteLength": 140,
+				"headerCapacity": 140,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 1,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -354,7 +360,7 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 104,
+								"byteOff": 108,
 								"stride": 4
 							}
 						]
@@ -374,9 +380,10 @@
 			"label": "heap_arraybuffer/A/create",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 544,
+				"headerCapacity": 552,
 				"headerViewStamp": 0,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -386,14 +393,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -406,7 +413,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -418,9 +425,10 @@
 			"label": "heap_arraybuffer/A/extend",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 800,
+				"headerCapacity": 808,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -430,14 +438,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -450,7 +458,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -463,21 +471,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 544,
+								"byteOff": 552,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 608,
+								"byteOff": 616,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 736,
+								"byteOff": 744,
 								"stride": 4
 							}
 						]
@@ -498,9 +506,10 @@
 			"label": "heap_arraybuffer/A/grow",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 1184,
+				"headerCapacity": 1192,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -510,14 +519,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 800,
+								"byteOff": 808,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 928,
+								"byteOff": 936,
 								"stride": 8
 							}
 						]
@@ -530,7 +539,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -543,21 +552,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 544,
+								"byteOff": 552,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 608,
+								"byteOff": 616,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 736,
+								"byteOff": 744,
 								"stride": 4
 							}
 						]
@@ -578,9 +587,10 @@
 			"label": "heap_arraybuffer/B/extend-realloc",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 384,
+				"headerCapacity": 392,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -590,14 +600,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 188,
+								"byteOff": 196,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 224,
+								"byteOff": 232,
 								"stride": 8
 							}
 						]
@@ -610,14 +620,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 288,
+								"byteOff": 296,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 320,
+								"byteOff": 328,
 								"stride": 8
 							}
 						]
@@ -639,9 +649,10 @@
 			"label": "heap_arraybuffer/B/extend-existing-rows",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 448,
+				"headerCapacity": 464,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -651,14 +662,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 240,
+								"byteOff": 252,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 272,
+								"byteOff": 288,
 								"stride": 8
 							}
 						]
@@ -671,14 +682,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 336,
+								"byteOff": 352,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 368,
+								"byteOff": 384,
 								"stride": 8
 							}
 						]
@@ -691,7 +702,7 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 432,
+								"byteOff": 448,
 								"stride": 4
 							}
 						]
@@ -712,9 +723,10 @@
 			"label": "heap_arraybuffer/C/grow-no-targets",
 			"layout": {
 				"byteLength": 4194304,
-				"headerCapacity": 136,
+				"headerCapacity": 140,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 1,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -724,7 +736,7 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 104,
+								"byteOff": 108,
 								"stride": 4
 							}
 						]
@@ -743,10 +755,11 @@
 		{
 			"label": "default_fresh_sab/A/create",
 			"layout": {
-				"byteLength": 544,
-				"headerCapacity": 544,
+				"byteLength": 552,
+				"headerCapacity": 552,
 				"headerViewStamp": 0,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -756,14 +769,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -776,7 +789,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -787,10 +800,11 @@
 		{
 			"label": "default_fresh_sab/A/extend",
 			"layout": {
-				"byteLength": 880,
-				"headerCapacity": 880,
+				"byteLength": 896,
+				"headerCapacity": 896,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -800,14 +814,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 512,
+								"byteOff": 524,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 544,
+								"byteOff": 560,
 								"stride": 8
 							}
 						]
@@ -820,7 +834,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 608,
+								"byteOff": 624,
 								"stride": 4
 							}
 						]
@@ -833,21 +847,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 624,
+								"byteOff": 640,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 688,
+								"byteOff": 704,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 816,
+								"byteOff": 832,
 								"stride": 4
 							}
 						]
@@ -867,10 +881,11 @@
 		{
 			"label": "default_fresh_sab/A/grow",
 			"layout": {
-				"byteLength": 1168,
-				"headerCapacity": 1168,
+				"byteLength": 1184,
+				"headerCapacity": 1184,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -880,14 +895,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 512,
+								"byteOff": 524,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 640,
+								"byteOff": 656,
 								"stride": 8
 							}
 						]
@@ -900,7 +915,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 896,
+								"byteOff": 912,
 								"stride": 4
 							}
 						]
@@ -913,21 +928,21 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 912,
+								"byteOff": 928,
 								"stride": 4
 							},
 							{
 								"componentId": 21,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 976,
+								"byteOff": 992,
 								"stride": 8
 							},
 							{
 								"componentId": 22,
 								"fieldId": 2,
 								"typeTag": 6,
-								"byteOff": 1104,
+								"byteOff": 1120,
 								"stride": 4
 							}
 						]
@@ -947,10 +962,11 @@
 		{
 			"label": "default_fresh_sab/B/extend-realloc",
 			"layout": {
-				"byteLength": 384,
-				"headerCapacity": 384,
+				"byteLength": 392,
+				"headerCapacity": 392,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -960,14 +976,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 188,
+								"byteOff": 196,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 224,
+								"byteOff": 232,
 								"stride": 8
 							}
 						]
@@ -980,14 +996,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 288,
+								"byteOff": 296,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 320,
+								"byteOff": 328,
 								"stride": 8
 							}
 						]
@@ -1008,10 +1024,11 @@
 		{
 			"label": "default_fresh_sab/B/extend-existing-rows",
 			"layout": {
-				"byteLength": 448,
-				"headerCapacity": 448,
+				"byteLength": 464,
+				"headerCapacity": 464,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1021,14 +1038,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 240,
+								"byteOff": 252,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 272,
+								"byteOff": 288,
 								"stride": 8
 							}
 						]
@@ -1041,14 +1058,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 336,
+								"byteOff": 352,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 368,
+								"byteOff": 384,
 								"stride": 8
 							}
 						]
@@ -1061,7 +1078,7 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 432,
+								"byteOff": 448,
 								"stride": 4
 							}
 						]
@@ -1081,10 +1098,11 @@
 		{
 			"label": "default_fresh_sab/C/grow-no-targets",
 			"layout": {
-				"byteLength": 136,
-				"headerCapacity": 136,
+				"byteLength": 140,
+				"headerCapacity": 140,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 1,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1094,7 +1112,7 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 104,
+								"byteOff": 108,
 								"stride": 4
 							}
 						]
@@ -1114,9 +1132,10 @@
 			"label": "wasm_memory/A/create",
 			"layout": {
 				"byteLength": 131072,
-				"headerCapacity": 544,
+				"headerCapacity": 552,
 				"headerViewStamp": 0,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1126,14 +1145,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -1146,7 +1165,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -1161,6 +1180,7 @@
 				"headerCapacity": 131328,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1170,14 +1190,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 428,
+								"byteOff": 436,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 464,
+								"byteOff": 472,
 								"stride": 8
 							}
 						]
@@ -1190,7 +1210,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -1241,6 +1261,7 @@
 				"headerCapacity": 196992,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1270,7 +1291,7 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 528,
+								"byteOff": 536,
 								"stride": 4
 							}
 						]
@@ -1318,9 +1339,10 @@
 			"label": "wasm_memory/B/extend-realloc",
 			"layout": {
 				"byteLength": 131072,
-				"headerCapacity": 384,
+				"headerCapacity": 392,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 2,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1330,14 +1352,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 188,
+								"byteOff": 196,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 224,
+								"byteOff": 232,
 								"stride": 8
 							}
 						]
@@ -1350,14 +1372,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 288,
+								"byteOff": 296,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 320,
+								"byteOff": 328,
 								"stride": 8
 							}
 						]
@@ -1379,9 +1401,10 @@
 			"label": "wasm_memory/B/extend-existing-rows",
 			"layout": {
 				"byteLength": 131072,
-				"headerCapacity": 448,
+				"headerCapacity": 464,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1391,14 +1414,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 240,
+								"byteOff": 252,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 272,
+								"byteOff": 288,
 								"stride": 8
 							}
 						]
@@ -1411,14 +1434,14 @@
 								"componentId": 10,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 336,
+								"byteOff": 352,
 								"stride": 4
 							},
 							{
 								"componentId": 11,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 368,
+								"byteOff": 384,
 								"stride": 8
 							}
 						]
@@ -1431,7 +1454,7 @@
 								"componentId": 20,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 432,
+								"byteOff": 448,
 								"stride": 4
 							}
 						]
@@ -1452,9 +1475,10 @@
 			"label": "wasm_memory/C/grow-no-targets",
 			"layout": {
 				"byteLength": 131072,
-				"headerCapacity": 136,
+				"headerCapacity": 140,
 				"headerViewStamp": 1,
 				"headerArchetypeCount": 1,
+				"headerLayoutDescriptorOff": 52,
 				"archetypes": [
 					{
 						"archetypeId": 0,
@@ -1464,7 +1488,7 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 104,
+								"byteOff": 108,
 								"stride": 4
 							}
 						]

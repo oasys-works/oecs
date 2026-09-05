@@ -28,7 +28,7 @@
 import { ModuleBuilder, op } from "./emit.mjs";
 
 export const HDR = { magic: 0, version: 4, viewStamp: 8, capacity: 12, archetypeCount: 16, layoutOff: 20, entityIndexOff: 32 };
-export const ARCH = { id: 0, mask: 4, rowCount: 20, rowCapacity: 24, columnCount: 28, enabledCount: 32, bytes: 36 };
+export const ARCH = { id: 0, mask: 4, rowCount: 20, rowCapacity: 24, columnCount: 28, enabledCount: 32, entityIdsOff: 36, bytes: 40 };
 export const COL = { componentId: 0, fieldId: 2, typeTag: 4, byteOff: 8, stride: 12, bytes: 16 };
 export const FNV_BASIS = 0x811c9dc5 | 0;
 export const FNV_PRIME = 16777619;
@@ -86,6 +86,10 @@ function walkBody() {
 				fold([op.get(DESC), op.load_i32(ARCH.rowCount)]),
 				fold([op.get(DESC), op.load_i32(ARCH.enabledCount)]),
 				fold([op.get(DESC), op.load_i32(ARCH.mask)]),
+				// The reserved row-to-entity offset. The module folds it so the
+				// comparison covers the whole header, and so a store that starts
+				// writing a real offset there fails here first.
+				fold([op.get(DESC), op.load_i32(ARCH.entityIdsOff)]),
 				op.i32(0), op.set(C),
 				op.block([
 					op.loop([
@@ -125,6 +129,7 @@ export function walkInJs(view, headerOff) {
 		h = foldWord(h, view.getUint32(desc + ARCH.rowCount, true));
 		h = foldWord(h, view.getUint32(desc + ARCH.enabledCount, true));
 		h = foldWord(h, view.getUint32(desc + ARCH.mask, true));
+		h = foldWord(h, view.getUint32(desc + ARCH.entityIdsOff, true));
 		for (let c = 0; c < ncol; c++) {
 			const co = desc + ARCH.bytes + c * COL.bytes;
 			h = foldWord(h, view.getUint16(co + COL.componentId, true));

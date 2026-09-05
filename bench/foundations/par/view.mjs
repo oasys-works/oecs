@@ -31,14 +31,18 @@ export const HEADER = {
 	entity_index_off: 32
 };
 
-export const ARCH_HEADER_BYTES = 36;
+export const ARCH_HEADER_BYTES = 40;
 export const ARCH = {
 	archetype_id: 0,
 	component_mask: 4,
 	row_count: 20,
 	row_capacity: 24,
 	column_count: 28,
-	enabled_count: 32
+	enabled_count: 32,
+	// Reserved for the row-to-entity table. The store writes zero, which says
+	// the archetype carries no such table, so a worker cannot name an entity
+	// from the bytes yet.
+	entity_ids_off: 36
 };
 
 export const COL_BYTES = 16;

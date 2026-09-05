@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	ARCHETYPE_DESCRIPTOR_OFFSETS,
+	archetypeDescriptorBytes,
 	columnKey,
 	createColumnStore,
 	growColumnStore,
@@ -15,6 +17,7 @@ import {
 	TYPE_TAG,
 	type ArchetypeSpec
 } from "..";
+import { toLegacyDenseSection } from "./legacy_dense";
 
 function spec(
 	archetypeId: number,
@@ -236,16 +239,17 @@ describe("restore_column_store rejection", () => {
 	});
 
 	it("accepts a version 0 snapshot and stamps the current version on the restored header", () => {
-		// The published 0.5 line wrote version 0 with this header shape, and every
-		// version 0 store sat at byte 0, so its offsets are offsets from the header.
+		// Every version 0 store sat at byte 0, so its offsets are offsets from the
+		// header. Its archetype descriptor header is four bytes narrower, because
+		// it holds no `entity_ids_off`, so the fixture writes the narrow shape
+		// rather than stamp the version field on a current section.
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
 		const col = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		col[0] = 7;
 		col[3] = -9;
-		const snap = new Uint8Array(columnStoreBytesView(store));
-		new DataView(snap.buffer).setUint32(STORE_HEADER_OFFSETS.sim_abi_version, 0, true);
+		const snap = toLegacyDenseSection(new Uint8Array(columnStoreBytesView(store)));
 		const restored = restoreColumnStore(snap);
 		expect(restored.header.simAbiVersion).toBe(SIM_ABI_VERSION);
 		expect(restored.view.getUint32(STORE_HEADER_OFFSETS.sim_abi_version, true)).toBe(
@@ -253,6 +257,51 @@ describe("restore_column_store rejection", () => {
 		);
 		const back = restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
 		expect([...back]).toEqual([...col]);
+	});
+
+	it("walks every archetype of a version 0 snapshot, not only the first", () => {
+		// The narrow header makes every record four bytes shorter, so a walk at
+		// the current stride lands past the second descriptor and reads garbage.
+		// Two archetypes with different column counts pin the stride, because a
+		// fixed skip would mask the difference.
+		const store = createColumnStore([
+			spec(0, 4, [
+				{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 },
+				{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.f64 }
+			]),
+			spec(1, 2, [{ componentId: 3, fieldId: 0, typeTag: TYPE_TAG.u16 }], 0b1000)
+		]);
+		const a = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array;
+		const b = store.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array;
+		const c = store.archetypes.get(1)!.columns.get(columnKey(3, 0))!.view as Uint16Array;
+		a.set([1, 2, 3, 4]);
+		b.set([0.5, 1.5, 2.5, 3.5]);
+		c.set([61000, 7]);
+
+		const restored = restoreColumnStore(toLegacyDenseSection(new Uint8Array(columnStoreBytesView(store))));
+		expect(restored.archetypes.size).toBe(2);
+		expect([...(restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)]).toEqual([
+			1, 2, 3, 4
+		]);
+		expect([
+			...(restored.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array)
+		]).toEqual([0.5, 1.5, 2.5, 3.5]);
+		expect([...(restored.archetypes.get(1)!.columns.get(columnKey(3, 0))!.view as Uint16Array)]).toEqual(
+			[61000, 7]
+		);
+		// The restored region carries the current width, so `enabled_count` and
+		// `entity_ids_off` read at their version 1 offsets and the second record
+		// starts where the current stride puts it.
+		expect(restored.header.simAbiVersion).toBe(SIM_ABI_VERSION);
+		const region = restored.header.layoutDescriptorOff;
+		expect(
+			restored.view.getUint32(region + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)
+		).toBe(0);
+		const second = region + archetypeDescriptorBytes(2);
+		expect(restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.archetype_id, true)).toBe(1);
+		expect(restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)).toBe(
+			0
+		);
 	});
 
 	// The header checks above cover length-for-header + magic + ABI, but the

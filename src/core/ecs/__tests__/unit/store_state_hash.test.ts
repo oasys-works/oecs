@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import { Store } from "../../store";
+import { ARCHETYPE_DESCRIPTOR_OFFSETS, columnStoreStateHash } from "../../../store";
 import { ECS_ERROR } from "../../utils/error";
 
 const Position = { x: "i32", y: "i32" } as const;
@@ -156,6 +157,29 @@ describe("Store.state_hash, live-row FNV-1a", () => {
 		const h1 = s.stateHash();
 		const h2 = s.stateHash();
 		expect(h1).toBe(h2);
+	});
+
+	it("ignores the archetype descriptor header, so a reserved field cannot move it", () => {
+		// The fold reads archetype id, live row count, enabled count and column
+		// bytes. It never reads a descriptor. So a value written into the
+		// reserved `entity_ids_off` leaves the world's digest where it was, and
+		// moves the store's byte digest, which folds the whole span.
+		const s = new Store({ deterministic: true });
+		const Pos = s.registerComponent(Position);
+		for (let i = 0; i < 4; i++) {
+			const e = s.createEntity();
+			s.addComponent(e, Pos, { x: i, y: -i });
+		}
+		const store = s.columnStore;
+		const before = s.stateHash();
+		const beforeBytes = columnStoreStateHash(store);
+		store.view.setUint32(
+			store.header.layoutDescriptorOff + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off,
+			0x1234,
+			true
+		);
+		expect(s.stateHash()).toBe(before);
+		expect(columnStoreStateHash(store)).not.toBe(beforeBytes);
 	});
 });
 

@@ -35,8 +35,10 @@
  */
 
 import {
+	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ENTITY_INDEX_HEADER_BYTES,
 	ENTITY_INDEX_HEADER_OFFSETS,
+	LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	readLayoutDescriptorRegion,
 	readStoreHeader,
 	STORE_HEADER_BYTES,
@@ -307,10 +309,16 @@ export function assertDenseMatchesLive(
 	}
 	let descriptors: readonly ArchetypeDescriptor[];
 	try {
+		// This guard runs on the raw section, before `restoreColumnStore` rewrites
+		// a version 0 region at the current archetype header width, so it walks
+		// the width the section was written with.
 		descriptors = readLayoutDescriptorRegion(
 			view,
 			header.layoutDescriptorOff,
-			header.archetypeCount
+			header.archetypeCount,
+			abi === LEGACY_ABSOLUTE_ABI_VERSION
+				? LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES
+				: ARCHETYPE_DESCRIPTOR_HEADER_BYTES
 		);
 	} catch (e) {
 		if (e instanceof RangeError) {

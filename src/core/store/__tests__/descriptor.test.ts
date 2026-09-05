@@ -2,9 +2,12 @@
  * Binary-fixture lock for the SAB layout descriptor.
  *
  * Pins the byte sequence of `ColumnDescriptor` (16 bytes) and
- * `ArchetypeDescriptor` (32-byte header + N × 16-byte columns) so the
+ * `ArchetypeDescriptor` (40-byte header + N × 16-byte columns) so the
  * WASM sim and the TS host can never silently disagree on where a column
  * lives in the SAB. Same role as `header.test.ts` plays for the SAB header.
+ *
+ * Every golden byte here is hand-derived from the offset table above the
+ * fixture, field by field, not captured from a run.
  *
  * Schema change ⇒ `SIM_ABI_VERSION` bump (see `header.ts`).
  */
@@ -12,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
+	LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	type ArchetypeDescriptor,
 	archetypeDescriptorBytes,
@@ -68,7 +72,7 @@ const ARCHETYPE_FIXTURE: ArchetypeDescriptor = {
 	columns: [COLUMN_FIXTURE]
 };
 
-// Header bytes (36) + COLUMN_GOLDEN_HEX (16) = 52 bytes total.
+// Header bytes (40) + COLUMN_GOLDEN_HEX (16) = 56 bytes total.
 // [0..4) archetype_id=42=0x2A → 2a 00 00 00
 // [4..8) mask[0]=0xDEADBEEF   → ef be ad de
 // [8..12) mask[1]=0           → 00 00 00 00
@@ -78,8 +82,12 @@ const ARCHETYPE_FIXTURE: ArchetypeDescriptor = {
 // [24..28) row_cap=16=0x10    → 10 00 00 00
 // [28..32) column_count=1     → 01 00 00 00
 // [32..36) enabled_count=3    → 03 00 00 00
+// [36..40) entity_ids_off=0   → 00 00 00 00
 const ARCHETYPE_HEADER_GOLDEN_HEX =
-	"2a000000efbeadde0000000000000000000000000300000010000000" + "01000000" + "03000000";
+	"2a000000efbeadde0000000000000000000000000300000010000000" +
+	"01000000" +
+	"03000000" +
+	"00000000";
 const ARCHETYPE_GOLDEN_HEX = ARCHETYPE_HEADER_GOLDEN_HEX + COLUMN_GOLDEN_HEX;
 
 // ───────────────────────── Region (2 archetypes) ────────────────────────
@@ -157,7 +165,7 @@ describe("SAB ColumnDescriptor, 16-byte fixed layout", () => {
 	});
 });
 
-describe("SAB ArchetypeDescriptor, 36-byte header + N × 16", () => {
+describe("SAB ArchetypeDescriptor, 40-byte header + N × 16", () => {
 	it("fixture writes to the golden byte sequence (1 column)", () => {
 		const buf = new ArrayBuffer(archetypeDescriptorBytes(1));
 		const view = new DataView(buf);
@@ -166,18 +174,50 @@ describe("SAB ArchetypeDescriptor, 36-byte header + N × 16", () => {
 		expect(toHex(new Uint8Array(buf))).toBe(ARCHETYPE_GOLDEN_HEX);
 	});
 
-	it("header is exactly ARCHETYPE_DESCRIPTOR_HEADER_BYTES (36) bytes", () => {
-		expect(ARCHETYPE_DESCRIPTOR_HEADER_BYTES).toBe(36);
+	it("header is exactly ARCHETYPE_DESCRIPTOR_HEADER_BYTES (40) bytes", () => {
+		expect(ARCHETYPE_DESCRIPTOR_HEADER_BYTES).toBe(40);
 		// archetype_id, component_mask (4 words @ 4), row_count, row_capacity,
-		// column_count, enabled_count. Reordering or widening shifts these,
-		// fails before the fixture to point at the version-bump requirement.
-		expect(Object.values(ARCHETYPE_DESCRIPTOR_OFFSETS)).toEqual([0, 4, 20, 24, 28, 32]);
+		// column_count, enabled_count, entity_ids_off. Reordering or widening
+		// shifts these, fails before the fixture to point at the version-bump
+		// requirement.
+		expect(Object.values(ARCHETYPE_DESCRIPTOR_OFFSETS)).toEqual([0, 4, 20, 24, 28, 32, 36]);
 	});
 
-	it("archetype_descriptor_bytes(N) = 36 + N × 16", () => {
-		expect(archetypeDescriptorBytes(0)).toBe(36);
-		expect(archetypeDescriptorBytes(1)).toBe(52);
-		expect(archetypeDescriptorBytes(5)).toBe(36 + 5 * 16);
+	it("entity_ids_off is the last header field, and the header ends after it", () => {
+		// Seven u32 fields, one of them four words wide, so the header spans
+		// 10 words. `entity_ids_off` closes it, so the first column descriptor
+		// starts at the header width.
+		expect(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off).toBe(36);
+		expect(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off + 4).toBe(
+			ARCHETYPE_DESCRIPTOR_HEADER_BYTES
+		);
+	});
+
+	it("the writer stores zero in entity_ids_off, which means the table is absent", () => {
+		// The field is reserved. The row-to-entity table does not live in the
+		// store yet, so a reader that finds anything but zero here would follow
+		// an offset to nothing. The buffer starts non-zero so the assertion
+		// pins a write and not an untouched allocation.
+		const buf = new ArrayBuffer(archetypeDescriptorBytes(1));
+		new Uint8Array(buf).fill(0xff);
+		const view = new DataView(buf);
+		writeArchetypeDescriptor(view, 0, ARCHETYPE_FIXTURE);
+		expect(view.getUint32(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)).toBe(0);
+	});
+
+	it("archetype_descriptor_bytes(N) = 40 + N × 16", () => {
+		expect(archetypeDescriptorBytes(0)).toBe(40);
+		expect(archetypeDescriptorBytes(1)).toBe(56);
+		expect(archetypeDescriptorBytes(5)).toBe(40 + 5 * 16);
+	});
+
+	it("measures a version 0 record at the narrower header it was written with", () => {
+		// Version 0 held no `entity_ids_off`, so its record is four bytes
+		// shorter for the same column count. Restore walks a version 0 region
+		// with this width.
+		expect(LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES).toBe(36);
+		expect(archetypeDescriptorBytes(0, LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES)).toBe(36);
+		expect(archetypeDescriptorBytes(2, LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES)).toBe(36 + 2 * 16);
 	});
 
 	it("write → read round-trips header + every column", () => {
@@ -206,15 +246,15 @@ describe("SAB ArchetypeDescriptor, 36-byte header + N × 16", () => {
 
 describe("SAB layout descriptor region, sequential variable-length walk", () => {
 	it("layout_descriptor_region_bytes sums each archetype's footprint", () => {
-		// 1-column archetype = 52, 1-column archetype = 52, total = 104.
-		expect(layoutDescriptorRegionBytes(REGION_FIXTURE)).toBe(104);
+		// 1-column archetype = 56, 1-column archetype = 56, total = 112.
+		expect(layoutDescriptorRegionBytes(REGION_FIXTURE)).toBe(112);
 
 		const wider: readonly ArchetypeDescriptor[] = [
 			{ ...ARCHETYPE_FIXTURE, columns: [COLUMN_FIXTURE, COLUMN_FIXTURE, COLUMN_FIXTURE] },
 			ARCHETYPE_2
 		];
-		// 36 + 3×16 = 84, plus 52 = 136.
-		expect(layoutDescriptorRegionBytes(wider)).toBe(136);
+		// 40 + 3×16 = 88, plus 56 = 144.
+		expect(layoutDescriptorRegionBytes(wider)).toBe(144);
 	});
 
 	it("write_layout_descriptor_region returns the end offset", () => {
@@ -222,7 +262,7 @@ describe("SAB layout descriptor region, sequential variable-length walk", () => 
 		const buf = new ArrayBuffer(regionOff + layoutDescriptorRegionBytes(REGION_FIXTURE));
 		const view = new DataView(buf);
 		const end = writeLayoutDescriptorRegion(view, regionOff, REGION_FIXTURE);
-		expect(end).toBe(regionOff + 104);
+		expect(end).toBe(regionOff + 112);
 	});
 
 	it("region round-trips through write → read at non-zero offset", () => {

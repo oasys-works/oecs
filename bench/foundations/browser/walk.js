@@ -60,6 +60,7 @@ export function readDescriptors(view, headerOff) {
 			rowCount: view.getUint32(addr + ARCH.row_count, true),
 			rowCapacity: view.getUint32(addr + ARCH.row_capacity, true),
 			enabledCount: view.getUint32(addr + ARCH.enabled_count, true),
+			entityIdsOff: view.getUint32(addr + ARCH.entity_ids_off, true),
 			descriptorAddress: addr,
 			columns
 		});
@@ -82,8 +83,9 @@ function fold(hash, word) {
 /**
  * The layout fold, field by field, in the order the module folds them: the
  * archetype count, then for each archetype its id, column count, row count,
- * enabled count and first mask word, then for each column its component id,
- * field id, type tag, stored byte offset and stride.
+ * enabled count, first mask word and reserved row-to-entity offset, then for
+ * each column its component id, field id, type tag, stored byte offset and
+ * stride.
  *
  * It folds the stored offset and not the address, so a world at any base folds
  * to the same value.
@@ -98,6 +100,7 @@ export function foldLayout(view, headerOff) {
 		hash = fold(hash, d.rowCount);
 		hash = fold(hash, d.enabledCount);
 		hash = fold(hash, d.mask[0]);
+		hash = fold(hash, d.entityIdsOff);
 		for (const c of d.columns) {
 			hash = fold(hash, c.componentId);
 			hash = fold(hash, c.fieldId);

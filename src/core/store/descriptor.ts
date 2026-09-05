@@ -23,13 +23,10 @@
  * All fields little-endian, same rationale as `header.ts`.
  */
 
-// Byte-layout constants generated from the Zig `extern struct`s in
-// `packages/sim/src/abi.zig` via `bun run gen:abi` (in-house Zig
-// bindgen). `@offsetOf` reads the real layout (explicit `_pad` and `_pad2` included),
-// so the TS offsets always match the bytes the wasm dereferences, a
-// transposed field is impossible. Re-exported here so `./descriptor` importers
-// and the `core/buffer` barrel keep the same surface. Golden bytes in
-// `__tests__/descriptor.test.ts` pin the values.
+// Byte-layout constants re-exported from `./vendored_abi/abi`, which owns them
+// and maintains them by hand. No generator produces them. Re-exported here so
+// `./descriptor` importers and the `core/buffer` barrel keep the same surface.
+// Golden bytes in `__tests__/descriptor.test.ts` pin the values.
 //
 //   - COLUMN_DESCRIPTOR_BYTES / _OFFSETS            16-byte per-column record
 //   - ARCHETYPE_DESCRIPTOR_HEADER_BYTES / _OFFSETS  fixed archetype header
@@ -40,6 +37,7 @@ import {
 	COLUMN_DESCRIPTOR_BYTES,
 	COLUMN_DESCRIPTOR_OFFSETS,
 	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
+	LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	COMPONENT_MASK_WORDS
 } from "./vendored_abi/abi";
@@ -48,6 +46,7 @@ export {
 	COLUMN_DESCRIPTOR_BYTES,
 	COLUMN_DESCRIPTOR_OFFSETS,
 	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
+	LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	COMPONENT_MASK_WORDS
 };
@@ -144,11 +143,14 @@ export function readColumnDescriptor(view: DataView, off: number): ColumnDescrip
 // variable.
 
 // `COMPONENT_MASK_WORDS` (the single knob the whole cross-language component
-// limit derives from) and `ARCHETYPE_DESCRIPTOR_HEADER_BYTES` are generated
-// from `abi.zig` (`ArchetypeDescriptorHeader.component_mask:
-// [COMPONENT_MASK_WORDS]u32`); see the import block above. The heap-side
-// `BitSet` is sized to match (`INITIAL_WORD_COUNT`). Bumping the word count
-// widens the descriptor on the wire, a `SIM_ABI_VERSION` bump.
+// limit derives from) and `ARCHETYPE_DESCRIPTOR_HEADER_BYTES` come from the
+// import block above. The heap-side `BitSet` is sized to match
+// (`INITIAL_WORD_COUNT`). Bumping the word count widens the descriptor on the
+// wire, a `SIM_ABI_VERSION` bump.
+//
+// The header ends with `entity_ids_off`, a reserved field that every writer
+// sets to zero. `ArchetypeDescriptor` below does not carry it, because a
+// reserved field with one legal value has nothing to round trip.
 
 /** Number of distinct components the cross-language ECS supports:
  * `COMPONENT_MASK_WORDS × 32` bits in the SAB archetype descriptor mask. The
@@ -177,9 +179,16 @@ export interface ArchetypeDescriptor {
 }
 
 /** Total bytes a descriptor will occupy, given its column count. Useful for
- * planning the layout descriptor region size up front. */
-export function archetypeDescriptorBytes(columnCount: number): number {
-	return ARCHETYPE_DESCRIPTOR_HEADER_BYTES + columnCount * COLUMN_DESCRIPTOR_BYTES;
+ * planning the layout descriptor region size up front.
+ *
+ * `headerBytes` selects the header width and defaults to the current one. Pass
+ * `LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES` to measure a version 0 region.
+ * Never pass it when planning a region the store will write. */
+export function archetypeDescriptorBytes(
+	columnCount: number,
+	headerBytes: number = ARCHETYPE_DESCRIPTOR_HEADER_BYTES
+): number {
+	return headerBytes + columnCount * COLUMN_DESCRIPTOR_BYTES;
 }
 
 export function writeArchetypeDescriptor(
@@ -199,6 +208,11 @@ export function writeArchetypeDescriptor(
 	view.setUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.row_capacity, d.rowCapacity, true);
 	view.setUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.column_count, d.columns.length, true);
 	view.setUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.enabled_count, d.enabledCount, true);
+	// `entity_ids_off` is reserved and holds zero until the row-to-entity table
+	// moves into the store. Write it rather than trust the allocation to be
+	// zero, because grow and extend rewrite descriptors over a region that
+	// already held a wider descriptor.
+	view.setUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, 0, true);
 
 	let colOff = off + ARCHETYPE_DESCRIPTOR_HEADER_BYTES;
 	for (let i = 0; i < d.columns.length; i++) {
@@ -208,10 +222,21 @@ export function writeArchetypeDescriptor(
 	return colOff;
 }
 
-export function readArchetypeDescriptor(view: DataView, off: number): ArchetypeDescriptor {
+/** Read one archetype descriptor at `off`.
+ *
+ * `headerBytes` says where this record's columns start and defaults to the
+ * current header width. A version 0 region needs
+ * `LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES`, because it holds no
+ * `entity_ids_off`. Every other field sits at the same offset in both widths,
+ * so nothing else here branches on the version. */
+export function readArchetypeDescriptor(
+	view: DataView,
+	off: number,
+	headerBytes: number = ARCHETYPE_DESCRIPTOR_HEADER_BYTES
+): ArchetypeDescriptor {
 	const columnCount = view.getUint32(off + ARCHETYPE_DESCRIPTOR_OFFSETS.column_count, true);
 	const columns: ColumnDescriptor[] = new Array(columnCount);
-	let colOff = off + ARCHETYPE_DESCRIPTOR_HEADER_BYTES;
+	let colOff = off + headerBytes;
 	for (let i = 0; i < columnCount; i++) {
 		columns[i] = readColumnDescriptor(view, colOff);
 		colOff += COLUMN_DESCRIPTOR_BYTES;
@@ -257,17 +282,24 @@ export function writeLayoutDescriptorRegion(
 	return off;
 }
 
+/** Walk `archetypeCount` descriptors from `regionOff`, in written order.
+ *
+ * `headerBytes` selects the archetype header width, and defaults to the current
+ * one. A caller that reads a version 0 store passes
+ * `LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES`, because the record stride is the
+ * only thing the narrower header changes. */
 export function readLayoutDescriptorRegion(
 	view: DataView,
 	regionOff: number,
-	archetypeCount: number
+	archetypeCount: number,
+	headerBytes: number = ARCHETYPE_DESCRIPTOR_HEADER_BYTES
 ): readonly ArchetypeDescriptor[] {
 	const out: ArchetypeDescriptor[] = new Array(archetypeCount);
 	let off = regionOff;
 	for (let i = 0; i < archetypeCount; i++) {
-		const d = readArchetypeDescriptor(view, off);
+		const d = readArchetypeDescriptor(view, off, headerBytes);
 		out[i] = d;
-		off += archetypeDescriptorBytes(d.columns.length);
+		off += archetypeDescriptorBytes(d.columns.length, headerBytes);
 	}
 	return out;
 }

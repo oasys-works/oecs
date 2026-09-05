@@ -113,6 +113,13 @@ resume accept a version 0 snapshot, because every version 0 store sat at byte 0 
 correctly as offsets from the header, so a snapshot the 0.5 line wrote still restores. Any other
 version is refused.
 
+The archetype descriptor header grows from 36 bytes to 40 and gains `entity_ids_off` at offset 36.
+The field is reserved for the archetype's row-to-entity table, and the store writes zero, which says
+the archetype carries no such table. A walker steps to the next record by `40 + column_count * 16`,
+and a reader that ignores the field reads every other field as before. A snapshot carries the
+descriptor bytes, so restore rewrites a version 0 region at the new width before it reads anything
+else, and the world's `stateHash` is unchanged because it never folds a descriptor.
+
 ### Changed. `ComputeBackend.run` takes `dt` and the tick
 
 `ComputeBackend.run(handle, deltaTime, tick)` replaces `run(handle)`. A backend that still declares

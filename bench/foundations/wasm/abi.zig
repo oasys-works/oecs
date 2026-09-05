@@ -27,7 +27,10 @@ const ARCH_MASK: u32 = 4;
 const ARCH_ROW_COUNT: u32 = 20;
 const ARCH_COLUMN_COUNT: u32 = 28;
 const ARCH_ENABLED_COUNT: u32 = 32;
-const ARCH_BYTES: u32 = 36;
+// Reserved for the row-to-entity table. The store writes zero, which says the
+// archetype carries no such table.
+const ARCH_ENTITY_IDS_OFF: u32 = 36;
+const ARCH_BYTES: u32 = 40;
 
 const COL_COMPONENT_ID: u32 = 0;
 const COL_FIELD_ID: u32 = 2;
@@ -100,6 +103,7 @@ export fn walk(header: u32) u32 {
         h = fold(h, u32At(desc + ARCH_ROW_COUNT));
         h = fold(h, u32At(desc + ARCH_ENABLED_COUNT));
         h = fold(h, u32At(desc + ARCH_MASK));
+        h = fold(h, u32At(desc + ARCH_ENTITY_IDS_OFF));
         var c: u32 = 0;
         while (c < ncol) : (c += 1) {
             const co = desc + ARCH_BYTES + c * COL_BYTES;

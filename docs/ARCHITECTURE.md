@@ -176,9 +176,11 @@ game.
 ### The column descriptors
 
 The table that answers "where is each column" is at `header.layoutDescriptorOff`. It is a sequence
-of `ArchetypeDescriptor` records of variable size. Each record has a 36-byte header
+of `ArchetypeDescriptor` records of variable size. Each record has a 40-byte header
 (`core/store/vendored_abi/abi.ts`: the archetype id, a component mask of 4 words, the number of
-rows, the row capacity, the number of columns, and the number of enabled rows). After that header
+rows, the row capacity, the number of columns, the number of enabled rows, and `entity_ids_off`).
+`entity_ids_off` is reserved for the row-to-entity table, and the store writes zero, which says the
+archetype carries no such table. After that header
 come N `ColumnDescriptor` records of 16 bytes each (`core/store/vendored_abi/abi.ts`:
 `component_id`, `field_id`, `type_tag`, `byte_off`, and `stride`). The engine walks the region by
 the column count of each archetype, and there is no offset table (`core/store/descriptor.ts`).

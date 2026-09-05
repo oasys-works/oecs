@@ -17,7 +17,7 @@ export const MAX_PAGES = 512;
 export const MAX_BYTES = MAX_PAGES * 65536;
 
 export const HDR = { magic: 0, version: 4, viewStamp: 8, capacity: 12, archetypeCount: 16, layoutOff: 20, entityIndexOff: 32 };
-export const ARCH = { id: 0, mask: 4, rowCount: 20, rowCapacity: 24, columnCount: 28, enabledCount: 32, bytes: 36 };
+export const ARCH = { id: 0, mask: 4, rowCount: 20, rowCapacity: 24, columnCount: 28, enabledCount: 32, entityIdsOff: 36, bytes: 40 };
 export const COL = { componentId: 0, fieldId: 2, typeTag: 4, byteOff: 8, stride: 12, bytes: 16 };
 
 /** Four archetypes, deterministic contents, no random source. */
@@ -114,6 +114,7 @@ export function readDescriptors(buffer, headerOff = 0) {
 			mask: dv.getUint32(off + ARCH.mask, true),
 			rowCount: dv.getUint32(off + ARCH.rowCount, true),
 			enabledCount: dv.getUint32(off + ARCH.enabledCount, true),
+			entityIdsOff: dv.getUint32(off + ARCH.entityIdsOff, true),
 			columnCount: ncol,
 			columns: cols
 		});
