@@ -101,7 +101,10 @@ ecs.getField(e, Pos, "x"); // about 1.667
 - **Two storage profiles, one core**. The default is a pure-TS heap (`ArrayBuffer`). A
   `SharedArrayBuffer` for workers or WASM is optional. The code path is the same, the `stateHash`
   is the same, and one `memory` option sets the size (a number of entities, a byte limit, or a
-  fixed capacity). Size and storage are separate fields, so any pair of them is legal.
+  fixed capacity). Size and storage are separate fields, so any pair of them is legal. The shared
+  allocators are `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, from
+  `@oasys/oecs/shared`. `fixedSabAllocator(maxBytes)` reserves one buffer that never grows, and it
+  keeps the fast write path on JavaScriptCore.
 
 **Queries**
 
@@ -152,26 +155,29 @@ ecs.getField(e, Pos, "x"); // about 1.667
 
 **Reactions and relationships**
 
-- **Observers**. `ecs.observe(...)` registers `onAdd`, `onRemove`, `onSet`, `onEnable`, and
-  `onDisable` callbacks, for a structure or for one entity. A sparse component takes the
-  entity-level `onSet`.
+- **Observers** (the `observers()` capability). `ecs.observe(...)` registers `onAdd`, `onRemove`,
+  `onSet`, `onEnable`, and `onDisable` callbacks, for a structure or for one entity. A sparse
+  component takes the entity-level `onSet`.
 - **Change detection at the row grain**. `ecs.trackRows(def)` keeps a change tick for each row.
   A chunk loop records a row with one store into `cols.ticks(def)`, a reader compares
   `cols.ticksRead(def)` with `cols.since` inside `changed(def).forEachChunk`, and
   `ctx.sparseChanged(def, e)` asks the same of a sparse component.
-- **Relations**. A relation is a `(relation, target)` pair. The presets are `ChildOf` and `IsA`.
+- **Relations** (the `relations()` capability). A relation is a `(relation, target)` pair. The
+  presets are `ChildOf` and `IsA`.
   A relation is exclusive or multi. Queries go in both directions (`targetOf`, `sourcesOf`,
   `ancestorsOf`, `rootOf`, and `cascadeOf`). The cleanup policy for a deleted target is
   `delete`, `clear`, or `orphan`. Relations use sparse storage. So they cause no archetype
   transition, and they use no identity bit.
 - **Sparse storage**. Use `registerSparseComponent` and `registerSparseTag`, then `addSparse` and
   `removeSparse`. A sparse component keeps its data in columns indexed by entity, so a read by id
-  is one load, and `sparseCursor(def)` is the fastest read by id that the engine has. Sparse
+  is one load, and `sparseCursor(def)` with `sparseCursorRead(def)` is the fastest read by id that
+  the engine has. Sparse
   storage is correct for data that a system reads by id, that changes frequently, or that is rare,
   because it causes no archetype transition.
-- **Resources**. A resource is a typed global value, keyed with `resourceKey<T>`. **Events** are
-  send-and-forget channels in struct-of-arrays form, keyed with `eventKey<F>` or `signalKey`. The
-  ECS clears the events at the end of each `update`.
+- **Resources**. A resource is a typed global value, keyed with `resourceKey<T>`. It needs no
+  capability. **Events** (the `events()` capability) are send-and-forget channels in
+  struct-of-arrays form, keyed with `eventKey<F>` or `signalKey`. The ECS clears the events at the
+  end of each `update`.
 - **Cached refs**. `ctx.ref(def, e)` gives you a writable ref, and it sets the change tick.
   `ctx.refRead(def, e)` gives you a read-only ref. A ref finds the archetype, the row, and the
   columns one time. Then you can write `pos.x += vel.vx * dt`.
@@ -187,10 +193,10 @@ ecs.getField(e, Pos, "x"); // about 1.667
 
 - **Determinism** (optional). Construct the ECS with `new ECS({ deterministic: true })`. Then use
   `ecs.snapshots.stateHash()`, which gives a 32-bit digest in FNV-1a style over the live dense
-  bytes, the sparse stores, and the target sets of multi relations. Also use
+  bytes, the sparse stores, and the target sets of multi relations. The hash is independent of the
+  storage type: a heap ECS and a shared ECS with the same history give the same hash.
   `ecs.snapshots.capture()`, `ecs.snapshots.restore(...)`, and the equivalent functions for sparse
-  data. The hash is independent of the storage type: a heap ECS and a shared ECS with the same
-  history give the same hash.
+  data need the `snapshots()` capability beside the flag.
 - **A write path from the host into the ECS**. `installHostCommandSeam(ecs)` applies typed
   `HostCommand` values from outside the schedule, through one approved `exclusive` system. It
   supports record and replay (`HostCommandRecorder` and `replayCommandLog`), and a ring transport
@@ -236,11 +242,16 @@ a capability you did not install is a compile error rather than a fault at run t
 still builds a world, and that world holds none of the four. A class method cannot be removed by a
 bundler, which is why these live behind an import you make rather than a member you always carry.
 
+To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
+from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
+gains. `CapsOf` is the surface a plugin list adds to the world.
+
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default (a production build, with the development guards removed) |
 | `@oasys/oecs/dev` | the same ECS with the development guards on. Import this to get the guards directly. See [Development and production](#dev-vs-prod) |
-| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP and COEP) |
+| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, for worker offload or a WASM backend (this needs COOP and COEP) |
 | `@oasys/oecs/relations` | the relations capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
 | `@oasys/oecs/events` | the events capability, host-side channels and signals, and `ctx.emit` |
 | `@oasys/oecs/snapshots` | the snapshot capability, `capture` and `restore` for a live world |
@@ -268,6 +279,9 @@ timestep, the memory options, and the cardinality of a relation).
 `@oasys/oecs` is the production build, with the guards removed. A bundler in development mode
 (`vite dev` or `webpack --mode development`) selects the build with the guards automatically,
 through the `development` export condition. As an alternative, import `@oasys/oecs/dev` directly.
+Each capability has the same subpath, `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
+`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the capability from the same
+channel as the world, because a capability binds to the core build it was made against.
 On **JSR and Deno** there is no bundler, because the package is raw source. The default is also
 production (`__DEV__ = false`). To turn the guards on while you develop, set
 `globalThis.__DEV__ = true` before the first import. For the full details, which include the

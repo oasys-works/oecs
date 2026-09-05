@@ -185,7 +185,8 @@ export const GameOver = signalKey("GameOver");
 export const Time = resourceKey<{ delta: number; elapsed: number }>("Time");
 ```
 
-Then import the key at each place where you emit, read, or use the resource:
+Then import the key at each place where you emit, read, or use the resource. `ecs.events` needs the
+events capability, and `ecs.resources` needs none:
 
 ```ts
 ecs.events.register(DamageEvent, ["target", "amount"]);
@@ -661,6 +662,9 @@ time, and the ECS calls you at the correct moment. Use an observer where you wou
 in each frame, or where you need exact information **for each entity**, which the archetype level of
 detail of `changed()` cannot give.
 
+Observers are a capability. Build the world with `ECS.create({ plugins: [observers()] })`, and
+import `observers` from `@oasys/oecs/observers`.
+
 ```ts
 const handle = ecs.observe(Health, {
   access: { reads: [Health], writes: [], spawns: [[Corpse]] },  // the callbacks run in an access span
@@ -770,6 +774,9 @@ A relation links two entities as a `(relation, target)` pair. Use it for hierarc
 targets, and instance-of links. Relations are built on sparse storage. So they cause no archetype
 transition, they use no bit of the dense identity, and each relation operation is **immediate**.
 
+Relations are a capability. Build the world with
+`ECS.create({ plugins: [relations()] })`, and import `relations` from `@oasys/oecs/relations`.
+
 ```ts
 import { registerChildOf } from "@oasys/oecs";
 const ChildOf = registerChildOf(ecs);        // a supplied preset, a free function
@@ -807,7 +814,12 @@ ecs.relations.sourcesOf(parent, ChildOf);               // [child, …], the rev
 ## 13. Events and signals
 
 An event and a signal share one lifetime. You emit it during one `update()` call, each later system
-in that call sees it, and the engine clears it before the next call. The difference is the payload:
+in that call sees it, and the engine clears it before the next call.
+
+Events are a capability. Build the world with `ECS.create({ plugins: [events()] })`, and import
+`events` from `@oasys/oecs/events`. `ecs.events`, `ctx.emit` and `ctx.readEvents` all need it.
+
+The difference between an event and a signal is the payload:
 
 ```ts
 import { eventKey, signalKey, type EntityID } from "@oasys/oecs";
@@ -873,6 +885,10 @@ canonical order, and a rule that permits integer columns only. In exchange it gi
 multiplayer, replay, deterministic debugging, and save and load. The flag controls `stateHash`,
 `capture` and `restore`, and the sparse functions `captureSparse` and `restoreSparse`. Each of them
 throws `DETERMINISM_DISABLED` when the flag is off.
+
+`capture` and `restore` also need the snapshots capability, which is separate from the flag. Build
+the world with `ECS.create({ deterministic: true, plugins: [snapshots()] })`, and import
+`snapshots` from `@oasys/oecs/snapshots`. `ecs.snapshots.stateHash()` needs the flag alone.
 
 If you need determinism:
 

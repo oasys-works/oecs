@@ -143,6 +143,7 @@ const tick = ecs.registerSystem({
   },
 });
 
+// ecs.observe needs the observers capability, from ECS.create({ plugins: [observers()] })
 ecs.observe(Cooldown, {
   access: { sparseReads: [Cooldown] },
   granularity: "entity",
@@ -190,7 +191,9 @@ ecs.snapshots.restoreSparse(bytes: Uint8Array): void;
 class SparseRestoreError extends Error {}
 ```
 
-Both need `{ deterministic: true }`, or they throw `DETERMINISM_DISABLED`. `restoreSparse` requires
+Both need the snapshots capability, from `ECS.create({ plugins: [snapshots()] })`, with `snapshots`
+imported from `@oasys/oecs/snapshots`. Both also need `{ deterministic: true }`, or they throw
+`DETERMINISM_DISABLED`. `restoreSparse` requires
 that you already registered the sparse components in the **same order**. It throws
 `SparseRestoreError` for a difference in the shape, in the identity of a field, in the bounds of an
 index, or in the bytes at the end. The full-world functions

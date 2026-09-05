@@ -70,10 +70,33 @@ ecs.getField(e, Pos, "x"); // about 1.667
 oecs has several import paths. The core is `@oasys/oecs`. Each other path is optional, and it costs
 nothing until you import it.
 
+Four subsystems are **capabilities**: relations, events, snapshots and observers. A world installs
+the ones it uses, and carries no code for the rest.
+
+```ts
+import { ECS } from "@oasys/oecs";
+import { relations } from "@oasys/oecs/relations";
+import { observers } from "@oasys/oecs/observers";
+
+const world = ECS.create({ plugins: [relations(), observers()] });
+world.relations.register(); // ok
+world.events.emit(Damaged, { amount: 1 }); // compile error, events is not installed
+```
+
+`ECS.create` returns the world intersected with the facades its plugins contribute. `new ECS()`
+still builds a world, and that world holds none of the four. A JavaScript caller that reaches for a
+capability the world did not install gets `CAPABILITY_NOT_INSTALLED`. A plugin list that installs
+one capability two times gets `CAPABILITY_ALREADY_INSTALLED`. See [errors](./errors.md).
+
+To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
+from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
+gains. `CapsOf` is the surface a plugin list adds to the world.
+
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default |
-| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP and COEP) |
+| `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, for worker offload or a WASM backend (this needs COOP and COEP) |
 | `@oasys/oecs/relations` | the **relations** capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
 | `@oasys/oecs/events` | the **events** capability, host-side channels and signals, and `ctx.emit` |
 | `@oasys/oecs/snapshots` | the **snapshots** capability, `capture` and `restore` for a live world |
@@ -161,10 +184,13 @@ The build tool **removes these checks from a production build**.
 
 **Production is the default.** On npm, `@oasys/oecs` is the production build, with the guards
 removed. A bundler in development mode selects the build with the guards automatically, through the
-`development` export condition. As an alternative, import `@oasys/oecs/dev`. On JSR and Deno the
-default is also production. Set `globalThis.__DEV__ = true` before the first import to turn the
-guards on. The [Development guards and production builds](../PRODUCTION.md) guide has the full
-matrix.
+`development` export condition. As an alternative, import `@oasys/oecs/dev`. Each capability has
+the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
+`@oasys/oecs/snapshots/dev` and `@oasys/oecs/observers/dev`. Take the capability from the same
+channel as the world. A capability binds to the core build it was made against. On JSR and Deno the
+default is also production. JSR publishes no `/dev` subpath. Set `globalThis.__DEV__ = true`
+before the first import to turn the guards on. The
+[Development guards and production builds](../PRODUCTION.md) guide has the full matrix.
 
 > [!IMPORTANT]
 > When this documentation says that an operation "throws in development", that behavior is a

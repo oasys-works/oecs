@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - 2026-09-04
+## [0.6.0] - 2026-09-05
 
 ### Changed (breaking). Four subsystems became capabilities a world installs
 
@@ -38,12 +38,30 @@ Each capability keeps its call sites unchanged. Only construction moves.
 - `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
 - `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
 
+Each capability also has a `/dev` subpath, `@oasys/oecs/relations/dev` and the three others, which
+serve the build with the development guards on. A capability binds to the core build it was made
+against, so take the capability and the world from the same channel.
+
 `ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` stay on every world. They describe the
 world, not the capability, and the determinism opt-in is still separate: `capture` and `restore`
 throw `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`, installed or not.
 
-A subsystem used without its capability throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message
-names the capability and the import that supplies it, because the fix is at the construction site.
+In TypeScript, reaching for a capability the world did not install is a compile error. In JavaScript
+nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message
+names the API and the import that supplies it, because the fix is at the construction site. On a
+bare world every member of `ecs.relations` and of `ecs.events` throws it. So do the call
+`ecs.observe(...)` and the four members `ecs.snapshots.capture`, `restore`, `captureSparse` and
+`restoreSparse`. The system-side seams throw it too. `ctx.emit`, `ctx.readEvents`,
+`ctx.addRelation`, `query.withRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among
+them.
+
+Installing one capability two times throws the new `ECS_ERROR.CAPABILITY_ALREADY_INSTALLED`.
+
+The types `Capability`, `CapabilityHost` and `CapsOf` are exported from `@oasys/oecs`, so a
+third-party capability is typed the way the four built-in ones are. `Capability<X>` is what a
+factory such as `relations()` returns, and what a plugin list holds. Its `install` takes a
+`CapabilityHost` and returns `X`, the surface the world gains. `CapsOf` is the surface a plugin
+list adds to the world.
 
 ### Changed (breaking). The store no longer forwards to its collaborators
 
@@ -154,8 +172,8 @@ Every structural row operation, the copy behind `addComponent` and `removeCompon
 swap-remove behind `despawn`, the swaps behind `disable` and `enable`, walked the columns of an
 archetype through one loop, and that loop had one typed-array access site. The site saw every column
 type that any archetype in the process used. V8 keeps one site fast for at most four typed-array
-classes. At the fifth type the site became megamorphic, and each element move then cost many times
-more, in every archetype, and not only in the one that mixed the types. The library offers eight
+classes. At the fifth type the site became megamorphic, and each element move then cost far more,
+in every archetype, and not only in the one that mixed the types. The library offers eight
 column types, so a schema with `f32` positions, an `i32` counter, a `u8` flag, a `u16` team and an
 `f64` timer reached the fifth type without notice.
 
@@ -221,8 +239,8 @@ the user's code said why.
 
 Every system body now runs through one trampoline whose call site the module makes megamorphic
 when it loads. No system body is inlined into the scheduler, whatever the number of literals, and
-each is compiled on its own. A dispatch costs a few nanoseconds more for each system in each phase
-a system that does any work repays that many times over.
+each is compiled on its own. A dispatch costs a little more, one time for each system in each phase.
+A system that does any work gains more than that cost.
 
 ### Changed. The cost of a new archetype no longer grows with the number of archetypes
 
@@ -240,7 +258,7 @@ A ref got one prototype for each (archetype, component) pair, and a cursor one f
 An engine gives an object a distinct shape for each distinct prototype, so the read of the row inside
 each getter saw one shape for each component that the program read through refs or cursors. At the
 fifth shape that read became megamorphic, and every field access through every ref and every cursor
-in the process paid a large multiple. A world with five components, each with only `f64` fields,
+in the process became far slower. A world with five components, each with only `f64` fields,
 was enough.
 
 Every ref and every cursor now shares one prototype for the whole process. Each distinct field name
@@ -321,9 +339,9 @@ with a worker or a WASM module and the buffer never moves.
 
 It exists for a measured reason. JavaScriptCore has no fast store path for a TypedArray view over a
 growable `SharedArrayBuffer`: a column read costs what a fixed buffer costs, but every column write
-costs several times more. The cost is for each access and not for each byte, so a small world pays
-the same multiple as a large one. V8 shows no such difference. Safari and Bun are JavaScriptCore. A
-fixed buffer restores the fast store path on both engine families and gives up only the growth.
+costs far more. The cost is for each access and not for each byte, so a small world pays it too.
+V8 shows no such difference. Safari and Bun are JavaScriptCore. A fixed buffer restores the fast
+store path on both engine families and gives up only the growth.
 
 `growableSabAllocator` and `wasmMemoryAllocator` now carry that warning in their own documentation.
 A shared `WebAssembly.Memory` gives a growable `SharedArrayBuffer` and can give nothing else, so the
@@ -341,6 +359,16 @@ said so and nothing tested a view's length. The rule is now in the `makeView` do
 tests hold it: one walks every column of every archetype, and one proves that a view keeps its
 length when the buffer below it grows. The second matters most, because a length-tracking view
 survives the identity and data checks that were already there.
+
+### Added. `ECS_ERROR.INVALID_TEMPLATE`
+
+`spawn` and `spawnMany` take a template from `ecs.template(...)`. A component definition, a callable
+bundle, or the pre-0.5 array of entries reached the store instead, and the store then failed with a
+`TypeError` about an internal field. That error named the wrong place, and it did not say what to
+do. A development build now throws `INVALID_TEMPLATE`, names the value the caller gave, and names
+the call to make in its place. `ecs.template` rejects the array of entries with the same code. The
+types already reject all four shapes, so this catches an untyped call site. Both checks are
+development only, and the production build is unchanged.
 
 ### Fixed. A write was reported on two frames when the writer ran before the reader
 
@@ -405,7 +433,7 @@ set from the live entity count at each drain, a frame switches to the scan, the 
 the row and pushes nothing, and the drain walks the plane of each archetype a writer stamped. A
 `markChanged` record stamps no archetype, so it is listed still, and dropped when a scan covers it.
 
-### Fixed. The observer drain was an order of magnitude slower on JavaScriptCore
+### Fixed. The observer drain took a slow path on JavaScriptCore
 
 The radix pass that orders a drain by entity index kept its scratch in a plain array grown by a
 length assignment. JavaScriptCore turns such an array into a sparse store, and each element store

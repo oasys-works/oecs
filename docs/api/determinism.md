@@ -42,7 +42,7 @@ ecs.snapshots.stateHash();   // the same number on both, at the same tick bounda
 ```ts
 new ECS();                              // deterministic is false by default
 new ECS({ deterministic: true });       // the flag, on a world with no capabilities
-ECS.create({ deterministic: true, plugins: [snapshots()] }); // the flag, and capture / restore
+ECS.create({ deterministic: true, plugins: [snapshots()] }); // the flag, and capture and restore
 ecs.snapshots.deterministic;            // read the flag, a getter on the facade
 ```
 

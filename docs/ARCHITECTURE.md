@@ -864,7 +864,9 @@ Source: `src/core/ecs/observer.ts`.
 
 An observer runs a callback when the engine adds, removes, or sets a component, or when it enables
 or disables the entity of that component. It is the push equivalent of a `changed()` query, which
-you must poll. `ecs.observe(def, config)` (`core/ecs/ecs.ts`) registers one, and it gives a handle
+you must poll. Observers are a capability, so a world installs them with
+`ECS.create({ plugins: [observers()] })` and imports `observers` from `@oasys/oecs/observers`.
+`ecs.observe(def, config)` (`capabilities/observers.ts`) registers one, and it gives a handle
 that you can dispose of. The shape of the config selects the kind: structural (`onAdd`, `onRemove`,
 `onDisable`, and `onEnable`), `onSet` with archetype granularity (the default), or `onSet` with
 entity granularity. The declared `access` of each observer builds a `SystemDescriptor`. So the

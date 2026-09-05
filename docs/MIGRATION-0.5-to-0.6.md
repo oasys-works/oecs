@@ -4,26 +4,29 @@ Version 0.6 makes every name state the act it performs, and it fixes the change 
 write is reported one time. There is **no alias for an old name**. The compiler finds every rename,
 because each old name is gone.
 
-Most of the work is mechanical. Two changes are not, and you must read them: the change tick, and
-the two reserved field names.
+Most of the work is mechanical. Three changes are not, and you must read them: the capability
+install, the change tick, and the two reserved field names.
 
-1. **The change tick reports a write one time**. `changed()` used to report a write on two
+1. **Relations, events, snapshots and observers are capabilities the world installs**. Build the
+   world with `ECS.create({ plugins: [relations(), events()] })`, and name the ones it uses.
+   `new ECS()` still builds a world, and that world holds none of the four.
+2. **The change tick reports a write one time**. `changed()` used to report a write on two
    frames when the writer ran before the reader, which is the usual order. It no longer does. A
    system that both writes a component and reads `changed()` on it no longer sees its own stamp on
    its next run.
-2. **`__cols` and `__row` are reserved field names**. Registration of a component with either
+3. **`__cols` and `__row` are reserved field names**. Registration of a component with either
    name now throws.
-3. **The renames on the public surface**. One table, applied by search and replace.
-4. **The fields another module reads lost the underscore**. These were never in the documented
+4. **The renames on the public surface**. One table, applied by search and replace.
+5. **The fields another module reads lost the underscore**. These were never in the documented
    API, so most callers see nothing.
-5. **A sparse component stores a typed value**. A field declared `i32` now truncates, where it
+6. **A sparse component stores a typed value**. A field declared `i32` now truncates, where it
    used to keep the number you gave.
-6. **`for..in` over a ref no longer lists a component's fields**.
-7. **`memory` is two fields, and not one union**.
+7. **`for..in` over a ref no longer lists a component's fields**.
+8. **`memory` is two fields, and not one union**.
 
 Everything else did not change. That includes the component operations, the query verbs, the
-schedule, the observers, the relations, the events, the resources, the determinism surface, and the
-snapshot format.
+schedule, the resources, the determinism surface, and the snapshot format. The observer, the
+relation and the event call sites are the same. Only the construction of the world moves.
 
 ---
 
@@ -195,7 +198,7 @@ Only the construction line changes. Every call site is the same.
 
 | You call | Install |
 | --- | --- |
-| `ecs.relations.*`, `ctx.addRelation`, `query.withRelation`, `query.hierarchy` | `relations()` from `@oasys/oecs/relations` |
+| `ecs.relations.*`, `ctx.addRelation`, `query.withRelation`, `query.hierarchy`, `query.forEachRelatedTo` | `relations()` from `@oasys/oecs/relations` |
 | `ecs.events.*`, `ctx.emit`, `ctx.readEvents` | `events()` from `@oasys/oecs/events` |
 | `ecs.snapshots.capture`, `.restore`, `.captureSparse`, `.restoreSparse` | `snapshots()` from `@oasys/oecs/snapshots` |
 | `ecs.observe` | `observers()` from `@oasys/oecs/observers` |
@@ -208,9 +211,17 @@ A world that installs none of the four carries none of their code, which is the 
 method cannot be removed by a bundler, so while `ECS` declared `relations` and `snapshots`, every
 program shipped that code whether or not it named them.
 
-If you miss one, the compiler says so: a world built without a capability has no member to reach
-for. A JavaScript caller gets `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message names the
-capability and the import.
+If you miss one, the compiler says so. In TypeScript, a world built without a capability has no
+member to reach for, so the mistake is a compile error.
+
+In JavaScript nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and
+the message names the API and the import that supplies it. On a bare world, every member of
+`ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the four
+members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The system-side
+seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`, `query.withRelation`,
+`query.hierarchy` and `query.forEachRelatedTo` are among them.
+
+Install one capability two times and the world throws `ECS_ERROR.CAPABILITY_ALREADY_INSTALLED`.
 
 A world type that must carry a capability spells it out:
 
@@ -219,6 +230,11 @@ import type { RelationsCapability } from "@oasys/oecs/relations";
 
 type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
 ```
+
+To write a capability of your own, import the types `Capability`, `CapabilityHost` and `CapsOf`
+from `@oasys/oecs`. `Capability<X>` is what a factory such as `relations()` returns, and what a
+plugin list holds. Its `install` takes a `CapabilityHost` and returns `X`, the surface the world
+gains. `CapsOf` is the surface a plugin list adds to the world.
 
 ## What is new in 0.6
 

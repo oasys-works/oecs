@@ -33,17 +33,18 @@ The **package root** (`@oasys/oecs`) exports `ECSError`, `ECS_ERROR`, and `isEcs
 > and access-check errors, and they are absent from a production build. There the same mistake
 > fails without a signal. These errors occur in **each** build, because they are structural or
 > fatal: `CIRCULAR_SYSTEM_DEPENDENCY`, `STORE_CAP_EXCEEDED`, `INVALID_MEMORY_OPTIONS`,
-> `DETERMINISM_DISABLED`, `INVALID_FRAME_STEP`, and the validators that run at construction. Use a
+> `DETERMINISM_DISABLED`, `INVALID_FRAME_STEP`, `CAPABILITY_NOT_INSTALLED`,
+> `CAPABILITY_ALREADY_INSTALLED`, and the validators that run at construction. Use a
 > development error as a safety net while you develop. Do not use it as a channel for error
 > handling in production. See
 > [development and production](./index.md#dev-vs-prod--read-this-once).
 
 ## Categories
 
-These are the 48 `ECS_ERROR` values, in groups by area:
+These are the 52 `ECS_ERROR` values, in groups by area:
 
 **Entities and components**
-`EID_MAX_INDEX_OVERFLOW`, `EID_MAX_GEN_OVERFLOW`, `ENTITY_NOT_ALIVE`, `ENTITY_NOT_DISABLED`, `COMPONENT_NOT_REGISTERED`, `COMPONENT_LIMIT_EXCEEDED`, `FIELD_NOT_REGISTERED`, `COMPONENT_INDEX_INVARIANT`
+`EID_MAX_INDEX_OVERFLOW`, `EID_MAX_GEN_OVERFLOW`, `ENTITY_NOT_ALIVE`, `ENTITY_NOT_DISABLED`, `COMPONENT_NOT_REGISTERED`, `COMPONENT_LIMIT_EXCEEDED`, `FIELD_NOT_REGISTERED`, `COMPONENT_INDEX_INVARIANT`, `INVALID_TEMPLATE`
 
 **Systems and the schedule**
 `CIRCULAR_SYSTEM_DEPENDENCY`, `DUPLICATE_SYSTEM`, `SYSTEM_FN_ARITY`, `QUERY_ACCESS_UNDECLARED`, `ACCESS_UNDECLARED`, `OPTIONAL_TERM_NOT_DECLARED`, `INVALID_RUN_CONDITION`, `INVALID_FIXED_TIMESTEP`, `INVALID_MAX_FIXED_STEPS`, `INVALID_FRAME_STEP`
@@ -57,11 +58,20 @@ These are the 48 `ECS_ERROR` values, in groups by area:
 **Observers**
 `OBSERVER_NON_CONVERGENT`, `OBSERVER_INVALID_CONFIG`, `OBSERVER_ONSET_EMIT`, `ROW_TICKS_NOT_TRACKED`
 
+**Capabilities**
+`CAPABILITY_NOT_INSTALLED`, `CAPABILITY_ALREADY_INSTALLED`
+
 **Determinism, memory, and the host write path**
 `DETERMINISM_DISABLED`, `NON_DETERMINISTIC_COLUMN_TYPE`, `INVALID_MEMORY_OPTIONS`, `STORE_CAP_EXCEEDED`, `REGION_NOT_DECLARED`, `BACKEND_ALREADY_ATTACHED`, `INVALID_RECORDER_SCHEDULE`, `COMMAND_LOG_TAG_COLLISION`
 
 It is easy to confuse a small number of these with a category near them:
 
+- `CAPABILITY_NOT_INSTALLED`. The world never installed the subsystem the call needs: relations,
+  events, snapshots, or observers. The message names the API and the import that supplies it, and
+  the remedy is at the construction site, `ECS.create({ plugins: [...] })`. This is different from
+  `*_NOT_REGISTERED`, which means that the world has the subsystem and not that one component,
+  event, or relation. In TypeScript the same mistake is a compile error, because a world carries
+  only the members its plugins contribute.
 - `ACCESS_UNDECLARED`. A system touched a component, a sparse component, a relation, or a resource
   that it did not declare in its access surface. This is different from `*_NOT_REGISTERED`, which
   means that you never registered the item with the world. The engine also throws

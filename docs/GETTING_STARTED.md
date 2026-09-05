@@ -19,15 +19,19 @@ component, system, resource, and event channel.
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
+import { events } from "@oasys/oecs/events";
 
-const ecs = new ECS({
+const ecs = ECS.create({
   fixedTimestep: 1 / 60,   // the rate of FIXED_UPDATE (default 1/60)
   maxFixedSteps: 4,        // the limit on fixed steps in one update(), to prevent the spiral of death
   memory: { columnCapacity: 1024 },   // the initial column capacity of each archetype
+  plugins: [events()],     // this guide emits and reads events
 });
 ```
 
-Each option is optional. `new ECS()` uses good default values.
+Each option is optional. `new ECS()` uses good default values, and it installs no capability.
+`ECS.create` adds the capabilities the world uses. This guide uses events, so it installs
+`events()`. Relations, snapshots and observers each have their own capability.
 
 ## 3. Define the components
 
@@ -343,6 +347,8 @@ moves the entity to a different archetype.
 
 ### Events and resources
 
+`ctx.emit` and `ctx.readEvents` need the events capability. Resources need none.
+
 ```ts
 ctx.emit(DamageEvent, { target: id, amount: 25 });
 ctx.emit(GameOver);
@@ -422,8 +428,9 @@ import {
   resourceKey,
   type EntityID,
 } from "@oasys/oecs";
+import { events } from "@oasys/oecs/events";
 
-const ecs = new ECS();
+const ecs = ECS.create({ plugins: [events()] });
 
 // --- Components ---
 const Pos    = ecs.registerComponent({ x: "f64", y: "f64" });

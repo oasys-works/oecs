@@ -84,7 +84,7 @@ interface SystemConfig {
   sparseWrites?:  readonly SparseComponentDef[];
   relationReads?:  readonly RelationDef[];        // include ANY_RELATION for forEachRelatedTo
   relationWrites?: readonly RelationDef[];
-  queries?: readonly (readonly ComponentDef[])[]; // one entry for each closed-over / builder query, a check only
+  queries?: readonly (readonly ComponentDef[])[]; // one entry for each closed-over or builder query, a check only
 
   // --- Optional ---
   name?: string;                                  // diagnostics
