@@ -16,7 +16,12 @@ Use these tools only for local work. They are not a part of the package.
 pnpm build                                # every probe measures dist/, not src/
 node bench/foundations/run.mjs            # every probe
 node bench/foundations/run.mjs p09        # one probe
+node bench/foundations/p23-pillars.mjs    # slow, it builds the package four times
 ```
+
+`p23-pillars.mjs` is the one probe that does not read `dist/`. It builds its own
+copies, one for each pillar it removes, so `run.mjs` takes several minutes once
+it is in the list.
 
 ## What each probe measures
 
@@ -33,6 +38,25 @@ node bench/foundations/run.mjs p09        # one probe
 | `p10-accessors.mjs` | exp 10 (accessor shape), P09's diagnosis | Where does a read of one field by id spend, and would a generated accessor help? |
 | `p11-memory-grid.mjs` | `ECSMemoryOptions` flattening proposal | Is sizing really independent of backing, and does every cell of the grid work? |
 | `p22-change.mjs` | the study's "tick+list" verdict for the entity grain | What does the entity grain cost on the write path and at the drain, which write paths does it see, and how many ticks is one write reported on? |
+| `p23-pillars.mjs` | no experiment, the three jit tricks the unit suite cannot see | Each pillar is removed from a copy of the source and the package is rebuilt. Which ones still pay? |
+| `p23-solid.mjs` | no experiment, the two ways this engine reaches SolidJS | Does the solid plugin cost less per tick than the observers chain, at each density of dirty rows? |
+| `p24-par-crossing.mjs` | no experiment, the parallel study | What does it cost to reach a worker and come back, and what does an atomic cost against a plain access? |
+| `p24-par-bytes-view.mjs` | no experiment, the parallel study | Can a worker that holds only the store buffer read what the query reads, and what does a layout republish cost it? |
+| `p24-par-split.mjs` | no experiment, the parallel study | Does a row-range split across K workers leave the same bytes and the same `stateHash`, and where does it start to pay? |
+| `p24-par-conflict.mjs` | the negative control for `p24-par-split` | Does the byte compare detect a real conflict, or does it detect nothing? |
+| `p24-par-structural.mjs` | no experiment, the parallel study | What does a worker see when a grow or a swap-remove runs beside its pass? |
+| `p24-par-engine.mjs` | no experiment, the shipped pool | Does `ecs.attachWorkers` with a `parallel` system leave the same bytes and the same `stateHash` as the system's own `fn`, and where does it pay? |
+| `p25-wasm-engine.mjs` | no experiment, the `wasm` kernel form | Does a `wasm` kernel on the shipped pool leave the same `stateHash` as the system's own `fn`, and what does it buy against the `js` kernel? |
+
+The six `p24-par-*` probes report into `findings-parallel.md` beside this
+file, not into the Results section below. They study running one system on
+several workers, which is a question the substrate study never asked. Five of
+them measure hand-rolled code. `p24-par-engine.mjs` measures the shipped pool.
+
+`p25-wasm-engine.mjs` reports into `findings-wasm.md` beside the other `p25`
+probes. It needs a `wasm`-backed world, because a worker imports the world's
+memory as the module's own. Zig builds a second module lane when the compiler
+is present, and the probe prints a skip when it is not.
 
 ## Results
 
@@ -491,6 +515,25 @@ Recorded rather than declared closed.
 - **Strings (rule 7).** There are no string columns, so experiment 08 has no
   counterpart.
 
+## The probes had drifted, and five of them threw
+
+Recorded because it decides what the numbers above are worth. Every probe here
+was written against 0.5. Against 0.6.0 five of them died before they measured
+anything, and one more died on its first line:
+
+- `memory: { budget: { entities: N } }` was removed in 0.6, which broke
+  `p01`, `p09`, `p10`, `p17` and `p21` at world construction.
+- `Query.eachChunk` is now `forEachChunk`, which broke the same five again plus
+  `p05-growth`, `p05-kernels`, `p11` and `conformance`.
+- `conformance.mjs` passed a `lib` binding it never defined, and the
+  plugins it installs now ship as their own entries rather than as named
+  exports of the root.
+
+All of that is repaired and every probe runs again. The lesson is the one the
+directory already argues for a test: a probe nothing runs is a probe that
+records the API of the day it was written. Nothing in the repository fails when
+these rot, because `run.mjs` is not in a gate.
+
 ## Two defects found while writing these probes
 
 Neither is a performance result. Both cost time and both are one-line fixes.
@@ -812,3 +855,207 @@ tick tail of the new row.
 **Not covered.** The pull API (`changed().forEachChunk` with `ticksRead`) has no timing row here:
 its loop is the `w:ticks` loop with a compare in place of a store, and the archetype filter of
 `forEach`. Deno.
+
+### P23, the three jit pillars. One is large, one is small, one buys nothing
+
+Node 24.12.0, Deno 2.9.1, Bun 1.3.13. Darwin arm64. oecs 0.6.0, production
+artifact on both sides.
+
+Three pieces of this library exist for the compiler. Each one is correct without
+the trick. Delete any of them and the whole unit suite passes: 140 files, 1771
+tests, green in each case, and the typechecker complains only that the function
+you stopped calling is now unused. Each one carries a file comment that says it
+was measured, and until now that comment was the only thing holding it in place.
+
+The probe removes each pillar from a copy of `src/`, rebuilds the package with
+`scripts/build.mjs`, and measures the same workload on both builds. It refuses
+to report when a patch matches its anchor text zero times or twice, and it
+refuses when the two builds emit identical bytes: both of those look exactly
+like a pillar that costs nothing.
+
+| pillar | case | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| `kinds` | eight element kinds | 3.16x | 2.64x | 1.29x |
+| `kinds` | one element kind (control) | 1.00x | 0.99x | 1.00x |
+| `dispatch` | one system, small world | 1.05x | 1.51x | 1.01x |
+| `dispatch` | one system, large world | 0.99x | 0.99x | 1.00x |
+| `shape` | sparse cursor, no dense cursor first | 1.03x | 1.00x | 1.00x |
+| `shape` | sparse cursor, dense cursor first | 1.00x | 0.98x | 1.02x |
+
+Each number is the patched build over the base build, so above one means the
+pillar still pays.
+
+**`kinds` is the large one, and it is the pillar with no test at all.** One
+accessor body for all eight element kinds costs a multiple on every field read
+of a component that mixes kinds, on both V8 runtimes. JavaScriptCore charges
+less, which is what `ref.ts` predicts: it says JSC pays from the second kind
+rather than at the fifth, so it has less headroom to lose. The control row is
+the one that makes the result readable. A component whose fields are all `f64`
+measures the same either way, so the cost is the cliff and not the refactor.
+
+Collapsing those eight copy-pasted bodies into one helper is behaviour
+preserving, it deletes about eighty lines, and it is the first change a tidy-up
+pass would make. Before this probe nothing in the repository would have
+objected.
+
+**`dispatch` still pays, and it pays less than the comment implies.** The
+schedule's comment says the inlined loop runs "much slower". What reproduces
+today is smaller and narrower than that. The effect is real on both V8 runtimes
+in a small world, where the scheduler's per-system cost is a visible share of
+the frame. It vanishes in a large world, where the system body dominates. It
+does not appear on JavaScriptCore at all. The direction of the claim holds. The
+size of it does not, on this engine, on this day. Note also that the existing
+`sched/update_20systems` suite case does **not** show this: twenty closures from
+one literal are already enough targets, so the seed protects the one-system
+world and the true factory world, not that case.
+
+**`shape` buys nothing that this probe can find.** Six comparisons, three
+runtimes, two orders, and every one of them lands inside the spread. The single
+disjoint row reads below one, which is the patched build winning by noise. The
+claim was order sensitivity: that a dense cursor running first would make a
+later sparse cursor slower. Both orders measure the same on both builds.
+
+That is not proof the mechanism never existed. V8's tracking of a field's
+constness is a version-dependent detail, and the comment says it was measured.
+It is a statement that the mechanism does not reach the shipped library on any
+runtime installed here. `primeAccessorShapes` costs two objects at module load,
+so keeping it is cheap insurance. What it must not keep is a comment that reads
+as a current measurement. The finding belongs next to the claim.
+
+**Not measured.** Three sibling rules have no probe and stay untested:
+`ref.ts` requires `__cols` and `__row` to appear as literals at every hot site
+rather than through an imported constant, `row_kinds.ts` requires the same of
+its type tags, and `row_kinds.ts` forbids folding its eight `switch` cases into
+a shared helper. Each of those is behaviour preserving to break. Each would be
+invisible to the suite, and to this probe.
+
+### P23-solid, ECS state into SolidJS. A signal per row wins at every dense density
+
+**The solid plugin costs less per tick than the observers chain at every
+dense density this probe measures.** It reads the store's change feed and writes
+one Solid signal per row. Its publish alone, with no subscriber, is below the
+chain's. The chain measures lower on the two rows that move almost nothing, one
+dirty row and an idle tick, and both of those sit in single-digit microseconds.
+
+The plugin's first design wrote a Solid store keyed by entity id. That
+design lost on every dense row of this probe. Both result sets are below, the
+first design first. The chain rows come from the probe as it stood
+before the kernel chain was removed. The probe now measures the plugin alone.
+
+node (V8) only. 200,000 entities in one archetype, one component of two `f32`
+fields, production artifact of the working tree. Deno and bun were not run.
+
+One `UPDATE` system writes `x` on K rows by id through `ctx.setField`, on a
+fixed shuffled order. The written value changes on every tick, so no equality
+skip on either path can hide a publish. The warm-up counts row visits and not
+ticks, so a sparse density gets more warm-up ticks than a dense one. Both worlds
+carry one `createEffect` for each entity, subscribed after the seed and before
+the timing. The chain effect reads `bindCell(id)()`. The plugin effect reads
+`cell(id)()`, bound once per row for parity. The timed region is the whole tick
+call, `batchedUpdate(world, dt)` for the chain and `world.update(dt)` for the
+plugin. Both paths wake the same count of effects on every row, and the
+probe prints that count.
+
+#### The first design, a Solid store keyed by entity id. It lost on every dense row
+
+**The store publish cost more than the chain at every density above one row.**
+The multiple moved between runs, 1.74x to 2.29x at K = 2,000 and 1.38x to 1.59x
+at K = 20,000, so read the direction and not the multiple.
+
+| K dirty of 200,000 | chain ms | cap ms | cap vs chain | chain ns/row | cap ns/row |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.009 | 0.008 | 0.90x | 8980 | 8083 |
+| 200 | 0.165 | 0.306 | **1.85x** | 826 | 1529 |
+| 2,000 | 2.143 | 4.908 | **2.29x** | 1072 | 2454 |
+| 20,000 | 33.943 | 49.032 | **1.44x** | 1697 | 2452 |
+| 200,000 | 130.521 | 237.835 | **1.82x** | 653 | 1189 |
+
+| variant | chain ms | cap ms |
+| --- | --- | --- |
+| idle, nothing written, every effect subscribed | 0.004 | 0.003 |
+| nosub, K = 2,000, no effect subscribed | 0.557 | 1.639 |
+
+**The store design already lost at the publish, before Solid read anything.**
+Its `nosub` row sat at about three times the chain's. That row was not
+symmetric and it favoured the plugin: the chain's `nosub` variant drops the
+per-entity kernel-to-Solid bridge along with the effects, so the chain figure
+was the half that reaches `reactiveMap` and the plugin figure was its whole
+path with nobody watching.
+
+**One dirty row was a tie.** The middle halves overlapped, chain 0.008 to 0.020
+and cap 0.007 to 0.017.
+
+#### The second design, one Solid signal per row. It wins at every dense density
+
+**The plugin is the cheaper path at 200 dirty rows and above.** One run of
+the whole probe, after the warm-up fix below.
+
+| K dirty of 200,000 | chain ms | cap ms | cap vs chain | chain ns/row | cap ns/row |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.003 | 0.010 | **3.57x** | 2875 | 10250 |
+| 200 | 0.114 | 0.085 | **0.74x** | 573 | 423 |
+| 2,000 | 2.484 | 1.485 | **0.60x** | 1242 | 742 |
+| 20,000 | 33.255 | 21.292 | **0.64x** | 1663 | 1065 |
+| 200,000 | 146.216 | 75.639 | **0.52x** | 731 | 378 |
+
+| variant | chain ms | cap ms |
+| --- | --- | --- |
+| idle, nothing written, every effect subscribed | 0.001 | 0.003 |
+| nosub, K = 2,000, no effect subscribed | 0.511 | 0.365 |
+
+**The 200-row loss the first run of this design reported was the probe's
+warm-up.** The shipped warm-up ran six ticks whatever the density. Under it,
+`chain:d200` measured 0.156, 0.160 and 0.173 ms across three runs and `cap:d200`
+measured 0.525, 0.541 and 0.547 ms. Raising the warm-up to 200 ticks and
+changing nothing else gave `chain:d200` 0.111, 0.116 and 0.122 ms, and
+`cap:d200` 0.084, 0.085 and 0.084 ms. So the plugin was the cheaper path at
+that density all along, and the six-tick warm-up hid it.
+
+**The cause is where the seed runs.** The seed walks every entity through the
+publish path before a single cell exists, so the branch that writes a cell's
+setter is never taken until the samples begin. Six ticks at 200 rows are 1,200
+visits of that branch, which is too few for the optimizing tier to come back.
+Six ticks at 2,000 rows are 12,000 visits, which is enough, and that density
+never showed the step. The chain shows no step at all, because its per-row path
+is the same code the seed already ran with its subscribers in place. The probe
+now warms by row visits and not by ticks.
+
+**The publish alone is the cheaper of the two.** The `nosub` row puts the
+plugin below the chain at the middle density with no subscriber on either
+side. Both variants drop their per-row reader, the chain its bridge and the
+plugin its cell, so the two figures answer the same question.
+
+**The subscriber half is cheaper as well.** Subtracting `nosub` from the
+K = 2,000 row leaves 1.973 ms for the chain and 1.120 ms for the plugin, for
+the same 2,000 woken effects.
+
+**The gap widens with density.** At 200,000 dirty rows the plugin runs at
+half the chain's tick and at half its per-row cost. The chain writes the kernel
+map and then wakes one bridge for each changed row, which is a second graph to
+walk. The plugin writes the signal the effect reads.
+
+**The two rows that move almost nothing go the other way, and they are the bad
+result here.** One dirty row costs the chain 0.003 ms and the plugin
+0.010 ms, and an idle tick costs 0.001 ms against 0.003 ms. Both are single-digit
+microseconds on a tick that carries 200,000 subscribed effects, and the run with
+the six-tick warm-up called both a tie. The direction on these two moved when the
+warm-up moved, so read them as small and warm-up sensitive. One run, so neither
+is repeated.
+
+> **The export condition decides whether this probe measures anything.** Under
+> node's own condition solid-js resolves to its server build, where a signal
+> holds a value and no effect ever runs. Every row would then report the cost of
+> writing values nobody reads. Each variant child spawns with
+> `--conditions=browser` in its node arguments, and asserts before it measures
+> that an effect inside a `createRoot` runs at creation and again after each
+> signal write.
+
+**Not measured.** No DOM and no renderer, so nothing here says what a real view
+adds. No `<For>`, so the key set and the row reconciler are untested. Effects
+only, which is the cheapest subscriber Solid has, so every row is a floor. One
+component, one archetype, one view and one field list. No spawn, no despawn and
+no disable inside the timed region, so the structural half of both paths is
+untested. The `eq` skip, which this probe defeats on purpose by changing the
+written value every tick. The plugin's column grain and its `singleton`
+entry point. Whether the one-row and idle rows hold, since each is one run.
+JavaScriptCore and Deno. One machine and one build.

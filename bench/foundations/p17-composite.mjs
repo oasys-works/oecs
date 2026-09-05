@@ -47,7 +47,7 @@ async function variantOecs() {
 	const { ECS, SCHEDULE } = await import(DIST.href);
 
 	const ecs = new ECS({
-		memory: { budget: { entities: N }, columnCapacity: pow2(N) }
+		memory: { entities: N, columnCapacity: pow2(N) }
 	});
 	const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 	const Kind = ecs.registerComponent({ k: "i32" });
@@ -58,7 +58,7 @@ async function variantOecs() {
 		reads: [Kind],
 		writes: [Pos, Health],
 		fn: () => {
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { hp } = cols.mut(Health);
 				const { k } = cols.read(Kind);
@@ -98,7 +98,7 @@ async function variantOecs() {
 	// Checksum: read every entity back so the comparison is verified to have
 	// computed something, and the two variants are verified to agree.
 	let sum = 0;
-	q.eachChunk((cols, count) => {
+	q.forEachChunk((cols, count) => {
 		const { x, y } = cols.mut(Pos);
 		const { hp } = cols.mut(Health);
 		for (let i = 0; i < count; i++) sum = (sum + x[i] + y[i] + hp[i]) % 1e9;

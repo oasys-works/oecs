@@ -61,7 +61,7 @@ async function run(name) {
 	const DIST = new URL("../../dist/index.js", import.meta.url);
 	const { ECS } = await import(DIST.href);
 
-	const ecs = new ECS({ memory: { budget: { entities: N }, columnCapacity: pow2(N) } });
+	const ecs = new ECS({ memory: { entities: N, columnCapacity: pow2(N) } });
 
 	// Eight fields either way. `mono` uses one element kind. `mixed` uses four.
 	const A =

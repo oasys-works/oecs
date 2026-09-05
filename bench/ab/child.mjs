@@ -31,13 +31,13 @@ const samples = Number(samplesArg);
 const entry = path.resolve(bundle);
 const base = await import(url.pathToFileURL(entry).href);
 
-// Capabilities ship on their own subpaths, so the entry alone does not carry
+// Each plugin ships on its own subpath, so the entry alone does not carry
 // them. Merge whatever this build has beside it. A build from before the split
 // has none, and carries the subsystems on the world instead, which is exactly
 // the difference `makeSuite` shims over.
 const lib = { ...base };
-for (const cap of ["snapshots", "events", "relations", "observers"]) {
-	const file = path.join(path.dirname(entry), "capabilities", `${cap}.js`);
+for (const name of ["snapshots", "events", "relations", "observers"]) {
+	const file = path.join(path.dirname(entry), "plugins", `${name}.js`);
 	try {
 		Object.assign(lib, await import(url.pathToFileURL(file).href));
 	} catch {

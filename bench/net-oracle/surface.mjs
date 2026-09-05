@@ -29,8 +29,8 @@
  */
 import { Divergence } from "./driver.mjs";
 
-/** A world with the snapshot capability installed. The tools here drive capture
- * and restore, so they take it. A consumer installs only the capabilities it
+/** A world with the snapshot plugin installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
 	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });

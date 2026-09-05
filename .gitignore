@@ -25,3 +25,6 @@ CLAUDE.md
 .claude
 
 .pnpm-store
+
+# Zig outputs of the WASM probes. `bench/foundations/wasm/build_zig.mjs` rebuilds them.
+bench/foundations/wasm/build/

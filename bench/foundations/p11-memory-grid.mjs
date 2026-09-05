@@ -116,7 +116,7 @@ function workload(ecs, n) {
 
 	let sum = 0;
 	const q = ecs.query(Pos, Hp);
-	q.eachChunk((cols, count) => {
+	q.forEachChunk((cols, count) => {
 		const { x } = cols.read(Pos);
 		const { hp } = cols.read(Hp);
 		for (let i = 0; i < count; i++) sum += x[i] + hp[i];

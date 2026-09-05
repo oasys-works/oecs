@@ -1,0 +1,769 @@
+# findings, running one system on several workers
+
+A worker that holds only the store `SharedArrayBuffer` reads exactly what the
+main thread's query reads, and a row-range split of a per-row kernel across
+eight workers leaves the same bytes and the same `stateHash` as the sequential
+run, on three runtimes and two engine families. The split pays for itself above
+a hundred thousand rows on the cheap kernel and above ten thousand rows on the
+heavy one. A grow moves the archetype and silently voids every cached view, and
+a swap-remove beside a live pass corrupts rows. Both are demonstrated, not
+argued.
+
+Node v24.12.0, Deno 2.9.1, Bun 1.3.13. Darwin arm64, Apple silicon.
+`os.availableParallelism()` reports **10**, so K is capped at 8.
+oecs 0.6.0-dev, production artifact from `dist/`.
+**Every number is one machine and one build. Read the positions and the ratios.**
+
+## Status
+
+Every probe here ran to completion on node, on deno and on bun. Nothing is
+outstanding.
+
+| probe | node | deno | bun | command |
+| --- | --- | --- | --- | --- |
+| `p24-par-crossing.mjs` | ran | ran | ran | `node bench/foundations/p24-par-crossing.mjs` |
+| `p24-par-bytes-view.mjs` | ran | ran | ran | `node bench/foundations/p24-par-bytes-view.mjs` |
+| `p24-par-split.mjs` | ran | ran | ran | `node bench/foundations/p24-par-split.mjs` |
+| `p24-par-conflict.mjs` | ran | ran | ran | `node bench/foundations/p24-par-conflict.mjs` |
+| `p24-par-structural.mjs` | ran | ran | ran | `node bench/foundations/p24-par-structural.mjs` |
+| `p24-par-engine.mjs` | ran | ran | ran | `node bench/foundations/p24-par-engine.mjs` |
+
+The first five probes changed no file under `src/`, so there is no patch to apply
+for them. `p24-par-engine.mjs` came later and measures the shipped engine, so it
+fails if the engine regresses.
+
+Swap `node` for `deno run -A` or for `bun` to repeat on the other runtimes.
+
+The readers now add the header offset to every offset they read, because the
+store writes each one measured from the header.
+`node bench/foundations/run.mjs p24` runs every one, because `run.mjs` already
+matches any file named `p<digits>-`.
+
+Known defects in the probes themselves:
+
+- **The bun spin figure in the crossing probe is bimodal across whole runs.**
+  Its median moved between 253 and 302272 nanoseconds over three runs of the
+  same file. The number is reported as a range and must not be quoted as one
+  value.
+- **The despawn race needs the progress word to fire.** An earlier version
+  posted the spin job and despawned at once. The host finished before the worker
+  woke, and the probe reported a clean run. The worker now publishes its pass
+  number and the host waits for a third of the passes before it acts. A future
+  edit that drops that wait will silently turn the probe into decoration.
+- **The walk cost is timed on the main thread**, where the descriptor bytes are
+  already in cache. A worker on a cold core pays more.
+
+Helpers live under `bench/foundations/par/`: `view.mjs` (the descriptor walk and
+the column bind), `pool.mjs` (the persistent worker pool and the barrier),
+`kernels.mjs` (the two kernels and the partition), `world.mjs` (the world every
+probe builds, and the public seam to the buffer), and one worker file for each
+probe.
+
+---
+
+## What this study did not test
+
+Name the gaps first, because a gap is a risk and a written risk is one you can
+control.
+
+- **No browser.** Every probe uses `node:worker_threads` and parks the host on
+  `Atomics.wait`. A browser main thread refuses `Atomics.wait`, so a browser host
+  must poll. The join cost there is unmeasured.
+- **No SpiderMonkey.** Firefox is a supported target in the README and no probe
+  here reaches it.
+- **No sparse store, no relation, no command buffer, no observer.** Only dense
+  archetype columns cross to a worker. Every other subsystem is main-thread JS
+  and no worker touches it.
+- **No real scheduler.** The probe releases one kernel at a barrier. It does not
+  build a conflict graph from the access declarations, does not run two different
+  systems at once, and does not interleave a parallel system with a sequential
+  one.
+- **No WASM.** That is a separate study.
+- **One machine, ten logical cores, one thermal state.** A run under load will
+  read differently.
+- **The float lane has no engine oracle.** `snapshots.stateHash()` refuses to run
+  on a world that holds float columns, so the float lane is checked by an exact
+  byte compare written inside the probe. The integer lane carries the engine's
+  own oracle.
+
+---
+
+## P24 crossing. The floor a split has to clear
+
+**Question.** What does it cost to release a worker and learn it finished, with
+an empty worker body?
+
+**Method.** One process. A pool of workers parked on `Atomics.wait` over one
+control word. The host bumps an epoch word, notifies, then waits for a done
+counter to reach the worker count. Three host wait styles: park on
+`Atomics.wait`, spin on `Atomics.load`, and spin a bounded number of times then
+park. `postMessage` is measured separately, on a worker that is not in the
+barrier loop, because `Atomics.wait` parks the whole thread and a parked worker
+never runs its message callback. Median of many samples, spread reported.
+
+### The crossing, nanoseconds for one release and one join
+
+| path | node | deno | bun |
+| --- | --- | --- | --- |
+| `postMessage` round trip, one number | 8751 | 23666 | 8781 |
+| `postMessage` round trip, 512 B copy | 9509 | 24627 | 10948 |
+| Atomics wake, one worker, host parks | 3186 | 3490 | 4867 |
+| Atomics wake, one worker, host spins then parks | 2083 | 2228 | 230 |
+| Atomics wake, one worker, host spins | 2010 | 2062 | 253 to 302272, bimodal |
+| Atomics barrier, 2 workers, host parks | 5189 | 5159 | 5529 |
+| Atomics barrier, 4 workers, host parks | 11324 | 11398 | 15327 |
+| Atomics barrier, 8 workers, host parks | 29223 | 28304 | 48978 |
+| Atomics barrier, 2 workers, host spins then parks | 5979 | 5081 | 25006 |
+| Atomics barrier, 4 workers, host spins then parks | 8401 | 9107 | 47527 |
+| Atomics barrier, 8 workers, host spins then parks | 41828 | 41538 | 85192 |
+
+Spread, node, eight workers, host parks: p25 28523, p75 30450, min 27885, max
+34601.
+
+### One word, atomic against plain, nanoseconds for one operation
+
+| op | node | deno | bun |
+| --- | --- | --- | --- |
+| plain field `++` on an object | 3.08 | 2.04 | 5.25 |
+| plain store into a heap `Int32Array` | 2.42 | 2.33 | 6.25 |
+| plain store into a shared `Int32Array` | 2.50 | 2.29 | 6.13 |
+| `Atomics.add` on a shared `Int32Array` | 8.87 | 8.62 | 6.25 |
+| plain read of a shared `Int32Array` | 3.00 | 2.33 | 6.21 |
+| `Atomics.load` on a shared `Int32Array` | 8.54 | 8.25 | 5.62 |
+
+### Worker startup, milliseconds, construction to the first message
+
+| workers | node | deno | bun |
+| --- | --- | --- | --- |
+| 1 | 16.50 | 19.24 | 5.01 |
+| 2 | 16.06 | 35.69 | 4.93 |
+| 4 | 18.13 | 74.73 | 5.17 |
+| 8 | 23.77 | 147.70 | 6.02 |
+
+### What it shows
+
+- **The Atomics barrier is cheaper than `postMessage`, and the gap grows with the
+  payload.** On deno `postMessage` costs an order more than the barrier.
+- **The barrier is not free and it is not flat.** The join cost rises faster than
+  linearly in the worker count on every runtime. The host notifies once but each
+  worker increments the same done word and notifies it, so eight workers contend
+  on one cache line. A tree join, or one done word for each worker, is untested
+  and is the obvious next thing to try.
+- **A spin-then-park host is a win on node and deno and a loss on bun.** On bun
+  the spin-then-park barrier costs several times what the parking barrier costs,
+  at every worker count. Do not build a host wait policy on the bun spin number.
+- **An atomic on one word costs a few times a plain access on V8, and nothing on
+  JavaScriptCore.** A shared change tick would pay that on every system boundary,
+  not on every row, so the cost is a rounding error against a barrier.
+- **Worker startup is a one-time cost everywhere, and deno's grows with the
+  count.** Deno pays roughly its single-worker cost for each extra worker. A deno
+  host must start its pool once and keep it.
+
+### What it does not cover
+
+The barrier releases one job to every worker. It does not measure releasing
+different work to different workers, and it does not measure a host that has
+other work to do while it waits.
+
+---
+
+## P24 bytes-view. A worker sees bytes, not the world
+
+**Question.** Can a worker that receives only the store buffer find the same
+column values the main thread's query reads, and what does re-finding them cost
+after a layout republish?
+
+**Method.** A world of 50,000 entities over three archetypes. The worker imports
+nothing from the package. It reads the 52-byte header at byte 0, walks the layout
+descriptor at `layout_descriptor_off`, and builds a typed-array view for each
+`(component_id, field_id)` pair it was asked for. It returns the sum, the first
+row, the last row of each bound field, and an FNV fold over the live bytes. The
+host derives the same four from `query.forEachChunk`.
+
+The only public path to the buffer is a declared region: `ECSOptions.regions`
+plus `ecs.regionHandle(id).buffer`. There is no `ecs.buffer`. The archetype's
+live row count comes from the descriptor's `row_count` field, which `ecs.update()`
+and `ctx.flush()` publish, and which `ecs.publishRowCounts()` forces.
+
+### Agreement
+
+| slot | archetype id | host rows | worker rows | host sum `Pos.x` | worker sum `Pos.x` | match |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 1 | 28571 | 28571 | 14148735 | 14148735 | yes |
+| 1 | 2 | 14286 | 14286 | 7197061 | 7197061 | yes |
+| 2 | 3 | 7143 | 7143 | 3629204 | 3629204 | yes |
+
+Byte fold: host 3334598825, worker 3334598825, equal. The lean walk agrees with
+the object walk.
+
+### What one republish costs a worker, microseconds, node
+
+| what | median | p25 | p75 |
+| --- | --- | --- | --- |
+| walk 4 archetypes, 24 columns, one object for each column | 6.17 | 6.00 | 6.75 |
+| walk plus bind, 4 fields | 10.29 | 9.96 | 10.50 |
+| bind only, walk cached | 3.96 | 3.92 | 4.00 |
+| lean bind, no per-column object | 3.71 | 3.67 | 3.92 |
+
+### The walk against the archetype count, microseconds, median
+
+| archetypes in the buffer | columns | node walk | node lean bind | deno lean bind | bun lean bind |
+| --- | --- | --- | --- | --- | --- |
+| 5 | 12 | 1.87 | 1.87 | 1.62 | 2.08 |
+| 17 | 48 | 5.79 | 3.25 | 2.63 | 4.21 |
+| 65 | 192 | 23.71 | 11.46 | 9.67 | 16.96 |
+| 257 | 768 | 95.33 | 46.58 | 39.33 | 67.42 |
+
+### What it shows
+
+- **The buffer alone is enough.** Every archetype, every row count and every
+  column offset the query uses is reachable from byte 0. A worker needs no
+  archetype graph, no component registry and no query cache.
+- **The walk is linear in the total column count and it is not cheap.** A world
+  with a few hundred archetypes costs tens of microseconds for each worker on
+  each republish. Eight workers pay it eight times, in parallel, but each one
+  pays it before it can do any work.
+- **Half the walk cost is the object for each column.** A form that reads the
+  descriptor bytes once and builds only the views it keeps costs about half the
+  form that describes every column first. A production worker uses the lean form.
+- **A worker cannot skip the walk by watching the buffer.** See the structural
+  probe: the buffer reference does not change on a grow. `view_stamp` in the
+  header is the only signal.
+
+### What it does not cover
+
+The walk is timed on the main thread, where the descriptor bytes are already in
+cache. The probe does not measure eight workers re-walking at the same moment.
+
+---
+
+## P24 split. One system across K workers
+
+**Question.** Does a row-range split give the same state as the sequential run,
+and where does it start to pay?
+
+**Method.** One process for each size. Three archetypes, all holding `Pos`,
+`Vel` and `Target`, told apart by two tags, so the split crosses an archetype
+boundary. Column capacity pinned so no grow lands inside a timed run.
+
+Every worker computes its own partition from the same inputs: the row counts in
+descriptor order, its index, and the worker count. No plan crosses the wire, so
+no two workers can disagree about who owns a row.
+
+The world is seeded, the seeded bytes are saved, and every lane restores them
+before it runs. Three lanes for each kernel: the registered system driven by
+`ecs.update()`, the same kernel over the raw bound views with no engine frame,
+and the K-worker split. The comparison is an exact byte compare of every live
+column byte, plus `snapshots.stateHash()` on the integer world.
+
+Kernel A is `pos += vel * dt`, three loads and three fused updates, no branch.
+Kernel B is a damped spring toward a target: several dozen flops, a square root,
+and two branches.
+
+### Correctness
+
+**40 configurations compared. 0 mismatches, on node, on deno and on bun.**
+
+Every K in 1, 2, 4 and 8, at 10,000, 100,000 and 1,000,000 entities, for both
+kernels, left column bytes identical to the sequential system. On the integer
+world `snapshots.stateHash()` was equal in every configuration as well.
+
+The byte folds are identical across the three runtimes. Kernel A at 1,000,000
+entities gives 466449760 on node, on deno and on bun. Kernel B gives 1628554168
+on all three. The integer world gives `stateHash` 1801880042 for kernel A and
+388972058 for kernel B, on all three. **Two engine families agree bit for bit on
+the result of an eight-way split.**
+
+### Speed, node, milliseconds for one frame, workers already started
+
+| entities | kernel | seq system | 1 worker | 2 | 4 | 8 | best gain |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 10,000 | A | 0.0219 | 0.0392 | 0.0428 | 0.0379 | 0.0572 | never wins |
+| 10,000 | B | 0.0662 | 0.0916 | 0.0647 | 0.0753 | 0.0786 | 1.02x at K=2 |
+| 100,000 | A | 0.2159 | 0.2358 | 0.1357 | 0.1037 | 0.1126 | 2.08x at K=4 |
+| 100,000 | B | 0.8018 | 0.8206 | 0.6235 | 0.3647 | 0.2681 | 2.99x at K=8 |
+| 1,000,000 | A | 2.1358 | 2.1662 | 1.1366 | 0.6303 | 0.4274 | 5.00x at K=8 |
+| 1,000,000 | B | 8.3213 | 8.3711 | 6.1955 | 3.2829 | 1.8659 | 4.46x at K=8 |
+
+Spread, node, 1,000,000 entities, kernel A, eight workers: p25 0.3986, p75
+0.5016.
+
+### The best gain against the sequential system, each runtime
+
+| entities | kernel | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| 10,000 | A | never wins | never wins | 1.19x at K=4 |
+| 10,000 | B | 1.02x at K=2 | 1.05x at K=2 | 1.96x at K=4 |
+| 100,000 | A | 2.08x at K=4 | 1.83x at K=4 | 3.92x at K=8 |
+| 100,000 | B | 2.99x at K=8 | 3.81x at K=8 | 5.25x at K=8 |
+| 1,000,000 | A | 5.00x at K=8 | 5.07x at K=8 | 5.54x at K=8 |
+| 1,000,000 | B | 4.46x at K=8 | 6.85x at K=8 | 6.36x at K=8 |
+
+Bun's larger ratios come from a slower sequential baseline, not a faster parallel
+one. Kernel A at 1,000,000 entities takes 6.28 ms sequentially on bun against
+2.14 ms on node, and 1.13 ms on eight bun workers against 0.43 ms on eight node
+workers. **Read the milliseconds, not only the ratio.**
+
+### What it shows
+
+- **The split is correct at every size and every worker count tested.** A
+  per-row-independent kernel over a row-range partition changes no byte relative
+  to the sequential run.
+- **`ecs.update()` costs almost nothing against the kernel.** The registered
+  system and the bare loop are within the spread of each other at every size. The
+  engine frame is not what a split has to beat.
+- **One worker is always a loss.** It pays the barrier and gains nothing. A
+  scheduler must not split below its own crossing cost.
+- **The crossover is between ten thousand and a hundred thousand rows on node and
+  deno**, and it is lower for the heavier kernel. At ten thousand rows kernel A
+  never wins on either V8 runtime, and kernel B wins by a margin inside the
+  spread.
+- **Eight workers is worse than four at a hundred thousand rows on node and deno
+  for kernel A**, and better at a million. The barrier grows with K while the work
+  for each worker shrinks.
+- **Scaling stops short of linear.** Eight workers give about five times on kernel
+  A at a million rows, not eight. Kernel A is memory bound and eight cores share
+  one memory system. Kernel B, the compute-bound one, reaches nearly seven times
+  on deno.
+
+### What it does not cover
+
+The parallel frame here is one barrier release. It has no sequential systems
+around it, no flush, no command apply, and no change-tick advance. A real frame
+adds all four. The probe never grows or despawns during a timed run, which is the
+case the structural probe shows is unsafe.
+
+---
+
+## P24 conflict. The negative control
+
+**Question.** The split probe reports that every configuration matched. Does the
+comparison detect a real conflict, or does it detect nothing?
+
+**Method.** 200,000 entities. Three conflicts written on purpose, each repeated
+eight times from the same restored seed. The probe prints every run.
+
+### Case 1. Every worker writes every row of `Pos.x`
+
+FNV over the live column bytes. The sequential answer applies the kernel K times
+in order.
+
+| workers | distinct results over 8 runs, node | deno | bun |
+| --- | --- | --- | --- |
+| 2 | 3 | 4 | 1 |
+| 4 | 6 | 8 | 6 |
+
+At two workers on node, five of the eight runs matched the sequential answer by
+luck and three did not. On bun at two workers all eight runs matched. **A run
+that agrees is not a run that is safe.** The conflict is real in every case and
+the oracle fires at four workers on all three runtimes.
+
+### Case 2. Every worker folds `Pos.x` into one shared cell, no atomic
+
+Sequential sum is 99,900,000.
+
+| workers | distinct results over 8 runs | example result, node | lost |
+| --- | --- | --- | --- |
+| 2 | 7 | 90261326 | 9638674 |
+| 4 | 8 | 44897036 | 55002964 |
+| 8 | 8 | 23361890 | 76538110 |
+
+Every run on every runtime differs from the sequential sum, and at eight workers
+about three quarters of the total is lost. This is the loudest failure in the
+study.
+
+### Case 3. A private cell for each worker, and the host's fold order
+
+Nothing races here. Each worker writes its own word. The only question is the
+order the host folds the partials in.
+
+| partials | workers | folds in worker order | folds in completion order | distinct completion orders over 8 runs |
+| --- | --- | --- | --- | --- |
+| world values | 4 | 1 | 1 | 5 |
+| world values | 8 | 1 | 1 | 8 |
+| spread magnitudes | 4 | 1 | 1 | 5 |
+| spread magnitudes | 8 | 1 | 2 | 8 |
+
+**The completion order varies on every run and at every worker count.** With the
+world's own values the fold order did not change the sum, because those partials
+are small whole numbers a double adds exactly. Scale each worker's partial to a
+different magnitude and the completion-order fold takes two distinct values over
+eight runs at eight workers, while the worker-order fold takes one.
+
+The same point without any worker: summing
+`[1e16, 1, -1e16, 1, 2, -3, 1e-8, 4]` forward gives 4.00000001 and backward
+gives 4.
+
+### What it shows
+
+- **The oracle works.** Overlapping writes and an unguarded shared cell both give
+  results that vary run to run and differ from the sequential answer. The split
+  probe's clean sheet is therefore evidence and not an artifact.
+- **A host-side reduction over per-worker partials is deterministic only if the
+  fold order is fixed.** The completion order is never stable. A reduction that
+  folds in arrival order is a determinism defect that hides whenever the partials
+  happen to add exactly.
+- **A conflict can pass by luck.** Two workers on bun matched the sequential
+  answer eight times out of eight. A single passing run proves nothing.
+
+### What it does not cover
+
+Both conflicts are within one column. The probe does not build a conflict across
+two components, across a sparse store, or across a relation, and it does not test
+what the access declarations would say about any of them.
+
+---
+
+## P24 structural. A structural change beside a worker iteration
+
+**Question.** The tree claims a grow or a swap-remove cannot run beside a worker
+that iterates cached views. Is the claim true, and what exactly does the worker
+see?
+
+**Method.** A worker binds its views once and refuses to rebind unless told to.
+`Pos.z` carries a row identity so a duplicated or a vanished row is visible as a
+number and not only as a bad sum. Stages 1 and 2 are staged rather than raced, so
+they repeat. Stages 3a and 3b are real races: the worker publishes its pass number
+into a shared word and the host waits for the pass to be well under way before it
+makes the structural change. Without that wait the host finished before the worker
+woke and the probe measured nothing.
+
+### Stage 1. The host grows while the worker holds cached views
+
+3,000 rows, column capacity 4,096, then 4,096 more spawns.
+
+| backing | same buffer reference | bytes before | bytes after | `view_stamp` | `Pos.x` byte offset | column moved |
+| --- | --- | --- | --- | --- | --- | --- |
+| shared, growable | yes | 12808384 | 13103296 | 2 to 3 | 12660928 to 12808384 | yes |
+| shared, fixed at the cap | yes | 67108864 | 67108864 | 2 to 3 | 12660928 to 12808384 | yes |
+
+What the worker read afterwards, from views it never rebound.
+
+| backing | worker rows | live rows in the descriptor | host rows | worker sum `Pos.x` | host sum `Pos.x` | worker `Pos.x[0]` |
+| --- | --- | --- | --- | --- | --- | --- |
+| shared, growable | 3000 | 7096 | 7096 | 300000 | 5513592 | 100 |
+| shared, fixed at the cap | 3000 | 7096 | 7096 | 300000 | 5513592 | 100 |
+
+A rebind gives 7096 rows and sum 5513592 on both backings, which is the truth.
+
+### Stage 2. The host despawns a block from the middle
+
+10,000 rows, 2,000 despawned, each a swap remove.
+
+| rows at bind | live rows after | column moved | stale pass visits | visits past the live tail | identities read twice | identities no longer live |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10000 | 8000 | no | 10000 | 2000 | 2000 | 0 |
+
+### Stage 3a. The worker adds each row's own identity while the host despawns
+
+20,000 rows, 6,000 despawned, 300 passes. A clean run leaves every live row at
+`100 + passes * identity`.
+
+| attempt | host ran during passes | live rows after | rows with all passes | rows without | min passes seen | max passes seen | values off the lattice |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 100 to 126 | 14000 | 12649 | 1351 | 299 | 300 | 110 |
+| 1 | 100 to 130 | 14000 | 12715 | 1285 | 299 | 300 | 33 |
+| 2 | 100 to 117 | 14000 | 12776 | 1224 | 299 | 300 | 49 |
+
+### Stage 3b. The same pass, and the host grows instead
+
+6,000 rows at bind, 8,192 spawned during the pass, 400 passes.
+
+| runtime | host ran during passes | live rows after | column moved | rows with all passes | min passes seen | max passes seen |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| node | 135 to 264 | 14192 | yes | 0 | 172 | 173 |
+| deno | 134 to 282 | 14192 | yes | 0 | 187 | 187 |
+| bun | 134 to 164 | 14192 | yes | 0 | 144 | 145 |
+
+### What it shows
+
+- **The claim is true, and the failure is silent.** After a grow the worker's
+  cached views read a block the store abandoned. The bytes are still there, still
+  aligned, still the right type. The worker's sum is a plausible number that is
+  wrong by an order.
+- **The buffer reference does not change and the byte length may not change.**
+  Both backings kept the same `SharedArrayBuffer` object. The fixed-cap backing
+  kept the same byte length as well. A worker cannot detect a grow by watching the
+  buffer. `view_stamp` moved from 2 to 3 in both cases and is the only signal.
+- **Growable and fixed-cap fail the same way.** The fixed-cap backing never
+  resizes, and the archetype still relocated to the tail. Reserving the cap up
+  front does not make a cached view safe. This overturns the intuition that a
+  fixed buffer makes a worker's views permanent.
+- **A swap-remove does not move a column, and that makes it worse, not better.**
+  The offset stayed put, so a worker sees no signal at all. With a stale row count
+  it visited 2,000 rows past the live tail and read 2,000 identities twice,
+  because the abandoned tail still holds copies of the rows that moved down.
+- **A live despawn corrupts rows.** Around a tenth of the live rows missed a pass,
+  and dozens of rows on every attempt hold a value that is not on the lattice at
+  all, which is a torn read, add and store.
+- **A live grow loses every write after the relocation.** Not one of 6,000 rows
+  received all 400 passes, on any runtime. Every row stopped at the pass where the
+  store copied the live rows to their new home. Everything the worker wrote after
+  that landed in memory nothing reads.
+
+### What it does not cover
+
+The probe never tests a worker that re-reads `view_stamp` before each pass, which
+is the obvious mitigation, nor a barrier that forbids a structural change while
+any worker is inside a pass. It does not test a WASM backing, whose grow detaches
+views rather than relocating them, and it makes only one archetype grow.
+
+---
+
+## P24 engine. The shipped pool, not a hand-rolled one
+
+**Question.** The split probe measured a hand-rolled split: its own worker file, its own barrier,
+its own bind. Does the engine's own pool leave the same state, and where does it pay against the
+engine's own sequential body?
+
+**Method.** One process for each size. The world comes from `dist/`, and everything between the
+frame and the rows is engine code: `ecs.attachWorkers`, a system with a `parallel` config, the
+control buffer, the shipped worker entry, the descriptor walk and the join stamp. The probe calls
+`ecs.update()` and nothing else.
+
+Three archetypes, all holding `Pos`, `Vel` and `Target`, told apart by two tags, so the split
+crosses an archetype boundary. Column capacity pinned so no grow lands inside a timed run. Two
+systems are registered, one for each kernel, and a run condition enables one at a time.
+
+Each kernel body lives in one module. The `parallel.kernel` names it by URL and export, and the
+`fn` imports the same file, so a difference between the two lanes can only come from the split.
+
+The world is seeded and the seeded bytes are saved. Each lane restores them before it runs. The
+sequential lane runs with no pool attached, so the schedule calls `fn`. Each pooled lane attaches
+`K` workers, restores, and times the same frames. The comparison is an exact byte compare of every
+live column byte, plus `snapshots.stateHash()` on the integer world.
+
+Kernel A is `pos += vel * dt`. Kernel B is a damped spring toward a target, with a square root and
+two branches.
+
+### Correctness
+
+**32 configurations compared on each of node, deno and bun. 0 mismatches on all three.**
+
+Every K in 1, 2, 4 and 8, at 10,000, 100,000 and 1,000,000 entities, for both kernels, left column
+bytes identical to the sequential `fn` run. On the integer world `snapshots.stateHash()` was equal
+in every configuration.
+
+The byte folds and the hashes agree across the three runtimes. Kernel A at 1,000,000 entities gives
+466449760 on node, on deno and on bun. Kernel B gives 1628554168 on all three. The integer world at
+100,000 entities gives `stateHash` 1801880042 for kernel A and 388972058 for kernel B, on all
+three.
+
+**Those are the same numbers the hand-rolled split reported.** The engine's pool and the probe's
+own barrier reach the same state, and two engine families agree with both.
+
+### Speed, node, milliseconds for one frame, pool already attached
+
+| entities | kernel | sequential `fn` | 1 worker | 2 | 4 | 8 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10,000 | A | 0.0343 | 0.0290 | 0.0210 | 0.0367 | 0.0497 |
+| 10,000 | B | 0.0687 | 0.0757 | 0.0598 | 0.0582 | 0.0763 |
+| 100,000 | A | 0.3385 | 0.2281 | 0.1429 | 0.1110 | 0.1046 |
+| 100,000 | B | 0.8234 | 0.8323 | 0.6271 | 0.3511 | 0.3095 |
+| 1,000,000 | A | 2.1788 | 2.2033 | 1.1717 | 0.6359 | 0.5478 |
+| 1,000,000 | B | 8.5138 | 8.5254 | 6.3867 | 3.2838 | 2.5372 |
+
+Integer lane, node, 100,000 entities: kernel A 0.3835 sequential against 0.1140 on eight workers,
+kernel B 1.0777 against 0.3353.
+
+### The best gain against the sequential `fn`, each runtime
+
+| entities | kernel | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| 10,000 | A | 1.64x at K=2 | 2.63x at K=2 | 1.26x at K=2 |
+| 10,000 | B | 1.18x at K=4 | 1.14x at K=4 | 2.06x at K=4 |
+| 100,000 | A | 3.24x at K=8 | 4.51x at K=8 | 3.13x at K=4 |
+| 100,000 | B | 2.66x at K=8 | 3.35x at K=8 | 3.74x at K=8 |
+| 1,000,000 | A | 3.98x at K=8 | 3.66x at K=8 | 4.15x at K=8 |
+| 1,000,000 | B | 3.36x at K=8 | 4.47x at K=8 | 4.31x at K=8 |
+
+Bun's sequential baseline is the slowest of the three. Kernel A at 1,000,000 entities takes 6.1274
+sequentially on bun against 2.1788 on node, and 1.4768 on eight bun workers against 0.5478 on eight
+node workers. **Read the milliseconds, not only the ratio.**
+
+### What it shows
+
+- **The shipped pool is correct at every size and every worker count tested.** The dispatch, the
+  plan, the shipped worker entry and the join leave the same bytes and the same state hash as the
+  system's own `fn`.
+- **One worker is not always a loss here, and that is a change from the hand-rolled probe.** The
+  two probes have different baselines. The split probe compared the workers against a bare loop over
+  the same bound views. This probe compares them against the engine's `fn`, which pays
+  `forEachChunk` and `cols.mut` for each archetype, and the kernel lane pays none of that. On the
+  cheap kernel one worker already matches or beats the main thread at ten thousand and a hundred
+  thousand rows. **The gain there is the driver, not the parallelism.**
+- **The gain is smaller than the hand-rolled split reported at a million rows.** The split probe
+  reached about five times on kernel A with eight workers against its own sequential system. This
+  probe reaches about four. The engine frame, the run condition, the row-count publish and the join
+  stamp all sit inside the measured frame here.
+- **Eight workers stops paying before the core count.** Kernel A gains almost nothing from four to
+  eight workers at a hundred thousand rows on node, and the same holds on the integer lane. Kernel A
+  is memory bound, and eight cores share one memory system.
+- **A small world still loses.** At ten thousand rows both kernels lose at eight workers on node and
+  on deno. The barrier grows with the worker count while the work for each worker shrinks. This is
+  what `parallel.minRows` exists for.
+- **The worker entry starts on all three runtimes.** node, deno and bun each resolve
+  `@oasys/oecs/worker` from the sibling of the package entry, start the workers through
+  `node:worker_threads`, load a `js` kernel by URL and park on the barrier. The whole driver, which
+  spawns one child process for each size, also runs to completion on bun and on `deno run -A`.
+
+### Known defects in this probe
+
+- **The sequential baseline is bimodal at a hundred thousand rows on V8.** For kernel A its median
+  sits well above its p25, and its p25 matches the one-worker lane almost exactly. The shape is
+  stable across repeated runs, and it is absent on bun. So every ratio at that size is a range, and
+  the one-worker figure there must not be read as a gain.
+- **The two lanes do not share a driver.** The kernel and the `fn` share a body, and they do not
+  share the loop that reaches the columns. The comparison is honest about a frame, and it is not an
+  isolated measure of the split.
+- **The frame holds one parallel system and nothing else.** No sequential system beside it, no
+  command apply, no observer drain.
+- **The pool is attached and detached between worker counts**, inside the same process. A leak
+  across that boundary would show up as drift, and nothing here would name it.
+
+### What it does not cover
+
+No `wasm` kernel is timed. The `wasm` path has a test but no probe, so its crossing cost inside the
+engine is unmeasured. No browser. No grow or despawn inside a timed run. No world with more than
+three archetypes, and none with a tag-only archetype the bind must skip. No measurement of the join
+timeout, which only fires on a worker that has already failed.
+
+---
+
+## What a scheduler would have to do, and what is still unknown
+
+The probes support these, and no more.
+
+1. A worker can run a system body from the buffer alone. Bind through the
+   descriptor, in the lean form, and cache the result against `view_stamp`.
+2. Release and join through `Atomics`, not `postMessage`. Park the host rather
+   than spin, unless a later probe shows a spin policy that holds on bun.
+3. Do not split below the crossing cost. On these runtimes that is somewhere
+   between ten thousand and a hundred thousand rows, and it depends on the kernel.
+4. Forbid every structural change while any worker is inside a pass. A grow is
+   silent, a swap-remove is silent, and both corrupt.
+5. Fix the order of any host-side reduction over per-worker partials. Never fold
+   in completion order.
+
+Unknown, and each one is a probe someone still has to write.
+
+- What the join costs with a tree barrier, or with one done word for each worker.
+- What a browser host pays when it cannot park.
+- Whether two different systems, rather than one system split K ways, keep the
+  same guarantee.
+- What the access declarations would have to say for a conflict graph to be built
+  from them, and whether the current `reads` and `writes` sets are enough.
+- What happens when a worker touches a sparse store, a relation or the command
+  buffer, none of which live in the buffer.
+- Whether the deterministic integer world is the only lane that can carry an
+  engine-level oracle, or whether `stateHash` could be extended to float columns
+  in a storage-independent way.
+
+---
+
+## Browser host. The worker-hosted path runs in Chrome
+
+**Question.** The level 1 pool was built and tested on node, bun and deno. Does the
+browser branch run at all, and does the main thread refuse to host?
+
+**Method.** Headless Chrome 153 driven over the DevTools protocol, a static server
+that sets `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`, and the built `dist/` served as is
+with no bundler. The page's main thread calls `attachWorkers` and expects a
+refusal. A module worker hosts a deterministic `shared` world of 60,000 entities
+over three archetypes, one excluded by a `without` tag, runs twelve frames of an
+integer `pos += vel * dt` system sequentially, then builds an identical world,
+attaches three pool workers with a `js` kernel by URL, runs the same frames, and
+compares `snapshots.stateHash()`. The harness lives outside the repository.
+
+| step | result |
+| --- | --- |
+| page `crossOriginIsolated`, `SharedArrayBuffer` present | true, true |
+| main thread `attachWorkers` | refused, the message names `Atomics.wait` and the remedy |
+| worker host, sequential `stateHash` | 2850976559 |
+| worker host, three pool workers attached | ready after about 8 ms |
+| worker host, parallel `stateHash` after twelve frames | 2850976559 |
+| equal | yes |
+| `detach` | resolves |
+
+**What it shows.** The browser branch of the worker entry starts, the pool
+resolves its worker URL from the served `dist/`, a `js` kernel loads by URL
+inside a browser worker, the host parks inside a worker, and the result is the
+sequential result. The main thread refusal fires before any worker starts.
+
+**What it does not cover.** No bundler. A bundler that walks
+`import("node:worker_threads")` inside the worker entry may refuse it even though
+a browser never evaluates that branch. No Firefox and no Safari. No wasm kernel
+in the browser. One entity count and one kernel. The timings are one machine and
+one run, so read the equality and not the milliseconds.
+
+---
+
+## Bundler pass. A Vite app that imports the package builds and runs in Chrome
+
+**Question.** The unbundled `dist/` runs in Chrome. Does an app that imports the
+package and builds for the browser run as well, and what does the bundler say
+about `node:worker_threads` and about the worker entry?
+
+**Method.** Vite 6.4.1, rollup 4.53.5, node 24.12.0, headless Chrome 153. An app
+outside the repository holds `index.html`, `main.js`, `host.js` and `kernel.js`.
+It resolves `@oasys/oecs` through `node_modules/@oasys/oecs`, a link to the
+repository, so the package exports map picks the file for each subpath. The
+config sets `root`, `worker: { format: "es" }`, `build.target: "es2022"` and
+`build.assetsInlineLimit: 0`. `main.js` calls `attachWorkers` on the main thread
+and expects the refusal, then starts `host.js` as a module worker. `host.js`
+builds the same deterministic 60,000-entity world the unbundled run used, runs
+twelve sequential frames, builds a second world, attaches three pool workers and
+runs the same frames, then compares `snapshots.stateHash()`. A static server
+sets the two cross-origin isolation headers. The harness lives outside the
+repository.
+
+**Before, the two failures.**
+
+| what | result |
+| --- | --- |
+| `vite build` warning | `Module "node:worker_threads" has been externalized for browser compatibility, imported by dist/index.js`, printed twice |
+| what the warning ships | a `__vite-browser-external` chunk, in place of the specifier |
+| `dist/worker.js` in the app output | absent, because no static import names it |
+| the default worker URL at run time | `/assets/worker.js`, which the server answers with 404 |
+| what the app saw | `attachWorkers` resolved, `pool.count` reported three, and the first frame then hung until the join timeout |
+
+The hang is the part worth naming. Chrome raises a plain `Event` and not an
+`ErrorEvent` when a module worker's script fails to fetch, so `event.message` is
+`undefined`. The pool listened for no error at all, so no worker ever answered
+`ready` and the attach waited on an answer that could not come.
+
+**After.** `node_threads.ts` reads the builtin through
+`process.getBuiltinModule`, and falls back to a specifier it joins at run time,
+so neither form reaches the bundler. `startBrowserWorkers` listens for the error
+event and reports the URL, and `attach` turns a worker that answered nothing
+into `WORKERS_ENTRY_UNREACHABLE`. The app passes `workerUrl` from
+`import workerUrl from "@oasys/oecs/worker?worker&url"`.
+
+| what | result |
+| --- | --- |
+| `vite build` warnings | none |
+| `__vite-browser-external` chunk | gone |
+| worker entry in the app output | `assets/worker-<hash>.js`, emitted by `?worker&url` |
+| page `crossOriginIsolated`, `SharedArrayBuffer` | true, true |
+| main thread `attachWorkers` | refused, the message names `Atomics.wait` |
+| worker host, sequential `stateHash` | 2850976559 |
+| worker host, three pool workers attached | resolves |
+| worker host, parallel `stateHash` after twelve frames | 2850976559 |
+| equal | yes |
+| the same app with the default URL kept | throws `WORKERS_ENTRY_UNREACHABLE`, and the message names the URL and `workerUrl` |
+
+`p24-par-engine.mjs` still reports no mismatch on node, on bun and on deno, so
+the `getBuiltinModule` path serves all three.
+
+**What it shows.** A browser app can bundle the package and drive the pool. The
+supported idiom is `workerUrl`, and the default sibling resolution is for the
+package as it ships. A wrong worker URL is now a fault with a remedy instead of
+a park with no end.
+
+**What it does not cover.** One bundler. No esbuild alone, no rollup alone, no
+webpack, no parcel and no bun bundler. One browser, so no Firefox and no Safari.
+No wasm kernel through a bundler. One entity count and one kernel. The `?url`
+import of the kernel module inlines it as a `data:` URL under the default
+`assetsInlineLimit`, and the run above set that limit to zero instead of testing
+the inline form.

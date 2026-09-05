@@ -108,7 +108,7 @@ async function run(name) {
 
 	const DIST = new URL("../../dist/index.js", import.meta.url);
 	const { ECS } = await import(DIST.href);
-	const ecs = new ECS({ memory: { budget: { entities: N }, columnCapacity: pow2(N) } });
+	const ecs = new ECS({ memory: { entities: N, columnCapacity: pow2(N) } });
 	const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 	const T = ecs.template(Pos({ x: 0, y: 0 }));
 	const ids = new Uint32Array(N);

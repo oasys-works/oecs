@@ -31,14 +31,14 @@ const PRESIZED_BULK = { memory: { columnCapacity: N * 6 } };
 /** @param {typeof import('../src/index.ts')} lib */
 export function makeSuite(lib, filter = "") {
 	// A world with every optional subsystem available, on either side of a
-	// comparison. A build from before the capability split carries them on the
+	// comparison. A build from before the plugin split carries them on the
 	// world already, and has no `ECS.create`. Both sides must measure the same
 	// work, so both get the same surface.
 	const makeWorld = (options) => {
 		if (typeof lib.ECS.create !== "function") return new lib.ECS(options);
 		const plugins = [];
-		for (const cap of [lib.snapshots, lib.events, lib.relations, lib.observers]) {
-			if (typeof cap === "function") plugins.push(cap());
+		for (const make of [lib.snapshots, lib.events, lib.relations, lib.observers]) {
+			if (typeof make === "function") plugins.push(make());
 		}
 		return lib.ECS.create({ ...options, plugins });
 	};
@@ -561,7 +561,7 @@ export function makeSuite(lib, filter = "") {
 	// 8. Relations.
 	// ────────────────────────────────────────────────────────────────────────
 	// Skipped entirely when the filter excludes it. Building the world anyway
-	// put a second world shape (and, on a build with capabilities, three extra
+	// put a second world shape (and, on a build with plugins, three extra
 	// modules) into a process that was measuring something else, which made a
 	// filtered comparison asymmetric between two builds.
 	if ("rel/".includes(filter) || filter.startsWith("rel/")) {

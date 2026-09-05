@@ -58,8 +58,8 @@ function shuffledOrder(n) {
  * spent, so a variant can split the write path from the tick tail. */
 async function build({ observer, body }) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
-	// Every world here installs the observer capability, even a variant that never
+	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
+	// Every world here installs the observer plugin, even a variant that never
 	// observes. One construction path keeps the comparison on the bodies.
 	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
 	KEEP.push(ecs);
@@ -344,7 +344,7 @@ async function drain(kind, K) {
  * tracks the component, and it must be one store more once something does. */
 async function sparseWrite(kind) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
 	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32" });
@@ -400,7 +400,7 @@ async function sparseWrite(kind) {
 
 async function idle(M) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
 	const ecs = ECS.create({ memory: { entities: 1024 }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const defs = [];
@@ -431,7 +431,7 @@ async function idle(M) {
  * above with the semantics in hand. */
 async function facts() {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
 	const lines = [];
 
 	// Which paths an entity-grain onSet sees.

@@ -39,7 +39,7 @@ async function workloadOecs() {
 	const DIST = new URL("../../dist/index.js", import.meta.url);
 	const { ECS, SCHEDULE } = await import(DIST.href);
 
-	const ecs = new ECS({ memory: { budget: { entities: N }, columnCapacity: pow2(N) } });
+	const ecs = new ECS({ memory: { entities: N, columnCapacity: pow2(N) } });
 	const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 	const Vel = ecs.registerComponent({ vx: "f64", vy: "f64" });
 	const Burning = ecs.registerComponent({});
@@ -51,7 +51,7 @@ async function workloadOecs() {
 			reads: [Vel],
 			writes: [Pos],
 			fn: () => {
-				q.eachChunk((cols, count) => {
+				q.forEachChunk((cols, count) => {
 					const { x, y } = cols.mut(Pos);
 					const { vx, vy } = cols.read(Vel);
 					for (let i = 0; i < count; i++) {

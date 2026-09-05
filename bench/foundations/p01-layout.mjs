@@ -51,7 +51,7 @@ function snap() {
 
 /** `sizing` selects how the arena is sized:
  *   default, `new ECS()`, 256 MiB growable cap, 1024-row columns
- *   budget , `{ budget: { entities: N } }`, the documented intent arm
+ *   budget , `{ entities: N }`, the documented intent arm
  *   pinned , budget + `columnCapacity: N`, so no column ever doubles
  * The third exists because doubling abandons the previous column block inside
  * the arena, and those pages have been touched, so they stay resident. The
@@ -64,8 +64,8 @@ async function oecsVariant(sizing) {
 		sizing === "default"
 			? undefined
 			: sizing === "budget"
-				? { budget: { entities: N } }
-				: { budget: { entities: N }, columnCapacity: pow2(N) };
+				? { entities: N }
+				: { entities: N, columnCapacity: pow2(N) };
 
 	const ecs = new ECS(memory ? { memory } : {});
 	KEEP.push(ecs);
@@ -78,7 +78,7 @@ async function oecsVariant(sizing) {
 		reads: [Mass],
 		writes: [Pos, Vel],
 		fn: () => {
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x, y, z } = cols.mut(Pos);
 				const { vx, vy, vz } = cols.mut(Vel);
 				const { m } = cols.read(Mass);

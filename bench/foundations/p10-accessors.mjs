@@ -87,7 +87,7 @@ async function run(name) {
 	const DIST = new URL("../../dist/index.js", import.meta.url);
 	const { ECS } = await import(DIST.href);
 
-	const ecs = new ECS({ memory: { budget: { entities: N }, columnCapacity: pow2(N) } });
+	const ecs = new ECS({ memory: { entities: N, columnCapacity: pow2(N) } });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32", y: "f32", z: "f32" });
 	ecs.startup();
@@ -166,13 +166,13 @@ async function run(name) {
 		const q = ecs.query(Pos);
 		times = timeIt(() => {
 			let s = 0;
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x } = cols.read(Pos);
 				for (let i = 0; i < count; i++) s += x[i];
 			});
 			return s;
 		});
-		q.eachChunk((cols, count) => {
+		q.forEachChunk((cols, count) => {
 			const { x } = cols.read(Pos);
 			for (let i = 0; i < count; i++) checksum += x[i];
 		});

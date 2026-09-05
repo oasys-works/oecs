@@ -22,8 +22,8 @@ import path from "node:path";
 import url from "node:url";
 import { buildLib } from "./build.mjs";
 
-/** A world with the snapshot capability installed. The tools here drive capture
- * and restore, so they take it. A consumer installs only the capabilities it
+/** A world with the snapshot plugin installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
 	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
@@ -37,7 +37,7 @@ const positional = args.filter((a) => !a.startsWith("--"));
 const outfile = path.join(here, PROD ? ".out/oecs.fuzz.prod.mjs" : ".out/oecs.fuzz.mjs");
 // A development build keeps the internal assertions active. `--prod` drops them.
 await buildLib(outfile, { dev: !PROD });
-// The whole namespace, not `ECS` alone. `snapshotWorld` reads a capability
+// The whole namespace, not `ECS` alone. `snapshotWorld` reads a plugin
 // factory off it for every plugin it installs.
 const lib = await import(url.pathToFileURL(outfile).href);
 

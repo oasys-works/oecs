@@ -1,6 +1,6 @@
 
-/** A world with the snapshot capability installed. The tools here drive capture
- * and restore, so they take it. A consumer installs only the capabilities it
+/** A world with the snapshot plugin installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
 	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
@@ -27,7 +27,18 @@ function snapshotWorld(lib, options) {
  */
 
 const DIST = new URL("../../dist/index.js", import.meta.url);
+const PLUGIN = (name) => new URL(`../../dist/plugins/${name}.js`, import.meta.url).href;
 const { ECS, SCHEDULE } = await import(DIST.href);
+// Each plugin ships as its own entry, so a consumer that installs none of
+// them carries none of their code. The probe installs all four, and thus it
+// imports all four.
+const lib = {
+	ECS,
+	snapshots: (await import(PLUGIN("snapshots"))).snapshots,
+	events: (await import(PLUGIN("events"))).events,
+	relations: (await import(PLUGIN("relations"))).relations,
+	observers: (await import(PLUGIN("observers"))).observers
+};
 
 function engineName() {
 	if (typeof Deno !== "undefined") return `deno-${Deno.version.deno}`;
@@ -56,7 +67,7 @@ const move = ecs.registerSystem({
 	reads: [Vel],
 	writes: [Pos],
 	fn: () => {
-		movers.eachChunk((cols, count) => {
+		movers.forEachChunk((cols, count) => {
 			const { x, y } = cols.mut(Pos);
 			const { vx, vy } = cols.read(Vel);
 			for (let i = 0; i < count; i++) {

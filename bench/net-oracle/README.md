@@ -619,9 +619,9 @@ more meaning to a successful run than it has:
 - **`FIXED_UPDATE`, and `FrameStepper`.** The harness calls `ecs.update(1)` and reads a variable
   timestep. The fixed-step accumulator, the limit on the count of the sub-steps, and the stepper for
   a frame are a separate path.
-- **The reactive read bridge**, at `@oasys/oecs/reactive` and `extensions/reactive`. That is a
-  separate entry with its own tests, and it is not the core.
-- **The editor extension**, at `extensions/editor`. Same reason.
+- **The Solid read path**, at `@oasys/oecs/solid` and `plugins/solid`. That is a separate entry
+  with its own tests, and it is not the core.
+- **The editor plugin**, at `plugins/editor`. Same reason.
 - **A resource that holds a value with a deep shape.** The resources here hold a number or a small
   record. A resource is out of `stateHash` and out of the snapshot, so its value is opaque to the
   engine, and the layer that a model could check is the lifecycle. `surface.mjs` checks that.
