@@ -37,7 +37,9 @@ const positional = args.filter((a) => !a.startsWith("--"));
 const outfile = path.join(here, PROD ? ".out/oecs.fuzz.prod.mjs" : ".out/oecs.fuzz.mjs");
 // A development build keeps the internal assertions active. `--prod` drops them.
 await buildLib(outfile, { dev: !PROD });
-const { ECS } = await import(url.pathToFileURL(outfile).href);
+// The whole namespace, not `ECS` alone: `snapshotWorld` reads a capability
+// factory off it for every plugin it installs.
+const lib = await import(url.pathToFileURL(outfile).href);
 
 const seed0 = Number(positional[0] ?? 1);
 const STEPS = Number(positional[1] ?? 4000);

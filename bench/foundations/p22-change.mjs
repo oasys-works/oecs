@@ -58,7 +58,10 @@ function shuffledOrder(n) {
  * spent, so a variant can split the write path from the tick tail. */
 async function build({ observer, body }) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const ecs = new ECS({ memory: { entities: N } });
+	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	// Every world here installs the observer capability, even a variant that never
+	// observes. One construction path keeps the comparison on the bodies.
+	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32", y: "f32", z: "f32" });
 	const q = ecs.query(Pos);
@@ -341,7 +344,8 @@ async function drain(kind, K) {
  * tracks the component, and it must be one store more once something does. */
 async function sparseWrite(kind) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const ecs = new ECS({ memory: { entities: N } });
+	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32" });
 	const Cool = ecs.registerSparseComponent({ v: "f32" });
@@ -396,7 +400,8 @@ async function sparseWrite(kind) {
 
 async function idle(M) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const ecs = new ECS({ memory: { entities: 1024 } });
+	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
+	const ecs = ECS.create({ memory: { entities: 1024 }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const defs = [];
 	for (let i = 0; i < 32; i++) defs.push(ecs.registerComponent({ v: "f32" }));
@@ -426,11 +431,12 @@ async function idle(M) {
  * above with the semantics in hand. */
 async function facts() {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
+	const { observers } = await import(new URL("../../dist/capabilities/observers.js", import.meta.url).href);
 	const lines = [];
 
 	// Which paths an entity-grain onSet sees.
 	{
-		const ecs = new ECS({ memory: { entities: 1000 } });
+		const ecs = ECS.create({ memory: { entities: 1000 }, plugins: [observers()] });
 		const Pos = ecs.registerComponent({ x: "f32" });
 		const fired = [];
 		ecs.observe(Pos, { granularity: "entity", access: { reads: [Pos], writes: [] }, onSet: (e) => fired.push(e) });
@@ -477,7 +483,7 @@ async function facts() {
 
 	// How many ticks one write is reported on, by system order.
 	for (const writerFirst of [true, false]) {
-		const ecs = new ECS({ memory: { entities: 1000 } });
+		const ecs = ECS.create({ memory: { entities: 1000 }, plugins: [observers()] });
 		const Pos = ecs.registerComponent({ x: "f32" });
 		const changed = ecs.query(Pos).changed(Pos);
 		let tick = 0;
@@ -511,7 +517,7 @@ async function facts() {
 
 	// Sparse components.
 	{
-		const ecs = new ECS({ memory: { entities: 1000 } });
+		const ecs = ECS.create({ memory: { entities: 1000 }, plugins: [observers()] });
 		const S = ecs.registerSparseComponent({ v: "f32" });
 		const Pos = ecs.registerComponent({ x: "f32" });
 		try {

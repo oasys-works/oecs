@@ -25,13 +25,24 @@
  * The harness reads the complete public entry, and not two names from it, because the
  * layers now use the write seam, the events, the resources, the run conditions, the
  * sparse components and the command log. Therefore the import below is a namespace.
+ *
+ * The world under test installs each optional subsystem, so the module it receives
+ * must carry the four capability constructors beside the root entry. `build.mjs`
+ * composes that same shape for the bundle that `run.mjs` and `mutants.mjs` load.
+ * This file composes it here, because vitest reads `src/` and builds nothing.
  */
 import { describe, expect, it } from "vitest";
-import * as lib from "../../src/index";
+import * as core from "../../src/index";
+import { snapshots } from "../../src/capabilities/snapshots";
+import { events } from "../../src/capabilities/events";
+import { relations } from "../../src/capabilities/relations";
+import { observers } from "../../src/capabilities/observers";
 import { assertRulesLinear } from "./spec.mjs";
 import { confluence, lockstep, refOnly, runCase } from "./driver.mjs";
 import { assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
 import { PROBES } from "./surface.mjs";
+
+const lib = { ...core, snapshots, events, relations, observers };
 
 describe("interaction-net oracle (deterministic simulation, lockstep vs reference)", () => {
 	it("the rule table is linear, the precondition for every confluence claim", () => {
