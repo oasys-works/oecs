@@ -28,11 +28,14 @@ outstanding.
 | `p24-par-structural.mjs` | ran | ran | ran | `node bench/foundations/p24-par-structural.mjs` |
 | `p24-par-engine.mjs` | ran | ran | ran | `node bench/foundations/p24-par-engine.mjs` |
 | `p24-par-join.mjs` | ran | ran | ran | `node bench/foundations/p24-par-join.mjs` |
+| `p24-par-minrows.mjs` | ran | ran | ran | `node bench/foundations/p24-par-minrows.mjs` |
 
 The first five probes changed no file under `src/`, so there is no patch to apply
 for them. `p24-par-engine.mjs` came later and measures the shipped engine, so it
 fails if the engine regresses. `p24-par-join.mjs` spawns node, deno and bun
-itself, so one command prints all three.
+itself, so one command prints all three. `p24-par-minrows.mjs` sets
+`DEFAULT_PARALLEL_MIN_ROWS`, and it is the file to rerun when that value is
+questioned.
 
 Swap `node` for `deno run -A` or for `bun` to repeat on the other runtimes.
 
@@ -836,6 +839,179 @@ No SpiderMonkey. No machine with more than ten logical cores, and the release si
 with the count, so a larger machine may read differently. No `wasm` kernel. No pass with a real load
 imbalance across workers, which is the case a per-worker word could still win. No measurement of
 what the join costs when the host has other work it could do instead of parking.
+## P24 minRows. Where the pool starts to pay
+
+**The crossover is a property of the body, and it moves by two orders of magnitude between the two
+bodies tested.** The compute-bound body wins from a few thousand matched rows. The memory-bound
+body needs about twelve thousand rows for each worker on V8, and about twenty thousand for each
+worker on bun. The highest sustained crossover anywhere in the sweep is 187,500 matched rows, on
+bun, on the wasm backing, on the memory-bound body, at nine workers. `DEFAULT_PARALLEL_MIN_ROWS` is
+set to 200,000 from that, so no tested cell dispatches a losing frame.
+
+**The gate is free.** An attached pool whose `minRows` the row count never reaches costs nothing a
+sample can see, at any size, on any backing, on any of the three runtimes. So a default that is too
+high costs only the gain it declines, and never a standing tax.
+
+**Question.** `p24-par-engine` and `p25-wasm-engine` pin `minRows` at one, so every pooled lane
+dispatches and neither says where the threshold belongs. Where does the pooled frame start to beat
+the sequential frame, and what does a dispatch below that point cost?
+
+**Method.** `node bench/foundations/p24-par-minrows.mjs`. One process for each backing and size.
+The world comes from `dist/`. Four archetypes hold `Pos` and `Vel`, and a tag excludes the fourth,
+so a split crosses an archetype boundary and one archetype must stay untouched. Every column is
+`i32` and the world is deterministic, which is the only shape `snapshots.stateHash()` will hash.
+
+Two bodies. The light one is `pos += vel * dt` over four columns, memory bound. The heavy one is a
+hash mix with a branch for each row, compute bound. Each runs as a `js` kernel and, on the wasm
+backing, as a module emitted by `wasm/emit.mjs`, which needs no toolchain.
+
+**The two lanes are paired, and that is what makes the answer trustworthy.** The sequential lane is
+not a world with no pool. It is a second system over the same body whose `minRows` sits above every
+size in the sweep, running with the pool attached. So the frame it measures is exactly the frame a
+world below the threshold pays. The two lanes run in alternating blocks inside one sample loop, so
+a machine that changes speed changes it for both lanes in the same round.
+
+`sustained` is the smallest row count that wins and keeps winning at every larger row count. A
+single winning size on a sweep of eleven sizes is an accident, and a default built on one would
+dispatch a frame that loses at every larger size.
+
+### Correctness
+
+**726 lane comparisons, 0 disagreements, 0 lanes that touched an excluded row.**
+
+242 on each of node, deno and bun. Every backing, every size, every body, every kernel form and
+every worker count leaves the `stateHash` the gated lane leaves. The rows of the excluded archetype
+keep their seeded values in every lane.
+
+### Sustained crossover, in matched rows
+
+| backing | body | kernel | K | node | deno | bun |
+| --- | --- | --- | --- | --- | --- | --- |
+| shared | heavy | js | 2 | 1,500 | 1,500 | 48,000 |
+| shared | heavy | js | 4 | 3,000 | 3,000 | 24,000 |
+| shared | heavy | js | 9 | 3,000 | 3,000 | 24,000 |
+| shared | light | js | 2 | 24,000 | 24,000 | 48,000 |
+| shared | light | js | 4 | 48,000 | 48,000 | 24,000 |
+| shared | light | js | 9 | 93,750 | 93,750 | 24,000 |
+| wasm | heavy | js | 2 | 3,000 | 1,500 | 1,500 |
+| wasm | heavy | js | 4 | 12,000 | 3,000 | 3,000 |
+| wasm | heavy | js | 9 | 3,000 | 3,000 | 6,000 |
+| wasm | heavy | wasm | 2 | 750 | 750 | 1,500 |
+| wasm | heavy | wasm | 4 | 12,000 | 3,000 | 3,000 |
+| wasm | heavy | wasm | 9 | 3,000 | 3,000 | 6,000 |
+| wasm | light | js | 2 | 24,000 | 24,000 | 93,750 |
+| wasm | light | js | 4 | 48,000 | 93,750 | 93,750 |
+| wasm | light | js | 9 | 93,750 | 93,750 | 187,500 |
+| wasm | light | wasm | 2 | 12,000 | 24,000 | 93,750 |
+| wasm | light | wasm | 4 | 48,000 | 48,000 | 93,750 |
+| wasm | light | wasm | 9 | 48,000 | 93,750 | 187,500 |
+
+Each cell is the crossover against the sequential lane's best block of the run, which is the
+sequential path at its fastest and the harder bar for the pool to clear. Against the sequential
+median the two V8 runtimes give the same cells, except `wasm light js` at four workers on deno,
+which crosses at 48,000 there.
+
+### The loss below the crossover, node, milliseconds for one frame
+
+The light body on the shared backing, which is the case the default is sized for.
+
+| rows | K | sequential | pooled | pooled minus sequential |
+| --- | --- | --- | --- | --- |
+| 3,000 | 9 | 0.0043 | 0.0675 | 0.0631 |
+| 12,000 | 9 | 0.0160 | 0.0519 | 0.0359 |
+| 24,000 | 2 | 0.0310 | 0.0299 | -0.0011 |
+| 24,000 | 9 | 0.0314 | 0.0562 | 0.0248 |
+| 48,000 | 4 | 0.0601 | 0.0542 | -0.0060 |
+| 48,000 | 9 | 0.0605 | 0.0665 | 0.0060 |
+| 93,750 | 9 | 0.1180 | 0.0775 | -0.0405 |
+| 750,000 | 9 | 0.9740 | 0.2462 | -0.7278 |
+
+**A frame at a thousand rows is the worst case for a wrong default.** With nine workers the pooled
+frame there costs about forty microseconds more than the sequential one, and the sequential frame
+itself costs about one microsecond. The barrier is the whole bill.
+
+### The gate, node, milliseconds for one frame
+
+The same system, no pool attached, then with a pool attached whose `minRows` the row count never
+reaches.
+
+| backing | rows | body | no pool | pool attached, declines | difference |
+| --- | --- | --- | --- | --- | --- |
+| shared | 93,750 | light | 0.1214 | 0.1169 | -0.0045 |
+| shared | 93,750 | heavy | 2.4889 | 2.5418 | 0.0529 |
+| shared | 750,000 | light | 0.9468 | 0.9653 | 0.0185 |
+| shared | 750,000 | heavy | 20.3188 | 20.3691 | 0.0503 |
+| wasm | 750,000 | light | 0.9651 | 0.9432 | -0.0219 |
+| wasm | 750,000 | heavy | 20.5353 | 20.2997 | -0.2356 |
+
+The difference changes sign across the table, which is what no effect looks like. The declined
+dispatch reads a dirty flag and compares two numbers, and neither shows.
+
+### The light body has two per-row speeds on V8, and the probe fought that
+
+The probe also runs each body over four flat `Int32Array` columns, with no engine and no pool. The
+light body reports two per-row costs there, and the slow one is several times the fast one. The
+switch happens with no engine, no worker and no store, so it belongs to the kernel and the engine
+that runs it.
+
+On node the standalone lane sits in the fast state at 750 and 1,500 rows and in the slow state at
+every larger size. On bun the switch lands one size later, and one bun size straddles it: at 3,000
+rows the minimum block is fast and the maximum block is slow. The heavy body shows no such split at
+any size on any runtime.
+
+**The in-engine sequential lane sat in the fast state at every size on node and deno.** Its minimum
+and its median agree across the whole sweep. So the crossovers above are measured against the
+sequential path at its best, and they are the conservative ones. An earlier version of this probe
+warmed by row visits alone, which left the sequential lane in the slow state between 12,000 and
+93,750 rows, and every light-body crossover there came out far too low. The warmup now counts
+frames as well as row visits, and a repeat of the sequential lane guards it.
+
+### What it shows
+
+- **A single default cannot serve both bodies.** The compute-bound body crosses about two orders of
+  magnitude earlier than the memory-bound one. A default that serves the memory-bound case leaves
+  almost all of the compute-bound case's gain on the table, and the reverse costs a frame.
+- **The crossover rises with the worker count on V8, and roughly holds the rows for each worker
+  constant.** The light body crosses near twelve thousand rows for each worker at two, four and
+  nine workers, on node and on deno, on both backings. Bun does not follow that rule.
+- **The kernel form barely moves the crossover.** The `wasm` kernel crosses one ladder step earlier
+  than the `js` kernel on node at two workers, and lands on the same cell everywhere else. So a
+  default that branched on the kernel form would buy almost nothing, and the engine has no cheap way
+  to know the body's weight, which is what actually decides the crossover.
+- **Bun's shared backing is far slower than its wasm backing for the same sequential body.** At
+  12,000 rows the light body costs 0.0525 on the shared backing and 0.0104 on the wasm backing, in
+  the same process shape. The two V8 runtimes show no such gap.
+- **A too-high default has no standing cost.** The gate table says so on both backings and all three
+  runtimes.
+
+### Known defects in this probe
+
+- **Bun's shared-backing pooled lane spikes at two sizes.** At 12,000 rows the pooled light frame
+  reports 0.3342 at two workers, 0.5802 at four and 0.5174 at nine, against a sequential 0.052. At
+  6,000 rows and at 48,000 rows the same lane behaves. The spike is present on the heavy body at the
+  same sizes. Every bun shared-backing crossover in the table above is therefore suspect, and the
+  bun cells that decide the default come from the wasm backing.
+- **One node cell spikes the same way.** The wasm backing, heavy body, `js` kernel, four workers,
+  6,000 rows reports 0.9106 pooled where 3,000 rows reports 0.0619 and 12,000 rows reports 0.1302.
+  That one cell is what pushes that series' crossover from 3,000 to 12,000 in the table.
+- **The sequential lane and the pooled lane do not share a JIT state.** The main thread runs the
+  body and each worker runs its own copy. A worker at nine workers sees a ninth of the rows, so it
+  reaches whatever state it reaches on its own schedule. The pairing cancels a machine-level change
+  and it cannot cancel this one.
+- **One archetype shape, one column count, one column type.** Four columns, four archetypes, one
+  excluded, every column `i32`.
+- **The default worker count is read from `availableParallelism()` on this machine.** A machine with
+  a different count would put the highest `K` somewhere else, and the highest `K` is what sets the
+  default.
+
+### What it does not cover
+
+No browser host, and no SpiderMonkey. No heap backing, which cannot attach workers at all. No float
+column, because the state hash refuses one. No grow, no despawn and no second system inside a timed
+frame, so the crossover is measured on a frame that holds one parallel system and nothing else. No
+cold start: the pool is attached and the kernels are loaded before any timing. No measurement of
+what the crossover does under load from another process, and this machine ran other work during
+parts of the sweep.
 
 ---
 

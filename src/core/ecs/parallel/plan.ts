@@ -22,13 +22,23 @@ import { ECS_ERROR, ECSError } from "../utils/error";
  * The total matched row count below which a parallel system runs `fn` on the
  * main thread.
  *
- * A placeholder, and the caller must tune it. The probes show the crossover is
- * a property of the machine and of the kernel, never a constant: a heavy kernel
- * crosses far earlier than a memory-bound one, and one worker is always a loss.
- * The value here is high enough that a world which never tunes it keeps the
- * sequential path.
+ * Measured, and deliberately conservative. A probe sweeps a memory-bound body
+ * and a compute-bound one, each as a `js` kernel and as a `wasm` kernel, over
+ * the shared backing and the wasm backing, on more than one engine family. This
+ * value sits above every crossover it found. So a world that never tunes it
+ * never pays a pooled frame that the sequential frame would have won.
+ *
+ * One number cannot serve two costs, and this one serves the memory-bound case.
+ * A compute-bound body crosses far earlier, and this value costs it most of its
+ * gain. Give such a system its own `minRows`.
+ *
+ * The crossover also rises with the worker count, because the barrier grows
+ * while the work for each worker shrinks. The plan cannot scale by that count,
+ * because the pool attaches after the plan is built.
+ *
+ * `parallel.minRows` from the caller always wins, and zero is a value.
  */
-export const DEFAULT_PARALLEL_MIN_ROWS = 100_000;
+export const DEFAULT_PARALLEL_MIN_ROWS = 200_000;
 
 /** What one dispatch reads. Mutable, because the pool fills `slot` and `ready`
  * when the workers report the kernel loaded. */

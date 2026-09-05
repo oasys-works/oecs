@@ -43,8 +43,12 @@ registration with `ECS_ERROR.PARALLEL_ACCESS`. Below `parallel.minRows`, and wit
 pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
 backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
 
-The split pays only above a row count that depends on the machine and the kernel, so `minRows` has
-a placeholder default the caller must tune. `bench/` holds the measurements.
+The split pays only above a row count that depends on the machine, the kernel and the worker count.
+`parallel.minRows` carries a measured default that sits above every crossover the probes found, on
+both bodies, both kernel forms, both backings and every runtime tested. A world that never tunes it
+never pays a pooled frame the sequential frame would have won. It gives up the gain instead. A
+compute-bound kernel crosses far earlier and should set its own value, and a caller's value always
+wins. `bench/` holds the measurements and the tuning method.
 
 With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
 Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside

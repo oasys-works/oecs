@@ -16,6 +16,7 @@ import { ECS } from "../../ecs";
 import { resourceKey } from "../../resource";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, ECSError } from "../../utils/error";
+import { DEFAULT_PARALLEL_MIN_ROWS } from "../../parallel/plan";
 import type { WorkerPool } from "../../parallel/pool";
 import type { ParallelColumn } from "../../system";
 import { KERNELS_URL, WORKER_URL, buildWorld } from "./parallel_fixture";
@@ -160,6 +161,100 @@ describe("a parallel registration", () => {
 			// @ts-expect-error 'z' is not a field of Pos
 			[Pos, "z"];
 		expect(wrongField[0]).toBe(Pos);
+	});
+});
+
+describe("the minRows default", () => {
+	function world() {
+		const built = buildWorld({ entities: 256, backing: "shared" });
+		const query = built.ecs.query(built.Pos, built.Vel);
+		const columns = [
+			[built.Pos, "x"],
+			[built.Vel, "vx"]
+		];
+		return { ...built, query, columns };
+	}
+
+	function register(minRows: number | undefined, kernelExport = "integrateI32") {
+		const { ecs, Pos, Vel, query, columns } = world();
+		const parallel: Record<string, unknown> = {
+			kernel: { js: KERNELS_URL, export: kernelExport },
+			columns,
+			query
+		};
+		if (minRows !== undefined) parallel.minRows = minRows;
+		const system = ecs.registerSystem({
+			name: "sweep",
+			reads: [Vel],
+			writes: [Pos],
+			parallel,
+			fn: () => {}
+		} as never);
+		return { ecs, system };
+	}
+
+	it("is a row count a world can reach, and not a sentinel", () => {
+		// The dispatch compares it against `query.entityCount`. A non-integer or a
+		// negative value would make that compare answer something the registration
+		// itself refuses from a caller.
+		expect(Number.isInteger(DEFAULT_PARALLEL_MIN_ROWS)).toBe(true);
+		expect(DEFAULT_PARALLEL_MIN_ROWS).toBeGreaterThan(0);
+	});
+
+	it("reaches the plan when the config names no minRows", () => {
+		const { system } = register(undefined);
+		expect(system.parallelPlan?.minRows).toBe(DEFAULT_PARALLEL_MIN_ROWS);
+	});
+
+	it("gives way to the caller's value", () => {
+		const { system } = register(7);
+		expect(system.parallelPlan?.minRows).toBe(7);
+	});
+
+	it("gives way to a caller's zero, which asks for every frame", () => {
+		// Zero is falsy and it is a value the registration accepts. A fallback that
+		// tested truth would swap it for the default and dispatch nothing below
+		// that, which is the opposite of what the caller asked for.
+		const { system } = register(0);
+		expect(system.parallelPlan?.minRows).toBe(0);
+	});
+
+	it("keeps a small world on the sequential body, with the pool attached", async () => {
+		// The behaviour the default exists for. The kernel throws, so a dispatch is
+		// visible: the frame would fail with PARALLEL_KERNEL_FAILED. The world holds
+		// far fewer rows than the default, so the pool declines and `fn` runs.
+		const { ecs, system } = register(undefined, "throwing");
+		let sequentialRuns = 0;
+		const counted = ecs.registerSystem({
+			name: "counter",
+			reads: [],
+			writes: [],
+			fn: () => {
+				sequentialRuns++;
+			}
+		} as never);
+		ecs.addSystems(SCHEDULE.UPDATE, counted, system);
+		pools.push(await ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+
+		expect(system.parallelPlan?.query.entityCount).toBeLessThan(DEFAULT_PARALLEL_MIN_ROWS);
+		expect(() => ecs.update(1)).not.toThrow();
+		expect(sequentialRuns).toBe(1);
+	});
+
+	it("dispatches once the caller lowers minRows under the row count", async () => {
+		// The other half. The same throwing kernel, the same world, and a threshold
+		// the row count clears. The pool now takes the pass, so the fault appears.
+		const { ecs, system } = register(1, "throwing");
+		ecs.addSystems(SCHEDULE.UPDATE, system);
+		pools.push(await ecs.attachWorkers({ count: 2, workerUrl: WORKER_URL }));
+
+		let caught = "no throw";
+		try {
+			ecs.update(1);
+		} catch (error) {
+			caught = (error as ECSError).category;
+		}
+		expect(caught).toBe(ECS_ERROR.PARALLEL_KERNEL_FAILED);
 	});
 });
 

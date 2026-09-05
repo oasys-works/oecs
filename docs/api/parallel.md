@@ -412,11 +412,41 @@ query you built with `without` to get a with-and-without match.
 `parallel.minRows` is the total matched row count below which the system runs `fn` on the main
 thread. Below it the pool is never released, so the frame pays no barrier.
 
-**The default is a placeholder, and you must tune it.** The threshold is a property of the machine
-and of the kernel, and never a constant the engine can hold. A heavy kernel crosses far earlier
-than a memory-bound one, and one worker is close to a loss at every size. The default is high
-enough that a world which never tunes it keeps the sequential path. Measure your own kernel on your
-own target. `bench/` holds the measurements this engine was tuned against.
+**The default is measured, and it is deliberately too high for most kernels.** It sits above every
+crossover a sweep of both bodies, both kernel forms, both backings and every runtime tested found. A
+world that never tunes it therefore never pays a pooled frame that the sequential frame would have
+won. It pays the other cost instead, which is the gain it does not take.
+
+**A compute-bound kernel should set its own value, far lower.** The crossover is a property of the
+body, and one constant cannot hold both cases. A body that does real arithmetic on each row wins
+early. A body that only moves memory needs many more rows before the split pays. The default serves
+the second case, because that is the case where a wrong guess costs a frame.
+
+The crossover also rises with the worker count, because the barrier grows while the work for each
+worker shrinks. The engine cannot fold that into the default, because `attachWorkers` runs after
+the system is registered.
+
+Your value always wins, and `0` is a value. It means dispatch at every row count.
+
+### Measuring your own kernel
+
+Run `node bench/foundations/p24-par-minrows.mjs`. It pairs two systems over one body, one whose
+`minRows` no row count reaches and one whose `minRows` is one, so the two lanes differ only by the
+dispatch. It sweeps the row count, prints both milliseconds side by side at every size, and names
+the smallest row count that wins and keeps winning.
+
+To measure your own kernel, change three things in that file:
+
+1. `BODIES`, to name your kernel's export and its JavaScript twin,
+2. `buildWorld`, to register your components and your archetype shape,
+3. `SIZES` and `KS`, to the row counts and worker counts you ship.
+
+Read the crossover of the row that matches your backing, your kernel form and your worker count.
+Set `minRows` to it. Read the loss column below that row as well, because that is what a value set
+too low costs you on every frame.
+
+`bench/foundations/findings-parallel.md` holds the measurements this default came from, and the
+cells where the pool loses are still in them.
 
 ## What the join stamps
 
