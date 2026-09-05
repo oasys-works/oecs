@@ -64,12 +64,12 @@ function buildIfStale(): void {
 }
 
 /** Run one harness against one entry, under plain node, and read its JSON. */
-function probe(source: string): Record<string, unknown> {
+function probe(source: string, timeout?: number): Record<string, unknown> {
 	const dir = mkdtempSync(join(tmpdir(), "oecs-dist-"));
 	try {
 		const entry = join(dir, "probe.mjs");
 		writeFileSync(entry, source);
-		const out = execFileSync(process.execPath, [entry], { cwd: ROOT, encoding: "utf8" });
+		const out = execFileSync(process.execPath, [entry], { cwd: ROOT, encoding: "utf8", timeout });
 		return JSON.parse(out) as Record<string, unknown>;
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -301,6 +301,33 @@ try {
 console.log(JSON.stringify({ name: named.name, bare }));
 `;
 
+const REFUSED_ATTACH = `
+const { readFileSync } = await import("node:fs");
+const { ECS, SCHEDULE } = await import(${JSON.stringify(PROD)});
+const module = new WebAssembly.Module(readFileSync(${JSON.stringify(join(ROOT, "src/core/ecs/__tests__/fixtures/kernel_emitted.wasm"))}));
+const ecs = new ECS({ memory: { backing: "shared", maxBytes: 16 * 1024 * 1024 } });
+const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
+const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" }, { name: "Vel" });
+ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({
+	reads: [Vel],
+	writes: [Pos],
+	queries: [[Pos, Vel]],
+	parallel: {
+		kernel: { wasm: module, export: "integrate_i32" },
+		columns: [[Pos, "x"], [Pos, "y"], [Vel, "vx"], [Vel, "vy"]],
+		minRows: 1
+	},
+	fn: () => {}
+}));
+let category = null;
+try {
+	await ecs.attachWorkers({ count: 2, workerUrl: ${JSON.stringify(join(DIST, "worker.js"))} });
+} catch (err) {
+	category = err.category;
+}
+console.log(JSON.stringify({ category, released: ecs.workers === null }));
+`;
+
 describe("the shipped bundle", () => {
 	beforeAll(() => {
 		buildIfStale();
@@ -475,5 +502,13 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 		expect(out.name).toBe("ECSError");
 		expect(out.bare.category).toBe("ENTITY_NOT_ALIVE");
 		expect(out.bare.name).toBe("ECSError");
+	});
+	it("ends its workers when the attach is refused, so the process can exit", () => {
+		// A wasm kernel cannot load on the shared backing, so the attach rejects.
+		// The workers it started were left alive, and a live worker thread keeps a
+		// process alive, so the child here never exited and the run timed out.
+		const out = probe(REFUSED_ATTACH, 20_000) as { category: string; released: boolean };
+		expect(out.category).toBe("PARALLEL_KERNEL_FAILED");
+		expect(out.released).toBe(true);
 	});
 });

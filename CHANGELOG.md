@@ -139,6 +139,9 @@ join cost, both of which are worse.
 
 ### Fixed
 
+A kernel that would not load rejected `attachWorkers` and left its workers running, so a node
+process never exited on its own. The pool now ends the workers before the fault leaves.
+
 An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no
 category. The base class now checks for that V8 extension before it calls it. `error.name` read as
 one minified letter in the production build, because it came off the constructor. It is now the

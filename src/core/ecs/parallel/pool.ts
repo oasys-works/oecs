@@ -360,7 +360,15 @@ export class WorkerPool {
 		// without a yield, and the yield path would then never run in a world that
 		// declared no parallel system before the attach.
 		pool._kick();
-		await pool.settled();
+		try {
+			await pool.settled();
+		} catch (error) {
+			// A kernel that will not load rejects the attach. The workers are already
+			// running, and a live worker thread keeps a process alive, so the pool
+			// ends them before the fault leaves.
+			await pool.detach();
+			throw error;
+		}
 		return pool;
 	}
 
