@@ -207,15 +207,15 @@ export interface ECSOptions {
 /** What a world puts in the reserved slot of a capability it never installed.
  *
  * The slot has to hold something. Left `undefined`, a JavaScript caller reading
- * `ecs.relations.add` meets a `TypeError` about a property of undefined, which
- * names neither the capability nor the import that supplies it. The proxy turns
- * every named read into the fault the world defines.
+ * `ecs.relations.add` meets a `TypeError` about a property of undefined. That
+ * fault names neither the capability nor the import that supplies it. The proxy
+ * turns every named read into the fault the world defines.
  *
- * A symbol read, a key that `Object.prototype` answers, and the `toJSON` and
- * `then` protocol keys answer as a plain object does. So `console.log`,
- * `JSON.stringify`, a string coercion and an `await` inspect the slot without a
- * fault, and only a member read reaches the throw. Frozen and built once per
- * capability, because a world holds the shared instance. */
+ * A symbol read and a key that `Object.prototype` answers behave as a plain
+ * object does. The `toJSON` and `then` protocol keys do the same. So
+ * `console.log`, `JSON.stringify`, a string coercion and an `await` inspect the
+ * slot without a fault. Only a member read reaches the throw. Frozen and built
+ * once per capability, because a world holds the shared instance. */
 function reserveCapabilitySlot(capability: string): object {
 	return Object.freeze(
 		new Proxy(Object.freeze({}), {

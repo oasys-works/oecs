@@ -74,9 +74,11 @@ Four subsystems are **capabilities**: relations, events, snapshots and observers
 the ones it uses, and carries no code for the rest.
 
 ```ts
-import { ECS } from "@oasys/oecs";
+import { ECS, eventKey } from "@oasys/oecs";
 import { relations } from "@oasys/oecs/relations";
 import { observers } from "@oasys/oecs/observers";
+
+const Damaged = eventKey<{ amount: number }>("Damaged");
 
 const world = ECS.create({ plugins: [relations(), observers()] });
 world.relations.register(); // ok

@@ -68,13 +68,13 @@ export { storeOnlyHost } from "./core/ecs";
 
 // The modules a capability bundle binds to instead of copying.
 //
-// Each capability ships in its own rollup graph, so a module it reaches is
-// compiled into it a second time unless the build marks the module external. A
-// second copy of a class breaks `instanceof`, and a second copy of a registry
-// holds none of what the core put in it. The build resolves such a module to
-// one package entry, which is why every name below is here: the entry has to
-// export the module's whole list. `scripts/core_boundary.ts` holds the mapping
-// and fails the build on a name this entry does not carry.
+// Each capability ships in its own rollup graph. A module it reaches is
+// compiled into it a second time. The build marks the module external to stop
+// that. A second copy of a class breaks `instanceof`. A second copy of a
+// registry holds none of what the core put in it. The build resolves such a
+// module to one package entry. That entry has to export the module's whole
+// list, which is why every name below is here. `scripts/core_boundary.ts` holds
+// the mapping and fails the build on a name this entry does not carry.
 
 // The two capability faults. The error classes a consumer catches are at the
 // package root, and these build one of them.

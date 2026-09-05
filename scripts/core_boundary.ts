@@ -1,20 +1,20 @@
 /***
  * The boundary between the core rollup graph and the capability rollup graph.
  *
- * The build runs two passes (see `vite.config.ts` for why). Two passes means
- * two module graphs, and a module the capability pass reaches is compiled into
- * the capability bundles as a second copy. For a pure function that is a few
- * duplicated bytes. For anything that carries identity or state it is a defect:
- * a copied class fails `instanceof` against the class the package root exports,
- * and a copied singleton or registry holds none of what the core put in it.
+ * The build runs two passes (see `vite.config.ts` for why). Two passes mean two
+ * module graphs. A module the capability pass reaches is compiled into the
+ * capability bundles as a second copy. For a pure function that is a few
+ * duplicated bytes. For anything that carries identity or state it is a defect.
+ * A copied class fails `instanceof` against the class the package root exports.
+ * A copied singleton or registry holds none of what the core put in it.
  *
  * So every module both graphs reach is classified here, once, in one of two
- * lists. `SINGLE` names a module the capability pass must not compile: the
- * pass marks it external and resolves it to a relative import of the core
- * artifact, so both graphs share the one instance. `DUPLICABLE` names a module
- * whose second copy changes nothing observable, with the reason beside it.
+ * lists. `SINGLE` names a module the capability pass must not compile. The pass
+ * marks it external and resolves it to a relative import of the core artifact.
+ * Both graphs then share the one instance. `DUPLICABLE` names a module whose
+ * second copy changes nothing observable, with the reason beside it.
  *
- * A module in neither list fails the build. That is the point: the failure is
+ * A module in neither list fails the build. That is the point. The failure is
  * a prompt to classify the module, not a bug report from a consumer.
  *
  * Cold path. Both plugins run at build time only.
@@ -40,14 +40,14 @@ interface CoreManifest {
 type CoreEntry = "index" | "internal";
 
 /** Modules the capability pass must not compile, and the entry that serves
- * each one. The entry has to export every binding the capability graph reaches,
- * which is why `src/internal.ts` carries the error and debug-name lists. */
+ * each one. The entry has to export every binding the capability graph reaches.
+ * That is why `src/internal.ts` carries the error and debug-name lists. */
 const SINGLE: Readonly<Record<string, CoreEntry>> = {
 	// `ECSError`, `ECSRestoreError` and the `ECS_ERROR` categories. A consumer
 	// catches these by class, and `isEcsError` is an `instanceof` behind a name.
 	"core/ecs/utils/error.ts": "index",
-	// The two capability faults, apart from the classes so that the classes can
-	// resolve to the root while these resolve to the tooling entry.
+	// The two capability faults, apart from the classes. The classes resolve to
+	// the root, and these resolve to the tooling entry.
 	"core/ecs/utils/capability_error.ts": "internal",
 	// `AppError`, the base `ECSError` extends. A second base would give a second
 	// prototype chain under the one class.
@@ -167,8 +167,8 @@ export function bindToCoreArtifact(srcDir: string, variant: string): Plugin {
 		buildStart() {
 			manifest = JSON.parse(fs.readFileSync(manifestPath(), "utf8")) as CoreManifest;
 			// A development capability bundle that bound to the production core
-			// would give the program two worlds, one with the guards and one
-			// without. Catch the stale record rather than ship that.
+			// would give the program two worlds. One carries the guards and one
+			// does not. Catch the stale record rather than ship that.
 			if (manifest.variant !== variant) {
 				throw new Error(
 					`the core graph record is for the ${manifest.variant} variant and this pass is ${variant}. Run scripts/build.mjs, which writes the record once per variant`
@@ -219,8 +219,9 @@ export function bindToCoreArtifact(srcDir: string, variant: string): Plugin {
 					if (rel in DUPLICABLE) continue;
 					copied.push(`${rel} (in ${chunk.fileName})`);
 				}
-				// `importedBindings` still keys on the token: renderChunk edits
-				// the text, not the metadata rollup collected.
+				// `importedBindings` still keys on the token, because
+				// `renderChunk` edits the text and not the metadata rollup
+				// collected.
 				for (const [entry, token] of Object.entries(TOKEN)) {
 					const bindings = chunk.importedBindings[token];
 					if (bindings === undefined) continue;

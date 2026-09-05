@@ -332,9 +332,9 @@ export {
 // (a plain `Error`, not an `ECSError`) stays exported separately above.
 export { ECSError, ECS_ERROR, isEcsError } from "./utils/error";
 
-// Capability, the plugin seam `ECS.create` drives. Type-only at the root: a
-// third-party capability needs the shape of the host it installs through and
-// the surface it contributes, and `CapsOf` is what types the world a plugin
+// Capability, the plugin seam `ECS.create` drives. These are type-only at the
+// root. A third-party capability needs the shape of the host it installs
+// through and the surface it contributes. `CapsOf` types the world a plugin
 // list builds. `storeOnlyHost` is a value, and it stays on `/internal` with the
 // rest of the tooling surface.
 export type { Capability, CapabilityHost, CapsOf } from "./capability";

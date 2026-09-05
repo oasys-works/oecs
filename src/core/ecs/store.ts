@@ -467,10 +467,10 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** The relation service, for a caller that is not `ecs.relations`.
 	 *
-	 * The getter above names `ecs.relations` in its fault, which is the wrong
-	 * remedy to print when a system context or a query term is what reached the
-	 * service. Every seam a user can reach passes its own name here. Error path
-	 * only: the successful read is the same field read the getter makes. */
+	 * The getter above names `ecs.relations` in its fault. That is the wrong
+	 * remedy when a system context or a query term reached the service. Every
+	 * seam a user can reach passes its own name here. Error path only. The
+	 * successful read is the same field read the getter makes. */
 	public requireRelations(api: string): RelationService {
 		if (this._relations === null) throw capabilityMissingError("relations", api);
 		return this._relations;

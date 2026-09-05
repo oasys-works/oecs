@@ -3,8 +3,9 @@
  *
  * A capability is a construction-time choice, so every failure here has the
  * same remedy: edit the `ECS.create` call. These tests hold the world to
- * saying so. They cover the reserved slots of a bare world, the seams a system
- * body and a query reach, and the second install of one capability.
+ * saying so. They cover the reserved slots of a bare world. They also cover the
+ * seams a system body and a query reach, and the second install of one
+ * capability.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -67,10 +68,9 @@ describe("a bare world names the missing capability", () => {
 	});
 
 	it("inspection and coercion of a reserved slot answer instead of throwing", () => {
-		// A logger walking a world reads `Symbol.toStringTag` and `Symbol.toPrimitive`
-		// off every member, `JSON.stringify` reads `toJSON`, an `await` reads `then`,
-		// and a string coercion reads `toString`. Each must answer as a plain object
-		// does, and only a member read may reach the fault.
+		// A logger reads `Symbol.toStringTag` and `toString`, `JSON.stringify` reads
+		// `toJSON`, and an `await` reads `then`. Each answers as a plain object does.
+		// Only a member read reaches the fault.
 		const world = new ECS();
 		const slot = (world as unknown as Record<string, object>).relations;
 		expect((slot as { [Symbol.toStringTag]?: string })[Symbol.toStringTag]).toBeUndefined();

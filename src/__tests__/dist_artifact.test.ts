@@ -130,7 +130,7 @@ console.log(JSON.stringify(out));
 
 /** A world with every capability installed, and one fault raised from inside
  * each of three capability modules. Each capability bundle is a separate rollup
- * graph, so a copied error class would answer `false` to `instanceof` here even
+ * graph. A copied error class would answer `false` to `instanceof` here, even
  * though the same source declared it. */
 const capabilityFaults = (
 	core: string,
@@ -201,8 +201,8 @@ console.log(JSON.stringify({ ran, undeclaredAdd }));
 `;
 
 /** Every static specifier one emitted module names. Rollup writes each import
- * at the start of a line, so a specifier inside a retained doc comment (which
- * is indented under a `*`) does not match. */
+ * at the start of a line. A specifier inside a retained doc comment does not
+ * match, because a `*` indents it. */
 function staticImports(file: string): string[] {
 	const src = readFileSync(file, "utf8");
 	const found = new Set<string>();

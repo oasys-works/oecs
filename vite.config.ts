@@ -22,7 +22,7 @@ const DEV_BUILD = process.env.OECS_VARIANT === "development";
 // bundles, which are small and loaded once.
 //
 // Duplicated code is not always harmless. A module that carries a class, a
-// singleton or a registry must exist once in a program, so the capability pass
+// singleton or a registry must exist once in a program. The capability pass
 // marks those external and resolves them to the core artifact.
 // `scripts/core_boundary.ts` holds the classification and fails the build on a
 // module it does not name.

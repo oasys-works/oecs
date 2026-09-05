@@ -23,9 +23,9 @@
 export { ECS, type ECSOptions } from "./core/ecs";
 export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
 
-// Capability, the plugin seam. Type-only: the capability modules ship on their
-// own subpaths, and these are what a capability outside this package
-// implements. `CapsOf` computes the world type a plugin list builds.
+// Capability, the plugin seam. These are type-only. The capability modules ship
+// on their own subpaths, and a capability outside this package implements these
+// types. `CapsOf` computes the world type a plugin list builds.
 export type { Capability, CapabilityHost, CapsOf } from "./core/ecs";
 
 // ECS memory sizing, the intent surface a consumer sizes an ECS

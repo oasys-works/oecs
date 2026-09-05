@@ -38,26 +38,25 @@ Each capability keeps its call sites unchanged. Only construction moves.
 - `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
 - `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
 
-Each capability also has a `/dev` subpath, `@oasys/oecs/relations/dev` and the three others, which
-serve the build with the development guards on. A capability binds to the core build it was made
-against, so take the capability and the world from the same channel.
+On npm, each capability also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the three others
+serve the build with the development guards on. JSR publishes no `/dev` subpath. A capability binds
+to the core build it was made against. Take the capability and the world from the same channel.
 
 `ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` stay on every world. They describe the
 world, not the capability, and the determinism opt-in is still separate: `capture` and `restore`
 throw `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`, installed or not.
 
 In TypeScript, reaching for a capability the world did not install is a compile error. In JavaScript
-nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message
-names the API and the import that supplies it, because the fix is at the construction site. On a
-bare world every member of `ecs.relations` and of `ecs.events` throws it. So do the call
-`ecs.observe(...)` and the four members `ecs.snapshots.capture`, `restore`, `captureSparse` and
-`restoreSparse`. The system-side seams throw it too. `ctx.emit`, `ctx.readEvents`,
-`ctx.addRelation`, `query.withRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among
-them.
+nothing stops the call, so the world throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`. The message names
+the API and the import that supplies it. The fix is at the construction site. On a bare world every
+member of `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the
+four members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The
+system-side seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`,
+`query.withRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among them.
 
 Installing one capability two times throws the new `ECS_ERROR.CAPABILITY_ALREADY_INSTALLED`.
 
-The types `Capability`, `CapabilityHost` and `CapsOf` are exported from `@oasys/oecs`, so a
+The types `Capability`, `CapabilityHost` and `CapsOf` are exported from `@oasys/oecs`. A
 third-party capability is typed the way the four built-in ones are. `Capability<X>` is what a
 factory such as `relations()` returns, and what a plugin list holds. Its `install` takes a
 `CapabilityHost` and returns `X`, the surface the world gains. `CapsOf` is the surface a plugin
@@ -363,12 +362,12 @@ survives the identity and data checks that were already there.
 ### Added. `ECS_ERROR.INVALID_TEMPLATE`
 
 `spawn` and `spawnMany` take a template from `ecs.template(...)`. A component definition, a callable
-bundle, or the pre-0.5 array of entries reached the store instead, and the store then failed with a
-`TypeError` about an internal field. That error named the wrong place, and it did not say what to
-do. A development build now throws `INVALID_TEMPLATE`, names the value the caller gave, and names
-the call to make in its place. `ecs.template` rejects the array of entries with the same code. The
-types already reject all four shapes, so this catches an untyped call site. Both checks are
-development only, and the production build is unchanged.
+bundle, the pre-0.5 array of entries, or some other value reached the store instead. The store then
+failed with a `TypeError` about an internal field. That error named the wrong place, and it did not
+say what to do. A development build now throws `INVALID_TEMPLATE`. It names the value the caller
+gave, and it names the call to make in its place. `ecs.template` rejects the array of entries with
+the same code. The types already reject all four shapes, so this catches an untyped call site. Both
+checks are development only, and the production build is unchanged.
 
 ### Fixed. A write was reported on two frames when the writer ran before the reader
 

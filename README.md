@@ -171,9 +171,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
 - **Sparse storage**. Use `registerSparseComponent` and `registerSparseTag`, then `addSparse` and
   `removeSparse`. A sparse component keeps its data in columns indexed by entity, so a read by id
   is one load, and `sparseCursor(def)` with `sparseCursorRead(def)` is the fastest read by id that
-  the engine has. Sparse
-  storage is correct for data that a system reads by id, that changes frequently, or that is rare,
-  because it causes no archetype transition.
+  the engine has. Sparse storage is correct for data that a system reads by id, that changes
+  frequently, or that is rare, because it causes no archetype transition.
 - **Resources**. A resource is a typed global value, keyed with `resourceKey<T>`. It needs no
   capability. **Events** (the `events()` capability) are send-and-forget channels in
   struct-of-arrays form, keyed with `eventKey<F>` or `signalKey`. The ECS clears the events at the
@@ -191,7 +190,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
 
 **Determinism, storage of state, and integration**
 
-- **Determinism** (optional). Construct the ECS with `new ECS({ deterministic: true })`. Then use
+- **Determinism** (optional). Construct the ECS with
+  `ECS.create({ deterministic: true, plugins: [snapshots()] })`. Then use
   `ecs.snapshots.stateHash()`, which gives a 32-bit digest in FNV-1a style over the live dense
   bytes, the sparse stores, and the target sets of multi relations. The hash is independent of the
   storage type: a heap ECS and a shared ECS with the same history give the same hash.

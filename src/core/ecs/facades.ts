@@ -302,11 +302,11 @@ export class ECSSnapshots {
 }
 
 /** The capture and restore surface, present at run time and absent from the
- * type. A bare world must fail to compile on `ecs.snapshots.capture`, so the
- * method cannot appear in the class body, and the snapshot capability's
- * subclass is what declares it. A JavaScript caller has no compiler, so the
- * prototype answers with the fault that names the import, not with a
- * `TypeError` about a missing method. `ECSSnapshotsFull` overrides all four. */
+ * type. A bare world must fail to compile on `ecs.snapshots.capture`. The
+ * method cannot appear in the class body, so the snapshot capability's subclass
+ * declares it. A JavaScript caller has no compiler. The prototype answers with
+ * the fault that names the import, not with a `TypeError` about a missing
+ * method. `ECSSnapshotsFull` overrides all four. */
 for (const method of ["capture", "restore", "captureSparse", "restoreSparse"]) {
 	(ECSSnapshots.prototype as unknown as Record<string, () => never>)[method] = function (): never {
 		throw capabilityMissingError("snapshots", `ecs.snapshots.${method}`);
