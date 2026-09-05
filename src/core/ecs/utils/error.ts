@@ -69,7 +69,11 @@ export enum ECS_ERROR {
 	/** An optional subsystem was used on a world that never installed it.
 	 * Distinct from `*_NOT_REGISTERED`, which means the world has the
 	 * subsystem but not that particular component, event or relation. */
-	CAPABILITY_NOT_INSTALLED = "CAPABILITY_NOT_INSTALLED"
+	CAPABILITY_NOT_INSTALLED = "CAPABILITY_NOT_INSTALLED",
+	/** One capability reached an install seam twice. The second service would
+	 * replace the first, and every handle the caller took from the first would
+	 * then address state the world no longer reads. */
+	CAPABILITY_ALREADY_INSTALLED = "CAPABILITY_ALREADY_INSTALLED"
 }
 
 export class ECSError extends AppError {
@@ -84,19 +88,6 @@ export class ECSError extends AppError {
 
 export function isEcsError(error: unknown): error is ECSError {
 	return error instanceof ECSError;
-}
-
-/** The fault a world raises when a caller uses a subsystem it never installed.
- * Names the capability and the import that supplies it, because the remedy is
- * a construction-site edit and not a call-site one. */
-export function capabilityMissingError(capability: string, api: string): ECSError {
-	return new ECSError(
-		ECS_ERROR.CAPABILITY_NOT_INSTALLED,
-		`${api} needs the ${capability} capability, which this world did not install. ` +
-			`Pass it at construction: ECS.create({ plugins: [${capability}()] }), ` +
-			`imported from @oasys/oecs/${capability}`,
-		{ capability }
-	);
 }
 
 /** Thrown by `Store.restore` (and the helpers here) when a combined snapshot

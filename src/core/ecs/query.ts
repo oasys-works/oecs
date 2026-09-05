@@ -251,8 +251,9 @@ export interface QueryResolver {
 	): void;
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term
 	 * (`withRelation`) to the membership store the sparse-match path
-	 * already drives. */
-	relationBackingSparseId(def: RelationDef): SparseComponentID;
+	 * already drives. `api` names the query verb the caller used, so a world
+	 * without the relations capability faults with the verb it reached. */
+	relationBackingSparseId(def: RelationDef, api: string): SparseComponentID;
 	/** Third query-match path: `(*, T)`, drive iteration from the union of
 	 * every relation's `sourcesOf(target)` (dedup + canonical sort), intersected
 	 * with the dense mask + sparse terms + the enabled-row filter. Only entered via
@@ -891,7 +892,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const cache = this._resolver.caches.withRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
-		const sid = this._resolver.relationBackingSparseId(def);
+		const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
 		const result = this._deriveRelation(
 			appendSparse(this.terms.sparseIncludes, sid as unknown as number),
 			this.terms.sparseExcludes,
@@ -917,7 +918,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const cache = this._resolver.caches.withoutRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
-		const sid = this._resolver.relationBackingSparseId(def);
+		const sid = this._resolver.relationBackingSparseId(def, "query.withoutRelation");
 		const result = this._deriveRelation(
 			this.terms.sparseIncludes,
 			appendSparse(this.terms.sparseExcludes, sid as unknown as number),

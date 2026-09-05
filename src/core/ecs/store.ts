@@ -83,7 +83,8 @@ import type { RelationService, RelationServiceHost } from "./relation_service";
 // Type-only: the per-consumer host seams Store implements. observer.ts /
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
-import { ECS_ERROR, ECSError, capabilityMissingError, ECSRestoreError } from "./utils/error";
+import { ECS_ERROR, ECSError, ECSRestoreError } from "./utils/error";
+import { capabilityMissingError, capabilityInstalledTwiceError } from "./utils/capability_error";
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
 // Type-only. The store never constructs a `SnapshotService`, so a world that
@@ -464,6 +465,17 @@ export class Store implements ObserverHost, QueryHost {
 		return this._relations;
 	}
 
+	/** The relation service, for a caller that is not `ecs.relations`.
+	 *
+	 * The getter above names `ecs.relations` in its fault, which is the wrong
+	 * remedy to print when a system context or a query term is what reached the
+	 * service. Every seam a user can reach passes its own name here. Error path
+	 * only: the successful read is the same field read the getter makes. */
+	public requireRelations(api: string): RelationService {
+		if (this._relations === null) throw capabilityMissingError("relations", api);
+		return this._relations;
+	}
+
 	/** Build the host the relation service needs. Closures, not field
 	 * references: `generations`, `entityArchetypes` and `entityRows` are
 	 * reallocated when capacity grows, so each accessor re-reads the live
@@ -486,10 +498,18 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Install the relations capability. Called once, by the capability. */
 	public installRelations(service: RelationService): void {
+		if (this._relations !== null) throw capabilityInstalledTwiceError("relations");
 		this._relations = service;
 	}
 	public get events(): EventRegistry {
 		if (this._events === null) throw capabilityMissingError("events", "ecs.events");
+		return this._events;
+	}
+
+	/** The event registry, for a caller that is not `ecs.events`. Names the
+	 * seam the user reached, the way `requireRelations` does. */
+	public requireEvents(api: string): EventRegistry {
+		if (this._events === null) throw capabilityMissingError("events", api);
 		return this._events;
 	}
 
@@ -501,6 +521,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Install the events capability. Called once, by the capability. */
 	public installEvents(registry: EventRegistry): void {
+		if (this._events !== null) throw capabilityInstalledTwiceError("events");
 		this._events = registry;
 	}
 	/** Build the host a snapshot capability needs. Only the store can reach
@@ -541,6 +562,7 @@ export class Store implements ObserverHost, QueryHost {
 
 	/** Install the snapshot capability. Called once, by the capability. */
 	public installSnapshots(service: SnapshotService): void {
+		if (this._snapshots !== null) throw capabilityInstalledTwiceError("snapshots");
 		this._snapshots = service;
 	}
 
@@ -3512,7 +3534,7 @@ export class Store implements ObserverHost, QueryHost {
 		maxDepth: number,
 		cb: (entityId: EntityID) => void
 	): void {
-		this.relations.forEachHierarchyMatch(
+		this.requireRelations("query.hierarchy").forEachHierarchyMatch(
 			include,
 			exclude,
 			anyOf,
@@ -3522,6 +3544,33 @@ export class Store implements ObserverHost, QueryHost {
 			maxDepth,
 			cb
 		);
+	}
+
+	/** Third query-match path: the `(*, T)` wildcard, every source pointing at
+	 * one target. `Query.forEachRelatedTo` is the seam the user reaches. */
+	public forEachTargetMatch(
+		target: EntityID,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		cb: (entityId: EntityID) => void
+	): void {
+		this.requireRelations("query.forEachRelatedTo").forEachTargetMatch(
+			target,
+			include,
+			exclude,
+			anyOf,
+			terms,
+			cb
+		);
+	}
+
+	/** The sparse membership store a relation rides, which is how a query turns
+	 * a `(R, *)` term into a sparse term. `api` names the query verb the user
+	 * called, because `withRelation` and `withoutRelation` both land here. */
+	public relationBackingSparseId(def: RelationDef, api: string): SparseComponentID {
+		return this.requireRelations(api).relationBackingSparseId(def);
 	}
 
 	// =======================================================

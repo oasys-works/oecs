@@ -542,12 +542,12 @@ const MUTANTS = [
 		what: "ctx.removeRelation removes every target instead of the named one",
 		find: `  removeRelation(src, def, tgt) {
     if (DEV) accessCheck.assertRelationWrite(def);
-    this._store.relations.removeRelation(src, def, tgt);
+    this._store.requireRelations("ctx.removeRelation").removeRelation(src, def, tgt);
     return this;
   }`,
 		to: `  removeRelation(src, def, tgt) {
     if (DEV) accessCheck.assertRelationWrite(def);
-    this._store.relations.removeRelation(src, def);
+    this._store.requireRelations("ctx.removeRelation").removeRelation(src, def);
     return this;
   }`,
 	},
@@ -559,7 +559,7 @@ const MUTANTS = [
 		id: "ctx-has-relation-always-true",
 		what: "ctx.hasRelation reports a target for every source",
 		find: `  hasRelation(src, def) {
-    return this._store.relations.hasRelation(src, def);
+    return this._store.requireRelations("ctx.hasRelation").hasRelation(src, def);
   }`,
 		to: `  hasRelation(src, def) {
     return true;
@@ -599,10 +599,10 @@ const MUTANTS = [
 		// ERA and the ROOT, which have no port 1.
 		id: "with-relation-does-not-narrow",
 		what: "withRelation keeps every row instead of the sources of that relation",
-		find: `    const sid = this._resolver.relationBackingSparseId(def);
+		find: `    const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
     const result = this._deriveRelation(
       appendSparse(this.terms.sparseIncludes, sid),`,
-		to: `    const sid = this._resolver.relationBackingSparseId(def);
+		to: `    const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
     const result = this._deriveRelation(
       this.terms.sparseIncludes,`,
 	},

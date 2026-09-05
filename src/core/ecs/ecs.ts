@@ -120,6 +120,7 @@ import { accessCheck } from "./access_check";
 import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
 import { BitSet, type TypedArrayTag } from "../../type_primitives";
 import { ECSError, ECS_ERROR } from "./utils/error";
+import { capabilityMissingError, capabilityInstalledTwiceError } from "./utils/capability_error";
 import {
 	DEFAULT_FIXED_TIMESTEP,
 	DEFAULT_MAX_FIXED_STEPS,
@@ -145,7 +146,10 @@ const ECS_OPTION_KEYS: ReadonlySet<string> = new Set([
 	"memory",
 	"regions",
 	"bindingsRegionBytes",
-	"deterministic"
+	"deterministic",
+	// `ECS.create` forwards its whole options record to the constructor, and
+	// the plugin list rides in it.
+	"plugins"
 ]);
 
 export interface ECSOptions {
@@ -198,6 +202,44 @@ export interface ECSOptions {
 	 * invariants (the in-place SAB allocator) and the `enabled_count`
 	 * partition are always-on regardless. */
 	deterministic?: boolean;
+}
+
+/** What a world puts in the reserved slot of a capability it never installed.
+ *
+ * The slot has to hold something. Left `undefined`, a JavaScript caller reading
+ * `ecs.relations.add` meets a `TypeError` about a property of undefined, which
+ * names neither the capability nor the import that supplies it. The proxy turns
+ * every named read into the fault the world defines.
+ *
+ * A symbol read, a key that `Object.prototype` answers, and the `toJSON` and
+ * `then` protocol keys answer as a plain object does. So `console.log`,
+ * `JSON.stringify`, a string coercion and an `await` inspect the slot without a
+ * fault, and only a member read reaches the throw. Frozen and built once per
+ * capability, because a world holds the shared instance. */
+function reserveCapabilitySlot(capability: string): object {
+	return Object.freeze(
+		new Proxy(Object.freeze({}), {
+			get(_target: object, key: string | symbol): unknown {
+				if (
+					typeof key === "symbol" ||
+					key in Object.prototype ||
+					key === "toJSON" ||
+					key === "then"
+				) {
+					return Reflect.get(Object.prototype, key);
+				}
+				throw capabilityMissingError(capability, `ecs.${capability}.${key}`);
+			}
+		})
+	);
+}
+
+const MISSING_RELATIONS: object = reserveCapabilitySlot("relations");
+const MISSING_EVENTS: object = reserveCapabilitySlot("events");
+
+/** The reserved `observe` slot. A function, because a caller calls it. */
+function missingObserve(): never {
+	throw capabilityMissingError("observers", "ecs.observe");
 }
 
 /** The fixed-timestep drives the `while (accumulator >= dt)` catch-up loop in
@@ -320,6 +362,7 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 			store: this._store,
 			context: this._ctx,
 			installObservers: (registry) => {
+				if (this._observers !== null) throw capabilityInstalledTwiceError("observers");
 				this._observers = registry;
 			}
 		};
@@ -472,10 +515,14 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 		// site saw two shapes. The names cost no import, so the core still
 		// carries none of the capability code. A capability outside this package
 		// adds a slot and pays that cost.
-		const slots = this as unknown as Record<string, undefined>;
-		slots.relations = undefined;
-		slots.events = undefined;
-		slots.observe = undefined;
+		//
+		// Each slot holds a reader that names the missing capability, not
+		// `undefined`. `ECS.create` overwrites the value, so the shape is the
+		// same either way.
+		const slots = this as unknown as Record<string, unknown>;
+		slots.relations = MISSING_RELATIONS;
+		slots.events = MISSING_EVENTS;
+		slots.observe = missingObserve;
 		this._ctx = new SystemContext(this._store);
 		// Observers dispatch through the shared SystemContext + accessCheck. The
 		// store calls the structural hook between fixed-point flush rounds. OnSet
@@ -1521,9 +1568,9 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 			}
 
 			this._schedule.runUpdate(this._ctx, dt);
-			// Post-update detection point for onSet observers:
+			// The post-update detection point:
 			// per-entity onSet drains the dirty list, archetype-granular onSet scans
-			// the change tick, both in canonical order. The dispatch gets its own
+			// the change tick, both in canonical order. The point gets its own
 			// change tick, above every run this frame, so an observer's baseline
 			// orders against every system's stamps and against the previous host
 			// window. onSet runs inside the event
@@ -1533,7 +1580,12 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 			// because it excludes event state. Any structural ops an onSet observer enqueues flush at the next
 			// tick's first phase boundary.
 			const evBefore = DEV && this._store.hasEvents ? this._store.events.devBufferedCount() : 0;
-			if (this._observers !== null) this._observers.dispatchSet(this._store.advanceChangeTick());
+			// The tick advances whether or not an observer registry exists. It
+			// marks the detection point, which a `changed()` query reads on a
+			// world that installed no observer capability. Only the dispatch is
+			// conditional.
+			const setTick = this._store.advanceChangeTick();
+			if (this._observers !== null) this._observers.dispatchSet(setTick);
 			if (DEV && this._store.hasEvents && this._store.events.devBufferedCount() !== evBefore) {
 				// An onSet observer emitted: `clearEvents` below would wipe it before
 				// any reader, so it is silently dropped, and would break snapshot/
@@ -1788,8 +1840,8 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 
 	/** QueryResolver implementation, backing sparse id of a relation, for the
 	 * `(R, *)` wildcard term (`Query.withRelation`). */
-	public relationBackingSparseId(def: RelationDef): SparseComponentID {
-		return this._store.relations.relationBackingSparseId(def);
+	public relationBackingSparseId(def: RelationDef, api: string): SparseComponentID {
+		return this._store.relationBackingSparseId(def, api);
 	}
 
 	/** QueryResolver implementation, `(*, T)` wildcard match path. */
@@ -1801,7 +1853,7 @@ export class ECS<C extends Caps = object> implements QueryResolver {
 		terms: QueryTerms,
 		cb: (entityId: EntityID) => void
 	): void {
-		this._store.relations.forEachTargetMatch(target, include, exclude, anyOf, terms, cb);
+		this._store.forEachTargetMatch(target, include, exclude, anyOf, terms, cb);
 	}
 
 	/** QueryResolver implementation, depth-ordered hierarchy match path. */

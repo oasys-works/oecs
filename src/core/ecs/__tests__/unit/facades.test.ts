@@ -102,14 +102,27 @@ describe("ECS grouped facades", () => {
 	it("a world without the capability fails closed, naming the remedy", () => {
 		// Two distinct failures, and both matter.
 		//
-		// On the world, `capture` is not a member at all: the type gate is the
-		// primary guard, and a JavaScript caller meets a plain `TypeError`. The
-		// core half of the facade still answers, because determinism is a
-		// property of the world and not of the capability.
+		// On the world, `capture` is absent from the type, which is the primary
+		// guard, and present on the prototype, so a JavaScript caller meets the
+		// fault instead of a `TypeError` about a missing method. The core half of
+		// the facade still answers, because determinism is a property of the
+		// world and not of the capability.
 		const bare = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		expect(bare.snapshots.deterministic).toBe(true);
 		expect(typeof bare.snapshots.stateHash()).toBe("number");
-		expect((bare.snapshots as unknown as Record<string, unknown>).capture).toBeUndefined();
+		const bareSnapshots = bare.snapshots as unknown as Record<string, () => unknown>;
+		for (const method of ["capture", "restore", "captureSparse", "restoreSparse"]) {
+			try {
+				bareSnapshots[method]();
+				expect.unreachable(`ecs.snapshots.${method} must throw without the capability`);
+			} catch (e) {
+				const err = e as ECSError;
+				expect(err).toBeInstanceOf(ECSError);
+				expect(err.category).toBe(ECS_ERROR.CAPABILITY_NOT_INSTALLED);
+				expect(err.message).toContain(`ecs.snapshots.${method}`);
+				expect(err.message).toContain("@oasys/oecs/snapshots");
+			}
+		}
 
 		// Below the world, the store's own entry point is reachable, and that is
 		// where the fault has to name the remedy: the fix is a construction-site

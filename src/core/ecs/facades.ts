@@ -29,6 +29,7 @@ import type {
 	SignalKey
 } from "./event";
 import { accessCheck } from "./access_check";
+import { capabilityMissingError } from "./utils/capability_error";
 import { dispatchTrace } from "./dispatch_trace";
 import { unsafeCast } from "../../type_primitives";
 import { DEV } from "../../dev_flag";
@@ -298,4 +299,16 @@ export class ECSSnapshots {
 		return this._store.stateHash();
 	}
 
+}
+
+/** The capture and restore surface, present at run time and absent from the
+ * type. A bare world must fail to compile on `ecs.snapshots.capture`, so the
+ * method cannot appear in the class body, and the snapshot capability's
+ * subclass is what declares it. A JavaScript caller has no compiler, so the
+ * prototype answers with the fault that names the import, not with a
+ * `TypeError` about a missing method. `ECSSnapshotsFull` overrides all four. */
+for (const method of ["capture", "restore", "captureSparse", "restoreSparse"]) {
+	(ECSSnapshots.prototype as unknown as Record<string, () => never>)[method] = function (): never {
+		throw capabilityMissingError("snapshots", `ecs.snapshots.${method}`);
+	};
 }

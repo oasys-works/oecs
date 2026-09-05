@@ -11,7 +11,7 @@
  * flush loops it ran before. The world checks for the registry once per
  * `update()` and once at startup. Neither is in a loop.
  *
- * The registry needs the world's shared system context, not just the store: an
+ * The registry needs the store and the world's shared system context. An
  * observer callback receives the same context a system does, so it sees the
  * same access span. That is why this capability reads `host.context`, and why
  * it cannot be installed on a bare store.

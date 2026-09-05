@@ -607,14 +607,14 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	/** Add a `(R, tgt)` pair to `src` (exclusive replaces, multi adds). */
 	public addRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt: EntityID): this {
 		if (DEV) accessCheck.assertRelationWrite(def);
-		this._store.relations.addRelation(src, def, tgt);
+		this._store.requireRelations("ctx.addRelation").addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`. For multi, omitting `tgt` removes all. */
 	public removeRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt?: EntityID): this {
 		if (DEV) accessCheck.assertRelationWrite(def);
-		this._store.relations.removeRelation(src, def, tgt);
+		this._store.requireRelations("ctx.removeRelation").removeRelation(src, def, tgt);
 		return this;
 	}
 
@@ -624,25 +624,25 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		def: D & DeclaredRelationRead<A, D>
 	): EntityID | undefined {
 		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.relations.targetOf(src, def);
+		return this._store.requireRelations("ctx.targetOf").targetOf(src, def);
 	}
 
 	/** All targets of `src` under `R`, ascending by id. */
 	public targetsOf<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
 		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.relations.targetsOf(src, def);
+		return this._store.requireRelations("ctx.targetsOf").targetsOf(src, def);
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
 	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
 	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
 		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.relations.sourcesOf(tgt, def);
+		return this._store.requireRelations("ctx.sourcesOf").sourcesOf(tgt, def);
 	}
 
 	/** Whether `src` holds any pair under `R`. */
 	public hasRelation(src: EntityID, def: RelationDef): boolean {
-		return this._store.relations.hasRelation(src, def);
+		return this._store.requireRelations("ctx.hasRelation").hasRelation(src, def);
 	}
 
 	/** Flush all deferred changes: structural (add and remove) first, then
@@ -686,11 +686,12 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 			dispatchTrace.recordEventEmit(key.description ?? "");
 		}
 		if (DEV) this._store.trace?.eventEmitted(key.description ?? "");
-		const def = this._store.events.defByKey(key);
+		const registry = this._store.requireEvents("ctx.emit");
+		const def = registry.defByKey(key);
 		if (values === undefined) {
-			this._store.events.emitSignal(def as EventDef<EmptyEventSchema>);
+			registry.emitSignal(def as EventDef<EmptyEventSchema>);
 		} else {
-			this._store.events.emit(def, values);
+			registry.emit(def, values);
 		}
 	}
 
@@ -709,8 +710,9 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEventRead(key.description ?? "");
 		}
-		const def = this._store.events.defByKey(key);
-		const reader = this._store.events.reader(def) as EventReader<S>;
+		const registry = this._store.requireEvents("ctx.readEvents");
+		const def = registry.defByKey(key);
+		const reader = registry.reader(def) as EventReader<S>;
 		if (DEV) this._store.trace?.eventRead(key.description ?? "", reader.length);
 		return reader;
 	}
