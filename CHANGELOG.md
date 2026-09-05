@@ -5,181 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added. The store can start anywhere in its memory
-
-`memory.storeBase` places the store header at a caller-chosen byte offset. Every offset the store
-writes, in the header, in the column descriptors, in the region table and in the rings, is now
-relative to that base, and `capacity` is the span from it. The store writes nothing below the base.
-A wasm-backed world defaults to one page and refuses zero, because a compiled module owns the low
-addresses of its own linear memory and a safe Zig or Rust build cannot read address 0. A caller
-places the base above the module's `__heap_base` and its run-time heap. `memoryPlan.storeBase`
-reports the value. `WASM_STORE_BASE_BYTES` is exported.
-
-`storeBaseAbove(exports, extraBytes)` reads a module's `__heap_base` export, adds the run-time heap
-the caller reserves, and rounds up to a whole page, so the base clears everything the module owns.
-
-A checked-in WebAssembly module, built with no toolchain, now reads a live store in the test suite
-and agrees with the TypeScript side on the layout walk, the byte digest, an f32 kernel and the
-deterministic state hash. The layout is a tested ABI, not a fixture that TypeScript compares with
-itself.
-
-### Added. One system across workers
-
-`workers()` from `@oasys/oecs/workers` is a plugin. `ECS.create({ plugins: [workers()] })` gives a
-world `ecs.workers`, which carries `attach(options)`, `pool` and `detach()`. The pool, the plan
-builder and the shim that reaches the node threads module ship in that subpath, so a world that
-never names it carries none of them. A JavaScript caller reading `world.workers.attach` on a bare
-world gets `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and the message names the import. `AttachWorkersOptions`,
-`WorkerPool`, `WorkersPlugin` and `DEFAULT_JOIN_TIMEOUT_MS` are exported from the same subpath, and
-`ParallelConfig`, `ParallelKernel` and `ParallelColumn` stay on the root, because they erase.
-
-`world.workers.attach({ count })` starts a persistent pool on the package's own worker entry,
-`@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load,
-either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL, and the
-columns the kernel receives in order. The schedule hands the pass to the pool inside the same
-access span a TypeScript body gets, parks the host on `Atomics.wait`, and joins before the phase
-flush. No spawn, no despawn and no grow can overlap the workers, because nothing else runs on the
-main thread while it is parked. Every worker computes its own row range per archetype from the
-descriptor row counts, its index and the worker count, so no plan crosses the wire and the result
-is deterministic. The join stamps every matched archetype for each declared write.
-
-A parallel system declares only `reads`, `writes` and a dense query. Sparse, relation, resource,
-spawn, despawn and transition declarations, `exclusive`, and `backendHandle` are refused at
-registration with `ECS_ERROR.PARALLEL_ACCESS`. Those refusals ship with the plugin, so a world that
-installed no workers plugin validates no `parallel` config, builds no plan and runs the system's
-`fn`. Below `parallel.minRows`, and without an attached pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
-backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
-
-The split pays only above a row count that depends on the machine, the kernel and the worker count.
-`parallel.minRows` carries a measured default that sits above every crossover the probes found, on
-both bodies, both kernel forms, both backings and every runtime tested. A world that never tunes it
-never pays a pooled frame the sequential frame would have won. It gives up the gain instead. A
-compute-bound kernel crosses far earlier and should set its own value, and a caller's value always
-wins. `bench/` holds the measurements and the tuning method.
-
-With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
-Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside
-the package as it ships and not inside a bundle. A worker whose script does not load now fails
-`workers.attach` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
-resolving with workers that never answer. The node threads module is reached through
-`process.getBuiltinModule`, so a browser build sees no node builtin specifier and prints no warning.
-
-`workers.attach` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
-can never report done, and the parked host would wait forever. On timeout the frame throws
-`PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
-`detach` terminates the hung worker.
-
-### Added. A kernel module contract that holds for any toolchain
-
-Every worker of the pool instantiates one module over one memory. `docs/api/parallel.md` now states
-what that costs a module and what a build has to do about it: the one import, the export and its
-arity, the store base, the stack, the data segment and the heap. It carries one build line for Zig,
-for Rust, for C through `zig cc` and for AssemblyScript.
-
-`registerSystem` refuses a `wasm` kernel module the pool cannot serve, with the new
-`ECS_ERROR.PARALLEL_KERNEL_MODULE`. An import other than `env.memory` is named in the message. A
-module that imports no memory is refused as well, because it addresses a linear memory of its own,
-writes rows nothing reads, and reports success. An export name the module does not carry, and an
-export that is not a function, are the other two. Development builds only, at registration.
-
-A worker now checks the export's parameter count against the column count plus three, and fails the
-kernel load with both numbers when they disagree.
-
-Five modules are checked into the test suite, built by the four toolchains above and by a
-hand-written emitter that uses no toolchain. Each carries the same bodies, and each runs on the real
-pool across several workers and must leave the bytes the sequential TypeScript body leaves. Five
-more carry one fault each, so every refusal above has a real module behind it. The suite proves the
-contract on a machine with no compiler installed.
-
-### Fixed. Every worker had the same shadow stack
-
-A worker gives each instance of a `wasm` kernel module its own shadow stack.
-
-An LLVM build, which is Zig, Rust, C and others, keeps a shadow stack in linear memory and addresses
-it through the mutable global `__stack_pointer`. A wasm global is per-instance, and every instance
-starts at the address the linker chose, so every worker wrote its frames to the same bytes. A kernel
-that spilled a local array, a struct passed by pointer, or the address of a local read back what
-another worker wrote. The corruption was silent, it needed no shared column, and no probe before
-this one caught it, because the earlier kernels held every value in a wasm local.
-
-The worker now carves one region for each worker out of `[__heap_base, storeBase)` and moves
-`__stack_pointer` to the top of its own. The regions come off the top of that span, downward from
-the store base, so worker `i` gets its top at `storeBase - i * stackBytes`.
-
-`workers.attach({ stackBytes })` says how big one region is, and everything below the lowest region
-stays the module's heap. Reserve the module's peak run-time heap plus one stack for each worker with
-`storeBaseAbove`, then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
-span, which leaves the module no heap. That is the default, and it suits a kernel that allocates
-nothing, which is what the heap rule asks for anyway.
-
-`stackBytes` must be an integer, a multiple of the frame alignment of 16, and at least one WASM page.
-A value outside that fails the attach with `WORKERS_COUNT_INVALID`. A span too small to hold one
-region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the
-span, the region, the worker count and the remedy. A module that exports no `__stack_pointer` is left
-alone, and the docs say such a kernel may not use a stack. One worker needs no region, because one
-instance owns the linked stack alone.
-
-The assignment runs once for each kernel load, so a pass pays nothing for it.
-
-### Changed (breaking for a module that reads the layout). `SIM_ABI_VERSION` is 1
-
-A reader that carries version 0 measured every offset from buffer byte 0. A module that treated a
-`byte_off` as a buffer address must add the store base it receives through `setLayout`. Restore and
-resume accept a version 0 snapshot, because every version 0 store sat at byte 0 and its offsets read
-correctly as offsets from the header, so a snapshot the 0.5 line wrote still restores. Any other
-version is refused.
-
-The archetype descriptor header grows from 36 bytes to 40 and gains `entity_ids_off` at offset 36.
-The field is reserved for the archetype's row-to-entity table, and the store writes zero, which says
-the archetype carries no such table. A walker steps to the next record by `40 + column_count * 16`,
-and a reader that ignores the field reads every other field as before. A snapshot carries the
-descriptor bytes, so restore rewrites a version 0 region at the new width before it reads anything
-else, and the world's `stateHash` is unchanged because it never folds a descriptor.
-
-### Changed. `ComputeBackend.run` takes `dt` and the tick
-
-`ComputeBackend.run(handle, deltaTime, tick)` replaces `run(handle)`. A backend that still declares
-`run(handle)` keeps compiling and keeps running, because the extra arguments are ignored. Only code
-that calls `run` itself sees the new shape. A module body needs `dt`, and
-neither `dt` nor the frame tick lives in the bytes. The schedule also publishes the descriptor row
-counts before every backend dispatch, so a module never reads a stale count after a host spawn
-before `startup()` or a spawn from a run condition.
-
-A caller-supplied `WebAssembly.Memory` may now carry `maxBytes`. The store needs a cap to promise
-its span, so the cap is `maxBytes` or the default ceiling.
-
-### Changed. One worker notifies the join, not every worker
-
-At the end of a parallel pass every worker still adds one to the done word, and now only the worker
-whose add carried the count to the worker count notifies it. An earlier notify could only wake a
-host that read a short count and parked again, so the host woke once for each worker and now wakes
-once for each pass. No wake is lost, because `Atomics.wait` compares and parks in one step. The
-join timeout, the failed-kernel path, the yield job and the stop job are unchanged.
-
-Measured against a hand-rolled barrier, the change never loses and it does not move a frame the
-engine runs. `bench/` holds the numbers, and it also holds what a per-worker done word and a tree
-join cost, both of which are worse.
-
-### Fixed
-
-A kernel that would not load rejected `workers.attach` and left its workers running, so a node
-process never exited on its own. The pool now ends the workers before the fault leaves.
-
-An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no
-category. The base class now checks for that V8 extension before it calls it. `error.name` read as
-one minified letter in the production build, because it came off the constructor. It is now the
-literal `ECSError`.
-
-The command, event and action rings copied slot payloads through a view built from buffer byte 0.
-At a nonzero base they wrote below the store. The rings now add the view offset.
-
-`wasmMemoryAllocator` predicted the JavaScriptCore write cost of a growable `SharedArrayBuffer`. A
-shared `WebAssembly.Memory` does not pay it. The comment now says so, and `bench/` holds the
-measurement.
-
-## [0.6.0] - 2026-09-05
+## [0.6.0] - 2026-09-06
 
 ### Changed (breaking). Four subsystems became plugins a world installs
 
@@ -337,6 +163,170 @@ not a Solid app polls the world. Take `ecs.getField`, a cursor, or a `changed()`
 `syncJoinToMap` also has no replacement. A view subscribes to one component, so take one view for
 each component and combine them where you read.
 
+### Added. The store can start anywhere in its memory
+
+`memory.storeBase` places the store header at a caller-chosen byte offset. Every offset the store
+writes, in the header, in the column descriptors, in the region table and in the rings, is now
+relative to that base, and `capacity` is the span from it. The store writes nothing below the base.
+A wasm-backed world defaults to one page and refuses zero, because a compiled module owns the low
+addresses of its own linear memory and a safe Zig or Rust build cannot read address 0. A caller
+places the base above the module's `__heap_base` and its run-time heap. `memoryPlan.storeBase`
+reports the value. `WASM_STORE_BASE_BYTES` is exported.
+
+`storeBaseAbove(exports, extraBytes)` reads a module's `__heap_base` export, adds the run-time heap
+the caller reserves, and rounds up to a whole page, so the base clears everything the module owns.
+
+A checked-in WebAssembly module, built with no toolchain, now reads a live store in the test suite
+and agrees with the TypeScript side on the layout walk, the byte digest, an f32 kernel and the
+deterministic state hash. The layout is a tested ABI, not a fixture that TypeScript compares with
+itself.
+
+### Added. One system across workers
+
+`workers()` from `@oasys/oecs/workers` is a plugin. `ECS.create({ plugins: [workers()] })` gives a
+world `ecs.workers`, which carries `attach(options)`, `pool` and `detach()`. The pool, the plan
+builder and the shim that reaches the node threads module ship in that subpath, so a world that
+never names it carries none of them. A JavaScript caller reading `world.workers.attach` on a bare
+world gets `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and the message names the import. `AttachWorkersOptions`,
+`WorkerPool`, `WorkersPlugin` and `DEFAULT_JOIN_TIMEOUT_MS` are exported from the same subpath, and
+`ParallelConfig`, `ParallelKernel` and `ParallelColumn` stay on the root, because they erase.
+
+`world.workers.attach({ count })` starts a persistent pool on the package's own worker entry,
+`@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load,
+either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL, and the
+columns the kernel receives in order. The schedule hands the pass to the pool inside the same
+access span a TypeScript body gets, parks the host on `Atomics.wait`, and joins before the phase
+flush. No spawn, no despawn and no grow can overlap the workers, because nothing else runs on the
+main thread while it is parked. Every worker computes its own row range per archetype from the
+descriptor row counts, its index and the worker count, so no plan crosses the wire and the result
+is deterministic. The join stamps every matched archetype for each declared write.
+
+A parallel system declares only `reads`, `writes` and a dense query. Sparse, relation, resource,
+spawn, despawn and transition declarations, `exclusive`, and `backendHandle` are refused at
+registration with `ECS_ERROR.PARALLEL_ACCESS`. Those refusals ship with the plugin, so a world that
+installed no workers plugin validates no `parallel` config, builds no plan and runs the system's
+`fn`. Below `parallel.minRows`, and without an attached pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
+backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
+
+The split pays only above a row count that depends on the machine, the kernel and the worker count.
+`parallel.minRows` carries a measured default that sits above every crossover the probes found, on
+both bodies, both kernel forms, both backings and every runtime tested. A world that never tunes it
+never pays a pooled frame the sequential frame would have won. It gives up the gain instead. A
+compute-bound kernel crosses far earlier and should set its own value, and a caller's value always
+wins. `bench/` holds the measurements and the tuning method.
+
+With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
+Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside
+the package as it ships and not inside a bundle. A worker whose script does not load now fails
+`workers.attach` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
+resolving with workers that never answer. The node threads module is reached through
+`process.getBuiltinModule`, so a browser build sees no node builtin specifier and prints no warning.
+
+`workers.attach` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
+can never report done, and the parked host would wait forever. On timeout the frame throws
+`PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
+`detach` terminates the hung worker.
+
+At the join every worker adds one to a done word, and the worker whose add completes the count
+wakes the host. So the host wakes once for a pass, whatever the worker count is. `bench/` holds
+the measurement beside a per-worker done word and a tree join, both of which cost more.
+
+### Added. A kernel module contract that holds for any toolchain
+
+Every worker of the pool instantiates one module over one memory. `docs/api/parallel.md` now states
+what that costs a module and what a build has to do about it: the one import, the export and its
+arity, the store base, the stack, the data segment and the heap. It carries one build line for Zig,
+for Rust, for C through `zig cc` and for AssemblyScript.
+
+`registerSystem` refuses a `wasm` kernel module the pool cannot serve, with the new
+`ECS_ERROR.PARALLEL_KERNEL_MODULE`. An import other than `env.memory` is named in the message. A
+module that imports no memory is refused as well, because it addresses a linear memory of its own,
+writes rows nothing reads, and reports success. An export name the module does not carry, and an
+export that is not a function, are the other two. Development builds only, at registration.
+
+A worker now checks the export's parameter count against the column count plus three, and fails the
+kernel load with both numbers when they disagree.
+
+Five modules are checked into the test suite, built by the four toolchains above and by a
+hand-written emitter that uses no toolchain. Each carries the same bodies, and each runs on the real
+pool across several workers and must leave the bytes the sequential TypeScript body leaves. Five
+more carry one fault each, so every refusal above has a real module behind it. The suite proves the
+contract on a machine with no compiler installed.
+
+### Added. Each worker instance owns its shadow stack, and `stackBytes` sizes it
+
+A worker gives each instance of a `wasm` kernel module its own shadow stack.
+
+An LLVM build, which is Zig, Rust, C and others, keeps a shadow stack in linear memory and addresses
+it through the mutable global `__stack_pointer`. A wasm global is per-instance, and every instance
+starts at the address the linker chose, so every worker wrote its frames to the same bytes. A kernel
+that spilled a local array, a struct passed by pointer, or the address of a local read back what
+another worker wrote. The corruption was silent, it needed no shared column, and no probe before
+this one caught it, because the earlier kernels held every value in a wasm local.
+
+The worker now carves one region for each worker out of `[__heap_base, storeBase)` and moves
+`__stack_pointer` to the top of its own. The regions come off the top of that span, downward from
+the store base, so worker `i` gets its top at `storeBase - i * stackBytes`.
+
+`workers.attach({ stackBytes })` says how big one region is, and everything below the lowest region
+stays the module's heap. Reserve the module's peak run-time heap plus one stack for each worker with
+`storeBaseAbove`, then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
+span, which leaves the module no heap. That is the default, and it suits a kernel that allocates
+nothing, which is what the heap rule asks for anyway.
+
+`stackBytes` must be an integer, a multiple of the frame alignment of 16, and at least one WASM page.
+A value outside that fails the attach with `WORKERS_COUNT_INVALID`. A span too small to hold one
+region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the
+span, the region, the worker count and the remedy. A module that exports no `__stack_pointer` is left
+alone, and the docs say such a kernel may not use a stack. One worker needs no region, because one
+instance owns the linked stack alone.
+
+The assignment runs once for each kernel load, so a pass pays nothing for it.
+
+### Changed (breaking for a module that reads the layout). `SIM_ABI_VERSION` is 1
+
+A reader that carries version 0 measured every offset from buffer byte 0. A module that treated a
+`byte_off` as a buffer address must add the store base it receives through `setLayout`. Restore and
+resume accept a version 0 snapshot, because every version 0 store sat at byte 0 and its offsets read
+correctly as offsets from the header, so a snapshot the 0.5 line wrote still restores. Any other
+version is refused.
+
+The archetype descriptor header grows from 36 bytes to 40 and gains `entity_ids_off` at offset 36.
+The field is reserved for the archetype's row-to-entity table, and the store writes zero, which says
+the archetype carries no such table. A walker steps to the next record by `40 + column_count * 16`,
+and a reader that ignores the field reads every other field as before. A snapshot carries the
+descriptor bytes, so restore rewrites a version 0 region at the new width before it reads anything
+else, and the world's `stateHash` is unchanged because it never folds a descriptor.
+
+### Changed. `ComputeBackend.run` takes `dt` and the tick
+
+`ComputeBackend.run(handle, deltaTime, tick)` replaces `run(handle)`. A backend that still declares
+`run(handle)` keeps compiling and keeps running, because the extra arguments are ignored. Only code
+that calls `run` itself sees the new shape. A module body needs `dt`, and
+neither `dt` nor the frame tick lives in the bytes. The schedule also publishes the descriptor row
+counts before every backend dispatch, so a module never reads a stale count after a host spawn
+before `startup()` or a spawn from a run condition.
+
+A caller-supplied `WebAssembly.Memory` may now carry `maxBytes`. The store needs a cap to promise
+its span, so the cap is `maxBytes` or the default ceiling.
+
+### Fixed
+
+A kernel that would not load rejected `workers.attach` and left its workers running, so a node
+process never exited on its own. The pool now ends the workers before the fault leaves.
+
+An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no
+category. The base class now checks for that V8 extension before it calls it. `error.name` read as
+one minified letter in the production build, because it came off the constructor. It is now the
+literal `ECSError`.
+
+The command, event and action rings copied slot payloads through a view built from buffer byte 0.
+At a nonzero base they wrote below the store. The rings now add the view offset.
+
+`wasmMemoryAllocator` predicted the JavaScriptCore write cost of a growable `SharedArrayBuffer`. A
+shared `WebAssembly.Memory` does not pay it. The comment now says so, and `bench/` holds the
+measurement.
+
 ### Changed. The store's observation seam takes a consumer name
 
 `Store.configureObservation` and `Store.configureSparseObservation` take the consumer name first, and
@@ -375,7 +365,6 @@ Declaring the plugin entries beside the core entries put them in one rollup grap
 then split `index.js` into ten small shared chunks. Those splits are real module boundaries at run
 time, and a measurement of `spawn` against the shipped artifact showed the cost. The plugins
 build in their own pass now, and the core chunk graph is unchanged.
-
 
 ### Changed (breaking). A name that misdescribed its body now says what it does
 
@@ -561,7 +550,6 @@ report the two reserved names alone, where they reported nothing before.
 A field name that two components give different types (an `x` that is `f32` in one and `i32` in
 another) reads and writes correctly on both. Its accessor dispatches on the column's class, which
 costs one `switch` more than an accessor for a name with one type.
-
 
 ### Changed (breaking). `memory` is two fields, and not one union of five arms
 

@@ -126,6 +126,7 @@ One system can run across a pool of workers. These are the names that carry it, 
 | `WorkerPool` | workers plugin, type | `count`, `settled()` and `detach()` |
 | `AttachWorkersOptions` | workers plugin, type | `count`, `workerUrl`, `joinTimeoutMs` and `stackBytes` |
 | `WorkersPlugin` | workers plugin, type | the surface the plugin adds to the world |
+| `ECSWorkers` | workers plugin, type | the facade behind `ecs.workers`, with `attach`, `pool` and `detach` |
 | `DEFAULT_JOIN_TIMEOUT_MS` | workers plugin | what `joinTimeoutMs` falls back to |
 | `SystemConfig.parallel` | `registerSystem` | `kernel`, `columns`, `minRows` and `query` |
 | `ParallelConfig` | root, type | the shape of that field |
