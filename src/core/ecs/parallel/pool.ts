@@ -7,6 +7,10 @@
  * far slower than that, and a parked worker never runs a message callback
  * anyway, so nothing but the job crosses during a frame.
  *
+ * The host wakes once for each pass. The worker that carries the done count to
+ * the worker count is the only one that notifies. The release side still wakes
+ * every worker, and that side grows with the worker count.
+ *
  * The host parks, and that is the structural guarantee. Nothing else runs on
  * the main thread while `Atomics.wait` blocks it, so no spawn, no despawn and
  * no grow can overlap a pass. A grow relocates columns with no change to the
@@ -471,6 +475,14 @@ export class WorkerPool {
 		const expected = this._workers.length;
 		// The deadline spans the whole pass, not one wait, because a spurious
 		// wake would otherwise restart the budget on every loop.
+		//
+		// One worker notifies the done word. It is the one whose add carried the
+		// count to `expected`. So this loop parks once for a pass that every
+		// worker finishes.
+		//
+		// The re-read above the park still earns its place. An early worker can
+		// finish before the host reaches the wait. The compare inside
+		// `Atomics.wait` is what keeps the host off a stale value.
 		const deadline = performance.now() + this._joinTimeoutMs;
 		for (;;) {
 			const done = Atomics.load(ctl, CTL_DONE);

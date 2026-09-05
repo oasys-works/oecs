@@ -78,6 +78,18 @@ before `startup()` or a spawn from a run condition.
 A caller-supplied `WebAssembly.Memory` may now carry `maxBytes`. The store needs a cap to promise
 its span, so the cap is `maxBytes` or the default ceiling.
 
+### Changed. One worker notifies the join, not every worker
+
+At the end of a parallel pass every worker still adds one to the done word, and now only the worker
+whose add carried the count to the worker count notifies it. An earlier notify could only wake a
+host that read a short count and parked again, so the host woke once for each worker and now wakes
+once for each pass. No wake is lost, because `Atomics.wait` compares and parks in one step. The
+join timeout, the failed-kernel path, the yield job and the stop job are unchanged.
+
+Measured against a hand-rolled barrier, the change never loses and it does not move a frame the
+engine runs. `bench/` holds the numbers, and it also holds what a per-worker done word and a tree
+join cost, both of which are worse.
+
 ### Fixed
 
 An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no

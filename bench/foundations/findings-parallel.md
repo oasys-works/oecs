@@ -27,10 +27,12 @@ outstanding.
 | `p24-par-conflict.mjs` | ran | ran | ran | `node bench/foundations/p24-par-conflict.mjs` |
 | `p24-par-structural.mjs` | ran | ran | ran | `node bench/foundations/p24-par-structural.mjs` |
 | `p24-par-engine.mjs` | ran | ran | ran | `node bench/foundations/p24-par-engine.mjs` |
+| `p24-par-join.mjs` | ran | ran | ran | `node bench/foundations/p24-par-join.mjs` |
 
 The first five probes changed no file under `src/`, so there is no patch to apply
 for them. `p24-par-engine.mjs` came later and measures the shipped engine, so it
-fails if the engine regresses.
+fails if the engine regresses. `p24-par-join.mjs` spawns node, deno and bun
+itself, so one command prints all three.
 
 Swap `node` for `deno run -A` or for `bun` to repeat on the other runtimes.
 
@@ -55,9 +57,9 @@ Known defects in the probes themselves:
 
 Helpers live under `bench/foundations/par/`: `view.mjs` (the descriptor walk and
 the column bind), `pool.mjs` (the persistent worker pool and the barrier),
-`kernels.mjs` (the two kernels and the partition), `world.mjs` (the world every
-probe builds, and the public seam to the buffer), and one worker file for each
-probe.
+`join.mjs` (the four join variants and the loop they share), `kernels.mjs` (the
+two kernels and the partition), `world.mjs` (the world every probe builds, and
+the public seam to the buffer), and one worker file for each probe.
 
 ---
 
@@ -149,6 +151,9 @@ Spread, node, eight workers, host parks: p25 28523, p75 30450, min 27885, max
   worker increments the same done word and notifies it, so eight workers contend
   on one cache line. A tree join, or one done word for each worker, is untested
   and is the obvious next thing to try.
+  **The cache line reading is wrong, and the join section below corrects it.** One
+  done word for each worker removes the contention and measures the same. The cost
+  is worker wake latency, and a tree join makes it worse.
 - **A spin-then-park host is a win on node and deno and a loss on bun.** On bun
   the spin-then-park barrier costs several times what the parking barrier costs,
   at every worker count. Do not build a host wait policy on the bun spin number.
@@ -627,6 +632,210 @@ No `wasm` kernel is timed. The `wasm` path has a test but no probe, so its cross
 engine is unmeasured. No browser. No grow or despawn inside a timed run. No world with more than
 three archetypes, and none with a tag-only archetype the bind must skip. No measurement of the join
 timeout, which only fires on a worker that has already failed.
+
+---
+
+## P24 join. Four ways for K workers to report a finished pass
+
+**The join is not where the barrier's cost sits, and the shipped join still wakes the host once
+for each worker.** Cutting the wake count to one for each pass is free and it never loses, and it
+does not move a frame the engine runs. Two of the four variants lose outright.
+
+**Question.** The crossing probe measured the whole barrier and said the join grows faster than the
+worker count. It never took the join apart. Which part of the release and the join grows, and does
+a cheaper join move a pass?
+
+**Method.** One hand-rolled pool for each variant, in a process of its own. The release side is
+identical in all four: the host bumps an epoch word and notifies it, and every worker sleeps on that
+word. Only the report differs.
+
+| variant | the report |
+| --- | --- |
+| a | one counter, every worker adds and notifies. What the engine shipped |
+| b | one counter, only the worker whose add returned K-1 notifies |
+| c | one word for each worker, one cache line apart. The host scans the K words and parks on the first that is behind |
+| d | a tree. Worker i waits for the words of 2i+1 and 2i+2, then writes its own. The host waits on worker 0's word |
+
+Variants c and d write the epoch into the word instead of counting, so the host clears nothing
+before a release and a stale word can never read as finished. Variants a and b need the counter
+cleared, which is one extra store the engine pays today.
+
+The words of c and d sit 128 bytes apart, because that is the Apple silicon line size.
+
+Three measurements for each variant and each K: an empty body, a light body, and a whole pass of
+`pos += vel * dt` over a shared world split by row range. The probe also counts how many times the
+host comes out of `Atomics.wait` for one pass. `bench/foundations/p24-par-join.mjs`, helpers in
+`bench/foundations/par/join.mjs` and `bench/foundations/par/join-worker.mjs`.
+
+### Release to the host's return, nanoseconds for one pass, empty body
+
+| K | join | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| 2 | a | 6187 | 6084 | 6680 |
+| 2 | b | 5189 | 5454 | 8883 |
+| 2 | c | 5299 | 5506 | 5841 |
+| 2 | d | 6529 | 6522 | 8141 |
+| 4 | a | 16438 | 15576 | 20720 |
+| 4 | b | 13510 | 15769 | 21495 |
+| 4 | c | 11494 | 10985 | 32249 |
+| 4 | d | 12283 | 10713 | 52164 |
+| 8 | a | 30866 | 31443 | 89488 |
+| 8 | b | 30658 | 29743 | 64508 |
+| 8 | c | 30386 | 32010 | 56799 |
+| 8 | d | 35121 | 33412 | 70603 |
+| 10 | a | 38591 | 38620 | 72129 |
+| 10 | b | 36900 | 37071 | 63741 |
+| 10 | c | 38058 | 37526 | 70719 |
+| 10 | d | 44852 | 47929 | 79145 |
+
+Spread, node, eight workers: variant a p25 30534, p75 31679, min 29927, max 35925. Variant b p25
+29862, p75 31405, min 29264, max 34672. The two middle halves overlap.
+
+### The same with a light body, nanoseconds for one pass
+
+| K | join | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| 2 | a | 5958 | 6360 | 6612 |
+| 2 | b | 5777 | 5832 | 11186 |
+| 2 | c | 5937 | 5781 | 10909 |
+| 2 | d | 6667 | 7028 | 7497 |
+| 4 | a | 17797 | 17426 | 26065 |
+| 4 | b | 15501 | 12857 | 20771 |
+| 4 | c | 16616 | 9645 | 20651 |
+| 4 | d | 13391 | 10721 | 41448 |
+| 8 | a | 32294 | 31754 | 63740 |
+| 8 | b | 30853 | 32248 | 60637 |
+| 8 | c | 31434 | 30174 | 64919 |
+| 8 | d | 36352 | 38192 | 70675 |
+| 10 | a | 40771 | 40326 | 73003 |
+| 10 | b | 38835 | 38406 | 69994 |
+| 10 | c | 38744 | 41556 | 68212 |
+| 10 | d | 46076 | 46004 | 75767 |
+
+### Host wakes for one pass, empty body. One is the floor
+
+| K | join | node | deno | bun |
+| --- | --- | --- | --- | --- |
+| 2 | a | 1.06 | 1.04 | 1.06 |
+| 2 | b | 1.00 | 1.00 | 1.00 |
+| 2 | c | 1.01 | 1.01 | 1.01 |
+| 2 | d | 1.00 | 1.00 | 1.00 |
+| 4 | a | 1.41 | 1.27 | 1.61 |
+| 4 | b | 1.00 | 1.00 | 1.00 |
+| 4 | c | 1.03 | 1.04 | 1.24 |
+| 4 | d | 1.00 | 1.00 | 1.00 |
+| 8 | a | 1.76 | 1.78 | 2.61 |
+| 8 | b | 1.00 | 1.00 | 1.00 |
+| 8 | c | 1.35 | 1.32 | 1.76 |
+| 8 | d | 1.00 | 1.00 | 1.00 |
+| 10 | a | 1.96 | 1.89 | 3.02 |
+| 10 | b | 1.00 | 1.00 | 1.00 |
+| 10 | c | 1.42 | 1.38 | 1.92 |
+| 10 | d | 1.00 | 1.00 | 1.00 |
+
+### The pass split in two, nanoseconds, empty body
+
+Each pass reads the clock twice, so the two parts add up to more than the amortised loop above
+reports. Read the split and not the total.
+
+| K | join | node release | node join | deno release | deno join | bun release | bun join |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | a | 750 | 4458 | 1000 | 4875 | 2583 | 6854 |
+| 2 | b | 667 | 4417 | 709 | 4500 | 1500 | 4959 |
+| 4 | a | 1334 | 11958 | 1334 | 11688 | 6187 | 12208 |
+| 4 | b | 667 | 7417 | 1167 | 10917 | 6292 | 14979 |
+| 8 | a | 3166 | 27709 | 2833 | 27938 | 20958 | 41938 |
+| 8 | b | 2520 | 27750 | 2291 | 27291 | 14375 | 20437 |
+| 10 | a | 3750 | 35979 | 3084 | 34188 | 22167 | 31875 |
+| 10 | b | 3167 | 33521 | 2833 | 35000 | 24458 | 34458 |
+
+### One whole pass of `pos += vel * dt`, milliseconds, node
+
+| K | join | 10,000 rows | 100,000 rows | 1,000,000 rows |
+| --- | --- | --- | --- | --- |
+| 2 | a | 0.0188 | 0.1255 | 1.1656 |
+| 2 | b | 0.0243 | 0.1359 | 1.1774 |
+| 2 | c | 0.0248 | 0.1400 | 1.1718 |
+| 2 | d | 0.0224 | 0.1308 | 1.1664 |
+| 4 | a | 0.0300 | 0.1011 | 0.6169 |
+| 4 | b | 0.0269 | 0.0992 | 0.6145 |
+| 4 | c | 0.0296 | 0.1042 | 0.6100 |
+| 4 | d | 0.0265 | 0.1040 | 0.6140 |
+| 8 | a | 0.0449 | 0.0905 | 0.5187 |
+| 8 | b | 0.0434 | 0.0913 | 0.5158 |
+| 8 | c | 0.0429 | 0.0923 | 0.5208 |
+| 8 | d | 0.0486 | 0.0939 | 0.5292 |
+| 10 | a | 0.0507 | 0.0916 | 0.4817 |
+| 10 | b | 0.0460 | 0.0943 | 0.4665 |
+| 10 | c | 0.0483 | 0.0955 | 0.4685 |
+| 10 | d | 0.0523 | 0.0974 | 0.4691 |
+
+### The shipped engine, before and after variant b, node
+
+One frame of the `p24-par-engine` world at 10,000 entities, kernel A, three interleaved rounds of
+each side. The only difference between the sides is the notify rule inside `barrierLoop`.
+
+| round | side | 1 worker | 2 | 4 | 8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | b | 0.0477 | 0.0414 | 0.0360 | 0.0458 |
+| 1 | a | 0.0496 | 0.0303 | 0.0360 | 0.0485 |
+| 2 | b | 0.0292 | 0.0264 | 0.0342 | 0.0532 |
+| 2 | a | 0.0294 | 0.0222 | 0.0365 | 0.0519 |
+| 3 | b | 0.0329 | 0.0280 | 0.0345 | 0.0535 |
+| 3 | a | 0.0310 | 0.0302 | 0.0368 | 0.0489 |
+
+### What it shows
+
+- **The join, and not the release, is where the time goes, and it is worker wake latency.** The
+  release costs a few microseconds at every worker count. The rest of the barrier is the host
+  waiting for the slowest worker to come out of its own `Atomics.wait`. No join variant can touch
+  that part, which is why the four variants sit so close together.
+- **Variant b takes the host wake count to exactly one, at every K and on every runtime.** The
+  shipped join wakes the host almost twice for each pass at eight workers on V8, and about three
+  times on JavaScriptCore. Every wake but the last reads a short count and parks again.
+- **Variant b never loses in the isolated barrier and it wins a little at high K.** Its empty-body
+  median sits below the shipped join at eight and ten workers on node and on deno in all three runs
+  of this file. The two middle halves overlap, so the win is inside the spread and must not be
+  quoted as a speedup.
+- **Variant b does not move a frame the engine runs.** Three interleaved rounds of the shipped
+  engine at ten thousand entities put the two sides inside each other's noise, and at eight workers
+  the shipped join reads faster in two of the three rounds. The wake count is the only measured
+  gain. This is the bad result, and it stays in the list.
+- **Variant c ties the shipped join and costs more to hold.** One word for each worker on its own
+  cache line removes no measurable time, and it needs K extra cache lines in the control buffer, a
+  scan on the host, and a per-worker index the worker must know. Its wake count sits between a and b
+  because the host parks on the lowest word that is behind, which is often not the last to finish.
+- **Variant d loses at every K above two.** The tree adds a park and a wake for each level, and the
+  host saves at most one wake against variant b, which already wakes once. On node at ten workers it
+  is the slowest of the four.
+- **Cache line contention on the done word is not the problem.** Variant c removes it entirely and
+  measures the same as the shipped join. The earlier reading of the crossing probe, that eight
+  workers contend on one line, is not supported by this probe.
+- **The barrier still grows with the worker count, and none of this changes that.** From two to ten
+  workers the empty-body barrier grows about six times on node, and the growth lands almost entirely
+  in the release side's wake of K parked threads plus the wait for the last of them.
+
+### Known defects in this probe
+
+- **The split table costs two clock reads for each pass**, so its two parts do not add up to the
+  amortised figure above it. It says where the time sits and not how much there is.
+- **The light body is a fixed accumulate and not a kernel a user writes.** It exists to stop every
+  worker finishing in the same instant, and it does not model a real load imbalance.
+- **The whole-pass lane is a hand-rolled split, not the engine.** It has no query, no run condition,
+  no row-count publish and no join stamp. The engine table above it is the one that answers the
+  engine question, and it is three rounds and one size.
+- **bun is bimodal here as it is in the crossing probe.** Variant b at two workers reads 8883 on the
+  run quoted above and reads below the shipped join on the other two runs. Read bun as a range.
+- **The pools are started and stopped inside one process for each variant**, so a variant is never
+  timed against another variant's threads. The three whole-pass sizes do share a process.
+
+### What it does not cover
+
+No browser, and a browser main thread cannot park at all, so its join has no measurement anywhere.
+No SpiderMonkey. No machine with more than ten logical cores, and the release side is what grows
+with the count, so a larger machine may read differently. No `wasm` kernel. No pass with a real load
+imbalance across workers, which is the case a per-worker word could still win. No measurement of
+what the join costs when the host has other work it could do instead of parking.
 
 ---
 

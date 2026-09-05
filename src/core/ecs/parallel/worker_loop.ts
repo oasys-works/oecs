@@ -217,7 +217,10 @@ export function createWorkerRuntime(
 	let seen = 0;
 
 	/** Sleep on the epoch word, run one job per release, report done. Returns
-	 * when the host asks the worker to yield or to stop. */
+	 * when the host asks the worker to yield or to stop.
+	 *
+	 * A yield and a stop return before the report, so neither touches the done
+	 * word. The host waits for a message on those two paths and not for a join. */
 	function barrierLoop(): boolean {
 		for (;;) {
 			while (Atomics.load(ctl, CTL_EPOCH) === seen) {
@@ -231,12 +234,19 @@ export function createWorkerRuntime(
 				runJob(slot);
 			} catch {
 				// The host reads one failing index and names the kernel itself, so
-				// no text crosses. The worker still reports done, otherwise the
-				// host parks for the rest of the process.
+				// no text crosses. The worker still falls through to the report
+				// below, otherwise the host parks for the rest of the process.
 				Atomics.compareExchange(ctl, CTL_FAILED, 0, index + 1);
 			}
-			Atomics.add(ctl, CTL_DONE, 1);
-			Atomics.notify(ctl, CTL_DONE);
+			// Only one add leaves a finished join for the host to see. It is the add
+			// that carries the count to the worker count, so it is the only one that
+			// notifies. Every earlier notify woke a host that read a short count and
+			// parked again, once for each worker.
+			//
+			// No wake is lost. `Atomics.wait` compares and parks in one step. A host
+			// that read a short count and then lost the race finds the word already
+			// moved, and returns without parking.
+			if (Atomics.add(ctl, CTL_DONE, 1) === count - 1) Atomics.notify(ctl, CTL_DONE);
 		}
 	}
 

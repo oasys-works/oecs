@@ -3,9 +3,10 @@
  *
  * The control buffer is one small `SharedArrayBuffer` beside the store. The
  * host writes the job, bumps the epoch and wakes every worker. Each worker adds
- * one to the done word when it finishes. Nothing else crosses during a frame,
- * because `postMessage` is far slower than an `Atomics` release and a parked
- * worker never runs a message callback anyway.
+ * one to the done word when it finishes, and the worker that completes the
+ * count notifies it. Nothing else crosses during a frame, because `postMessage`
+ * is far slower than an `Atomics` release and a parked worker never runs a
+ * message callback anyway.
  *
  * The store buffer never travels here. A worker holds it from its start
  * message and reads it directly.
@@ -19,7 +20,16 @@ import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi.ts";
 
 /** The frame number, and the word every worker sleeps on. */
 export const CTL_EPOCH = 0;
-/** How many workers finished this epoch. */
+/**
+ * How many workers finished this epoch. The host clears it before it bumps the
+ * epoch, and every worker adds one when its pass ends, whether the kernel ran
+ * or threw.
+ *
+ * One worker notifies this word, and it is the one whose add carried the count
+ * to the worker count. An earlier notify only wakes a host that reads a short
+ * count and parks again. So the host wakes once for each pass and not once for
+ * each worker.
+ */
 export const CTL_DONE = 1;
 /** Which kernel slot to run, or one of the control jobs below. */
 export const CTL_KERNEL = 2;

@@ -38,6 +38,9 @@ one the store bytes, the store base and a control buffer, and it loads the kerne
 system registered so far. The promise resolves when every worker parks on the barrier with its
 kernels in hand. `ecs.workers` reports the attached pool, or `null`.
 
+At the end of a pass every worker adds one to a done word, and the worker that carries the count to
+the worker count wakes the host. So the host wakes once for a pass, whatever the worker count is.
+
 | Option | What it says |
 | --- | --- |
 | `count` | Workers to start. Defaults to one below the reported parallelism, floor one |
