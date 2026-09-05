@@ -175,6 +175,29 @@ the new field `sizing` names the size axis.
 
 ---
 
+## A module that reads the layout adds the store base
+
+`SIM_ABI_VERSION` is 1. A module that read a version 0 store took every offset it found as a buffer
+address. In a version 1 store every offset in the header, in the column descriptors, in the region
+table and in the rings is measured from the store header, and the header sits at `memory.storeBase`.
+A wasm-backed world defaults that base to one page and refuses zero. Read a column at
+`storeBase + byte_off`, and take the base from `setLayout(storeBase)`. `storeBaseAbove(exports,
+extraBytes)` derives a base above a module's `__heap_base`.
+
+The archetype descriptor header is 40 bytes. It ends with `entity_ids_off`, which is reserved and
+holds zero. A walker steps to the next record by `40 + column_count * 16`.
+
+`ComputeBackend.run(handle, dt, tick)` replaces `run(handle)`. A backend that still declares
+`run(handle)` keeps compiling and keeps running. The schedule publishes the descriptor row counts
+before every backend dispatch. A host that drives a module outside the schedule calls
+`ecs.publishRowCounts()` first.
+
+A snapshot the 0.5 line wrote still restores. Every version 0 store sat at byte 0, so its offsets
+read correctly as offsets from the header, and restore rewrites its descriptor region at the new
+width before it reads anything else.
+
+---
+
 ## Install the plugins the world uses
 
 Relations, events, snapshots and observers moved off `new ECS()`. Install the ones the world uses:
@@ -317,3 +340,8 @@ These are additions. None of them is required to upgrade.
 A `ref` or a cursor write now reaches an entity-level `onSet` observer, which the change detection
 page always said it did. `ctx.ref` records the entity when you create the ref, and a mutable cursor
 records it on each `at`. `refRead` and `cursorRead` record nothing.
+- **`memory.storeBase` and `storeBaseAbove(exports, extraBytes)`.** The store header sits at a byte
+  offset you choose, above everything a module owns. See [WASM](api/wasm.md).
+- **One system across workers.** `ecs.attachWorkers({ count })` starts a pool, and the `parallel`
+  config on `registerSystem` names a kernel from any toolchain that the pool runs over disjoint row
+  ranges. See [parallel execution](api/parallel.md).
