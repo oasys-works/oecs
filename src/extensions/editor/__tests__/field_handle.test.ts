@@ -16,11 +16,12 @@ import type { ComponentDef, EntityID } from "../../../core/ecs";
 import { batchedUpdate, syncFieldsToMap } from "../../reactive";
 import { Editor } from "../editor";
 import { fieldHandle } from "../field_handle";
+import { observers } from "../../../capabilities/observers";
 
 type CellDef = ComponentDef<{ x: "i32"; heat: "i32" }>;
 
 function setup() {
-	const world = new ECS({ deterministic: true });
+	const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 	const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 	const commands = installHostCommandSeam(world);
 	// The real read channel: component observers → reactiveMap, per-entity.

@@ -53,17 +53,12 @@ export const WORLD_SNAPSHOT_MAGIC = 0x30535257;
  * layout changes. Independent of `SIM_ABI_VERSION` (which gates the dense bytes). */
 export const ECS_SNAPSHOT_VERSION = 1;
 
-/** Thrown by `Store.restore` (and the helpers here) when a combined snapshot
- * is malformed, carries the wrong magic and version, or targets a world whose
- * archetype and component registration doesn't match the snapshot. Mirrors
- * `StoreRestoreError` / `SparseRestoreError` so callers see one error class per
- * restore failure mode. */
-export class ECSRestoreError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "ECSRestoreError";
-	}
-}
+// `ECSRestoreError` lives in `utils/error.ts` and is re-exported here.
+// The store's restore-time host-row rebuild throws it, and a value import of
+// this module from the store would pin the framing and serialization code into
+// every world, including one that installs no snapshot capability.
+import { ECSRestoreError } from "./utils/error";
+export { ECSRestoreError };
 
 /** Per-archetype host-side row bookkeeping the SAB doesn't carry authoritatively. */
 export interface ArchetypeRowState {

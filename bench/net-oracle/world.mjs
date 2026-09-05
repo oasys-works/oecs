@@ -98,6 +98,10 @@ export class EcsNet {
 			installHostCommandSeam,
 			HostCommandRecorder,
 			bundle,
+			snapshots,
+			events,
+			relations,
+			observers,
 		} = lib;
 		// Kept for the names that only one check reads, such as `HIERARCHY_UNBOUNDED`.
 		this._lib = lib;
@@ -115,7 +119,10 @@ export class EcsNet {
 		// the opt-in profile and not one allocator alone.
 		const options = float ? {} : { deterministic: true };
 		if (sab) options.memory = { backing: "shared" };
-		this.ecs = new ECS(options);
+		// The oracle drives capture and restore, so it installs the snapshot
+		// capability. A world that never captures does not, and does not carry
+		// the serialization code.
+		this.ecs = ECS.create({ ...options, plugins: [snapshots(), events(), relations(), observers()] });
 		const ecs = this.ecs;
 
 		// ── the host write seam ─────────────────────────────────────────────

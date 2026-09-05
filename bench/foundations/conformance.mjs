@@ -1,3 +1,11 @@
+
+/** A world with the snapshot capability installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the capabilities it
+ * names, and carries no code for the rest. */
+function snapshotWorld(lib, options) {
+	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+}
+
 /**
  * Cross-runtime conformance probe.
  *
@@ -36,7 +44,7 @@ function check(name, actual, expected) {
 }
 
 // --- world -----------------------------------------------------------------
-const ecs = new ECS({ deterministic: true });
+const ecs = snapshotWorld(lib, { deterministic: true });
 
 const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
 const Vel = ecs.registerComponent({ vx: "i32", vy: "i32" });

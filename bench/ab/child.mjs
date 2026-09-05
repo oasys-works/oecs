@@ -28,7 +28,22 @@ const samples = Number(samplesArg);
 
 // The bundle path arrives as a plain filesystem path, so it has to be converted
 // rather than handed to `import()` as-is.
-const lib = await import(url.pathToFileURL(path.resolve(bundle)).href);
+const entry = path.resolve(bundle);
+const base = await import(url.pathToFileURL(entry).href);
+
+// Capabilities ship on their own subpaths, so the entry alone does not carry
+// them. Merge whatever this build has beside it. A build from before the split
+// has none, and carries the subsystems on the world instead, which is exactly
+// the difference `makeSuite` shims over.
+const lib = { ...base };
+for (const cap of ["snapshots", "events", "relations", "observers"]) {
+	const file = path.join(path.dirname(entry), "capabilities", `${cap}.js`);
+	try {
+		Object.assign(lib, await import(url.pathToFileURL(file).href));
+	} catch {
+		// Absent on a pre-split build. `makeSuite` falls back to `new ECS()`.
+	}
+}
 
 const cases = makeSuite(lib, filter ?? "");
 const out = {};

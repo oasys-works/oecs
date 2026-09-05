@@ -36,7 +36,7 @@
  ***/
 
 import { topologicalSort } from "../../type_primitives";
-import type { SystemContext } from "./query";
+import type { SystemContext } from "./system_context";
 import type {
 	SystemFn, SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";

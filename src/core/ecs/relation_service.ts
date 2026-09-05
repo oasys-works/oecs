@@ -15,6 +15,7 @@
 import type { BitSet, TypedArrayTag } from "../../type_primitives";
 import { unsafeCast } from "../../type_primitives";
 import type { Archetype } from "./archetype";
+import type { QueryTerms } from "./query";
 import { type EntityID, createEntityId, entityNotAliveError, getEntityIndex } from "./entity";
 // Value import (the hierarchy driver reuses the canonical eid radix);
 // observer.ts imports only *types* from the ECS core, so this is a one-way
@@ -56,11 +57,9 @@ export interface RelationServiceHost {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
-		cb: (entityId: EntityID) => void,
-		includesDisabled: boolean
+		cb: (entityId: EntityID) => void
 	): void;
 }
 
@@ -310,11 +309,11 @@ export class RelationService {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
-		includesDisabled: boolean,
+		terms: QueryTerms,
 		cb: (entityId: EntityID) => void
 	): void {
+		// Unpacked once, the loops below read locals (see `Store.forEachSparseMatch`).
+		const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
 		const rels = this._relations;
 		if (rels.length === 0) return;
 		const seen = new Set<number>();
@@ -589,12 +588,10 @@ export class RelationService {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		relation: RelationDef,
 		maxDepth: number,
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void {
 		const rs = this._relationOf(relation);
@@ -608,15 +605,8 @@ export class RelationService {
 		//    dense mask + sparse require and exclude (which carries any composed `(R, *)`
 		//    backing ids) + the enabled-row filter all apply identically.
 		const matched: number[] = [];
-		this._host.forEachSparseMatch(
-			include,
-			exclude,
-			anyOf,
-			sparseIncludes,
-			sparseExcludes,
-			denseArchetypes,
-			(e) => matched.push(e as number),
-			includesDisabled
+		this._host.forEachSparseMatch(include, exclude, anyOf, terms, denseArchetypes, (e) =>
+			matched.push(e as number)
 		);
 		if (matched.length === 0) return;
 		// 2. Sort by entity index, the canonical within-band (secondary) order.

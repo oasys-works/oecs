@@ -12,7 +12,8 @@
  * field coverage.
  ***/
 
-import type { ECS } from "../ecs";
+import { ECS } from "../ecs";
+import { snapshots, type SnapshotsCapability } from "../../../capabilities/snapshots";
 import type { ArchetypeView } from "../archetype";
 import type { ComponentDef, ComponentSchema } from "../component";
 import type { EntityID } from "../entity";
@@ -20,14 +21,26 @@ import type { EventKey, EventReader } from "../event";
 import type { HostCommandQueue } from "../host_commands";
 import { spawnEntry } from "../host_commands";
 import { bundle } from "../component";
-import type { SystemContext } from "../query";
+import type { SystemContext } from "../system_context";
 import type { SystemConfig } from "../system";
 import type { SparseComponentDef } from "../sparse_store";
 import type { RelationDef, RelationCardinality } from "../relation";
 import type { ResourceKey } from "../resource";
 import type { Template } from "../store";
+import { events, type EventsCapability } from "../../../capabilities/events";
+import { relations, type RelationsCapability } from "../../../capabilities/relations";
+import { observers, type ObserversCapability } from "../../../capabilities/observers";
 
-declare const world: ECS;
+// The ambient world carries every capability these assertions reach for. The
+// gate itself is asserted in `capabilityGateAssertions`, against worlds built
+// with and without one.
+declare const world: ECS<
+	EventsCapability & SnapshotsCapability & RelationsCapability & ObserversCapability
+> &
+	EventsCapability &
+	SnapshotsCapability &
+	RelationsCapability &
+	ObserversCapability;
 declare const e: EntityID;
 declare const Pos: ComponentDef<{ x: "f64"; y: "f64" }>;
 declare const Vel: ComponentDef<{ vx: "f64"; vy: "f64" }>;
@@ -423,6 +436,31 @@ function facadeCardinalityAssertions(): void {
 void addComponentsAssertions;
 void tagValueAssertions;
 void componentDefVariance;
+function capabilityGateAssertions(): void {
+	// The capability surface is a compile-time gate, not a convention. A world
+	// built without a plugin has no member to reach, and a world built with one
+	// carries the widened facade. This is the whole reason `ECS.create` returns
+	// an intersection rather than a plain `ECS`.
+	const bare = ECS.create({ plugins: [events(), relations(), observers()] });
+	const withSnap = ECS.create({ plugins: [snapshots(), events(), relations(), observers()] });
+
+	// Determinism is core, so both worlds answer it.
+	void bare.snapshots.stateHash();
+	void withSnap.snapshots.stateHash();
+
+	// Capture and restore arrive with the capability.
+	void withSnap.snapshots.capture();
+	// @ts-expect-error, capture() needs the snapshots capability installed
+	void bare.snapshots.capture();
+	// @ts-expect-error, restore() needs the snapshots capability installed
+	void bare.snapshots.restore(new Uint8Array());
+
+	// An installed world is still assignable where a bare world is expected:
+	// the capability widens the surface and narrows nothing.
+	const asBare: ECS = withSnap;
+	void asBare;
+}
+
 void registerEventAssertions;
 void hostSeamAssertions;
 void noInferAssertions;
@@ -435,3 +473,4 @@ void eventReaderReadonlyAssertions;
 void relationCardinalityAssertions;
 void queryTermAssertions;
 void facadeCardinalityAssertions;
+void capabilityGateAssertions;

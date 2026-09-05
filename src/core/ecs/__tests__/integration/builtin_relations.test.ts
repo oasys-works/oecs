@@ -13,12 +13,13 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { registerChildOf, registerIsA } from "../../builtin_relations";
 import { getEntityIndex, type EntityID } from "../../entity";
+import { relations } from "../../../../capabilities/relations";
 
 const idx = (es: EntityID[]): number[] => es.map(getEntityIndex).sort((a, b) => a - b);
 
 describe("register_is_a", () => {
 	it("instance-of query: sources_of lists all instances of an exemplar", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world);
 		const exemplar = world.spawn();
 		const i1 = world.spawn();
@@ -32,7 +33,7 @@ describe("register_is_a", () => {
 	});
 
 	it("is exclusive, re-adding replaces the exemplar", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world);
 		const e1 = world.spawn();
 		const e2 = world.spawn();
@@ -45,7 +46,7 @@ describe("register_is_a", () => {
 	});
 
 	it("walks the IsA chain: instance → exemplar → grand-exemplar", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world);
 		const grand = world.spawn();
 		const exemplar = world.spawn();
@@ -64,7 +65,7 @@ describe("register_is_a", () => {
 	});
 
 	it("default policy ('clear'): destroying an exemplar drops the link but keeps instances", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world); // default onDeleteTarget: "clear"
 		const exemplar = world.spawn();
 		const inst = world.spawn();
@@ -78,7 +79,7 @@ describe("register_is_a", () => {
 	});
 
 	it("'delete' override: destroying an exemplar cascade-destroys its instances", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world, { onDeleteTarget: "delete" });
 		const exemplar = world.spawn();
 		const i1 = world.spawn();
@@ -94,7 +95,7 @@ describe("register_is_a", () => {
 	});
 
 	it("records the link only. no live component inheritance", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world);
 		const Pos = world.registerComponent(["x"] as const);
 		const exemplar = world.spawn();
@@ -112,7 +113,7 @@ describe("register_is_a", () => {
 
 describe("register_child_of", () => {
 	it("parent → children query and up-chain traversal", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = registerChildOf(world);
 		const parent = world.spawn();
 		const c1 = world.spawn();
@@ -128,7 +129,7 @@ describe("register_child_of", () => {
 	});
 
 	it("default policy ('delete'): destroying a parent cascade-destroys the subtree", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = registerChildOf(world); // default onDeleteTarget: "delete"
 		const gp = world.spawn();
 		const p = world.spawn();
@@ -144,7 +145,7 @@ describe("register_child_of", () => {
 	});
 
 	it("'clear' override: children survive a parent's destruction as roots", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = registerChildOf(world, { onDeleteTarget: "clear" });
 		const parent = world.spawn();
 		const child = world.spawn();

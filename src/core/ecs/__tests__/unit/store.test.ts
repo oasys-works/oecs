@@ -13,6 +13,8 @@ import {
 import type { ComponentDef, ComponentID } from "../../component";
 import { BitSet } from "../../../../type_primitives";
 import { ECSError, ECS_ERROR } from "../../utils/error";
+import { events } from "../../../../capabilities/events";
+import { storeOnlyHost } from "../../../../core/ecs/capability";
 
 function makeMask(...ids: (number | ComponentID)[]): BitSet {
 	const mask = new BitSet();
@@ -704,15 +706,18 @@ describe("Store", () => {
 	// walk the channel twice, breaking the at-most-once-per-tick invariant.
 
 	it("a thrown emit does not double-register the channel in the dirty list", () => {
+		// A raw store drives the registry directly, so it installs the capability
+		// the same way `ECS.create({ plugins: [events()] })` does one layer up.
 		const store = new Store();
-		const Pair = store.registerEvent<{ a: number; b: number }>(["a", "b"]);
+		events().install(storeOnlyHost(store));
+		const Pair = store.events.register<{ a: number; b: number }>(["a", "b"]);
 
 		// Fresh channel: nothing buffered, dirty list empty.
-		expect(store.devBufferedEventCount).toBe(0);
+		expect(store.events.devBufferedCount()).toBe(0);
 
 		// `b` is missing, emit throws under __DEV__ without marking the channel.
 		try {
-			store.emitEvent(Pair, { a: 1 });
+			store.events.emit(Pair, { a: 1 });
 			expect.fail("should have thrown");
 		} catch (e) {
 			expect(e).toBeInstanceOf(ECSError);
@@ -720,24 +725,24 @@ describe("Store", () => {
 		}
 
 		// Nothing was buffered and the channel was not marked dirty.
-		expect(store.devBufferedEventCount).toBe(0);
+		expect(store.events.devBufferedCount()).toBe(0);
 
 		// A subsequent valid emit buffers exactly one event and marks the channel
 		// dirty exactly once. With the bug the id is now in the dirty list twice,
 		// so the buffered count is double-counted (2, not 1).
-		store.emitEvent(Pair, { a: 2, b: 3 });
-		expect(store.devBufferedEventCount).toBe(1);
+		store.events.emit(Pair, { a: 2, b: 3 });
+		expect(store.events.devBufferedCount()).toBe(1);
 
 		// `clearEvents` clears the channel. A duplicate id is harmless to the
 		// channel (clear is idempotent) but the count must drop to 0 in one pass.
-		store.clearEvents();
-		expect(store.devBufferedEventCount).toBe(0);
+		store.events.clear();
+		expect(store.events.devBufferedCount()).toBe(0);
 
 		// And after clearing, the channel is reusable: the next emit re-registers
 		// it once and the reader reads the fresh row back at index 0.
-		store.emitEvent(Pair, { a: 4, b: 5 });
-		expect(store.devBufferedEventCount).toBe(1);
-		const reader = store.getEventReader(Pair);
+		store.events.emit(Pair, { a: 4, b: 5 });
+		expect(store.events.devBufferedCount()).toBe(1);
+		const reader = store.events.reader(Pair);
 		expect(reader.length).toBe(1);
 		expect(reader.a[0]).toBe(4);
 		expect(reader.b[0]).toBe(5);

@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-09-04
 
+### Changed (breaking). Four subsystems became capabilities a world installs
+
+`new ECS()` no longer carries relations, events, snapshot and restore, or observers. Each is a
+capability on its own subpath, installed at construction:
+
+```ts
+import { ECS } from "@oasys/oecs";
+import { relations } from "@oasys/oecs/relations";
+import { observers } from "@oasys/oecs/observers";
+
+const world = ECS.create({ plugins: [relations(), observers()] });
+world.relations.register();
+```
+
+`ECS.create` returns the world intersected with the facades its plugins contribute. A world that
+did not install a capability has no member to reach for, so `ecs.relations` on a bare world is a
+compile error and not a fault at run time. `new ECS()` still builds a world, and that world holds
+none of the four.
+
+The reason is that a class method cannot be removed by a bundler. While `ECS` declared `relations`
+and `snapshots`, every program carried the relation and snapshot code whether or not it named them.
+A capability the construction site imports is a reference a bundler can follow, and one it can drop.
+A program that installs none of the four now ships far less code. `bench/` holds the measurement.
+
+Each capability keeps its call sites unchanged. Only construction moves.
+
+- `@oasys/oecs/relations`, `relations()`, gives `ecs.relations` and the relation terms on a query.
+- `@oasys/oecs/events`, `events()`, gives `ecs.events`, `ctx.emit` and `ctx.readEvents`.
+- `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
+- `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
+
+`ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` stay on every world. They describe the
+world, not the capability, and the determinism opt-in is still separate: `capture` and `restore`
+throw `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`, installed or not.
+
+A subsystem used without its capability throws `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message
+names the capability and the import that supplies it, because the fix is at the construction site.
+
+### Changed (breaking). The store no longer forwards to its collaborators
+
+Thirty methods on the internal `Store` forwarded one operation each to a collaborator, and carried
+no logic. A caller now names the owner: `store.relations.addRelation`, `store.events.emit`,
+`store.resources.get`, `store.snapshots.capture`. The forwarding hid which object held the state and
+widened the class for nothing.
+
+### Changed. The query terms travel as one record
+
+A query carries two kinds of term. A dense term sets a bit in the component mask and picks the
+archetypes. Every other term (sparse membership, optional fetch, include-disabled, the `(R, *)`
+wildcard, hierarchy ordering) now rides in one `QueryTerms` record. `Query`'s constructor takes one
+parameter where it took seven, the three driver seams take one where they repeated four, and a query
+that declares no such term shares one frozen record. Adding a term is one edit instead of five.
+
+### Changed. `Commands` and `SystemContext` moved to their own module
+
+`query.ts` held the read side and the write side of the system-facing interface. The write side is
+`system_context.ts` now. Every export is unchanged, and the barrel re-exports both.
+
+### Fixed. The build no longer splits the core entry into small chunks
+
+Declaring the capability entries beside the core entries put them in one rollup graph, and rollup
+then split `index.js` into ten small shared chunks. Those splits are real module boundaries at run
+time, and a measurement of `spawn` against the shipped artifact showed the cost. The capabilities
+build in their own pass now, and the core chunk graph is unchanged.
+
+
 ### Changed (breaking). A name that misdescribed its body now says what it does
 
 A name that promises one act and performs another sends a reader to the wrong conclusion without

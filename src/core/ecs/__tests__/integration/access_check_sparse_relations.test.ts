@@ -13,8 +13,9 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
+import { relations } from "../../../../capabilities/relations";
 
 /** Empty dense access declaration. Spread and override the sparse and relation
  * terms per test. */
@@ -43,7 +44,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 
 describe("Sparse access validation", () => {
 	it("throws when a system adds an undeclared sparse component", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 
@@ -61,7 +62,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("permits a sparse add, remove and set when declared in sparse_writes", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 
@@ -82,7 +83,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("throws when a system removes an undeclared sparse component", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 }); // host-side: not checked
@@ -101,7 +102,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("throws when a system writes an undeclared sparse field", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 });
@@ -120,7 +121,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("throws when a system reads an undeclared sparse field", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 1 });
@@ -139,7 +140,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("a declared sparse_write implicitly authorises reads of the same component", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 7 });
@@ -162,7 +163,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("a sparse_reads-only declaration permits reads but still blocks writes", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 		world.addSparse(e, Cooldown, { ready_at: 7 });
@@ -183,7 +184,7 @@ describe("Sparse access validation", () => {
 	});
 
 	it("has_sparse is a membership probe and is not access-checked", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
 
@@ -205,7 +206,7 @@ describe("Sparse access validation", () => {
 
 describe("Relation access validation", () => {
 	it("throws when a system adds an undeclared relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -224,7 +225,7 @@ describe("Relation access validation", () => {
 	});
 
 	it("permits relation add and remove when declared in relation_writes", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -245,7 +246,7 @@ describe("Relation access validation", () => {
 	});
 
 	it("throws when a system reads an undeclared relation via target_of", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -265,7 +266,7 @@ describe("Relation access validation", () => {
 	});
 
 	it("a declared relation_write implicitly authorises reads of the same relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -288,7 +289,7 @@ describe("Relation access validation", () => {
 	});
 
 	it("has_relation is a membership probe and is not access-checked", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 
@@ -310,7 +311,7 @@ describe("Relation access validation", () => {
 
 describe("Access id spaces are disjoint", () => {
 	it("a dense write declaration does not authorise a same-numbered sparse component", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		// First dense component and first sparse component both erase to numeric
 		// id 0 in their respective spaces. A single merged set would wrongly let
 		// the declared dense write authorise the sparse add.
@@ -334,7 +335,7 @@ describe("Access id spaces are disjoint", () => {
 	});
 
 	it("a sparse write declaration does not authorise a same-numbered relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -357,7 +358,7 @@ describe("Access id spaces are disjoint", () => {
 
 describe("Sparse and relation access outside any system", () => {
 	it("host-side sparse + relation mutations are never access-checked", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const Targets = world.relations.register();
 		const a = world.spawn();

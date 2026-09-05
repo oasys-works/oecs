@@ -68,78 +68,78 @@ export class ECSRelations {
 	}): RelationDef<"multi">;
 	public register(opts?: RelationOptions): RelationDef;
 	public register(opts?: RelationOptions): RelationDef {
-		return this._store.registerRelation(opts);
+		return this._store.relations.registerRelation(opts);
 	}
 
 	/** Count of registered relations. */
 	public get count(): number {
-		return this._store.relationCount;
+		return this._store.relations.count;
 	}
 
 	/** Add a `(R, tgt)` pair to `src`. Exclusive replaces the existing target
 	 * multi adds to the set. No archetype transition. */
 	public add(src: EntityID, def: RelationDef, tgt: EntityID): this {
-		this._store.addRelation(src, def, tgt);
+		this._store.relations.addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`. For multi, omitting `tgt` removes
 	 * all of `src`'s targets. No archetype transition. */
 	public remove(src: EntityID, def: RelationDef, tgt?: EntityID): this {
-		this._store.removeRelation(src, def, tgt);
+		this._store.relations.removeRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Whether `src` holds any pair under `R`. */
 	public has(src: EntityID, def: RelationDef): boolean {
-		return this._store.hasRelation(src, def);
+		return this._store.relations.hasRelation(src, def);
 	}
 
 	/** The single target of `src` under an exclusive relation, or `undefined`. */
 	public targetOf(src: EntityID, def: RelationDef<"exclusive">): EntityID | undefined {
-		return this._store.targetOf(src, def);
+		return this._store.relations.targetOf(src, def);
 	}
 
 	/** All targets of `src` under `R`, ascending by id. */
 	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
-		return this._store.targetsOf(src, def);
+		return this._store.relations.targetsOf(src, def);
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
 	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
 	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
-		return this._store.sourcesOf(tgt, def);
+		return this._store.relations.sourcesOf(tgt, def);
 	}
 
 	/** All `(source, target)` pairs of relation `R`, the `(R, *)` wildcard.
 	 * Sources in canonical entity-index order. Cold path. */
 	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
-		return this._store.pairsOf(def);
+		return this._store.relations.pairsOf(def);
 	}
 
 	/** Every `(relation, source)` pointing at `tgt`, across all relation kinds,
 	 * the `(*, T)` wildcard. Ordered by relation id then source id. */
 	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
-		return this._store.sourcesOfAny(tgt);
+		return this._store.relations.sourcesOfAny(tgt);
 	}
 
 	/** Walk relation `R` up from `src` to its chain root, returning
 	 * `[src, parent, …, root]` (nearest-ancestor-first). Exclusive only. */
 	public ancestorsOf(src: EntityID, def: RelationDef<"exclusive">): EntityID[] {
-		return this._store.ancestorsOf(src, def);
+		return this._store.relations.ancestorsOf(src, def);
 	}
 
 	/** The root of `src`'s `R`-chain (`src` itself when it has no target).
 	 * Exclusive only. */
 	public rootOf(src: EntityID, def: RelationDef<"exclusive">): EntityID {
-		return this._store.rootOf(src, def);
+		return this._store.relations.rootOf(src, def);
 	}
 
 	/** Walk relation `R` down from `root` over the reverse index, returning the
 	 * subtree (including `root`) breadth-first, parents before children (the
 	 * `cascade` order). Exclusive only. */
 	public cascadeOf(root: EntityID, def: RelationDef<"exclusive">): EntityID[] {
-		return this._store.cascadeOf(root, def);
+		return this._store.relations.cascadeOf(root, def);
 	}
 
 	/** Reclaim relation reverse-index memory: drop every reverse entry whose
@@ -147,7 +147,7 @@ export class ECSRelations {
 	 * cold-path, no observable state change, call at a scene or snapshot
 	 * boundaries. */
 	public compact(): number {
-		return this._store.compactRelations();
+		return this._store.relations.compactRelations();
 	}
 }
 
@@ -174,12 +174,12 @@ export class ECSEvents {
 		key: EventKey<S>,
 		fields: F & EventFieldsCover<S, F>
 	): void {
-		this._store.registerEventByKey<S>(key, fields);
+		this._store.events.registerByKey<S>(key, fields);
 	}
 
 	/** Register a signal (empty-payload event channel). */
 	public registerSignal(key: SignalKey): void {
-		this._store.registerEventByKey<EmptyEventSchema>(key, []);
+		this._store.events.registerByKey<EmptyEventSchema>(key, []);
 	}
 
 	public emit(key: SignalKey): void;
@@ -191,11 +191,11 @@ export class ECSEvents {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEventEmit(key.description ?? "");
 		}
-		const def = this._store.getEventDefByKey(key);
+		const def = this._store.events.defByKey(key);
 		if (values === undefined) {
-			this._store.emitSignal(def as EventDef<EmptyEventSchema>);
+			this._store.events.emitSignal(def as EventDef<EmptyEventSchema>);
 		} else {
-			this._store.emitEvent(def, values);
+			this._store.events.emit(def, values);
 		}
 	}
 
@@ -203,8 +203,8 @@ export class ECSEvents {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordEventRead(key.description ?? "");
 		}
-		const def = this._store.getEventDefByKey(key);
-		return this._store.getEventReader(def) as EventReader<S>;
+		const def = this._store.events.defByKey(key);
+		return this._store.events.reader(def) as EventReader<S>;
 	}
 }
 
@@ -231,7 +231,7 @@ export class ECSResources {
 		if (DEV && dispatchTrace.isActive()) {
 			dispatchTrace.recordResourceRegister(key.description ?? "");
 		}
-		this._store.registerResource(key, value);
+		this._store.resources.register(key, value);
 	}
 
 	public get<T>(key: ResourceKey<T>): T {
@@ -241,7 +241,7 @@ export class ECSResources {
 				dispatchTrace.recordResourceRead(key.description ?? "");
 			}
 		}
-		return unsafeCast<T>(this._store.getResource(key));
+		return unsafeCast<T>(this._store.resources.get(key));
 	}
 
 	public set<T>(key: ResourceKey<T>, value: NoInfer<T>): void {
@@ -251,7 +251,7 @@ export class ECSResources {
 				dispatchTrace.recordResourceWrite(key.description ?? "");
 			}
 		}
-		this._store.setResource(key, value);
+		this._store.resources.set(key, value);
 	}
 
 	/** Drop a resource from the world. Access-checked as a *write*
@@ -264,11 +264,11 @@ export class ECSResources {
 				dispatchTrace.recordResourceRemove(key.description ?? "");
 			}
 		}
-		this._store.removeResource(key);
+		this._store.resources.remove(key);
 	}
 
 	public has<T>(key: ResourceKey<T>): boolean {
-		return this._store.hasResource(key);
+		return this._store.resources.has(key);
 	}
 }
 
@@ -278,7 +278,9 @@ export class ECSResources {
  * `{ deterministic: true }`. All cold-path, take captures at tick
  * boundaries (between `update()`s). */
 export class ECSSnapshots {
-	private readonly _store: Store;
+	// Protected, not private: the snapshot capability subclasses this to add
+	// `capture` / `restore`, and reaches the store the same way.
+	protected readonly _store: Store;
 	/** @internal constructed by `ECS`. */
 	constructor(store: Store) {
 		this._store = store;
@@ -296,33 +298,4 @@ export class ECSSnapshots {
 		return this._store.stateHash();
 	}
 
-	/** Capture the full live world (dense + sparse and relations + host-side
-	 * bookkeeping) to one self-contained byte buffer that `restore` can mount
-	 * back onto a live, ticking world. v1 does not capture resources,
-	 * events, or change-detection baselines. */
-	public capture(): Uint8Array {
-		return this._store.snapshot();
-	}
-
-	/** Mount a `capture()` buffer onto this live world and keep ticking.
-	 * Fails closed on a malformed frame or registration mismatch before
-	 * mutating any live state. Requires a matching archetype set + column
-	 * layout (prewarm so the set is stable). */
-	public restore(bytes: Uint8Array): void {
-		this._store.restore(bytes);
-	}
-
-	/** Serialize the sparse stores + relations to a self-contained buffer,
-	 * the sparse half of a world snapshot, canonical entity-index order.
-	 * Pairs with `restoreSparse`. */
-	public captureSparse(): Uint8Array {
-		return this._store.snapshotSparse();
-	}
-
-	/** Repopulate the sparse stores + relation indices from `captureSparse`
-	 * bytes. Sparse components must already be registered in the same order
-	 * throws `SparseRestoreError` on a shape or identity mismatch. */
-	public restoreSparse(bytes: Uint8Array): void {
-		this._store.restoreSparse(bytes);
-	}
 }

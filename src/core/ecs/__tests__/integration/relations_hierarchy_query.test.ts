@@ -32,8 +32,9 @@ import { registerChildOf } from "../../builtin_relations";
 import { HIERARCHY_UNBOUNDED } from "../../query";
 import { SCHEDULE } from "../../schedule";
 import type { EntityID } from "../../entity";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
+import { relations } from "../../../../capabilities/relations";
 
 /** Collect a hierarchy query's yielded entities in order (order is the point,
  * do not sort). */
@@ -45,7 +46,7 @@ function order(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[] 
 
 describe(".hierarchy(R), canonical depth ordering", () => {
 	it("yields parents before children: depth ascending, then eid ascending in band", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world); // exclusive
 
@@ -69,7 +70,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 	});
 
 	it("a lone matched entity with no relation is a root (depth 0)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const solo = world.spawn();
@@ -78,7 +79,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 	});
 
 	it("orders a forest globally by eid within a band, not parent-grouped (vs bfs)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 
@@ -100,7 +101,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 	});
 
 	it("re-targeting a parent re-buckets the subtree's depth", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const a = world.spawn();
@@ -118,7 +119,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 	});
 
 	it("a dangling (dead) parent makes the orphaned child a root (depth 0)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world, { onDeleteTarget: "orphan" });
 		const root = world.spawn();
@@ -139,7 +140,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 
 describe(".hierarchy(R), max_depth", () => {
 	it("drops entities deeper than max_depth (inclusive)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const r = world.spawn(); // depth 0
@@ -160,7 +161,7 @@ describe(".hierarchy(R), max_depth", () => {
 
 describe(".hierarchy(R), intersection and composition", () => {
 	it("intersects the matched set with a dense require term (depth stays structural)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const ChildOf = registerChildOf(world);
 		// root has no Pos → not matched, but still counts toward child depth.
@@ -177,7 +178,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 	});
 
 	it("composes with require_sparse (both must hold), preserving depth order", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const Marked = world.registerSparseTag();
 		const ChildOf = registerChildOf(world);
@@ -197,7 +198,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 	});
 
 	it("is carried through dense composition regardless of order", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const r = world.spawn();
@@ -214,7 +215,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 		// hierarchy-bearing query must thread `_hierarchy` through `_deriveSparse`,
 		// or the ordering is silently lost. Build the same world as the
 		// hierarchy-last sparse test and assert both orders agree with the spec.
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const Marked = world.registerSparseTag();
 		const ChildOf = registerChildOf(world);
@@ -237,7 +238,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 	it("survives a require_relation composed after hierarchy (routes through _derive_relation)", () => {
 		// Same trap on the relation-wildcard derive path. ChildOf defines the tree
 		// a second relation Tagged is the (R, *) membership filter composed last.
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const Tagged = world.relations.register();
@@ -259,7 +260,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 	});
 
 	it("excludes disabled entities by default, includes them with include_disabled()", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const r = world.spawn();
@@ -277,7 +278,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 
 describe(".hierarchy(R), guards", () => {
 	it("throws RELATION_MODE_MISMATCH on a multi relation (exclusive-only)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const Likes = world.relations.register({ multi: true });
 		const a = world.spawn();
@@ -293,7 +294,7 @@ describe(".hierarchy(R), guards", () => {
 	});
 
 	it("throws RELATION_CYCLE on a cyclic chain in __DEV__", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = world.relations.register(); // exclusive; bypass child_of for a raw cycle
 		const a = world.spawn();
@@ -310,7 +311,7 @@ describe(".hierarchy(R), guards", () => {
 	});
 
 	it("for_each / count / archetype_count reject a hierarchy query (no per-archetype span)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const q = world.query(Node).hierarchy(ChildOf);
@@ -320,14 +321,14 @@ describe(".hierarchy(R), guards", () => {
 	});
 
 	it("rejects a second hierarchy ordering on the same query", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const A = world.relations.register();
 		const B = world.relations.register();
 		expect(() => world.query().hierarchy(A).hierarchy(B)).toThrow(/already set/i);
 	});
 
 	it("rejects a negative or non-integer max_depth (caller typo), accepts valid limits", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		expect(() => world.query().hierarchy(R, -1)).toThrow(/maxDepth/);
 		expect(() => world.query().hierarchy(R, 1.5)).toThrow(/maxDepth/);
@@ -341,14 +342,14 @@ describe(".hierarchy(R), guards", () => {
 
 describe(".hierarchy(R), cached, stable instances", () => {
 	it("repeated unbounded hierarchy from the same parent returns the identical Query", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const base = world.query();
 		expect(base.hierarchy(R)).toBe(base.hierarchy(R));
 	});
 
 	it("a max_depth-limited hierarchy mints fresh (not cached)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const base = world.query();
 		expect(base.hierarchy(R, 2)).not.toBe(base.hierarchy(R, 2));
@@ -371,7 +372,7 @@ describe(".hierarchy(R), access declaration (relation_reads)", () => {
 	}
 
 	it("throws when a system iterates a hierarchy query without relation_reads", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const a = world.spawn();
@@ -392,7 +393,7 @@ describe(".hierarchy(R), access declaration (relation_reads)", () => {
 	});
 
 	it("passes when relation_reads declares the hierarchy relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const r = world.spawn();

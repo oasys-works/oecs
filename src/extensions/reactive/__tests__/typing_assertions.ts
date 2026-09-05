@@ -6,8 +6,12 @@
 
 import { syncJoinToMap, shallow } from "../ecs_sync";
 import type { ComponentDef, ECS } from "../../../core/ecs";
+import { type ObserversCapability } from "../../../capabilities/observers";
+/** A world with the observers capability, which the sync driver needs. */
+type ObservingWorld = ECS<ObserversCapability> & ObserversCapability;
 
-declare const world: ECS;
+
+declare const world: ObservingWorld;
 declare const Pos: ComponentDef<{ x: "f64"; y: "f64" }>;
 declare const Health: ComponentDef<{ hp: "f64" }>;
 declare const Mana: ComponentDef<{ mp: "f64" }>;

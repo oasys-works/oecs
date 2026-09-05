@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, type ECSError } from "../../utils/error";
-import type { Query, SystemContext } from "../../query";
+import type { Query } from "../../query";
+import type { SystemContext } from "../../system_context";
 import type { SystemConfig, SystemFn } from "../../system";
 
 function makeConfig(overrides?: Partial<SystemConfig>): SystemConfig {

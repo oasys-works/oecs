@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schedule, SCHEDULE } from "../../schedule";
-import { SystemContext } from "../../query";
+import { SystemContext } from "../../system_context";
 import { Store } from "../../store";
 import {
 	asSystemId,

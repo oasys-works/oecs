@@ -19,8 +19,9 @@ import { ECS } from "../../ecs";
 import { ANY_RELATION } from "../../relation";
 import { SCHEDULE } from "../../schedule";
 import type { EntityID } from "../../entity";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
+import { relations } from "../../../../capabilities/relations";
 
 const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
@@ -39,7 +40,7 @@ const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((
 // ─────────────────────────── (R, *) withRelation ───────────────────────
 describe("(R, *) require_relation, membership", () => {
 	it("matches every source holding a target (exclusive), spanning archetypes", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 		const Targets = world.relations.register();
@@ -63,7 +64,7 @@ describe("(R, *) require_relation, membership", () => {
 	});
 
 	it("matches a multi source once regardless of how many targets it holds", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const a = world.spawn();
 		const t1 = world.spawn();
@@ -80,7 +81,7 @@ describe("(R, *) require_relation, membership", () => {
 	});
 
 	it("drops a source once its relation is removed", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -92,7 +93,7 @@ describe("(R, *) require_relation, membership", () => {
 	});
 
 	it("equals the distinct sources of pairs_of(R)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const ents = Array.from({ length: 6 }, () => world.spawn());
 		world.relations.add(ents[0], Likes, ents[4]);
@@ -106,7 +107,7 @@ describe("(R, *) require_relation, membership", () => {
 	});
 
 	it("still matches an orphan-dangling source (membership row persists, like pairs_of)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register(); // default orphan
 		const a = world.spawn();
 		const t = world.spawn();
@@ -122,7 +123,7 @@ describe("(R, *) require_relation, membership", () => {
 // ─────────────────────────── (R, *) composition ────────────────────────────
 describe("(R, *) require_relation / exclude_relation, composition", () => {
 	it("intersects with a dense require term", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
 		const t = world.spawn();
@@ -135,7 +136,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 	});
 
 	it("intersects with a .not() dense exclude", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
 		const Targets = world.relations.register();
@@ -151,7 +152,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 	});
 
 	it("exclude_relation drops sources that hold the relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
 		const t = world.spawn();
@@ -164,7 +165,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 	});
 
 	it("composes (R, *) with require_sparse (both must hold)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Marked = world.registerSparseTag();
 		const Targets = world.relations.register();
 		const t = world.spawn();
@@ -179,7 +180,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 	});
 
 	it("excludes disabled sources by default, includes them with include_disabled()", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
 		const t = world.spawn();
@@ -201,14 +202,14 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 // ─────────────────────────── (R, *) cache stability ────────────────────────
 describe("(R, *) require_relation, cached, stable instances", () => {
 	it("repeated require_relation from the same parent returns the identical Query", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const base = world.query();
 		expect(base.withRelation(R)).toBe(base.withRelation(R));
 	});
 
 	it("multi-arg require_relation equals the chained form", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const A = world.relations.register();
 		const B = world.relations.register();
 		const base = world.query();
@@ -216,7 +217,7 @@ describe("(R, *) require_relation, cached, stable instances", () => {
 	});
 
 	it("dense composition keeps the (R, *) term regardless of order", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
 		const t = world.spawn();
@@ -243,7 +244,7 @@ function collectRelated(
 
 describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 	it("collects every source related to T across relation kinds, dedup'd", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const Likes = world.relations.register({ multi: true });
 		const T = world.spawn();
@@ -263,14 +264,14 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 	});
 
 	it("yields nothing when no source targets T", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		world.relations.register();
 		const lonely = world.spawn();
 		expect(collectRelated(world.query(), lonely)).toEqual([]);
 	});
 
 	it("intersects with the receiver's dense predicate", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
 		const T = world.spawn();
@@ -283,7 +284,7 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 	});
 
 	it("composes with a (R, *) term on the receiver", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const Likes = world.relations.register({ multi: true });
 		const T = world.spawn();
@@ -298,7 +299,7 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 	});
 
 	it("is consistent with sources_of on an orphan-dangling dead target", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register(); // orphan
 		const T = world.spawn();
 		const a = world.spawn();
@@ -315,7 +316,7 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 describe("(R, *) determinism, identical histories yield identical order", () => {
 	it("two worlds built by the same op sequence yield the same raw order", () => {
 		const build = (): number[] => {
-			const world = new ECS();
+			const world = ECS.create({ plugins: [relations()] });
 			const R = world.relations.register();
 			const ents = Array.from({ length: 8 }, () => world.spawn());
 			// Scrambled-but-fixed insertion order.
@@ -334,7 +335,7 @@ describe("(R, *) determinism, identical histories yield identical order", () => 
 // ─────────────────────────── dense-path guard ──────────────────────────────
 describe("(R, *), dense-path methods refuse the wildcard query", () => {
 	it("count() / for_each() throw, steering to for_each_entity", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const q = world.query().withRelation(R);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
@@ -366,7 +367,7 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 
 describe("(R, *) / (*, T) access validation", () => {
 	it("throws when a system iterates require_relation without declaring relation_reads", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();
 		const t = world.spawn();
@@ -386,7 +387,7 @@ describe("(R, *) / (*, T) access validation", () => {
 	});
 
 	it("permits require_relation iteration when relation_reads is declared", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();
 		const t = world.spawn();
@@ -410,7 +411,7 @@ describe("(R, *) / (*, T) access validation", () => {
 	});
 
 	it("for_each_related_to throws without ANY_RELATION, passes with it", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();
 		const T = world.spawn();
@@ -428,7 +429,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		);
 		expect(undeclared).toThrow(/system 'related_reader'.*didn't declare/);
 
-		const world2 = new ECS();
+		const world2 = ECS.create({ plugins: [relations()] });
 		const R2 = world2.relations.register();
 		const a2 = world2.spawn();
 		const T2 = world2.spawn();
@@ -451,7 +452,7 @@ describe("(R, *) / (*, T) access validation", () => {
 	});
 
 	it("a dense write declaration does not authorise a (R, *) wildcard read", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(["x"] as const);
 		const R = world.relations.register(); // relation id 0, same number as Pos
 		const a = world.spawn();

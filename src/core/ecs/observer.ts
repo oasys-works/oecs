@@ -55,7 +55,7 @@ import type { ComponentDef, ComponentHandle } from "./component";
 import type { SparseComponentDef } from "./sparse_store";
 import type { EntityID } from "./entity";
 import type { FrameTraceSink, ObserverOp } from "./frame_trace";
-import type { SystemContext } from "./query";
+import type { SystemContext } from "./system_context";
 import type { DrainResult, StructuralObserverEvents } from "./store";
 import {
 	_INTERNAL_EMPTY_ACCESS,

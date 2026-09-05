@@ -16,6 +16,7 @@ import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
 import { getEntityIndex, type EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
+import { observers } from "../../../../capabilities/observers";
 
 const Pos = { x: "i32", y: "i32" } as const;
 const Vel = { vx: "i32", vy: "i32" } as const;
@@ -40,7 +41,7 @@ function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
 
 describe("Observers, onDisable and onEnable", () => {
 	it("a deferred disable fires onDisable at the flush boundary; re-enable fires onEnable", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const disabled: number[] = [];
 		const enabled: number[] = [];
@@ -67,7 +68,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("an immediate (host-side) disable does not fire onDisable", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		let fires = 0;
 		world.observe(P, { onDisable: () => fires++, access: openAccess([P]) });
@@ -80,7 +81,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("onDisable fires once per carried component the entity has an observer on", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const V = world.registerComponent(Vel);
 		const onP: number[] = [];
@@ -101,7 +102,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("net-effect: disable+enable in one tick fires nothing; disable+enable+disable fires one onDisable", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const disabled: number[] = [];
 		const enabled: number[] = [];
@@ -134,7 +135,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("fires in canonical entity-id order within an observer (radix, not queue order)", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const order: number[] = [];
 		world.observe(P, {
@@ -160,7 +161,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("an onDisable that enqueues structural work settles in the same tick (cascade)", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const Marker = world.registerTag();
 		const survivor = world.spawn();
@@ -185,7 +186,7 @@ describe("Observers, onDisable and onEnable", () => {
 
 	it("registering toggle observers does not change state_hash (signal is out of the hash)", () => {
 		const build = (observe: boolean) => {
-			const world = new ECS({ deterministic: true });
+			const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 			const P = world.registerComponent(Pos);
 			if (observe) {
 				world.observe(P, {
@@ -214,7 +215,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("yield_existing seeds enabled members only, a disabled entity is absent", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const enabledEntity = world.spawn();
 		const disabledEntity = world.spawn();
@@ -233,7 +234,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("per-entity onSet does not fire for a disabled entity (matches the default-query exclusion)", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const sets: number[] = [];
 		world.observe(P, {
@@ -266,7 +267,7 @@ describe("Observers, onDisable and onEnable", () => {
 	});
 
 	it("a destroyed entity does not fire onDisable even if a disable was queued for it", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const disabled: number[] = [];
 		world.observe(P, {

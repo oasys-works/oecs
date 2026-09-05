@@ -1,5 +1,15 @@
 # Relations
 
+> This page needs the **relations** capability. Install it at construction:
+>
+> ```ts
+> import { relations } from "@oasys/oecs/relations";
+>
+> const world = ECS.create({ plugins: [relations()] });
+> ```
+>
+> A world built with `new ECS()` has none of it, and reaching for it is a compile error.
+
 > [!NOTE]
 > **0.5.0, a grouped surface.** The registration, mutation, reads, wildcards, traversal, and
 > compaction of a relation are on the **`ecs.relations`** facade: `ecs.relations.register()`,

@@ -15,13 +15,14 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { RelationDef } from "../../relation";
 import { getEntityIndex, type EntityID } from "../../entity";
+import { relations } from "../../../../capabilities/relations";
 
 const ids = (es: EntityID[]): number[] => es.map((e) => e as number);
 const getIndex = (e: EntityID): number => getEntityIndex(e);
 
 describe("ECS relation traversal, up chain", () => {
 	it("walks a multi-level chain from a source to its root", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register(); // exclusive
 		const root = world.spawn();
 		const mid = world.spawn();
@@ -38,7 +39,7 @@ describe("ECS relation traversal, up chain", () => {
 	});
 
 	it("returns a lone source as its own chain and root", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		const solo = world.spawn();
 
@@ -47,7 +48,7 @@ describe("ECS relation traversal, up chain", () => {
 	});
 
 	it("re-targeting moves the chain root", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -67,7 +68,7 @@ describe("ECS relation traversal, up chain", () => {
 		// via the index-keyed sparse store, so a dangling target handle (orphan
 		// policy) whose slot was recycled would splice the chain onto the
 		// unrelated new occupant. It must terminate at the dead handle instead.
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register(); // exclusive, orphan default
 		const root = world.spawn(); // index 0
 		const mid = world.spawn(); // index 1
@@ -105,7 +106,7 @@ describe("ECS relation traversal, up chain", () => {
 
 describe("ECS relation traversal, cascade", () => {
 	it("visits parents before children, breadth-first", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		// Tree:        root
 		//             /    \
@@ -136,7 +137,7 @@ describe("ECS relation traversal, cascade", () => {
 	});
 
 	it("a leaf cascades to itself only", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		const leaf = world.spawn();
 		expect(ids(world.relations.cascadeOf(leaf, ChildOf))).toEqual(ids([leaf]));
@@ -145,7 +146,7 @@ describe("ECS relation traversal, cascade", () => {
 
 describe("ECS relation traversal, cycle guard", () => {
 	it("throws RELATION_CYCLE on an up-walk through a cycle (no hang)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -161,7 +162,7 @@ describe("ECS relation traversal, cycle guard", () => {
 	});
 
 	it("throws RELATION_CYCLE on a cascade through a cycle (no hang)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = world.relations.register();
 		const a = world.spawn();
 		const b = world.spawn();
@@ -176,7 +177,7 @@ describe("ECS relation traversal, cycle guard", () => {
 
 describe("ECS relation traversal, exclusive only", () => {
 	it("throws on a multi relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
 		const tgt = world.spawn();

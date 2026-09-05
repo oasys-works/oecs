@@ -1,5 +1,17 @@
 # Determinism
 
+> This page needs the **snapshots** capability. Install it at construction:
+>
+> ```ts
+> import { snapshots } from "@oasys/oecs/snapshots";
+>
+> const world = ECS.create({ plugins: [snapshots()] });
+> ```
+>
+> A world built with `new ECS()` has none of it, and reaching for it is a compile error.
+> `capture` and `restore` need it. `stateHash` and `deterministic` do not: they
+> describe the world, and every world answers them.
+
 > [!NOTE]
 > **0.5.0, a grouped surface.** The determinism surface is the state digest with the snapshot and
 > resume functions. It is on the **`ecs.snapshots`** facade. The members are
@@ -18,7 +30,7 @@ rule that permits integer columns only applies. A plain `ECS` keeps no canonical
 not expose the hash and snapshot surface.
 
 ```ts
-const ecs = new ECS({ deterministic: true });
+const ecs = ECS.create({ deterministic: true, plugins: [snapshots()] });
 const Pos = ecs.registerComponent(["x", "y"], "i32");   // integer columns, see the rule against floats
 
 // …run the same history on two ECS instances…
@@ -28,9 +40,14 @@ ecs.snapshots.stateHash();   // the same number on both, at the same tick bounda
 ## How to turn it on
 
 ```ts
-new ECS({ deterministic: true });   // false by default
-ecs.snapshots.deterministic;        // read the flag, a getter on the facade
+new ECS();                              // deterministic is false by default
+new ECS({ deterministic: true });       // the flag, on a world with no capabilities
+ECS.create({ deterministic: true, plugins: [snapshots()] }); // the flag, and capture / restore
+ecs.snapshots.deterministic;            // read the flag, a getter on the facade
 ```
+
+The flag and the capability are independent. The flag buys the canonical order. The capability buys
+`capture` and `restore`. `stateHash` needs the flag and no capability.
 
 The flag controls exactly the surface that has a canonical order: `stateHash`, `capture` and
 `restore`, and `captureSparse` and `restoreSparse`. If you call one of them without the flag, you

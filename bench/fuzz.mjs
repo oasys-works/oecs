@@ -22,6 +22,14 @@ import path from "node:path";
 import url from "node:url";
 import { buildLib } from "./build.mjs";
 
+/** A world with the snapshot capability installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the capabilities it
+ * names, and carries no code for the rest. */
+function snapshotWorld(lib, options) {
+	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+}
+
+
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const PROD = args.includes("--prod");
@@ -55,7 +63,7 @@ function runOne(seed) {
 	// This is the only path that still reads the logical length of a column, in
 	// `restoreHostRows` and in the check for a decrease in `refreshView`. The row
 	// plane stopped keeping that length correct continuously.
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const A = ecs.registerComponent({ a0: "i32", a1: "i32" });
 	const B = ecs.registerComponent({ b0: "i32" });
 	const C = ecs.registerComponent({ c0: "i32", c1: "i32", c2: "i32" });

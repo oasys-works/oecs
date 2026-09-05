@@ -8,10 +8,18 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS, eventKey, resourceKey, signalKey } from "../../index";
+import { ECSError, ECS_ERROR } from "../../utils/error";
+import { Store } from "../../store";
+import { snapshots } from "../../../../capabilities/snapshots";
+import { events } from "../../../../capabilities/events";
+import { relations } from "../../../../capabilities/relations";
+import { storeOnlyHost } from "../../capability";
+
+
 
 describe("ECS grouped facades", () => {
 	it("relations: register, add, has, targetOf, traversal and compact", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots(), relations()] });
 		const ChildOf = ecs.relations.register();
 		const parent = ecs.spawn();
 		const mid = ecs.spawn();
@@ -39,7 +47,7 @@ describe("ECS grouped facades", () => {
 	});
 
 	it("events: register, emit and read and signals", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [events(), relations()] });
 		const Damage = eventKey<{ amount: number }>("Damage");
 		const Ping = signalKey("Ping");
 		ecs.events.register(Damage, ["amount"]);
@@ -54,7 +62,7 @@ describe("ECS grouped facades", () => {
 	});
 
 	it("resources: register, get, set, remove and has", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots(), relations()] });
 		const Gold = resourceKey<number>("Gold");
 		ecs.resources.register(Gold, 10);
 		expect(ecs.resources.has(Gold)).toBe(true);
@@ -68,7 +76,7 @@ describe("ECS grouped facades", () => {
 	});
 
 	it("snapshots: deterministic flag + capture and restore round-trip", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 		expect(ecs.snapshots.deterministic).toBe(true);
 
 		const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
@@ -91,8 +99,39 @@ describe("ECS grouped facades", () => {
 		expect(ecs.snapshots.stateHash()).toBe(hashBefore);
 	});
 
+	it("a world without the capability fails closed, naming the remedy", () => {
+		// Two distinct failures, and both matter.
+		//
+		// On the world, `capture` is not a member at all: the type gate is the
+		// primary guard, and a JavaScript caller meets a plain `TypeError`. The
+		// core half of the facade still answers, because determinism is a
+		// property of the world and not of the capability.
+		const bare = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		expect(bare.snapshots.deterministic).toBe(true);
+		expect(typeof bare.snapshots.stateHash()).toBe("number");
+		expect((bare.snapshots as unknown as Record<string, unknown>).capture).toBeUndefined();
+
+		// Below the world, the store's own entry point is reachable, and that is
+		// where the fault has to name the remedy: the fix is a construction-site
+		// edit, so the message names the capability and the import.
+		const store = new Store({ deterministic: true });
+		try {
+			store.snapshot();
+			expect.unreachable("Store.snapshot() must throw without the capability");
+		} catch (e) {
+			const err = e as ECSError;
+			expect(err).toBeInstanceOf(ECSError);
+			expect(err.category).toBe(ECS_ERROR.CAPABILITY_NOT_INSTALLED);
+			expect(err.message).toContain("snapshots");
+			expect(err.message).toContain("ECS.create");
+		}
+		// Installing it opens exactly that door.
+		snapshots().install(storeOnlyHost(store));
+		expect(store.snapshot()).toBeInstanceOf(Uint8Array);
+	});
+
 	it("snapshots facade stays gated on non-deterministic worlds", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots(), relations()] });
 		expect(ecs.snapshots.deterministic).toBe(false);
 		expect(() => ecs.snapshots.stateHash()).toThrow();
 		expect(() => ecs.snapshots.capture()).toThrow();

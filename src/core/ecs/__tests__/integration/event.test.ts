@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import { eventKey, signalKey, type EventReader } from "../../event";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
+import { events } from "../../../../capabilities/events";
 
 describe("Event system", () => {
 	// ==== Event key registration and emit and read ====
 
 	it("emit in one system, read in a later system within the same update", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Damage = eventKey<{ target: number; amount: number }>("Damage");
 		world.events.register(Damage, ["target", "amount"] as const);
 		const received: { target: number; amount: number }[] = [];
@@ -42,7 +43,7 @@ describe("Event system", () => {
 	});
 
 	it("events are cleared between frames", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Hit = eventKey<{ damage: number }>("Hit");
 		world.events.register(Hit, ["damage"] as const);
 
@@ -71,7 +72,7 @@ describe("Event system", () => {
 	});
 
 	it("signal (zero-field) events work", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const GameOver = signalKey("GameOver");
 		world.events.registerSignal(GameOver);
 		let fired = false;
@@ -102,7 +103,7 @@ describe("Event system", () => {
 	});
 
 	it("multiple emits accumulate within a frame", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Score = eventKey<{ points: number }>("Score");
 		world.events.register(Score, ["points"] as const);
 		const totals: number[] = [];
@@ -136,7 +137,7 @@ describe("Event system", () => {
 	});
 
 	it("startup events are readable in POST_STARTUP", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Ready = signalKey("Ready");
 		world.events.registerSignal(Ready);
 		let readCount = 0;
@@ -168,7 +169,7 @@ describe("Event system", () => {
 	// must be drained at the end of startup, since events live one *update* tick
 	// and startup is not an update tick.
 	it("startup-emitted events do not leak into the first update", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Boot = signalKey("Boot");
 		world.events.registerSignal(Boot);
 
@@ -206,7 +207,7 @@ describe("Event system", () => {
 	});
 
 	it("reading an event with no emits returns length 0", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Nothing = eventKey<{ value: number }>("Nothing");
 		world.events.register(Nothing, ["value"] as const);
 		let readLength = -1;
@@ -226,7 +227,7 @@ describe("Event system", () => {
 	});
 
 	it("multiple signal emits accumulate", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Tick = signalKey("Tick");
 		world.events.registerSignal(Tick);
 		let count = 0;
@@ -257,7 +258,7 @@ describe("Event system", () => {
 	});
 
 	it("events emitted in PRE_UPDATE are readable in UPDATE and POST_UPDATE", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Input = eventKey<{ key: number }>("Input");
 		world.events.register(Input, ["key"] as const);
 		let updateLen = 0;
@@ -295,7 +296,7 @@ describe("Event system", () => {
 	// ==== Error handling ====
 
 	it("duplicate register_event throws EVENT_ALREADY_REGISTERED", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Ev = eventKey<{ x: number }>("Ev");
 		world.events.register(Ev, ["x"] as const);
 
@@ -309,7 +310,7 @@ describe("Event system", () => {
 	});
 
 	it("emit on unregistered key throws EVENT_NOT_REGISTERED", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Ev = eventKey<{ x: number }>("Unregistered");
 
 		try {
@@ -322,7 +323,7 @@ describe("Event system", () => {
 	});
 
 	it("read on unregistered key throws EVENT_NOT_REGISTERED", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Ev = eventKey<{ x: number }>("Unregistered");
 
 		try {
@@ -342,7 +343,7 @@ describe("Event system", () => {
 	// mutating any column, so a caught throw leaves every column untouched and
 	// the next valid emit lands at row 0.
 	it("a thrown emit (missing field) does not desync the channel columns", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Pair = eventKey<{ a: number; b: number }>("Pair");
 		world.events.register(Pair, ["a", "b"] as const);
 
@@ -377,7 +378,7 @@ describe("Event system", () => {
 	// ==== ECS.read and ECS.emit (facade-level) ====
 
 	it("ECS.read works for reading events outside systems", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Score = eventKey<{ points: number }>("Score");
 		world.events.register(Score, ["points"] as const);
 
@@ -388,7 +389,7 @@ describe("Event system", () => {
 	});
 
 	it("ECS.emit signal works at facade level", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Ping = signalKey("Ping");
 		world.events.registerSignal(Ping);
 
@@ -405,7 +406,7 @@ describe("Event system", () => {
 	// declared type matches the runtime backing.
 
 	it("reader columns are growable numeric arrays, not typed arrays", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Score = eventKey<{ points: number }>("Score");
 		world.events.register(Score, ["points"] as const);
 

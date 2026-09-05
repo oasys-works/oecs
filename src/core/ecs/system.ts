@@ -49,7 +49,7 @@ import type { EntityID } from "./entity";
 import type { SparseComponentDef } from "./sparse_store";
 import type { RelationDef } from "./relation";
 import type { ResourceKey } from "./resource";
-import type { SystemContext } from "./query";
+import type { SystemContext } from "./system_context";
 import type { BackendSystemHandle } from "./compute_backend";
 import type { Template } from "./store";
 

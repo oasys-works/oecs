@@ -74,6 +74,10 @@ nothing until you import it.
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default |
 | `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP and COEP) |
+| `@oasys/oecs/relations` | the **relations** capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
+| `@oasys/oecs/events` | the **events** capability, host-side channels and signals, and `ctx.emit` |
+| `@oasys/oecs/snapshots` | the **snapshots** capability, `capture` and `restore` for a live world |
+| `@oasys/oecs/observers` | the **observers** capability, `ecs.observe` |
 | `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies (`signal`, `computed`, `effect`, and reactive collections) |
 | `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel, it publishes only the changed entities and columns |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |

@@ -54,6 +54,10 @@ import {
 	syncJoinToMap,
 	syncSingletonToStruct
 } from "../ecs_sync";
+import { observers, type ObserversCapability } from "../../../capabilities/observers";
+/** A world with the observers capability, which the sync driver needs. */
+type ObservingWorld = ECS<ObserversCapability> & ObserversCapability;
+
 
 // ---------------------------------------------------------------------------
 // Seeded prng, mulberry32. Deterministic per seed, so every replay (and every
@@ -166,7 +170,7 @@ function splitBatches<T extends { kind: string }>(ops: readonly T[]): T[][] {
 // then calls `start()`, so `seedExisting` and the observers see the same world.
 // ---------------------------------------------------------------------------
 interface ChurnEngine {
-	readonly world: ECS;
+	readonly world: ObservingWorld;
 	readonly Pos: ComponentDef<{ x: "f64"; y: "f64" }>;
 	readonly Health: ComponentDef<{ hp: "f64" }>;
 	start(): void;
@@ -175,7 +179,7 @@ interface ChurnEngine {
 }
 
 function buildEngine(): ChurnEngine {
-	const world = new ECS();
+	const world = ECS.create({ plugins: [observers()] });
 	const Pos = world.registerComponent({ x: "f64", y: "f64" });
 	const Health = world.registerComponent({ hp: "f64" });
 
@@ -293,7 +297,7 @@ function buildEngine(): ChurnEngine {
 type V2 = { x: number; y: number };
 
 function queryOracle<V>(
-	world: ECS,
+	world: ObservingWorld,
 	defs: ComponentDef[],
 	project: (e: EntityID) => V
 ): Map<EntityID, V> {
@@ -481,7 +485,7 @@ describe("ecs_sync churn oracle, syncSingletonToStruct under field and toggle ch
 	it("the struct equals current fields when enabled, declared defaults when disabled", () => {
 		const FIELDS = ["a", "b", "c"] as const;
 		for (let seed = 0; seed < SEEDS; seed++) {
-			const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
+			const world = ECS.create({ ...({ deterministic: false }), plugins: [observers()] }); // the client/UI world is non-deterministic
 			const Session = world.registerComponent({ a: "f64", b: "f64", c: "f64" });
 			const singleton = world.spawn();
 			world.addComponent(singleton, Session, { a: 1, b: 2, c: 3 });

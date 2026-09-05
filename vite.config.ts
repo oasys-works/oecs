@@ -12,10 +12,19 @@ import path from "path";
 // the production pass and `emptyOutDir` clears the dir only on that first pass.
 const DEV_BUILD = process.env.OECS_VARIANT === "development";
 
+// Capabilities build in their own pass. Declaring them beside the core entries
+// put them in one rollup graph, and rollup then split `index.js` into ten small
+// chunks so the capability bundles could share code with it. Those splits are
+// real module boundaries at run time, and a measurement of `spawn` on the
+// shipped artifact showed the cost. A separate pass leaves the core chunk graph
+// exactly as it was, at the price of a little duplicated code in the capability
+// bundles, which are small and loaded once.
+const CAPABILITY_BUILD = process.env.OECS_ENTRIES === "capabilities";
+
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   plugins: [
-    ...(command === "build" && !DEV_BUILD
+    ...(command === "build" && !DEV_BUILD && !CAPABILITY_BUILD
       ? [dts({ tsconfigPath: "./tsconfig.build.json" })]
       : []),
   ],
@@ -41,12 +50,31 @@ export default defineConfig(({ command }) => ({
     target: "es2022",
     // production pass wipes dist. The development pass adds its `*.development.*`
     // artifacts alongside without clearing the production output.
-    emptyOutDir: !DEV_BUILD,
+    emptyOutDir: !DEV_BUILD && !CAPABILITY_BUILD,
     lib: {
       // Multi-entry, one per published subpath. Keys are src-relative paths so
       // the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
       // land at matching paths, the `exports` map points both at the same path.
-      entry: {
+      entry: CAPABILITY_BUILD
+        ? {
+            "capabilities/snapshots": path.resolve(
+              __dirname,
+              "src/capabilities/snapshots.ts",
+            ),
+            "capabilities/events": path.resolve(
+              __dirname,
+              "src/capabilities/events.ts",
+            ),
+            "capabilities/relations": path.resolve(
+              __dirname,
+              "src/capabilities/relations.ts",
+            ),
+            "capabilities/observers": path.resolve(
+              __dirname,
+              "src/capabilities/observers.ts",
+            ),
+          }
+        : {
         index: path.resolve(__dirname, "src/index.ts"),
         shared: path.resolve(__dirname, "src/shared.ts"),
         "reactive/index": path.resolve(
@@ -65,9 +93,9 @@ export default defineConfig(({ command }) => ({
           __dirname,
           "src/extensions/solid/index.ts",
         ),
-        primitives: path.resolve(__dirname, "src/primitives.ts"),
-        internal: path.resolve(__dirname, "src/internal.ts"),
-      },
+            primitives: path.resolve(__dirname, "src/primitives.ts"),
+            internal: path.resolve(__dirname, "src/internal.ts"),
+          },
       formats: ["es", "cjs"],
       fileName: (format, entryName) =>
         `${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`,

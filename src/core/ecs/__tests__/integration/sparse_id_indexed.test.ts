@@ -13,13 +13,14 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
+import { snapshots } from "../../../../capabilities/snapshots";
 import { SCHEDULE } from "../../schedule";
 import { ECS_ERROR, ECSError } from "../../utils/error";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 
 describe("id-indexed sparse store", () => {
 	it("converts a value as the field's type converts", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots()] });
 		const S = ecs.registerSparseComponent({ a: "u8", b: "i16", c: "f32", d: "f64" });
 		const e = ecs.spawn();
 		ecs.addSparse(e, S, { a: 300, b: -40000, c: 0.1, d: 0.1 });
@@ -36,7 +37,7 @@ describe("id-indexed sparse store", () => {
 	});
 
 	it("grows past the initial capacity, and a cursor made before the grow reads the live columns", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots()] });
 		const S = ecs.registerSparseComponent({ v: "i32" });
 		const c = ecs.sparseCursorRead(S);
 		// Spawn well past the initial capacity of a store (64), with holes.
@@ -60,7 +61,7 @@ describe("id-indexed sparse store", () => {
 	});
 
 	it("a sparse cursor writes through, and a walk sees a remove made during the walk", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots()] });
 		const Pos = ecs.registerComponent({ x: "f64" });
 		const S = ecs.registerSparseComponent({ v: "f64" });
 		const ids = ecs.spawnMany(ecs.template(Pos({ x: 0 })), 10);
@@ -92,7 +93,7 @@ describe("id-indexed sparse store", () => {
 
 	it("snapshot and restore carry typed values, and the hash ignores add order", () => {
 		const build = (order: number[]) => {
-			const ecs = new ECS({ deterministic: true });
+			const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots()] });
 			const Pos = ecs.registerComponent({ x: "i32" });
 			const S = ecs.registerSparseComponent({ a: "u8", b: "i32" });
 			const ids = ecs.spawnMany(ecs.template(Pos({ x: 1 })), 100);
@@ -116,7 +117,7 @@ describe("id-indexed sparse store", () => {
 	});
 
 	it("the sparse cursor names a dead entity, a non-member, and an undeclared access under DEV", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots()] });
 		const Pos = ecs.registerComponent({ x: "f64" });
 		const S = ecs.registerSparseComponent({ v: "f64" });
 		const T = ecs.registerSparseComponent({ w: "f64" });
@@ -162,7 +163,7 @@ describe("id-indexed sparse store", () => {
 
 describe("reserved accessor field names", () => {
 	it("registration refuses `__cols` and `__row` on dense and sparse components", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots()] });
 		for (const name of ["__cols", "__row"]) {
 			expect(() => ecs.registerComponent({ [name]: "f64" })).toThrow(ECSError);
 			expect(() => ecs.registerSparseComponent({ [name]: "f64" })).toThrow(ECSError);

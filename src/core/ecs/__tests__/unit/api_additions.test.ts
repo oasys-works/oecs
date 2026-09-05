@@ -13,6 +13,8 @@ import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { not, allOf, anyOf, runEveryNTicks, type ConditionContext } from "../../run_condition";
 import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
+import { relations } from "../../../../capabilities/relations";
+import { observers } from "../../../../capabilities/observers";
 
 function staleOf(e: number): never {
 	return (e + (1 << 20)) as never; // same index, bumped generation, dead
@@ -20,7 +22,7 @@ function staleOf(e: number): never {
 
 describe("total has* + tryGetField", () => {
 	it("hasComponent, hasSparse and hasRelation return false for a dead entity", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Tag = world.registerSparseComponent({ v: "f64" });
 		const R = world.relations.register();
@@ -34,7 +36,7 @@ describe("total has* + tryGetField", () => {
 	});
 
 	it("tryGetField: value when held, undefined for missing component or dead id", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Vel = world.registerComponent({ vx: "f64" });
 		const e = world.spawn();
@@ -45,7 +47,7 @@ describe("total has* + tryGetField", () => {
 	});
 
 	it("ctx.tryGetField mirrors the host total read inside a system", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Vel = world.registerComponent({ vx: "f64" });
 		const e = world.spawn();
@@ -71,7 +73,7 @@ describe("total has* + tryGetField", () => {
 
 describe("Query.firstEntity / singleEntity", () => {
 	it("firstEntity: undefined on no match, an entity on match", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const q = world.query(Pos);
 		expect(q.firstEntity()).toBeUndefined();
@@ -81,7 +83,7 @@ describe("Query.firstEntity / singleEntity", () => {
 	});
 
 	it("singleEntity: returns the singleton, dev-throws on 0 and on >1", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const q = world.query(Pos);
 
@@ -104,7 +106,7 @@ describe("Query.firstEntity / singleEntity", () => {
 	});
 
 	it("firstEntity honors sparse terms via the walk fallback", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Mark = world.registerSparseComponent({ v: "f64" });
 		const a = world.spawn();
@@ -118,7 +120,7 @@ describe("Query.firstEntity / singleEntity", () => {
 
 describe("host refRead", () => {
 	it("reads whole-component fields through a readonly ref", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64", y: "f64" });
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3, y: 4 });
@@ -143,7 +145,7 @@ describe("run-condition combinators", () => {
 
 describe("ObserverHandle Symbol.dispose", () => {
 	it("using-disposal unregisters the observer (parity with dispose())", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations(), observers()] });
 		const Tag = world.registerTag();
 		let fires = 0;
 		const e1 = world.spawn();

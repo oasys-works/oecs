@@ -32,6 +32,7 @@ import { openAccess } from "../test_helpers";
 import { BitSet } from "../../../../type_primitives";
 import { asComponentId, createComponentDef } from "../../component";
 import type { ComponentDef, SystemDescriptor } from "../..";
+import { observers } from "../../../../capabilities/observers";
 
 function viewStamp(world: ECS): number {
 	return world.columnStore.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
@@ -39,7 +40,7 @@ function viewStamp(world: ECS): number {
 
 describe("archetype pre-warming", () => {
 	it("a single declared spawn becomes a live archetype before any on_added runs", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
@@ -63,7 +64,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("the spawn-seeded worklist walks every reachable transition", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
@@ -85,7 +86,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("transitions with `remove` shrink masks too", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
@@ -103,7 +104,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("the entire closure goes through one extend_column_store (view_stamp bumps once)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 		const C = world.registerComponent(["v"] as const);
@@ -137,7 +138,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("startup with no spawns or transitions is a no-op (view_stamp unchanged)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const baseline = viewStamp(world);
 
 		world.registerSystem({
@@ -152,7 +153,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("duplicate masks across systems collapse to a single archetype", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
@@ -174,7 +175,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("after startup, ctx.add_component for a prewarmed mask makes no further extends", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
 
@@ -208,7 +209,7 @@ describe("archetype pre-warming", () => {
 	it("a system with transitions but no spawns contributes nothing to the closure", () => {
 		// The closure walk seeds from `spawns`. A transition with nothing
 		// to fire on can't materialise an archetype on its own.
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
@@ -232,7 +233,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("an observer's declared spawn is prewarmed at startup, like a system's", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Trigger = world.registerTag();
 		const Mote = world.registerComponent(["v"] as const);
 
@@ -257,7 +258,7 @@ describe("archetype pre-warming", () => {
 		// {A} → {A,B}. The reachable {A,B} archetype must be prewarmed even though
 		// no single descriptor declares it, the closure now mixes system seeds
 		// with observer transitions.
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
 
@@ -274,7 +275,7 @@ describe("archetype pre-warming", () => {
 	});
 
 	it("liberal `when_has` (subset of mask) admits the transition", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Owner = world.registerComponent(["owner"] as const);
 		const CombatTarget = world.registerComponent(["target_id"] as const);

@@ -29,6 +29,14 @@
  */
 import { Divergence } from "./driver.mjs";
 
+/** A world with the snapshot capability installed. The tools here drive capture
+ * and restore, so they take it. A consumer installs only the capabilities it
+ * names, and carries no code for the rest. */
+function snapshotWorld(lib, options) {
+	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+}
+
+
 /** Report a failure through the same channel that the driver uses. */
 function bad(what, msg) {
 	throw new Divergence(`surface/${what}: ${msg}`);
@@ -104,7 +112,7 @@ export function traversalGuards(lib) {
 	const what = "traversal";
 	const at = CHECKS;
 	const { ECS, HIERARCHY_UNBOUNDED } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const N = ecs.registerComponent({ d: "i32" }, { name: "N" });
 	const P = ecs.relations.register({ exclusive: true, onDeleteTarget: "clear" });
 	// A chain of five: 0 <- 1 <- 2 <- 3 <- 4, with 0 as the root.
@@ -211,7 +219,7 @@ export function builtinRelations(lib) {
 	const what = "builtins";
 	const at = CHECKS;
 	const { ECS, registerChildOf, registerIsA } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const T = ecs.registerComponent({ v: "i32" }, { name: "T" });
 	const ChildOf = registerChildOf(ecs);
 	const IsA = registerIsA(ecs);
@@ -272,7 +280,7 @@ export function wildcardRead(lib) {
 	const what = "wildcard";
 	const at = CHECKS;
 	const { ECS, SCHEDULE, ANY_RELATION } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const T = ecs.registerComponent({ v: "i32" }, { name: "T" });
 	const R1 = ecs.relations.register({ exclusive: true, onDeleteTarget: "clear" });
 	const R2 = ecs.relations.register({ multi: true, onDeleteTarget: "clear" });
@@ -347,7 +355,7 @@ export function templatesAndBatch(lib) {
 	const what = "templates";
 	const at = CHECKS;
 	const { ECS, bundle } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ dx: "i32" }, { name: "Vel" });
 	const Mark = ecs.registerComponent({}, { name: "Mark" });
@@ -455,7 +463,7 @@ export function hostSeamVocabulary(lib) {
 		uninstallHostCommandSeam,
 		spawnEntry,
 	} = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const queue = installHostCommandSeam(ecs);
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
 	const Tag = ecs.registerComponent({}, { name: "Tag" });
@@ -535,7 +543,7 @@ export function commandReplay(lib) {
 	// One builder, used two times. The replay needs a world with the same shape: the
 	// same components, registered in the same order, and the same systems.
 	const build = (recorder) => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = snapshotWorld(lib, { deterministic: true });
 		const queue = installHostCommandSeam(
 			ecs,
 			recorder === null ? undefined : { recorder }
@@ -639,7 +647,7 @@ export function runConditions(lib) {
 		anyOf,
 		systemSet,
 	} = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Mark = ecs.registerComponent({ v: "i32" }, { name: "Mark" });
 	const Mode = resourceKey("mode");
 	ecs.resources.register(Mode, 0);
@@ -734,7 +742,7 @@ export function resourceAndEventEdges(lib) {
 	const what = "resources";
 	const at = CHECKS;
 	const { ECS, SCHEDULE, resourceKey, eventKey, signalKey, ECS_ERROR } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Cfg = resourceKey("cfg");
 	eq(what, "has() before the register", ecs.resources.has(Cfg), false);
 	throwsWith(lib, what, "get() before the register", ECS_ERROR.RESOURCE_NOT_REGISTERED, () =>
@@ -810,7 +818,7 @@ export function sparseRestoreGuard(lib) {
 	const what = "sparse-restore";
 	const at = CHECKS;
 	const { ECS, SparseRestoreError } = lib;
-	const a = new ECS({ deterministic: true });
+	const a = snapshotWorld(lib, { deterministic: true });
 	const A1 = a.registerSparseComponent({ k: "i32" }, { name: "S1" });
 	const ea = a.spawn();
 	a.addSparse(ea, A1, { k: 5 });
@@ -821,7 +829,7 @@ export function sparseRestoreGuard(lib) {
 	eq(what, "the field after a restore into the same world", a.getSparseField(ea, A1, "k"), 5);
 
 	// A world with a different sparse shape must refuse the bytes.
-	const b = new ECS({ deterministic: true });
+	const b = snapshotWorld(lib, { deterministic: true });
 	b.registerSparseComponent({ k: "i32", extra: "i32" }, { name: "S1" });
 	b.registerSparseComponent({ z: "u8" }, { name: "S2" });
 	let err = null;
@@ -854,7 +862,7 @@ export function frameTrace(lib) {
 	const what = "trace";
 	const at = CHECKS;
 	const { ECS, SCHEDULE, FrameTraceRecorder } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
 	const Tag = ecs.registerComponent({}, { name: "Tag" });
 	let adds = 0;
@@ -946,7 +954,7 @@ export function relationRemoval(lib) {
 	const what = "relation-remove";
 	const at = CHECKS;
 	const { ECS } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const T = ecs.registerComponent({ v: "i32" }, { name: "T" });
 	const Ex = ecs.relations.register({ exclusive: true, onDeleteTarget: "clear" });
 	const Mu = ecs.relations.register({ multi: true, onDeleteTarget: "clear" });
@@ -1027,7 +1035,7 @@ export function cursorsAndRefs(lib) {
 	const what = "cursors";
 	const at = CHECKS;
 	const { ECS, SCHEDULE } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Other = ecs.registerComponent({ z: "i32" }, { name: "Other" });
 	const ents = [];
@@ -1138,7 +1146,7 @@ export function immediateToggle(lib) {
 	const what = "immediate-toggle";
 	const at = CHECKS;
 	const { ECS, installHostCommandSeam } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const queue = installHostCommandSeam(ecs, { name: "toggle-apply" });
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
 	let disables = 0;
@@ -1221,7 +1229,7 @@ export function worldRestoreGuard(lib) {
 	const VERSION_OFF = 4;
 	const FRAME_HEADER = 20;
 
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Mark = ecs.registerComponent({}, { name: "Mark" });
 	const S = ecs.registerSparseComponent({ v: "i32" }, { name: "S" });
@@ -1319,7 +1327,7 @@ export function worldRestoreGuard(lib) {
 
 	// A world with a different registration must refuse the bytes, and it must stay
 	// usable. This is the case that a save from an older build gives.
-	const other = new ECS({ deterministic: true });
+	const other = snapshotWorld(lib, { deterministic: true });
 	const OPos = other.registerComponent({ x: "i32", y: "i32", z: "i32" }, { name: "Pos" });
 	const oe = other.spawn();
 	other.addComponent(oe, OPos, { x: 1, y: 2, z: 3 });
@@ -1376,7 +1384,7 @@ export function immediateComponentWrites(lib) {
 	const what = "immediate-components";
 	const at = CHECKS;
 	const { ECS, ECS_ERROR, bundle, SCHEDULE } = lib;
-	const ecs = new ECS({ deterministic: true });
+	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 	const Vel = ecs.registerComponent({ dx: "i32" }, { name: "Vel" });
 	const Tag = ecs.registerComponent({}, { name: "Tag" });

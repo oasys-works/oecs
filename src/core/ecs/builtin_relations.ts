@@ -23,6 +23,12 @@
  ***/
 
 import type { ECS } from "./ecs";
+import type { RelationsCapability } from "../../capabilities/relations";
+
+/** A world with the relations capability installed. These helpers register a
+ * relation, so they need it. The import is type-only: this module stays part of
+ * the core and pins no capability code into a world that installs none. */
+type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
 import type { OnDeleteTarget, RelationDef } from "./relation";
 
 /** Options for a built-in relation. `exclusive` / `multi` are fixed (always
@@ -50,7 +56,7 @@ export interface BuiltinRelationOptions {
  * flecs's `IsA`-remove, since there is no inherited data to strip). Pass
  * `"delete"` for strong instance-of (exemplar death cascade-destroys instances).
  */
-export function registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
+export function registerIsA(ecs: RelationalWorld, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
 	return ecs.relations.register({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "clear"
@@ -71,7 +77,7 @@ export function registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDe
  * its whole subtree (flecs's default). Pass `"clear"` to let children survive as
  * roots, or `"orphan"` to leave a dangling `targetOf`.
  */
-export function registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
+export function registerChildOf(ecs: RelationalWorld, opts?: BuiltinRelationOptions): RelationDef<"exclusive"> {
 	return ecs.relations.register({
 		exclusive: true,
 		onDeleteTarget: opts?.onDeleteTarget ?? "delete"

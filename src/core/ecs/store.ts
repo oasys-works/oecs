@@ -58,9 +58,10 @@ import {
 	type SparseComponentDef,
 	type SparseComponentID
 } from "./sparse_store";
-import type { RelationDef, RelationOptions } from "./relation";
-import type { EmptyEventSchema, EventDef, EventReader, EventShape } from "./event";
-import { EventRegistry } from "./event_registry";
+import type { RelationDef } from "./relation";
+// Type-only. The events capability constructs the registry, so a world that
+// installs none does not carry `event_registry.ts`.
+import type { EventRegistry } from "./event_registry";
 import { ResourceRegistry } from "./resource_registry";
 import {
 	unsafeCast,
@@ -75,15 +76,19 @@ import {
 	type ArchetypeColumnLayout,
 	type ArchetypeID
 } from "./archetype";
-import type { Query, QueryHost } from "./query";
-import { RelationService } from "./relation_service";
+import type { Query, QueryHost, QueryTerms } from "./query";
+// Type-only. The relations capability constructs the service, so a world that
+// installs none does not carry `relation_service.ts` or `relation.ts`.
+import type { RelationService, RelationServiceHost } from "./relation_service";
 // Type-only: the per-consumer host seams Store implements. observer.ts /
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
-import { ECS_ERROR, ECSError } from "./utils/error";
+import { ECS_ERROR, ECSError, capabilityMissingError, ECSRestoreError } from "./utils/error";
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
-import { SnapshotService } from "./snapshot_service";
+// Type-only. The store never constructs a `SnapshotService`, so a world that
+// installs no snapshot capability does not carry `snapshot_service.ts` at all.
+import type { SnapshotService, SnapshotHost } from "./snapshot_service";
 import { ArchetypeGraph } from "./archetype_graph";
 import { accessCheck } from "./access_check";
 import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
@@ -117,7 +122,7 @@ import {
 	type ColumnStore
 } from "../store";
 import type { ECSMemoryCapContext } from "./ecs_memory";
-import { ECSRestoreError, type HostState } from "./resume";
+import type { HostState } from "./resume";
 import { DEV } from "../../dev_flag";
 
 // Local copies of the entity-id constants. The by-id paths (`_liveIndex`,
@@ -386,12 +391,18 @@ export class Store implements ObserverHost, QueryHost {
 	// Registry + traversal algorithms live in `RelationService`. The Store's
 	// relation methods below are one-line delegations. Wired in the constructor
 	// through the narrow `RelationServiceHost` seam.
-	private readonly _relationService: RelationService;
+	// Installed by the relations capability, `null` until then. The destroy
+	// paths test it before the existing `count > 0` gate, which keeps the
+	// no-relation world on the same branch it already took.
+	private _relations: RelationService | null;
 
 	// --- Event channels ---
 	// Channel array + key map + per-tick dirty list live in `EventRegistry`
 	// (event_registry.ts); the event methods below delegate.
-	private readonly _events = new EventRegistry();
+	// Installed by the events capability, `null` until then. `ECS.update` clears
+	// the channels at the tick tail and checks `hasEvents` first, so a world
+	// without the capability pays one null test per frame.
+	private _events: EventRegistry | null;
 
 	// --- Archetype management ---
 	// Topology (archetype list, mask→id map, id counter, inverted component
@@ -432,7 +443,114 @@ export class Store implements ObserverHost, QueryHost {
 	// and fail-closed validation live in `SnapshotService`. The Store keeps
 	// the DETERMINISM_DISABLED gates and the live-world mutation seams
 	// (`_mountRestoredDense`, `_reconstructHostRows`).
-	private readonly _snapshots: SnapshotService;
+	// Installed by the snapshot capability, `null` until then. Cold path: every
+	// read goes through the `snapshots` accessor, which is never in a loop.
+	private _snapshots: SnapshotService | null;
+
+	// The collaborators a caller reaches by name.
+	//
+	// These used to be reached through one delegating method per operation on
+	// this class: `store.addRelation` forwarded to `_relationService.addRelation`
+	// and so on, for thirty operations across four collaborators. The forwarding
+	// carried no logic. It only widened this class and hid which object owns
+	// the state. A caller now names the owner, and a new operation on a
+	// collaborator needs no edit here.
+	//
+	// Cold path, every one. The hot paths (`forEachSparseMatch`, the destroy
+	// loops, the state digest) still reach `_relationService` through the
+	// private field, so no accessor sits inside a loop.
+	public get relations(): RelationService {
+		if (this._relations === null) throw capabilityMissingError("relations", "ecs.relations");
+		return this._relations;
+	}
+
+	/** Build the host the relation service needs. Closures, not field
+	 * references: `generations`, `entityArchetypes` and `entityRows` are
+	 * reallocated when capacity grows, so each accessor re-reads the live
+	 * field. */
+	public relationHost(): RelationServiceHost {
+		return {
+			isAlive: (id) => this.isAlive(id),
+			hasSparse: (entityId, def) => this.hasSparse(entityId, def),
+			pushSparseStore: (fieldNames, fieldTypes) => this._pushSparseStore(fieldNames, fieldTypes),
+			sparseStoreOf: (def) => this._sparseStoreOf(def),
+			sparseStores: () => this._sparseStores,
+			generations: () => this._entityAllocator.generations,
+			entityArchetypes: () => this._entityArchetypes,
+			entityRows: () => this._entityRows,
+			archetypes: () => this._archGraph.archetypes,
+			forEachSparseMatch: (include, exclude, anyOf, terms, denseArchetypes, cb) =>
+				this.forEachSparseMatch(include, exclude, anyOf, terms, denseArchetypes, cb)
+		};
+	}
+
+	/** Install the relations capability. Called once, by the capability. */
+	public installRelations(service: RelationService): void {
+		this._relations = service;
+	}
+	public get events(): EventRegistry {
+		if (this._events === null) throw capabilityMissingError("events", "ecs.events");
+		return this._events;
+	}
+
+	/** Whether the events capability is installed. Read once per frame by the
+	 * tick-tail clear, which must be a no-op on a world without channels. */
+	public get hasEvents(): boolean {
+		return this._events !== null;
+	}
+
+	/** Install the events capability. Called once, by the capability. */
+	public installEvents(registry: EventRegistry): void {
+		this._events = registry;
+	}
+	/** Build the host a snapshot capability needs. Only the store can reach
+	 * these fields, so it builds the record and the capability owns the service.
+	 * The accessors re-read live fields per call: the column store and the
+	 * entity-index views are replaced on a restore. All cold path. */
+	public snapshotHost(): SnapshotHost {
+		return {
+			sparseStores: () => this._sparseStores,
+			// A world with no relation capability has no relation side data, and
+			// an empty section is what the snapshot format already writes for a
+			// world that registered no relation.
+			relationStores: () => (this._relations === null ? [] : this._relations.stores),
+			generations: () => this._entityAllocator.generations,
+			archetypes: () => this._archGraph.archetypes,
+			columnStore: () => this._columnStore,
+			bufferAllocator: () => this._bufferAllocator,
+			entityIndexCapacity: () => this._entityIndexCapacity,
+			tick: () => this.tick,
+			setTick: (tick) => {
+				this.tick = tick;
+			},
+			publishRowCounts: () => this.publishRowCounts(),
+			mountRestoredDense: (restored) => this._mountRestoredDense(restored),
+			reconstructHostRows: (host) => this._reconstructHostRows(host),
+			invalidateCaches: () => {
+				this.queryDirtyEpoch++;
+				this._rowCountsDirty = true;
+			}
+		};
+	}
+
+	/** The allocator, which is its own snapshot seam. Handed to the capability
+	 * so the store need not construct the service itself. */
+	public get entityAllocator(): EntityAllocator {
+		return this._entityAllocator;
+	}
+
+	/** Install the snapshot capability. Called once, by the capability. */
+	public installSnapshots(service: SnapshotService): void {
+		this._snapshots = service;
+	}
+
+	public get snapshots(): SnapshotService {
+		if (this._snapshots === null) throw capabilityMissingError("snapshots", "snapshot()");
+		return this._snapshots;
+	}
+	public get resources(): ResourceRegistry {
+		return this._resources;
+	}
 
 	public tick: number = 0;
 
@@ -801,40 +919,14 @@ export class Store implements ObserverHost, QueryHost {
 			},
 			this._obsEvents
 		);
-		// The host seam hands the relation service closures, not field refs:
-		// `generations` / `entityArchetypes` / `entityRows` are reallocated
-		// on capacity growth, so each accessor re-reads the live field per call.
-		this._relationService = new RelationService({
-			isAlive: (id) => this.isAlive(id),
-			hasSparse: (entityId, def) => this.hasSparse(entityId, def),
-			pushSparseStore: (fieldNames, fieldTypes) => this._pushSparseStore(fieldNames, fieldTypes),
-			sparseStoreOf: (def) => this._sparseStoreOf(def),
-			sparseStores: () => this._sparseStores,
-			generations: () => this._entityAllocator.generations,
-			entityArchetypes: () => this._entityArchetypes,
-			entityRows: () => this._entityRows,
-			archetypes: () => this._archGraph.archetypes,
-			forEachSparseMatch: (
-				include,
-				exclude,
-				anyOf,
-				sparseIncludes,
-				sparseExcludes,
-				denseArchetypes,
-				cb,
-				includesDisabled
-			) =>
-				this.forEachSparseMatch(
-					include,
-					exclude,
-					anyOf,
-					sparseIncludes,
-					sparseExcludes,
-					denseArchetypes,
-					cb,
-					includesDisabled
-				)
-		});
+		// Assigned here, not at the declaration, and the order is load-bearing.
+		// A class field with an initializer is defined at the top of the
+		// constructor, which moved these three ahead of every field the engine
+		// assigns and shifted the rest of the object's layout. That cost `spawn`
+		// measurable time for no reason. Keep the assignment here.
+		this._snapshots = null;
+		this._relations = null;
+		this._events = null;
 		// Always-on event ring. 4 KiB + 16 B header per
 		// Store is negligible and means any system that needs to emit
 		// SAB-visible events finds `header.event_ring_off` non-zero
@@ -884,29 +976,6 @@ export class Store implements ObserverHost, QueryHost {
 		// re-read live fields per call (the column store and entity-index views
 		// are replaced on restore); the allocator rides in whole as its own
 		// snapshot seam (step 3). All cold-path.
-		this._snapshots = new SnapshotService(
-			{
-				sparseStores: () => this._sparseStores,
-				relationStores: () => this._relationService.stores,
-				generations: () => this._entityAllocator.generations,
-				archetypes: () => this._archGraph.archetypes,
-				columnStore: () => this._columnStore,
-				bufferAllocator: () => this._bufferAllocator,
-				entityIndexCapacity: () => this._entityIndexCapacity,
-				tick: () => this.tick,
-				setTick: (tick) => {
-					this.tick = tick;
-				},
-				publishRowCounts: () => this.publishRowCounts(),
-				mountRestoredDense: (restored) => this._mountRestoredDense(restored),
-				reconstructHostRows: (host) => this._reconstructHostRows(host),
-				invalidateCaches: () => {
-					this.queryDirtyEpoch++;
-					this._rowCountsDirty = true;
-				}
-			},
-			this._entityAllocator
-		);
 		// Archetype topology. Creation-path-only closures, an
 		// edge-cache hit never calls the host.
 		this._archGraph = new ArchetypeGraph({
@@ -1288,7 +1357,7 @@ export class Store implements ObserverHost, QueryHost {
 		// index, targets ascending by id) so add and remove history doesn't perturb
 		// the digest. The relation id is folded as a header, mirroring the
 		// sparse-store and archetype headers.
-		const rels = this._relationService.stores;
+		const rels = this._relations === null ? [] : this._relations.stores;
 		for (let r = 0; r < rels.length; r++) {
 			const rs = rels[r];
 			if (rs.exclusive) continue; // exclusive targets already folded via their sparse field
@@ -1745,7 +1814,7 @@ export class Store implements ObserverHost, QueryHost {
 
 		// No target-cleanup policy → no cascade can ever form, so skip the
 		// work-list allocation and tear the single entity down directly.
-		if (!this._relationService.hasTargetCleanup) {
+		if (this._relations === null || !this._relations.hasTargetCleanup) {
 			this._destroyOne(id, null);
 			return;
 		}
@@ -1792,9 +1861,10 @@ export class Store implements ObserverHost, QueryHost {
 		// Then apply each relation's target-role cleanup policy: `clear`
 		// drops surviving sources' links in place. `delete` appends them to
 		// `cascade` for the driver to destroy through this same path.
-		if (this._relationService.count > 0) {
-			this._relationService.purgeSource(id);
-			if (cascade !== null) this._relationService.cleanupTarget(id, cascade);
+		const rel = this._relations;
+		if (rel !== null && rel.count > 0) {
+			rel.purgeSource(id);
+			if (cascade !== null) rel.cleanupTarget(id, cascade);
 		}
 		// Out-of-identity sparse data is keyed by entity index, so it's untouched
 		// by the archetype swap-remove above, purge it explicitly so a recycled
@@ -2192,13 +2262,14 @@ export class Store implements ObserverHost, QueryHost {
 		// Relations layer on the sparse store. Purge each destroyed entity's
 		// source role *before* its sparse rows go (the exclusive purge reads the
 		// target field). Gated so the no-relations path is untouched.
-		const hasRelations = this._relationService.count > 0;
+		const relations = this._relations;
+		const hasRelations = relations !== null && relations.count > 0;
 		// Target-role cleanup policies: `clear` drops surviving sources'
 		// links in place. `delete` pushes sources back onto `buf` so this same
 		// loop destroys them (the `buf.length` re-read drives the cascade, chains
 		// and trees fall out, the generation guard dedups and terminates cycles).
 		// Gated so no-policy worlds skip the whole reverse-index walk.
-		const hasTargetCleanup = hasRelations && this._relationService.hasTargetCleanup;
+		const hasTargetCleanup = hasRelations && relations!.hasTargetCleanup;
 		// onRemove fan-out: collect an effective-remove event per observed
 		// component on each dying entity. Gated so the no-observer path is
 		// byte-for-byte unchanged. Dispatched by `flushStructural`.
@@ -2230,8 +2301,8 @@ export class Store implements ObserverHost, QueryHost {
 				if (arch.length === 0) crossed = true;
 			}
 
-			if (hasRelations) this._relationService.purgeSource(eid);
-			if (hasTargetCleanup) this._relationService.cleanupTarget(eid, buf);
+			if (hasRelations) relations!.purgeSource(eid);
+			if (hasTargetCleanup) relations!.cleanupTarget(eid, buf);
 			if (hasSparse) this._purgeSparse(idx);
 
 			entArch[idx] = UNASSIGNED;
@@ -3107,7 +3178,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * entity-index ordering is the determinism tax the flag gates. */
 	public snapshotSparse(): Uint8Array {
 		this._assertDeterministic("snapshot_sparse()");
-		return this._snapshots.snapshotSparse();
+		return this.snapshots.snapshotSparse();
 	}
 
 	/** Repopulate the sparse stores from `snapshotSparse` bytes, replacing all
@@ -3125,7 +3196,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * `snapshotSparse`, which produces the canonical bytes restore consumes. */
 	public restoreSparse(bytes: Uint8Array): void {
 		this._assertDeterministic("restore_sparse()");
-		this._snapshots.restoreSparse(bytes);
+		this.snapshots.restoreSparse(bytes);
 		this._resetSparseTicks();
 	}
 
@@ -3162,7 +3233,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * at a tick boundary (between `update()`s). See the ADR. */
 	public snapshot(): Uint8Array {
 		this._assertDeterministic("snapshot()");
-		return this._snapshots.snapshot();
+		return this.snapshots.snapshot();
 	}
 
 	/**
@@ -3179,7 +3250,7 @@ export class Store implements ObserverHost, QueryHost {
 	 * unless `{ deterministic: true }`. See `snapshot()` for the v1 scope. */
 	public restore(bytes: Uint8Array): void {
 		this._assertDeterministic("restore()");
-		this._snapshots.restore(bytes);
+		this.snapshots.restore(bytes);
 		this._resetSparseTicks();
 	}
 
@@ -3266,91 +3337,21 @@ export class Store implements ObserverHost, QueryHost {
 	// These delegations keep the Store surface stable for ecs.ts and the query
 	// internals.
 
-	public registerRelation(opts?: RelationOptions): RelationDef {
-		return this._relationService.registerRelation(opts);
-	}
 
-	/** Number of registered relations. Visible to tests asserting the
-	 * no-transition invariant alongside `archetype_count`. */
-	public get relationCount(): number {
-		return this._relationService.count;
-	}
 
-	public addRelation(src: EntityID, def: RelationDef, tgt: EntityID): void {
-		this._relationService.addRelation(src, def, tgt);
-	}
 
-	public removeRelation(src: EntityID, def: RelationDef, tgt?: EntityID): void {
-		this._relationService.removeRelation(src, def, tgt);
-	}
 
-	public targetOf(src: EntityID, def: RelationDef): EntityID | undefined {
-		return this._relationService.targetOf(src, def);
-	}
 
-	public targetsOf(src: EntityID, def: RelationDef): EntityID[] {
-		return this._relationService.targetsOf(src, def);
-	}
 
-	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
-		return this._relationService.sourcesOf(tgt, def);
-	}
 
-	public hasRelation(src: EntityID, def: RelationDef): boolean {
-		return this._relationService.hasRelation(src, def);
-	}
 
-	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
-		return this._relationService.pairsOf(def);
-	}
 
-	public sourcesOfAny(tgt: EntityID): readonly (readonly [RelationDef, EntityID])[] {
-		return this._relationService.sourcesOfAny(tgt);
-	}
 
-	public relationBackingSparseId(def: RelationDef): SparseComponentID {
-		return this._relationService.relationBackingSparseId(def);
-	}
 
-	/** Drive a `(*, T)` wildcard query (`Query.forEachRelatedTo`), see
-	 * `RelationService.forEachTargetMatch`. */
-	public forEachTargetMatch(
-		target: EntityID,
-		include: BitSet,
-		exclude: BitSet | null,
-		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
-		includesDisabled: boolean,
-		cb: (entityId: EntityID) => void
-	): void {
-		this._relationService.forEachTargetMatch(
-			target,
-			include,
-			exclude,
-			anyOf,
-			sparseIncludes,
-			sparseExcludes,
-			includesDisabled,
-			cb
-		);
-	}
 
-	public compactRelations(): number {
-		return this._relationService.compactRelations();
-	}
 
-	public ancestorsOf(src: EntityID, def: RelationDef): EntityID[] {
-		return this._relationService.ancestorsOf(src, def);
-	}
 
-	public rootOf(src: EntityID, def: RelationDef): EntityID {
-		return this._relationService.rootOf(src, def);
-	}
 
-	public cascadeOf(root: EntityID, def: RelationDef): EntityID[] {
-		return this._relationService.cascadeOf(root, def);
-	}
 
 	/** Second query-match path: iterate entities matching a
 	 * dense mask **and** sparse-membership terms, invoking `cb` per entity.
@@ -3373,12 +3374,14 @@ export class Store implements ObserverHost, QueryHost {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
-		cb: (entityId: EntityID) => void,
-		includesDisabled: boolean
+		cb: (entityId: EntityID) => void
 	): void {
+		// Unpacked once per call into the locals the driver below reads, which is
+		// what the old positional parameters already were. The loops keep reading
+		// locals, never a property off `terms`.
+		const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
 		const stores = this._sparseStores;
 		if (DEV) {
 			for (let i = 0; i < sparseIncludes.length; i++) {
@@ -3503,24 +3506,20 @@ export class Store implements ObserverHost, QueryHost {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		relation: RelationDef,
 		maxDepth: number,
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void {
-		this._relationService.forEachHierarchyMatch(
+		this.relations.forEachHierarchyMatch(
 			include,
 			exclude,
 			anyOf,
-			sparseIncludes,
-			sparseExcludes,
+			terms,
 			denseArchetypes,
 			relation,
 			maxDepth,
-			includesDisabled,
 			cb
 		);
 	}
@@ -4283,47 +4282,14 @@ export class Store implements ObserverHost, QueryHost {
 	// Event channels, delegations to `EventRegistry` (event_registry.ts)
 	// =======================================================
 
-	public registerEvent<S extends EventShape<S>>(fields: readonly (keyof S & string)[]): EventDef<S> {
-		return this._events.register<S>(fields);
-	}
 
-	public emitEvent(def: EventDef<any>, values: Record<string, number>): void {
-		this._events.emit(def, values);
-	}
 
-	public emitSignal(def: EventDef<EmptyEventSchema>): void {
-		this._events.emitSignal(def);
-	}
 
-	public getEventReader<S extends EventShape<S>>(def: EventDef<S>): EventReader<S> {
-		return this._events.reader(def);
-	}
 
-	public clearEvents(): void {
-		this._events.clear();
-	}
 
-	/** `DEV`-only mid-update emit detection, see
-	 * `EventRegistry.devBufferedCount`. */
-	public get devBufferedEventCount(): number {
-		return this._events.devBufferedCount();
-	}
 
-	public registerEventByKey<S extends EventShape<S>>(
-		key: symbol,
-		fields: readonly (keyof S & string)[]
-	): EventDef<S> {
-		return this._events.registerByKey<S>(key, fields);
-	}
 
-	// any: type-erased, caller recovers F from EventKey<F>
-	public getEventDefByKey(key: symbol): EventDef<any> {
-		return this._events.defByKey(key);
-	}
 
-	public hasEventKey(key: symbol): boolean {
-		return this._events.hasKey(key);
-	}
 
 	// =======================================================
 	// Resource storage, delegations to `ResourceRegistry` (resource_registry.ts)
@@ -4331,27 +4297,10 @@ export class Store implements ObserverHost, QueryHost {
 
 	private readonly _resources = new ResourceRegistry();
 
-	public registerResource(key: symbol, value: unknown): void {
-		this._resources.register(key, value);
-	}
 
-	public getResource(key: symbol): unknown {
-		return this._resources.get(key);
-	}
 
-	public setResource(key: symbol, value: unknown): void {
-		this._resources.set(key, value);
-	}
 
-	/** Fails closed on a missing key. The present → absent → present
-	 * lifecycle, see `ResourceRegistry.remove`. */
-	public removeResource(key: symbol): void {
-		this._resources.remove(key);
-	}
 
-	public hasResource(key: symbol): boolean {
-		return this._resources.has(key);
-	}
 }
 
 

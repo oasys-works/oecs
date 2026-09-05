@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import { resourceKey } from "../../resource";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";

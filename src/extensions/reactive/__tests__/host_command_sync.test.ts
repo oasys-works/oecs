@@ -21,11 +21,12 @@ import {
 } from "../../../core/ecs";
 import { pushCommand } from "../../../core/store";
 import { batchedUpdate, shallow, syncComponentToMap } from "../ecs_sync";
+import { observers } from "../../../capabilities/observers";
 
 type CellDef = ComponentDef<{ x: "i32"; heat: "i32" }>;
 
 function makeWorld() {
-	const world = new ECS({ deterministic: true });
+	const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 	const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 	const commands = installHostCommandSeam(world);
 	const sync = syncComponentToMap(
@@ -103,7 +104,7 @@ describe("host command SAB-ring transport → reactive read bridge", () => {
 	const OP_DESPAWN = 11;
 
 	it("a ring-sourced despawn fires the observers the bridge drains (entity leaves the map)", () => {
-		const world = new ECS({ deterministic: true });
+		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 		// The apply system drains the SAB ring too. Bind the despawn codec.
 		const ring = new HostCommandDispatcher().onCommand(OP_DESPAWN, ringDespawnCodec());

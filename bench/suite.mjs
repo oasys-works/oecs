@@ -30,6 +30,18 @@ const PRESIZED_BULK = { memory: { columnCapacity: N * 6 } };
 
 /** @param {typeof import('../src/index.ts')} lib */
 export function makeSuite(lib, filter = "") {
+	// A world with every optional subsystem available, on either side of a
+	// comparison. A build from before the capability split carries them on the
+	// world already, and has no `ECS.create`. Both sides must measure the same
+	// work, so both get the same surface.
+	const makeWorld = (options) => {
+		if (typeof lib.ECS.create !== "function") return new lib.ECS(options);
+		const plugins = [];
+		for (const cap of [lib.snapshots, lib.events, lib.relations, lib.observers]) {
+			if (typeof cap === "function") plugins.push(cap());
+		}
+		return lib.ECS.create({ ...options, plugins });
+	};
 	const { ECS, SCHEDULE } = lib;
 	const cases = [];
 	const add = (name, fn, opts) => {
@@ -548,8 +560,12 @@ export function makeSuite(lib, filter = "") {
 	// ────────────────────────────────────────────────────────────────────────
 	// 8. Relations.
 	// ────────────────────────────────────────────────────────────────────────
-	{
-		const ecs = new ECS();
+	// Skipped entirely when the filter excludes it. Building the world anyway
+	// put a second world shape (and, on a build with capabilities, three extra
+	// modules) into a process that was measuring something else, which made a
+	// filtered comparison asymmetric between two builds.
+	if ("rel/".includes(filter) || filter.startsWith("rel/")) {
+		const ecs = makeWorld();
 		const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 		const ChildOf = ecs.relations.register({ mode: "exclusive" });
 		const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), N);

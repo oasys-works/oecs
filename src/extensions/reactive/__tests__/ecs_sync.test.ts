@@ -27,11 +27,12 @@ import {
 	batchedUpdate,
 	shallow
 } from "../ecs_sync";
+import { observers } from "../../../capabilities/observers";
 
 /** Build a world whose UPDATE system writes `Pos.x` for whatever eids the test
  * queues, and spawns and despawns whatever it queues, so the test scripts a tick. */
 function makeWorld() {
-	const world = new ECS();
+	const world = ECS.create({ plugins: [observers()] });
 	const Pos = world.registerComponent({ x: "f64" });
 	const toWrite: { eid: EntityID; x: number }[] = [];
 	const toSpawn: number[] = []; // values for newly-spawned entities
@@ -210,7 +211,7 @@ describe("syncComponentToMap, real ECS → reactiveMap", () => {
 // ---------------------------------------------------------------------------
 describe("syncFieldsToMap", () => {
 	it("projects the listed fields and auto-dedups by content (no hand-written eq)", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent({ x: "f64", y: "f64", hp: "f64" });
 		const toWrite: { eid: EntityID; field: "x" | "y" | "hp"; v: number }[] = [];
 		world.addSystems(
@@ -270,7 +271,7 @@ describe("syncFieldsToMap", () => {
 /** World with Pos{x} + Health{hp}; a system writes either component or adds/
  * removes Health on a Pos entity, so a test can script a join scenario. */
 function makeJoinWorld() {
-	const world = new ECS();
+	const world = ECS.create({ plugins: [observers()] });
 	const Pos = world.registerComponent({ x: "f64" });
 	const Health = world.registerComponent({ hp: "f64" });
 	const writePos: { eid: EntityID; x: number }[] = [];
@@ -532,7 +533,7 @@ describe("syncComponentToMap, enable and disable add path", () => {
  * reserved singleton entity carrying a `Session` component (netStatus enum-as-i32,
  * latency and fps f64), the heterogeneous-but-numeric shape the mechanism targets. */
 function makeSingletonWorld() {
-	const world = new ECS({ deterministic: false }); // the client/UI world is non-deterministic
+	const world = ECS.create({ ...({ deterministic: false }), plugins: [observers()] }); // the client/UI world is non-deterministic
 	const Session = world.registerComponent({ netStatus: "i32", latency: "f64", fps: "f64" });
 	const singleton = world.spawn();
 	world.addComponent(singleton, Session, { netStatus: 2, latency: 20, fps: 60 });
@@ -755,7 +756,7 @@ const EMPTY = 255; // an "empty slot" sentinel (cf. the army's EMPTY_SLOT = 0xff
  * its slots initialised to EMPTY. An UPDATE system drains an in-tick write/disable/
  * enable queue. Host-side writes go straight through `world.setField` in the test. */
 function makeSingletonArrayWorld() {
-	const world = new ECS({ deterministic: false });
+	const world = ECS.create({ ...({ deterministic: false }), plugins: [observers()] });
 	const Army = world.registerComponent({ s0: "u8", s1: "u8", s2: "u8" });
 	const singleton = world.spawn();
 	world.addComponent(singleton, Army, { s0: EMPTY, s1: EMPTY, s2: EMPTY });
@@ -967,7 +968,7 @@ describe("shallow", () => {
 // ---------------------------------------------------------------------------
 describe("cross-sync coalescing (the batched-tick contract)", () => {
 	function makeTwoChannelWorld() {
-		const world = new ECS({ deterministic: false });
+		const world = ECS.create({ ...({ deterministic: false }), plugins: [observers()] });
 		const Net = world.registerComponent({ latency: "f64" });
 		const Clock = world.registerComponent({ elapsed: "f64" });
 		const singleton = world.spawn();

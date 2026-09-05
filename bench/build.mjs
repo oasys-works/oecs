@@ -56,9 +56,34 @@ const esbuild = (() => {
 	}
 })();
 
+/** The bench bundle exposes the root entry plus every capability, so a tool
+ * here can build a world with any subsystem installed. The published package
+ * keeps them on separate subpaths, which is what lets a consumer drop the ones
+ * it never names. A tool measuring or checking the whole engine wants all of
+ * them, so it takes this shim instead. */
+const ENTRY_SHIM = `export * from "./src/index.ts";
+export { snapshots } from "./src/capabilities/snapshots.ts";
+export { events } from "./src/capabilities/events.ts";
+export { relations } from "./src/capabilities/relations.ts";
+export { observers } from "./src/capabilities/observers.ts";
+`;
+
 export async function buildLib(outfile, { dev = false, from = root } = {}) {
+	const fs = await import("node:fs");
+	// Written beside `src/` so its relative specifiers resolve, and named so a
+	// stray copy is obviously generated.
+	const shim = path.join(from, ".bench-entry.generated.ts");
+	fs.writeFileSync(shim, ENTRY_SHIM);
+	try {
+		return await buildFrom(shim, outfile, dev);
+	} finally {
+		fs.rmSync(shim, { force: true });
+	}
+}
+
+async function buildFrom(entry, outfile, dev) {
 	await esbuild.build({
-		entryPoints: [path.join(from, "src/index.ts")],
+		entryPoints: [entry],
 		bundle: true,
 		format: "esm",
 		platform: "node",

@@ -21,6 +21,7 @@ import { SCHEDULE } from "../../schedule";
 import type { SystemDescriptor } from "../../system";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
+import { relations } from "../../../../capabilities/relations";
 
 /** A system that bumps the changed tick of `def`'s column on every archetype
  * that `q` matches. Ordered before the reader in each test below. */
@@ -35,7 +36,7 @@ function writer(world: ECS, q: Query<ComponentDef[]>, def: ComponentDef, field: 
 
 describe("Query.changed with more than one component", () => {
 	it("visits an archetype once when any named component changed", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const A = world.registerComponent({ a: "f64" });
 		const B = world.registerComponent({ b: "f64" });
 		const Left = world.registerComponent({ l: "f64" });
@@ -98,7 +99,7 @@ describe("Query.changed with more than one component", () => {
 	});
 
 	it("caches the one-argument form and builds the many-argument form fresh", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const A = world.registerComponent({ a: "f64" });
 		const B = world.registerComponent({ b: "f64" });
 		const q = world.query(A, B);
@@ -112,7 +113,7 @@ describe("Query.changed with more than one component", () => {
 
 describe("Query.withoutRelation with more than one relation", () => {
 	it("excludes a source holding either relation", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const R1 = world.relations.register();
 		const R2 = world.relations.register();
@@ -147,7 +148,7 @@ describe("Query.withoutRelation with more than one relation", () => {
 
 describe("Query.singleEntity on a query that is not dense-only", () => {
 	it("walks the entities to count them, and throws on a count other than one", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Mark = world.registerSparseComponent({ v: "f64" });
 		const q = world.query(Pos).withSparse(Mark);

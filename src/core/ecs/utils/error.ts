@@ -65,7 +65,11 @@ export enum ECS_ERROR {
 	 * definition and a bundle are the two usual mistakes. Dev-only. Without this
 	 * check, the value goes to the store. Then the store fails with a `TypeError`
 	 * about an internal field. That error names the wrong place. */
-	INVALID_TEMPLATE = "INVALID_TEMPLATE"
+	INVALID_TEMPLATE = "INVALID_TEMPLATE",
+	/** An optional subsystem was used on a world that never installed it.
+	 * Distinct from `*_NOT_REGISTERED`, which means the world has the
+	 * subsystem but not that particular component, event or relation. */
+	CAPABILITY_NOT_INSTALLED = "CAPABILITY_NOT_INSTALLED"
 }
 
 export class ECSError extends AppError {
@@ -80,4 +84,29 @@ export class ECSError extends AppError {
 
 export function isEcsError(error: unknown): error is ECSError {
 	return error instanceof ECSError;
+}
+
+/** The fault a world raises when a caller uses a subsystem it never installed.
+ * Names the capability and the import that supplies it, because the remedy is
+ * a construction-site edit and not a call-site one. */
+export function capabilityMissingError(capability: string, api: string): ECSError {
+	return new ECSError(
+		ECS_ERROR.CAPABILITY_NOT_INSTALLED,
+		`${api} needs the ${capability} capability, which this world did not install. ` +
+			`Pass it at construction: ECS.create({ plugins: [${capability}()] }), ` +
+			`imported from @oasys/oecs/${capability}`,
+		{ capability }
+	);
+}
+
+/** Thrown by `Store.restore` (and the helpers here) when a combined snapshot
+ * is malformed, carries the wrong magic and version, or targets a world whose
+ * archetype and component registration doesn't match the snapshot. Mirrors
+ * `StoreRestoreError` / `SparseRestoreError` so callers see one error class per
+ * restore failure mode. */
+export class ECSRestoreError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ECSRestoreError";
+	}
 }

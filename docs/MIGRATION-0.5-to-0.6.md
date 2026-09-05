@@ -172,6 +172,54 @@ the new field `sizing` names the size axis.
 
 ---
 
+## Install the capabilities the world uses
+
+Relations, events, snapshots and observers moved off `new ECS()`. Install the ones the world uses:
+
+```ts
+// before
+const world = new ECS({ deterministic: true });
+world.relations.register();
+world.observe(Pos, { onAdd });
+
+// after
+import { relations } from "@oasys/oecs/relations";
+import { observers } from "@oasys/oecs/observers";
+
+const world = ECS.create({ deterministic: true, plugins: [relations(), observers()] });
+world.relations.register();
+world.observe(Pos, { onAdd });
+```
+
+Only the construction line changes. Every call site is the same.
+
+| You call | Install |
+| --- | --- |
+| `ecs.relations.*`, `ctx.addRelation`, `query.withRelation`, `query.hierarchy` | `relations()` from `@oasys/oecs/relations` |
+| `ecs.events.*`, `ctx.emit`, `ctx.readEvents` | `events()` from `@oasys/oecs/events` |
+| `ecs.snapshots.capture`, `.restore`, `.captureSparse`, `.restoreSparse` | `snapshots()` from `@oasys/oecs/snapshots` |
+| `ecs.observe` | `observers()` from `@oasys/oecs/observers` |
+
+`ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` need no capability. They describe the
+world. The determinism opt-in is unchanged and still separate: `capture` and `restore` throw
+`DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`.
+
+A world that installs none of the four carries none of their code, which is the point. A class
+method cannot be removed by a bundler, so while `ECS` declared `relations` and `snapshots`, every
+program shipped that code whether or not it named them.
+
+If you miss one, the compiler says so: a world built without a capability has no member to reach
+for. A JavaScript caller gets `ECS_ERROR.CAPABILITY_NOT_INSTALLED`, and the message names the
+capability and the import.
+
+A world type that must carry a capability spells it out:
+
+```ts
+import type { RelationsCapability } from "@oasys/oecs/relations";
+
+type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
+```
+
 ## What is new in 0.6
 
 These are additions. None of them is required to upgrade.

@@ -1,5 +1,15 @@
 # Events
 
+> This page needs the **events** capability. Install it at construction:
+>
+> ```ts
+> import { events } from "@oasys/oecs/events";
+>
+> const world = ECS.create({ plugins: [events()] });
+> ```
+>
+> A world built with `new ECS()` has none of it, and reaching for it is a compile error.
+
 > [!NOTE]
 > **0.5.0, a grouped surface.** On the host, the registration, emission, and reading of an event
 > are on the **`ecs.events`** facade: `ecs.events.register(Damage, ["amount"])`,

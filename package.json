@@ -1,196 +1,256 @@
 {
-  "name": "@oasys/oecs",
-  "version": "0.6.0",
-  "description": "Archetype-based Entity Component System",
-  "type": "module",
-  "exports": {
-    ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "development": "./dist/index.development.js",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "development": "./dist/index.development.cjs",
-        "default": "./dist/index.cjs"
-      }
-    },
-    "./dev": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.development.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.development.cjs"
-      }
-    },
-    "./primitives": {
-      "import": {
-        "types": "./dist/primitives.d.ts",
-        "development": "./dist/primitives.development.js",
-        "default": "./dist/primitives.js"
-      },
-      "require": {
-        "types": "./dist/primitives.d.cts",
-        "development": "./dist/primitives.development.cjs",
-        "default": "./dist/primitives.cjs"
-      }
-    },
-    "./reactive": {
-      "import": {
-        "types": "./dist/reactive/index.d.ts",
-        "development": "./dist/reactive/index.development.js",
-        "default": "./dist/reactive/index.js"
-      },
-      "require": {
-        "types": "./dist/reactive/index.d.cts",
-        "development": "./dist/reactive/index.development.cjs",
-        "default": "./dist/reactive/index.cjs"
-      }
-    },
-    "./reactive-sync": {
-      "import": {
-        "types": "./dist/extensions/reactive/index.d.ts",
-        "development": "./dist/extensions/reactive/index.development.js",
-        "default": "./dist/extensions/reactive/index.js"
-      },
-      "require": {
-        "types": "./dist/extensions/reactive/index.d.cts",
-        "development": "./dist/extensions/reactive/index.development.cjs",
-        "default": "./dist/extensions/reactive/index.cjs"
-      }
-    },
-    "./editor": {
-      "import": {
-        "types": "./dist/extensions/editor/index.d.ts",
-        "development": "./dist/extensions/editor/index.development.js",
-        "default": "./dist/extensions/editor/index.js"
-      },
-      "require": {
-        "types": "./dist/extensions/editor/index.d.cts",
-        "development": "./dist/extensions/editor/index.development.cjs",
-        "default": "./dist/extensions/editor/index.cjs"
-      }
-    },
-    "./solid": {
-      "import": {
-        "types": "./dist/extensions/solid/index.d.ts",
-        "development": "./dist/extensions/solid/index.development.js",
-        "default": "./dist/extensions/solid/index.js"
-      },
-      "require": {
-        "types": "./dist/extensions/solid/index.d.cts",
-        "development": "./dist/extensions/solid/index.development.cjs",
-        "default": "./dist/extensions/solid/index.cjs"
-      }
-    },
-    "./shared": {
-      "import": {
-        "types": "./dist/shared.d.ts",
-        "development": "./dist/shared.development.js",
-        "default": "./dist/shared.js"
-      },
-      "require": {
-        "types": "./dist/shared.d.cts",
-        "development": "./dist/shared.development.cjs",
-        "default": "./dist/shared.cjs"
-      }
-    },
-    "./internal": {
-      "import": {
-        "types": "./dist/internal.d.ts",
-        "development": "./dist/internal.development.js",
-        "default": "./dist/internal.js"
-      },
-      "require": {
-        "types": "./dist/internal.d.cts",
-        "development": "./dist/internal.development.cjs",
-        "default": "./dist/internal.cjs"
-      }
-    },
-    "./package.json": "./package.json"
-  },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "CHANGELOG.md"
-  ],
-  "sideEffects": false,
-  "scripts": {
-    "dev": "vite",
-    "build": "node scripts/build.mjs && node scripts/postbuild.mjs",
-    "test": "vitest",
-  "typecheck": "tsc --noEmit",
-  "test:oracle": "vitest run --config bench/net-oracle/vitest.config.ts",
-  "verify": "pnpm typecheck && vitest run && pnpm build",
-    "bench": "vitest bench",
-    "prepublishOnly": "pnpm verify"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/oasys-works/oecs.git"
-  },
-  "homepage": "https://github.com/oasys-works/oecs#readme",
-  "bugs": {
-    "url": "https://github.com/oasys-works/oecs/issues"
-  },
-  "license": "MIT",
-  "keywords": [
-    "ecs",
-    "entity-component-system",
-    "archetype",
-    "gamedev"
-  ],
-  "peerDependencies": {
-    "solid-js": "^1.9.3"
-  },
-  "peerDependenciesMeta": {
-    "solid-js": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@types/node": "^25.0.3",
-    "@vitest/coverage-v8": "^4.0.18",
-    "solid-js": "^1.9.3",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "vite-plugin-dts": "^4.5.3",
-    "vitest": "^4.0.18"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "typesVersions": {
-    "*": {
-      "dev": [
-        "./dist/index.d.ts"
-      ],
-      "primitives": [
-        "./dist/primitives.d.ts"
-      ],
-      "reactive": [
-        "./dist/reactive/index.d.ts"
-      ],
-      "reactive-sync": [
-        "./dist/extensions/reactive/index.d.ts"
-      ],
-      "editor": [
-        "./dist/extensions/editor/index.d.ts"
-      ],
-      "solid": [
-        "./dist/extensions/solid/index.d.ts"
-      ],
-      "shared": [
-        "./dist/shared.d.ts"
-      ],
-      "internal": [
-        "./dist/internal.d.ts"
-      ]
-    }
-  }
+	"name": "@oasys/oecs",
+	"version": "0.6.0",
+	"description": "Archetype-based Entity Component System",
+	"type": "module",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"development": "./dist/index.development.js",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"development": "./dist/index.development.cjs",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./dev": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.development.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.development.cjs"
+			}
+		},
+		"./primitives": {
+			"import": {
+				"types": "./dist/primitives.d.ts",
+				"development": "./dist/primitives.development.js",
+				"default": "./dist/primitives.js"
+			},
+			"require": {
+				"types": "./dist/primitives.d.cts",
+				"development": "./dist/primitives.development.cjs",
+				"default": "./dist/primitives.cjs"
+			}
+		},
+		"./reactive": {
+			"import": {
+				"types": "./dist/reactive/index.d.ts",
+				"development": "./dist/reactive/index.development.js",
+				"default": "./dist/reactive/index.js"
+			},
+			"require": {
+				"types": "./dist/reactive/index.d.cts",
+				"development": "./dist/reactive/index.development.cjs",
+				"default": "./dist/reactive/index.cjs"
+			}
+		},
+		"./reactive-sync": {
+			"import": {
+				"types": "./dist/extensions/reactive/index.d.ts",
+				"development": "./dist/extensions/reactive/index.development.js",
+				"default": "./dist/extensions/reactive/index.js"
+			},
+			"require": {
+				"types": "./dist/extensions/reactive/index.d.cts",
+				"development": "./dist/extensions/reactive/index.development.cjs",
+				"default": "./dist/extensions/reactive/index.cjs"
+			}
+		},
+		"./editor": {
+			"import": {
+				"types": "./dist/extensions/editor/index.d.ts",
+				"development": "./dist/extensions/editor/index.development.js",
+				"default": "./dist/extensions/editor/index.js"
+			},
+			"require": {
+				"types": "./dist/extensions/editor/index.d.cts",
+				"development": "./dist/extensions/editor/index.development.cjs",
+				"default": "./dist/extensions/editor/index.cjs"
+			}
+		},
+		"./solid": {
+			"import": {
+				"types": "./dist/extensions/solid/index.d.ts",
+				"development": "./dist/extensions/solid/index.development.js",
+				"default": "./dist/extensions/solid/index.js"
+			},
+			"require": {
+				"types": "./dist/extensions/solid/index.d.cts",
+				"development": "./dist/extensions/solid/index.development.cjs",
+				"default": "./dist/extensions/solid/index.cjs"
+			}
+		},
+		"./shared": {
+			"import": {
+				"types": "./dist/shared.d.ts",
+				"development": "./dist/shared.development.js",
+				"default": "./dist/shared.js"
+			},
+			"require": {
+				"types": "./dist/shared.d.cts",
+				"development": "./dist/shared.development.cjs",
+				"default": "./dist/shared.cjs"
+			}
+		},
+		"./internal": {
+			"import": {
+				"types": "./dist/internal.d.ts",
+				"development": "./dist/internal.development.js",
+				"default": "./dist/internal.js"
+			},
+			"require": {
+				"types": "./dist/internal.d.cts",
+				"development": "./dist/internal.development.cjs",
+				"default": "./dist/internal.cjs"
+			}
+		},
+		"./package.json": "./package.json",
+		"./snapshots": {
+			"import": {
+				"types": "./dist/capabilities/snapshots.d.ts",
+				"development": "./dist/capabilities/snapshots.development.js",
+				"default": "./dist/capabilities/snapshots.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/snapshots.d.cts",
+				"development": "./dist/capabilities/snapshots.development.cjs",
+				"default": "./dist/capabilities/snapshots.cjs"
+			}
+		},
+		"./events": {
+			"import": {
+				"types": "./dist/capabilities/events.d.ts",
+				"development": "./dist/capabilities/events.development.js",
+				"default": "./dist/capabilities/events.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/events.d.cts",
+				"development": "./dist/capabilities/events.development.cjs",
+				"default": "./dist/capabilities/events.cjs"
+			}
+		},
+		"./relations": {
+			"import": {
+				"types": "./dist/capabilities/relations.d.ts",
+				"development": "./dist/capabilities/relations.development.js",
+				"default": "./dist/capabilities/relations.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/relations.d.cts",
+				"development": "./dist/capabilities/relations.development.cjs",
+				"default": "./dist/capabilities/relations.cjs"
+			}
+		},
+		"./observers": {
+			"import": {
+				"types": "./dist/capabilities/observers.d.ts",
+				"development": "./dist/capabilities/observers.development.js",
+				"default": "./dist/capabilities/observers.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/observers.d.cts",
+				"development": "./dist/capabilities/observers.development.cjs",
+				"default": "./dist/capabilities/observers.cjs"
+			}
+		}
+	},
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"CHANGELOG.md"
+	],
+	"sideEffects": false,
+	"scripts": {
+		"dev": "vite",
+		"build": "node scripts/build.mjs && node scripts/postbuild.mjs",
+		"test": "vitest",
+		"typecheck": "tsc --noEmit",
+		"test:oracle": "vitest run --config bench/net-oracle/vitest.config.ts",
+		"verify": "pnpm typecheck && vitest run && pnpm build",
+		"bench": "vitest bench",
+		"prepublishOnly": "pnpm verify"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/oasys-works/oecs.git"
+	},
+	"homepage": "https://github.com/oasys-works/oecs#readme",
+	"bugs": {
+		"url": "https://github.com/oasys-works/oecs/issues"
+	},
+	"license": "MIT",
+	"keywords": [
+		"ecs",
+		"entity-component-system",
+		"archetype",
+		"gamedev"
+	],
+	"peerDependencies": {
+		"solid-js": "^1.9.3"
+	},
+	"peerDependenciesMeta": {
+		"solid-js": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^25.0.3",
+		"@vitest/coverage-v8": "^4.0.18",
+		"solid-js": "^1.9.3",
+		"typescript": "~5.6.2",
+		"vite": "^6.0.3",
+		"vite-plugin-dts": "^4.5.3",
+		"vitest": "^4.0.18"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"typesVersions": {
+		"*": {
+			"dev": [
+				"./dist/index.d.ts"
+			],
+			"primitives": [
+				"./dist/primitives.d.ts"
+			],
+			"reactive": [
+				"./dist/reactive/index.d.ts"
+			],
+			"reactive-sync": [
+				"./dist/extensions/reactive/index.d.ts"
+			],
+			"editor": [
+				"./dist/extensions/editor/index.d.ts"
+			],
+			"solid": [
+				"./dist/extensions/solid/index.d.ts"
+			],
+			"shared": [
+				"./dist/shared.d.ts"
+			],
+			"internal": [
+				"./dist/internal.d.ts"
+			],
+			"snapshots": [
+				"./dist/capabilities/snapshots.d.ts"
+			],
+			"events": [
+				"./dist/capabilities/events.d.ts"
+			],
+			"relations": [
+				"./dist/capabilities/relations.d.ts"
+			],
+			"observers": [
+				"./dist/capabilities/observers.d.ts"
+			]
+		}
+	}
 }

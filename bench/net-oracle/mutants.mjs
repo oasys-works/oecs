@@ -472,7 +472,7 @@ const MUTANTS = [
 	{
 		id: "events-not-cleared-at-the-tick-tail",
 		what: "an event channel keeps its rows past the end of the update",
-		find: `      this._store.clearEvents();
+		find: `      if (this._store.hasEvents) this._store.events.clear();
       if (DEV) this._store.trace?.tickEnd(this._tick);`,
 		to: `      if (DEV) this._store.trace?.tickEnd(this._tick);`,
 	},
@@ -542,12 +542,12 @@ const MUTANTS = [
 		what: "ctx.removeRelation removes every target instead of the named one",
 		find: `  removeRelation(src, def, tgt) {
     if (DEV) accessCheck.assertRelationWrite(def);
-    this._store.removeRelation(src, def, tgt);
+    this._store.relations.removeRelation(src, def, tgt);
     return this;
   }`,
 		to: `  removeRelation(src, def, tgt) {
     if (DEV) accessCheck.assertRelationWrite(def);
-    this._store.removeRelation(src, def);
+    this._store.relations.removeRelation(src, def);
     return this;
   }`,
 	},
@@ -559,7 +559,7 @@ const MUTANTS = [
 		id: "ctx-has-relation-always-true",
 		what: "ctx.hasRelation reports a target for every source",
 		find: `  hasRelation(src, def) {
-    return this._store.hasRelation(src, def);
+    return this._store.relations.hasRelation(src, def);
   }`,
 		to: `  hasRelation(src, def) {
     return true;
@@ -601,10 +601,10 @@ const MUTANTS = [
 		what: "withRelation keeps every row instead of the sources of that relation",
 		find: `    const sid = this._resolver.relationBackingSparseId(def);
     const result = this._deriveRelation(
-      appendSparse(this.sparseIncludes, sid),`,
+      appendSparse(this.terms.sparseIncludes, sid),`,
 		to: `    const sid = this._resolver.relationBackingSparseId(def);
     const result = this._deriveRelation(
-      this.sparseIncludes,`,
+      this.terms.sparseIncludes,`,
 	},
 	{
 		// The fetch of an optional column must give the column when the archetype holds

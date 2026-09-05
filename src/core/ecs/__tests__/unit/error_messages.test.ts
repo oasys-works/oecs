@@ -17,14 +17,15 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { resourceKey } from "../../resource";
 import { eventKey } from "../../event";
+import { events } from "../../../../capabilities/events";
 
 describe("component debug names", () => {
 	it("names the component in access-violation messages", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Pos = world.registerComponent({ x: "f64", y: "f64" }, { name: "Pos" });
 		const Vel = world.registerComponent({ vx: "f64", vy: "f64" }, { name: "Vel" });
 		const e = world.spawn();
@@ -63,7 +64,7 @@ describe("component debug names", () => {
 	});
 
 	it("array-shorthand registration accepts a name in the options slot", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Pos = world.registerComponent(["x", "y"] as const, "i32", { name: "Pos" });
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1, y: 2 });
@@ -74,7 +75,7 @@ describe("component debug names", () => {
 
 describe("ENTITY_NOT_ALIVE context", () => {
 	it("names the op and decodes index/generation, with the id in context", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Pos = world.registerComponent({ x: "f64" }, { name: "Pos" });
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
@@ -99,13 +100,13 @@ describe("ENTITY_NOT_ALIVE context", () => {
 
 describe("registry messages interpolate the key name", () => {
 	it("resource read of an unregistered key names it and hints registration", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Config = resourceKey<number>("config");
 		expect(() => world.resources.get(Config)).toThrow(/'config'.*resources\.register/);
 	});
 
 	it("event emit of an unregistered key names it and hints registration", () => {
-		const world = new ECS();
+		const world = ECS.create({ plugins: [events()] });
 		const Hit = eventKey<{ dmg: number }>("hit");
 		expect(() => world.events.read(Hit)).toThrow(/'hit'.*events\.register/);
 	});

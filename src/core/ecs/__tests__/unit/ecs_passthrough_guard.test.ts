@@ -33,17 +33,31 @@ import ts from "typescript";
 const BEGIN_MARKER = "// === BEGIN STORE PASS-THROUGH BAND ===";
 const END_MARKER = "// === END STORE PASS-THROUGH BAND ===";
 const DELEGATES = new Set(["_store", "_schedule", "_ctx", "_observers"]);
+// A collaborator the store exposes by name. `this._store.relations.addRelation(…)`
+// is still one mechanical delegation: the extra hop names the object that owns
+// the state, and adds no logic. Every other rule below is unchanged, so a band
+// member still cannot branch, compute an argument, or make a second call.
+const STORE_COLLABORATORS = new Set(["relations", "events", "resources", "snapshots"]);
 
 const ecsPath = fileURLToPath(new URL("../../ecs.ts", import.meta.url));
 const source = readFileSync(ecsPath, "utf8");
 
-/** `this.<delegate>.<member>` where `<delegate>` is an allowed collaborator. */
+/** `this.<delegate>.<member>`, or `this._store.<collaborator>.<member>` where
+ * `<collaborator>` is one the store exposes by name. */
 function isDelegateAccess(expr: ts.Expression): boolean {
+	if (!ts.isPropertyAccessExpression(expr)) return false;
+	const recv = expr.expression;
+	if (!ts.isPropertyAccessExpression(recv)) return false;
+	// `this.<delegate>.<member>`
+	if (recv.expression.kind === ts.SyntaxKind.ThisKeyword) {
+		return DELEGATES.has(recv.name.text);
+	}
+	// `this._store.<collaborator>.<member>`
 	return (
-		ts.isPropertyAccessExpression(expr) &&
-		ts.isPropertyAccessExpression(expr.expression) &&
-		expr.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
-		DELEGATES.has(expr.expression.name.text)
+		ts.isPropertyAccessExpression(recv.expression) &&
+		recv.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+		recv.expression.name.text === "_store" &&
+		STORE_COLLABORATORS.has(recv.name.text)
 	);
 }
 
@@ -182,8 +196,10 @@ describe("ECS pass-through band", () => {
 		const names = new Set(
 			bandMembers.map((m) => (m.name && ts.isIdentifier(m.name) ? m.name.text : "?"))
 		);
-		// Spot-check members that must live in the band today.
-		for (const expected of ["archetypeCount", "registerTag", "flush", "observe", "addSystems"]) {
+		// Spot-check members that must live in the band today. `observe` used to
+		// be here and is not any more: it arrives with the observers capability,
+		// so a world that never installs one has no such member to delegate.
+		for (const expected of ["archetypeCount", "registerTag", "flush", "addSystems"]) {
 			expect(names.has(expected), `expected ${expected} in the band`).toBe(true);
 		}
 	});

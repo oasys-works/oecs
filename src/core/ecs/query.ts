@@ -1,5 +1,5 @@
 /***
- * Query, QueryBuilder, SystemContext. System-facing ECS interface.
+ * Query and QueryBuilder. The read side of the system-facing interface.
  *
  * Query<Defs> is a live, cached view over all archetypes matching a
  * component mask. Iterate with forEach(), which yields non-empty
@@ -9,10 +9,13 @@
  * QueryBuilder is the entry point for creating queries inside
  * registerSystem(fn, qb => qb.with(Pos, Vel)).
  *
- * SystemContext wraps Store for use inside system functions, exposing
- * only deferred operations (add and remove component, destroy entity) that
- * buffer changes until the phase flush. This prevents iterator
- * invalidation during system execution.
+ * The write side is `system_context.ts`. A system reaches this file for the
+ * rows it iterates and that one for the values it changes.
+ *
+ * A query carries two kinds of term. A dense term sets a bit in the component
+ * mask and picks the archetypes. Every other term rides in one `QueryTerms`
+ * record, leaves the mask alone, and lets a derived query share the parent's
+ * live archetype list. Read `QueryTerms` before adding a term.
  *
  * Usage (inside a system):
  *
@@ -43,12 +46,10 @@
  *
  ***/
 
-import type { Store } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
 import type { Archetype, ArchetypeView } from "./archetype";
 import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
-import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";
 import type {
 	ComponentDef,
@@ -56,51 +57,14 @@ import type {
 	ComponentID,
 	MutableColumnsForSchema,
 	ColumnsForSchema,
-	AttachValuesArg,
-	BundleOrDef,
 	SchemaOf,
-	FieldValues,
 	DeclaredQueryTerm
 } from "./component";
-import { bundleDef, bundleValues } from "./component";
-import type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./sparse_store";
+import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
 import type { RelationDef } from "./relation";
-import type {
-	SystemAccess,
-	DeclaredRead,
-	DeclaredWrite,
-	DeclaredAdd,
-	DeclaredRemove,
-	DeclaredSparseRead,
-	DeclaredSparseWrite,
-	DeclaredRelationRead,
-	DeclaredRelationWrite,
-	DeclaredResourceRead,
-	DeclaredResourceWrite,
-	DespawnArg
-} from "./system";
-import {
-	createCursor,
-	createRef,
-	createSparseCursor,
-	type ComponentCursor,
-	type ComponentRef,
-	type ReadonlyComponentCursor,
-	type ReadonlyComponentRef
-} from "./ref";
-import type {
-	EmptyEventSchema,
-	EventDef,
-	EventKey,
-	EventReader,
-	EventShape,
-	SignalKey
-} from "./event";
-import type { ResourceKey, ResourceValueOf } from "./resource";
-import { BitSet, unsafeCast } from "../../type_primitives";
+import { BitSet } from "../../type_primitives";
 import { bucketPush } from "./utils/arrays";
 import { ECSError, ECS_ERROR } from "./utils/error";
-import { dispatchTrace } from "./dispatch_trace";
 import { accessCheck } from "./access_check";
 import { DEV } from "../../dev_flag";
 
@@ -135,29 +99,16 @@ export interface QueryHost {
 	noteSetEntity(def: ComponentHandle, eid: EntityID): void;
 	/** A chunk loop took the row tick column of `cid` (`cols.ticks`). */
 	noteScan(cid: number): void;
-	/** Dev-only: buffered event count across dirty channels (mid-update emit
-	 * detection in `ECS.update()`). */
-	readonly devBufferedEventCount: number;
+	/** The event registry and the relation service are reached by name off the
+	 * store (`store.events`, `store.relations`), not through this seam. This
+	 * interface stays the query driver's view of its host, and nothing else. */
 	/** Second query-match path: sparse-term intersection. */
 	forEachSparseMatch(
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
-		cb: (entityId: EntityID) => void,
-		includesDisabled: boolean
-	): void;
-	/** Third query-match path: the `(*, T)` wildcard. */
-	forEachTargetMatch(
-		target: EntityID,
-		include: BitSet,
-		exclude: BitSet | null,
-		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void;
 	/** Fourth query-match path: hierarchy depth ordering. */
@@ -165,12 +116,10 @@ export interface QueryHost {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		relation: RelationDef,
 		maxDepth: number,
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void;
 }
@@ -296,11 +245,9 @@ export interface QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
-		cb: (entityId: EntityID) => void,
-		includesDisabled: boolean
+		cb: (entityId: EntityID) => void
 	): void;
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term
 	 * (`withRelation`) to the membership store the sparse-match path
@@ -315,9 +262,7 @@ export interface QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
-		includesDisabled: boolean,
+		terms: QueryTerms,
 		cb: (entityId: EntityID) => void
 	): void;
 	/** Fourth query-match path: yield the matched entities (dense mask +
@@ -331,12 +276,10 @@ export interface QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		relation: RelationDef,
 		maxDepth: number,
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void;
 }
@@ -354,6 +297,78 @@ const NO_OPTIONAL_TERMS: readonly ComponentID[] = Object.freeze([]);
 // `DEV` `relationReads` access check (`_assertRelationAccess`); the driver
 // reads the relation's backing sparse id off `sparseIncludes`, never this.
 const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
+
+/** The non-dense query terms, carried as one frozen record.
+ *
+ * Every term here leaves the dense component mask alone, so a query that
+ * carries one still shares its parent's live archetype list. They travel
+ * together through each derive (`and`, `without`, `anyOf`) and through each
+ * driver seam below, so one parameter replaces the run of positional lists
+ * those signatures used to repeat.
+ *
+ * A query that carries none of them holds `NO_TERMS`. That is why
+ * `_carryNondense` decides with one reference comparison, where it used to
+ * test each term in turn. The old shape spread one term across a constructor
+ * parameter, a carry test and a `new Query` argument, and a term added to two
+ * of the three went unnoticed. Add a term by adding a field here and a line to
+ * `deriveTerms`.
+ *
+ * Cold path. Read once per `forEach` call, never per row. */
+export interface QueryTerms {
+	/** Sparse membership a matched entity must hold. Also carries the backing
+	 * sparse id of each `(R, *)` relation term, which is how the wildcard
+	 * reuses the sparse-match driver unchanged. */
+	readonly sparseIncludes: readonly SparseComponentID[];
+	/** Sparse membership a matched entity must not hold. */
+	readonly sparseExcludes: readonly SparseComponentID[];
+	/** Fetch-if-present terms. Does not narrow the matched set. Authorizes
+	 * `getOptionalColumnRead` under `DEV`. */
+	readonly optionalTerms: readonly ComponentID[];
+	/** Include disabled rows. Widens the iteration bound from the enabled
+	 * count to the total count. */
+	readonly includesDisabled: boolean;
+	/** `(R, *)` terms, recorded for the `DEV` `relationReads` access check
+	 * alone. The driver reads the backing sparse id off `sparseIncludes`. */
+	readonly relationIncludes: readonly RelationDef[];
+	readonly relationExcludes: readonly RelationDef[];
+	/** Depth-ordering term. Reorders the matched entities, parents first. */
+	readonly hierarchyTerm: HierarchyTerm | null;
+}
+
+/** The terms of a query that declares none. Shared by every dense-only query,
+ * so the common path allocates nothing and `_carryNondense` compares one
+ * reference. Frozen: a mutation here would reach every such query. */
+export const NO_TERMS: QueryTerms = Object.freeze({
+	sparseIncludes: NO_SPARSE_TERMS,
+	sparseExcludes: NO_SPARSE_TERMS,
+	optionalTerms: NO_OPTIONAL_TERMS,
+	includesDisabled: false,
+	relationIncludes: NO_RELATION_TERMS,
+	relationExcludes: NO_RELATION_TERMS,
+	hierarchyTerm: null
+});
+
+/** Build the terms for a derived query.
+ *
+ * The result never equals `NO_TERMS`, and `_carryNondense` depends on that.
+ * Every caller adds a term and none removes one, so a derive always widens the
+ * record. The zero-argument forms (`optional()`, `withSparse()`) return the
+ * receiver before they reach here, which is what keeps the rule true. A future
+ * term that can be removed breaks it, and must collapse an emptied record back
+ * to `NO_TERMS` here.
+ *
+ * Cold path: one call per cache miss on a derive, never per row. */
+export function deriveTerms(base: QueryTerms, patch: Partial<QueryTerms>): QueryTerms {
+	return Object.freeze({
+		sparseIncludes: patch.sparseIncludes ?? base.sparseIncludes,
+		sparseExcludes: patch.sparseExcludes ?? base.sparseExcludes,
+		optionalTerms: patch.optionalTerms ?? base.optionalTerms,
+		includesDisabled: patch.includesDisabled ?? base.includesDisabled,
+		relationIncludes: patch.relationIncludes ?? base.relationIncludes,
+		relationExcludes: patch.relationExcludes ?? base.relationExcludes,
+		hierarchyTerm: patch.hierarchyTerm !== undefined ? patch.hierarchyTerm : base.hierarchyTerm
+	});
+}
 
 /** No depth limit on a `.hierarchy(R)` term, yield every matched entity
  * regardless of its depth in the tree. The default `maxDepth`. */
@@ -530,53 +545,19 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// Stable id minted by the resolver. Combined with a component id into
 	// (id << 16) | cid to key the resolver's shared single-component caches.
 	public readonly id: number;
-	// Sparse-membership terms. Empty for a dense-only query (the common
-	// case), in which they share the frozen NO_SPARSE_TERMS singleton and the
-	// sparse match path is never consulted. `withSparse` / `withoutSparse`
-	// don't touch the dense mask, so a derived query reuses the parent's live
-	// `_archetypes` array, the store keeps pushing new archetypes into it, so
-	// both queries stay live without a second `registerQuery`.
-	public readonly sparseIncludes: readonly SparseComponentID[];
-	public readonly sparseExcludes: readonly SparseComponentID[];
-	// Optional fetch-if-present terms. Empty for the common case (shares
-	// the frozen NO_OPTIONAL_TERMS singleton). An optional term does not narrow
-	// the matched set. It leaves the dense mask untouched, so a derived query
-	// reuses the parent's live `_archetypes` array (same as the sparse terms).
-	// The term is *consumed*, not decorative: `forEach` publishes it as
-	// the active optional scope, and `getOptionalColumnRead` rejects (in
-	// `DEV`) a fetch of any component not listed here, so `.optional(T)` is
-	// the declaration that authorizes the fetch, the read-side analog of
-	// `reads:[T]`. It is carried symmetrically through `and`, `not` and `anyOf` (see
-	// `_carryNondense`), so term order never drops it.
-	public readonly optionalTerms: readonly ComponentID[];
-	// Include-disabled opt-in. False by default, queries exclude disabled
-	// entities (the archetype iteration bound `entityCount` is `enabled_count`).
-	// `.includeDisabled()` derives a query with this true. It widens the
-	// non-empty filter, `count`, and `forEachEntity` to span disabled rows, and
-	// makes `forEach` publish the all-rows iteration flag so the SoA loop reads
-	// `entityCount === length`. Like the sparse and optional terms it doesn't touch
-	// the dense mask, so the derived query reuses the parent's live archetype list
-	// and is carried through `and`, `not` and `anyOf` (`_carryNondense`).
+	// The non-dense terms, one frozen record (see `QueryTerms`). A query that
+	// declares none holds the shared `NO_TERMS`, which is the identity
+	// `_carryNondense` tests. No term here touches the dense mask, so a derived
+	// query reuses this one's live `_archetypes` array: the store keeps pushing
+	// newly-created archetypes into it, and both queries stay live off one
+	// `registerQuery`.
+	public readonly terms: QueryTerms;
+	// `terms.includesDisabled`, copied out at construction. The iteration bound
+	// is chosen from it on every `entityCount`, `firstEntity` and `forEach`
+	// call, and reading it through `terms` there costs a second load on a path
+	// measured in single-digit nanoseconds. The constructor is the only writer
+	// and `terms` is frozen, so the copy cannot drift.
 	public readonly includesDisabled: boolean;
-	// Relation-wildcard `(R, *)` terms. Empty for the common case (shares
-	// the frozen NO_RELATION_TERMS singleton). `withRelation(R)` /
-	// `withoutRelation(R)` push R's *backing sparse id* onto `sparseIncludes` /
-	// `sparseExcludes` (so iteration reuses the sparse-match driver unchanged) and
-	// record R here purely so `forEachEntity` / `forEachRelatedTo` can assert
-	// `relationReads: [R]` under `DEV` (`_assertRelationAccess`). Carried
-	// through `and`, `not` and `anyOf` like the sparse terms (`_carryNondense`).
-	public readonly relationIncludes: readonly RelationDef[];
-	public readonly relationExcludes: readonly RelationDef[];
-	// Hierarchy depth-ordering term. `null` for the common case (no
-	// ordering). A `.hierarchy(R)` term does not narrow the matched set or touch
-	// the dense mask. It reorders the matched entities into depth order (parents
-	// before children) and optionally drops those past `maxDepth`. So the derived
-	// query reuses this one's live archetype list and is carried through
-	// `and`, `not` or `anyOf` like the sparse or optional terms (`_carryNondense`). It
-	// reaches the store only via `forEachEntity` (members scatter across
-	// archetypes. There is no SoA span, so `forEach` rejects it, like a sparse
-	// term); `accessCheck` validates `relationReads: [R]` at iteration time.
-	public readonly hierarchyTerm: HierarchyTerm | null;
 
 	constructor(
 		archetypes: Archetype[],
@@ -586,13 +567,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
 		id: number,
-		sparseIncludes: readonly SparseComponentID[] = NO_SPARSE_TERMS,
-		sparseExcludes: readonly SparseComponentID[] = NO_SPARSE_TERMS,
-		optionalTerms: readonly ComponentID[] = NO_OPTIONAL_TERMS,
-		includesDisabled: boolean = false,
-		relationIncludes: readonly RelationDef[] = NO_RELATION_TERMS,
-		relationExcludes: readonly RelationDef[] = NO_RELATION_TERMS,
-		hierarchyTerm: HierarchyTerm | null = null
+		terms: QueryTerms = NO_TERMS
 	) {
 		this._archetypes = archetypes;
 		this.defs = defs;
@@ -601,13 +576,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		this._exclude = exclude;
 		this._anyOf = anyOf;
 		this.id = id;
-		this.sparseIncludes = sparseIncludes;
-		this.sparseExcludes = sparseExcludes;
-		this.optionalTerms = optionalTerms;
-		this.includesDisabled = includesDisabled;
-		this.relationIncludes = relationIncludes;
-		this.relationExcludes = relationExcludes;
-		this.hierarchyTerm = hierarchyTerm;
+		this.terms = terms;
+		this.includesDisabled = terms.includesDisabled;
 	}
 
 	/** Guard the dense-only methods (`count` / `forEach` / `archetype_count`)
@@ -620,11 +590,11 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * include-mask invariant. */
 	private _assertDenseOnly(method: string): void {
 		if (
-			this.sparseIncludes.length > 0 ||
-			this.sparseExcludes.length > 0 ||
-			this.relationIncludes.length > 0 ||
-			this.relationExcludes.length > 0 ||
-			this.hierarchyTerm !== null
+			this.terms.sparseIncludes.length > 0 ||
+			this.terms.sparseExcludes.length > 0 ||
+			this.terms.relationIncludes.length > 0 ||
+			this.terms.relationExcludes.length > 0 ||
+			this.terms.hierarchyTerm !== null
 		) {
 			throw new ECSError(
 				ECS_ERROR.SPARSE_QUERY_DENSE_PATH,
@@ -637,11 +607,11 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * archetype-walk fast paths (`entityCount`, `firstEntity`, `singleEntity`). */
 	private _isDenseOnly(): boolean {
 		return (
-			this.sparseIncludes.length === 0 &&
-			this.sparseExcludes.length === 0 &&
-			this.relationIncludes.length === 0 &&
-			this.relationExcludes.length === 0 &&
-			this.hierarchyTerm === null
+			this.terms.sparseIncludes.length === 0 &&
+			this.terms.sparseExcludes.length === 0 &&
+			this.terms.relationIncludes.length === 0 &&
+			this.terms.relationExcludes.length === 0 &&
+			this.terms.hierarchyTerm === null
 		);
 	}
 
@@ -732,17 +702,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * state, threading the terms forward so composition is symmetric regardless of
 	 * order. Reading `base`'s private fields is allowed, same-class instance. */
 	private _carryNondense(base: Query<any>): Query<any> {
-		if (
-			this.optionalTerms.length === 0 &&
-			this.sparseIncludes.length === 0 &&
-			this.sparseExcludes.length === 0 &&
-			!this.includesDisabled &&
-			this.relationIncludes.length === 0 &&
-			this.relationExcludes.length === 0 &&
-			this.hierarchyTerm === null
-		) {
-			return base;
-		}
+		// One reference comparison. `deriveTerms` collapses an empty result back
+		// to the shared `NO_TERMS`, so this identity holds for a query that
+		// derived its way back to declaring no term, not only for a fresh one.
+		if (this.terms === NO_TERMS) return base;
 		return new Query(
 			base._archetypes,
 			base.defs,
@@ -751,13 +714,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			base._exclude,
 			base._anyOf,
 			this._resolver.nextQueryId(),
-			this.sparseIncludes,
-			this.sparseExcludes,
-			this.optionalTerms,
-			this.includesDisabled,
-			this.relationIncludes,
-			this.relationExcludes,
-			this.hierarchyTerm
+			this.terms
 		);
 	}
 
@@ -856,8 +813,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
-			appendSparse(this.sparseIncludes, sid),
-			this.sparseExcludes
+			appendSparse(this.terms.sparseIncludes, sid),
+			this.terms.sparseExcludes
 		);
 		cache.set(key, result);
 		return result;
@@ -883,8 +840,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
-			this.sparseIncludes,
-			appendSparse(this.sparseExcludes, sid)
+			this.terms.sparseIncludes,
+			appendSparse(this.terms.sparseExcludes, sid)
 		);
 		cache.set(key, result);
 		return result;
@@ -908,13 +865,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this._exclude,
 			this._anyOf,
 			this._resolver.nextQueryId(),
-			sparseIncludes,
-			sparseExcludes,
-			this.optionalTerms,
-			this.includesDisabled,
-			this.relationIncludes,
-			this.relationExcludes,
-			this.hierarchyTerm
+			deriveTerms(this.terms, { sparseIncludes, sparseExcludes })
 		);
 	}
 
@@ -942,10 +893,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver.relationBackingSparseId(def);
 		const result = this._deriveRelation(
-			appendSparse(this.sparseIncludes, sid as unknown as number),
-			this.sparseExcludes,
-			appendRelation(this.relationIncludes, def),
-			this.relationExcludes
+			appendSparse(this.terms.sparseIncludes, sid as unknown as number),
+			this.terms.sparseExcludes,
+			appendRelation(this.terms.relationIncludes, def),
+			this.terms.relationExcludes
 		);
 		cache.set(key, result);
 		return result;
@@ -968,10 +919,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (cached !== undefined) return cached as Query<Defs>;
 		const sid = this._resolver.relationBackingSparseId(def);
 		const result = this._deriveRelation(
-			this.sparseIncludes,
-			appendSparse(this.sparseExcludes, sid as unknown as number),
-			this.relationIncludes,
-			appendRelation(this.relationExcludes, def)
+			this.terms.sparseIncludes,
+			appendSparse(this.terms.sparseExcludes, sid as unknown as number),
+			this.terms.relationIncludes,
+			appendRelation(this.terms.relationExcludes, def)
 		);
 		cache.set(key, result);
 		return result;
@@ -995,13 +946,12 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this._exclude,
 			this._anyOf,
 			this._resolver.nextQueryId(),
-			sparseIncludes,
-			sparseExcludes,
-			this.optionalTerms,
-			this.includesDisabled,
-			relationIncludes,
-			relationExcludes,
-			this.hierarchyTerm
+			deriveTerms(this.terms, {
+				sparseIncludes,
+				sparseExcludes,
+				relationIncludes,
+				relationExcludes
+			})
 		);
 	}
 
@@ -1030,7 +980,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		maxDepth: number = HIERARCHY_UNBOUNDED
 	): Query<Defs> {
 		if (DEV) {
-			if (this.hierarchyTerm !== null) {
+			if (this.terms.hierarchyTerm !== null) {
 				throw new ECSError(
 					ECS_ERROR.HIERARCHY_ALREADY_SET,
 					`hierarchy() is already set on this query, a query carries a single depth ordering`
@@ -1075,13 +1025,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this._exclude,
 			this._anyOf,
 			this._resolver.nextQueryId(),
-			this.sparseIncludes,
-			this.sparseExcludes,
-			this.optionalTerms,
-			this.includesDisabled,
-			this.relationIncludes,
-			this.relationExcludes,
-			hierarchyTerm
+			deriveTerms(this.terms, { hierarchyTerm })
 		);
 	}
 
@@ -1091,11 +1035,11 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * built outside a system, same rationale as the data-op checks. `DEV` only
 	 * outside a system `assertRelationRead` is a no-op. */
 	private _assertRelationAccess(): void {
-		for (let i = 0; i < this.relationIncludes.length; i++) {
-			accessCheck.assertRelationRead(this.relationIncludes[i]);
+		for (let i = 0; i < this.terms.relationIncludes.length; i++) {
+			accessCheck.assertRelationRead(this.terms.relationIncludes[i]);
 		}
-		for (let i = 0; i < this.relationExcludes.length; i++) {
-			accessCheck.assertRelationRead(this.relationExcludes[i]);
+		for (let i = 0; i < this.terms.relationExcludes.length; i++) {
+			accessCheck.assertRelationRead(this.terms.relationExcludes[i]);
 		}
 	}
 
@@ -1120,9 +1064,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this.include,
 			this._exclude,
 			this._anyOf,
-			this.sparseIncludes,
-			this.sparseExcludes,
-			this.includesDisabled,
+			this.terms,
 			cb
 		);
 	}
@@ -1159,7 +1101,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		const cache = this._resolver.caches.optionalSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
-		const result = this._deriveOptional(appendOptional(this.optionalTerms, cid));
+		const result = this._deriveOptional(appendOptional(this.terms.optionalTerms, cid));
 		cache.set(key, result);
 		return result;
 	}
@@ -1176,13 +1118,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this._exclude,
 			this._anyOf,
 			this._resolver.nextQueryId(),
-			this.sparseIncludes,
-			this.sparseExcludes,
-			optionalTerms,
-			this.includesDisabled,
-			this.relationIncludes,
-			this.relationExcludes,
-			this.hierarchyTerm
+			deriveTerms(this.terms, { optionalTerms })
 		);
 	}
 
@@ -1206,13 +1142,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this._exclude,
 			this._anyOf,
 			this._resolver.nextQueryId(),
-			this.sparseIncludes,
-			this.sparseExcludes,
-			this.optionalTerms,
-			true,
-			this.relationIncludes,
-			this.relationExcludes,
-			this.hierarchyTerm
+			deriveTerms(this.terms, { includesDisabled: true })
 		);
 		cache.set(this.id, result);
 		return result;
@@ -1238,7 +1168,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			// `getOptionalColumnRead` can verify each fetch was declared via
 			// `.optional(T)`. Dev-only, prod runs the bare loop below
 			// byte-for-byte. The `finally` keeps the scope balanced if `cb` throws.
-			accessCheck.enterOptionalScope(this.optionalTerms);
+			accessCheck.enterOptionalScope(this.terms.optionalTerms);
 			try {
 				const archs = this.nonEmptyArchs();
 				for (let i = 0; i < archs.length; i++) {
@@ -1330,7 +1260,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		view.resolver = this._resolver;
 		if (DEV) {
 			this._assertDenseOnly("forEachChunk");
-			accessCheck.enterOptionalScope(this.optionalTerms);
+			accessCheck.enterOptionalScope(this.terms.optionalTerms);
 			try {
 				const archs = this.nonEmptyArchs();
 				for (let i = 0; i < archs.length; i++) {
@@ -1383,7 +1313,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	private _someInner(cb: (arch: ArchetypeView<Defs>) => boolean): boolean {
 		if (DEV) {
 			this._assertDenseOnly("some");
-			accessCheck.enterOptionalScope(this.optionalTerms);
+			accessCheck.enterOptionalScope(this.terms.optionalTerms);
 			try {
 				const archs = this.nonEmptyArchs();
 				for (let i = 0; i < archs.length; i++) {
@@ -1418,7 +1348,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			// `getOptionalColumnRead` can verify each fetch was declared via
 			// `.optional(T)`. Dev-only, prod runs the bare loop below
 			// byte-for-byte. The `finally` keeps the scope balanced if `cb` throws.
-			accessCheck.enterOptionalScope(this.optionalTerms);
+			accessCheck.enterOptionalScope(this.terms.optionalTerms);
 			try {
 				const archs = this.nonEmptyArchs();
 				for (let i = 0; i < archs.length; i++) {
@@ -1466,18 +1396,16 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// over R, so it routes to the dedicated depth-ordered driver rather than the
 		// insertion-order sparse-match path. The relation is read, so it needs the
 		// same `relationReads: [R]` assertion as a `(R, *)` term.
-		if (this.hierarchyTerm !== null) {
-			if (DEV) accessCheck.assertRelationRead(this.hierarchyTerm.relation);
+		if (this.terms.hierarchyTerm !== null) {
+			if (DEV) accessCheck.assertRelationRead(this.terms.hierarchyTerm.relation);
 			this._resolver.forEachHierarchyMatch(
 				this.include,
 				this._exclude,
 				this._anyOf,
-				this.sparseIncludes,
-				this.sparseExcludes,
+				this.terms,
 				this.nonEmptyArchs(),
-				this.hierarchyTerm.relation,
-				this.hierarchyTerm.maxDepth,
-				this.includesDisabled,
+				this.terms.hierarchyTerm.relation,
+				this.terms.hierarchyTerm.maxDepth,
 				cb
 			);
 			return;
@@ -1486,11 +1414,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			this.include,
 			this._exclude,
 			this._anyOf,
-			this.sparseIncludes,
-			this.sparseExcludes,
+			this.terms,
 			this.nonEmptyArchs(),
-			cb,
-			this.includesDisabled
+			cb
 		);
 	}
 
@@ -1638,701 +1564,6 @@ export class QueryBuilder {
 	}
 }
 
-/**
- * A `BundleOrDef` whose def is constrained to the enclosing system's declared
- * add surface (system.ts). The bundle branch restates `Bundle`'s shape with
- * the def slot narrowed, intersecting `Bundle<any> & { def: … }` instead
- * would put two `ComponentDef` instantiations in one intersection, which TS
- * relates leniently (see the access-typing notes in system.ts).
- *
- * The outer conditional is a deliberate no-op (`[D] extends [unknown]` is
- * always true): it makes the variance of `D`, and therefore of the access
- * param `A` threaded through `Commands` / `SystemContext`. Unmeasurable to
- * the compiler. A measurable (plain-union) definition here gets `A` marked
- * reliably contravariant, variance-based comparison then rejects
- * `SystemContext<Narrow> → SystemContext` without the structural fallback,
- * and every helper taking a bare `SystemContext` stops accepting typed
- * contexts. Unmeasurable variance forces the structural path, where class
- * methods compare bivariantly and the conversion holds.
- *
- * The inner `D extends ComponentDef ? … : never` Distributes over the declared
- * add-set union, so each raw-literal branch carries its own def's schema
- * (`Partial<FieldValues<SchemaOf<D>>>`) rather than the erased
- * `Partial<Record<string, number>>`. A hand-written `{ def: Vel, values: { x }}`
- * whose fields don't match its def is then rejected in a declared-access system,
- * matching the `StrictBundles` guarantee on the `ecs.*` surface. A permissive
- * context (`add: ComponentDef<any>`, i.e. an unnarrowed / `exclusive` system)
- * keeps the loose shape, which is the point of opting out of narrowing. The
- * outer no-op is preserved, so the variance invariant above still holds
- * (verified: the `permissiveHelper(ctx)` assertion still compiles).
- */
-export type DeclaredBundleOrDef<D> = [D] extends [unknown]
-	? D extends ComponentDef
-		? D | { readonly def: D; readonly values: Readonly<Partial<FieldValues<SchemaOf<D>>>> }
-		: never
-	: never;
-
-/**
- * Deferred structural-command facade (Bevy `Commands`).
- * Namespaces the deferred structural ops so the call site is self-documenting:
- * `ctx.commands.add(e, …)` is *always* deferred (applied at the phase flush),
- * ending the collision where `ecs.addComponent` (immediate) and a bare
- * `ctx.addComponent` (deferred) would share a name with opposite timing. Takes
- * varargs callable bundles, so one shape, `commands.spawn(bundle(Pos,{x,y}), bundle(Vel,{vx:1}))`,
- * serves spawn and add. This is the only deferred surface: the bare
- * `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable`
- * duplicates were removed in 0.5.0, completing the receiver-implies-timing
- * rule (`ecs.*` immediate, `ctx.commands.*` deferred) that 0.5.0 started for
- * spawn/despawn.
- *
- * `A` narrows the def-taking methods to the enclosing system's declared access
- * (system.ts). The default is fully permissive.
- *
- * `out A` (declared covariance) is deliberate: every use of `A` sits inside a
- * declared-access conditional, whose variance the compiler cannot measure,
- * left unannotated, the measured verdict rejects `Commands<Narrow> →
- * Commands` (the direction every permissive consumer needs). Covariance is
- * the honest direction: a context with more declared access is usable where
- * one with less is expected. The checks themselves are per-instantiation, so
- * the annotation does not weaken them.
- */
-export class Commands<out A extends SystemAccess = SystemAccess> {
-	constructor(private readonly _store: Store) {}
-
-	/** Spawn from bundles. Create is immediate (the id is returned now); the
-	 *  component attaches are deferred to the phase flush, so until that flush the
-	 *  entity exists in its empty and partial archetype and a query running later in
-	 *  the same phase can observe it half-built. (Same semantics as
-	 *  `ctx.commands.spawn()` + `ctx.addComponent`. Fully-deferred id-reservation
-	 *  spawn, à la Bevy, is a separate follow-up.) */
-	public spawn(...items: DeclaredBundleOrDef<A["add"]>[]): EntityID {
-		const e = this._store.createEntity();
-		if (DEV) this._store.trace?.commandQueued("spawn", e, null);
-		for (let i = 0; i < items.length; i++) {
-			const def = bundleDef(items[i]);
-			if (DEV) accessCheck.assertAdd(def);
-			this._store.addComponentDeferred(e, def, bundleValues(items[i]));
-			// Trace each attach like `add` does, the queued adds are what the
-			// flush drains, so a sink reconstructing the frame sees all of them.
-			if (DEV) this._store.trace?.commandQueued("add", e, def.id);
-		}
-		return e;
-	}
-
-	/** Attach bundles to an existing entity (deferred). Bundles zero-fill
-	 * omitted fields. */
-	public add(entityId: EntityID, ...items: DeclaredBundleOrDef<A["add"]>[]): this;
-	/** Explicit complete-values attach (deferred), the compile-checked shape
-	 * where a typo'd or missing field is a compile error, mirroring the
-	 * immediate `ecs.addComponent(e, def, values)`. Tags take no values
-	 * argument (`AttachValuesArg`). */
-	public add<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredAdd<A, D>,
-		...values: AttachValuesArg<SchemaOf<D>>
-	): this;
-	public add(entityId: EntityID, ...items: (BundleOrDef | Record<string, number>)[]): this {
-		// (def, values) shape: a callable def followed by a values record. A
-		// bundle always carries a *callable* `def` property, so a plain record,
-		// even one whose schema has a field literally named "def" (a number
-		// there, not a function), can never be mistaken for one.
-		if (
-			items.length === 2 &&
-			typeof items[0] === "function" &&
-			items[1] !== null &&
-			typeof items[1] === "object" &&
-			typeof (items[1] as { def?: unknown }).def !== "function"
-		) {
-			const def = items[0] as ComponentDef;
-			if (DEV) accessCheck.assertAdd(def);
-			this._store.addComponentDeferred(entityId, def, items[1] as Record<string, number>);
-			if (DEV) this._store.trace?.commandQueued("add", entityId, def.id);
-			return this;
-		}
-		for (let i = 0; i < items.length; i++) {
-			const item = items[i] as BundleOrDef;
-			const def = bundleDef(item);
-			if (DEV) accessCheck.assertAdd(def);
-			this._store.addComponentDeferred(entityId, def, bundleValues(item));
-			if (DEV) this._store.trace?.commandQueued("add", entityId, def.id);
-		}
-		return this;
-	}
-
-	/** Remove a component (deferred). */
-	public remove<D extends ComponentDef<any>>(entityId: EntityID, def: D & DeclaredRemove<A, D>): this {
-		if (DEV) accessCheck.assertRemove(def);
-		this._store.removeComponentDeferred(entityId, def);
-		if (DEV) this._store.trace?.commandQueued("remove", entityId, def.id);
-		return this;
-	}
-
-	/** Destroy an entity (deferred). */
-	public despawn(entityId: DespawnArg<A>): this {
-		if (DEV) accessCheck.assertDespawn();
-		// The conditional argument type is `EntityID` whenever this compiles
-		// (the false branch is uninhabited); the cast recovers it for a body
-		// where `A` is still generic.
-		const id = entityId as EntityID;
-		this._store.destroyEntityDeferred(id);
-		if (DEV) this._store.trace?.commandQueued("despawn", id, null);
-		return this;
-	}
-
-	/** Buffer `entityId` to be disabled at the phase flush (idempotent).
-	 * Deferred because a toggle is an in-archetype row swap, which would corrupt
-	 * a `forEach` SoA loop iterating that archetype if applied mid-system (it
-	 * reorders the dense columns being read). A disabled entity is excluded from
-	 * default queries. Opt back in per query with `.includeDisabled()`. The
-	 * immediate read is `ctx.isDisabled`. */
-	public disable(entityId: EntityID): this {
-		this._store.disableEntityDeferred(entityId);
-		if (DEV) this._store.trace?.commandQueued("disable", entityId, null);
-		return this;
-	}
-
-	/** Buffer `entityId` to be re-enabled at the phase flush (idempotent).
-	 * Deferred for the same row-swap reason as `disable`. */
-	public enable(entityId: EntityID): this {
-		this._store.enableEntityDeferred(entityId);
-		if (DEV) this._store.trace?.commandQueued("enable", entityId, null);
-		return this;
-	}
-}
-
-/**
- * The per-system world facade. `A` is the system's declared access surface
- * (system.ts): the config-form `registerSystem` computes it from
- * the literal `reads` and `writes`/… declarations and every guarded method below
- * checks its handle argument against the matching union at compile time,
- * the same rules `accessCheck` enforces at runtime in `DEV`. The default
- * `A = SystemAccess` is fully permissive, so a bare `SystemContext` (helper
- * functions, host-side code, explicitly-annotated escape hatches) behaves
- * exactly as before, and every narrowed `SystemContext<…>` is assignable to
- * it.
- *
- * `out A` (declared covariance) is deliberate, see `Commands` above: the
- * declared-access conditionals are unmeasurable to the compiler, and the
- * unannotated verdict rejects exactly the `SystemContext<Narrow> →
- * SystemContext` conversion the whole design depends on.
- */
-export class SystemContext<out A extends SystemAccess = SystemAccess> {
-	public lastRunTick: number = 0;
-
-	/** Deferred structural-command facade. */
-	public readonly commands: Commands<A>;
-
-	/** The frame tick: the count of `update()` calls so far. Run conditions
-	 * read it. The change tick that a write stamps is a separate counter that
-	 * advances before every system run, so it does not equal this value. */
-	public get ecsTick(): number {
-		return this._store.tick;
-	}
-
-	/** @internal Advance the change tick for the run that follows and return
-	 * the new value. The schedule calls it before each system run and before
-	 * each phase flush. Not for a system body. */
-	public advanceChangeTick(): number {
-		return this._store.advanceChangeTick();
-	}
-
-	/** The world's frame-trace sink, or `null`. Lets the schedule
-	 * fire `systemBegin` and `flush*` without reaching into the private store.
-	 * Read only under `if (DEV)`. The seam is dead-code-eliminated in prod. */
-	public get trace(): FrameTraceSink | null {
-		return this._store.trace;
-	}
-
-	constructor(private readonly _store: Store) {
-		this.commands = new Commands<A>(_store);
-	}
-
-	public isAlive(entityId: EntityID): boolean {
-		return this._store.isAlive(entityId);
-	}
-
-	public hasComponent(entityId: EntityID, def: ComponentDef): boolean {
-		return this._store.hasComponent(entityId, def);
-	}
-
-	public getField<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredRead<A, D>,
-		field: string & keyof SchemaOf<D>
-	): number {
-		if (DEV) {
-			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
-		}
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		return arch.readField(row, def.id, field);
-	}
-
-	/** Total sibling of {@link getField}, mirroring `ecs.tryGetField`
-	 *: `undefined` when the entity is dead or doesn't hold
-	 * the component, instead of a dev throw or a prod garbage read. The safe way
-	 * to probe-and-read in one call: `ctx.tryGetField(e, Health, "current") ?? 0`. */
-	public tryGetField<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredRead<A, D>,
-		field: string & keyof SchemaOf<D>
-	): number | undefined {
-		if (DEV) accessCheck.assertRead(def);
-		if (!this._store.hasComponent(entityId, def)) return undefined;
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		return arch.readField(row, def.id, field);
-	}
-
-	public setField<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredWrite<A, D>,
-		field: string & keyof SchemaOf<D>,
-		value: number
-	): void {
-		if (DEV) {
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.setField", entityId, componentLabel(def));
-		}
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		// `getColumnMut` (mutable) invokes `accessCheck.assertWrite` under DEV,
-		// so setField doesn't need a separate check.
-		const col = arch.getColumnMut(def, field, this._store.changeTick);
-		col[row] = value;
-		// Per-entity onSet: record the changed row for components with a dirty-list
-		// observer. Gated so the common no-onSet path pays nothing.
-		if (this._store.anyDirtyTracked) this._store.noteSet(def.id as number, arch, row, entityId);
-	}
-
-	/** Read-modify-write one field: `updateField(e, Gold, "value", v => v - cost)`
-	 * is the one-line form of the `getField` → compute → `setField` round trip.
-	 * Returns the written value. Same access-check and observer semantics as the
-	 * two calls it composes (inlined here: the declared-access conditionals on
-	 * those methods only resolve per `A` instantiation, so a body where `A` is
-	 * still generic cannot call them without casts). */
-	public updateField<D extends ComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredWrite<A, D>,
-		field: string & keyof SchemaOf<D>,
-		fn: (current: number) => number
-	): number {
-		if (DEV) {
-			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.updateField", entityId, componentLabel(def));
-		}
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		const next = fn(arch.readField(row, def.id, field));
-		const col = arch.getColumnMut(def, field, this._store.changeTick);
-		col[row] = next;
-		if (this._store.anyDirtyTracked) this._store.noteSet(def.id as number, arch, row, entityId);
-		return next;
-	}
-
-	/**
-	 * Record an entity as changed for a component's per-entity `onSet` observer.
-	 * The SoA write idiom, `const { x } = cols.mut(D); x[i] = v` in a tight
-	 * loop, bypasses the engine, which never sees the per-element writes, so a
-	 * per-entity `onSet` consumer records the row by hand. This is the by-id
-	 * form: a call, a resolve and a list push per row. The row form,
-	 * `cols.ticks(D)[i] = cols.tick`, is one store per row, and the one to
-	 * reach for inside a chunk loop. No-op for components without a
-	 * per-entity onSet observer. `setField`, `ref` and a cursor record on
-	 * their own.
-	 */
-	public markChanged(entityId: EntityID, def: ComponentDef): void {
-		if (this._store.anyDirtyTracked) this._store.noteSetEntity(def, entityId);
-	}
-
-	/**
-	 * Create a cached component reference for a single entity. Marks the
-	 * component as changed (the mutable default, see `refRead` for the
-	 * read-only variant to reach for when you are not mutating), and records
-	 * the entity for a per-entity onSet observer. Both happen here, at
-	 * creation: the accessor's setters write raw columns and cannot record,
-	 * so the record is conservative, as the archetype stamp is. See ref.ts.
-	 */
-	public ref<D extends ComponentDef<any>>(
-		def: D & DeclaredWrite<A, D>,
-		entityId: EntityID
-	): ComponentRef<SchemaOf<D>> {
-		if (DEV) {
-			accessCheck.assertWrite(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.ref", entityId, componentLabel(def));
-		}
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		if (DEV && arch.accessorColumns[def.id] === undefined)
-			throw new ECSError(
-				ECS_ERROR.COMPONENT_NOT_REGISTERED,
-				`ctx.ref: ${componentLabel(def)} has no columns in this archetype, the entity doesn't hold it, or it is a tag (no fields to ref)`,
-				{ component: def.id, entity: entityId }
-			);
-		arch.changedTick[def.id] = this._store.changeTick;
-		if (this._store.anyDirtyTracked) this._store.noteSet(def.id as number, arch, row, entityId);
-		// ! safe in prod (dev guard above): _accCols is populated for all components with fields in this archetype
-		return createRef<SchemaOf<D>>(arch.accessorColumns[def.id]!, row);
-	}
-
-	/**
-	 * Create a cached read-only component reference for a single entity. Use
-	 * this when you are not mutating. The returned `ReadonlyComponentRef<S>`
-	 * is an *advisory* compile-time barrier (no `_changedTick` bump): the
-	 * `readonly` typing blocks field writes at the type layer, but the
-	 * underlying accessor shares its prototype with `ref()` and can still be
-	 * written through a deliberate cast. See ref.ts.
-	 */
-	public refRead<D extends ComponentDef<any>>(
-		def: D & DeclaredRead<A, D>,
-		entityId: EntityID
-	): ReadonlyComponentRef<SchemaOf<D>> {
-		if (DEV) {
-			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.refRead", entityId, componentLabel(def));
-		}
-		const arch = this._store.resolveEntity(entityId);
-		const row = this._store.resolvedRow;
-		if (DEV && arch.accessorColumns[def.id] === undefined)
-			throw new ECSError(
-				ECS_ERROR.COMPONENT_NOT_REGISTERED,
-				`ctx.refRead: ${componentLabel(def)} has no columns in this archetype, the entity doesn't hold it, or it is a tag (no fields to ref)`,
-				{ component: def.id, entity: entityId }
-			);
-		// ! safe in prod (dev guard above): _accCols is populated for all components with fields in this archetype
-		return createRef<SchemaOf<D>>(arch.accessorColumns[def.id]!, row);
-	}
-
-	/**
-	 * A re-pointable single-entity cursor over `def`, the in-system twin of
-	 * {@link ECS.cursor}, and the accessor to reach for when a system touches many
-	 * entities **by id** rather than by query span.
-	 *
-	 * `ctx.ref` allocates one accessor for each entity. That allocation is the
-	 * largest part of the cost of a read of one field by id, because to make an
-	 * accessor costs much more than to move one. Make the cursor one time,
-	 * outside the loop:
-	 *
-	 *   const p = ctx.cursor(Pos);
-	 *   for (const e of hits) { p.at(e); p.x += p.y * dt; }
-	 *
-	 * Mutable: every `at()` stamps the change tick. Still prefer `forEachChunk` when
-	 * a query can express the entity set, a cursor removes the per-entity
-	 * allocation, not the per-entity archetype resolution.
-	 */
-	public cursor<D extends ComponentDef<any>>(
-		def: D & DeclaredWrite<A, D>
-	): ComponentCursor<SchemaOf<D>> {
-		if (DEV) accessCheck.assertWrite(def);
-		return createCursor<SchemaOf<D>>(
-			this._store.componentFieldNames(def),
-			this._store.cursorBinder(def, true)
-		);
-	}
-
-	/** Read-only {@link cursor}: no change-tick stamp on `at()`. Advisory only,
-	 * same caveat as `ctx.refRead`. */
-	public cursorRead<D extends ComponentDef<any>>(
-		def: D & DeclaredRead<A, D>
-	): ReadonlyComponentCursor<SchemaOf<D>> {
-		if (DEV) accessCheck.assertRead(def);
-		return createCursor<SchemaOf<D>>(
-			this._store.componentFieldNames(def),
-			this._store.cursorBinder(def, false)
-		) as ReadonlyComponentCursor<SchemaOf<D>>;
-	}
-
-	// --- Deferred structural ops live on `ctx.commands` ---
-	// The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` /
-	// `ctx.enable` duplicates were removed in 0.5.0 (same break that removed
-	// `ctx.createEntity` / `ctx.destroyEntity`): one deferred surface, one
-	// timing rule per receiver. `isDisabled` stays here. It is an immediate
-	// *read*, not a buffered structural op.
-
-	/** Whether `entityId` is currently disabled (immediate read). Toggling is
-	 * deferred, `ctx.commands.disable` / `ctx.commands.enable`. */
-	public isDisabled(entityId: EntityID): boolean {
-		return this._store.isDisabled(entityId);
-	}
-
-	// --- Sparse (out-of-identity) component operations ---
-	// Immediate, not deferred: a sparse add and remove causes no archetype
-	// transition and no row reallocation, so it's safe to apply mid-system.
-	// It can't invalidate a *dense* query's iteration the way a structural
-	// change would. Field reads and writes mirror `getField` / `setField`.
-	//
-	// Sharp edge of the immediacy: it is not safe during `forEachEntity` over
-	// a query whose driving sparse term is the one being mutated, the immediate
-	// add and remove edits the live key array under the walk (see `forEachEntity`).
-	// Buffer such edits and apply after.
-	//
-	// Access-checked under `DEV` against the system's `sparseReads` /
-	// `sparseWrites` declarations: add, remove and set_field require a write
-	// term, getField a read term (a write implies a read). `hasSparse` is
-	// unchecked, mirroring `hasComponent`. Sparse ids live in their own id
-	// space, so the check keys the dedicated sparse sets, never the dense ones.
-
-	/** Tags take no values argument. Valued schemas require a complete one. */
-	public addSparse<D extends SparseComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredSparseWrite<A, D>,
-		...values: AttachValuesArg<SparseSchemaOf<D>>
-	): this {
-		if (DEV) accessCheck.assertSparseWrite(def);
-		this._store.addSparse(entityId, def, values[0] as Record<string, number> | undefined);
-		return this;
-	}
-
-	public removeSparse<D extends SparseComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredSparseWrite<A, D>
-	): this {
-		if (DEV) accessCheck.assertSparseWrite(def);
-		this._store.removeSparse(entityId, def);
-		return this;
-	}
-
-	public hasSparse(entityId: EntityID, def: SparseComponentDef): boolean {
-		return this._store.hasSparse(entityId, def);
-	}
-
-	public getSparseField<D extends SparseComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredSparseRead<A, D>,
-		field: string & keyof SparseSchemaOf<D>
-	): number {
-		if (DEV) accessCheck.assertSparseRead(def);
-		return this._store.getSparseField(entityId, def, field);
-	}
-
-	public setSparseField<D extends SparseComponentDef<any>>(
-		entityId: EntityID,
-		def: D & DeclaredSparseWrite<A, D>,
-		field: string & keyof SparseSchemaOf<D>,
-		value: number
-	): void {
-		if (DEV) accessCheck.assertSparseWrite(def);
-		this._store.setSparseField(entityId, def, field, value);
-	}
-
-	/** A cursor over a sparse component, the sparse sibling of {@link cursor}
-	 * and the fastest read by id in a system: `at()` writes the entity index and
-	 * a field access is one load. Mutable. Declare the component in
-	 * `sparseWrites`. See `ECS.sparseCursor`. */
-	public sparseCursor<D extends SparseComponentDef<any>>(
-		def: D & DeclaredSparseWrite<A, D>
-	): ComponentCursor<SparseSchemaOf<D>> {
-		if (DEV) accessCheck.assertSparseWrite(def);
-		return createSparseCursor<SparseSchemaOf<D>>(
-			this._store.sparseFieldNames(def),
-			this._store.sparseAccessorColumns(def),
-			this._store.sparseCursorCheck(def, true),
-			this._store.sparseTickPlane(def),
-			this._store
-		);
-	}
-
-	/** Whether the sparse component of `entityId` changed since the previous
-	 * run of this system: its row tick is above `lastRunTick`. The row grain
-	 * of change detection for a sparse component, as a pull. Needs row ticks
-	 * (`ecs.trackRows(def)`, or an entity-level `onSet`), and throws
-	 * `ROW_TICKS_NOT_TRACKED` without them. A non-member reads `false`. */
-	public sparseChanged<D extends SparseComponentDef<any>>(
-		def: D & DeclaredSparseRead<A, D>,
-		entityId: EntityID
-	): boolean {
-		if (DEV) accessCheck.assertSparseRead(def);
-		return this._store.sparseTickOf(def, entityId) > this.lastRunTick;
-	}
-
-	/** Read-only {@link sparseCursor}; declare the component in `sparseReads`.
-	 * Advisory only, same caveat as `ctx.cursorRead`. */
-	public sparseCursorRead<D extends SparseComponentDef<any>>(
-		def: D & DeclaredSparseRead<A, D>
-	): ReadonlyComponentCursor<SparseSchemaOf<D>> {
-		if (DEV) accessCheck.assertSparseRead(def);
-		return createSparseCursor<SparseSchemaOf<D>>(
-			this._store.sparseFieldNames(def),
-			this._store.sparseAccessorColumns(def),
-			this._store.sparseCursorCheck(def, false)
-		) as ReadonlyComponentCursor<SparseSchemaOf<D>>;
-	}
-
-	// --- Relations (sparse (relation, target) pairs) ---
-	// Immediate like the sparse ops, no archetype transition, safe mid-system.
-	// Registration is host-side (`ECS.registerRelation`), so it is not mirrored
-	// here. Systems add, remove and query pairs.
-	//
-	// Access-checked under `DEV` against `relationReads` / `relationWrites`:
-	// add and remove require a write term, target_of, targets_of and sources_of a
-	// read term (write implies read). `hasRelation` is unchecked, mirroring
-	// `hasComponent`. Relation ids are their own id space, the check keys the
-	// dedicated relation sets.
-
-	/** Add a `(R, tgt)` pair to `src` (exclusive replaces, multi adds). */
-	public addRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt: EntityID): this {
-		if (DEV) accessCheck.assertRelationWrite(def);
-		this._store.addRelation(src, def, tgt);
-		return this;
-	}
-
-	/** Remove a `(R, tgt)` pair from `src`. For multi, omitting `tgt` removes all. */
-	public removeRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt?: EntityID): this {
-		if (DEV) accessCheck.assertRelationWrite(def);
-		this._store.removeRelation(src, def, tgt);
-		return this;
-	}
-
-	/** The single target of `src` under an exclusive relation, or `undefined`. */
-	public targetOf<D extends RelationDef<"exclusive">>(
-		src: EntityID,
-		def: D & DeclaredRelationRead<A, D>
-	): EntityID | undefined {
-		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.targetOf(src, def);
-	}
-
-	/** All targets of `src` under `R`, ascending by id. */
-	public targetsOf<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
-		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.targetsOf(src, def);
-	}
-
-	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
-	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
-	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
-		if (DEV) accessCheck.assertRelationRead(def);
-		return this._store.sourcesOf(tgt, def);
-	}
-
-	/** Whether `src` holds any pair under `R`. */
-	public hasRelation(src: EntityID, def: RelationDef): boolean {
-		return this._store.hasRelation(src, def);
-	}
-
-	/** Flush all deferred changes: structural (add and remove) first, then
-	 *  destructions. Republishes archetype row counts into the SAB
-	 *  descriptor at the end so any WASM scan running in the next phase
-	 *  sees fresh `row_count` fields. This is one of two publish sites,
-	 *  `ECS.update()` also republishes once at tick start, which covers
-	 *  host-side mutations between updates. The publish walks
-	 *  descriptors only. It doesn't touch column data, and benches at
-	 *  sub-microsecond per archetype, so paying it once per phase boundary
-	 *  is materially cheaper than the earlier pattern of paying it per
-	 *  WASM-using system per tick. The descriptor walk is now gated
-	 *  on a dirty flag, so read-only phases skip the walk entirely. */
-	public flush(): void {
-		this._store.flushStructural();
-		this._store.flushDestroys();
-		this._store.publishRowCounts();
-	}
-
-	// =======================================================
-	// Events
-	// =======================================================
-
-	/**
-	 * Emit an event (or a payload-less signal) onto its channel. The event is
-	 * visible to every system that runs *later* in the same `update()` and is
-	 * cleared at the tick's tail, events live exactly one tick, there is no
-	 * ack/consume. The channel must have been registered at world setup via
-	 * `ecs.events.register(key, fields)` / `registerSignal(key)`.
-	 *
-	 * @example
-	 * const Damaged = eventKey<{ target: EntityID; amount: number }>("Damaged");
-	 * ecs.events.register(Damaged, ["target", "amount"]);
-	 * // inside a system:
-	 * ctx.emit(Damaged, { target: e, amount: 10 });
-	 */
-	public emit(key: SignalKey): void;
-	public emit<S extends EventShape<S>>(key: EventKey<S>, values: NoInfer<S>): void;
-	public emit(key: EventKey, values?: Record<string, number>): void {
-		if (DEV && dispatchTrace.isActive()) {
-			dispatchTrace.recordEventEmit(key.description ?? "");
-		}
-		if (DEV) this._store.trace?.eventEmitted(key.description ?? "");
-		const def = this._store.getEventDefByKey(key);
-		if (values === undefined) {
-			this._store.emitSignal(def as EventDef<EmptyEventSchema>);
-		} else {
-			this._store.emitEvent(def, values);
-		}
-	}
-
-	/**
-	 * Read this tick's events on a channel. Returns an SoA reader over
-	 * everything emitted *earlier in the same `update()`*, order systems so
-	 * readers run after emitters, or they see an empty reader.
-	 *
-	 * @example
-	 * const dmg = ctx.readEvents(Damaged); // SoA columns, one per field
-	 * for (let i = 0; i < dmg.length; i++) {
-	 *   applyDamage(dmg.target[i], dmg.amount[i]);
-	 * }
-	 */
-	public readEvents<S extends EventShape<S>>(key: EventKey<S>): EventReader<S> {
-		if (DEV && dispatchTrace.isActive()) {
-			dispatchTrace.recordEventRead(key.description ?? "");
-		}
-		const def = this._store.getEventDefByKey(key);
-		const reader = this._store.getEventReader(def) as EventReader<S>;
-		if (DEV) this._store.trace?.eventRead(key.description ?? "", reader.length);
-		return reader;
-	}
-
-	// =======================================================
-	// Resources
-	// =======================================================
-
-	/** Read a resource (declared in `resourceReads`). The flat `ctx` surface verbs
-	 * its accessors, `getResource`, `setResource`, `removeResource` and `hasResource`,
-	 * matching `getField`, `setField` and `hasComponent`. The grouped `ecs.resources`
-	 * facade drops the noun (`get`, `set`, `remove` and `has`) because its receiver
-	 * already names it. */
-	public getResource<K extends ResourceKey<any>>(
-		key: K & DeclaredResourceRead<A, K>
-	): ResourceValueOf<K> {
-		if (DEV) {
-			accessCheck.assertResourceRead(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceRead(key.description ?? "");
-			}
-		}
-		return unsafeCast<ResourceValueOf<K>>(this._store.getResource(key));
-	}
-
-	public setResource<K extends ResourceKey<any>>(
-		key: K & DeclaredResourceWrite<A, K>,
-		value: ResourceValueOf<NoInfer<K>>
-	): void {
-		if (DEV) {
-			accessCheck.assertResourceWrite(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceWrite(key.description ?? "");
-			}
-		}
-		this._store.setResource(key, value);
-	}
-
-	/** Drop a resource mid-tick. A lifecycle mutation, so it is access-
-	 * checked as a *write*, the system must declare the key in `resourceWrites`,
-	 * which serialises it against readers and writers of the same resource. Fails
-	 * closed on a missing key. */
-	public removeResource<K extends ResourceKey<any>>(key: K & DeclaredResourceWrite<A, K>): void {
-		if (DEV) {
-			accessCheck.assertResourceWrite(key);
-			if (dispatchTrace.isActive()) {
-				dispatchTrace.recordResourceRemove(key.description ?? "");
-			}
-		}
-		this._store.removeResource(key);
-	}
-
-	public hasResource<T>(key: ResourceKey<T>): boolean {
-		return this._store.hasResource(key);
-	}
-}
-
 export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 	private readonly _query: Query<Defs>;
 	private readonly _changedIds: number[];
@@ -2402,7 +1633,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 			// `getOptionalColumnRead` falls into `assertOptionalFetch`'s lenient
 			// no-scope branch and the `.optional(T)` gate never fires here.
 			// Dev-only. Prod runs the bare loop below byte-for-byte.
-			accessCheck.enterOptionalScope(this._query.optionalTerms);
+			accessCheck.enterOptionalScope(this._query.terms.optionalTerms);
 			try {
 				for (let i = 0; i < archs.length; i++) {
 					const arch = archs[i];
@@ -2465,7 +1696,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const ids = this._changedIds;
 		if (DEV) {
 			q.assertDenseOnly("changed().forEachChunk");
-			accessCheck.enterOptionalScope(q.optionalTerms);
+			accessCheck.enterOptionalScope(q.terms.optionalTerms);
 			try {
 				for (let i = 0; i < archs.length; i++) {
 					const arch = archs[i];
@@ -2524,7 +1755,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 			// `getOptionalColumnRead` falls into `assertOptionalFetch`'s lenient
 			// no-scope branch and the `.optional(T)` gate never fires here.
 			// Dev-only. Prod runs the bare loop below byte-for-byte.
-			accessCheck.enterOptionalScope(this._query.optionalTerms);
+			accessCheck.enterOptionalScope(this._query.terms.optionalTerms);
 			try {
 				for (let i = 0; i < archs.length; i++) {
 					const arch = archs[i];

@@ -21,7 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
 
 const Position = ["x", "y"] as const;

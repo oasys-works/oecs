@@ -4,14 +4,18 @@
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
+import { snapshots } from "../../../../capabilities/snapshots";
 import { Store } from "../../store";
 import { SCHEDULE } from "../../schedule";
 import { getEntityIndex, type EntityID } from "../../entity";
 import { ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";
+import { observers } from "../../../../capabilities/observers";
+
+
 
 function world() {
-	const ecs = new ECS({ deterministic: true });
+	const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 	const Pos = ecs.registerComponent(["x"] as const, "i32");
 	const Tag = ecs.registerTag();
 	const fired: number[] = [];
@@ -210,7 +214,7 @@ describe("cols.ticks, the row record", () => {
 	});
 
 	it("survives a grow of the archetype between the stamp and the drain", () => {
-		const ecs = new ECS({ deterministic: true, memory: { entities: 64, columnCapacity: 8 } });
+		const ecs = ECS.create({ ...({ deterministic: true, memory: { entities: 64, columnCapacity: 8 } }), plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		ecs.observe(Pos, {
@@ -237,7 +241,7 @@ describe("cols.ticks, the row record", () => {
 	});
 
 	it("throws for a component no entity-level onSet tracks", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
@@ -315,7 +319,7 @@ describe("the tick plane of a freed slot", () => {
 		// stamp unless the next append zeroes the tick plane. A template spawn
 		// lands in that slot, in a frame where the drain scans, and it must not
 		// fire: an insert is structural, and `onAdd` reports it.
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		ecs.observe(Pos, {
@@ -345,7 +349,7 @@ describe("the tick plane of a freed slot", () => {
 
 describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChunk", () => {
 	it("reports the rows written since the reader's previous run, once each", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		ecs.trackRows(Pos);
 		const ids: EntityID[] = [];
@@ -386,7 +390,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("sees a row stamped in a chunk loop through ticksRead, and never a row left alone", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		ecs.trackRows(Pos);
 		const T = ecs.template(Pos({ x: 0 }));
@@ -425,7 +429,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("throws through ticksRead when no row ticks exist, and trackRows is idempotent", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
@@ -438,7 +442,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("accepts a sparse component, and rejects a malformed handle", () => {
-		const ecs = new ECS({ deterministic: true });
+		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const S = ecs.registerSparseComponent({ v: "i32" });
 		expect(() => ecs.trackRows(S)).not.toThrow();
 		expect(() => ecs.trackRows({} as never)).toThrow(
@@ -453,7 +457,7 @@ describe("the by-id record switches to the scan past the list cap", () => {
 		// crosses it with a few hundred by-id writes. Every written entity must
 		// still fire exactly one time, and an entity recorded by `markChanged`
 		// in an archetype nobody wrote must still fire from the list.
-		const ecs = new ECS({ deterministic: true, memory: { entities: 4096 } });
+		const ecs = ECS.create({ ...({ deterministic: true, memory: { entities: 4096 } }), plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const Tag = ecs.registerTag();
 		const fired: number[] = [];
@@ -489,7 +493,7 @@ describe("the by-id record switches to the scan past the list cap", () => {
 
 describe("the drain baseline of an entity-level onSet", () => {
 	it("reports the first write after the observer joins a tracked component", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [snapshots(), observers()] });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		// The plane exists before the observer, which `trackRows` alone gives.
 		ecs.trackRows(Pos);

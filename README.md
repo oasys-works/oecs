@@ -218,11 +218,33 @@ ecs.getField(e, Pos, "x"); // about 1.667
 The core is `@oasys/oecs`. Each other entry point is optional, and it costs nothing until you
 import it.
 
+Four subsystems are **capabilities**: relations, events, snapshots and observers. A world installs
+the ones it uses, and carries no code for the rest.
+
+```ts
+import { ECS } from "@oasys/oecs";
+import { relations } from "@oasys/oecs/relations";
+import { observers } from "@oasys/oecs/observers";
+
+const world = ECS.create({ plugins: [relations(), observers()] });
+world.relations.register(); // ok
+world.events.emit(Damaged, { amount: 1 }); // compile error, events is not installed
+```
+
+`ECS.create` returns the world intersected with the facades its plugins contribute, so reaching for
+a capability you did not install is a compile error rather than a fault at run time. `new ECS()`
+still builds a world, and that world holds none of the four. A class method cannot be removed by a
+bundler, which is why these live behind an import you make rather than a member you always carry.
+
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default (a production build, with the development guards removed) |
 | `@oasys/oecs/dev` | the same ECS with the development guards on. Import this to get the guards directly. See [Development and production](#dev-vs-prod) |
 | `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, for worker offload or a WASM backend (this needs COOP and COEP) |
+| `@oasys/oecs/relations` | the relations capability, `(relation, target)` pairs, wildcards and hierarchy traversal |
+| `@oasys/oecs/events` | the events capability, host-side channels and signals, and `ctx.emit` |
+| `@oasys/oecs/snapshots` | the snapshot capability, `capture` and `restore` for a live world |
+| `@oasys/oecs/observers` | the observers capability, `ecs.observe` for `onAdd`, `onRemove` and `onSet` |
 | `@oasys/oecs/reactive` | the reactive kernel, which has no dependencies (`signal`, `computed`, `effect`, and reactive collections) |
 | `@oasys/oecs/reactive-sync` | the bridge from the ECS to the kernel, and it publishes only the changed entities and columns |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |

@@ -1,7 +1,7 @@
 /**
  * Relations, `addRelation` endpoint-liveness guard in a *production* build.
  *
- * `Store.addRelation` rejects a dead `src` or `tgt` by throwing in `__DEV__` and
+ * `RelationService.addRelation` rejects a dead `src` or `tgt` by throwing in `__DEV__` and
  * no-opping in production (symmetric). The dev throw is the only behaviour the
  * normal suite can observe: vitest hard-codes `define: { __DEV__: true }`
  * (vitest.config.ts), so `if (__DEV__)` is substituted to `if (true)` at
@@ -33,9 +33,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
+
+
 const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STORE = resolve(HERE, "../../store.ts");
+const RELATIONS = resolve(HERE, "../../../../capabilities/relations.ts");
+const CAPABILITY = resolve(HERE, "../../capability.ts");
 
 type Outcome = { threw: boolean; leaked: number[] };
 
@@ -69,18 +73,21 @@ async function runProdHarness(): Promise<Record<"exclusive" | "multi", Outcome>>
 		writeFileSync(
 			entry,
 			`import { Store } from ${JSON.stringify(STORE)};
+import { relations } from ${JSON.stringify(RELATIONS)};
+import { storeOnlyHost } from ${JSON.stringify(CAPABILITY)};
 export function run() {
 	const out = {};
 	for (const [name, opts] of [["exclusive", {}], ["multi", { multi: true }]]) {
 		const s = new Store();
-		const R = s.registerRelation(opts);
+		relations().install(storeOnlyHost(s));
+		const R = s.relations.registerRelation(opts);
 		const src = s.createEntity();
 		const tgt = s.createEntity();
 		s.destroyEntity(tgt); // tgt is now a dead handle
 		let threw = false;
-		try { s.addRelation(src, R, tgt); } catch { threw = true; }
+		try { s.relations.addRelation(src, R, tgt); } catch { threw = true; }
 		// A leaked reverse entry keyed by the dead target surfaces here.
-		out[name] = { threw, leaked: s.sourcesOf(tgt, R).map((e) => Number(e)) };
+		out[name] = { threw, leaked: s.relations.sourcesOf(tgt, R).map((e) => Number(e)) };
 	}
 	return out;
 }

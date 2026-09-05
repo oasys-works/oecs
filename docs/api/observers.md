@@ -1,5 +1,15 @@
 # Observers
 
+> This page needs the **observers** capability. Install it at construction:
+>
+> ```ts
+> import { observers } from "@oasys/oecs/observers";
+>
+> const world = ECS.create({ plugins: [observers()] });
+> ```
+>
+> A world built with `new ECS()` has none of it, and reaching for it is a compile error.
+
 An **observer** runs a callback when a component is added, removed, or changed, or when its entity
 is enabled or disabled. It is the push equivalent of a [`changed()`](./change-detection.md) query,
 which you must poll. You register the observer one time, and the ECS calls you at the correct

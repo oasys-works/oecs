@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { EntityID } from "../../entity";
+import { relations, type RelationsCapability } from "../../../../capabilities/relations";
+
+/** The fixture installs the capability, so its type carries it. A bare `ECS`
+ * here would erase the surface the cases reach for. */
+type RelationalWorld = ECS<RelationsCapability> & RelationsCapability;
 
 /** Spin up an ECS and a handful of live entities for relation wiring. */
-function makeWorld(n: number): { ecs: ECS; ents: EntityID[] } {
-	const ecs = new ECS();
+function makeWorld(n: number): { ecs: RelationalWorld; ents: EntityID[] } {
+	const ecs = ECS.create({ plugins: [relations()] });
 	const ents: EntityID[] = [];
 	for (let i = 0; i < n; i++) ents.push(ecs.spawn());
 	return { ecs, ents };
@@ -12,7 +17,7 @@ function makeWorld(n: number): { ecs: ECS; ents: EntityID[] } {
 
 describe("relations wildcard, (R, *) over an exclusive relation", () => {
 	it("enumerates no pairs for an empty relation", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [relations()] });
 		const targets = ecs.relations.register();
 		expect(ecs.relations.pairsOf(targets)).toEqual([]);
 	});
@@ -62,7 +67,7 @@ describe("relations wildcard, (R, *) over an exclusive relation", () => {
 
 describe("relations wildcard, (R, *) over a multi relation", () => {
 	it("enumerates no pairs for an empty relation", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [relations()] });
 		const likes = ecs.relations.register({ multi: true });
 		expect(ecs.relations.pairsOf(likes)).toEqual([]);
 	});

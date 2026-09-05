@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { ECS_ERROR, type ECSError } from "../../utils/error";
 import type { SystemConfig } from "../../system";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 
 /** Minimal dense-empty config. Spread and override per test. */
 function base(overrides: Partial<SystemConfig>): SystemConfig {

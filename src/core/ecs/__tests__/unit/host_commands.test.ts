@@ -26,7 +26,7 @@ import {
 	type HostCommandQueue
 } from "../../host_commands";
 import type { ComponentDef } from "../../component";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import { createEntityId, type EntityID } from "../../entity";
 import { pushCommand } from "../../../store";
 

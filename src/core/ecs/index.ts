@@ -64,7 +64,7 @@ export {
 } from "./run_condition";
 
 // Systems
-export { SystemContext } from "./query";
+export { SystemContext } from "./system_context";
 export type {
 	SystemFn,
 	SystemConfig,
@@ -99,7 +99,7 @@ export type {
 	RelationsAccessDecl,
 	ResourcesAccessDecl
 } from "./system";
-export type { DeclaredBundleOrDef } from "./query";
+export type { DeclaredBundleOrDef } from "./system_context";
 
 // Access check, dev-mode validation singleton.
 export { accessCheck } from "./access_check";
@@ -221,9 +221,10 @@ export type {
 
 // Queries
 export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED } from "./query";
-export type { HierarchyTerm } from "./query";
+export type { HierarchyTerm, QueryTerms } from "./query";
 // forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
-export { ChunkColumns, Commands } from "./query";
+export { ChunkColumns } from "./query";
+export { Commands } from "./system_context";
 
 // Archetype, only the read-only view + opaque id are public. The concrete
 // `Archetype` (with structural mutators) stays internal.

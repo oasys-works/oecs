@@ -65,24 +65,15 @@
 import { Store, type Template, type TemplateOverrides } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
 import {
-	ObserverRegistry,
-	type ObserverConfig,
-	type ObserverHandle,
-	type EntitySetObserverConfig,
-	type ArchetypeSetObserverConfig,
-	type StructuralObserverConfig
+	ObserverRegistry
 } from "./observer";
 import type { ColumnStore } from "../store";
-import { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./facades";
+import { ECSResources, ECSSnapshots } from "./facades";
+import type { Capability, CapabilityHost, CapsOf } from "./capability";
 import { Schedule, type SCHEDULE } from "./schedule";
 import type { Archetype, ArchetypeID } from "./archetype";
-import {
-	SystemContext,
-	Query,
-	QueryBuilder,
-	QueryCache,
-	type QueryResolver
-} from "./query";
+import { Query, QueryBuilder, QueryCache, type QueryResolver, type QueryTerms } from "./query";
+import { SystemContext } from "./system_context";
 import type { EntityID } from "./entity";
 import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";
@@ -284,28 +275,77 @@ function assertTemplate(value: unknown, op: string): void {
 	);
 }
 
-export class ECS implements QueryResolver {
+/** The capabilities installed on a world. Each optional subsystem contributes
+ * its facade property here, so a world that never installed one cannot name it.
+ * The empty default keeps `ECS` usable unparameterised. */
+export type Caps = object;
+
+export class ECS<C extends Caps = object> implements QueryResolver {
+	/** Phantom. Carries the installed-capability surface so `C` is measurable
+	 * to the compiler. Declared, never assigned, and erased from the emitted
+	 * JavaScript, so it costs a world nothing. */
+	declare readonly __caps?: C;
+
+	/** Build a world with capabilities installed.
+	 *
+	 * The returned type is the world intersected with the facades its plugins
+	 * contribute, so `ECS.create({ plugins: [relations()] }).relations` type-checks
+	 * and the same read on a bare `new ECS()` does not. Reach for `new ECS()`
+	 * when the world needs none of the optional subsystems: that world does not
+	 * carry their code.
+	 *
+	 * @example
+	 * import { relations } from "@oasys/oecs/relations";
+	 * const world = ECS.create({ plugins: [relations()] });
+	 * world.relations.register();
+	 */
+	public static create<const P extends readonly Capability<object>[]>(
+		options?: ECSOptions & { readonly plugins?: P }
+	): ECS<CapsOf<P>> & CapsOf<P> {
+		const world = new ECS<CapsOf<P>>(options);
+		const plugins = options?.plugins;
+		if (plugins !== undefined) {
+			for (let i = 0; i < plugins.length; i++) {
+				const cap = plugins[i] as unknown as Capability<object>;
+				Object.assign(world, cap.install(world._capabilityHost()));
+			}
+		}
+		return world as ECS<CapsOf<P>> & CapsOf<P>;
+	}
+
+	/** The host a capability installs through. Built per world, once per
+	 * install. Cold path. */
+	private _capabilityHost(): CapabilityHost {
+		return {
+			store: this._store,
+			context: this._ctx,
+			installObservers: (registry) => {
+				this._observers = registry;
+			}
+		};
+	}
+
 	private readonly _store: Store;
 	private readonly _schedule: Schedule;
 	private readonly _ctx: SystemContext;
 	/** Component observers. Inert until `observe(...)` is
 	 * called, the structural-flush fast path is byte-for-byte unchanged. */
-	private readonly _observers: ObserverRegistry;
+	// Installed by the observers capability, `null` until then. The store's
+	// structural-flush fast path is gated on its own observer counts, so a world
+	// without the capability runs the flush loops it ran before. The world checks
+	// this once per `update()` and once at startup, both cold.
+	private _observers: ObserverRegistry | null = null;
 
 	// --- Grouped facades ---
 	// Cohesive secondary surfaces, each wrapping the same Store entry points
 	// the pre-0.5 flat methods used (flat forms removed in 0.5.0); hot-path
 	// API (component ops, queries, spawn and destroy, sparse ops) stays flat.
-	/** Relations: register, add, remove and has, wildcard + traversal reads,
-	 * reverse-index compaction. See `ECSRelations`. */
-	public readonly relations: ECSRelations;
-	/** Host-side event channels + signals: register, registerSignal, emit and read
-	 * (system-side `ctx.emit` is unchanged). See `ECSEvents`. */
-	public readonly events: ECSEvents;
 	/** World resources: register/get/set/remove/has. See `ECSResources`. */
 	public readonly resources: ECSResources;
-	/** Determinism surface: capture and restore (full + sparse), stateHash,
-	 * the `deterministic` flag. See `ECSSnapshots`. */
+	/** Determinism: `stateHash()` and the `deterministic` flag, both properties
+	 * of the world itself. Capture and restore are not here. They arrive with
+	 * the snapshot capability, which replaces this with a widened facade, so a
+	 * world that never installs it carries no serialization code. */
 	public readonly snapshots: ECSSnapshots;
 
 	private readonly _systems: Set<SystemDescriptor> = new Set();
@@ -422,16 +462,25 @@ export class ECS implements QueryResolver {
 			deterministic: options?.deterministic
 		});
 		this._schedule = new Schedule(options?.onWarn);
-		this.relations = new ECSRelations(this._store);
-		this.events = new ECSEvents(this._store);
 		this.resources = new ECSResources(this._store);
 		this.snapshots = new ECSSnapshots(this._store);
+		// Reserve a slot for every capability facade this package ships, filled
+		// or not. `ECS.create` then assigns into an existing property instead of
+		// adding one, so a world with capabilities and a world without share one
+		// hidden shape. Measured: without this, `spawn` on a bare world slowed
+		// once a capability world existed in the same process, because the call
+		// site saw two shapes. The names cost no import, so the core still
+		// carries none of the capability code. A capability outside this package
+		// adds a slot and pays that cost.
+		const slots = this as unknown as Record<string, undefined>;
+		slots.relations = undefined;
+		slots.events = undefined;
+		slots.observe = undefined;
 		this._ctx = new SystemContext(this._store);
 		// Observers dispatch through the shared SystemContext + accessCheck. The
 		// store calls the structural hook between fixed-point flush rounds. OnSet
 		// is driven from `update()`'s tail (the post-update detection point).
-		this._observers = new ObserverRegistry(this._store, this._ctx);
-		this._store.setStructuralObserverHook((ev) => this._observers.dispatchStructural(ev));
+
 		this._fixedTimestep = validateFixedTimestep(
 			options?.fixedTimestep ?? DEFAULT_FIXED_TIMESTEP
 		);
@@ -1398,7 +1447,7 @@ export class ECS implements QueryResolver {
 		// otherwise it sits in the channel until the first `update()` clears it
 		// at its tail, and a frame-1 PRE_UPDATE or UPDATE reader sees it as if
 		// emitted this frame. Mirrors `update()`'s tail.
-		this._store.clearEvents();
+		if (this._store.hasEvents) this._store.events.clear();
 	}
 
 	/** Compute the archetype closure from every registered system's and
@@ -1410,7 +1459,8 @@ export class ECS implements QueryResolver {
 	 * `private` because the only caller is `startup()`. Visible to tests via
 	 * the `archetype_count` delta on the public ECS facade. */
 	private _prewarmArchetypes(): void {
-		const closure = computeArchetypeClosure([...this._systems, ...this._observers.descriptors()]);
+		const observed = this._observers === null ? [] : this._observers.descriptors();
+		const closure = computeArchetypeClosure([...this._systems, ...observed]);
 		if (closure.length === 0) return;
 		this._store.archCreateManyFromMasks(closure);
 	}
@@ -1482,9 +1532,9 @@ export class ECS implements QueryResolver {
 			// then empty at the tick boundary, which snapshot and restore relies on,
 			// because it excludes event state. Any structural ops an onSet observer enqueues flush at the next
 			// tick's first phase boundary.
-			const evBefore = DEV ? this._store.devBufferedEventCount : 0;
-			this._observers.dispatchSet(this._store.advanceChangeTick());
-			if (DEV && this._store.devBufferedEventCount !== evBefore) {
+			const evBefore = DEV && this._store.hasEvents ? this._store.events.devBufferedCount() : 0;
+			if (this._observers !== null) this._observers.dispatchSet(this._store.advanceChangeTick());
+			if (DEV && this._store.hasEvents && this._store.events.devBufferedCount() !== evBefore) {
 				// An onSet observer emitted: `clearEvents` below would wipe it before
 				// any reader, so it is silently dropped, and would break snapshot/
 				// restore determinism if it survived. Bridge a detected change to
@@ -1494,7 +1544,7 @@ export class ECS implements QueryResolver {
 					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clearEvents. Emit from a system instead."
 				);
 			}
-			this._store.clearEvents();
+			if (this._store.hasEvents) this._store.events.clear();
 			if (DEV) this._store.trace?.tickEnd(this._tick);
 			this._tick++;
 			// The host window. A write between two updates stamps the value this
@@ -1561,12 +1611,16 @@ export class ECS implements QueryResolver {
 	// === BEGIN STORE PASS-THROUGH BAND ===
 	//
 	// Every member below is a single mechanical delegation to a collaborator
-	// (`this._store` / `this._schedule` / `this._ctx` / `this._observers`):
-	// exactly one call or property read, optionally followed by `return this`
-	// for chaining. No branches, no loops, no dev checks, no argument
-	// adaptation beyond literal defaults. This section must stay logic-free,
-	// a method that outgrows this shape (gains a check, adapts a result,
-	// combines calls) moves above the band, next to the other real logic.
+	// (`this._store` / `this._schedule` / `this._ctx` / `this._observers`), or
+	// to one the store exposes by name (`this._store.relations` / `.events` /
+	// `.resources` / `.snapshots`): exactly one call or property read,
+	// optionally followed by `return this` for chaining. No branches, no loops,
+	// no dev checks, no argument adaptation beyond literal defaults. The named
+	// hop is not logic, it says which object owns the state, so the store no
+	// longer needs a forwarding method per operation. This section must stay
+	// logic-free, a method that outgrows the shape (gains a check, adapts a
+	// result, combines calls) moves above the band, next to the other real
+	// logic.
 	//
 	// Enforced by src/core/ecs/__tests__/unit/ecs_passthrough_guard.test.ts,
 	// which parses this file and asserts the shape of every member between
@@ -1725,28 +1779,17 @@ export class ECS implements QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
-		cb: (entityId: EntityID) => void,
-		includesDisabled: boolean
+		cb: (entityId: EntityID) => void
 	): void {
-		this._store.forEachSparseMatch(
-			include,
-			exclude,
-			anyOf,
-			sparseIncludes,
-			sparseExcludes,
-			denseArchetypes,
-			cb,
-			includesDisabled
-		);
+		this._store.forEachSparseMatch(include, exclude, anyOf, terms, denseArchetypes, cb);
 	}
 
 	/** QueryResolver implementation, backing sparse id of a relation, for the
 	 * `(R, *)` wildcard term (`Query.withRelation`). */
 	public relationBackingSparseId(def: RelationDef): SparseComponentID {
-		return this._store.relationBackingSparseId(def);
+		return this._store.relations.relationBackingSparseId(def);
 	}
 
 	/** QueryResolver implementation, `(*, T)` wildcard match path. */
@@ -1755,21 +1798,10 @@ export class ECS implements QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
-		includesDisabled: boolean,
+		terms: QueryTerms,
 		cb: (entityId: EntityID) => void
 	): void {
-		this._store.forEachTargetMatch(
-			target,
-			include,
-			exclude,
-			anyOf,
-			sparseIncludes,
-			sparseExcludes,
-			includesDisabled,
-			cb
-		);
+		this._store.relations.forEachTargetMatch(target, include, exclude, anyOf, terms, cb);
 	}
 
 	/** QueryResolver implementation, depth-ordered hierarchy match path. */
@@ -1777,24 +1809,20 @@ export class ECS implements QueryResolver {
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
-		sparseIncludes: readonly SparseComponentID[],
-		sparseExcludes: readonly SparseComponentID[],
+		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		relation: RelationDef,
 		maxDepth: number,
-		includesDisabled: boolean,
 		cb: (entityId: EntityID) => void
 	): void {
 		this._store.forEachHierarchyMatch(
 			include,
 			exclude,
 			anyOf,
-			sparseIncludes,
-			sparseExcludes,
+			terms,
 			denseArchetypes,
 			relation,
 			maxDepth,
-			includesDisabled,
 			cb
 		);
 	}
@@ -1854,15 +1882,6 @@ export class ECS implements QueryResolver {
 	// cast, only the `.id` is read. If a schema-typed row and column argument is
 	// ever handed to `onSet`, that's a runtime feature (cursor resolution on
 	// the observer hot path), not a signature change.
-	public observe(def: ComponentHandle, config: StructuralObserverConfig): ObserverHandle;
-	public observe(def: ComponentHandle, config: EntitySetObserverConfig): ObserverHandle;
-	public observe(def: ComponentHandle, config: ArchetypeSetObserverConfig): ObserverHandle;
-	/** A sparse component takes the entity-level `onSet` alone: it has no
-	 * archetype, so no structural events and no archetype grain. */
-	public observe(def: SparseComponentDef, config: EntitySetObserverConfig): ObserverHandle;
-	public observe(def: ComponentHandle | SparseComponentDef, config: ObserverConfig): ObserverHandle {
-		return this._observers.register(def, config);
-	}
 
 	/**
 	 * Keep a change tick for each row of `def`, the row grain of change

@@ -14,10 +14,11 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import type { SystemContext } from "../../query";
+import type { SystemContext } from "../../system_context";
 import { SCHEDULE } from "../../schedule";
 import { ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
+import { relations } from "../../../../capabilities/relations";
 
 /** Run `fn` once inside a system with the supplied declaration. */
 function inSystem(ecs: ECS, access: ReturnType<typeof openAccess>, fn: (ctx: SystemContext) => void): void {
@@ -28,7 +29,7 @@ function inSystem(ecs: ECS, access: ReturnType<typeof openAccess>, fn: (ctx: Sys
 
 describe("ctx.cursorRead", () => {
 	it("reads the entity it is pointed at, and refuses an undeclared component", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [relations()] });
 		const Pos = ecs.registerComponent({ x: "f64" }, { name: "Pos" });
 		const Vel = ecs.registerComponent({ v: "f64" }, { name: "Vel" });
 		const a = ecs.spawn(ecs.template(Pos({ x: 1 })));
@@ -53,7 +54,7 @@ describe("ctx.cursorRead", () => {
 
 describe("ctx.sparseCursor", () => {
 	it("writes through the cursor, and refuses a component declared read-only", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [relations()] });
 		const S = ecs.registerSparseComponent({ v: "f64" }, { name: "S" });
 		const T = ecs.registerSparseComponent({ v: "f64" }, { name: "T" });
 		const e = ecs.spawn();
@@ -78,7 +79,7 @@ describe("ctx.sparseCursor", () => {
 
 describe("ctx.targetsOf and ctx.sourcesOf", () => {
 	it("agree with the host forms, and refuse an undeclared relation", () => {
-		const ecs = new ECS();
+		const ecs = ECS.create({ plugins: [relations()] });
 		const Likes = ecs.relations.register({ multi: true });
 		const Other = ecs.relations.register({ multi: true });
 		const src = ecs.spawn();

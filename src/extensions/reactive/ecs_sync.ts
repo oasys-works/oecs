@@ -97,6 +97,12 @@ import type {
 	SystemAccessDeclaration,
 	SystemContext
 } from "../../core/ecs";
+import type { ObserversCapability } from "../../capabilities/observers";
+
+/** A world that can register an observer. The sync driver keeps a derived view
+ * in step through `onAdd` / `onRemove` / `onSet`, so it needs the capability.
+ * Type-only: this module pins no capability code. */
+type ObservingWorld = ECS<ObserversCapability> & ObserversCapability;
 
 // `shallow` moved to the dependency-free kernel entry. Imported for the
 // field-list sugar's default eq and re-exported so existing `/reactive-sync`
@@ -250,7 +256,7 @@ class JoinRowReader implements JoinReader {
  * component here goes stale (its changes aren't subscribed).
  */
 export function syncComponentToMap<S extends ComponentSchema, V>(
-	ecs: ECS,
+	ecs: ObservingWorld,
 	def: ComponentDef<S>,
 	project: Projection<S, V>,
 	opts: EcsMapSyncOptions<V> = {}
@@ -346,7 +352,7 @@ export function syncFieldsToMap<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	ecs: ECS,
+	ecs: ObservingWorld,
 	def: ComponentDef<S>,
 	fields: F,
 	opts: Omit<EcsMapSyncOptions<{ [K in F[number]]: number }>, "eq"> = {}
@@ -372,7 +378,7 @@ export function syncFieldsToMap<
  * sweep. Drive with `batchedUpdate(world, dt)`.
  */
 export function syncJoinToMap<Schemas extends readonly ComponentSchema[], V>(
-	ecs: ECS,
+	ecs: ObservingWorld,
 	defs: readonly [...{ [I in keyof Schemas]: ComponentDef<Schemas[I]> }],
 	project: JoinProjection<V, Schemas>,
 	// no `NoInfer` on `V` here: with a context-sensitive `project` callback it
@@ -513,7 +519,7 @@ export function syncSingletonToStruct<
 	S extends ComponentSchema,
 	const F extends readonly (string & keyof S)[]
 >(
-	ecs: ECS,
+	ecs: ObservingWorld,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: F,
@@ -611,7 +617,7 @@ export interface SingletonArraySyncOptions<T> {
  * `@oasys/oecs/solid`'s `fromKernelArray` + a Solid `<Index>`.
  */
 export function syncSingletonToArray<S extends ComponentSchema>(
-	ecs: ECS,
+	ecs: ObservingWorld,
 	def: ComponentDef<S>,
 	eid: EntityID,
 	fields: readonly (string & keyof S)[],
@@ -685,6 +691,6 @@ export function syncSingletonToArray<S extends ComponentSchema>(
  * this world) wakes its readers once, not once per observer dispatch point.
  * Equivalent to `batch(() => ecs.update(dt))`.
  */
-export function batchedUpdate(ecs: ECS, dt: number): void {
+export function batchedUpdate(ecs: ObservingWorld, dt: number): void {
 	batch(() => ecs.update(dt));
 }
