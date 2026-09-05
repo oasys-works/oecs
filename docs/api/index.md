@@ -134,8 +134,8 @@ One system can run across a pool of workers. These are the names that carry it, 
 | `ecs.publishRowCounts()` | `ECS` | refresh the descriptor row counts for a module you drive yourself |
 
 The errors are `WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`,
-`WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS` and
-`PARALLEL_KERNEL_FAILED`. See [errors](./errors.md).
+`WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`,
+`PARALLEL_KERNEL_MODULE` and `PARALLEL_KERNEL_FAILED`. See [errors](./errors.md).
 
 The root also exports **`VERSION`**, which is the package version as a string constant that you can
 read at run time (`import { VERSION } from "@oasys/oecs"`). It is a literal in the source, and not
