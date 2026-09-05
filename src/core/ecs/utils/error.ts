@@ -87,9 +87,9 @@ export enum ECS_ERROR {
 	/** The host cannot block on `Atomics.wait`, so it cannot park while the
 	 * workers run. A browser main thread is the case. */
 	WORKERS_HOST_CANNOT_PARK = "WORKERS_HOST_CANNOT_PARK",
-	/** `attachWorkers` was given a number that is not a positive integer. The
-	 * worker count and the join timeout are the two, and the message names
-	 * which. */
+	/** `attachWorkers` was given a number outside its range. The worker count,
+	 * the join timeout and the kernel stack size are the three, and the message
+	 * names which. */
 	WORKERS_COUNT_INVALID = "WORKERS_COUNT_INVALID",
 	/** A worker's script did not load, so the worker answered nothing. A
 	 * `workerUrl` that points at no file is the case, and a bundled app that

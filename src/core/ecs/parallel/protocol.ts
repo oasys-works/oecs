@@ -56,6 +56,28 @@ export const JOB_YIELD = -1;
 /** Leave the barrier loop and stop. */
 export const JOB_STOP = -2;
 
+// ── The shadow stack of a wasm kernel ───────────────────────────────────────
+
+/**
+ * The frame alignment an LLVM wasm target keeps for its shadow stack. A region
+ * that is a multiple of this needs no rounding at its top.
+ *
+ * The host validates `stackBytes` against it and the worker carves against it,
+ * so both live here rather than in either half.
+ */
+export const KERNEL_STACK_ALIGN = 16;
+
+/**
+ * The smallest stack region a worker accepts, one WASM page.
+ *
+ * A wasm stack has no guard page, so a kernel that runs past the bottom of its
+ * region writes into the region below it and nothing reports the overrun. The
+ * floor catches a caller who reserved nothing. It does not size the stack of a
+ * deep kernel, and no engine can. The caller reserves the span and says how
+ * much of it one worker gets.
+ */
+export const KERNEL_STACK_MIN_BYTES = 65_536;
+
 /** What a worker receives before it does anything. `store` is the
  * `WebAssembly.Memory` on the wasm backing and the `SharedArrayBuffer` on the
  * shared backing, because the two grow differently: the memory hands back a new
@@ -67,6 +89,11 @@ export interface WorkerStart {
 	readonly control: SharedArrayBuffer;
 	readonly index: number;
 	readonly count: number;
+	/** Bytes of shadow stack one instance of a `wasm` kernel module gets, or 0
+	 * when the caller named none. At 0 the worker divides the whole span between
+	 * the module's `__heap_base` and the store base, which leaves the module no
+	 * heap. */
+	readonly stackBytes: number;
 }
 
 /** One kernel a worker loads, addressed by its slot for the rest of the run.

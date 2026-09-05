@@ -60,6 +60,10 @@ The state hash of a deterministic world is the oracle for every step.
 - The fix is a region for each instance, carved from `[__heap_base, storeBase)`,
   which is the span the caller already reserves. It costs nothing inside a pass,
   and the shared-stack lane is far slower as well as wrong.
+- The regions come off the top of that span, so `attachWorkers({ stackBytes })`
+  can leave the module a heap below them. Without the option the pool divides
+  the whole span and the module has no heap, which is the right default only
+  because a kernel may not allocate anyway.
 - The engine cannot find the stack of a module that exports no
   `__stack_pointer`, so the contract says such a kernel uses none.
 - A data segment above the store base is safe. The segment and the guard word

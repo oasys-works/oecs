@@ -121,7 +121,7 @@ One system can run across a pool of workers. These are the names that carry it, 
 | `ecs.attachWorkers(options)` | `ECS` | starts the pool, resolves when every kernel is loaded |
 | `ecs.workers` | `ECS` | the attached `WorkerPool`, or `null` |
 | `WorkerPool` | root, type | `count`, `settled()` and `detach()` |
-| `AttachWorkersOptions` | root, type | `count`, `workerUrl` and `joinTimeoutMs` |
+| `AttachWorkersOptions` | root, type | `count`, `workerUrl`, `joinTimeoutMs` and `stackBytes` |
 | `SystemConfig.parallel` | `registerSystem` | `kernel`, `columns`, `minRows` and `query` |
 | `ParallelConfig` | root, type | the shape of that field |
 | `ParallelKernel` | root, type | `{ wasm, export }` or `{ js, export }` |

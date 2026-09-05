@@ -100,9 +100,10 @@ It is easy to confuse a small number of these with a category near them:
 - `WORKERS_HOST_CANNOT_PARK`. The host refuses `Atomics.wait`, so it cannot park while the workers
   run. A browser main thread is the case. Host the world inside a worker, and attach the pool from
   there. This is in each build.
-- `WORKERS_COUNT_INVALID`. `attachWorkers` was given a number that is not a positive integer. The
-  worker `count` and `joinTimeoutMs` are the two, and the message names which one and the value.
-  This is in each build.
+- `WORKERS_COUNT_INVALID`. `attachWorkers` was given a number outside its range. The worker `count`,
+  `joinTimeoutMs` and `stackBytes` are the three, and the message names which one and the value.
+  `count` and `joinTimeoutMs` must be positive integers. `stackBytes` must be an integer, a multiple
+  of the frame alignment of 16, and at least one WASM page of 65536 bytes. This is in each build.
 - `WORKERS_ENTRY_UNREACHABLE`. A worker's script did not load, so the worker answered nothing. A
   bundled app that kept the default worker URL is the case, because a bundler leaves
   `@oasys/oecs/worker` out of its graph. Pass `workerUrl` with the URL your bundler emits for that

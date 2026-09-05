@@ -118,8 +118,8 @@ function kernelWorld({ kernel, body, storeBase = STORE_BASE }: WorldOptions) {
 	return world;
 }
 
-async function attach(world: ReturnType<typeof kernelWorld>, count: number) {
-	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL });
+async function attach(world: ReturnType<typeof kernelWorld>, count: number, stackBytes?: number) {
+	const pool = await world.ecs.attachWorkers({ count, workerUrl: WORKER_URL, stackBytes });
 	pools.push(pool);
 	return pool;
 }
@@ -361,5 +361,119 @@ describe("a kernel module the pool refuses", () => {
 		});
 		await attach(world, 1);
 		expect(world.ecs.workers?.count).toBe(1);
+	}, 30_000);
+});
+
+/**
+ * `attachWorkers` with `stackBytes`, and the module heap it leaves alone.
+ *
+ * The pool carves the stack regions downward from the store base. With
+ * `stackBytes` the regions are exactly that size, so everything below the
+ * lowest one stays the module's heap. Without it the pool divides the whole
+ * span and the module has no heap. Both halves are locked here, because the
+ * second is the reason the first is worth an option.
+ */
+describe("the stack the caller sizes", () => {
+	const STACK_BYTES = 128 * 1024;
+	const SENTINEL = 0xa5a50000;
+
+	/** Where the module's heap ends when the pool takes `count` regions of
+	 * `STACK_BYTES` off the top. */
+	const heapEnd = (count: number) => STORE_BASE - count * STACK_BYTES;
+
+	function heapBaseOf(memory: WebAssembly.Memory): number {
+		const probe = new WebAssembly.Instance(fixture("kernel_zig.wasm"), { env: { memory } });
+		return (probe.exports.__heap_base as WebAssembly.Global).value as number;
+	}
+
+	/** Fill the span with a pattern that depends on the address, so a frame that
+	 * lands anywhere inside it shows, and a shift shows too. */
+	function paint(memory: WebAssembly.Memory, from: number, to: number): void {
+		const words = new Uint32Array(memory.buffer, from, (to - from) >> 2);
+		for (let i = 0; i < words.length; i++) words[i] = (SENTINEL ^ i) >>> 0;
+	}
+
+	function repainted(memory: WebAssembly.Memory, from: number, to: number): number {
+		const words = new Uint32Array(memory.buffer, from, (to - from) >> 2);
+		let wrong = 0;
+		for (let i = 0; i < words.length; i++) if (words[i] !== ((SENTINEL ^ i) >>> 0)) wrong++;
+		return wrong;
+	}
+
+	function stackWorld() {
+		return kernelWorld({
+			kernel: { wasm: fixture("kernel_zig.wasm"), export: "stack_i32" },
+			body: stackI32
+		});
+	}
+
+	it("leaves the module's heap untouched, and still answers", async () => {
+		const expected = sequential(stackI32);
+		const world = stackWorld();
+		await attach(world, WORKERS, STACK_BYTES);
+
+		// Painted after the attach, so the data segment every worker writes at
+		// instantiation is already in place.
+		const memory = world.ecs.wasmMemory as WebAssembly.Memory;
+		const from = heapBaseOf(memory);
+		const to = heapEnd(WORKERS);
+		expect(to).toBeGreaterThan(from);
+		paint(memory, from, to);
+
+		for (let frame = 0; frame < FRAMES; frame++) world.ecs.update(DT);
+
+		expect(repainted(memory, from, to)).toBe(0);
+		expect(readColumns(world.ecs, world.Pos, world.Vel)).toEqual(expected.columns);
+	}, 30_000);
+
+	it("takes the whole span with no stackBytes, so the same heap is gone", async () => {
+		const world = stackWorld();
+		await attach(world, WORKERS);
+		const memory = world.ecs.wasmMemory as WebAssembly.Memory;
+		const from = heapBaseOf(memory);
+		const to = heapEnd(WORKERS);
+		paint(memory, from, to);
+
+		world.ecs.update(DT);
+
+		expect(repainted(memory, from, to)).toBeGreaterThan(0);
+	}, 30_000);
+
+	it("fails the kernel load when the workers need more stack than the span holds", async () => {
+		const world = stackWorld();
+		let caught = { category: "no throw", message: "" };
+		try {
+			// Four regions of one megabyte against a span of about three.
+			await attach(world, 4, 1024 * 1024);
+		} catch (error) {
+			caught = { category: (error as ECSError).category, message: (error as Error).message };
+		}
+		expect(caught.category).toBe(ECS_ERROR.PARALLEL_KERNEL_FAILED);
+		expect(caught.message).toContain("stack region of 1048576 bytes");
+		expect(caught.message).toContain("lower attachWorkers stackBytes");
+	}, 30_000);
+
+	it("refuses a stackBytes the pool cannot carve, at the attach", async () => {
+		const world = stackWorld();
+		const refusal = async (stackBytes: number) => {
+			try {
+				await attach(world, 2, stackBytes);
+			} catch (error) {
+				return { category: (error as ECSError).category, message: (error as Error).message };
+			}
+			return { category: "no throw", message: "" };
+		};
+
+		const fraction = await refusal(1.5);
+		expect(fraction.category).toBe(ECS_ERROR.WORKERS_COUNT_INVALID);
+		expect(fraction.message).toContain("integer >= 1");
+
+		const unaligned = await refusal(STACK_BYTES + 4);
+		expect(unaligned.category).toBe(ECS_ERROR.WORKERS_COUNT_INVALID);
+		expect(unaligned.message).toContain("multiple of 16");
+
+		const tiny = await refusal(4096);
+		expect(tiny.category).toBe(ECS_ERROR.WORKERS_COUNT_INVALID);
+		expect(tiny.message).toContain("65536");
 	}, 30_000);
 });

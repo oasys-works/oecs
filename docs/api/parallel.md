@@ -46,6 +46,7 @@ the worker count wakes the host. So the host wakes once for a pass, whatever the
 | `count` | Workers to start. Defaults to one below the reported parallelism, floor one |
 | `workerUrl` | Where the worker entry lives. Defaults to the sibling of the package entry. A bundled app passes it |
 | `joinTimeoutMs` | Milliseconds the host waits at the join before it gives up on the pass |
+| `stackBytes` | Shadow stack one instance of a `wasm` kernel module gets. Omit it and the pool takes the whole reserve, which leaves the module no heap |
 
 Rules the engine holds you to:
 
@@ -234,7 +235,7 @@ const move = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, move);
 ecs.startup();
 
-const pool = await ecs.attachWorkers({ count: WORKERS });
+const pool = await ecs.attachWorkers({ count: WORKERS, stackBytes: STACK_BYTES });
 ```
 
 The TypeScript body beside a module body must compute the same thing. An engine folds a
@@ -300,33 +301,45 @@ module and pass a store base above it with `storeBaseAbove`. See [the store base
 instantiates the same module over one memory, and a wasm global is per-instance, so every worker's
 `__stack_pointer` starts at the address the linker chose. Every worker would then write its frames
 to the same bytes. When the module exports the global the pool gives each worker its own region,
-carved from the span between `__heap_base` and the store base. When the module does not export it
+carved downward from the store base out of the span above `__heap_base`. When the module does not export it
 the engine cannot find the stack and cannot protect it, so a kernel from such a module may not use
 one. An LLVM build spills a local array, a struct passed by pointer, or the address of a local, so
 export the global whenever the body does any of those.
 
-**Size the reserve for the workers.** The pool divides `[__heap_base, storeBase)` evenly among the
-workers, so the reserve you pass decides the stack each worker gets. Pass the module's peak
-run-time heap plus one stack for each worker:
+**Size the reserve for the workers, and say how much of it is stack.** The regions come out of the
+span `[__heap_base, storeBase)`, and the pool carves them downward from the store base. Worker `i`
+gets the top of its region at `storeBase - i * stackBytes`. So reserve the module's peak run-time
+heap plus one stack for each worker, and pass the same `stackBytes` to `attachWorkers`:
 
 ```ts
 const workers = 4;
 const stackBytes = 1024 * 1024;      // as deep as your kernel goes
+const heapPeak = 4 * 1024 * 1024;    // what the module allocates while it runs
 
 const ecs = ECS.create({
   memory: {
     backing: { wasm: { memory } },
-    storeBase: storeBaseAbove(probe.exports, workers * stackBytes),
+    storeBase: storeBaseAbove(probe.exports, heapPeak + workers * stackBytes),
   },
 });
-const pool = await ecs.attachWorkers({ count: workers });
+const pool = await ecs.attachWorkers({ count: workers, stackBytes });
 ```
 
-A region below one WASM page fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message
-names the span, the worker count and the bytes to reserve. A wasm stack has no guard page, so a
-kernel that runs deeper than its region writes into the region below it and nothing reports the
-overrun. Only you can size it. One worker needs no region, because one instance owns the linked
-stack alone.
+Everything below the lowest region stays the module's heap, and the pool never writes there.
+
+**Omit `stackBytes` and the module has no heap.** The pool then divides the whole span among the
+workers, so every byte between `__heap_base` and the store base belongs to a stack. That is the
+default. It is right for a kernel that allocates nothing, which is what the heap rule below asks
+for anyway, and it needs no number from you.
+
+`stackBytes` must be an integer, a multiple of the frame alignment of 16, and at least one WASM page
+of 65536 bytes. A value outside that fails the attach with `WORKERS_COUNT_INVALID`. A span too small
+to hold one region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the
+message names the span, the region, the worker count and the remedy.
+
+A wasm stack has no guard page. A kernel that runs deeper than its region writes into the region
+below it, and nothing reports the overrun. Only you can size it. One worker needs no region, because
+one instance owns the linked stack alone.
 
 **The data segment is shared, and the heap is shared.** A module built for shared memory
 initialises its data segment once, behind a guard word the linker places in the same memory, so
@@ -508,6 +521,8 @@ Name these before you plan around them.
   notices nothing about a worker that answers with wrong bytes.
 - **No stack guard.** The pool gives each worker a region and sets `__stack_pointer` to its top. A
   kernel that runs deeper than its region writes into the region below, and nothing reports it.
+- **One stack size for every worker.** `stackBytes` is one number for the pool, not one for each
+  kernel or each worker.
 - **No stack for a module that hides it.** A module that exports no mutable `__stack_pointer` keeps
   the stack the linker gave it, and every worker shares it. Such a kernel uses no stack.
 - **No allocation from a module.** Every instance draws from one heap, and nothing serialises them.

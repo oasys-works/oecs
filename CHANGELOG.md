@@ -95,13 +95,22 @@ that spilled a local array, a struct passed by pointer, or the address of a loca
 another worker wrote. The corruption was silent, it needed no shared column, and no probe before
 this one caught it, because the earlier kernels held every value in a wasm local.
 
-The worker now carves `[__heap_base, storeBase)` into one region for each worker and moves
-`__stack_pointer` to the top of its own. The reserve you pass to `storeBaseAbove` decides the stack
-each worker gets, so add one stack for each worker to it. A region below one WASM page fails the
-kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the span, the worker count and the
-bytes to reserve. A module that exports no `__stack_pointer` is left alone, and the docs say such a
-kernel may not use a stack. One worker needs no region, because one instance owns the linked stack
-alone.
+The worker now carves one region for each worker out of `[__heap_base, storeBase)` and moves
+`__stack_pointer` to the top of its own. The regions come off the top of that span, downward from
+the store base, so worker `i` gets its top at `storeBase - i * stackBytes`.
+
+`attachWorkers({ stackBytes })` says how big one region is, and everything below the lowest region
+stays the module's heap. Reserve the module's peak run-time heap plus one stack for each worker with
+`storeBaseAbove`, then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
+span, which leaves the module no heap. That is the default, and it suits a kernel that allocates
+nothing, which is what the heap rule asks for anyway.
+
+`stackBytes` must be an integer, a multiple of the frame alignment of 16, and at least one WASM page.
+A value outside that fails the attach with `WORKERS_COUNT_INVALID`. A span too small to hold one
+region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the
+span, the region, the worker count and the remedy. A module that exports no `__stack_pointer` is left
+alone, and the docs say such a kernel may not use a stack. One worker needs no region, because one
+instance owns the linked stack alone.
 
 The assignment runs once for each kernel load, so a pass pays nothing for it.
 

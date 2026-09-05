@@ -95,14 +95,14 @@ function reference(body) {
 	return fnv(i32, 0, ROWS * 4);
 }
 
-/** The top of each worker's stack region, carved from `[heapBase, storeBase)`.
- * The same arithmetic the engine runs, written here so the probe measures the
- * rule and not the implementation. */
+/** The top of each worker's stack region, carved downward from the store base
+ * out of `[heapBase, storeBase)`. The same arithmetic the engine runs, written
+ * here so the probe measures the rule and not the implementation. */
 function stackTopsFor(heapBase, storeBase, count) {
 	const region = Math.floor((storeBase - heapBase) / count / FRAME_ALIGN) * FRAME_ALIGN;
 	if (region <= 0) return null;
 	const tops = new Array(count);
-	for (let i = 0; i < count; i++) tops[i] = heapBase + (i + 1) * region;
+	for (let i = 0; i < count; i++) tops[i] = storeBase - i * region;
 	return tops;
 }
 

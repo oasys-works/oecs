@@ -40,6 +40,8 @@ import {
 	CTL_KERNEL,
 	JOB_STOP,
 	JOB_YIELD,
+	KERNEL_STACK_ALIGN,
+	KERNEL_STACK_MIN_BYTES,
 	type HostMessage,
 	type KernelMessage,
 	type WorkerReply,
@@ -54,23 +56,6 @@ import {
 import { COMPONENT_MASK_WORDS } from "../../store/vendored_abi/abi.ts";
 
 type KernelFn = (...args: number[]) => void;
-
-/**
- * The frame alignment an LLVM wasm target keeps for its shadow stack. A region
- * that is a multiple of this needs no rounding at its top.
- */
-const STACK_ALIGN = 16;
-
-/**
- * The smallest stack region a worker accepts, one WASM page.
- *
- * A wasm stack has no guard page, so a kernel that runs past the bottom of its
- * region writes into the region below it and nothing reports the overrun. The
- * floor here catches a caller who reserved nothing. It does not size the stack
- * of a deep kernel, and no engine can: the caller reserves the span, and the
- * worker divides what it finds.
- */
-const STACK_MIN_BYTES = 65_536;
 
 /**
  * A module's `__heap_base` or `__stack_pointer`, whichever form it exports.
@@ -101,8 +86,21 @@ function globalNumber(exported: unknown): number | null {
  * another worker wrote. The corruption is silent and it needs no shared column.
  *
  * The regions come from `[__heap_base, storeBase)`, which is the span the
- * caller reserves above everything the module owns. Worker `i` takes the `i`th
- * slice and the stack grows down from its top.
+ * caller reserves above everything the module owns. They are carved downward
+ * from the store base, so worker `i` owns
+ * `[storeBase - (i + 1) * region, storeBase - i * region)` and its stack grows
+ * down from the top of that. A stack pointer at `storeBase` writes no store
+ * byte, because a frame lands below the pointer and never on it.
+ *
+ * `stackBytes` decides the region size and so decides what is left over.
+ *
+ *   - Given: the region is exactly that, the regions sit at the top of the
+ *     span, and everything below the lowest one stays the module's heap.
+ *   - Zero: the pool divides the whole span, so the module has no heap. That is
+ *     the default, and the docs say so.
+ *
+ * Downward from the top either way, so one rule covers both and a caller who
+ * names `stackBytes` knows where the heap ends without knowing the count.
  *
  * A module that exports no `__stack_pointer` is left alone. The engine cannot
  * find its stack, so the contract says such a kernel may not use one.
@@ -116,7 +114,8 @@ function assignStackRegion(
 	exportName: string,
 	storeBase: number,
 	index: number,
-	count: number
+	count: number,
+	stackBytes: number
 ): void {
 	const pointer = globalObject(instance.exports.__stack_pointer);
 	if (pointer === null || count === 1) return;
@@ -127,19 +126,29 @@ function assignStackRegion(
 			`the kernel export '${exportName}' comes from a module with a '__stack_pointer' and no numeric '__heap_base', so the worker cannot find the span its stack may use. Link with --export=__heap_base.`
 		);
 	}
-	// Every region top has to land on the frame alignment, so the first one does
-	// too. A linker aligns `__heap_base` already, and this costs nothing when it
-	// did.
-	const floor = Math.ceil(heapBase / STACK_ALIGN) * STACK_ALIGN;
+	// Every region top has to land on the frame alignment, so the span's own
+	// bottom does too. A linker aligns `__heap_base` already, and this costs
+	// nothing when it did.
+	const floor = Math.ceil(heapBase / KERNEL_STACK_ALIGN) * KERNEL_STACK_ALIGN;
 	const reserve = storeBase - floor;
-	const region = Math.floor(reserve / count / STACK_ALIGN) * STACK_ALIGN;
-	if (region < STACK_MIN_BYTES) {
+	const region =
+		stackBytes > 0
+			? stackBytes
+			: Math.floor(reserve / count / KERNEL_STACK_ALIGN) * KERNEL_STACK_ALIGN;
+	if (region < KERNEL_STACK_MIN_BYTES) {
 		throw new Error(
-			`the kernel export '${exportName}' needs one stack region for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} leave ${region} for each. Raise memory.storeBase to reserve at least ${count * STACK_MIN_BYTES} bytes above the module's heap.`
+			`the kernel export '${exportName}' needs one stack region for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} leave ${region} for each. Raise memory.storeBase to reserve at least ${count * KERNEL_STACK_MIN_BYTES} bytes above the module's heap.`
+		);
+	}
+	// Only a caller-given `stackBytes` reaches this. A divided span fits by
+	// construction, and a span too small to divide failed above.
+	if (count * region > reserve) {
+		throw new Error(
+			`the kernel export '${exportName}' needs one stack region of ${region} bytes for each of ${count} workers, and the ${reserve} bytes between __heap_base ${heapBase} and the store base ${storeBase} hold fewer. Raise memory.storeBase, or lower attachWorkers stackBytes.`
 		);
 	}
 	try {
-		pointer.value = floor + (index + 1) * region;
+		pointer.value = storeBase - index * region;
 	} catch {
 		throw new Error(
 			`the kernel export '${exportName}' comes from a module whose '__stack_pointer' is immutable, so every worker would share one stack. Build with mutable globals, or give the kernel a body that uses no stack.`
@@ -186,6 +195,9 @@ export function createWorkerRuntime(
 	const storeBase = start.storeBase;
 	const index = start.index;
 	const count = start.count;
+	// A start payload written by an older host carries no field, so the zero here
+	// means the same thing a caller who named nothing means.
+	const stackBytes = start.stackBytes ?? 0;
 	const ctl = new Int32Array(start.control);
 	const ctlF64 = new Float64Array(start.control);
 	const kernels: (Kernel | undefined)[] = [];
@@ -243,7 +255,7 @@ export function createWorkerRuntime(
 						`the wasm kernel export '${message.exportName}' takes ${call.length} parameters and the system declares ${specs.length >> 1} columns, which needs ${arity}. Give the kernel one parameter for each column, then begin, end and dt.`
 					);
 				}
-				assignStackRegion(instance, message.exportName, storeBase, index, count);
+				assignStackRegion(instance, message.exportName, storeBase, index, count, stackBytes);
 				settle(call as KernelFn, false);
 				return;
 			}

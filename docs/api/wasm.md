@@ -186,15 +186,25 @@ shadow stack end. Whatever the module allocates while it runs sits above that, a
 knows how far. Pass its peak. A store based inside that heap fails the same silent way.
 
 **A pool takes its stack regions from the same span.** The span `[__heap_base, storeBase)` is the
-caller's reserve, and `attachWorkers` divides it evenly among the workers to give each instance a
-private shadow stack. So a world that runs a `wasm` kernel across a pool adds one stack for each
-worker to the extra bytes:
+caller's reserve, and `attachWorkers` carves one private shadow stack out of it for each worker,
+downward from the store base. So a world that runs a `wasm` kernel across a pool adds one stack for
+each worker to the extra bytes, and tells the pool how big one stack is:
 
 ```ts
-storeBase: storeBaseAbove(probe.exports, moduleHeapPeak + workers * stackBytes),
+const ecs = ECS.create({
+  memory: {
+    backing: { wasm: { memory } },
+    storeBase: storeBaseAbove(probe.exports, moduleHeapPeak + workers * stackBytes),
+  },
+});
+
+const pool = await ecs.attachWorkers({ count: workers, stackBytes });
 ```
 
-See [the module contract](./parallel.md#the-module-contract).
+**Both lines, or neither.** Without `stackBytes` the pool divides the whole span, and
+`moduleHeapPeak` then buys nothing, because a stack region covers it. Reserve a heap only when you
+name the stack size beside it. See
+[the module contract](./parallel.md#the-module-contract).
 
 `WASM_STORE_BASE_BYTES` is the default base for the wasm backing, one page. It is on
 `@oasys/oecs/internal`.
@@ -343,7 +353,8 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 8. Call `ecs.publishRowCounts()` before each run of a module that you drive outside the schedule.
 9. Read the base from the module with `storeBaseAbove(instance.exports, extraBytes)`, and pass the
    module its own peak run-time heap plus one stack for each worker of the pool.
-10. Link a kernel module with `--export=__stack_pointer` when its body spills anything, and keep it
+10. Give `attachWorkers` the same `stackBytes` you reserved, so the pool leaves the heap alone.
+11. Link a kernel module with `--export=__stack_pointer` when its body spills anything, and keep it
     off the module's heap either way.
 
 ## See also

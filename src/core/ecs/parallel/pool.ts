@@ -48,6 +48,8 @@ import {
 	CTL_KERNEL,
 	JOB_STOP,
 	JOB_YIELD,
+	KERNEL_STACK_ALIGN,
+	KERNEL_STACK_MIN_BYTES,
 	type HostMessage,
 	type WorkerReply,
 	type WorkerStart
@@ -101,6 +103,55 @@ export interface AttachWorkersOptions {
 	 * dies outright reports nothing, so without this the host parks for the life
 	 * of the process. */
 	readonly joinTimeoutMs?: number;
+	/**
+	 * Bytes of shadow stack one instance of a `wasm` kernel module gets. An
+	 * integer, a multiple of `KERNEL_STACK_ALIGN`, at least
+	 * `KERNEL_STACK_MIN_BYTES`.
+	 *
+	 * The regions are carved downward from the store base, so with this given
+	 * everything below the lowest region stays the module's heap. Without it the
+	 * pool divides the whole span between the module's `__heap_base` and the
+	 * store base, and the module then has no heap.
+	 *
+	 * A wasm stack has no guard page. A kernel that runs deeper than its region
+	 * writes into the region below it and nothing reports the overrun, so this is
+	 * a number only the caller can pick.
+	 */
+	readonly stackBytes?: number;
+}
+
+/**
+ * Check `stackBytes` and hand the worker the value, or 0 when the caller named
+ * none.
+ *
+ * The worker cannot report a named fault, because it cannot import the error
+ * codes, so a value the caller controls is checked here where the message can
+ * carry one. A span too small for the value it names is a fact of the module,
+ * and only the worker knows it, so that one still fails at kernel load.
+ *
+ * Cold path.
+ */
+function resolveStackBytes(given: number | undefined): number {
+	if (given === undefined) return 0;
+	if (!Number.isInteger(given) || given < 1) {
+		throw new ECSError(
+			ECS_ERROR.WORKERS_COUNT_INVALID,
+			`attachWorkers: stackBytes must be an integer >= 1, got ${String(given)}`
+		);
+	}
+	if (given % KERNEL_STACK_ALIGN !== 0) {
+		throw new ECSError(
+			ECS_ERROR.WORKERS_COUNT_INVALID,
+			`attachWorkers: stackBytes must be a multiple of ${KERNEL_STACK_ALIGN}, the frame alignment of a wasm shadow stack, got ${given}`
+		);
+	}
+	if (given < KERNEL_STACK_MIN_BYTES) {
+		throw new ECSError(
+			ECS_ERROR.WORKERS_COUNT_INVALID,
+			`attachWorkers: stackBytes must be at least ${KERNEL_STACK_MIN_BYTES}, one WASM page, got ${given}`
+		);
+	}
+	return given;
 }
 
 /** One runtime's worker, behind the two calls the pool makes. */
@@ -327,6 +378,7 @@ export class WorkerPool {
 				`attachWorkers: joinTimeoutMs must be an integer >= 1, got ${String(joinTimeoutMs)}`
 			);
 		}
+		const stackBytes = resolveStackBytes(options?.stackBytes);
 		const control = new SharedArrayBuffer(CONTROL_BYTES);
 		const starts: WorkerStart[] = [];
 		for (let i = 0; i < count; i++) {
@@ -335,7 +387,8 @@ export class WorkerPool {
 				storeBase: world.storeBase,
 				control,
 				index: i,
-				count
+				count,
+				stackBytes
 			});
 		}
 		const url = options?.workerUrl ?? defaultWorkerUrl();
