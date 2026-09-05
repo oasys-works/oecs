@@ -221,7 +221,10 @@ ecs.getField(e, Pos, "x"); // about 1.667
   host, and joins before the phase flush, so no structural change can overlap the workers. Every
   worker computes its own row range, so the result is deterministic. Below `parallel.minRows`, and
   with no pool, the system runs its own `fn`. In a browser the world lives inside a worker, because
-  a main thread cannot park, and Blink, Gecko and WebKit all run the pool from there.
+  a main thread cannot park, and Blink, Gecko and WebKit all run the pool from there. A `wasm` kernel
+  follows a module contract that holds for any toolchain: one memory import, one exported function,
+  and an exported `__stack_pointer` when the body uses a stack. The suite runs kernels built by
+  Zig, Rust, C and AssemblyScript beside one emitted with no toolchain.
 - **A store that starts anywhere in its memory**. `memory.storeBase` places the header at a byte
   offset you choose, and the store writes nothing below it. `storeBaseAbove(exports, extraBytes)`
   reads that offset from a module's `__heap_base`, so a WASM-backed world never lands on the
