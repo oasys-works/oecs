@@ -101,6 +101,13 @@ The package names no node builtin in a specifier a bundler resolves, so a browse
 externalized `node:worker_threads` and ships no stub for one. `src/__tests__/dist_artifact.test.ts`
 holds the emitted files to that.
 
+Three browser engines run this path: Blink, Gecko and WebKit. Each one refuses `Atomics.wait` on
+the main thread, each one loads a `js` kernel by URL inside a pool worker, each one runs a `wasm`
+kernel over a shared `WebAssembly.Memory`, and each one leaves the same state hash as the
+sequential run. Safari proper is not covered, because `safaridriver` needs a privileged enable
+step. `bench/foundations/browser/` holds the harness, and `bench/foundations/findings-parallel.md`
+holds the matrix and the gaps.
+
 ## The parallel system form
 
 ### A `js` kernel
@@ -344,7 +351,8 @@ Name these before you plan around them.
   is built.
 - **No sparse store, no relation, no resource and no structural intent from a worker.** Each one is
   a main-thread object.
-- **No browser main thread as host.** It cannot park. Host the world in a worker.
+- **No browser main thread as host.** It cannot park. Host the world in a worker. Blink, Gecko and
+  WebKit all refuse the park, so this is a browser rule and not one engine's behaviour.
 - **No watchdog beyond the join timeout.** The engine notices a worker that misses the join. It
   notices nothing about a worker that answers with wrong bytes.
 - **No reduction, and no work stealing.** The partition is fixed before the release.

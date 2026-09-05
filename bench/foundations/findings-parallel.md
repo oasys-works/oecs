@@ -767,3 +767,119 @@ No wasm kernel through a bundler. One entity count and one kernel. The `?url`
 import of the kernel module inlines it as a `data:` URL under the default
 `assetsInlineLimit`, and the run above set that limit to zero instead of testing
 the inline form.
+
+---
+
+## Browser matrix. The worker path runs in Chrome, in Firefox and in WebKit
+
+**Question.** The worker-hosted pool ran in Chrome. Does it run in the other two
+browser engine families, and does a `wasm` kernel run on the pool in a browser at
+all?
+
+**Method.** `bench/foundations/browser/` holds the harness, and it is checked in.
+`server.mjs` serves the repository with `Cross-Origin-Opener-Policy: same-origin`
+and `Cross-Origin-Embedder-Policy: require-corp`. `page.js` runs the case a main
+thread owns. `host.js` is a module worker that hosts a world and runs the four
+cases a worker host owns. `drive.mjs` starts each browser through Playwright,
+which it imports from a directory that `OECS_PLAYWRIGHT_DIR` or `--playwright`
+names, so Playwright stays out of the package. The page reads the built `dist/`,
+so a run measures the artifact and not the source.
+
+Each pooled lane builds the same world twice: four archetypes over `Pos` and
+`Vel`, one of them excluded by a tag, integer columns, `deterministic: true`. One
+world runs sixteen frames with no pool. The other attaches three workers and runs
+the same frames. The two must leave the same `snapshots.stateHash()`.
+
+The lane also counts the calls to the sequential `fn`. The two hashes also agree
+when every dispatch falls back to `fn`, and that fallback is the failure the lane
+exists to catch, so a pooled run that calls `fn` at all fails the lane.
+`parallel.minRows` is one, so every frame takes the pool. The grow lane reads the
+store buffer length through the public region seam before and after the spawn, so
+a run that never grew fails as well.
+
+| case | chromium 153.0.8010.12 | firefox 155.0 | webkit 26.6 | Safari 18.5 |
+| --- | --- | --- | --- | --- |
+| main thread `attachWorkers` refuses with `WORKERS_HOST_CANNOT_PARK` | pass | pass | pass | not run |
+| worker host, shared backing, three workers, `js` kernel | pass | pass | pass | not run |
+| worker host, wasm backing, three workers, `wasm` kernel from the emitter | pass | pass | pass | not run |
+| a wrong `workerUrl` gives `WORKERS_ENTRY_UNREACHABLE` and does not hang | pass | pass | pass | not run |
+| a store grow between two runs of passes keeps the pooled answer | pass | pass | pass | not run |
+
+What the passing lanes carried:
+
+| what | value |
+| --- | --- |
+| sequential and pooled `stateHash`, `js` lane and `wasm` lane | 3818282166, in every browser |
+| sequential and pooled `stateHash`, the grow lane | 1110936159, in every browser |
+| calls to the sequential `fn` during a pooled run | zero, in every lane and every browser |
+| the store buffer, before and after the grow lane spawns | longer after, in every browser |
+
+**What it shows.**
+
+- Three engines refuse `Atomics.wait` on a main thread. The refusal is a browser
+  rule and not a Chrome behaviour, so `hostCanPark` probes the right thing.
+- A `js` kernel loads by URL inside a browser pool worker on all three.
+- A `wasm` kernel runs on the pool inside a browser, over a shared
+  `WebAssembly.Memory` at the default store base. That path carried tests and no
+  browser run before this.
+- A store grow between two runs of passes leaves the pooled answer equal to the
+  sequential answer. The worker rebinds on the moved `view_stamp` on all three.
+- The state hash is the same value on all three engines. So the store bytes agree
+  across engine families, and not only inside one.
+- A wrong `workerUrl` is a fault with a remedy on all three. The error listener
+  in `startBrowserWorkers` covers Gecko and WebKit and not only Blink, and the
+  message names the URL in each.
+
+**Two defects the matrix found and did not fix.** Both live in
+`src/utils/error.ts`, which this study did not change.
+
+- **`AppError` calls `Error.captureStackTrace` with no guard.** That function is
+  a V8 extension. Every engine in this matrix has it, so no case failed. An
+  engine without it turns every named fault into
+  `TypeError: Error.captureStackTrace is not a function`, and the category the
+  caller needs is lost. Delete the function in node and call `attachWorkers` on a
+  heap world to watch it happen. The README names a Safari floor below the
+  release that adopted the function, so the risk sits inside the supported
+  window.
+- **`AppError` sets `name` from `this.constructor.name`.** A production build
+  renames the class, so `error.name` reads as one minified letter in every result
+  above. `error.category` carries the code and is unaffected.
+
+**Safari proper.** Not run. `safaridriver` answers a session request with
+`Could not create a session: You must enable 'Allow remote automation' in the
+Developer section of Safari Settings to control Safari via WebDriver.` That is a
+privileged enable step, so the WebKit build Playwright ships is the closest this
+study reaches. WebKit and Safari share an engine and not a release train, so a
+WebKit pass is evidence about the engine and not about a shipped Safari.
+
+**What the harness itself was tested against.** Four deliberate defects, one per
+behaviour the matrix names, each run in chromium and then restored:
+
+| defect | what noticed |
+| --- | --- |
+| `parallel.minRows` raised above the row count | the `fn` count, and not the hashes, which still agreed |
+| the column stride read from the wrong descriptor offset in the walk | the layout fold |
+| the wrong `workerUrl` pointed at the real worker entry | the attach resolved, so the lane reported no fault |
+| the grow lane's column capacity raised above the spawn | the store buffer length did not move |
+
+The first one is the one worth keeping. A pooled run that silently falls back to
+`fn` leaves the same state hash as the sequential run, so equality alone would
+have called that lane a pass.
+
+**What it does not cover.**
+
+- **No bundler in Firefox and in WebKit.** The Vite pass above ran in Chrome
+  only.
+- **No Safari, no Chrome for Android, no Safari on iOS, and no Windows browser.**
+  One machine, one operating system.
+- **One entity count, one kernel, one worker count and one frame count.** Nothing
+  here says where the threshold sits in a browser, because the harness measures
+  no time at all.
+- **No join timeout lane.** A worker that dies inside a pass is untested in a
+  browser, so `PARALLEL_KERNEL_FAILED` from a missed join has no browser
+  evidence.
+- **No kernel that throws.** The failed word path is untested in a browser.
+- **No detach under load, and no second attach after a detach.**
+- **No page reload with a pool attached**, so nothing says what a browser does
+  with workers parked in `Atomics.wait` when the page goes away.
+- **No float lane.** Every column is `i32`, because the state hash is the oracle.

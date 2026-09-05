@@ -654,3 +654,72 @@ deno difference as well.
   only from two workers up.
 - No browser host, no SpiderMonkey, and deno and bun run the smallest size only.
 - The join stamp is not measured apart from the frame that contains it.
+
+---
+
+## Browser reader. `store_reader.wasm` reads a live store in three browsers
+
+**Question.** `store_reader.wasm` is the checked-in module the vitest suite
+drives against a wasm-backed world. It had never run in a browser. Does a
+browser's WebAssembly engine read the store the way node's does?
+
+**Method.** `bench/foundations/browser/` holds the harness, and `page.js` runs
+this case on the page's main thread, because the reader needs no worker.
+`drive.mjs` starts chromium, firefox and webkit through Playwright. The page
+fetches the module from `src/core/ecs/__tests__/fixtures/store_reader.wasm` and
+instantiates it against the world's own `WebAssembly.Memory`.
+
+`walk.js` is the same descriptor walk in JavaScript, and it takes its ABI
+constants from `par/view.mjs`, because a probe must not import `src/`. The world
+is the one `wasm_store_reader.test.ts` builds: three archetypes, position and
+velocity, position alone, and position, velocity and a third component. The
+masks differ, so a reader that ignores the descriptor and walks every column
+gets a different answer. The page checks that shape before it compares anything.
+
+The page learns the header offset from `subscribeLayout` and assumes no value
+for it.
+
+| check | chromium 153.0.8010.12 | firefox 155.0 | webkit 26.6 | Safari 18.5 |
+| --- | --- | --- | --- | --- |
+| the header offset the world publishes | 65536 | 65536 | 65536 | not run |
+| archetypes that hold columns, and both mask shapes present | 3, yes | 3, yes | 3, yes | not run |
+| `walk`, the module against the page | 509280631, equal | 509280631, equal | 509280631, equal | not run |
+| `fnv1a` over the range the header claims | 2085181029, equal | 2085181029, equal | 2085181029, equal | not run |
+| `step`, rows the module reports against the page | 80, equal | 80, equal | 80, equal | not run |
+| the f32 columns after the step, module against page | equal | equal | equal | not run |
+| `step_i32`, rows the module reports against the page | 80, equal | 80, equal | 80, equal | not run |
+| `stateHash` after the integer step, module world against page world | equal | equal | equal | not run |
+
+**What it shows.**
+
+- A browser's WebAssembly engine folds the descriptor region to the value the
+  page folds. The offsets baked into the module and the offsets the store writes
+  agree in a browser.
+- The byte digest over the range the header claims agrees, so the module reads
+  the same range the header describes.
+- The f32 step leaves the columns the page's own rounded body leaves, on three
+  engines. The page rounds every operation with `Math.fround` and does not lean
+  on an engine folding the arithmetic to f32 by itself.
+- Two of the three archetypes hold both components, and both the module and the
+  page report eighty rows. A reader that skipped the mask test would report
+  every row.
+- The integer twin leaves the same `snapshots.stateHash()` on both sides, so the
+  agreement is about the world and not only about the bytes around it.
+- The header sits above address 0 on the wasm backing, in a browser as in node,
+  and every offset the reader adds is measured from it.
+
+**What it does not cover.**
+
+- **No cached-address lane.** The vitest suite drives `step_cached` across a grow
+  and shows the module writing into an abandoned block. That lane is not in the
+  browser harness, so nothing here says what a browser does with an address held
+  across a relocation.
+- **No Safari, no mobile browser and no Windows browser.** `safaridriver` needs a
+  privileged enable step, so Safari proper is not run. WebKit and Safari share an
+  engine and not a release train.
+- **One module.** `store_reader.wasm` only. The emitted kernel module runs in the
+  worker lane of the parallel matrix, and no toolchain-built module runs in a
+  browser here.
+- **One world shape, one column capacity and one row count.**
+- **No timing.** The harness compares values and measures nothing.
+- **No growth lane inside the browser.** The store never grows during this case.
