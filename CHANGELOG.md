@@ -80,6 +80,11 @@ its span, so the cap is `maxBytes` or the default ceiling.
 
 ### Fixed
 
+An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no
+category. The base class now checks for that V8 extension before it calls it. `error.name` read as
+one minified letter in the production build, because it came off the constructor. It is now the
+literal `ECSError`.
+
 The command, event and action rings copied slot payloads through a view built from buffer byte 0.
 At a nonzero base they wrote below the store. The rings now add the view offset.
 

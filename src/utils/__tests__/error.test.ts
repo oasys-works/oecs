@@ -53,3 +53,20 @@ describe("AppError", () => {
     expect(new TestError("a")).toBeInstanceOf(Error);
   });
 });
+
+describe("AppError without Error.captureStackTrace", () => {
+  it("delivers the fault when the extension is absent", () => {
+    // A V8 extension. An engine without it must still hand the caller the
+    // message and the name.
+    const ctor = Error as { captureStackTrace?: unknown };
+    const saved = ctor.captureStackTrace;
+    ctor.captureStackTrace = undefined;
+    try {
+      const err = new TestError("boom");
+      expect(err.message).toBe("boom");
+      expect(err.name).toBe("TestError");
+    } finally {
+      ctor.captureStackTrace = saved;
+    }
+  });
+});

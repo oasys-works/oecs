@@ -284,6 +284,23 @@ function staticImports(file: string): string[] {
 	return [...found].sort();
 }
 
+const ERROR_NAMES = `
+const root = await import(${JSON.stringify(PROD)});
+const named = new root.ECSError("ENTITY_NOT_ALIVE", "entity 1 is not alive");
+const saved = Error.captureStackTrace;
+delete Error.captureStackTrace;
+let bare;
+try {
+	const err = new root.ECSError("ENTITY_NOT_ALIVE", "entity 2 is not alive");
+	bare = { category: err.category, message: err.message, name: err.name };
+} catch (err) {
+	bare = { threw: String(err) };
+} finally {
+	Error.captureStackTrace = saved;
+}
+console.log(JSON.stringify({ name: named.name, bare }));
+`;
+
 describe("the shipped bundle", () => {
 	beforeAll(() => {
 		buildIfStale();
@@ -449,5 +466,14 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 				"./typed_arrays.js"
 			]);
 		}
+	});
+	it("names its errors with a literal, and delivers a fault without captureStackTrace", () => {
+		// A production build renames the class, so a name read off the constructor
+		// is one minified letter. captureStackTrace is a V8 extension, and a browser
+		// engine without it must still hand the caller the category.
+		const out = probe(ERROR_NAMES) as { name: string; bare: Record<string, string> };
+		expect(out.name).toBe("ECSError");
+		expect(out.bare.category).toBe("ENTITY_NOT_ALIVE");
+		expect(out.bare.name).toBe("ECSError");
 	});
 });

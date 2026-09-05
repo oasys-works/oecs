@@ -26,5 +26,6 @@ export class AssertionError extends AppError {
 		context?: Record<string, unknown>
 	) {
 		super(message, false, context);
+		this.name = "AssertionError";
 	}
 }

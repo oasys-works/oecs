@@ -112,6 +112,7 @@ export class ECSError extends AppError {
 		context?: Record<string, unknown>
 	) {
 		super(message ?? category, true, context);
+		this.name = "ECSError";
 	}
 }
 
