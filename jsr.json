@@ -34,7 +34,8 @@
 			"src/vite-env.d.ts",
 			".github",
 			"docs",
-			"bench"
+			"bench",
+			"scripts"
 		]
 	}
 }

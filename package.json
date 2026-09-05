@@ -123,6 +123,16 @@
 				"default": "./dist/capabilities/snapshots.cjs"
 			}
 		},
+		"./snapshots/dev": {
+			"import": {
+				"types": "./dist/capabilities/snapshots.d.ts",
+				"default": "./dist/capabilities/snapshots.development.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/snapshots.d.cts",
+				"default": "./dist/capabilities/snapshots.development.cjs"
+			}
+		},
 		"./events": {
 			"import": {
 				"types": "./dist/capabilities/events.d.ts",
@@ -133,6 +143,16 @@
 				"types": "./dist/capabilities/events.d.cts",
 				"development": "./dist/capabilities/events.development.cjs",
 				"default": "./dist/capabilities/events.cjs"
+			}
+		},
+		"./events/dev": {
+			"import": {
+				"types": "./dist/capabilities/events.d.ts",
+				"default": "./dist/capabilities/events.development.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/events.d.cts",
+				"default": "./dist/capabilities/events.development.cjs"
 			}
 		},
 		"./relations": {
@@ -147,6 +167,16 @@
 				"default": "./dist/capabilities/relations.cjs"
 			}
 		},
+		"./relations/dev": {
+			"import": {
+				"types": "./dist/capabilities/relations.d.ts",
+				"default": "./dist/capabilities/relations.development.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/relations.d.cts",
+				"default": "./dist/capabilities/relations.development.cjs"
+			}
+		},
 		"./observers": {
 			"import": {
 				"types": "./dist/capabilities/observers.d.ts",
@@ -157,6 +187,16 @@
 				"types": "./dist/capabilities/observers.d.cts",
 				"development": "./dist/capabilities/observers.development.cjs",
 				"default": "./dist/capabilities/observers.cjs"
+			}
+		},
+		"./observers/dev": {
+			"import": {
+				"types": "./dist/capabilities/observers.d.ts",
+				"default": "./dist/capabilities/observers.development.js"
+			},
+			"require": {
+				"types": "./dist/capabilities/observers.d.cts",
+				"default": "./dist/capabilities/observers.development.cjs"
 			}
 		}
 	},
@@ -242,13 +282,25 @@
 			"snapshots": [
 				"./dist/capabilities/snapshots.d.ts"
 			],
+			"snapshots/dev": [
+				"./dist/capabilities/snapshots.d.ts"
+			],
 			"events": [
+				"./dist/capabilities/events.d.ts"
+			],
+			"events/dev": [
 				"./dist/capabilities/events.d.ts"
 			],
 			"relations": [
 				"./dist/capabilities/relations.d.ts"
 			],
+			"relations/dev": [
+				"./dist/capabilities/relations.d.ts"
+			],
 			"observers": [
+				"./dist/capabilities/observers.d.ts"
+			],
+			"observers/dev": [
 				"./dist/capabilities/observers.d.ts"
 			]
 		}
