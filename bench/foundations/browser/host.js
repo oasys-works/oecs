@@ -22,9 +22,9 @@
  * source.
  */
 
-import { ECS, SCHEDULE } from "../../../dist/index.js";
+import { ECS, SCHEDULE, storeBaseAbove } from "../../../dist/index.js";
 import { workers } from "../../../dist/plugins/workers.js";
-import { emitKernelModule } from "../wasm/kernel_module.mjs";
+import { emitKernelModule, HEAP_BASE } from "../wasm/kernel_module.mjs";
 import { integrateI32 } from "../wasm/engine-kernels.mjs";
 import { regionSpec, storeBuffer } from "../par/world.mjs";
 
@@ -269,9 +269,13 @@ async function main() {
 					emitKernelModule({ minPages: 1, maxPages: MAX_PAGES })
 				);
 				return lane("worker-wasm", {
-					// No `storeBase`, so the wasm backing keeps its own default. The
-					// emitted module owns no byte of the memory it imports.
-					memory: { backing: { wasm: { maximumPages: MAX_PAGES, initialPages: INITIAL_PAGES } } },
+					// The emitted module links a shadow stack and owns every byte below
+					// `HEAP_BASE`. The store starts above that, with one stack region for
+					// each worker, which is the rule every linked kernel follows.
+					memory: {
+						backing: { wasm: { maximumPages: MAX_PAGES, initialPages: INITIAL_PAGES } },
+						storeBase: storeBaseAbove({ __heap_base: HEAP_BASE }, WORKERS * 65_536)
+					},
 					kernel: { wasm: module, export: "integrate_i32" }
 				});
 			}

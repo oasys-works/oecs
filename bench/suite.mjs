@@ -624,20 +624,24 @@ export function makeSuite(lib, filter = "") {
 		// The sparse cursor is the read by id that the docs recommend: the columns
 		// are indexed by entity, so `at` writes one field and a read is one load.
 		// It sits beside `getSparseField` so the two paths are visible as a pair.
-		const spark = ecs.sparseCursorRead(Spark);
-		add(
-			"sparse/cursor_read",
-			() => {
-				let s = 0;
-				for (let r = 0; r < 20; r++)
-					for (let i = 0; i < N; i += 2) {
-						spark.at(ids[i]);
-						s += spark.v;
-					}
-				sink = s;
-			},
-			{ iters: 20 * (N / 2) }
-		);
+		// A build from before sparse cursors has no `sparseCursorRead`, so a
+		// comparison with such a ref runs without this row.
+		if (typeof ecs.sparseCursorRead === "function") {
+			const spark = ecs.sparseCursorRead(Spark);
+			add(
+				"sparse/cursor_read",
+				() => {
+					let s = 0;
+					for (let r = 0; r < 20; r++)
+						for (let i = 0; i < N; i += 2) {
+							spark.at(ids[i]);
+							s += spark.v;
+						}
+					sink = s;
+				},
+				{ iters: 20 * (N / 2) }
+			);
+		}
 		// Membership churn on a sparse tag: a bit flip and no archetype move.
 		const SparkTag = ecs.registerSparseTag();
 		add(
