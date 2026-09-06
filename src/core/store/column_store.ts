@@ -16,7 +16,7 @@
  * type_tag }] }` for every archetype, it computes byte offsets, writes the
  * header + descriptor, and hands back the views in one shot.
  *
- * Not yet wired into `Archetype` / `Store`, that lands in a follow-up
+ * Not yet wired into `Archetype` and `Store`, that lands in a follow-up
  * once `view_stamp` invalidation is in place. The intent
  * here is to lock the offset math against a binary fixture so the
  * Archetype migration can lean on a tested primitive instead of inventing
@@ -358,12 +358,12 @@ export interface CreateColumnStoreOptions {
 	 * the SAB at a stable offset right after the 48-byte header. Slot
 	 * count must be a power of two. `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `command_ring_off`
-	 * stays at 0 ("absent"); existing test fixtures with hand-rolled SABs
-	 * see the legacy layout (descriptor region immediately after header).
+	 * stays at 0 ("absent"). An existing test fixture with a hand-rolled SAB
+	 * sees the legacy layout, with the descriptor region right after the header.
 	 *
 	 * Sizing the ring this way, between header and descriptor region,
-	 * keeps `command_ring_off` stable across `extendColumnStore` /
-	 * `growColumnStore` calls, since those grow the descriptor region and
+	 * keeps `command_ring_off` stable across an `extendColumnStore` or
+	 * `growColumnStore` call, since those grow the descriptor region and
 	 * the column tail but never the bytes between header and descriptor. */
 	readonly commandRingCapacitySlots?: number;
 	/** When provided, allocates the entity-index region inside the SAB at a
@@ -386,8 +386,8 @@ export interface CreateColumnStoreOptions {
 	 *
 	 * Slot count must be a power of two. `EVENT_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `event_ring_off`
-	 * stays at 0 ("absent"); existing test fixtures with hand-rolled
-	 * SABs see the layout without it. */
+	 * stays at 0 ("absent"). An existing test fixture with a hand-rolled
+	 * SAB sees the layout without it. */
 	readonly eventRingCapacitySlots?: number;
 	/** When provided, allocates the action ring
 	 * inside the SAB at a stable offset between the entity-index and event-ring
@@ -396,7 +396,7 @@ export interface CreateColumnStoreOptions {
 	 *
 	 * Slot count must be a power of two. `ACTION_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `action_ring_off`
-	 * stays at 0 ("absent"); bare-SAB tests skip it. (Engine mechanism, the
+	 * stays at 0 ("absent"). A bare-SAB test skips it. (Engine mechanism, the
 	 * `Store` allocates one always-on. It is no longer a public ECS option.) */
 	readonly actionRingCapacitySlots?: number;
 	/** Consumer-declared SAB regions. Each `StoreRegionSpec` carries an
@@ -415,7 +415,7 @@ export interface CreateColumnStoreOptions {
 	 * region, so the offset is stable across grow and extend) and the host writes the
 	 * `(component_id, field_id)` IDs into it via `write_sim_bindings`.
 	 *
-	 * Omitted / 0 ⇒ no bindings region (`bindings_off` stays 0, "absent"), the
+	 * Omitted or 0 ⇒ no bindings region (`bindings_off` stays 0, "absent"), the
 	 * default for a pure-TS game that pays nothing for the WASM seam. This used
 	 * to be the engine-baked `SIM_BINDINGS_BYTES` ABI constant reflected from the
 	 * game's Zig struct. It is now de-welded, so a manifest edit no longer dirties
@@ -521,7 +521,7 @@ export function createColumnStore(
 	options: CreateColumnStoreOptions = {}
 ): ColumnStore {
 	// SAB-availability is enforced by the allocator (the only thing that builds a
-	// SharedArrayBuffer): `DEFAULT_SAB_ALLOCATOR` / `growableSabAllocator` throw
+	// SharedArrayBuffer): `DEFAULT_SAB_ALLOCATOR` and `growableSabAllocator` throw
 	// `SabUnavailableError` in a SAB-less runtime, while `heapArrayBufferAllocator`
 	// returns a plain ArrayBuffer. So this function is backing-agnostic. It builds
 	// views over whatever `allocator(totalBytes)` hands back.
@@ -531,8 +531,8 @@ export function createColumnStore(
 	// (STORE_PREFIX_REGIONS, command, entity-index, event and action), the generic
 	// region-table directory + consumer regions, then the always-present
 	// sim-bindings block, then the layout descriptor + column data. Everything
-	// before the descriptor region keeps a stable offset across descriptor /
-	// column growth. STORE_PREFIX_REGIONS (mechanism) + the consumer region table
+	// before the descriptor region keeps a stable offset across descriptor growth
+	// and column growth. STORE_PREFIX_REGIONS (mechanism) + the consumer region table
 	// are both walked again by the realloc snapshot and restore in extend.ts.
 	const storeBase = options.storeBase ?? 0;
 	assertStoreBase(storeBase);
@@ -551,7 +551,7 @@ export function createColumnStore(
 	// Consumer-declared regions: laid out after the mechanism regions
 	// and addressed via a generic region-table directory rather than named
 	// header fields. The directory precedes the regions (so its own offset is
-	// stable too); each entry records the region's `byte_length`, letting the
+	// stable too). Each entry records the region's `byte_length`, letting the
 	// realloc snapshot and restore path copy a region across a grow without
 	// re-deriving consumer knobs.
 	const consumerRegions = options.regions ?? [];
@@ -566,13 +566,13 @@ export function createColumnStore(
 		cursor += spec.bytes;
 	}
 
-	// Sim-bindings region (v5 / "SAB-is-the-interface"). Opt-in: a consumer that
-	// attaches a WASM backend supplies its size via `bindingsRegionBytes`
-	// (`@internal/sim`'s game-owned `SIM_BINDINGS_BYTES`); a pure-TS game omits it
+	// Sim-bindings region, the "SAB is the interface" arm. Opt-in: a consumer
+	// that attaches a WASM backend supplies its size through `bindingsRegionBytes`,
+	// computed from its own binding manifest. A pure-TS world omits it
 	// and gets no region (`bindings_off` = 0, "absent"). Sits right before the
-	// descriptor region so its offset is stable across `extendColumnStore` /
-	// `growColumnStore` (those grow the descriptor region + column tail, never the
-	// bytes before it). The host writes the `(component_id, field_id)` IDs into it
+	// descriptor region so its offset is stable across `extendColumnStore` and
+	// `growColumnStore` (those grow the descriptor region and the column tail,
+	// never the bytes before it). The host writes the `(component_id, field_id)` ids into it
 	// once per layout via `write_sim_bindings`. The Zig per-system exports read
 	// from here. Engine-opaque, the size is a runtime input, not an
 	// ABI constant reflected from the game's binding struct.
@@ -603,7 +603,7 @@ export function createColumnStore(
 		regionTableOff,
 		regionTableCount,
 		// `regionOffsets` stays keyed by the snake ABI field names (it also indexes
-		// `STORE_HEADER_OFFSETS`); map its 4 entries onto the camelCase header fields.
+		// `STORE_HEADER_OFFSETS`). Map its 4 entries onto the camelCase header fields.
 		commandRingOff: regionOffsets.command_ring_off,
 		entityIndexOff: regionOffsets.entity_index_off,
 		eventRingOff: regionOffsets.event_ring_off,

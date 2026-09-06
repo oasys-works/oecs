@@ -21,7 +21,7 @@ type CellDef = ComponentDef<{ x: "i32"; heat: "i32" }>;
 type VelDef = ComponentDef<{ vx: "i32" }>;
 
 /** Read committed state straight from the world (the stand-in for the read
- * channel in these core tests); `undefined` for a missing slot so the editor
+ * channel in these core tests). It answers `undefined` for a missing slot so the editor
  * falls back to `0`. */
 function makeReader(world: ECS): FieldReader {
 	return (entityId, def, field) =>
@@ -46,7 +46,7 @@ function onlyCell(world: ECS, Cell: CellDef): EntityID {
 }
 
 describe("Editor, spawn → edit → edit → undo×N (the acceptance walk-back)", () => {
-	it("undo walks state back, then removes the spawn; undo on an empty stack is a no-op", () => {
+	it("undo walks state back, then removes the spawn, and undo on an empty stack is a no-op", () => {
 		const { world, Cell, editor } = setup();
 
 		let id: EntityID | undefined;
@@ -121,7 +121,7 @@ describe("Editor, set_field undo and redo round-trips", () => {
 });
 
 describe("Editor, despawn undo and redo (data round-trips, identity does not)", () => {
-	it("undo respawns the captured data; redo removes the respawned entity", () => {
+	it("undo respawns the captured data, redo removes the respawned entity", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 5, heat: 3 })], (e) => (id = e));
@@ -158,7 +158,7 @@ describe("Editor, despawn undo and redo (data round-trips, identity does not)", 
 });
 
 describe("Editor, add and remove component round-trips", () => {
-	it("add_component undo removes it; redo re-adds; remove_component undo restores values", () => {
+	it("add_component undo removes it, redo re-adds it, remove_component undo restores values", () => {
 		const { world, Cell, editor } = setup();
 		const Vel = world.registerComponent({ vx: "i32" }) as VelDef;
 		let id: EntityID | undefined;
@@ -257,7 +257,7 @@ describe("Editor, more than one undo and redo per frame (the stale-id regression
 
 		// Two more editor actions before the next world.update, the multi undo and redo
 		// per-frame sequence that once regressed. redo re-enqueues the spawn (respawns
-		// under a new id once it applies); the immediately-following undo re-enqueues
+		// under a new id once it applies. The immediately-following undo re-enqueues
 		// the same stable inverse-despawn object by reference. Pre-fix, the redo's
 		// `onSpawned` replaced the inverse slot with a fresh object, so this already-
 		// enqueued despawn still pointed at the dead original `id` → ENTITY_NOT_ALIVE
@@ -318,7 +318,7 @@ describe("Editor, an empty transaction is a no-op", () => {
 });
 
 describe("Editor, pending_field self-resolves once the channel catches up", () => {
-	it("returns the edit before commit, then undefined after; an external write is not shadowed", () => {
+	it("returns the edit before commit, then undefined after, and an external write is not shadowed", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 10, heat: 0 })], (e) => (id = e));
@@ -396,7 +396,7 @@ describe("Editor, pending_field self-resolves when the slot dies", () => {
 });
 
 describe("Editor, onChange, canUndo and canRedo", () => {
-	it("fires on commit, undo, redo, clear; unsubscribe stops it", () => {
+	it("fires on commit, undo, redo and clear, and unsubscribe stops it", () => {
 		const { world, Cell, editor } = setup();
 		let fires = 0;
 		const off = editor.onChange(() => {

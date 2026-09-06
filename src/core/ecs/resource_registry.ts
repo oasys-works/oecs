@@ -45,7 +45,7 @@ export class ResourceRegistry {
 	}
 
 	/** Drop a resource from the world. Fails closed on a missing key (mirrors
-	 * `get` / `set`); afterwards the key is free to `register` again, the
+	 * `get` and `set`). Afterwards the key is free to `register` again, the
 	 * present → absent → present lifecycle. Purely a host-side
 	 * dictionary delete with no determinism-hash effect. */
 	public remove(key: symbol): void {

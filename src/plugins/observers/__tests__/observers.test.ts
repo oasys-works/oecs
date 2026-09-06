@@ -1,5 +1,5 @@
 /**
- * Component observers, onAdd and onRemove / onSet.
+ * Component observers, onAdd, onRemove and onSet.
  *
  * Ports the two locked proofs to the real engine:
  *   - determinism: one logical op-set in several input orderings → identical
@@ -45,7 +45,7 @@ describe("Observers, onAdd and onRemove basics", () => {
 		expect(fired).toEqual([e as number]);
 	});
 
-	it("onRemove fires for an effective remove; no-op remove fires nothing", () => {
+	it("onRemove fires for an effective remove, a no-op remove fires nothing", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Tag = world.registerTag();
 		const removed: number[] = [];
@@ -195,7 +195,7 @@ describe("Observers, dispose mid-round", () => {
 // ============================================================================
 // onRemove fans out across a destroy. A destroy is a remove of the whole
 // mask, so it must fire onRemove for every carried component, at the deferred
-// flush boundary, in the same commit-then-observe / canonical-order discipline
+// flush boundary, in the same commit-then-observe and canonical-order discipline
 // as an explicit remove. The entity is freed before the callback runs, so the
 // onRemove identifies what was destroyed by its (now dead) eid.
 // ============================================================================
@@ -880,7 +880,7 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 	});
 
 	it("records a dirty row from a ctx.ref write via ctx.mark_changed", () => {
-		// `ctx.ref` / `ctx.getColumnMut` writes bypass setField's auto-record, so a
+		// A `ctx.ref` or `ctx.getColumnMut` write bypasses setField's auto-record, so a
 		// per-entity onSet consumer marks the row explicitly (the bench's winning
 		// `tick+list`: raw write + an int push).
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
@@ -987,7 +987,7 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 });
 
 describe("Observers, onSet (archetype-granular, change tick)", () => {
-	it("fires once per changed archetype-column with the archetype view; not on unchanged ticks", () => {
+	it("fires once per changed archetype-column with the archetype view, and not on an unchanged tick", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const counts: number[] = [];

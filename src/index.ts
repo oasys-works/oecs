@@ -41,8 +41,8 @@ export type { ECSMemoryOptions, MemoryBacking, WasmMemoryArm } from "./core/ecs"
 // module's `__heap_base` and gives back a `memory.storeBase` that clears it.
 export { storeBaseAbove } from "./core/ecs";
 
-// Template / direct-create, opaque archetype template from `ECS.template`,
-// consumed by `ECS.spawn` / `ECS.spawnMany`.
+// Template and direct create, the opaque archetype template from
+// `ECS.template`, consumed by `ECS.spawn` and `ECS.spawnMany`.
 export type { Template, TemplateOverrides } from "./core/ecs";
 
 // SAB layout subscription, generic hook for any consumer (e.g. a compute
@@ -65,7 +65,7 @@ export {
 	type SystemSetConfig
 } from "./core/ecs";
 
-// Run conditions, per-tick gates for scheduled systems / sets.
+// Run conditions, per-tick gates for a scheduled system or system set.
 export {
 	type RunCondition,
 	type ConditionContext,
@@ -94,7 +94,7 @@ export type {
 export type { ParallelConfig, ParallelKernel, ParallelColumn } from "./core/ecs";
 // Compile-time access typing (system.ts): the config-form `registerSystem`
 // narrows `ctx` to the declared access surface. `SystemAccess` + the
-// `Declared*` guards are what helper signatures reference. `DeclaredAccess` /
+// `Declared*` guards are what helper signatures reference. `DeclaredAccess` and
 // `TypedSystemConfig` are the computed shapes behind the inference.
 export type {
 	SystemAccess,

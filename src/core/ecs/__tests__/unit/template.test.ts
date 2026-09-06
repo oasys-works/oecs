@@ -16,7 +16,7 @@ function setup() {
 	return { ecs, Position, Velocity, Health, AttackRange, EngageRange, Tag };
 }
 
-describe("template / direct-spawn", () => {
+describe("template and direct spawn", () => {
 	it("resolves the target archetype once, creating it if absent", () => {
 		const { ecs, Position, Velocity } = setup();
 		const before = ecs.archetypeCount;

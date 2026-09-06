@@ -6,7 +6,7 @@
  * live generations before slot retirement, 256 MiB SAB). They
  * verify nothing aliases or corrupts at scale. They do not probe behavior
  * at vs over a cap. The real cap boundaries live in `unit/entity.test.ts`
- * (index / generation overflow throws) and `unit/store.test.ts`
+ * (an index or generation overflow throws) and `unit/store.test.ts`
  * (generation-exhaustion slot retirement).
  */
 

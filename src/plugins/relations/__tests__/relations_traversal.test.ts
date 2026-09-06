@@ -2,7 +2,7 @@
  * Relations, traversal over an exclusive relation's tree.
  *
  * Covers the issue's acceptance criteria:
- *  - `ancestorsOf` / `rootOf`: walk an exclusive relation from a source up to
+ *  - `ancestorsOf` and `rootOf`: walk an exclusive relation from a source up to
  *    its chain root (a multi-level parent chain);
  *  - `cascadeOf`: breadth-first subtree walk that visits parents before
  *    children, deterministically (children ascending by id);

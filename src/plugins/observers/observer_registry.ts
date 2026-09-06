@@ -1,5 +1,5 @@
 /***
- * Observer, per-component reactive hooks (onAdd, onRemove and onDisable /
+ * Observer, per-component reactive hooks (onAdd, onRemove, onDisable,
  * onEnable and onSet).
  *
  * onDisable and onEnable extend the structural model to the entity enable and disable transition:
@@ -12,7 +12,7 @@
  * collapse to one event per *net* transition across a drain (disable→enable→
  * disable in a tick = a single onDisable. Required so the radix canonical order
  * never reorders a duplicate eid).
- * bitECS / flecs expose first-class component observers. We had only *system*
+ * bitECS and flecs expose first-class component observers. We had only system
  * lifecycle hooks, so reactions ("on `Death` added → spawn corpse", "on
  * `HexPos` set → mark spatial index") were hand-polled every tick. Observers
  * express them directly.
@@ -223,7 +223,7 @@ export class ObserverRegistry implements ObserverHooks {
 	/** Per-`dispatchSet` cache of each sparse component's drain, so two
 	 * observers on one sparse component fire over one snapshot. */
 	private readonly _sparseDrainCache = new Map<number, EntityID[]>();
-	/** Cached access-topological order. Invalidated on register / dispose. */
+	/** Cached access-topological order. A register or a dispose invalidates it. */
 	private _topo: ObserverEntry[] | null = null;
 
 	// --- dispatch scratch (reused, never reallocated in the hot loop) ---
@@ -261,8 +261,8 @@ export class ObserverRegistry implements ObserverHooks {
 	/** The synthesized `SystemDescriptor`s of every registered observer, in
 	 * registration order (`dispose()` splices entries out, so none are stale).
 	 * Fed into the `startup()` archetype-prewarm closure so an observer's declared
-	 * `spawns` / `transitions` create their target archetypes eagerly, exactly as a
-	 * system's do. Without this an observer-spawned/-transitioned archetype
+	 * `spawns` and `transitions` create their target archetypes eagerly, exactly as a
+	 * system's do. Without this an archetype an observer spawns into or transitions to
 	 * first-touches lazily mid-tick, the one asymmetry left in the otherwise
 	 * uniform "no lazy archetypes" prewarm. */
 	descriptors(): SystemDescriptor[] {
@@ -540,8 +540,9 @@ export class ObserverRegistry implements ObserverHooks {
 
 	/**
 	 * Fire onSet observers for the current frame, in canonical order. Per-entity
-	 * onSet drains the opt-in dirty list (once per changed entity); archetype-
-	 * granular onSet scans the change tick (once per changed archetype-column).
+	 * onSet drains the opt-in dirty list, once for each changed entity.
+	 * Archetype-granular onSet scans the change tick, once for each changed
+	 * archetype column.
 	 * Called by `ECS.update` after all phases. `run` is the change tick advanced
 	 * for this dispatch: above every system run of the frame, and the baseline
 	 * each archetype-granular observer keeps for its next dispatch.
@@ -691,7 +692,7 @@ export class ObserverRegistry implements ObserverHooks {
 		this._radixOut = radixSortByIndex(eids, this._radixOut, this._radixC0, this._radixC1);
 		// Registration can happen mid-frame (a system closure registering a
 		// yieldExisting observer lazily), so snapshot + restore the caller's frame
-		// the way `dispatchStructural` / `dispatchSet` do, `accessCheck.leave`
+		// the way `dispatchStructural` and `dispatchSet` do, `accessCheck.leave`
 		// nulls `active` rather than popping, and a bare leave here would silently
 		// disable dev-mode access enforcement for the rest of the caller's body.
 		const prev = DEV ? accessCheck.current() : null;

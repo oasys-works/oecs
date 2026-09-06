@@ -44,7 +44,7 @@ export type RelationCardinality = "exclusive" | "multi";
 
 // Phantom cardinality slot: `registerRelation`'s overloads
 // stamp the literal cardinality into the handle type, and the exclusive-only
-// surfaces (`targetOf`, `ancestorsOf` / `rootOf` / `cascadeOf`,
+// surfaces (`targetOf`, `ancestorsOf`, `rootOf`, `cascadeOf` and
 // `Query.hierarchy`) accept only `RelationDef<"exclusive">`, turning the
 // dev-mode RELATION_MODE_MISMATCH throw into a compile error. Optional +
 // covariant (a tuple, like ComponentDef's schema slot) so a stamped handle
@@ -147,8 +147,8 @@ export interface RelationStoreView {
 
 /** What the relation service needs from `Store`, nothing more. The accessor
  * members re-read the live field on every call, so capacity growth that
- * reallocates `generations` / `entityArchetypes` / `entityRows` is always
- * observed; never cache their return values across mutations. */
+ * reallocates `generations`, `entityArchetypes` or `entityRows` is always
+ * observed. Never cache their return values across mutations. */
 export interface RelationServiceHost {
 	isAlive(id: EntityID): boolean;
 	hasSparse(entityId: EntityID, def: SparseComponentDef): boolean;

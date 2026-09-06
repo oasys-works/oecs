@@ -51,7 +51,7 @@ describe("ECS, fixed_timestep validation", () => {
 // `maxFixedSteps` is validated at the configuration boundary too.
 //
 // `update()` clamps the spiral-of-death with `maxAcc = maxFixedSteps *
-// fixedTimestep`. A non-integer / < 1 / non-finite `maxFixedSteps` either
+// fixedTimestep`. A `maxFixedSteps` that is non-integer, below 1 or non-finite either
 // makes that clamp never fire (`Infinity` or `NaN` ⇒ the `while (accumulator >=
 // fixedTimestep)` catch-up loop runs unboundedly for a large `dt`) or freezes
 // fixed systems (`0` clamps the accumulator to 0). The constructor rejects them

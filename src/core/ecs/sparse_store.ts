@@ -3,7 +3,7 @@
  * `DontFragment`, Bevy sparse-set storage).
  *
  * A sparse component's membership and data live in an engine-managed sparse
- * set keyed by **entity index**, outside the 128-bit archetype mask. Add /
+ * set keyed by entity index, outside the 128-bit archetype mask. Add,
  * remove, has, get and set touch no archetype graph: no transition, no row
  * copy, and no bitmask identity bit consumed, so sparse components do **not**
  * count against `STORE_DESCRIPTOR_COMPONENT_LIMIT`. This is the substrate of the
@@ -40,9 +40,9 @@
  * of their field names, and the store refills it in place when it grows, so a
  * cursor made before a grow keeps reading the live columns.
  *
- * Deterministic snapshot / state-hash coverage, hashing and serializing in
+ * Deterministic snapshot and state-hash coverage, hashing and serializing in
  * canonical entity-index order, is in place (`canonicalIndices`,
- * `snapshotSparseStores` / `restoreSparseStores` below).
+ * `snapshotSparseStores` and `restoreSparseStores` below).
  ***/
 
 import { Brand, type AnyTypedArray, type TypedArrayTag } from "../../type_primitives";
@@ -66,7 +66,7 @@ export type SparseComponentID = Brand<number, "sparse_component_id">;
 // Phantom slot carrying the field schema S at compile time (erased at runtime,
 // where a SparseComponentDef is only its SparseComponentID number). Distinct
 // from ComponentDef's `__schema` so a sparse def cannot be passed to the dense
-// `addComponent` / `getField` surface (and vice-versa), the two storage
+// `addComponent` and `getField` surface (and the reverse), the two storage
 // classes are not interchangeable.
 declare const __sparseSchema: unique symbol;
 
@@ -369,7 +369,7 @@ const F64_BYTES = 8;
  * single-`f64` component) load into the wrong slot when relations and user
  * sparse components are registered in a different interleaving between the
  * snapshot and restore worlds. Field count is already in the header, so
- * the fingerprint exists purely to catch same-shape / different-identity. */
+ * the fingerprint exists to catch a same-shape store with a different identity. */
 function schemaFingerprint(
 	fieldNames: readonly string[],
 	fieldTypes: readonly TypedArrayTag[]
@@ -464,7 +464,7 @@ export function snapshotSparseStores(stores: readonly SparseComponentStore[]): U
  *
  * Throws `SparseRestoreError` on any shape or identity mismatch (store count,
  * field count, schema-hash field identity, an entity index past `MAX_INDEX`,
- * or a truncated / over-long buffer) rather than silently corrupting state.
+ * or a truncated or over-long buffer) rather than silently corrupting state.
  * The index bound matters because the columns of a store grow to fit the
  * highest member index, an unvalidated crafted u32 (up to ~4.29e9) would ask
  * for a multi-GB column for each field. */

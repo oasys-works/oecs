@@ -46,7 +46,7 @@ describe("event_ring, constants and sizing", () => {
 		expect(eventRingBytes(EVENT_RING_DEFAULT_CAPACITY_SLOTS)).toBe(16 + 256 * 16);
 	});
 
-	it("empty-slot marker is 0; event-def IDs must be > 0", () => {
+	it("empty-slot marker is 0, and an event-def id must be > 0", () => {
 		expect(EVENT_OP_EMPTY).toBe(0);
 	});
 
@@ -59,7 +59,7 @@ describe("event_ring, constants and sizing", () => {
 });
 
 describe("event_ring, init", () => {
-	it("zeroes write_head, read_head, overflow; sets capacity", () => {
+	it("zeroes write_head, read_head and overflow, then sets capacity", () => {
 		const { view, ringOff } = freshRing(16);
 		expect(eventRingWriteHead(view, ringOff)).toBe(0);
 		expect(eventRingReadHead(view, ringOff)).toBe(0);
@@ -208,7 +208,7 @@ describe("event_ring, wrap-around", () => {
 		// index `head & (capacity - 1)` are only correct across the 2^32
 		// counter boundary because of the `>>> 0`, a regression dropping it
 		// surfaces only near the counter wrap. Seed both heads immediately below
-		// UINT32_MAX (the grow.test.ts:80 DataView-seed pattern) so the
+		// `UINT32_MAX` (the `grow.test.ts` DataView-seed pattern) so the
 		// pushes below carry the counters through 0xffffffff → 0.
 		const { view, ringOff } = freshRing(4);
 		const NEAR_MAX = 0xff_ff_ff_fe;

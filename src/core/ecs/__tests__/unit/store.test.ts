@@ -158,7 +158,7 @@ describe("Store", () => {
 		expect(store.isAlive(createEntityId(0, RETIRED_GENERATION))).toBe(false);
 	});
 
-	it("isAlive is fail-closed for forged / out-of-bounds handles", () => {
+	it("isAlive is fail-closed for a forged or out-of-bounds handle", () => {
 		const store = new Store();
 		const live = store.createEntity();
 		expect(store.isAlive(live)).toBe(true); // sanity: a real handle still reads alive
@@ -385,7 +385,7 @@ describe("Store", () => {
 		// Buffer a Vel that is both added and removed in the same flush. This is
 		// the only construction that distinguishes the ordering: under
 		// adds-before-removes the add lands first and the later remove strips it
-		// (Vel ends absent); under removes-first the remove would be a no-op on
+		// so Vel ends absent. Under removes-first the remove would be a no-op on
 		// a not-yet-present Vel and the add would survive (Vel ends present).
 		// Final membership alone, as the old test asserted with only-added
 		// Vel and Hp and only-removed Pos, cannot tell the two orderings apart.
@@ -696,7 +696,7 @@ describe("Store", () => {
 	// Event channel dirty-list invariant
 	//=========================================================
 
-	// Regression: `emitEvent` / `emitSignal` mark a channel dirty
+	// Regression: `emitEvent` and `emitSignal` mark a channel dirty
 	// (push its id to `dirtyEventChannels`) only after a successful emit.
 	// The old order sampled `reader.length === 0` and pushed the id before
 	// `channel.emit(...)`. If that emit threw the `__DEV__` missing-field check,

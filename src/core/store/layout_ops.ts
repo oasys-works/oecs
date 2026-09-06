@@ -1,8 +1,8 @@
 /**
- * Shared layout and realloc operations for `growColumnStore` / `extendColumnStore`.
- * The two files used to duplicate ~200 lines of structurally parallel
- * logic, the tail-cursor `alignUp` placement with its 2³¹ offset guard, the
- * in-place buffer grow + view-mint step, and the whole realloc-and-republish
+ * Shared layout and realloc operations for `growColumnStore` and
+ * `extendColumnStore`. The two files used to duplicate a long stretch of
+ * structurally parallel logic, the tail-cursor `alignUp` placement with its
+ * 2³¹ offset guard, the in-place buffer grow and view-mint step, and the whole realloc-and-republish
  * choreography (snapshot → createColumnStore → restore → view-stamp bump →
  * header patch). Each invariant now has one home here. Grow and extend keep only
  * their genuinely distinct logic (which archetypes move, how descriptors are
@@ -68,7 +68,7 @@ export interface TailArchetypeLayout {
  * final tail (last column's advance, not re-aligned) becomes the grown
  * buffer's byteLength and is guarded past `STORE_MAX_BYTE_OFFSET` exactly
  * like `planLayout` guards the create-time layout. Descriptors come back
- * with `rowCount` / `enabledCount` zeroed (the store side of those counters
+ * with `rowCount` and `enabledCount` zeroed (the store side of those counters
  * lives with the caller). */
 export function layoutColumnsAtTail(
 	startCursor: number,
@@ -107,8 +107,8 @@ export function layoutColumnsAtTail(
 }
 
 /** Grow an in-place-backed store's buffer to `newTotal` and mint the DataView
- * the caller must write headers and descriptors through. `growableSabAllocator` /
- * `heapArrayBufferAllocator` return the same buffer instance grown in place;
+ * the caller must write headers and descriptors through. `growableSabAllocator`
+ * and `heapArrayBufferAllocator` return the same buffer instance grown in place.
  * `wasmMemoryAllocator` returns a new ref over the same linear memory, old
  * typed-array views stay valid either way (the `isInPlace` contract), but
  * when the ref changed the old DataView's byteLength is frozen at the
@@ -377,9 +377,9 @@ export function restoreLiveColumns(
  *      overwrite the empty state `createColumnStore` initialised.
  *   4. Bump `view_stamp` from the pre-capture value and patch the returned
  *      header so its cached `viewStamp` matches the buffer bytes only
- *      written, `createColumnStore` stamped it 0. `capacity` /
+ *      written, `createColumnStore` stamped it 0. `capacity` and
  *      `archetype_count` are already correct (createColumnStore sized them),
- *      so the spread carries them, and the internal `_allocator` /
+ *      so the spread carries them, and the internal `_allocator` and
  *      `_regionBytes` fields, through unchanged.
  *
  * Every view in the returned store is fresh. Callers must refresh

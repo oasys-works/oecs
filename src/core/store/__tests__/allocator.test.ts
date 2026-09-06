@@ -114,7 +114,7 @@ describe("wasm_memory_allocator, rejections", () => {
 	it("throws a contextual error when a needed grow fails (cap reached)", () => {
 		// initial 1 page, maximum 2 pages → a request needing 3 pages forces
 		// the grow to fail. The JS API throws a RangeError (it does not return
-		// -1); the allocator must normalise that into its own contextual error
+		// -1). The allocator must normalise that into its own contextual error
 		// naming the requested bytes, with the underlying RangeError preserved
 		// as `cause` rather than leaking past the boundary.
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 2, shared: true });
@@ -249,7 +249,7 @@ describe("heap_arraybuffer_allocator, fixed-buffer fast-path invariant (0.5.3)",
 			byteLength: number;
 		};
 		expect(buffer.resizable).toBe(false);
-		// A fixed buffer reports maxByteLength === byteLength (=== cap here); a
+		// A fixed buffer reports maxByteLength === byteLength, which is cap here. A
 		// resizable one would report maxByteLength === cap but byteLength === 1024.
 		expect(buffer.maxByteLength).toBe(cap);
 		expect(buffer.byteLength).toBe(cap);

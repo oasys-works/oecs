@@ -40,9 +40,9 @@
  * backing is typed `InPlaceBufferAllocator` (so `DEFAULT_SAB_ALLOCATOR` does not
  * typecheck) and a runtime backstop rejects untyped JS callers.
  *
- * The resolved `intentLabel` / `budgetEntities` travel into `Store` so the
- * hard-fail at the cap is phrased in the caller's own terms ("3.2× the declared
- * budget, runaway entity creation upstream?") instead of raw bytes. The cap
+ * The resolved `intentLabel` and `budgetEntities` travel into `Store` so the
+ * hard-fail at the cap is phrased in the caller's own terms, as a multiple of
+ * the declared budget, instead of as raw bytes. The cap
  * stays a hard ceiling with no grow-beyond fallback, that decision is not this
  * module's to revisit.
  */
@@ -322,7 +322,7 @@ function assertPositiveInt(name: string, n: number): void {
  * wrong and only show up as a cap failure much later, and a silently-ignored
  * `allocator` would put the columns in a different buffer than a WASM consumer's
  * sim reads. So the guard throws and names the rewrite, the same way the
- * `initial_capacity` / `buffer_allocator` guard in `ECS`'s constructor does.
+ * `initial_capacity` and `buffer_allocator` guard in `ECS`'s constructor does.
  */
 const REMOVED_ARMS: Readonly<Record<string, string>> = {
 	budget: "{ budget: { entities: N } } → { entities: N }",

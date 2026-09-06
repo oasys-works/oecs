@@ -81,7 +81,7 @@ describe("dispatch_trace.resolve_callsite_from_stack", () => {
 		const stack = [...engineFrames, userFrame].join("\n");
 		const first = resolveCallsiteFromStack(stack, "/repo", cache);
 		expect(first).toBe("game/src/systems/combat/death.ts");
-		// Engine frames cache as null (skipped); the user frame caches its
+		// An engine frame caches as null, because it is skipped. The user frame caches its
 		// repo-relative path. A second walk hits the cache and agrees.
 		expect(cache.get(engineFrames[1]!)).toBeNull();
 		expect(cache.get(userFrame)).toBe("game/src/systems/combat/death.ts");
@@ -118,7 +118,7 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 	it("counts repeated dispatches from the same site", () => {
 		const t = create();
 		// record() is unconditional, the isActive() gate lives at the call
-		// sites (ecs.ts / query.ts), not here, so a fresh tracer records with
+		// sites, `ecs.ts` and `query.ts`, not here, so a fresh tracer records with
 		// no env setup. All three calls share one callsite → two distinct keys.
 		t.recordEventEmit("Death");
 		t.recordEventEmit("Death");

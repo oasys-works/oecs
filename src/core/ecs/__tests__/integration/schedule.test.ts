@@ -44,7 +44,7 @@ describe("Schedule (integration)", () => {
 	// Execution order
 	//=========================================================
 
-	it("run_startup executes PRE_STARTUP -> STARTUP -> POST_STARTUP", () => {
+	it("run_startup executes pre_startup, then startup, then post_startup", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -62,7 +62,7 @@ describe("Schedule (integration)", () => {
 		expect(order).toEqual(["pre", "main", "post"]);
 	});
 
-	it("run_update executes PRE_UPDATE -> UPDATE -> POST_UPDATE", () => {
+	it("run_update executes pre_update, then update, then post_update", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -398,7 +398,7 @@ describe("Schedule (integration)", () => {
 			}
 		});
 
-		// UPDATE system checks if entity is still alive
+		// The `UPDATE` system checks whether the entity is still alive
 		const checker = makeSystem({
 			fn: () => {
 				aliveInUpdate = store.isAlive(entity);

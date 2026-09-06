@@ -27,7 +27,7 @@ function setup() {
 }
 
 describe("fieldHandle, two-way feel over a read channel", () => {
-	it("value reflects the channel; set enqueues an undoable SetField; the loop closes", () => {
+	it("value reflects the channel, set enqueues an undoable SetField, the loop closes", () => {
 		const { world, Cell, editor } = setup();
 
 		let id: EntityID | undefined;

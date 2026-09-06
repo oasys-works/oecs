@@ -3,7 +3,7 @@
  *
  * Covers the issue's acceptance criteria:
  *  - register exclusive + multi-target relations. Add and remove pairs. Query
- *    forward (`targetOf` / `targetsOf`) and reverse (`sourcesOf`);
+ *    forward (`targetOf` and `targetsOf`) and reverse (`sourcesOf`),
  *  - exclusive: adding a second target replaces the first (one per source)
  *  - the reverse index stays consistent through add, remove, and re-target
  *  - add or remove of a pair causes no archetype transition (`archetype_count`
@@ -158,7 +158,7 @@ describe("ECS relations, multi-target", () => {
 		expect(world.relations.has(src, Likes)).toBe(true);
 	});
 
-	it("removing the last target drops membership; remove-all clears everything", () => {
+	it("removing the last target drops membership, remove-all clears everything", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
@@ -216,7 +216,7 @@ describe("relations registration + validation", () => {
 });
 
 describe("relations cause no archetype transition", () => {
-	it("add / re-target / remove leave archetype_count and archetype_id stable", () => {
+	it("add, re-target and remove leave archetype_count and archetype_id stable", () => {
 		const store = capStore({ deterministic: true });
 		const Pos = store.registerComponent({ x: "i32", y: "i32" });
 		const Targets = store.relations.registerRelation();
@@ -388,7 +388,7 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 	// sparse store, so `restoreSparse` must rebuild them: exclusive reverse
 	// from the restored sparse target field, multi forward sets + reverse from
 	// the relation section of the snapshot. Before the rebuild landed, a
-	// restored world hashed equal to the original but `sourcesOf` / multi
+	// restored world hashed equal to the original but `sourcesOf` and multi
 	// `targetsOf` returned empty, silent determinism divergence.
 
 	it("multi: forward sets, reverse index, and state_hash all round-trip", () => {
@@ -507,7 +507,7 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 describe("relation restore validation, defensive hardening", () => {
 	it("rejects a multi relation source index past MAX_INDEX", () => {
 		// The multi forward set is keyed by source entity index and that index is
-		// fed to createEntityId(idx, gens[idx]); an unvalidated wild u32 reads
+		// fed to createEntityId(idx, gens[idx]). An unvalidated wild u32 reads
 		// gens out of bounds and grows the side Map unboundedly. Patch a valid
 		// one-source multi snapshot's source index to MAX_INDEX + 1.
 		const make = () => {

@@ -106,7 +106,7 @@ describe("entity_index, typed-array views", () => {
 		expect(v.archetypes.length).toBe(cap);
 		expect(v.rows.length).toBe(cap);
 
-		// All three should be Int32Array. UNASSIGNED (-1) round-trips.
+		// All three should be Int32Array. `UNASSIGNED` (-1) round-trips.
 		expect(v.generations).toBeInstanceOf(Int32Array);
 		expect(v.archetypes).toBeInstanceOf(Int32Array);
 		expect(v.rows).toBeInstanceOf(Int32Array);
@@ -124,7 +124,7 @@ describe("entity_index, typed-array views", () => {
 		expect(v.rows.byteOffset).toBe(ENTITY_INDEX_HEADER_BYTES + 2 * cap * 4);
 	});
 
-	it("-1 sentinel round-trips through Int32Array (UNASSIGNED ↔ 0xFFFFFFFF)", () => {
+	it("-1 sentinel round-trips through Int32Array (`UNASSIGNED` ↔ 0xFFFFFFFF)", () => {
 		const cap = 2;
 		const buffer = new SharedArrayBuffer(entityIndexRegionBytes(cap));
 		const view = new DataView(buffer);

@@ -1,15 +1,15 @@
 /**
- * Relationship wildcard query terms, `(R, *)` / `(*, T)` as composable
- * query terms, distinct from the cold materializing helpers `pairsOf(R)` /
+ * Relationship wildcard query terms, `(R, *)` and `(*, T)` as composable
+ * query terms, distinct from the cold materializing helpers `pairsOf(R)` and
  * `sourcesOfAny(T)`.
  *
- *  - `withRelation(R)` / `withoutRelation(R)`, `(R, *)`: match sources that
+ *  - `withRelation(R)` and `withoutRelation(R)`, `(R, *)`: match sources that
  *    hold (or don't hold) any target under `R`. Membership semantics (each source
  *    once), iterated via `forEachEntity`, reusing the sparse-match path
  *    (insertion order, canonical sorting reserved for `stateHash`/snapshot).
  *  - `forEachRelatedTo(T)`, `(*, T)`: every source related to `T` under any
  *    relation, dedup'd, ascending-EntityID order, composing with the receiver's
- *    dense and sparse / `(R, *)` predicate.
+ *    dense, sparse and `(R, *)` predicate.
  *  - Access: `withRelation` needs `relationReads: [R]`. `forEachRelatedTo`
  *    needs `relationReads: [ANY_RELATION]`.
  */

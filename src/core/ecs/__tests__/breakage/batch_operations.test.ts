@@ -32,7 +32,7 @@ describe("Batch operation edge cases", () => {
 		expect(arch.entityCount).toBe(0);
 	});
 
-	it("batch_add when component already present, no-op / correct behavior", () => {
+	it("batch_add when component already present, a no-op with correct behavior", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 

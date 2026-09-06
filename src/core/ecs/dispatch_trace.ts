@@ -1,8 +1,8 @@
 /**
  * Dev-mode dispatch tracer.
  *
- * Singleton buffer that captures `(callsite, channel, op, key)` per ECS /
- * action dispatch when `VISUAL_INTEL_TRACE=1` is set in the environment.
+ * Singleton buffer that captures `(callsite, channel, op, key)` for each ECS
+ * dispatch and each action dispatch when `VISUAL_INTEL_TRACE=1` is set in the environment.
  * Compile-time gated by `DEV`, so production builds dead-code-eliminate
  * every record() call. Output is a deterministic JSON snapshot the
  * `visual-intel` service can ingest as a third channel of evidence
@@ -29,7 +29,7 @@
  * stack in tests.
  *
  * Activation. `record()` is *unconditional*. It records on every call. The
- * `isActive()` env-var gate is applied by the *callers* (`ecs.ts` /
+ * `isActive()` env-var gate is applied by the callers (`ecs.ts` and
  * `query.ts`, all `if (DEV && dispatchTrace.isActive())`), not inside
  * `record()`. This keeps the gate in one place, the dispatch hot path,
  * where `DEV === false` dead-code-eliminates the whole branch in prod.
@@ -37,8 +37,8 @@
 
 // This module holds only the in-memory tracer, no filesystem access. It is
 // transitively reachable from the browser `client` bundle (via core/ecs), so it
-// must stay free of `node:fs` / `node:path`. Persisting a snapshot to disk is a
-// server-only concern and lives in `services/server`.
+// must stay free of `node:fs` and of `node:path`. Persisting a snapshot to disk
+// is a server-only concern, and it lives outside this package.
 
 export type DispatchChannel = "ecs-events" | "actions" | "resources";
 export type EcsEventOp = "emit" | "read";
@@ -238,7 +238,7 @@ function resolveCallsiteFromStack(
 function toRepoRelative(abs: string, root: string): string {
 	let p = abs;
 	if (p.startsWith("file://")) {
-		// Strip the URL prefix without pulling in node:url, the Bun /
+		// Strip the URL prefix without pulling in node:url, the Bun and
 		// V8 stack format always uses `file://` + an absolute path.
 		p = p.slice("file://".length);
 	}

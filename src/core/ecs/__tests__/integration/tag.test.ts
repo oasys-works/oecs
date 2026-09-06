@@ -56,7 +56,7 @@ describe("Tag components", () => {
 	});
 
 	//=========================================================
-	// hasComponent / removeComponent with tags
+	// hasComponent and removeComponent with tags
 	//=========================================================
 
 	it("has_component returns false before tag is added", () => {

@@ -54,7 +54,7 @@ export interface ConditionContext {
 
 /**
  * A per-tick gate. `evaluate` returns `true` to run the gated system(s), `false`
- * to skip them this tick. `reads` / `resourceReads` declare the predicate's
+ * to skip them this tick. `reads` and `resourceReads` declare the predicate's
  * read surface for `accessCheck` (dev) and the future parallel scheduler's
  * read-edge graph. Both are optional (absent reads as empty).
  */
@@ -75,8 +75,8 @@ export interface RunCondition {
 
 /**
  * Run the gated system(s) only while a resource equals `expected` (strict `===`,
- * so reference identity for objects). The canonical "feature flag / game phase"
- * gate, flip `ecs.resources.set(key, …)` and the whole group toggles.
+ * so reference identity for objects). The canonical gate for a feature flag or
+ * a game phase. Flip `ecs.resources.set(key, …)` and the whole group toggles.
  */
 export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunCondition {
 	if (DEV && typeof expected === "object" && expected !== null) {
@@ -125,7 +125,7 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
 		);
 	}
 	// Fold the phase into [0, n) once at construction (handles offset ≥ n and
-	// negative offset); the per-tick check then never relies on signed-zero.
+	// negative offset). The per-tick check then never relies on signed-zero.
 	const phase = ((offset % n) + n) % n;
 	return {
 		name: `runEveryNTicks(${n}${phase !== 0 ? `, +${phase}` : ""})`,
@@ -154,7 +154,7 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 
 // ── Combinators ────────────────────────────────────────────────────────────
 // Compose conditions without hand-rolled closures. Each combinator merges the
-// operands' declared read surfaces (`reads` / `resourceReads`) so accessCheck
+// operands' declared read surfaces (`reads` and `resourceReads`) so accessCheck
 // and the future parallel scheduler still see every edge, and derives its
 // `name` from the operands for legible diagnostics. Evaluation order is the
 // argument order, and it short-circuits like `&&` and `||`. A condition is a

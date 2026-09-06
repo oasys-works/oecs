@@ -199,7 +199,7 @@ describe("column_store_state_hash, round-trip", () => {
 describe("column_store_state_hash, page-rounding allocators", () => {
 	const PAGE = 64 * 1024;
 
-	/** Mimics `wasmMemoryAllocator` / `growableSabAllocator`: rounds the
+	/** Mimics `wasmMemoryAllocator` and `growableSabAllocator`. Rounds the
 	 * requested byte count up to the next 64 KiB page, so the returned
 	 * `SharedArrayBuffer` is larger than `capacity`. The SAB header still
 	 * records the exact `capacity`. */

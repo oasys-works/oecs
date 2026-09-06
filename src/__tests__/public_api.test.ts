@@ -3,7 +3,7 @@
  * this test makes any widening (or narrowing) of the published runtime
  * surface an explicit diff in review. Type-only exports have no runtime
  * presence and are not covered here. The explicit export lists in
- * `src/index.ts` / `src/internal.ts` are their review surface.
+ * `src/index.ts` and `src/internal.ts` are their review surface.
  *
  * The lists live in `public_api_surface.ts`, because `dist_artifact.test.ts`
  * holds the shipped bundle to the same two lists.

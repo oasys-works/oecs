@@ -1,5 +1,5 @@
 /**
- * SAB snapshot / restore.
+ * SAB snapshot and restore.
  *
  * An ECS snapshot is a `Uint8Array` over the SAB region up to
  * `header.capacity`, and restore copies that buffer back. With every
@@ -59,7 +59,7 @@ export interface RestoreColumnStoreOptions {
 /** Zero-copy `Uint8Array` view over the SAB's used byte range. Length is
  * `header.capacity`, the canonical size, not `buffer.byteLength`. The two
  * coincide for `DEFAULT_SAB_ALLOCATOR` (it allocates exactly `totalBytes`),
- * but `wasmMemoryAllocator` / `growableSabAllocator` round the buffer up
+ * but `wasmMemoryAllocator` and `growableSabAllocator` round the buffer up
  * to 64 KiB page boundaries, so `buffer.byteLength` can exceed `capacity` by up
  * to a page of trailing slack (see the allocator contract in `allocator.ts`).
  * Hashing or round-tripping that slack would make two logically-identical
@@ -160,7 +160,7 @@ function migrateLegacyDescriptorRegion(bytes: Uint8Array): Uint8Array {
  * never grows, so a non-in-place allocator is fine here.
  *
  * The input can be any `Uint8Array`, a view from `columnStoreBytesView`,
- * a sliced copy, or bytes read off disk / postMessage. The function
+ * a sliced copy, or bytes read off disk or off `postMessage`. The function
  * honours `bytes.byteOffset` and `bytes.byteLength`, so passing a
  * subarray that doesn't start at offset 0 of its backing buffer is
  * supported.

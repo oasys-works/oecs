@@ -75,7 +75,7 @@ export interface ExtendResult {
 	 * instance is reused, existing column TypedArray views are unchanged,
 	 * and callers may skip `refreshViews` on every pre-existing
 	 * Archetype. False when the slow path ran (fresh SAB or wasm-memory
-	 * grow with detached views); callers must refresh every Archetype's
+	 * grow with detached views). A caller must then refresh every Archetype's
 	 * SAB-backed columns from the returned `store` before reading them. */
 	readonly viewsPreserved: boolean;
 }
@@ -273,7 +273,7 @@ function extendColumnStoreInPlace(
 ): ExtendResult {
 	// 1. Compute new column byte_offs at the SAB tail, `tailCursorBytes(old)`
 	//    is the live extent (header `capacity` for the fixed heap buffer,
-	//    `buffer.byteLength` for the growable-SAB / wasm backings). New columns
+	//    `buffer.byteLength` for the growable-SAB and wasm backings). New columns
 	//    have no prior stride, so it's derived from the type tag here.
 	const tailLayouts: TailArchetypeLayout[] = new Array(newArchetypes.length);
 	for (let i = 0; i < newArchetypes.length; i++) {
@@ -292,7 +292,7 @@ function extendColumnStoreInPlace(
 	}
 	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
 	// `capacity` for the fixed heap ArrayBuffer, or `buffer.byteLength` for the
-	// growable-SAB / wasm backings (the wasm fast path deliberately lands new
+	// growable-SAB and wasm backings (the wasm fast path deliberately lands new
 	// regions past its page-rounded tail, unchanged here).
 	const { descriptors: newDescriptors, newTotal } = layoutColumnsAtTail(
 		tailCursorBytes(old),

@@ -73,7 +73,7 @@ describe("command_ring, constants and sizing", () => {
 });
 
 describe("command_ring, init", () => {
-	it("zeroes write_head, read_head, overflow; sets capacity", () => {
+	it("zeroes write_head, read_head and overflow, then sets capacity", () => {
 		const { view, ringOff } = freshRing(16);
 		expect(commandRingWriteHead(view, ringOff)).toBe(0);
 		expect(commandRingReadHead(view, ringOff)).toBe(0);
@@ -219,7 +219,7 @@ describe("command_ring, wrap-around", () => {
 		// index `head & (capacity - 1)` are only correct across the 2^32
 		// counter boundary because of the `>>> 0`, a regression dropping it
 		// surfaces only near the counter wrap. Seed both heads immediately below
-		// UINT32_MAX (the grow.test.ts:80 DataView-seed pattern) so the
+		// `UINT32_MAX` (the `grow.test.ts` DataView-seed pattern) so the
 		// pushes below carry the counters through 0xffffffff → 0.
 		const { view, ringOff } = freshRing(4);
 		const NEAR_MAX = 0xff_ff_ff_fe;

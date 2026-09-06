@@ -5,7 +5,7 @@
  * arbitrary named region (a `region_id` the engine has never heard of) and the
  * engine lays it out, addresses it through the generic region-table directory,
  * and, crucially, snapshots and restores it across a SAB grow without knowing
- * anything about its contents. No game concept (terrain / spatial-grid / … )
+ * anything about its contents. No game concept, no terrain and no spatial grid,
  * appears anywhere in this file: the regions here are fabricated.
  */
 
@@ -92,7 +92,7 @@ describe("generic consumer region table", () => {
 
 		// Extend with a new archetype. The default allocator is not in-place, so
 		// this takes the realloc-and-republish slow path, i.e. it exercises
-		// `snapshotRegions` / `restoreRegions` for the consumer
+		// `snapshotRegions` and `restoreRegions` for the consumer
 		// region, not only the mechanism regions.
 		const result = extendColumnStore(store, {
 			newArchetypes: [{ ...ARCH, archetypeId: 2 }]
@@ -149,7 +149,7 @@ describe("generic consumer region table", () => {
 //     snapshotted/restored. It sits before the descriptor tail and stays put,
 //     so its bytes and offset are carried forward verbatim.
 //   - realloc `growColumnStore` (default allocator): a resize, not an append,
-//     routes the region through `snapshotRegions` / `restoreRegions`
+//     routes the region through `snapshotRegions` and `restoreRegions`
 //     exactly like the extend slow path.
 //   - in-place `growColumnStore` (growable allocator): like the in-place extend,
 //     the region is untouched while only the grown archetype's columns relocate.

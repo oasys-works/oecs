@@ -1,5 +1,5 @@
 /**
- * Action ring, main-thread producer / worker-thread consumer SPSC ring
+ * Action ring, a main-thread producer and worker-thread consumer SPSC ring
  * for client input intents (`send_action`-shaped bytes).
  *
  * Same on-the-wire shape as `command_ring.ts`, but with two practical
@@ -24,7 +24,7 @@
  * SPSC contract:
  *   - Producer: main thread, from `GameNetworkClient.send_action`. Pushes
  *     one entry per user action. `Atomics.store`s `write_head` after each.
- *   - Consumer: sim worker, drained on each `apply_diff` / `apply_snapshot`
+ *   - Consumer: sim worker, drained on each `apply_diff` and `apply_snapshot`
  *     boundary. `Atomics.store`s `read_head` after each pop.
  *   - Today's consumer is a no-op observer (logs or counts in DEV), the
  *     wire path still goes main → WebSocket → server. A later change moves
@@ -38,7 +38,7 @@
  *     overflow doesn't drop the action. It only drops worker
  *     observability for that one entry.
  *
- * Atomics: the head fields (`write_head` / `read_head`) are the
+ * Atomics: the head fields `write_head` and `read_head` are the
  * cross-thread synchronization edge, the producer runs on the main
  * thread, the consumer in the sim worker, and both alias the same
  * `SharedArrayBuffer`. The producer writes the slot bytes, then
@@ -50,7 +50,7 @@
  * producer's `setUint8(len)` + payload `set()` are visible and read a
  * torn or stale slot, and the producer could read a stale `read_head`
  * (false overflow, or overwrite a slot mid-read). Slot payload bytes
- * stay on plain `DataView` / `Uint8Array` ops, the head Atomics fence
+ * stay on plain `DataView` and `Uint8Array` ops, the head Atomics fence
  * them, so no per-byte atomic is needed. A future PR may still add an
  * `Atomics.wait/notify` pair so the worker can block between actions
  * instead of polling, additive change, no layout shift.
@@ -224,8 +224,8 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
  * NOTE: a `0` return is ambiguous. It means "ring empty" or "a 0-byte
  * slot" (the latter only reachable via ABI-skew, since `pushAction`
  * rejects empty payloads). Callers that loop must decide emptiness from
- * the heads (`pendingActionCount` / `write_head === read_head`), not
- * from this return value; see `drainActionRing`. */
+ * the heads, either `pendingActionCount` or `write_head === read_head`, and
+ * not from this return value. See `drainActionRing`. */
 export function popAction(view: DataView, ringOff: number, outPayload: Uint8Array): number {
 	if (outPayload.byteLength < ACTION_RING_MAX_PAYLOAD_BYTES) {
 		throw new ActionRingError(

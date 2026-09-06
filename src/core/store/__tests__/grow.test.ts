@@ -75,7 +75,7 @@ describe("grow_column_store", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
-		// Manually push the stamp to UINT32_MAX so the next grow wraps to 0.
+		// Manually push the stamp to `UINT32_MAX` so the next grow wraps to 0.
 		const STORE_HEADER_VIEW_STAMP_OFF = 8;
 		old.view.setUint32(STORE_HEADER_VIEW_STAMP_OFF, 0xff_ff_ff_ff, true);
 

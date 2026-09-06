@@ -173,7 +173,7 @@ describe("GrowableTypedArray", () => {
   });
 
   //=========================================================
-  // Int32 / Uint32, integer precision
+  // Int32 and Uint32, integer precision
   //=========================================================
 
   it("GrowableInt32Array stores signed integers exactly", () => {

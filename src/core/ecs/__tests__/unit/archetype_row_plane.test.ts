@@ -1,5 +1,5 @@
 /**
- * Row-plane invariants (`_bufs` / `_eids` / `_rowCap` / `_colCap`).
+ * Row-plane invariants (`_bufs`, `_eids`, `_rowCap` and `_colCap`).
  *
  * The Archetype caches its columns' raw backing views and their joint capacity
  * so an append is one compare and a direct `bufs[i][row]` store, instead of a
@@ -10,8 +10,8 @@
  *     entity-id array reallocates before the column grow is attempted, so from
  *     that instant the cached `_eids` addresses an orphaned buffer. A SAB-cap
  *     grow throwing out of `growHandler` is a state the world is meant to
- *     survive. It is the whole basis of the fail-closed `Store.spawn` /
- *     `spawnMany` contract, so the re-sync must happen on that path too.
+ *     survive. It is the whole basis of the fail-closed `Store.spawn` and
+ *     `Store.spawnMany` contract, so the re-sync must happen on that path too.
  *
  *  2. **A shortfall in the entity-id term alone must not reach `growHandler`.**
  *     `_rowCap` is the min of the entity-id capacity and the columns', but the

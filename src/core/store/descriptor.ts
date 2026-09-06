@@ -104,7 +104,7 @@ export const TYPED_ARRAY_TAG_TO_TYPE_TAG = {
 // explicit there (`_pad` and `_pad2`), alignment-friendly layout means a Zig
 // `*ColumnDescriptor` and the TS `DataView` see the same byte sequence on every
 // host. `COLUMN_DESCRIPTOR_BYTES` and `COLUMN_DESCRIPTOR_OFFSETS` are generated
-// (see the import block above); the pad bytes are skipped in the offset table.
+// (see the import block above). The offset table skips the pad bytes.
 
 export interface ColumnDescriptor {
 	readonly componentId: number;

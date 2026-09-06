@@ -19,7 +19,7 @@ function moveWorld(n: number) {
 }
 
 describe("Query.forEachChunk", () => {
-	it("moves entities correctly (Pos += Vel*dt) via cols.mut / cols.read", () => {
+	it("moves entities correctly (Pos += Vel*dt) through cols.mut and cols.read", () => {
 		const N = 64;
 		const { Pos, Vel, q } = moveWorld(N);
 		q.forEachChunk((cols, count) => {
@@ -59,7 +59,7 @@ describe("Query.forEachChunk", () => {
 		expect(chunks).toBe(1);
 	});
 
-	it("cols.mut stamps the change tick; cols.read does not", () => {
+	it("cols.mut stamps the change tick, cols.read does not", () => {
 		const { world, Pos, Vel, q } = moveWorld(4);
 		// store._tick re-syncs at update() start, so two ticks push the visible
 		// current tick to 1, distinguishable from the setup stamp (0).
@@ -111,7 +111,7 @@ describe("Query.forEachChunk", () => {
 		for (let i = 0; i < 12; i++) expect(seen[i]).toBeCloseTo(i + 5, 10);
 	});
 
-	it("honors includeDisabled(): default skips disabled rows; includeDisabled() spans and mutates them", () => {
+	it("honors includeDisabled(), the default skips disabled rows and includeDisabled() spans and mutates them", () => {
 		const world = new ECS({ memory: { columnCapacity: 16 } });
 		const Pos = world.registerComponent({ x: "f64" });
 		const ids: EntityID[] = [];

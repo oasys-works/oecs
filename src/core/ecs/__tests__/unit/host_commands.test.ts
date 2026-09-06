@@ -113,7 +113,7 @@ describe("host command seam, the vocabulary applies", () => {
 		expect(world.hasComponent(e!, Tag)).toBe(false);
 	});
 
-	it("disable hides from the default query; enable restores", () => {
+	it("disable hides from the default query, enable restores", () => {
 		let e: EntityID | undefined;
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
 		world.update(1 / 60);

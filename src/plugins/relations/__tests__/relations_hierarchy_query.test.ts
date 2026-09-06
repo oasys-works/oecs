@@ -133,7 +133,7 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 		world.flush(); // child now dangles at a dead handle (orphan policy)
 		expect(world.isAlive(root)).toBe(false);
 
-		// child is now a root (dead parent → depth 0); grand is its child (depth 1).
+		// child is now a root (dead parent → depth 0), grand is its child (depth 1).
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([child, grand].map(Number));
 	});
 });
@@ -173,7 +173,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 		world.relations.add(child, ChildOf, root); // child structural depth 1
 		world.relations.add(grand, ChildOf, child); // grand structural depth 2
 
-		// root excluded (no Pos); child(depth 1) before grand(depth 2).
+		// root excluded, because it has no Pos. child(depth 1) before grand(depth 2).
 		expect(order(world.query(Pos).hierarchy(ChildOf))).toEqual([child, grand].map(Number));
 	});
 

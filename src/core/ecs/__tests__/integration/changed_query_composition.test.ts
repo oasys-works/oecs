@@ -4,7 +4,7 @@
 // `forEach`, so refining after it (`q.changed(Pos).without(Dead)`) was
 // impossible. You had to remember to refine before
 // (`q.without(Dead).changed(Pos)`). ChangedQuery now mirrors the dense query
-// verbs (`and` / `without` / `anyOf` / `optional`); each refines the underlying
+// verbs `and`, `without`, `anyOf` and `optional`. Each refines the underlying
 // query and re-wraps, so the order no longer matters and the result set is
 // identical either way.
 //

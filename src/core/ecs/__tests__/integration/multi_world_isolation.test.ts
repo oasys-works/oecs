@@ -30,7 +30,7 @@ const Counter = { n: "i32" } as const;
 
 /**
  * A deterministic world seeded so each `seed` evolves on a distinct trajectory:
- * `seed + 1` entities starting at distinct values, and an UPDATE system that
+ * `seed + 1` entities starting at distinct values, and an `UPDATE` system that
  * increments every counter once per tick. Distinct seeds ⇒ distinct
  * `stateHash` after any fixed number of ticks.
  */
@@ -147,7 +147,7 @@ describe("multi-world isolation", () => {
 
 			// World A: its system declares access to `Allowed` only. Mid-span it
 			// ticks world B, then reads the undeclared `Forbidden`. Once, that
-			// read silently passed (B's tick nulled the span); now it must throw,
+			// read silently passed, because B's tick nulled the span. Now it must throw,
 			// attributed to A's system.
 			const worldA = new ECS();
 			const Allowed = worldA.registerComponent(["v"] as const);

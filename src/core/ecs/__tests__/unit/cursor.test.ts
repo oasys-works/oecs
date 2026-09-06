@@ -4,7 +4,7 @@ import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
 
 /**
- * `ECS.cursor` / `ECS.cursorRead` and their `ctx` twins, the re-pointable
+ * `ECS.cursor` and `ECS.cursorRead` and their `ctx` twins, the re-pointable
  * single-entity accessor (the re-pointable cursor in ref.ts).
  *
  * The cursor exists for speed, but the reason it is a separate type rather than a

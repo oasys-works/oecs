@@ -59,7 +59,7 @@ import {
 import { DEV } from "../../dev_flag";
 
 // The per-archetype plan-entry shape lives in layout_ops.ts (shared with
-// `ExtendPlan.existing`); re-exported here so `GrowPlan` consumers keep their
+// `ExtendPlan.existing`). Re-exported here so `GrowPlan` consumers keep their
 // import path.
 export type { ArchetypeGrowSpec } from "./layout_ops";
 
@@ -140,7 +140,7 @@ function growColumnStoreInPlace(
 	}
 	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
 	// `capacity` for the fixed heap ArrayBuffer (whose byteLength is the full
-	// cap), or `buffer.byteLength` for the growable-SAB / wasm backings (unchanged).
+	// cap), or `buffer.byteLength` for the growable-SAB and wasm backings (unchanged).
 	const { descriptors, newTotal } = layoutColumnsAtTail(tailCursorBytes(old), tailLayouts);
 	const newDescriptors = new Map<number, ArchetypeDescriptor>();
 	for (let i = 0; i < descriptors.length; i++) {

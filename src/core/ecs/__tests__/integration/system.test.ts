@@ -175,8 +175,8 @@ describe("ECS system registration", () => {
 	});
 
 	// The bare-fn overload is `(ctx, dt)`. Forgetting the query builder
-	// on the `(q, ctx, dt)` form would silently misbind args (q := ctx, dt := undefined);
-	// the __DEV__ arity guard fails fast instead. Strict TS already rejects the
+	// on the `(q, ctx, dt)` form would silently misbind args (q := ctx, dt := undefined).
+	// The __DEV__ arity guard fails fast instead. Strict TS already rejects the
 	// literal 3-param-arrow-with-no-builder form, so this 3-arity function reaches
 	// the bare overload via a cast standing in for an untyped JS consumer.
 	it("throws SYSTEM_FN_ARITY when a 3-param fn is registered without a query builder", () => {
@@ -300,12 +300,12 @@ describe("ECS fixed timestep", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		// Should only run UPDATE, no fixed loop
+		// Runs `UPDATE` alone, with no fixed loop
 		world.update(1 / 60);
 		expect(order).toEqual(["update"]);
 	});
 
-	it("FIXED_UPDATE runs before variable UPDATE phases", () => {
+	it("fixed_update runs before the variable update phases", () => {
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		const order: string[] = [];
 

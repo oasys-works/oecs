@@ -91,7 +91,7 @@ describe("FrameStepper", () => {
 		expect(raf.pending).toBe(true); // loop keeps rescheduling
 	});
 
-	it("pause() cancels the pending frame and resets the timestamp; play() resumes fresh", () => {
+	it("pause() cancels the pending frame and resets the timestamp, play() resumes fresh", () => {
 		const { ecs, dts } = world();
 		const raf = fakeRaf();
 		const stepper = new FrameStepper(ecs, {
@@ -110,7 +110,7 @@ describe("FrameStepper", () => {
 		expect(dts()).toEqual([1 / 60, 1 / 60, 1 / 60]);
 	});
 
-	it("toggle() flips run state; play() is a no-op while running; dispose() pauses", () => {
+	it("toggle() flips run state, play() is a no-op while running, dispose() pauses", () => {
 		const { ecs } = world();
 		const raf = fakeRaf();
 		const stepper = new FrameStepper(ecs, {

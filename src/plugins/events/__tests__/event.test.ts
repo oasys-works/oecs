@@ -165,7 +165,7 @@ describe("Event system", () => {
 
 	// Regression: startup() had no clearEvents() (only update() did),
 	// so events emitted in a startup phase leaked into the first update(), a
-	// frame-1 PRE_UPDATE and UPDATE reader saw them as if emitted this frame. They
+	// first-frame `PRE_UPDATE` and `UPDATE` reader saw them as if emitted this frame. They
 	// must be drained at the end of startup, since events live one *update* tick
 	// and startup is not an update tick.
 	it("startup-emitted events do not leak into the first update", () => {
@@ -257,7 +257,7 @@ describe("Event system", () => {
 		expect(count).toBe(3);
 	});
 
-	it("events emitted in PRE_UPDATE are readable in UPDATE and POST_UPDATE", () => {
+	it("events emitted in pre_update are readable in update and post_update", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Input = eventKey<{ key: number }>("Input");
 		world.events.register(Input, ["key"] as const);

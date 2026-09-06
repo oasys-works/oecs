@@ -1,7 +1,7 @@
 /**
  * World snapshot and resume framing + host-state (de)serialization.
  *
- * `Store.snapshot()` / `Store.restore()` mount a captured world back onto a
+ * `Store.snapshot()` and `Store.restore()` mount a captured world back onto a
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
  * snapshot is three sections:
  *
@@ -15,7 +15,7 @@
  *   3. **host-state**, the host-side bookkeeping the SAB does not carry: the
  *      world tick, the entity recycle free-list (in live LIFO order. There is no
  *      byte source for it, and its order is load-bearing for byte-identical
- *      resume, see below), the alive count, and per-archetype `length` /
+ *      resume, see below), the alive count, and per-archetype `length` and
  *      `enabledCount` (the SAB descriptor omits these for tag-only archetypes,
  *      so we capture them for every archetype uniformly).
  *
@@ -26,8 +26,9 @@
  * and the index it draws feeds the canonical-ordered sparse `stateHash` fold (and
  * the whole-SAB `columnStoreStateHash` via the entity-index region). A different
  * reuse order ⇒ a diverged hash on the first post-resume spawn that touches a
- * sparse store / relation. Serializing the list (a few hundred bytes off the tick
- * path) keeps the runtime LIFO allocator untouched while making resume exact.
+ * sparse store or relation. Serializing the list costs a small block off the
+ * tick path, and it keeps the runtime LIFO allocator untouched while making
+ * resume exact.
  *
  * This module holds only the *pure* framing and serialization + the registration
  * guard. The mount itself (swap the SAB, republish views, reconstruct host state)
@@ -274,7 +275,7 @@ export function assertDenseMatchesLive(
 		);
 	}
 	// Entity-index capacity is host-fixed (the region is sized once at
-	// construction); a mismatch means the target world was sized differently and
+	// construction). A mismatch means the target world was sized differently and
 	// the restored region wouldn't line up. Bounds-check the header read first.
 	const eiOff = header.entityIndexOff;
 	if (eiOff < 0 || eiOff + ENTITY_INDEX_HEADER_BYTES > dense.byteLength) {

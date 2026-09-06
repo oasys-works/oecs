@@ -229,14 +229,14 @@ export class Schedule {
 	// operations, and not the system bodies, are where most of the phase loop goes.
 	// They hash an object identity twice for each system in each frame.
 	//
-	// Indexed by a SCHEDULE-local slot, not by `SystemDescriptor.id`. Ids come
+	// Indexed by a `SCHEDULE`-local slot, not by `SystemDescriptor.id`. Ids come
 	// from a per-world counter, so two descriptors registered with two different
 	// worlds both get id 0, scheduling them into a third world would alias them
 	// onto one slot and let the system that runs more often overwrite the other's
 	// last-run tick (silently widening its `changed()` window). Slots are handed
 	// out per Schedule, so identity comes from this schedule's own numbering.
 	private readonly _lastRunTicks: number[] = [];
-	// Descriptor → its `_lastRunTicks` slot. Consulted only by `addSystems` /
+	// Descriptor → its `_lastRunTicks` slot. Consulted only by `addSystems` and
 	// `removeSystem`. The run loop never touches it (the slot travels in the
 	// phase plan).
 	//
@@ -251,7 +251,7 @@ export class Schedule {
 	// Without reuse the array would grow by one per `addSystems` call, unbounded
 	// under a workload that toggles systems on and off each frame.
 	private readonly _freeSlots: number[] = [];
-	// Nesting depth of a drive (`runStartup` / `runUpdate` / `runFixedUpdate`).
+	// Nesting depth of a drive (`runStartup`, `runUpdate` or `runFixedUpdate`).
 	// Non-zero means a phase plan is live and `_runPhase`'s loop may still write
 	// `_lastRunTicks` through the `slots` array it captured, which is what makes
 	// recycling a freed slot unsafe right now, see `_assignLastRunSlot`.
@@ -278,7 +278,7 @@ export class Schedule {
 	// exactly as the backend is: `null` means `desc.parallelPlan` is never read.
 	private _workers: ParallelRoute | null = null;
 
-	/** Dev-diagnostic sink (`ECSOptions.onWarn`); defaults to `console.warn`.
+	/** Dev-diagnostic sink (`ECSOptions.onWarn`). Defaults to `console.warn`.
 	 * The only schedule diagnostic today is `_warnDroppedEdge`. */
 	private readonly _onWarn: (message: string) => void;
 
@@ -322,7 +322,7 @@ export class Schedule {
 				sets
 			};
 
-			// ! safe: constructor pre-populates all SCHEDULE enum keys
+			// ! safe: the constructor pre-populates every `SCHEDULE` enum key
 			this._phaseSystems.get(phase)!.push(node);
 			this._phaseBySystem.set(descriptor, phase);
 			this._assignLastRunSlot(descriptor);
@@ -372,7 +372,7 @@ export class Schedule {
 		const phase = this._phaseBySystem.get(system);
 		if (phase === undefined) return;
 
-		// ! safe: phase came from systemIndex which only stores valid SCHEDULE keys
+		// ! safe: phase came from systemIndex, which only stores a valid `SCHEDULE` key
 		const nodes = this._phaseSystems.get(phase)!;
 		const index = nodes.findIndex((n) => n.descriptor === system);
 		if (index !== -1) {
@@ -577,7 +577,7 @@ export class Schedule {
 		// Probe the gate map only when something in the whole schedule is gated.
 		const hasGates = this._gatedSystems.size > 0;
 		// Hoist the backend once per phase (constant across the loop). `null` is the
-		// common case (no backend attached); then `backendHandle` is never read and
+		// common case, with no backend attached. Then `backendHandle` is never read and
 		// the dispatch is byte-for-byte the plain `desc.fn(ctx, dt)` path. The
 		// `=== null` check is a perfectly-predicted branch. A measurement of the
 		// dispatch shows that this branch is free against the baseline, and that a
@@ -608,8 +608,8 @@ export class Schedule {
 			: undefined;
 		// `slots` is a snapshot: a `removeSystem` from inside a system clears
 		// `_phasePlans`, but this loop keeps running, and keeps writing back through,
-		// the plan it already captured. The caller (`runStartup` / `runUpdate` /
-		// `runFixedUpdate`) holds `_driveDepth` for the whole drive, which is what
+		// the plan it already captured. The caller, one of `runStartup`, `runUpdate`
+		// and `runFixedUpdate`, holds `_driveDepth` for the whole drive, which is what
 		// stops `_assignLastRunSlot` handing a slot this loop still writes to a
 		// system added mid-phase.
 		for (let i = 0; i < sorted.length; i++) {
@@ -752,7 +752,7 @@ export class Schedule {
 		const cached = this._phasePlans.get(phase);
 		if (cached !== undefined) return cached;
 
-		// ! safe: constructor pre-populates all SCHEDULE enum keys
+		// ! safe: the constructor pre-populates every `SCHEDULE` enum key
 		const nodes = this._phaseSystems.get(phase)!;
 		const sorted = this._sortSystems(nodes, phase);
 		const slots = new Int32Array(sorted.length);

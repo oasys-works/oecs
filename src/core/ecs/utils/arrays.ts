@@ -29,7 +29,7 @@ export function bucketPush<T>(map: Map<number, T[]>, key: number, value: T): voi
  * entire flush. Distinct live entities have distinct indices,
  * so index order is a total canonical order. `out` is typed scratch, and the
  * return value is the scratch to keep: the same buffer, or a larger one when
- * `K` outgrew it. `c0` / `c1` are 1024-entry histograms (reused).
+ * `K` outgrew it. `c0` and `c1` are 1024-entry histograms, and both are reused.
  */
 export function radixSortByIndex(
 	eids: number[],

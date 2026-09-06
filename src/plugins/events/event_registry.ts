@@ -84,8 +84,8 @@ export class EventRegistry implements EventHooks {
 	/** `DEV`-only: total events currently buffered across the dirty channels.
 	 * `ECS.update` samples this either side of `dispatchSet` to assert an onSet
 	 * observer emitted nothing, its emissions would be wiped by the tick-tail
-	 * `clearEvents` and break the empty-channel-at-boundary invariant snapshot /
-	 * restore relies on. Walks only the dirty list, never the hot emit path. */
+	 * `clearEvents` and break the empty-channel-at-boundary invariant that
+	 * snapshot and restore rely on. Walks only the dirty list, never the hot emit path. */
 	public devBufferedCount(): number {
 		const dirty = this._dirtyChannels;
 		const channels = this._channels;

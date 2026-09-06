@@ -48,7 +48,7 @@ export interface HostState {
 /** What the snapshot and resume orchestration needs from `Store`, closure-
  * injected (the `RelationServiceHost` style). Accessors re-read live fields
  * per call (the column store and the entity-index views are replaced on
- * restore); the three mutation members keep Store-owned state transitions on
+ * restore). The three mutation members keep Store-owned state transitions on
  * the Store side. All cold-path. */
 export interface SnapshotHost {
 	readonly sparseStores: () => readonly SparseComponentStore[];

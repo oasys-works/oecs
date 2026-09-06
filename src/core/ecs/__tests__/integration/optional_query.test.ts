@@ -1,5 +1,5 @@
 /**
- * Optional query terms, fetch-if-present (Bevy `Option<&T>` / flecs `?`).
+ * Optional query terms, fetch-if-present (Bevy `Option<&T>`, flecs `?`).
  *
  * `q.optional(T)` fetches `T` when an entity has it but does not exclude
  * entities that lack it: the matched set stays at the required terms, spanning
@@ -11,8 +11,8 @@
  *  - read-only ⇒ a `stateHash` no-op
  *  - the optional read is access-declared (`reads:[T]`), and the check fires even
  *    on the absent span
- *  - composition with `and` / `not` / `anyOf` is symmetric, the term survives a
- *    dense compose in either order (the silent-drop regression);
+ *  - composition with `and`, `not` and `anyOf` is symmetric, the term survives a
+ *    dense compose in either order (the silent-drop regression)
  *  - the term gates the fetch, `getOptionalColumnRead` throws in `__DEV__` if
  *    the component wasn't declared via `.optional(T)`
  *  - cache identity.
@@ -495,7 +495,7 @@ describe("ECS optional query terms", () => {
 		expect(multi).toBe(root.and(Hp).and(Mana));
 		expect(root.and(Hp, Mana)).toBe(multi); // second call: same instance
 
-		// not / any_of multi-arg fold likewise.
+		// not and any_of multi-arg fold likewise.
 		expect(root.without(Hp, Mana)).toBe(root.without(Hp).without(Mana));
 		expect(root.anyOf(Hp, Mana)).toBe(root.anyOf(Hp).anyOf(Mana));
 

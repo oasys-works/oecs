@@ -13,7 +13,7 @@
  * Ordering invariants the drain policy encodes (owned here, verbatim from
  * the pre-extraction `Store.flushStructural`):
  *  - adds and removes settle before destroys, so an explicit remove's onRemove
- *    fires with the entity live (the original behavior is preserved);
+ *    fires with the entity live (the original behavior is preserved)
  *  - destroys settle before toggles, so a toggle sees its entity's final
  *    archetype for the tick
  *  - each observed round dispatches only effective transitions, and any
@@ -130,7 +130,7 @@ export class DeferredCommandBuffer {
 	public flushStructural(): void {
 		// Each applier owns its dirty bookkeeping. It captures
 		// per-archetype pre-lengths during its loop and settles the
-		// row-counts / query-epoch flags from those captures.
+		// row-count and query-epoch flags from those captures.
 
 		// No-observer fast path, byte-for-byte the original flush. While no
 		// onAdd, onRemove, onDisable or onEnable observer is registered we never
@@ -206,7 +206,7 @@ export class DeferredCommandBuffer {
 					this._host.applyToggles();
 				}
 				// Dispatch only effective transitions. A pass of pure no-ops
-				// (already-has / already-lacks / dead / component-less destroy /
+				// (already-has, already-lacks, dead, a component-less destroy, or
 				// a disable+enable that nets to nothing) fires nothing. We cannot
 				// `break` here, another buffer may still hold work, so let the
 				// `while` re-check own termination. Each pass fully drains at

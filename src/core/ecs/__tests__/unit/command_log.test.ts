@@ -3,7 +3,7 @@
  * host → ECS write seam. Asserts the deterministic-sim payoff:
  *   - the apply path logs the applied `HostCommand`s + per-tick `dt` + seed,
  *     behind an opt-in recorder (off by default, the un-recorded drain is
- *     unchanged);
+ *     unchanged)
  *   - the log round-trips through serialize → deserialize (plain JSON)
  *   - a replay driver re-applies it against a fresh world and, under the
  *     determinism opt-in, reproduces the per-tick `stateHash`
@@ -58,7 +58,7 @@ function firstEntity(world: ECS, def: ComponentDef): EntityID | undefined {
 
 /**
  * A world built identically for record and for replay: a `Cell` data component, a
- * `Clock` whose `ms` a dt-driven UPDATE system advances by `round(dt*1000)` each
+ * `Clock` whose `ms` a dt-driven `UPDATE` system advances by `round(dt*1000)` each
  * tick, the write seam, and (optionally) a recorder. Registration order is fixed
  * so branded ids line up across the two worlds, the contract replay rests on.
  */
@@ -104,7 +104,7 @@ function recordSession(): { recorder: HostCommandRecorder; hashes: number[] } {
 	const { world, Cell, Clock, commands } = buildWorld(recorder);
 
 	// Seed-time edits (drain at PRE_STARTUP): a clock + a cell. The clock's id is
-	// not needed (the clock system finds it by query); the cell's is, for later
+	// not needed, because the clock system finds it by query. The cell's is, for later
 	// commands that target it.
 	let cellA: EntityID | undefined;
 	commands.spawn([spawnEntry(Clock, { ms: 0 })]);
@@ -343,7 +343,7 @@ describe("command log, both transports land in one log", () => {
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (e) => (cell = e));
 		world.update(1 / 60);
 
-		// Mutate via the SAB ring (the cross-thread / wire transport).
+		// Mutate through the SAB ring, the cross-thread and wire transport.
 		const buffer = world.columnStore;
 		pushCommand(
 			buffer.view,

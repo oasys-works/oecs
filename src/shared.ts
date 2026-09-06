@@ -1,5 +1,5 @@
 /**
- * `@oasys/oecs/shared`, the opt-in SharedArrayBuffer / WASM profile.
+ * `@oasys/oecs/shared`, the opt-in SharedArrayBuffer and WASM profile.
  *
  * The default `@oasys/oecs` profile runs the column store over a plain
  * fixed `ArrayBuffer` (no cross-origin isolation). This entry surfaces the

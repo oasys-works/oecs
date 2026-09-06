@@ -40,7 +40,7 @@ function commandQueue(world: ECS, access: ReturnType<typeof openAccess>) {
 }
 
 describe("Observers, onDisable and onEnable", () => {
-	it("a deferred disable fires onDisable at the flush boundary; re-enable fires onEnable", () => {
+	it("a deferred disable fires onDisable at the flush boundary, re-enable fires onEnable", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const disabled: number[] = [];
@@ -101,7 +101,7 @@ describe("Observers, onDisable and onEnable", () => {
 		expect(onV).toEqual([e as number]);
 	});
 
-	it("net-effect: disable+enable in one tick fires nothing; disable+enable+disable fires one onDisable", () => {
+	it("net effect, disable+enable in one tick fires nothing, disable+enable+disable fires one onDisable", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const disabled: number[] = [];
@@ -279,7 +279,7 @@ describe("Observers, onDisable and onEnable", () => {
 		const cmds = commandQueue(world, openAccess([P]));
 		world.startup();
 
-		// Destroy drains before the toggle (structural quiescent → toggle); the dead
+		// Destroy drains before the toggle (structural quiescent → toggle). The dead
 		// handle is skipped, so onDisable never fires for it.
 		cmds.push((ctx) => {
 			ctx.commands.disable(e);

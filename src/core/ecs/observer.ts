@@ -61,9 +61,9 @@ interface ObserverConfigBase {
 	 * host-side `ecs.disable()` does not fire (like immediate `addComponent`). */
 	onDisable?: ObserverFn;
 	/** Fires when an entity carrying this component is *enabled*, symmetric
-	 * with `onDisable` / `onAdd`. */
+	 * with `onDisable` and `onAdd`. */
 	onEnable?: ObserverFn;
-	/** Access surface the callbacks touch (reads, writes and spawns / …). Partial:
+	/** Access surface the callbacks touch (reads, writes, spawns and the rest). Partial:
 	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `DEV`. */
 	access?: Partial<SystemAccessDeclaration>;
 	/** flecs-style replay of current matches on registration (onAdd only, seeds the

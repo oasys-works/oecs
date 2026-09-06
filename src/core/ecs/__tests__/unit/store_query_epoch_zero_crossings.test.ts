@@ -102,7 +102,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		const Vel = world.registerComponent(Velocity);
 
 		// Establish + cache the [Pos] archetype so a query is already live
-		// before the move below. (The empty and UNASSIGNED archetype is created
+		// before the move below. (The empty and `UNASSIGNED` archetype is created
 		// lazily at the first createEntity.)
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
@@ -114,7 +114,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(qVel.archetypeCount).toBe(0);
 		qVel.forEach(() => {});
 
-		// A component-less (UNASSIGNED) entity gains Vel. This installs the
+		// A component-less (`UNASSIGNED`) entity gains Vel. This installs the
 		// brand-new [Vel] archetype and crosses its entity count 0→1. The
 		// observable contract is that the cached query now reports exactly this
 		// entity. (Whether the install itself bumps the dirty epoch is an
@@ -224,7 +224,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(total).toBe(3);
 	});
 
-	it("batch_add_component bumps once per 0-crossing (src always; tgt iff was empty)", () => {
+	it("batch_add_component bumps once per 0-crossing (src always, tgt iff it was empty)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -377,7 +377,7 @@ describe("enabled_count 0-crossings on row add", () => {
 		expect(q.entityCount).toBe(0);
 
 		// y transitions [Pos] → [Pos, Vel] via addComponent. Source [Pos] goes
-		// 2→1 (keep remains, no length cross); target [Pos, Vel] is all-disabled,
+		// 2→1, keep remains and no length crosses. Target [Pos, Vel] is all-disabled,
 		// so the enabled append crosses enabledCount 0→1 only.
 		const y = world.spawn();
 		world.addComponent(y, Pos, { x: 1, y: 1 });

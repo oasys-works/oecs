@@ -2,10 +2,10 @@
  * Event ring. SPSC ring buffer for ECS signal and event payloads shared
  * between TS and the Zig sim.
  *
- * Same byte layout as the command ring (`command_ring.ts`); the two
- * could share a primitive but keeping them separate makes the
- * direction of flow explicit: command ring is WASM→TS (structural
- * intents to drain post-tick); event ring is bidirectional during
+ * Same byte layout as the command ring (`command_ring.ts`). The two
+ * could share a primitive, but keeping them separate makes the
+ * direction of flow explicit. The command ring is WASM→TS, and carries
+ * structural intents to drain post-tick. The event ring is bidirectional during
  * `tick()`. Zig systems push events, TS readers (or other Zig
  * systems) drain.
  *
@@ -25,8 +25,8 @@
  * from 1 to honour this. The engine integration in 4D+ enforces it.
  *
  * SPSC contract (single host thread):
- *   - Producer: Zig sim `tick()` (post-4D) or TS host (test producers /
- *     existing JS-side emitters bridged into the ring).
+ *   - Producer: Zig sim `tick()` (post-4D) or TS host (a test producer, or an
+ *     existing JS-side emitter bridged into the ring).
  *   - Consumer: TS host drain (post-4D) or Zig system that reads
  *     queued events from a sibling system.
  *   - The two never run concurrently (one host thread orchestrates

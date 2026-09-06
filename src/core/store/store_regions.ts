@@ -46,8 +46,8 @@ import type { CreateColumnStoreOptions } from "./column_store";
 
 /** The `StoreHeader` fields that hold a mechanism region's byte offset (0 ⇒
  * region absent). Exactly the four fields a `MechanismRegionSpec` can own. The
- * always-present `bindings_off` / `layout_descriptor_off` and the generic
- * `region_table_off` / `region_table_count` pair are not mechanism regions in
+ * always-present `bindings_off` and `layout_descriptor_off`, and the generic
+ * `region_table_off` and `region_table_count` pair, are not mechanism regions in
  * this sense and are computed directly outside the loop. */
 export type StoreRegionOffsetField =
 	| "command_ring_off"

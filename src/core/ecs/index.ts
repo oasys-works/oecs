@@ -25,8 +25,8 @@ export {
 	type WasmMemoryArm
 } from "./ecs_memory";
 
-// Template / direct-create, opaque archetype template from `ECS.template`,
-// consumed by `ECS.spawn` / `ECS.spawnMany`.
+// Template and direct create, the opaque archetype template from
+// `ECS.template`, consumed by `ECS.spawn` and `ECS.spawnMany`.
 export type { Template, TemplateOverrides } from "./store";
 
 // SAB layout subscription, generic hook for any consumer (e.g. a compute
@@ -53,7 +53,7 @@ export {
 	type SystemSetConfig
 } from "./schedule";
 
-// Run conditions, per-tick gates for scheduled systems / sets. The
+// Run conditions, per-tick gates for a scheduled system or system set. The
 // predicate type + ConditionContext, plus the shipped built-ins.
 export {
 	type RunCondition,
@@ -135,7 +135,7 @@ export type {
 // drains them at the schedule head through `applyHostCommand` into the existing
 // deferred buffers. `installHostCommandSeam(world)` wires it and returns the
 // queue. The SAB `command_ring` is the second transport: a
-// `HostCommandDispatcher` + `ring*Codec` decode cross-thread / wire bytes into
+// `HostCommandDispatcher` and `ring*Codec` decode cross-thread and wire bytes into
 // the same `applyHostCommand`.
 export {
 	installHostCommandSeam,
@@ -165,7 +165,7 @@ export type {
 // Wire `HostCommandRecorder` via `installHostCommandSeam(world, { recorder })`
 // to log the applied `HostCommand`s + per-tick `dt` + seed. `replayCommandLog`
 // re-applies a `CommandLog` against a fresh world (per-tick `stateHash` matches
-// under the determinism opt-in). `serializeCommandLog` /
+// under the determinism opt-in). `serializeCommandLog` and
 // `deserializeCommandLog` round-trip it through JSON.
 export {
 	HostCommandRecorder,
@@ -210,18 +210,19 @@ export { ECS_SNAPSHOT_VERSION } from "./snapshot";
 // *advisory* compile-time barriers, not runtime safety boundaries, each wraps
 // the live mutable backing store, so a deliberate cast can still write
 // through. Mutation-default accessors are unsuffixed (`ctx.ref`,
-// `Archetype.getColumnMut`); the read-only variants carry an explicit `_read`
+// `Archetype.getColumnMut`). The read-only variants carry an explicit `_read`
 // suffix (`ctx.refRead`, `Archetype.getColumnRead`).
 //
 // The column-cursor family shares this convention in a second spelling: the
-// forEachChunk cursors `cols.mut(def)` / `cols.read(def)` are the explicit-verb
-// pair, and `ctx.ref` / `ctx.refRead` are their outside-iteration single-entity
-// analog. All are def-first (`ref(Pos, e)`, `cols.mut(Pos)`), a cursor is named
-// for what it points at, deliberately unlike the entity-first `getField(e, def,
-// field)` reader family. See docs/api/refs.md and queries.md.
-// `cursor` / `cursorRead` complete the family in a third spelling: the
+// forEachChunk cursors `cols.mut(def)` and `cols.read(def)` are the
+// explicit-verb pair, and `ctx.ref` and `ctx.refRead` are their
+// outside-iteration single-entity analog. All are def-first (`ref(Pos, e)`,
+// `cols.mut(Pos)`), a cursor is named for what it points at, deliberately
+// unlike the entity-first `getField(e, def, field)` reader family.
+// `cursor` and `cursorRead` complete the family in a third spelling: the
 // single-entity accessor that is created once and repointed, rather than minted
-// per entity like a ref. Same def-first, mutable-default/`Read`-suffix rules.
+// per entity like a ref. Same rules again, def-first, mutable by default, and a
+// `Read` suffix on the read-only form.
 export type {
 	ComponentCursor,
 	ComponentRef,
@@ -249,10 +250,11 @@ export type { EntityID, ReadonlyEntityIDArray } from "./entity";
 export { getEntityIndex } from "./entity";
 
 // The rest of the packed-EntityID codec + its bounds. Exposed for consumers
-// that mint or bounds-check handles outside the normal `spawn` /// `spawnMany` paths: snapshot and replication decode (paired with
-// `getEntityIndex`), and adversarial harnesses that forge out-of-range /
-// `RETIRED_GENERATION` / stale handles to prove `isAlive` + the mutators read
-// them dead. `createEntityId` is the inverse of
+// that mint or bounds-check handles outside the normal `spawn` and `spawnMany`
+// paths: snapshot and replication decode (paired with
+// `getEntityIndex`), and adversarial harnesses that forge an out-of-range, a
+// `RETIRED_GENERATION` or a stale handle to prove `isAlive` and the mutators
+// read them dead. `createEntityId` is the inverse of
 // `getEntityIndex` and `getEntityGeneration`. Like `getEntityIndex` it does no
 // aliveness check, the generational guard stays the caller's job.
 export {

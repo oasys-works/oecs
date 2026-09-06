@@ -49,7 +49,7 @@ export type { RingCommandApplier } from "./core/ecs";
 // Packed-EntityID codec + bounds, for consumers that
 // mint or bounds-check handles outside the normal `spawn` paths:
 // snapshot and replication decode (paired with the root's `getEntityIndex`) and
-// adversarial harnesses forging out-of-range / retired and stale handles.
+// adversarial harnesses forging an out-of-range, a retired or a stale handle.
 // `createEntityId` does no aliveness check, the generational guard stays the
 // caller's job.
 export {

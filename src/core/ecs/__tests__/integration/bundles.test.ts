@@ -85,7 +85,7 @@ describe("callable component defs", () => {
 		const Vel = world.registerComponent({ vx: "f64", vy: "f64" });
 		const Tag = world.registerTag();
 
-		// Pos({x,y}) / Vel({vx}) callable form. Tag bare. Vel omits vy → zero-fill.
+		// Pos({x,y}) and Vel({vx}) callable form. Tag bare. Vel omits vy → zero-fill.
 		const e = world.spawnBundle(Pos({ x: 5, y: 6 }), Vel({ vx: 7 }), Tag);
 		expect(world.getField(e, Pos, "x")).toBe(5);
 		expect(world.getField(e, Pos, "y")).toBe(6);

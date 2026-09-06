@@ -160,12 +160,12 @@ export interface ECSOptions {
 	/** How the world's memory is sized and backed. Two independent axes, two
 	 * independent fields, every combination of them is legal.
 	 *
-	 * How big: `entities` (with optional `archetypes` / `bytesPerEntity` to
+	 * How big: `entities` (with optional `archetypes` and `bytesPerEntity` to
 	 * shape the derivation) or `maxBytes`, or both. Give both when you know
 	 * both: the count sizes the columns and the entity index, the cap is yours.
 	 *
 	 * What backs it: `backing`, `"heap"` (default, a plain fixed ArrayBuffer),
-	 * `"shared"` (a SharedArrayBuffer, for worker offload / a WASM backend),
+	 * `"shared"` (a SharedArrayBuffer, for worker offload or a WASM backend),
 	 * `{ wasm }` (the buffer is a WebAssembly.Memory) or `{ allocator }` (the
 	 * expert escape hatch, in-place-typed).
 	 *
@@ -176,17 +176,17 @@ export interface ECSOptions {
 	/** Consumer-declared SAB regions, forwarded to `Store`. Each
 	 * `StoreRegionSpec` carries an opaque `region_id`, a precomputed byte size,
 	 * and an `init` closure. The engine lays them out generically and exposes
-	 * them via `regionHandle(id)` / `regionOffset(id)`. A game (e.g.
-	 * `@internal/sim`'s region specs) supplies these, the engine ships no
-	 * game regions of its own. Replaces the eight game-named region options
+	 * them through `regionHandle(id)` and `regionOffset(id)`. A consumer
+	 * supplies the specs. The engine ships no region of its own. Replaces the
+	 * eight game-named region options
 	 * (`terrain_map_radius`, `spatial_grid_*`, `army_*`, `flow_field_*`,
 	 * `actionRingCapacitySlots`) the ECS used to carry. */
 	regions?: readonly StoreRegionSpec[];
 	/** Byte size of the opt-in sim-bindings region, forwarded to `Store`.
-	 * A consumer that attaches a WASM `ComputeBackend` passes its own size, for
-	 * this game, `@internal/sim`'s `SIM_BINDINGS_BYTES` (computed from the binding
-	 * manifest), so the host can publish the `(component_id, field_id)` IDs the
-	 * accelerated systems read. Omitted / 0 ⇒ no region: a pure-TS world pays
+	 * A consumer that attaches a WASM `ComputeBackend` passes its own size,
+	 * computed from its own binding manifest, so the host can publish the
+	 * `(component_id, field_id)` ids the accelerated systems read. Omitted or
+	 * 0 ⇒ no region, and a pure-TS world pays
 	 * nothing for the WASM seam. The size is a runtime input, not an engine ABI
 	 * constant. It is de-welded from the generated ABI. */
 	bindingsRegionBytes?: number;
@@ -269,9 +269,9 @@ function validateFixedTimestep(value: number): number {
 /** The spiral-of-death clamp in `update()` is `maxAcc = maxFixedSteps *
  * fixedTimestep; if (accumulator > maxAcc) accumulator = maxAcc`. A non-finite
  * `maxFixedSteps` makes `maxAcc` non-finite so the clamp never fires and a large
- * `dt` runs `while (accumulator >= fixedTimestep)` unboundedly (the exact hang the
- * clamp exists to prevent); `0` clamps the accumulator to 0 so fixed systems never
- * run. Validate it (finite integer ≥ 1) the same way `fixedTimestep` is. */
+ * `dt` runs `while (accumulator >= fixedTimestep)` unboundedly, the exact hang
+ * the clamp exists to prevent. A `0` clamps the accumulator to 0, so no fixed
+ * system runs. Validate it as a finite integer ≥ 1, the way `fixedTimestep` is. */
 function validateMaxFixedSteps(value: number): number {
 	if (!Number.isInteger(value) || value < 1) {
 		throw new ECSError(
@@ -467,9 +467,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	// --- Grouped facades ---
 	// Cohesive secondary surfaces, each wrapping the same Store entry points
-	// the pre-0.5 flat methods used (flat forms removed in 0.5.0); hot-path
-	// API (component ops, queries, spawn and destroy, sparse ops) stays flat.
-	/** World resources: register/get/set/remove/has. See `ECSResources`. */
+	// the pre-0.5 flat methods used. The flat forms went away in 0.5.0. The
+	// hot-path API stays flat: component ops, queries, spawn and destroy,
+	// sparse ops.
+	/** World resources, to register, get, set, remove and test. See
+	 * `ECSResources`. */
 	public readonly resources: ECSResources;
 	/** Determinism: `stateHash()` and the `deterministic` flag, both properties
 	 * of the world itself. Capture and restore are not here. They arrive with
@@ -686,7 +688,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 *
 	 * One backend per ECS: attaching while one is already attached throws in
 	 * `DEV` (detach first). The engine never inspects the backend beyond
-	 * `setLayout` / `run`. It carries no game vocabulary. */
+	 * `setLayout` and `run`. It carries no game vocabulary. */
 	public attachBackend(backend: ComputeBackend): () => void {
 		if (DEV && this._backend !== null) {
 			throw new ECSError(
@@ -860,7 +862,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/**
 	 * Spawn an entity from varargs bundles, the immediate
 	 * host-side analog of `ctx.commands.spawn`, and the same callable-bundle
-	 * grammar as `addComponents` / `template`. `ecs.spawnBundle(Pos({x,y}),
+	 * grammar as `addComponents` and `template`. `ecs.spawnBundle(Pos({x,y}),
 	 * Vel({vx:1}), IsEnemy)` collapses the attach shapes into one. Each item is
 	 * checked against its own def's schema (`StrictBundles`). Bundles are applied
 	 * immediately. A single combined-archetype insertion (one transition instead
@@ -943,9 +945,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** Immediately destroy an entity, `ecs.despawn(e); ecs.isAlive(e)` is
 	 *  `false` on the next line, matching the immediacy of every other host
 	 *  facade mutation. Inside a system the buffered path is
-	 *  `ctx.commands.despawn` (applied at the phase flush); calling this from
-	 *  a system body throws in DEV, since an immediate destroy mid-iteration
-	 *  can invalidate rows the running query is walking. */
+	 *  `ctx.commands.despawn`, applied at the phase flush. A call from a system
+	 *  body throws in DEV, because an immediate destroy mid-iteration can
+	 *  invalidate rows the running query is walking. */
 	public despawn(entityId: EntityID): this {
 		if (DEV)
 			this._assertOutsideSystem(
@@ -961,9 +963,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// `EntityID`, but is excluded from queries by default (it sits in the disabled
 	// tail of its archetype, so `arch.entityCount` skips it). No archetype
 	// transition. Toggling is a single row swap. Host-side calls are immediate
-	// (mirrors `addComponent`); the deferred in-system path is
-	// `ctx.commands.disable` / `ctx.commands.enable` (a row swap would corrupt an
-	// in-flight `forEach` over that archetype). A disabled entity must hold at
+	// (mirrors `addComponent`). The deferred in-system path is
+	// `ctx.commands.disable` and `ctx.commands.enable`, because a row swap would
+	// corrupt an in-flight `forEach` over that archetype. An entity must hold at
 	// least one component (a component-less entity has no archetype row to
 	// partition).
 
@@ -1109,7 +1111,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * Bulk remove a component from all entities in the given archetype.
 	 * O(columns) via TypedArray.set() instead of O(N×columns).
 	 *
-	 * Takes an `ArchetypeID` (from `ArchetypeView.id`); see `batchAddComponent`.
+	 * Takes an `ArchetypeID`, from `ArchetypeView.id`. See `batchAddComponent`.
 	 */
 	public batchRemoveComponent(src: ArchetypeID, def: ComponentDef): this {
 		if (DEV) {
@@ -1187,7 +1189,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 *     p.x += p.y
 	 *   }
 	 *
-	 * Reach for it when you touch **many entities** by id. Reach for `refRead` /
+	 * Reach for it when you touch many entities by id. Reach for `refRead` or
 	 * `ref` for a single entity, and for `forEachChunk` whenever a query can express
 	 * the set. A column walk resolves nothing for each row, so it stays quicker
 	 * than a cursor, a cursor removes the allocation, not the resolution.
@@ -1265,7 +1267,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	}
 
 	/** Total sibling of {@link getField}: `undefined` when the
-	 * entity is dead or doesn't hold the component, instead of a dev throw /
+	 * entity is dead or doesn't hold the component, instead of a dev throw and a
 	 * prod garbage read. The safe way to probe-and-read in one call:
 	 * `ecs.tryGetField(e, Health, "current") ?? 0`. */
 	public tryGetField<S extends ComponentSchema>(
@@ -1317,8 +1319,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * Get the live, cached query matching entities that have **all** of
 	 * `defs`. Queries are deduplicated by mask, calling this twice with the
 	 * same terms returns the same instance, so build once at setup and reuse
-	 * the view stays live as archetypes appear. Refine with `.and()` /
-	 * `.without()` / `.anyOf()`. Iterate with `forEachChunk` (mutating hot path),
+	 * the view stays live as archetypes appear. Refine with `.and()`,
+	 * `.without()` or `.anyOf()`. Iterate with `forEachChunk` (mutating hot path),
 	 * `forEach` (per-archetype), or `forEachEntity` (per-entity).
 	 *
 	 * @example
@@ -1354,7 +1356,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * retained, the mint path copies each one into the `Query`, into the dedup
 	 * entry, and (via `Store.registerQuery`) into the registered-query record.
 	 * So callers may pass a scratch mask they intend to reuse (`ecs.query`) or
-	 * a live mask they still own (`Query.and` / `.without` / `.anyOf` pass
+	 * a live mask they still own (`Query.and`, `.without` and `.anyOf` pass
 	 * `this._include` etc.). Do not add a caller-side `.copy()` "for safety":
 	 * on the cache-hit path that is a per-call BitSet + `number[]` allocation
 	 * for nothing. */
@@ -1412,9 +1414,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/**
 	 * Register a system and get its scheduling handle. The config form is the
-	 * production shape: it declares the access surface (`reads` / `writes` are
-	 * mandatory. `spawns` / `despawns` / resource and sparse and relation terms
-	 * optional), which is enforced at runtime in dev *and* narrows `ctx` at
+	 * production shape. It declares the access surface. `reads` and `writes` are
+	 * mandatory. The `spawns`, `despawns`, resource, sparse and relation terms
+	 * are optional. The runtime enforces the surface in dev, and it narrows `ctx` at
 	 * the type level so undeclared access fails to compile. Registration does
 	 * not schedule, pass the returned descriptor to
 	 * `ecs.addSystems(SCHEDULE.UPDATE, ...)`.
@@ -1446,7 +1448,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * the typed-config overload so exclusive configs never get narrowed. */
 	public registerSystem(config: SystemConfig & { readonly exclusive: true }): SystemDescriptor;
 	/** Config form (system.ts): the declaration lists are inferred
-	 * as literal tuples and `fn` / `onAdded` receive
+	 * as literal tuples, and `fn` and `onAdded` receive
 	 * `SystemContext<DeclaredAccess<…>>`, undeclared access fails to compile
 	 * with the same taxonomy the runtime `accessCheck` throws with in
 	 * `DEV`. A config value typed as plain `SystemConfig` (dynamically
@@ -1487,8 +1489,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				const fn = fnOrConfig as (q: Query<any>, ctx: SystemContext, dt: number) => void;
 				config = { ..._INTERNAL_EMPTY_ACCESS, fn: (_ctx, dt) => fn(q, ctx, dt) };
 			} else {
-				// Bare function overload, access surface unannotated; the config
-				// form is how a system declares its per-system access.
+				// Bare function overload, with the access surface unannotated. The
+				// config form is how a system declares its per-system access.
 				//
 				// Footgun guard: a bare `SystemFn` is `(ctx, dt)`, arity
 				// ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
@@ -1594,9 +1596,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 		// Events live exactly one *update* tick. Startup is setup, not an
 		// update tick, so any event a startup phase emits (readable across the
-		// PRE_STARTUP→STARTUP→POST_STARTUP run above) must be drained here,
+		// `PRE_STARTUP`→`STARTUP`→`POST_STARTUP` run above) must be drained here,
 		// otherwise it sits in the channel until the first `update()` clears it
-		// at its tail, and a frame-1 PRE_UPDATE or UPDATE reader sees it as if
+		// at its tail, and a first-frame `PRE_UPDATE` or `UPDATE` reader sees it as if
 		// emitted this frame. Mirrors `update()`'s tail.
 		if (this._store.hasEvents) this._store.events.clear();
 	}
@@ -1652,7 +1654,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			if (DEV) this._store.trace?.tickBegin(this._tick, dt);
 
 			// Publish row counts before the first phase runs. Covers any
-			// immediate-mode `addComponents` / `removeComponents` /
+			// immediate-mode `addComponents`, `removeComponents` or
 			// `despawn` the host did between updates, those mutate
 			// archetype lengths without touching the SAB descriptor.
 			// Subsequent phase boundaries re-publish via `ctx.flush()`, so
@@ -1730,13 +1732,13 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/** Register an archetype template. Resolves the component set +
 	 * default field values to a target archetype once (creating it if absent,
-	 * fits the prewarm model), so later `spawn` / `spawnMany` calls land
-	 * entities directly in that archetype with **zero archetype transitions**.
+	 * fits the prewarm model), so a later `spawn` or `spawnMany` call lands
+	 * entities directly in that archetype with no archetype transition.
 	 *
 	 *   const Bullet = ecs.template(Position({ x: 0, y: 0 }), Velocity({ vx: 0, vy: 0 }));
 	 *
-	 * Takes the same callable-bundle varargs as `spawnBundle` / `addComponents`
-	 * (each item schema-checked against its own def); the resulting
+	 * Takes the same callable-bundle varargs as `spawnBundle` and
+	 * `addComponents`, each item schema-checked against its own def. The resulting
 	 * `Template<[Position, Velocity]>` keeps the typed key set that `spawn`'s
 	 * `overrides` map over. Not a pass-through. It normalizes bundles to the
 	 * store's entry shape, so it lives here with the other real logic, not in the
@@ -1771,10 +1773,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// ============================================================================
 	// === BEGIN STORE PASS-THROUGH BAND ===
 	//
-	// Every member below is a single mechanical delegation to a collaborator
-	// (`this._store` / `this._schedule` / `this._ctx` / `this._observers`), or
-	// to one the store exposes by name (`this._store.relations` / `.events` /
-	// `.resources` / `.snapshots`): exactly one call or property read,
+	// Every member below is a single mechanical delegation to a collaborator,
+	// one of `this._store`, `this._schedule`, `this._ctx` and `this._observers`.
+	// It may also delegate to one the store exposes by name, one of
+	// `this._store.relations`, `.events`, `.resources` and `.snapshots`. Each is
+	// exactly one call or property read,
 	// optionally followed by `return this` for chaining. No branches, no loops,
 	// no dev checks, no argument adaptation beyond literal defaults. The named
 	// hop is not logic, it says which object owns the state, so the store no
@@ -1829,7 +1832,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** The single SAB backing every archetype's column views. Exposed for
 	 * snapshot and restore, `columnStoreStateHash`-based determinism checks, and
 	 * WASM or worker hand-off paths. Mutation flows through the
-	 * usual `addComponent` / `removeComponent` / `flush` APIs. Readers
+	 * usual `addComponent`, `removeComponent` and `flush` APIs. Readers
 	 * that hold a column view across a grow must consult
 	 * `header.view_stamp` to detect a republish. */
 	public get columnStore(): ColumnStore {
@@ -1864,7 +1867,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		return this._store.hasComponent(entityId, def);
 	}
 
-	/** Whether `entityId` is currently disabled. Toggle via `disable` / `enable`
+	/** Whether `entityId` is currently disabled. Toggle with `disable` or `enable`
 	 * (immediate, above the band. They carry the in-system dev guard). */
 	public isDisabled(entityId: EntityID): boolean {
 		return this._store.isDisabled(entityId);
@@ -2008,13 +2011,13 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * hand-polled every tick, "on `Death` added → spawn corpse", "on `HexPos`
 	 * set → mark the spatial index", become declarative.
 	 *
-	 * - **`onAdd` / `onRemove`** `(eid, ctx)` fire at the structural-flush
+	 * - `onAdd` and `onRemove` `(eid, ctx)` fire at the structural-flush
 	 *   boundary, after the batch commits, in canonical order (access-topological
 	 *   across observers, entity-id order within), looping to a fixed point so
 	 *   cascades settle. Determinism: a `stateHash` replay reproduces regardless
 	 *   of the order ops were queued.
-	 * - **`onDisable` / `onEnable`** `(eid, ctx)` fire at the same flush boundary
-	 *   when an entity carrying the component is *disabled* / *enabled*, once
+	 * - `onDisable` and `onEnable` `(eid, ctx)` fire at the same flush boundary
+	 *   when an entity carrying the component is disabled or enabled, once
 	 *   per net transition, for every component the entity carries
 	 *   (a disable is a soft remove of the whole mask from default queries). Like
 	 *   `onAdd` and `onRemove`, an *immediate* `ecs.disable()` does not fire, only
@@ -2033,9 +2036,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * (merged over an all-empty declaration), undeclared access throws in
 	 * `DEV`, and those decls drive the firing order. `yieldExisting` replays
 	 * `onAdd` over current matches on registration. Register at world-build time
-	 * (before `startup()`); the returned handle's `dispose()` unregisters.
+	 * (before `startup()`). The returned handle's `dispose()` unregisters.
 	 */
-	// Deliberately non-generic: the callbacks receive `(eid, ctx)` / `(arch,
+	// Deliberately non-generic: the callbacks receive `(eid, ctx)` or `(arch,
 	// ctx)` and read data through def-carrying APIs (`ctx.getField(eid, def,
 	// …)`), which are already schema-checked, a `<S>` here would bind from
 	// `def` and flow nowhere. `ComponentHandle` (not the erased `ComponentDef`)

@@ -5,7 +5,7 @@
  * these pin the *resume* plugin the engine previously lacked:
  *
  *   - **mount + tick**, restore a snapshot onto a live world. It queries + ticks.
- *   - **host-state reconstruction**, `Archetype.length` / `enabledCount`, the
+ *   - host-state reconstruction, `Archetype.length` and `enabledCount`, the
  *     per-row `_entityIds` back-reference, and the entity recycle free-list (in
  *     LIFO order, the load-bearing bit) are rebuilt correctly.
  *   - **resume == control**, a world snapshotted at tick N, restored, and
@@ -172,7 +172,7 @@ describe("resume framing + host-state serialization", () => {
 });
 
 describe("restore, mount + reconstruction", () => {
-	it("mounts a snapshot onto a fresh world; it queries + ticks afterward", () => {
+	it("mounts a snapshot onto a fresh world, and it queries and ticks afterward", () => {
 		const src = build(SAB);
 		for (let i = 0; i < 8; i++) step(src, i);
 		const snap = src.world.snapshots.capture();

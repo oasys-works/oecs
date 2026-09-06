@@ -6,7 +6,7 @@
  * directive", and a positive case that stops compiling fails directly.
  *
  * Covers the schema-precision seams: the callable-bundle varargs shared by
- * `addComponents` / `spawnBundle` / `template` (`StrictBundles`), the
+ * `addComponents`, `spawnBundle` and `template` (`StrictBundles`), the
  * declared-access strictness on `ctx.commands` (distributive
  * `DeclaredBundleOrDef`), tag components refusing values, and `registerEvent`
  * field coverage.

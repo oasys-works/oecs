@@ -126,10 +126,9 @@ export {
 	commandRingWriteHead
 } from "./command_ring";
 
-// Generic command-dispatch surface. A consumer binds a payload codec +
-// handler per opcode. The engine owns no opcode names. The game's opcode enum
-// (`COMMAND_OP`) and payload codecs (`SpawnUnitFields`, …) live in
-// `@internal/sim`'s `command_payloads.ts`.
+// Generic command-dispatch surface. A consumer binds a payload codec and a
+// handler for each opcode. The engine owns no opcode name. A consumer's opcode
+// enum and payload codecs live in the consumer's own module.
 export { type PayloadCodec, CommandDispatcher } from "./command_dispatch";
 
 export { BufferBackedColumn, StoreColumnOverflowError } from "./buffer_backed_column";

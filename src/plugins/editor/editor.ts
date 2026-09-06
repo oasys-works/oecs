@@ -88,7 +88,7 @@ const txns = new WeakMap<TransactionBuilder, MutableTxn>();
  * shadow and read channel where needed. Spawn and despawn install id-finalizers
  * (via `HostCommand.onSpawned`) that patch the apply-time id into the right slot.
  *
- * Obtained from {@link Editor.transaction}; not constructed directly.
+ * Obtained from {@link Editor.transaction}. Never constructed directly.
  */
 export class TransactionBuilder {
 	/** Values staged by this build, layered over the editor's shared shadow. Kept
@@ -128,7 +128,7 @@ export class TransactionBuilder {
 		// resolves to the live id: the paired respawn's `onSpawned` runs earlier in
 		// the same drain and updates this `eid` before the despawn applies. Replacing
 		// the slot instead left an already-enqueued despawn pointing at the dead
-		// original → `ENTITY_NOT_ALIVE` / leaked entity.
+		// original, which is an `ENTITY_NOT_ALIVE` throw and a leaked entity.
 		const inverseDespawn: { kind: "despawn"; eid: EntityID } = {
 			kind: "despawn",
 			eid: 0 as EntityID
@@ -266,8 +266,8 @@ export class Editor {
 
 	/**
 	 * Group several actions into one undo entry. Build them on the passed
-	 * {@link TransactionBuilder}; the whole group commits (enqueues its forward
-	 * commands) and lands on the undo stack atomically, clearing the redo stack.
+	 * {@link TransactionBuilder}. The whole group commits, which enqueues its
+	 * forward commands, and lands on the undo stack atomically, clearing the redo stack.
 	 */
 	transaction(build: (tx: TransactionBuilder) => void): EditorTransaction {
 		const builder = new TransactionBuilder(this._readField, this._shadow);
@@ -373,7 +373,7 @@ export class Editor {
 		this._notify();
 	}
 
-	/** Current stack depths, for an "Undo (3)" / "Redo" affordance. */
+	/** Current stack depths, for an "Undo (3)" or "Redo" affordance. */
 	depths(): { undo: number; redo: number } {
 		return { undo: this._undoStack.length, redo: this._redoStack.length };
 	}
@@ -392,8 +392,8 @@ export class Editor {
 	 * Subscribe to undo-stack and redo-stack changes: fires after every commit, undo,
 	 * redo, and clear, the push signal an "Undo (3)" affordance needs instead
 	 * of polling `depths()` per frame. Returns an unsubscribe function.
-	 * Callbacks run synchronously in subscription order. Read `canUndo` /
-	 * `canRedo` / `depths()` inside.
+	 * Callbacks run synchronously in subscription order. Read `canUndo`,
+	 * `canRedo` and `depths()` inside.
 	 */
 	onChange(cb: () => void): () => void {
 		this._listeners.push(cb);

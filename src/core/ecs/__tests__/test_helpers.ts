@@ -1,5 +1,5 @@
 /**
- * Shared test helpers for ECS tests under packages/engine/src/core/ecs/__tests__.
+ * Shared test helpers for the ECS tests in this directory.
  *
  * `SystemAccessDeclaration` is mandatory on every
  * `registerSystem` config and validates it at runtime in __DEV__. Tests
@@ -9,7 +9,7 @@
  * `openAccess(...defs)` builds a permissive declaration for the supplied
  * component handles: every component is in `reads + writes` (so reads,
  * writes, and adds are all allowed since assertAdd consults `writes`) and
- * in `despawns` (so removeComponent / destroyEntity pass).
+ * in `despawns` (so removeComponent and destroyEntity pass).
  *
  * `spawns` and `transitions` are left empty here on purpose.
  * The prewarm pass walks every system's spawns + transitions at
@@ -29,9 +29,9 @@ import type { ResourceKey } from "../resource";
 import type { SystemAccessDeclaration } from "../system";
 
 /** A permissive access declaration over the supplied components and
- * resources. See file header for why `spawns` / `transitions` are empty.
+ * resources. See the file header for why `spawns` and `transitions` are empty.
  *
- * `sparseDefs` / `relationDefs` are placed in both the read and
+ * `sparseDefs` and `relationDefs` are placed in both the read and
  * write terms of their respective (separate) id spaces, so the returned
  * declaration also authorises every sparse and relation op on the supplied
  * handles. Omit them for a dense-only system (the optional terms stay absent,

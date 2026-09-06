@@ -3,7 +3,7 @@
  * header offset fields (`terrain_off`, `spatial_grid_off`, … ) the substrate
  * used to hard-code.
  *
- * The engine ships only genuinely-generic mechanism regions (the command /
+ * The engine ships only genuinely-generic mechanism regions (the command,
  * event and action rings and the entity-index) as named `StoreHeader` fields. A
  * Consumer (a game) declares the named regions it wants, terrain, a spatial
  * grid, whatever, as `StoreRegionSpec`s. The engine lays each out after the
@@ -45,7 +45,7 @@ export { REGION_TABLE_ENTRY_BYTES, REGION_TABLE_ENTRY_OFFSETS };
  * firing per realloc. */
 export interface StoreRegionSpec {
 	/** Consumer-owned region id (nonzero, distinct). Written to the directory
-	 * resolved by the consumer via `findRegionOffset` / `abi.find_region`. */
+	 * resolved by the consumer through `findRegionOffset` or `abi.find_region`. */
 	readonly id: number;
 	/** Human label for diagnostics and the self-documenting directory dump. */
 	readonly name: string;
@@ -66,7 +66,7 @@ export interface RegionTableEntry {
 	readonly byteLength: number;
 }
 
-/** A resolved handle to a consumer region, returned by `ECS.regionHandle` /
+/** A resolved handle to a consumer region, returned by `ECS.regionHandle` or
  * `Store.regionHandle`. Carries the live `buffer` and `view` plus the region's byte
  * `offset` and full `bytes`, so a consumer's region module can build a
  * TypedArray view over exactly the region's span without re-reading the
@@ -179,7 +179,7 @@ export function readRegionTable(
 	return out;
 }
 
-/** Read the directory described by the SAB header (`region_table_off` /
+/** Read the directory described by the SAB header (`region_table_off` and
  * `region_table_count`). Empty when no consumer regions were declared. */
 export function readHeaderRegionTable(view: DataView): RegionTableEntry[] {
 	const tableOff = view.getUint32(STORE_HEADER_OFFSETS.region_table_off, true);

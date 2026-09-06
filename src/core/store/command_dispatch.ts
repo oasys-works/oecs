@@ -6,9 +6,9 @@
  * slots. The engine never interprets a code. This module is the thin,
  * game-free glue that lets a consumer bind a payload codec + typed handler to
  * each opcode and drain the ring in one call. The opcode enum and the codecs
- * themselves stay consumer-owned, for our game they live in
- * `@internal/sim`'s `command_payloads.ts` (`COMMAND_OP`, `SpawnUnitFields`,
- * `encode/decode_spawn_unit_payload`); the engine knows none of those names.
+ * themselves stay consumer-owned. A consumer names its own opcode table, its
+ * own payload fields and its own encode and decode pair. The engine knows none
+ * of those names.
  *
  * Usage:
  *

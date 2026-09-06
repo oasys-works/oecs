@@ -18,7 +18,7 @@
  *     integration + destroy-purge + `has`) and the target set lives in a side
  *     `Map<source index, Set<target EntityID>>` this module owns. Because that
  *     side map is *not* in the sparse store, the target-set *values* are folded
- *     into `stateHash` and serialized through `snapshotRelations` /
+ *     into `stateHash` and serialized through `snapshotRelations` and
  *     `restoreRelations` explicitly (the sparse store carries only multi
  *     membership). Both cardinalities are now fully determinism-covered.
  *
@@ -40,13 +40,13 @@
  * + sparse membership in lockstep, a missed site silently corrupted the
  * reverse index. It is now **virtual dispatch** on `RelationStore`: an abstract
  * base owns the cardinality-agnostic reverse index, and `ExclusiveRelationStore`
- * / `MultiRelationStore` (built by `createRelationStore`) each own their forward
- * representation *and* the backing `SparseComponentStore` interaction for it.
+ * and `MultiRelationStore` (built by `createRelationStore`) each own their forward
+ * representation and the backing `SparseComponentStore` interaction for it.
  * The registry level keeps the things that are genuinely its own, entity
  * liveness (`Store`), relation and sparse registration and destroy *orchestration*
  * (purge ordering, `OnDeleteTarget` policy, `RelationService`,
- * relation_service.ts), and drives a relation through `link` / `unlink` /
- * `purgeSource` / `forEachCanonicalPair`, with no cardinality branch. Each
+ * relation_service.ts), and drives a relation through `link`, `unlink`,
+ * `purgeSource` and `forEachCanonicalPair`, with no cardinality branch. Each
  * cardinality's lockstep bookkeeping lives in exactly one method on one class,
  * so there is no scattered site to miss. The cardinality-free reclaim primitive
  * (`pruneDeadReverse`) rides the shared base unchanged.
@@ -77,21 +77,22 @@ const EMPTY_TAG_VALUES: Readonly<Record<string, number>> = Object.freeze({});
  * base owns the cardinality-agnostic **reverse index** (target → sources, keyed
  * by full `EntityID` so a recycled slot can't alias a dead target's sources) and
  * a handle on the backing `SparseComponentStore`. The forward representation and
- * its sparse interaction are owned by the concrete `ExclusiveRelationStore` /
+ * its sparse interaction are owned by the concrete `ExclusiveRelationStore` and
  * `MultiRelationStore` (built by `createRelationStore`).
  *
  * The registry level (`Store` + `RelationService`) owns what is genuinely its
  * own, entity liveness, registration, and destroy orchestration, and drives
- * a relation through the virtual `link` /
- * `unlink` / `purgeSource` / `forEachCanonicalPair` / … without ever
- * branching on cardinality. Each cardinality keeps forward link + reverse index
- * + sparse membership in lockstep inside one method on one class, so the
+ * a relation through the virtual `link`,
+ * `unlink`, `purgeSource`, `forEachCanonicalPair` and their peers, without ever
+ * branching on cardinality. Each cardinality keeps the forward link, the reverse
+ * index and the sparse membership in lockstep inside one method on one class, so the
  * lockstep can't be broken by missing a scattered `if (rs.exclusive)` site. */
 export abstract class RelationStore implements RelationStoreView {
-	/** `true` → one target per source (target in the sparse field); `false` →
+	/** `true` → one target per source, held in the sparse field. `false` →
 	 * a set of targets per source. The cardinality discriminant survives as a
-	 * field because it is part of the snapshot header and the traversal/`targetOf`
-	 * mode guards, but the forward *mechanics* are virtual, not branched on it. */
+	 * field because the snapshot header and the traversal and `targetOf`
+	 * mode guards carry it. The forward mechanics stay virtual, never branched
+	 * on it. */
 	public readonly exclusive: boolean;
 	/** Backing sparse component def: `{ target: f64 }` when exclusive, a tag when
 	 * multi. Carries membership (and the target, when exclusive). */
@@ -153,7 +154,7 @@ export abstract class RelationStore implements RelationStoreView {
 	 * cardinality-free (reverse-index only), so it lives on the base unchanged.
 	 *
 	 * Pure index reclaim: the **forward** links (the exclusive sparse target
-	 * field, the multi forward set) are left untouched, so `targetOf` /
+	 * field, the multi forward set) are left untouched, so `targetOf` and
 	 * `targetsOf` still return the dangling dead handle exactly as `orphan`
 	 * promises. The reverse index is derived, so dropping a dead-target entry
 	 * changes nothing observable except `sourcesOf` on that dead handle (which
@@ -254,7 +255,7 @@ export abstract class RelationStore implements RelationStoreView {
 
 	/** Rebuild the reverse index from the forward links after a restore.
 	 * Exclusive reads it back from the newly restored sparse target field (the
-	 * reverse index is never serialized); multi already rebuilt its reverse edges
+	 * reverse index is never serialized). Multi already rebuilt its reverse edges
 	 * in `restoreAddTarget`, so this is a no-op for it. `createId` maps a source
 	 * index to its full `EntityID`. */
 	public abstract rebuildReverse(createId: MakeSourceID): void;
@@ -352,7 +353,7 @@ class ExclusiveRelationStore extends RelationStore {
  * fixed-width sparse row, so membership is a sparse **tag** on the backing store
  * and the target set lives in this side `Map<source index, Set<target>>`. The
  * set *values* are not in the sparse store, so they are folded into `stateHash`
- * and serialized via `snapshotRelations` / `restoreRelations` explicitly. */
+ * and serialized through `snapshotRelations` and `restoreRelations` explicitly. */
 class MultiRelationStore extends RelationStore {
 	/** source entity **index** → set of target `EntityID`s. Keyed by source index
 	 * so destroy-purge, which has the freed index, can drop it in O(1). An
@@ -429,7 +430,7 @@ class MultiRelationStore extends RelationStore {
 
 	public forEachCanonicalTargetSet(cb: CanonicalTargetSetFn): void {
 		// Canonical source order = ascending index. Canonical target order =
-		// ascending id (in `targetsAt`); empty sets are skipped. This is the
+		// ascending id (in `targetsAt`), and an empty set is skipped. This is the
 		// one place that ordering + skip-empty lives, `stateHash`,
 		// `snapshotRelations`, and `pairsOf` all fold through here, so they can
 		// no longer disagree on the empty-set branch (a latent divergence:
@@ -580,7 +581,7 @@ export function snapshotRelations(relations: readonly RelationStoreView[]): Uint
  *
  * Throws `SparseRestoreError` on any shape mismatch (relation count, an
  * exclusive or multi flag that disagrees with the registered relation, a multi
- * source index past `MAX_INDEX`, or a truncated / over-long buffer) rather than
+ * source index past `MAX_INDEX`, or a truncated or over-long buffer) rather than
  * silently building a corrupt index. */
 export function restoreRelations(
 	relations: readonly RelationStoreView[],

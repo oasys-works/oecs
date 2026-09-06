@@ -46,7 +46,7 @@ export const FNV1A_PRIME = 0x01000193;
  * here, by the sparse-store `schemaFingerprint`, and by the server determinism
  * byte and u32 folds, so the constants and the round live in exactly one place.
  *
- * Trivially inlinable (monomorphic, no allocation); the intermediate `>>> 0`s
+ * Trivially inlinable, monomorphic and allocation-free. The intermediate `>>> 0`s
  * never change a later round (xor and imul see the same 32-bit pattern signed or
  * unsigned), they only keep the value unsigned for readers. */
 export function fnv1aStep(hash: number, b: number): number {

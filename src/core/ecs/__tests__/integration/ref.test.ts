@@ -498,7 +498,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		}
 	});
 
-	it("ctx.ref / ctx.refRead on an alive entity missing the component throw COMPONENT_NOT_REGISTERED", () => {
+	it("ctx.ref and ctx.refRead on an alive entity missing the component throw COMPONENT_NOT_REGISTERED", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -533,7 +533,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		}
 	});
 
-	it("ctx.ref / ctx.refRead with a tag def throw COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
+	it("ctx.ref and ctx.refRead with a tag def throw COMPONENT_NOT_REGISTERED (tags have no columns)", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 		const e = world.spawn();

@@ -9,7 +9,7 @@
  * `*StoreHeader` and a JS `DataView` see the same bytes.
  *
  * Endianness: little-endian. WASM is little-endian. Bun and every browser
- * we target run on little-endian hosts (x86_64 / arm64). All DataView reads
+ * we target run on little-endian hosts (x86_64 and arm64). All DataView reads
  * and writes pass `littleEndian = true` explicitly so the fixture bytes are
  * the same regardless of host byte order, even if a future host disagrees.
  *
@@ -46,7 +46,7 @@
  *     `next_step` region, per-base-owner blocks of `(from_hex_id,
  *     to_hex_id)` u32 pairs that the eventual Zig port of `movement.ts`
  *     reads via linear scan. TS owns writes (`build_flow_field` rebuilds
- *     per-match on wave-spawn / building changes); Zig is read-only.
+ *     per-match on a wave spawn or a building change). Zig is read-only.
  *     ABI bump because the header widened by 4 bytes past v3's packed
  *     size. Pre-v4 wasm builds can't be mixed with v4 SABs.
  *   - v5 ("SAB-is-the-interface"): widens to 64 bytes and adds
@@ -72,7 +72,7 @@
  *     `spawn_anchors_off` and `flow_field_off`) and replaces them with the
  *     generic `region_table_off` + `region_table_count` pair pointing at a
  *     `RegionTableEntry[]` directory. A consumer resolves its region via
- *     `findRegionOffset` (TS) / `abi.find_region` (Zig). Header shrinks
+ *     `findRegionOffset` (TS) and `abi.find_region` (Zig). Header shrinks
  *     64 → 52 bytes, the first schema change that narrowed it. The SAB
  *     stays the always-on substrate. Only the game-named shape moves out.
  *
@@ -99,10 +99,10 @@
 //   - STORE_HEADER_BYTES   total header size (13 u32 fields)
 //
 // The sim-bindings region's byte size is no longer an engine ABI constant.
-// It's game-owned, a consumer that opts into a WASM backend passes its
-// own size via `CreateColumnStoreOptions.bindingsRegionBytes` (the game-computed
-// `SIM_BINDINGS_BYTES` in `@internal/sim`). De-welding it from the ABI means a
-// game's binding-manifest edit no longer drifts this engine golden.
+// It is consumer-owned. A consumer that opts into a WASM backend passes its
+// own size through `CreateColumnStoreOptions.bindingsRegionBytes`, computed
+// from its own binding manifest. Keeping it out of the ABI means a consumer's
+// binding-manifest edit no longer drifts this engine golden.
 import {
 	STORE_MAGIC,
 	SIM_ABI_VERSION,
@@ -157,7 +157,7 @@ export interface StoreHeader {
 	 * (`(region_id, byte_offset, byte_length)` triples) holding one entry
 	 * per consumer-declared region. 0 means no consumer regions were
 	 * declared. The engine treats `region_id` as opaque. A consumer resolves
-	 * its region with `findRegionOffset(view, header, id)` (TS) /
+	 * its region with `findRegionOffset(view, header, id)` (TS) or
 	 * `abi.find_region(header_addr, id)` (Zig). Replaces the five game-named
 	 * offset fields (`terrain_off` and `spatial_grid_off`/… ) the SAB header
 	 * used to hard-code. This de-games the SAB substrate. */
@@ -165,15 +165,13 @@ export interface StoreHeader {
 	/** Number of `RegionTableEntry` records at `region_table_off`. */
 	readonly regionTableCount: number;
 	/** Byte offset of the sim-bindings region, an opaque block of `u16`
-	 * `(component_id, field_id)` IDs (layout owned by the game, in
-	 * `@internal/sim`'s `sim_bindings.ts` and `bindings.zig`). The host writes it
-	 * once per layout via `write_sim_bindings`. The Zig per-system exports
-	 * (`tick_cooldown_ready` / `tick_movement_tick` / `tick_faith_production`
-	 * and the batched `tick_all`) read their IDs from here instead of taking
+	 * `(component_id, field_id)` ids. The consumer owns the layout. The host
+	 * writes it once per layout through `write_sim_bindings`. A WASM per-system
+	 * export reads its ids from here instead of taking
 	 * them as call args. Present only when the consumer opts into a WASM backend
 	 * by passing `bindingsRegionBytes` to `createColumnStore`. 0 = absent (a
 	 * pure-TS game pays nothing for this region). The size is a runtime input,
-	 * not an engine ABI constant. (v5 / "SAB-is-the-interface".) */
+	 * not an engine ABI constant. It arrived with the "SAB is the interface" arm. */
 	readonly bindingsOff: number;
 }
 

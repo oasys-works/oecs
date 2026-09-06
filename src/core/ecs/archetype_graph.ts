@@ -12,7 +12,7 @@
  * way. The
  * graph never touches `_columnStore`.
  *
- * Hot-path notes: `get` / `resolveAdd` / `resolveRemove`
+ * Hot-path notes: `get`, `resolveAdd` and `resolveRemove`
  * are called per structural op. Both resolve paths are edge-cache hits on
  * the steady state (one array index + one property read). `archetypes` and
  * `componentIndex` are exposed as the live arrays so Store's flush loops
@@ -239,7 +239,7 @@ export class ArchetypeGraph {
 	 * component index, and fan into any matching registered queries.
 	 *
 	 * Clones `mask` before storing, callers may pass scratch BitSets that
-	 * they intend to reuse (e.g. `addComponents` / `removeComponents`'s
+	 * they intend to reuse (e.g. the `addComponents` and `removeComponents`
 	 * `_scratchTargetMask`). The Archetype and the archetypeMap bucket
 	 * both keep references long-term, so the clone is required for
 	 * correctness, and is the previously-implicit guarantee made by the
@@ -262,7 +262,7 @@ export class ArchetypeGraph {
 		//      once, so `id` is pushed once per component within this single call.
 		//   2. `_install` is the sole writer of `componentIndex`, and runs
 		//      exactly once per archetype id: its only callers
-		//      (`getOrCreateFromMask` / `getOrCreateFromMasks`)
+		//      (`getOrCreateFromMask` and `getOrCreateFromMasks`)
 		//      mint a fresh monotonic `_nextArchetypeId` and pre-check
 		//      `_lookup`, so an id is never re-installed.
 		//   3. The multiplicity that does exist in the data model, a source with
@@ -356,7 +356,7 @@ export class ArchetypeGraph {
 
 /** Build a single `ArchetypeSpec` for the SAB shadow from an archetype's
  * heap-side layouts. Tag-only archetypes (no `layouts`) produce a spec
- * with `columns: []`, which `createColumnStore` / `extendColumnStore`
+ * with `columns: []`, which `createColumnStore` and `extendColumnStore`
  * handle as a header-only descriptor (no column data region). The SAB
  * component mask is `COMPONENT_MASK_WORDS` 32-bit words copied from the
  * BitSet's first words. Components past bit `STORE_DESCRIPTOR_COMPONENT_LIMIT`

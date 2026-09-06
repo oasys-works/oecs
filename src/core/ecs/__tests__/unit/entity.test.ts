@@ -16,7 +16,7 @@ const [x, y] = [31, 7];
 // Every value is chosen for its bit pattern, so the cartesian product
 // below exercises the 20-bit index | 11-bit generation boundary far more
 // pointedly than random draws did: min or max, one-bit-off-power-of-two, the
-// per-field high bit, and the two alternating-bit masks (0x5… / 0xA…) that
+// per-field high bit, and the two alternating-bit masks (0x5… and 0xA…) that
 // expose any bit leakage across the field boundary.
 const ADVERSARIAL_INDICES = [
 	0, // min

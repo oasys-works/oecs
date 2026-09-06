@@ -100,7 +100,7 @@ describe("CommandDispatcher", () => {
 		pushCommand(view, ringOff, 10, new Uint8Array(15).fill(1));
 		pushCommand(view, ringOff, 99, new Uint8Array(15).fill(2)); // unregistered
 
-		// Both slots are drained (count includes the skipped one); only the
+		// Both slots are drained, and the count includes the skipped one. Only the
 		// registered opcode invokes a handler.
 		expect(dispatcher.drain(view, ringOff)).toBe(2);
 		expect(handled).toHaveBeenCalledTimes(1);

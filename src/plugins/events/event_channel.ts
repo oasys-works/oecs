@@ -33,7 +33,7 @@ export class EventChannel {
 
 		// Build the reader: a mutable length plus one column per field. The
 		// columns are the same `number[]` objects the channel mutates internally
-		// (emit and clear); the reader's type (EventReader) exposes them as read-only
+		// (emit and clear). The reader's type (EventReader) exposes them as read-only
 		// arrays so consumers don't mutate the channel. That barrier is advisory
 		// (compile-time only), see EventReader.
 		const columnsByField: Record<string, ReadonlyArray<number>> = {};

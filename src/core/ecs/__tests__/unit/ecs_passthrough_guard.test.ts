@@ -3,8 +3,8 @@
  *
  * `ecs.ts` ends with a marker-delimited "store pass-through band": the
  * contiguous section holding every ECS method that is a *pure mechanical
- * delegation* to a collaborator (`this._store` / `this._schedule` / `this._ctx`
- * / `this._observers`). The band's invariant is that logic can never silently
+ * delegation* to a collaborator, one of `this._store`, `this._schedule`,
+ * `this._ctx` and `this._observers`. The band's invariant is that logic can never silently
  * accrete there, a method that grows a dev check, an argument adaptation, or
  * a second call has outgrown the band and must move above it, next to the
  * other real logic.

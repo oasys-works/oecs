@@ -3,7 +3,7 @@
  *
  * Locks in the dev-mode diagnostic upgrades:
  *  - `registerComponent(schema, { name })` threads the debug name into
- *    access-violation and liveness messages (`'Pos' (component 0)`);
+ *    access-violation and liveness messages (`'Pos' (component 0)`)
  *  - every `ENTITY_NOT_ALIVE` names the operation and decodes the packed id
  *    (index + generation) with the id in `context`
  *  - access violations use the dedicated `ACCESS_UNDECLARED` category, not

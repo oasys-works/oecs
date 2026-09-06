@@ -33,7 +33,7 @@ function spawnPos(world: ECS, PosDef: ReturnType<ECS["registerComponent"]>, n: n
 }
 
 describe("entity enable and disable", () => {
-	it("disable excludes from default queries; enable restores", () => {
+	it("disable excludes from default queries, enable restores", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
@@ -100,7 +100,7 @@ describe("entity enable and disable", () => {
 		expect(world.getField(e, P, "y")).toBe(70);
 	});
 
-	it("preserves sparse data and relations across disable→enable; EntityID stable", () => {
+	it("preserves sparse data and relations across disable→enable, EntityID stable", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		const P = world.registerComponent(Pos);
 		const Cooldown = world.registerSparseComponent({ ready_at: "i32" } as const);
@@ -159,7 +159,7 @@ describe("entity enable and disable", () => {
 		}
 	});
 
-	it("is idempotent: re-disabling / re-enabling is a no-op", () => {
+	it("is idempotent, a re-disable or a re-enable is a no-op", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 3);

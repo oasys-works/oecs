@@ -14,7 +14,7 @@
  * Tag-only archetypes (hasColumns === false) skip all column operations
  * since tags carry no data, only the entityIds array is maintained.
  *
- * Graph edges (ArchetypeEdge) cache "add component X" / "remove component X"
+ * Graph edges (ArchetypeEdge) cache "add component X" and "remove component X"
  * transitions so the Store can resolve the target archetype in O(1).
  *
  ***/
@@ -49,7 +49,7 @@ import { ECS_ERROR, ECSError } from "./utils/error";
 import { NO_SWAP as NO_SWAP_IMPORT, UNASSIGNED as UNASSIGNED_IMPORT, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 
 // Local copies of the constants the row operations compare against. An
-// imported binding is not a constant to the optimizer (see ref.ts); a local
+// imported binding is not a constant to the optimizer, see `ref.ts`. A local
 // one is.
 const NO_SWAP = NO_SWAP_IMPORT;
 const UNASSIGNED = UNASSIGNED_IMPORT;
@@ -235,8 +235,8 @@ export class Archetype implements ArchetypeView {
 	 * `enabled_count === length` (no disabled rows) is the common case, every
 	 * fast path below short-circuits on it, so an archetype that never disables
 	 * an entity pays nothing. Disable and enable swap a row across the boundary
-	 * (`disableRow` and `enableRow`); appends place enabled rows in front of the
-	 * disabled tail (`_placeTail`). `entityCount` (the query and iteration bound)
+	 * (`disableRow` and `enableRow`). An append places an enabled row in front of
+	 * the disabled tail (`_placeTail`). `entityCount` (the query and iteration bound)
 	 * returns this. `length` and `totalCount` span disabled rows too. Folded into
 	 * `stateHash` and published to the SAB descriptor so the WASM sim and
 	 * snapshot and restore honour it.
@@ -258,10 +258,10 @@ export class Archetype implements ArchetypeView {
 	public flushPreLen: number = 0;
 	public flushPreEnabled: number = 0;
 	/**
-	 * DEV-only iteration guard: >0 while a dense query iterator (`forEach` /
-	 * `forEachChunk` / `some` / `ChangedQuery.forEach`) is delivering this
-	 * archetype to a user callback. The row-removing and reordering primitives
-	 * (`removeRow` / `disableRow` / `enableRow`) check it so an immediate
+	 * DEV-only iteration guard: >0 while a dense query iterator delivers this
+	 * archetype to a user callback. Those iterators are `forEach`,
+	 * `forEachChunk`, `some` and `ChangedQuery.forEach`. The row-removing and
+	 * reordering primitives `removeRow`, `disableRow` and `enableRow` check it, so an immediate
 	 * structural mutation from inside the walk, which would swap-remove under
 	 * the iterator and silently skip or repeat entities, throws instead.
 	 * Production builds never read or write it.
@@ -292,7 +292,7 @@ export class Archetype implements ArchetypeView {
 	// Raw backing views, index-parallel with `flatColumns` (the row plane).
 	//
 	// The archetype used to place rows through the `ColumnBacking` API,
-	// `col.push(v)` / `col.swapRemove(r)` / `col.pop()`, which costs, per column
+	// `col.push(v)`, `col.swapRemove(r)` and `col.pop()`, which costs, per column
 	// per row, a `.buf` accessor call, a capacity compare, and a `_len`
 	// load and store, on top of the one typed-array element move that is the actual
 	// work. A profile of a component add and remove churn loop shows that this
@@ -598,7 +598,7 @@ export class Archetype implements ArchetypeView {
 		for (let i = n; i < bufs.length; i++) bufs[i][row] = 0;
 	}
 
-	/** Re-derive the `bufs` / `_eids` / `_rowCap` row plane from the backing
+	/** Re-derive the `bufs`, `_eids` and `_rowCap` row plane from the backing
 	 * columns. The sole writer of all three, see the `bufs` field doc for the
 	 * invariant it restores. Cold: construction, `refreshViews`, tail of a grow. */
 	private _syncRowPlane(): void {
@@ -642,7 +642,7 @@ export class Archetype implements ArchetypeView {
 	 *
 	 * Called only from `_syncRowPlane`, which is the only thing that can change a
 	 * column's buffer identity, so after this runs, a cached group is correct by
-	 * construction and `columnGroupMut` / `columnGroupRead` need no staleness test
+	 * construction, and `columnGroupMut` and `columnGroupRead` need no staleness test
 	 * at all. That absence is the point: those two run once per archetype per
 	 * `forEachChunk` pass, which for a fragmented query is once per chunk, and this
 	 * file already carries one hard-won lesson (`_onArchShrink`): one more
@@ -694,7 +694,7 @@ export class Archetype implements ArchetypeView {
 	 *
 	 * `bufs` and `_eids` and `flatColumns[i].buf` and `_entityIds.buf` are two paths to
 	 * one buffer, and only the first is cached, the row ops index the cache while
-	 * `getColumnRead` / `writeFields` read `.buf` fresh. Anything that changes a
+	 * `getColumnRead` and `writeFields` read `.buf` fresh. Anything that changes a
 	 * buffer's identity owes a `_syncRowPlane`. Miss one and the two paths split
 	 * silently, with row writes landing in an orphan that later reads never see.
 	 *
@@ -791,7 +791,7 @@ export class Archetype implements ArchetypeView {
 			// throw is a state the world is meant to survive, not a fatal: the
 			// SAB-cap grow throws from here by design "with the world untouched",
 			// which is the whole basis of the fail-closed, all-or-nothing
-			// `Store.spawn` / `spawnMany` contract.
+			// `Store.spawn` and `Store.spawnMany` contract.
 			//
 			// But the entity-id array already reallocated above, so from that point
 			// `_eids` addresses an orphaned buffer while `_entityIds._buf` is the new
@@ -904,7 +904,7 @@ export class Archetype implements ArchetypeView {
 			);
 		}
 		// `flatColumns` and `storeArch.columnsInOrder` share an index space:
-		// both are built by walking `layouts` in order, then `fieldNames` /
+		// both are built by walking `layouts` in order, then `fieldNames` and
 		// `columns` in order (see `Archetype` constructor and
 		// `storeSpecFromLayouts` in store.ts). Iterating by index avoids the
 		// per-column `Map.get(columnKey(...))` lookup the previous loop did,
@@ -1209,7 +1209,7 @@ export class Archetype implements ArchetypeView {
 	/**
 	 * Get a single field's column **if this archetype has the component**, else
 	 * `undefined`, the fetch-if-present accessor for optional query terms
-	 * (Bevy `Option<&T>` / flecs `?`). An optional query (`q.optional(T)`) spans
+	 * (Bevy `Option<&T>`, flecs `?`). An optional query (`q.optional(T)`) spans
 	 * archetypes both with and without `T`. The caller branches once per
 	 * archetype span on the return:
 	 *
@@ -1290,11 +1290,11 @@ export class Archetype implements ArchetypeView {
 	// object, `const { x, y } = cols.mut(Pos)`, collapsing the per-field
 	// `getColumnMut` preamble + tick threading into one call, then a plain
 	// typed-array inner loop. `_mut` stamps the change tick once (so the loop
-	// body is pure indexing); `_read` does not. Both reuse one cached object per
+	// body is pure indexing). `_read` does not. Both reuse one cached object per
 	// (archetype, component), refreshing each field's live buffer reference in
 	// place every call, a buffer can change identity across a between-tick grow,
 	// so we always re-read. ⇒ zero per-archetype allocation. Safety: destructure
-	// the returned group immediately (`const { x, y } = cols.mut(Pos)`); do not
+	// the returned group immediately (`const { x, y } = cols.mut(Pos)`). Do not
 	// retain the object across calls, a later `cols.mut(SameComponent)` refreshes
 	// the same instance. The destructured locals are unaffected (refs are copied).
 
@@ -1445,7 +1445,7 @@ export class Archetype implements ArchetypeView {
 		// per-row access is one array load instead of an array load plus a `.buf`
 		// accessor on a `ColumnBacking` whose concrete type (heap `GrowableTypedArray`
 		// vs SAB `BufferBackedColumn`) makes that load polymorphic. Same invariant the
-		// row ops rely on (see the `bufs` field doc); `_assertRowPlaneFresh` below
+		// row ops rely on, see the `bufs` field doc. `_assertRowPlaneFresh` below
 		// catches a missed `_syncRowPlane` under DEV.
 		if (DEV) this._assertRowPlaneFresh("readField");
 		return this.bufs[offset + fi][row];
@@ -1562,7 +1562,7 @@ export class Archetype implements ArchetypeView {
 	// Direct-spawn append paths. Write the template's default field
 	// values straight into the columns as the row is appended, a single
 	// pass, skipping the zero-fill-then-overwrite of `addEntity` +
-	// `writeFields`. Backs `Store.spawn` / `Store.spawnMany`. The
+	// `writeFields`. Backs `Store.spawn` and `Store.spawnMany`. The
 	// "single-pass append" strategy was the fastest of the strategies that we
 	// measured.
 	// ===================================================================
@@ -1679,8 +1679,8 @@ export class Archetype implements ArchetypeView {
 		const wasDisabled = srcRow >= src.enabledCount;
 		// Destination is the empty archetype (a remove that drops the entity's
 		// last component): keep it rowless. Detach from `src` (partition-aware) and
-		// report UNASSIGNED so the entity lands in the single canonical
-		// component-less form (matches `createEntity`); the caller writes that
+		// report `UNASSIGNED` so the entity lands in the single canonical
+		// component-less form (matches `createEntity`). The caller writes that
 		// into entityRows.
 		if (!this.materializesRows) {
 			src.removeRow(srcRow, entityRows);
@@ -1705,8 +1705,8 @@ export class Archetype implements ArchetypeView {
 		this.length++;
 
 		// Place the appended row: a disabled entity stays in the disabled tail
-		// (no `enabled_count` bump); an enabled one is placed in the enabled
-		// region (`_placeTail` corrects past any disabled rows).
+		// with no `enabled_count` bump. An enabled one lands in the enabled
+		// region, and `_placeTail` corrects past any disabled rows.
 		const dstRow = wasDisabled ? tail : this._placeTail(tail, entityRows);
 
 		// Remove the entity from the source (partition-aware, owns its own
@@ -1761,7 +1761,7 @@ export class Archetype implements ArchetypeView {
 		if (count === 0) return this.length;
 		// The empty archetype never materialises rows, so a bulk move into it is
 		// invalid, the caller (`Store.batchRemoveComponent`) must instead
-		// unplace every entity (UNASSIGNED) and `src.clearRows()`.
+		// unplace every entity (`UNASSIGNED`) and `src.clearRows()`.
 		if (DEV && !this.materializesRows) throw emptyArchetypeRowError();
 
 		this.reserveRows(count);
@@ -1772,7 +1772,7 @@ export class Archetype implements ArchetypeView {
 		// Bulk copy entity IDs
 		this._eids.set(src._eids.subarray(0, count), dstStart);
 
-		// Bulk copy columns using TypedArray.set() / fill()
+		// Bulk copy columns using TypedArray.set() and fill()
 		for (let i = 0; i < dstBufs.length; i++) {
 			const si = transitionMap[i];
 			if (si >= 0) {
@@ -1831,7 +1831,7 @@ export class Archetype implements ArchetypeView {
 	/**
 	 * Re-derive the host-side row bookkeeping after a snapshot is mounted onto a
 	 * live world (`Store.restore`). A snapshot reloads the column bytes
-	 * (dense SAB) but not the host-side `length` / `enabledCount` / `_entityIds`
+	 * (dense SAB) but not the host-side `length`, `enabledCount` and `_entityIds`
 	 * back-reference, those are reconstructed here. `refreshViews` must have
 	 * already repointed the columns at the restored SAB.
 	 *
@@ -1839,7 +1839,7 @@ export class Archetype implements ArchetypeView {
 	 * occupies each row and passes them in row order (`rowEntityIds[r]` is the
 	 * packed `EntityID` at row `r`. Rows `[0, length)` are dense, enabled rows
 	 * first then disabled per the partition). `enabledCount` is the restored
-	 * partition boundary. This is the inverse of the per-row `addEntity` /
+	 * partition boundary. This is the inverse of the per-row `addEntity` and
 	 * `disableRow` bookkeeping the live run accumulated.
 	 */
 	public restoreHostRows(rowEntityIds: readonly number[], enabledCount: number): void {
@@ -1881,8 +1881,8 @@ export class Archetype implements ArchetypeView {
 
 	/**
 	 * Get the transition map from this archetype to `target`, building and caching
-	 * it on miss. Used by Store.addComponents / removeComponents, the per-edge
-	 * cache only covers single-component steps.
+	 * it on miss. `Store.addComponents` and `Store.removeComponents` use it. The
+	 * per-edge cache only covers single-component steps.
 	 */
 	public transitionMapTo(target: Archetype): Int16Array {
 		const cached = this._batchTransitionMaps.get(target.id);
@@ -1940,11 +1940,12 @@ function emptyArchetypeRowError(): ECSError {
  * disabled rows needs the `entityRows` map to repoint the displaced disabled
  * entity, but none was passed. Signals a Store append path that forgot to thread
  * `entityRows` through. Compiled out of production builds. */
-/** Dev-only guard error: an immediate structural mutation (despawn /
- * removeComponent / addComponent transition, disable and enable) targeted an
- * archetype that a live query walk is currently visiting. The swap-remove /
- * partition swap would relocate rows under the iterator, silently skipping or
- * repeating entities. Collect the entity ids during the walk and mutate after
+/** Dev-only guard error: an immediate structural mutation targeted an archetype
+ * that a live query walk is currently visiting. That mutation is a despawn, a
+ * `removeComponent` or `addComponent` transition, a disable or an enable. The
+ * swap-remove or the partition swap would relocate rows under the iterator,
+ * silently skipping or repeating entities. Collect the entity ids during the
+ * walk and mutate after
  * it (inside a system, use the deferred `ctx.commands`). Compiled out of
  * production builds. */
 function structuralMidWalkError(op: string): ECSError {

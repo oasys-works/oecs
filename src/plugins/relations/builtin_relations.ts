@@ -1,13 +1,13 @@
 /***
  * Built-in relations, named presets over the generic relation primitive.
  *
- * flecs ships `IsA` / `ChildOf` as builtin relationships the core special-cases
+ * flecs ships `IsA` and `ChildOf` as builtin relationships the core special-cases
  * (component inheritance, name-scoping). We deliberately do not: our relations
  * carry no engine-integrated semantics (the SoA and WASM hot loop
  * disfavours traversal-per-read), so these are *thin*, each is only
  * `ecs.relations.register(...)` with a chosen cardinality + cleanup policy, and
- * the generic relation surface (`targetOf` / `sourcesOf` / `ancestorsOf` /
- * `cascadeOf` / cleanup) does the rest. They live here as free functions, a
+ * the generic relation surface does the rest, through `targetOf`, `sourcesOf`,
+ * `ancestorsOf`, `cascadeOf` and cleanup. They live here as free functions, a
  * convention layer over the primitive, rather than as `ECS` methods, so the
  * world facade stays the mechanism surface and this module is the home for
  * future built-ins.
@@ -30,7 +30,7 @@ import type { RelationsPlugin } from "./index";
  * relation, so they need it. */
 type RelationalWorld = ECS<RelationsPlugin> & RelationsPlugin;
 
-/** Options for a built-in relation. `exclusive` / `multi` are fixed (always
+/** Options for a built-in relation. `exclusive` and `multi` are fixed (always
  * exclusive, required for the chain and tree traversal helpers), so only the
  * target-deletion cleanup policy is tunable. */
 export interface BuiltinRelationOptions {
@@ -44,7 +44,7 @@ export interface BuiltinRelationOptions {
  *
  * - "all instances of exemplar E" is `ecs.relations.sourcesOf(E, IsA)`.
  * - the IsA chain (`instance → exemplar → …`) is walked with
- *   `ecs.relations.ancestorsOf(instance, IsA)` / `rootOf` / `cascadeOf(exemplar, IsA)`.
+ *   `ecs.relations.ancestorsOf(instance, IsA)`, `rootOf` and `cascadeOf(exemplar, IsA)`.
  * - **No component inheritance**. IsA records the link only. Materialization of
  *   an instance from its exemplar stays a spawn-time copy (the template path,
  *   deliberately decoupled. An exemplar is a real entity,

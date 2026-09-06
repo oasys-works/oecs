@@ -82,7 +82,7 @@ import { DEV } from "../../dev_flag";
  *
  * The outer conditional is a deliberate no-op (`[D] extends [unknown]` is
  * always true): it makes the variance of `D`, and therefore of the access
- * param `A` threaded through `Commands` / `SystemContext`. Unmeasurable to
+ * param `A` threaded through `Commands` and `SystemContext`. Unmeasurable to
  * the compiler. A measurable (plain-union) definition here gets `A` marked
  * reliably contravariant, variance-based comparison then rejects
  * `SystemContext<Narrow> → SystemContext` without the structural fallback,
@@ -96,7 +96,7 @@ import { DEV } from "../../dev_flag";
  * `Partial<Record<string, number>>`. A hand-written `{ def: Vel, values: { x }}`
  * whose fields don't match its def is then rejected in a declared-access system,
  * matching the `StrictBundles` guarantee on the `ecs.*` surface. A permissive
- * context (`add: ComponentDef<any>`, i.e. an unnarrowed / `exclusive` system)
+ * context (`add: ComponentDef<any>`, an unnarrowed or `exclusive` system)
  * keeps the loose shape, which is the point of opting out of narrowing. The
  * outer no-op is preserved, so the variance invariant above still holds
  * (verified: the `permissiveHelper(ctx)` assertion still compiles).
@@ -115,10 +115,10 @@ export type DeclaredBundleOrDef<D> = [D] extends [unknown]
  * `ctx.addComponent` (deferred) would share a name with opposite timing. Takes
  * varargs callable bundles, so one shape, `commands.spawn(bundle(Pos,{x,y}), bundle(Vel,{vx:1}))`,
  * serves spawn and add. This is the only deferred surface: the bare
- * `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` / `ctx.enable`
+ * `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable` and `ctx.enable`
  * duplicates were removed in 0.5.0, completing the receiver-implies-timing
  * rule (`ecs.*` immediate, `ctx.commands.*` deferred) that 0.5.0 started for
- * spawn/despawn.
+ * spawn and despawn.
  *
  * `A` narrows the def-taking methods to the enclosing system's declared access
  * (system.ts). The default is fully permissive.
@@ -134,7 +134,7 @@ export type DeclaredBundleOrDef<D> = [D] extends [unknown]
 export class Commands<out A extends SystemAccess = SystemAccess> {
 	constructor(private readonly _store: Store) {}
 
-	/** Spawn from bundles. Create is immediate (the id is returned now); the
+	/** Spawn from bundles. The create is immediate, so the id returns now. The
 	 *  component attaches are deferred to the phase flush, so until that flush the
 	 *  entity exists in its empty and partial archetype and a query running later in
 	 *  the same phase can observe it half-built. (Same semantics as
@@ -206,7 +206,7 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	public despawn(entityId: DespawnArg<A>): this {
 		if (DEV) accessCheck.assertDespawn();
 		// The conditional argument type is `EntityID` whenever this compiles
-		// (the false branch is uninhabited); the cast recovers it for a body
+		// (the false branch is uninhabited). The cast recovers it for a body
 		// where `A` is still generic.
 		const id = entityId as EntityID;
 		this._store.destroyEntityDeferred(id);
@@ -488,14 +488,14 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	}
 
 	// --- Deferred structural ops live on `ctx.commands` ---
-	// The bare `ctx.addComponent` / `ctx.removeComponent` / `ctx.disable` /
-	// `ctx.enable` duplicates were removed in 0.5.0 (same break that removed
-	// `ctx.createEntity` / `ctx.destroyEntity`): one deferred surface, one
+	// The bare `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable` and
+	// `ctx.enable` duplicates were removed in 0.5.0, the same break that removed
+	// `ctx.createEntity` and `ctx.destroyEntity`. One deferred surface, one
 	// timing rule per receiver. `isDisabled` stays here. It is an immediate
-	// *read*, not a buffered structural op.
+	// read, not a buffered structural op.
 
 	/** Whether `entityId` is currently disabled (immediate read). Toggling is
-	 * deferred, `ctx.commands.disable` / `ctx.commands.enable`. */
+	 * deferred, `ctx.commands.disable` and `ctx.commands.enable`. */
 	public isDisabled(entityId: EntityID): boolean {
 		return this._store.isDisabled(entityId);
 	}
@@ -503,15 +503,15 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// --- Sparse (out-of-identity) component operations ---
 	// Immediate, not deferred: a sparse add and remove causes no archetype
 	// transition and no row reallocation, so it's safe to apply mid-system.
-	// It can't invalidate a *dense* query's iteration the way a structural
-	// change would. Field reads and writes mirror `getField` / `setField`.
+	// It cannot invalidate a dense query's iteration the way a structural
+	// change would. Field reads and writes mirror `getField` and `setField`.
 	//
 	// Sharp edge of the immediacy: it is not safe during `forEachEntity` over
 	// a query whose driving sparse term is the one being mutated, the immediate
 	// add and remove edits the live key array under the walk (see `forEachEntity`).
 	// Buffer such edits and apply after.
 	//
-	// Access-checked under `DEV` against the system's `sparseReads` /
+	// Access-checked under `DEV` against the system's `sparseReads` and
 	// `sparseWrites` declarations: add, remove and set_field require a write
 	// term, getField a read term (a write implies a read). `hasSparse` is
 	// unchecked, mirroring `hasComponent`. Sparse ids live in their own id
@@ -590,7 +590,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		return this._store.sparseTickOf(def, entityId) > this.lastRunTick;
 	}
 
-	/** Read-only {@link sparseCursor}; declare the component in `sparseReads`.
+	/** Read-only {@link sparseCursor}. Declare the component in `sparseReads`.
 	 * Advisory only, same caveat as `ctx.cursorRead`. */
 	public sparseCursorRead<D extends SparseComponentDef<any>>(
 		def: D & DeclaredSparseRead<A, D>
@@ -608,7 +608,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// Registration is host-side (`ECS.registerRelation`), so it is not mirrored
 	// here. Systems add, remove and query pairs.
 	//
-	// Access-checked under `DEV` against `relationReads` / `relationWrites`:
+	// Access-checked under `DEV` against `relationReads` and `relationWrites`:
 	// add and remove require a write term, target_of, targets_of and sources_of a
 	// read term (write implies read). `hasRelation` is unchecked, mirroring
 	// `hasComponent`. Relation ids are their own id space, the check keys the
@@ -644,7 +644,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
-	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
+	 * `(entity, def)` order, matching `targetOf` and `targetsOf`. */
 	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
 		if (DEV) accessCheck.assertRelationRead(def);
 		return this._store.requireRelations("ctx.sourcesOf").sourcesOf(tgt, def);
@@ -679,9 +679,9 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	/**
 	 * Emit an event (or a payload-less signal) onto its channel. The event is
 	 * visible to every system that runs *later* in the same `update()` and is
-	 * cleared at the tick's tail, events live exactly one tick, there is no
-	 * ack/consume. The channel must have been registered at world setup via
-	 * `ecs.events.register(key, fields)` / `registerSignal(key)`.
+	 * cleared at the tick's tail, events live exactly one tick, and there is no
+	 * acknowledgement. The channel must have been registered at world setup with
+	 * `ecs.events.register(key, fields)` or `registerSignal(key)`.
 	 *
 	 * @example
 	 * const Damaged = eventKey<{ target: EntityID; amount: number }>("Damaged");

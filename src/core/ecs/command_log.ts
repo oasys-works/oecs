@@ -30,7 +30,7 @@
  * the non-serializable members are a `spawn`'s `onSpawned` callback (which the
  * recorder strips, a replayed spawn reproduces the same id deterministically, so
  * downstream commands that reference it still resolve) and each `ComponentDef`
- * (a callable handle). {@link serializeCommandLog} / {@link deserializeCommandLog}
+ * (a callable handle). {@link serializeCommandLog} and {@link deserializeCommandLog}
  * round-trip the log through JSON: `EntityID` rides as the plain number it is, and
  * a def is tagged by its numeric `.id` and reconstructed on parse (replay only
  * reads `def.id`, and the fresh world re-registers components in the same order).
@@ -60,14 +60,14 @@ export interface RecordedTick {
  * A recorded session: the `seed` it ran under, the seed-time commands drained at
  * startup, and the per-tick command stream. Plain, serializable data, the
  * record-side mirror of the typed `HostCommand` vocabulary. Replay it with
- * {@link replayCommandLog}; persist it with {@link serializeCommandLog}.
+ * {@link replayCommandLog}. Persist it with {@link serializeCommandLog}.
  */
 export interface CommandLog {
 	/** Session seed, the implementer's deterministic input (e.g. an RNG seed).
-	 * Opaque to the engine (the core tick takes only `dt`); carried so a replay
+	 * Opaque to the engine, because the core tick takes only `dt`. Carried so a replay
 	 * rebuilds the world the same way the original was built. */
 	readonly seed: number;
-	/** Commands drained at the PRE_STARTUP head (seed-time edits), applied before
+	/** Commands drained at the `PRE_STARTUP` head (seed-time edits), applied before
 	 * the first update tick. Enqueued before `ecs.startup()` on replay. */
 	readonly startup: readonly HostCommand[];
 	/** One entry per update tick, in order. */
@@ -96,7 +96,7 @@ interface MutableTick {
  * command stream as the ECS ticks. Read it back with {@link log} (a live view,
  * ready to {@link serializeCommandLog serialize}).
  *
- * Bucketing: STARTUP-phase drains (which never call {@link openTick}) append to
+ * Bucketing: a `STARTUP`-phase drain never calls {@link openTick}, so it appends to
  * the {@link startup} bucket. Each update-phase drain {@link openTick}s its tick.
  * Multiple update-phase drains in one tick reuse the same bucket (keyed by the
  * ECS tick), so a frame's commands stay together. The apply system runs every
@@ -110,7 +110,7 @@ export class HostCommandRecorder implements HostCommandSink {
 	private readonly _startup: HostCommand[] = [];
 	private readonly _ticks: MutableTick[] = [];
 	/** Where {@link record} appends. Defaults to the startup bucket (seed-time
-	 * drains happen before any `openTick`); each `openTick` repoints it. */
+	 * drains happen before any `openTick`). Each `openTick` repoints it. */
 	private _sink: HostCommand[] = this._startup;
 
 	constructor(seed = 0) {

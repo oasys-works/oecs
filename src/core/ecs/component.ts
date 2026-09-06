@@ -118,7 +118,7 @@ declare const __schema: unique symbol;
  * A component handle. **Callable**: `Pos({ x, y })` produces a `Bundle` (omitted
  * fields zero-fill at attach), so one varargs shape, `spawn(Pos({x,y}),
  * Vel({vx:1}), IsEnemy)`, replaces the older incompatible attach shapes. A bare
- * `Pos` (uncalled) still stands in for a tag / all-zero values wherever a
+ * `Pos` (uncalled) still stands in for a tag, or for all-zero values, wherever a
  * `BundleOrDef` is accepted.
  *
  * The numeric component id lives on `.id` (registration order). Consumers treat
@@ -170,7 +170,7 @@ export type DeclaredQueryTerm<Defs extends readonly ComponentDef<any>[], D> = [D
 	? unknown
 	: ["component is not a term of this query, add it with .and(...)", D];
 
-/** Options bag accepted by `registerComponent` / `registerSparseComponent`. */
+/** Options bag accepted by `registerComponent` and `registerSparseComponent`. */
 export interface ComponentRegisterOptions {
 	/** Debug label for diagnostics, errors then read `'Pos' (component 5)`
 	 * instead of `component 5`. Never affects behaviour, layout, or hashing. */
@@ -200,7 +200,7 @@ const NO_VALUES = Object.freeze({});
 /**
  * Mint a callable `ComponentDef` for a freshly-registered component id. The
  * returned function produces a `Bundle` when called (`Pos({x,y})`) and carries
- * its numeric id on a non-enumerable `.id` (invisible to spreads / `JSON`).
+ * its numeric id on a non-enumerable `.id`, invisible to a spread and to `JSON`.
  * The single cast bridges the function value to the branded handle type, the
  * `.id` is installed at runtime by `defineProperty` (the branded-ID boundary).
  */
@@ -220,14 +220,14 @@ export interface Bundle<S extends ComponentSchema = ComponentSchema> {
 	readonly values: Partial<FieldValues<S>>;
 }
 
-/** Either a populated bundle or a bare def (tag / all-fields-zero). */
+/** Either a populated bundle or a bare def, a tag with all fields zero. */
 export type BundleOrDef<S extends ComponentSchema = ComponentSchema> = Bundle<S> | ComponentDef<S>;
 
 /** Re-validate one bundle-or-def item against its own def's schema. A bare def
  * (the callable) passes as-is. A bundle is re-stated as `Bundle<S>` for its
  * def's `S`, so a hand-written `{ def, values }` literal whose fields don't
  * match the def is rejected, closing the raw-literal leak that `bundle(Pos,…)`
- * / `Pos(…)` never had (those validate at their own call site). Per-element
+ * and `Pos(…)` never had (those validate at their own call site). Per-element
  * mapper for `StrictBundles`. */
 export type StrictBundle<T> = T extends ComponentDef
 	? T

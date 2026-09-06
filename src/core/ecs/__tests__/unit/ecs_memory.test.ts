@@ -380,7 +380,7 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 		expect(thrown).toBeInstanceOf(ECSError);
 		expect((thrown as ECSError).category).toBe(ECS_ERROR.STORE_CAP_EXCEEDED);
 
-		// We actually drove into the cap (not an empty / off-by-one loop).
+		// We actually drove into the cap, not an empty or off-by-one loop.
 		expect(ids.length).toBeGreaterThan(0);
 		// No phantom-alive slot: the live count equals exactly the ids handed back,
 		// the failed spawn committed nothing, and every returned id is alive.

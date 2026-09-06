@@ -10,7 +10,7 @@
  * therefore `stateHash` and zero-require query iteration, depended on add/
  * remove history rather than logical state. These tests pin every path into the
  * empty archetype (bare create, single, multi and tag remove, batch remove, empty
- * template spawn) to the same rowless form, plus the destroy / re-add lifecycle.
+ * template spawn) to the same rowless form, plus the destroy and re-add lifecycle.
  */
 
 import { describe, expect, it } from "vitest";
@@ -164,7 +164,7 @@ describe("state_hash is independent of add and remove history", () => {
 	});
 
 	it("two worlds reaching one component-less entity by different paths hash equal", () => {
-		// Identical archetype graph in both worlds (filler holds [Pos]); the
+		// Identical archetype graph in both worlds, where filler holds [Pos]. The
 		// only difference is whether `e` was created bare or round-tripped
 		// through [Pos]. Logically identical ⇒ identical digest.
 		const build = (viaRemove: boolean): number => {

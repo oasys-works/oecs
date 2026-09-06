@@ -3,8 +3,8 @@
  *
  * Archetype's per-column storage comes from a single
  * SharedArrayBuffer instead of a per-archetype `new TypedArrayFor[tag](cap)`.
- * The challenge is that `Archetype._flatColumns` calls `push` / `pop` /
- * `swapRemove` / `bulkAppend` / `bulkAppendZeroes` / `clear`, and a
+ * The challenge is that `Archetype._flatColumns` calls `push`, `pop`,
+ * `swapRemove`, `bulkAppend`, `bulkAppendZeroes` and `clear`, and a
  * fixed-length TypedArray view doesn't expose any of those.
  *
  * BufferBackedColumn wraps a view at a known `(byte_off, row_capacity)` inside

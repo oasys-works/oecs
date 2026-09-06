@@ -3,7 +3,7 @@
  *
  * Owns the allocation half of the entity index: the SAB-backed generations
  * view, the high-water mark, the free-list, and the alive count. `Store`
- * keeps the *membership* half (`_entityArchetypes` / `_entityRows`), which
+ * keeps the membership half (`_entityArchetypes` and `_entityRows`), because which
  * archetype and row a live slot occupies is archetype state, not allocation
  * state.
  *
@@ -76,7 +76,7 @@ export class EntityAllocator {
 		return this._freeIndices.length;
 	}
 
-	/** Allocate a slot and return its packed id; the slot index is left in
+	/** Allocate a slot and return its packed id. The slot index is left in
 	 * `lastIndex`. This *commits* the slot (bumps counts, stamps the generation
 	 * so `isAliveIndex` is already true), a caller placing the entity into an
 	 * archetype row must have reserved column capacity first. */

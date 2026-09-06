@@ -86,7 +86,7 @@ export class ECSRelations {
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
-	 * `(entity, def)` order, matching `targetOf` / `targetsOf`. */
+	 * `(entity, def)` order, matching `targetOf` and `targetsOf`. */
 	public sourcesOf(tgt: EntityID, def: RelationDef): EntityID[] {
 		return this._service.sourcesOf(tgt, def);
 	}

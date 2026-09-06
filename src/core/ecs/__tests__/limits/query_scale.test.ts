@@ -1,7 +1,7 @@
 /**
  * Query scale, "no corruption at moderate scale", not a cap boundary.
  *
- * Query-cache dedup and live archetype growth over ≤63 tags / ≤20
+ * Query-cache dedup and live archetype growth over ≤63 tags and ≤20
  * components and a few hundred entities, well inside the 128-component SAB
  * descriptor limit. These verify cached queries stay coherent and
  * grow live, not behavior at the cap. The real cap boundary lives in

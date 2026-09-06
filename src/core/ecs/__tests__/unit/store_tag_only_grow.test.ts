@@ -2,13 +2,13 @@
  * Tag-only archetype growth regression.
  *
  * Tag-only archetypes (mask is all tags, no data fields) have an empty
- * `Archetype._flatColumns` array. Their `addEntity` / `moveEntityFromTag`
+ * `Archetype._flatColumns` array. Their `addEntity` and `moveEntityFromTag`
  * paths bypass the SAB column bound check by design. There are no SAB
  * columns to overflow. The row count lives on the heap-backed
  * `_entityIds` instead. The SAB descriptor records `row_capacity =
  * initialCapacity` for them as metadata only.
  *
- * Before the fix, `extendColumnStore` / `_growHandler` reported
+ * Before the fix, `extendColumnStore` and `_growHandler` reported
  * `row_count: a.length` for every archetype, and any tag-only archetype
  * past its initial row_capacity would trip the primitive's vacuous bound
  * check (`row_count > row_capacity`) on the next structural change.

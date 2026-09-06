@@ -212,7 +212,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 			}
 		});
 
-		// All in same UPDATE phase, so flush happens after all 3 run
+		// All in the same `UPDATE` phase, so the flush happens after all three run
 		world.addSystems(SCHEDULE.UPDATE, sys1, sys2, sys3);
 		world.startup();
 		world.update(0);

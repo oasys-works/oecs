@@ -13,8 +13,8 @@
  * The fix makes the rebuild allocate a fresh array and swap it in, so the
  * outer iterator keeps walking the snapshot it started with. In-system
  * iteration was never affected, deferred mutations settle the epoch during
- * `flushStructural`, between systems, never mid-loop. The trigger is host /
- * immediate-mode code that iterates and mutates on the same Query.
+ * `flushStructural`, between systems, never mid-loop. The trigger is host code
+ * in immediate mode that iterates and mutates on the same Query.
  *
  * NOTE (STRUCTURAL_DURING_ITERATION): mutating the archetype the walk is
  * currently visiting is a dev error since the host-iteration guard landed,

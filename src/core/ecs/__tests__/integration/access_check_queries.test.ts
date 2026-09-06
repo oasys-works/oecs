@@ -4,12 +4,12 @@
 // iterates via `ctx.query(...)`. The runtime `accessCheck` already throws at
 // the first iteration if a system reads a component it never declared. This
 // lint moves that failure forward to `registerSystem` by checking the two
-// declarations agree. A query term reads each listed component's presence /
-// columns, so every id in `queries` must appear in `reads ∪ writes`.
+// declarations agree. A query term reads each listed component's presence and
+// its columns, so every id in `queries` must appear in `reads ∪ writes`.
 //
 // The lint runs in `__DEV__` only (dead-code-eliminated in production, like the
 // rest of `accessCheck`), is skipped for `exclusive` systems (full access), and
-// never fires for the bare-fn / 2-arg `registerSystem` overloads (which carry no
+// never fires for the bare-function or two-argument `registerSystem` overload (which carries no
 // `queries`). These tests pin all of that.
 
 import { describe, expect, it } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * Command ring. WASM-side producer / TS-side consumer SPSC ring buffer
+ * Command ring. A WASM-side producer and TS-side consumer SPSC ring buffer
  * for structural-change intents emitted during `sim.tick()`.
  *
  * Layout:
@@ -40,8 +40,8 @@
  *                 oriented helpers (DataView in TS, `mem.readInt` in Zig).
  *
  * The ring lives before the layout-descriptor region in the SAB (right
- * after the 32-byte header) so its offset is stable across descriptor /
- * column-region growth. The host writes `header.command_ring_off` to
+ * after the 32-byte header) so its offset is stable across descriptor growth
+ * and column-region growth. The host writes `header.command_ring_off` to
  * point at it during `createColumnStore`. Absent ring is signalled by
  * `command_ring_off === 0`.
  */
@@ -132,7 +132,7 @@ export function pendingCommandCount(view: DataView, ringOff: number): number {
 }
 
 /** Push a command into the ring from the TS side. Production producer is
- * WASM (via `command_ring.zig`); this is for host-side tests and for
+ * WASM, through `command_ring.zig`. This is for host-side tests and for
  * symmetric tests across the two sides. Returns `false` on overflow and
  * sets the overflow flag. Payload must be exactly 15 bytes. */
 export function pushCommand(
@@ -141,7 +141,7 @@ export function pushCommand(
 	opCode: number,
 	payload: Uint8Array
 ): boolean {
-	// Symmetric with `pushEvent` / `CommandDispatcher.on` / `assertRingOpCode`:
+	// Symmetric with `pushEvent`, `CommandDispatcher.on` and `assertRingOpCode`:
 	// opCode 0 is the empty-slot marker and a non-u8 corrupts the slot byte. The
 	// production producer is WASM (op-codes ≥ 1), so this guards the TS test and host
 	// producer for parity.

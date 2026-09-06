@@ -1,9 +1,9 @@
 /**
  * Batch-4 API additions (combinators + dispose):
  *  - total `has*` probes + `tryGetField` (dead or missing → undefined, no throw)
- *  - `Query.firstEntity` / `Query.singleEntity`
+ *  - `Query.firstEntity` and `Query.singleEntity`
  *  - host-side `ecs.refRead` parity with `ctx.refRead`
- *  - run-condition combinators `not` / `allOf` / `anyOf`
+ *  - run-condition combinators `not`, `allOf` and `anyOf`
  *  - `ObserverHandle[Symbol.dispose]` (`using` support).
  */
 
@@ -71,7 +71,7 @@ describe("total has* + tryGetField", () => {
 	});
 });
 
-describe("Query.firstEntity / singleEntity", () => {
+describe("Query.firstEntity and singleEntity", () => {
 	it("firstEntity: undefined on no match, an entity on match", () => {
 		const world = ECS.create({ plugins: [relations(), observers()] });
 		const Pos = world.registerComponent({ x: "f64" });

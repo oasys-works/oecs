@@ -6,7 +6,7 @@
  * slot-retirement path (`unit/store.test.ts`) covers clean recycle vs.
  * retire at a slot's boundary. Those are intentionally not re-covered here.
  *
- * This file covers the remaining axis: a duration / lifecycle-bounded churn whose
+ * This file covers the remaining axis, a duration-bounded and lifecycle-bounded churn whose
  * *cumulative* creates far exceed *peak concurrency*, asserting the allocator's
  * by-design envelope properties:
  *
@@ -41,7 +41,7 @@ function highWater(store: ECS | Store): number {
 }
 
 describe("Lifecycle and duration soak", () => {
-	it("bounded-live churn returns entityCount to baseline; survivors keep their data, dead handles stay dead", () => {
+	it("bounded-live churn returns entityCount to baseline, survivors keep their data, dead handles stay dead", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
@@ -118,7 +118,7 @@ describe("Lifecycle and duration soak", () => {
 
 		// Soak: cumulative creates climb to peak + cycles*churn (= 16_000) while the
 		// live count is pinned at the peak. A naive cumulative-keyed allocator would
-		// ratchet byteLength / high-water every cycle. Recycling keeps both flat.
+		// ratchet byteLength and high-water every cycle. Recycling keeps both flat.
 		for (let cycle = 0; cycle < CYCLES; cycle++) {
 			despawn(CHURN);
 			spawn(CHURN);

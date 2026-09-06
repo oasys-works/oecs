@@ -118,7 +118,7 @@ describe("Query cache coherence edge cases", () => {
 		expect(world.hasComponent(e, Tag)).toBe(true);
 	});
 
-	it("two queries Q1=[Pos], Q2=[Pos,Vel]; remove Vel during system, entity in Q1 not Q2 after flush", () => {
+	it("two queries Q1=[Pos] and Q2=[Pos,Vel], remove Vel during system, entity in Q1 not Q2 after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);

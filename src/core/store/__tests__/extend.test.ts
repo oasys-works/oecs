@@ -65,7 +65,7 @@ describe("extend_column_store, happy path", () => {
 		expect(newViewStamp).toBe(1);
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 		// The realloc path patches the returned header so its cached
-		// `view_stamp` / `capacity` match the SAB bytes, no stale 0.
+		// `view_stamp` and `capacity` match the SAB bytes, no stale 0.
 		expect(next.header.viewStamp).toBe(1);
 		expect(next.header.capacity).toBe(readStoreHeader(next.view).capacity);
 	});

@@ -2,8 +2,8 @@
  * accessCheck, runtime enforcement of a system's declared access.
  *
  * Module-level singleton that enforces a system's declared access surface
- * (`reads` / `writes` / `spawns` / `despawns` / `transitions` /
- * `resourceReads` / `resourceWrites`, plus the optional sparse and relation
+ * (`reads`, `writes`, `spawns`, `despawns`, `transitions`,
+ * `resourceReads` and `resourceWrites`, plus the optional sparse and relation
  * terms) at runtime in `DEV`. Schedule calls
  * `accessCheck.enter(desc)` before invoking the system's `fn` (or
  * `onAdded`) and `accessCheck.leave()` after. SystemContext + Archetype
@@ -326,8 +326,8 @@ class AccessCheck {
 	// --- Sparse component and relation checks ---
 	// Keyed against the dedicated sparse and relation sets, not the dense
 	// `reads` and `writes` sets, the id spaces are disjoint by construction (see
-	// file header). `def as unknown as number` recovers the SparseComponentID /
-	// RelationID the branded handle erases to at runtime.
+	// file header). `def as unknown as number` recovers the SparseComponentID or
+	// the RelationID the branded handle erases to at runtime.
 
 	assertSparseRead(def: SparseComponentDef): void {
 		if (this._activeSets === null) return;
@@ -379,7 +379,7 @@ class AccessCheck {
 	// declared via `.optional(T)`, the term that authorizes the optional fetch.
 	// This is what makes the optional term *consumed* rather than decorative: like
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
-	// checked here in `DEV`. A stack (not a single slot) handles re-entrant /
+	// checked here in `DEV`. A stack (not a single slot) handles a re-entrant or
 	// nested `forEach`. The optional scope is independent of the per-system
 	// `enter` and `leave` above, a host-side `ecs.query(...).forEach` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual

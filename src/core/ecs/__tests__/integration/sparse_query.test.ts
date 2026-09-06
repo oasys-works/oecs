@@ -1,7 +1,7 @@
 /**
  * Sparse storage class, query integration.
  *
- * The second query-match path: queries can `withSparse` / `withoutSparse`
+ * The second query-match path: a query can `withSparse` or `withoutSparse`
  * a sparse component and iterate the matching entities via `forEachEntity`,
  * across every archetype. Covers the issue's acceptance criteria:
  *  - require a sparse component (members only, regardless of archetype)
@@ -160,7 +160,7 @@ describe("ECS sparse query integration", () => {
 	// Multi-sparse require (smallest-store drive) + exclude combo
 	//=========================================================
 
-	it("multiple sparse requires intersect; smallest store drives the scan", () => {
+	it("multiple sparse requires intersect, and the smallest store drives the scan", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -372,7 +372,7 @@ describe("ECS sparse query integration", () => {
 	// Dense-path methods guard against sparse terms
 	//=========================================================
 	//
-	// count() / forEach() / archetype_count walk only the dense archetype list
+	// count(), forEach() and archetype_count walk only the dense archetype list
 	// and never consult the sparse stores. On a sparse-derived query they would
 	// fail open (return the unfiltered dense result), so they throw in __DEV__
 	// steering the caller to forEachEntity. Tests run under vitest, where

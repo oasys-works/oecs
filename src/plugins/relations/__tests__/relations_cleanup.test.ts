@@ -211,7 +211,7 @@ describe("OnDeleteTarget = clear, sources survive, link dropped", () => {
 		expect(sorted(store.relations.sourcesOf(tgt, Targets))).toEqual([]);
 	});
 
-	it("removes only the dead target from a multi-target set; others remain", () => {
+	it("removes only the dead target from a multi-target set, the others remain", () => {
 		const store = capStore();
 		const Likes = store.relations.registerRelation({ multi: true, onDeleteTarget: "clear" });
 		const dead = store.createEntity();

@@ -25,16 +25,16 @@
  *     field matches `generations[index]` iff it's still alive.
  *   - `archetypes[i] = -1` (UNASSIGNED) when the slot hasn't been placed
  *     into an archetype, or when the entity is destroyed.
- *   - `rows[i]      = -1` (UNASSIGNED) on destroy / not-placed.
+ *   - `rows[i]      = -1` (`UNASSIGNED`) on a destroy, or when not placed.
  *
  * Field width: i32 (signed) on the TS side so `-1` round-trips through
  * `Int32Array` without unsigned coercion. Zig reads as i32 too, bit
- * pattern is identical to u32 `0xFFFFFFFF` for the UNASSIGNED case, and
+ * pattern is identical to u32 `0xFFFFFFFF` for the `UNASSIGNED` case, and
  * for valid archetype_ids (bounded by `MAX_INDEX = 2^20`) the sign bit
  * is never set, so signed or unsigned interpretation agrees.
  *
  * Region placement: between command ring and descriptor region so the
- * offset is stable across descriptor / column-region growth (same
+ * offset is stable across descriptor growth and column-region growth (same
  * property the command ring gets). Grow path (when entityHighWater
  * exceeds `capacity`) uses `growColumnStore`, slow path, same as
  * descriptor-region overflow.

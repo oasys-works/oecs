@@ -151,7 +151,7 @@ describe("Run conditions", () => {
 		expect(ranOn).toEqual([1, 4]);
 	});
 
-	it("run_every_n_ticks folds an out-of-range / negative offset into [0, n)", () => {
+	it("run_every_n_ticks folds an out-of-range or negative offset into [0, n)", () => {
 		const runWith = (n: number, offset: number): number[] => {
 			const world = new ECS({ deterministic: true });
 			const ranOn: number[] = [];

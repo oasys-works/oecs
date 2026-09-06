@@ -46,7 +46,7 @@
  * `isInPlace` does not promise the SAB *reference* stays
  * identical. `growableSabAllocator` happens to return the same SAB
  * instance every time (`SharedArrayBuffer.prototype.grow` resizes in
- * place); `wasmMemoryAllocator` on shared `WebAssembly.Memory`
+ * place). `wasmMemoryAllocator` on shared `WebAssembly.Memory`
  * returns a *new* SAB ref after `memory.grow()`, but old views built
  * over the previous ref keep working. V8 keeps the underlying linear
  * memory mapped at the same address. Verified empirically (this branch,
@@ -57,7 +57,7 @@
  */
 export interface BufferAllocator {
 	/** Returns a buffer of byteLength >= `bytes`. The historical name is
-	 * "SAB", but the return is `ArrayBufferLike`: `growableSabAllocator` /
+	 * "SAB", but the return is `ArrayBufferLike`. `growableSabAllocator` and
 	 * `wasmMemoryAllocator` produce a `SharedArrayBuffer` (the SAB profile),
 	 * while `heapArrayBufferAllocator` produces a plain fixed (non-resizable)
 	 * `ArrayBuffer` reserved at the cap (the pure-TS heap profile, no
@@ -128,7 +128,7 @@ export class StoreCapExceededError extends Error {
  * doesn't expose `SharedArrayBuffer`. The fix is environment-level (the host
  * must serve the page cross-origin isolated, or be a runtime like Bun that
  * exposes SAB unconditionally). Or choose the pure-TS heap profile
- * (`memory: { backing: "heap" }` / `heapArrayBufferAllocator`), which needs no SAB
+ * (`memory: { backing: "heap" }`, `heapArrayBufferAllocator`), which needs no SAB
  * and no cross-origin isolation. Lives on the allocator (not the store)
  * because the allocator is the only thing that constructs a SAB. */
 export class SabUnavailableError extends Error {
@@ -176,7 +176,7 @@ interface BufferStrategy {
 /** One home for the single-buffer allocators: the first call allocates the
  * backing (a resizable SAB grown via `.grow()` for `growableSabAllocator`, a
  * fixed `ArrayBuffer` reserved at `maxBytes` for `heapArrayBufferAllocator`,
- * whose growTo never fires); later in-cap calls return the same buffer. The cap
+ * whose growTo never fires). A later in-cap call returns the same buffer. The cap
  * check, the hard-ceiling throw (deliberately no grow-beyond-cap
  * fallback), and the `isInPlace` marker live here exactly once. The public
  * wrappers contribute only the buffer primitive and any availability guard. */

@@ -1,9 +1,9 @@
-// Sparse-component / relation access-declaration coverage.
+// Sparse-component and relation access-declaration coverage.
 //
 // The dense `SystemContext` mutators have run an `accessCheck` guard under
 // `__DEV__` since access declarations became mandatory. Sparse
-// (`addSparse` / `removeSparse` /
-// `setSparseField`) and relation (`addRelation` / `removeRelation`)
+// (`addSparse`, `removeSparse` and
+// `setSparseField`) and relation (`addRelation` and `removeRelation`)
 // mutators used to forward straight to the store with no check, because
 // `SystemAccessDeclaration` had no vocabulary for the two new id spaces. These
 // tests pin the closed hole: an undeclared sparse or relation access throws in

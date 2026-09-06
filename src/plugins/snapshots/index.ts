@@ -1,7 +1,7 @@
 /***
  * The snapshot plugin. Capture a live world, mount one back.
  *
- * Install it to give a world `capture` / `restore` and their sparse halves.
+ * Install it to give a world `capture` and `restore` and their sparse halves.
  * A world that does not install it keeps `ecs.snapshots.stateHash()` and
  * `ecs.snapshots.deterministic`, which are properties of the world itself, and
  * carries none of the serialization, framing or fail-closed validation code.

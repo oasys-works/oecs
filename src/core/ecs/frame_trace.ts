@@ -21,7 +21,7 @@
  * `Store._relations`). The seam only *reads*. It never perturbs
  * `stateHash`, ordering, or any observable behaviour.
  *
- * In-memory only, no `node:fs` / `node:path`. This module is transitively
+ * In-memory only, with no `node:fs` and no `node:path`. This module is transitively
  * reachable from the browser bundle (via core/ecs), so it must stay free of
  * Node built-ins, exactly like `dispatch_trace.ts`.
  */
@@ -40,7 +40,7 @@ export type ObserverOp = "add" | "remove" | "set" | "enable" | "disable";
 
 /**
  * The push sink. All callers are `DEV`-gated, so the methods receive raw ids
- * and descriptor references (no string-building on the hot path); the recorder
+ * and descriptor references, with no string-building on the hot path. The recorder
  * decides what to retain. Implementations must be side-effect-free with respect
  * to the ECS. They observe, never mutate.
  */
@@ -130,8 +130,8 @@ function labelOf(d: SystemDescriptor): string {
 }
 
 /**
- * The in-tree `FrameTraceSink`. Mirrors `command_log.ts`'s `openTick` /
- * `RecordedTick` shape: `tickBegin` opens a fresh `FrameTrace`, every other
+ * The in-tree `FrameTraceSink`. Mirrors the `openTick` and `RecordedTick`
+ * shape of `command_log.ts`: `tickBegin` opens a fresh `FrameTrace`, every other
  * method appends to it, `tickEnd` closes it. Events arriving with no open
  * frame (e.g. a stray pre-`update` flush) are ignored rather than throwing,
  * the recorder is a passive observer.

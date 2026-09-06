@@ -4,7 +4,7 @@
  * `RelationStore` (relation_store.ts) owns one relation kind's storage
  * mechanics. This service owns the registry-level algorithms that used to live
  * directly on `Store`: registration, the pair mutators and readers, the
- * `(R, *)` / `(*, T)` wildcard drivers, parent-chain traversal, destroy-path
+ * `(R, *)` and `(*, T)` wildcard drivers, parent-chain traversal, destroy-path
  * cleanup, and the hierarchy depth-ordering query driver. `Store` keeps
  * one-line delegations so `ecs.ts` and the query internals are untouched.
  *
@@ -54,15 +54,15 @@ export class RelationService implements RelationHooks {
 	// True once any relation registers a non-`orphan` `onDeleteTarget` policy.
 	// Gates the target-role cleanup branch in both of the Store's
 	// destroy paths so the common case (no cleanup policies) leaves the destroy
-	// hot path untouched, mirrors the Store's `count > 0` / sparse-store gates.
+	// hot path untouched, mirrors the Store's `count > 0` and sparse-store gates.
 	private _hasTargetCleanup = false;
 
 	// Reused radix scratch for the hierarchy depth-ordering driver.
 	// The motivating use case, transform propagation, is a per-tick depth-ordered
 	// pass, so `forEachHierarchyMatch` allocating two 1024-entry histograms + an
-	// `out` array per call would be per-tick GC churn. These three are
-	// **fully consumed by `radixSortByIndex` before any `cb` fires**, so unlike
-	// the call-local `matched` / `buckets` / `depthMemo` / `visiting` (which stay
+	// `out` array per call would be per-tick GC churn. `radixSortByIndex` fully
+	// consumes these three before any `cb` fires, so unlike
+	// the call-local `matched`, `buckets`, `depthMemo` and `visiting` (which stay
 	// live across the emit loop and would corrupt under a re-entrant callback) they
 	// are safe to share as instance state. Mirrors the observer's `_radix_*` scratch,
 	// which `ObserverRegistry` owns privately and so is not reachable from here.
@@ -73,7 +73,7 @@ export class RelationService implements RelationHooks {
 	constructor(private readonly _host: RelationServiceHost) {}
 
 	/** The registry, indexed by RelationID, the read-only view the Store's
-	 * `stateHash` / snapshot and restore paths iterate. */
+	 * `stateHash`, snapshot and restore paths iterate. */
 	public get stores(): readonly RelationStore[] {
 		return this._relations;
 	}
@@ -102,7 +102,7 @@ export class RelationService implements RelationHooks {
 	 *
 	 * The backing sparse store is resolved and handed to the relation so it can
 	 * drive forward and membership rows directly, the cardinality-specific
-	 * interaction is `ExclusiveRelationStore` / `MultiRelationStore`'s, not a
+	 * interaction belongs to `ExclusiveRelationStore` and `MultiRelationStore`, not to a
 	 * branch here. */
 	public registerRelation(opts?: RelationOptions): RelationDef {
 		const wantMulti = opts?.multi === true;
@@ -116,7 +116,7 @@ export class RelationService implements RelationHooks {
 		const exclusive = !wantMulti;
 		const onDeleteTarget = opts?.onDeleteTarget ?? DEFAULT_ON_DELETE_TARGET;
 		// The exclusive `{ target: f64 }` slot holds an exact-integer EntityID, so
-		// it bypasses the float guard (see `Store._pushSparseStore`); a
+		// it bypasses the float guard, see `Store._pushSparseStore`. A
 		// deterministic world must be free to use relations. Multi is a
 		// membership tag (no fields).
 		const sparse: SparseComponentDef = exclusive
@@ -220,11 +220,11 @@ export class RelationService implements RelationHooks {
 	 * Sources are emitted in **canonical entity-index order** (the
 	 * determinism convention): exclusive relations ride the backing sparse
 	 * store's `canonicalIndices`, multi relations ride the same
-	 * `forEachCanonicalTargetSet` traversal `stateHash` / `snapshotRelations`
-	 * use. A multi source's targets follow ascending by id. Empty when the
-	 * relation holds no pairs. Cold path, allocates the result array (and, for
-	 * multi, sorts each source's target set); not for per-tick use. The
-	 * point-query forms are `targetOf` / `targetsOf`. */
+	 * `forEachCanonicalTargetSet` traversal that `stateHash` and
+	 * `snapshotRelations` use. A multi source's targets follow ascending by id.
+	 * Empty when the relation holds no pairs. Cold path, it allocates the result
+	 * array, and for multi it sorts each source's target set. Not for per-tick
+	 * use. The point-query forms are `targetOf` and `targetsOf`. */
 	public pairsOf(def: RelationDef): readonly (readonly [EntityID, EntityID])[] {
 		const rs = this._relationOf(def);
 		const out: [EntityID, EntityID][] = [];
@@ -255,11 +255,11 @@ export class RelationService implements RelationHooks {
 
 	// --- Wildcard query terms ---
 	// `(R, *)` and `(*, T)` as composable query terms (vs the cold materializing
-	// helpers `pairsOf` / `sourcesOfAny` above). Membership semantics: each
+	// helpers `pairsOf` and `sourcesOfAny` above). Membership semantics: each
 	// matching source is yielded once. Fetch its targets on demand with
 	// `targetsOf`. Insertion order, consistent with the `withSparse` path
 	// (deterministic by construction across lockstep peers, canonical sorting is
-	// reserved for `stateHash`/snapshot). The measurement shows that
+	// reserved for `stateHash` and for snapshot). The measurement shows that
 	// canonical ordering costs much more for each iteration, and that it gives no
 	// advantage for determinism.
 
@@ -282,7 +282,7 @@ export class RelationService implements RelationHooks {
 	 * relation into a `Set` (dedup by full `EntityID`, a source related to `T`
 	 * via two relations is yielded once), then sorts ascending: the cross-relation
 	 * union has no inherent order, so one cold sort gives a deterministic,
-	 * canonical `(*, T)` order matching `sourcesOf` / `sourcesOfAny` (which sort
+	 * canonical `(*, T)` order matching `sourcesOf` and `sourcesOfAny` (which sort
 	 * the same way). Cold and structural, not a per-tick hot loop over many targets.
 	 * `sparseIncludes` and `sparseExcludes` carry both raw sparse terms and the backing
 	 * stores of any composed `(R, *)` terms, so it intersects with them uniformly. */
@@ -559,13 +559,13 @@ export class RelationService implements RelationHooks {
 	 * and the bucket append is stable, each depth band stays index-ascending.
 	 * Tuned for the motivating per-tick case (transform propagation): the radix
 	 * scratch is reused instance state (`_hierarchyRadix*`), so a per-tick pass
-	 * churns no histograms. The working set (`matched` / `buckets` / `depthMemo` /
-	 * `visiting`) is still allocated per call, as it must stay call-local for
+	 * churns no histograms. The working set (`matched`, `buckets`, `depthMemo`
+	 * and `visiting`) is still allocated per call, as it must stay call-local for
 	 * re-entrancy.
 	 *
 	 * Exclusive-only, a multi relation throws `RELATION_MODE_MISMATCH` in `DEV`
-	 * (mirrors `cascadeOf` / `ancestorsOf`); a cycle is a loud `RELATION_CYCLE` in
-	 * `DEV` and a safe break in production. */
+	 * (mirrors `cascadeOf` and `ancestorsOf`). A cycle is a loud `RELATION_CYCLE`
+	 * in `DEV` and a safe break in production. */
 	public forEachHierarchyMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -594,8 +594,8 @@ export class RelationService implements RelationHooks {
 		// 2. Sort by entity index, the canonical within-band (secondary) order.
 		//    Reuses instance radix scratch (`_hierarchyRadix*`): it is fully
 		//    consumed here, before any `cb` fires, so it is safe to share across
-		//    calls even under a re-entrant callback (unlike `matched` / `buckets` /
-		//    `depthMemo` / `visiting` below, which stay call-local).
+		//    calls even under a re-entrant callback, unlike `matched`, `buckets`,
+		//    `depthMemo` and `visiting` below, which stay call-local.
 		this._hierarchyRadixOut = radixSortByIndex(
 			matched,
 			this._hierarchyRadixOut,
@@ -659,7 +659,7 @@ export class RelationService implements RelationHooks {
 				base = known;
 				break;
 			}
-			// Live parent index, or -1 (root / dead-dangling parent → `cur` is a root).
+			// Live parent index, or -1 when `cur` is a root or its parent is dead.
 			const next = store.getField(cur, 0);
 			let parent = -1;
 			if (next !== undefined) {

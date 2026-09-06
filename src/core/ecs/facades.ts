@@ -29,7 +29,7 @@ import { unsafeCast } from "../../type_primitives";
 import { DEV } from "../../dev_flag";
 
 /** World resources, singleton values keyed by `ResourceKey<T>`. Runtime
- * mutations (`set` / `remove`) are access-checked as resource writes inside
+ * mutations (`set` and `remove`) are access-checked as resource writes inside
  * a system span. `register` is a one-time world-setup op. */
 export class ECSResources {
 	private readonly _store: Store;
@@ -99,7 +99,7 @@ export class ECSResources {
  * boundaries (between `update()`s). */
 export class ECSSnapshots {
 	// Protected, not private: the snapshot plugin subclasses this to add
-	// `capture` / `restore`, and reaches the store the same way.
+	// `capture` and `restore`, and reaches the store the same way.
 	protected readonly _store: Store;
 	/** @internal constructed by `ECS`. */
 	constructor(store: Store) {

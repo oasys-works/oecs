@@ -128,7 +128,7 @@ export function isEcsError(error: unknown): error is ECSError {
 /** Thrown by `Store.restore` (and the helpers here) when a combined snapshot
  * is malformed, carries the wrong magic and version, or targets a world whose
  * archetype and component registration doesn't match the snapshot. Mirrors
- * `StoreRestoreError` / `SparseRestoreError` so callers see one error class per
+ * `StoreRestoreError` and `SparseRestoreError` so callers see one error class per
  * restore failure mode. */
 export class ECSRestoreError extends Error {
 	constructor(message: string) {

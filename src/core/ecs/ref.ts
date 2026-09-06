@@ -32,12 +32,13 @@
  * between one `at()` and the field accesses that follow it must stay
  * structurally quiet.
  *
- * Naming: `ref` / `cursor` are the mutable defaults (they bump the component's
- * change tick); `refRead` / `cursorRead` are the read-only variants. The
- * read-only typing is *advisory*, see the note on `ReadonlyComponentRef`.
+ * Naming: `ref` and `cursor` are the mutable defaults, and they bump the
+ * component's change tick. `refRead` and `cursorRead` are the read-only
+ * variants. The read-only typing is advisory, see the note on
+ * `ReadonlyComponentRef`.
  * Argument order is def-first, `ref(Pos, e)`, not `ref(e, Pos)`, because a
  * ref is a single-entity member of the column-cursor family, the
- * outside-iteration analog of `cols.mut(Pos)` / `cols.read(Vel)` (query.ts).
+ * outside-iteration analog of `cols.mut(Pos)` and `cols.read(Vel)` in `query.ts`.
  *
  * ── One prototype for every accessor in the process ─────────────────────────
  *
@@ -83,7 +84,7 @@
  * first registration of a field name selects the literal by that field's type.
  * When a later component gives the same name a different type, the name's
  * accessor is replaced with one that dispatches on the column's class through
- * `readElemOf` / `writeElemOf` (row_kinds.ts), which hold one site for each
+ * `readElemOf` and `writeElemOf` in `row_kinds.ts`, which hold one site for each
  * kind. That accessor costs one `switch` more, and only the names with mixed
  * types pay it. The eight bodies are copies with one type name changed, and
  * they must stay separate literals. row_kinds.ts applies the same rule to the

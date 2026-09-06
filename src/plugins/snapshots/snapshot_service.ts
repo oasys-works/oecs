@@ -3,15 +3,15 @@
  *
  * Owns the serialization, framing, and fail-closed validation of the
  * determinism-gated snapshot surface: the sparse+relation section
- * (`snapshotSparse` / `restoreSparse`), and the full-world capture and mount
- * (`snapshot` / `restore`). The `DETERMINISM_DISABLED` gate stays
+ * (`snapshotSparse` and `restoreSparse`), and the full-world capture and mount
+ * (`snapshot` and `restore`). The `DETERMINISM_DISABLED` gate stays
  * on `Store`'s public delegations. This service assumes the gate
  * already passed.
  *
  * Boundary: the service reaches other state only
  * through explicit snapshot seams,
  *   - `EntityAllocator` exposes its own snapshot interface
- *     (`snapshotFreeIndices` / `setHighWater` / `restoreHostState`), passed
+ *     (`snapshotFreeIndices`, `setHighWater` and `restoreHostState`), passed
  *     in whole as the per-collaborator seam
  *   - live-world mutations that belong to the Store (swapping the column
  *     store backing, rebuilding host-side rows, cache invalidation) stay as
@@ -180,10 +180,10 @@ export class SnapshotService implements SnapshotHooks {
 		// in. A guard run on the materialised store would therefore fire only
 		// after the live world was already clobbered. So validate everything that
 		// gates the mount straight from the snapshot bytes first: the dense
-		// archetype set + per-column layout + entity-index capacity, and the
-		// sparse-section shape (store count + field identity). The archetype/
-		// component and sparse graph is rebuilt from code, not the snapshot (same
-		// contract as `restoreSparse`); a mismatch leaves the world untouched.
+		// archetype set, the per-column layout, the entity-index capacity, and the
+		// sparse-section shape (store count and field identity). The archetype,
+		// component and sparse graph is rebuilt from code, not from the snapshot,
+		// the same contract as `restoreSparse`. A mismatch leaves the world untouched.
 		assertDenseMatchesLive(
 			sections.dense,
 			this._host.columnStore().archetypes,
@@ -222,7 +222,7 @@ export class SnapshotService implements SnapshotHooks {
 	 * dense mount commits. Mirrors `restoreSparse`'s frame check, then validates the
 	 * sparse-stores sub-section without mutating. A relation-registration difference
 	 * surfaces here too: every `registerRelation` adds a backing sparse store, so a
-	 * differing relation set changes the sparse store count / schema. Throws
+	 * differing relation set changes the sparse store count or its schema. Throws
 	 * `SparseRestoreError` on a mismatch. */
 	private _assertSparseMatchesLive(bytes: Uint8Array): void {
 		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
