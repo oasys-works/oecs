@@ -26,33 +26,43 @@ describe("dispatch_trace.parse_frame_file", () => {
 });
 
 describe("dispatch_trace.resolve_callsite_from_stack", () => {
-	// Synthetic stack: the tracer's own frames (inside the engine ECS package)
+	// Synthetic stack: the tracer's own frames (a source checkout of the engine)
 	// stacked above the actual user dispatch site. The walk must drop every
 	// engine frame and attribute the first non-engine (user) frame.
 	const engineFrames = [
 		"Error",
-		"    at DispatchTrace.record (/repo/packages/engine/src/core/ecs/dispatch_trace.ts:130:20)",
-		"    at World.emit (/repo/packages/engine/src/core/ecs/ecs.ts:822:5)"
+		"    at DispatchTrace.record (/repo/oecs/src/core/ecs/dispatch_trace.ts:130:20)",
+		"    at World.emit (/repo/oecs/src/core/ecs/ecs.ts:822:5)"
 	];
-	const userFrame = "    at deathSystem (/repo/packages/game/src/systems/combat/death.ts:42:10)";
+	const userFrame = "    at deathSystem (/repo/game/src/systems/combat/death.ts:42:10)";
 
 	it("skips engine ECS frames and attributes the first user frame", () => {
 		const stack = [...engineFrames, userFrame].join("\n");
-		// Regression guard: if the ENGINE_FRAME_MARKER skip is removed
+		// Regression guard: if the engine frame skip is removed
 		// (or its marker string drifts), the first engine frame
 		// (dispatch_trace.ts) is attributed instead and this assertion fails.
 		expect(resolveCallsiteFromStack(stack, "/repo")).toBe(
-			"packages/game/src/systems/combat/death.ts"
+			"game/src/systems/combat/death.ts"
 		);
+	});
+
+	it("skips the installed package under node_modules and attributes the first app frame", () => {
+		const stack = [
+			"Error",
+			"    at DispatchTrace.record (/app/node_modules/@oasys/oecs/dist/internal.development.js:1301:20)",
+			"    at ECS.emit (/app/node_modules/@oasys/oecs/dist/index.development.js:822:5)",
+			"    at deathSystem (/app/src/systems/death.ts:42:10)"
+		].join("\n");
+		expect(resolveCallsiteFromStack(stack, "/app")).toBe("src/systems/death.ts");
 	});
 
 	it("strips a file:// scheme and trims the repo root on the attributed frame", () => {
 		const stack = [
 			...engineFrames,
-			"    at deathSystem (file:///repo/packages/game/src/systems/combat/death.ts:42:10)"
+			"    at deathSystem (file:///repo/game/src/systems/combat/death.ts:42:10)"
 		].join("\n");
 		expect(resolveCallsiteFromStack(stack, "/repo")).toBe(
-			"packages/game/src/systems/combat/death.ts"
+			"game/src/systems/combat/death.ts"
 		);
 	});
 
@@ -70,11 +80,11 @@ describe("dispatch_trace.resolve_callsite_from_stack", () => {
 		const cache = new Map<string, string | null>();
 		const stack = [...engineFrames, userFrame].join("\n");
 		const first = resolveCallsiteFromStack(stack, "/repo", cache);
-		expect(first).toBe("packages/game/src/systems/combat/death.ts");
+		expect(first).toBe("game/src/systems/combat/death.ts");
 		// Engine frames cache as null (skipped); the user frame caches its
 		// repo-relative path. A second walk hits the cache and agrees.
 		expect(cache.get(engineFrames[1]!)).toBeNull();
-		expect(cache.get(userFrame)).toBe("packages/game/src/systems/combat/death.ts");
+		expect(cache.get(userFrame)).toBe("game/src/systems/combat/death.ts");
 		expect(resolveCallsiteFromStack(stack, "/repo", cache)).toBe(first);
 	});
 });

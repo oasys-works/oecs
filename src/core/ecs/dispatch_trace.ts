@@ -63,7 +63,17 @@ export interface DispatchTraceSnapshot {
 	};
 }
 
-const ENGINE_FRAME_MARKER = "/packages/engine/src/core/ecs/";
+/** A frame inside the engine, which the callsite walk skips. Two shapes exist:
+ * a source checkout of this repository, and the installed package under
+ * `node_modules`. The first frame that matches neither is the user callsite. */
+const ENGINE_FRAME_MARKERS: readonly string[] = ["/oecs/src/", "/@oasys/oecs/"];
+
+function isEngineFrame(abs: string): boolean {
+	for (let i = 0; i < ENGINE_FRAME_MARKERS.length; i++) {
+		if (abs.includes(ENGINE_FRAME_MARKERS[i]!)) return true;
+	}
+	return false;
+}
 
 class DispatchTrace {
 	private _activeCache: boolean | null = null;
@@ -212,7 +222,7 @@ function resolveCallsiteFromStack(
 			cache?.set(line, null);
 			continue;
 		}
-		if (abs.includes(ENGINE_FRAME_MARKER)) {
+		if (isEngineFrame(abs)) {
 			// Engine-internal frame, keep walking. Cache as null so we
 			// don't reparse this line next time.
 			cache?.set(line, null);
