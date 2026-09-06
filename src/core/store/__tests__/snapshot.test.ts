@@ -304,6 +304,26 @@ describe("restore_column_store rejection", () => {
 		);
 	});
 
+	it("keeps an f64 column aligned when an odd number of descriptors widen", () => {
+		// Each descriptor grows by four bytes, so an odd archetype count moves the
+		// columns by a value that is not a multiple of eight. An f64 column then
+		// lands off its stride, and its view throws. The shift rounds up to the
+		// widest stride for this reason, and an even count hides the fault.
+		const store = createColumnStore([
+			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.f64 }], 0b1),
+			spec(1, 4, [{ componentId: 2, fieldId: 0, typeTag: TYPE_TAG.i32 }], 0b10),
+			spec(2, 4, [{ componentId: 3, fieldId: 0, typeTag: TYPE_TAG.u16 }], 0b100)
+		]);
+		const f = store.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Float64Array;
+		f.set([0.5, 1.5, 2.5, 3.5]);
+		const restored = restoreColumnStore(
+			toLegacyDenseSection(new Uint8Array(columnStoreBytesView(store)))
+		);
+		expect([
+			...(restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Float64Array)
+		]).toEqual([0.5, 1.5, 2.5, 3.5]);
+	});
+
 	// The header checks above cover length-for-header + magic + ABI, but the
 	// layout-descriptor region itself was trusted: a snapshot that passes them
 	// yet whose descriptor offset and column extents read past the buffer used to

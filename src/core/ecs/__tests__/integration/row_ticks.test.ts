@@ -428,6 +428,45 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 		expect(seen).toEqual(idx(ids, 3));
 	});
 
+	it("hands a plain chunk loop the change tick of the system's own previous run", () => {
+		// The two cases above read `cols.since` through `changed().forEachChunk`,
+		// which is a different method on a different class. A plain `forEachChunk`
+		// fills the same field, and this pins it.
+		//
+		// The expected value comes from the schedule, not from a run. Before each
+		// body the phase loop reads the system's slot into `lastRunTick`, then
+		// advances the change tick and hands that value to the pass as `cols.tick`,
+		// then writes it back to the slot after the body. So the `since` of one
+		// pass is the `tick` of the pass before it, and 0 before the first.
+		const ecs = ECS.create({ ...({ deterministic: true }) });
+		const Pos = ecs.registerComponent(["x"] as const, "i32");
+		ecs.spawn(ecs.template(Pos({ x: 0 })));
+		const q = ecs.query(Pos);
+		const ticks: number[] = [];
+		const sinces: number[] = [];
+		ecs.addSystems(
+			SCHEDULE.UPDATE,
+			ecs.registerSystem({
+				...openAccess([Pos]),
+				fn: () => {
+					q.forEachChunk((cols) => {
+						ticks.push(cols.tick);
+						sinces.push(cols.since);
+					});
+				}
+			})
+		);
+		ecs.startup();
+		for (let i = 0; i < 4; i++) ecs.update(1 / 60);
+
+		expect(sinces).toEqual([0, ...ticks.slice(0, -1)]);
+		// Non-vacuous. Every run takes a tick of its own, so the expectation above
+		// is not a list of zeroes that any value would satisfy.
+		expect(ticks.length).toBeGreaterThan(1);
+		expect(new Set(ticks).size).toBe(ticks.length);
+		expect(Math.min(...ticks)).toBeGreaterThan(0);
+	});
+
 	it("throws through ticksRead when no row ticks exist, and trackRows is idempotent", () => {
 		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
 		const Vel = ecs.registerComponent(["v"] as const, "i32");

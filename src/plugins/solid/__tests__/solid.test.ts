@@ -288,6 +288,27 @@ describe("the column grain", () => {
 		tick();
 		expect(project).toHaveBeenCalledTimes(3);
 	});
+
+	it("projects nobody on the first quiet tick, whatever the plane already holds", () => {
+		// The seed publishes every member, so the baseline of a new view sits
+		// above every stamp the plane carries. A baseline of zero would project
+		// each archetype the world ever touched, one time, at the first settle.
+		const { world, Pos, tick } = makeWorld();
+		for (let i = 0; i < 4; i++) {
+			const e = world.spawn();
+			world.addComponent(e, Pos, { x: i, y: 0 });
+		}
+		world.startup();
+		tick();
+
+		const project = vi.fn((row: { field(name: "x"): number }) => row.field("x"));
+		world.solid.component(Pos, project, { grain: "column" });
+		expect(project).toHaveBeenCalledTimes(4);
+		project.mockClear();
+
+		tick();
+		expect(project).toHaveBeenCalledTimes(0);
+	});
 });
 
 describe("the Solid flush", () => {
