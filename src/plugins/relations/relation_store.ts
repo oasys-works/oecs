@@ -10,7 +10,7 @@
  *     exclusive relations inherit determinism + snapshot and restore + query
  *     membership *for free*: everything written through the sparse store is
  *     folded into `Store.stateHash()` and round-trips via `snapshotSparse`,
- *     and matches `Query.withSparse(R)`. Adding a second target overwrites the
+ *     and matches `Query.andSparse(R)`. Adding a second target overwrites the
  *     first (engine-enforced one-per-source).
  *
  *   - **multi**, a set of targets per source. A set can't fit a fixed-width

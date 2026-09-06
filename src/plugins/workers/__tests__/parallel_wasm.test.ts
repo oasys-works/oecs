@@ -170,7 +170,7 @@ function integrateModule(): WebAssembly.Module {
 function integrateWorld(kernel: { js?: string; wasm?: WebAssembly.Module; export: string }) {
 	const world = buildWorld({ entities: 1024, backing: "wasm" });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const system = ecs.registerSystem({
 		reads: [Vel],
 		writes: [Pos],

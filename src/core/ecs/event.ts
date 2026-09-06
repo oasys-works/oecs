@@ -36,20 +36,24 @@
  *
  ***/
 
-import {
-	Brand,
-	validateAndCast,
-	isNonNegativeInteger,
-	unsafeCast
-} from "../../type_primitives";
+import { Brand, unsafeCast } from "../../type_primitives";
+import { DEV } from "../../dev_flag";
+import { ECSError, ECS_ERROR } from "./utils/error";
 
 export type EventID = Brand<number, "event_id">;
-export const asEventId = (value: number) =>
-	validateAndCast<number, EventID>(
-		value,
-		isNonNegativeInteger,
-		"EventID must be a non-negative integer"
-	);
+
+// The fault is an `ECSError` and not an assertion. An assertion class extends a
+// second error base, and the events plugin ships in its own bundle, so that base
+// would be copied or bound. `ECSError` already resolves to the package root.
+export const asEventId = (value: number): EventID => {
+	if (DEV && !(Number.isInteger(value) && value >= 0)) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_EVENT_ID,
+			`event id must be an integer >= 0, got ${value}`
+		);
+	}
+	return unsafeCast<EventID>(value);
+};
 
 /** Event schema: field name → value type. Every value is a number at
  * runtime. The declared type may be a branded number (e.g. `EntityID`)

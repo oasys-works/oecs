@@ -41,7 +41,8 @@ type CoreEntry = "index" | "internal";
 
 /** Modules the plugin pass must not compile, and the entry that serves
  * each one. The entry has to export every binding the plugin graph reaches.
- * That is why `src/internal.ts` carries the error and debug-name lists. */
+ * That is why `src/internal.ts` carries the plugin-fault and debug-name
+ * lists. */
 const SINGLE: Readonly<Record<string, CoreEntry>> = {
 	// `ECSError`, `ECSRestoreError` and the `ECS_ERROR` categories. A consumer
 	// catches these by class, and `isEcsError` is an `instanceof` behind a name.
@@ -49,9 +50,6 @@ const SINGLE: Readonly<Record<string, CoreEntry>> = {
 	// The two plugin faults, apart from the classes. The classes resolve to
 	// the root, and these resolve to the tooling entry.
 	"core/ecs/utils/plugin_error.ts": "internal",
-	// `AppError`, the base `ECSError` extends. A second base would give a second
-	// prototype chain under the one class.
-	"utils/error.ts": "internal",
 	// `StoreRestoreError` and `SparseRestoreError`, both caught by class and
 	// both exported from the package root.
 	"core/restore_errors.ts": "index",
@@ -93,9 +91,8 @@ const DUPLICABLE: Readonly<Record<string, string>> = {
 	"core/store/state_hash.ts": "FNV-1a steps, pure",
 	"core/store/vendored_abi/abi.ts": "ABI constants",
 	"dev_flag.ts": "one boolean, and each variant compiles it to the same literal",
-	"type_primitives/assertions.ts": "assertion helpers, pure",
-	"type_primitives/error.ts":
-		"AssertionError, which no entry exports, so no caller can name it, and its base is single"
+	"type_primitives/assertions.ts":
+		"identity casts, because every caller the plugin graph reaches throws an ECSError instead of an assertion"
 };
 
 /** The specifier rollup emits for an externalised module, rewritten to a real

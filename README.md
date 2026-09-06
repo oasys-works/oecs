@@ -110,7 +110,10 @@ ecs.getField(e, Pos, "x"); // about 1.667
 **Queries**
 
 - **Live, cached queries**. Write `ecs.query(Pos, Vel)`, then make it more exact with `.and()`,
-  `.without()`, or `.anyOf()`. The store adds new matching archetypes to the query automatically.
+  `.not()`, or `.or()`. The store adds new matching archetypes to the query automatically.
+- **A nested expression**. `q.where(or(and(Pos, Vel), Frozen))` says what no chain says. The free
+  `and`, `or` and `not` build it, and a plugin supplies its own `ArchetypeTerm` on the same
+  footing.
 - **Two iteration verbs**. Use `forEach(arch => …)` to read archetypes. Use
   `forEachChunk((cols, count) => …)` for the high-frequency loop that writes. In that loop, `cols.mut`
   and `cols.read` give you all the columns of one component at the same time.
@@ -119,7 +122,7 @@ ecs.getField(e, Pos, "x"); // about 1.667
   the system.
 - **Queries for relations and hierarchies**. Use the wildcards `(R, *)` and `(*, T)`, plus
   `forEachRelatedTo` and `query.hierarchy(rel, depth)`. For **sparse queries**, use
-  `query.withSparse(...)`. Queries skip disabled entities. To include them, use
+  `query.andSparse(...)`. Queries skip disabled entities. To include them, use
   `query.includeDisabled()`.
 
 **Systems and the schedule**
@@ -130,10 +133,16 @@ ecs.getField(e, Pos, "x"); // about 1.667
   `(q, ctx, dt)`
   forms with a query builder, for connection code that touches no data. The lifecycle hooks are
   `onAdded`, `onRemoved`, and `dispose`. Set `exclusive: true` for full-world setup or teardown.
-- **A topological scheduler**. There are seven phases: `PRE_STARTUP`, `STARTUP`, `POST_STARTUP`,
-  `FIXED_UPDATE`, `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Each phase does a Kahn sort on the
-  `before` and `after` constraints. Insertion order breaks a tie, which keeps the result
+- **A topological scheduler**. There are seven built-in phases: `PRE_STARTUP`, `STARTUP`,
+  `POST_STARTUP`, `FIXED_UPDATE`, `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Each phase does a Kahn
+  sort on the `before` and `after` constraints. Insertion order breaks a tie, which keeps the result
   deterministic. Cycle detection is always active.
+- **An open phase set**. `ecs.addPhase(name, { loop, before, after })` adds one more slot to a loop
+  and gives back a `Phase` handle. A plugin owns its own slot that way. `PhaseConfig` is the config,
+  `PhaseLoop` is one of `"startup"`, `"fixed"` and `"update"`, and `SchedulePhase` is either
+  spelling: a `SCHEDULE` member or a handle. `addSystems` takes either. The engine sorts each loop's
+  phases the same way, and it throws `UNKNOWN_PHASE` or `CIRCULAR_PHASE_DEPENDENCY` on a mistake. A
+  frame trace event carries a `PhaseName`.
 - **A fixed timestep**. An accumulator loop uses the `fixedTimestep` value that you set. A limit
   protects against the spiral of death.
 - **System sets and run conditions**. Use `systemSet(...)` with `configureSet(...)`. The supplied
@@ -267,8 +276,20 @@ from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns,
 plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
 gains. `PluginsOf` is the surface a plugin list adds to the world. `ChangeFeed` is the store's
 record of what changed, and `ObservationFlags`, `DrainResult` and `StructuralObserverEvents` are
-what crosses it. The [plugins](./docs/api/plugins.md) page documents every host member, the rules
-`ECS.create` checks, and the change feed a plugin drains.
+what crosses it.
+
+`PluginHost` carries nine members, and every one is open to any plugin. `store`, `world`,
+`changes`, `context` and `memory` are the state a plugin reads. `onSettle`, `onPrewarm`,
+`onDispose` and `installRoute` are the four hook points. Each is named for what it hooks, and never
+for the plugin that ships it. A plugin that wants a slot of its own in the frame adds a phase with
+`host.world.addPhase`. A plugin that runs a system body itself takes `installRoute`, and gives back
+a `SystemRoutePlanner`. It holds the `RouteControl` that comes back, and hands the schedule a
+`RouteDispatch`. `PluginMemory` is `host.memory`, which names the backing, its source and the store
+base.
+
+The [plugins](./docs/api/plugins.md) page documents every host member, the route seam, the rules
+`ECS.create` checks, and the change feed a plugin drains. It is the one full text. The API index
+and the migration guide point at it.
 
 | Import | What it is |
 | --- | --- |

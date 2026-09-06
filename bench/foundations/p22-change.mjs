@@ -527,7 +527,7 @@ async function facts() {
 			lines.push(`observe(sparse): throws "${e.message}"`);
 		}
 		try {
-			ecs.query(Pos).withSparse(S).changed(S);
+			ecs.query(Pos).andSparse(S).changed(S);
 			lines.push("changed(sparse): accepted, and nothing stamps a sparse column, so it never matches");
 		} catch (e) {
 			lines.push(`changed(sparse): throws "${e.message}"`);

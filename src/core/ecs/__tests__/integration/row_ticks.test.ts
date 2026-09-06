@@ -86,7 +86,7 @@ describe("cols.ticks, the row record", () => {
 		// wrote comes from the list.
 		const { ecs, Pos, Tag, ids, fired } = world();
 		ecs.addComponent(ids[5], Tag);
-		const plain = ecs.query(Pos).without(Tag);
+		const plain = ecs.query(Pos).not(Tag);
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: (ctx) => {

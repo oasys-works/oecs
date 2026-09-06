@@ -165,10 +165,10 @@ registration refuses them on a dense or a sparse component.
 Filter on a sparse component with the query terms, then iterate by entity:
 
 ```ts
-withSparse(...defs): Query<Defs>;      // require membership
-withoutSparse(...defs): Query<Defs>;   // remove the members
+andSparse(...defs): Query<Defs>;   // require membership
+notSparse(...defs): Query<Defs>;   // remove the members
 
-ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
+ecs.query(Unit).andSparse(Cooldown).forEachEntity((e) => {
   const ready = ecs.getSparseField(e, Cooldown, "ready");
   // …
 });
@@ -213,5 +213,5 @@ type SparseComponentID;       // a separate id space from ComponentID, it does n
 - [relations](./relations.md), `(relation, target)` pairs, which are built on sparse storage
 - [components](./components.md), dense components, and the budget of 128 slots that sparse storage
   avoids
-- [queries](./queries.md), `withSparse` and the `forEachEntity` terminal
+- [queries](./queries.md), `andSparse` and the `forEachEntity` terminal
 - [determinism](./determinism.md), `captureSparse` and the rule against floats

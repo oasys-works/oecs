@@ -1,26 +1,38 @@
 /***
- * Store. Internal ECS data orchestrator.
+ * Store. The world's mutable state, and every operation that changes it.
  *
- * Owns all mutable state: entity ID allocation, component metadata,
- * archetype graph, and entity-to-archetype mapping. World delegates
- * every data operation here. Store is never exposed to systems or
- * external code.
+ * Owns entity id allocation, component metadata, the archetype graph, the
+ * entity-to-archetype map, sparse storage, the deferred buffers and the
+ * change feed. A world holds one store and delegates every data operation
+ * to it.
  *
- * Architecture: Archetype-based storage with cached graph edges.
- * Component data lives in typed array columns within each Archetype.
- * Moving an entity between archetypes copies its column data from the
- * source row to a fresh row in the target archetype, then swap-removes
- * the source row.
+ * **Who reaches a store.** `ECS` owns one and forwards to it. `SystemContext`
+ * holds the same one, so a system body queues its deferred operations
+ * straight into it. A plugin receives it as `PluginHost.store`, which is a
+ * published type, so a plugin written outside this package calls store
+ * methods directly. `Store` itself is not exported from the package entry,
+ * and that alone narrows the surface. `plugin.ts` names the host members a
+ * plugin is meant to use, and
+ * `__tests__/integration/third_party_plugin.test.ts` writes one from them.
  *
- * The archetype graph caches add and remove edges, so repeated transitions
- * (e.g. "add Velocity to [Position]") resolve in O(1) after the first
- * occurrence.
+ * **What the store refuses.** It builds no facade, runs no schedule, and
+ * imports no plugin module. Relations, events, snapshots and observers each
+ * install through a seam declared here, rather than living here, so a world
+ * that installs none of them ships none of their code.
  *
- * Deferred operations (addComponentDeferred, removeComponentDeferred,
- * destroyEntityDeferred) buffer changes in flat parallel arrays and
- * flush them in batch, avoiding per-operation archetype transitions
- * during system execution.
+ * Archetype-based storage with cached graph edges. Component data lives in
+ * typed array columns inside each archetype. Moving an entity between
+ * archetypes copies its column data from the source row to a fresh row in the
+ * target archetype, then swap-removes the source row. Thus a structural
+ * change moves a row, and a held row index goes stale.
  *
+ * The archetype graph caches add and remove edges, so a repeated transition
+ * such as "add Velocity to [Position]" resolves in O(1) after the first one.
+ *
+ * The deferred operations buffer into flat parallel arrays and flush in
+ * batch. A system body queues, and the flush applies. That keeps an archetype
+ * transition out of the middle of an iteration, where it would move the row
+ * under the loop.
  ***/
 
 import {
@@ -77,10 +89,27 @@ import {
 	type ArchetypeID
 } from "./archetype";
 import type { Query, QueryHost, QueryTerms } from "./query";
-// Type-only: the per-consumer host seams Store implements. observer.ts and
-// query.ts import only types from store.ts, so neither edge is a runtime cycle.
+// The store shapes a consumer names without holding a `Store`. They live in a
+// leaf so a module that only needs one does not import this file.
+import type {
+	ComponentMeta,
+	DrainResult,
+	ObservationFlags,
+	StructuralObserverEvents,
+	Template
+} from "./store_types";
+export type {
+	ComponentMeta,
+	DrainResult,
+	ObservationFlags,
+	StructuralObserverEvents,
+	Template
+} from "./store_types";
+// Type-only: the per-consumer host seams Store implements. Neither observer.ts
+// nor query.ts imports store.ts back, and both edges here erase, so no cycle
+// reaches the bundle. `src/__tests__/import_graph.test.ts` holds that.
 import type { ObserverHost } from "./observer";
-import type { ChangeFeed } from "./plugin";
+import type { ChangeFeed } from "./change_feed";
 import { ECS_ERROR, ECSError, ECSRestoreError } from "./utils/error";
 import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
 import { EntityAllocator } from "./entity_allocator";
@@ -131,111 +160,6 @@ const INDEX_BITS = INDEX_BITS_IMPORT;
 const INDEX_MASK = INDEX_MASK_IMPORT;
 const MAX_ENTITY_ID = MAX_ENTITY_ID_IMPORT;
 const RETIRED_GENERATION = RETIRED_GENERATION_IMPORT;
-
-export interface ComponentMeta {
-	/** Optional debug name from `registerComponent(schema, { name })`,
-	 * diagnostic messages only, never behaviour. */
-	name?: string;
-	fieldNames: string[];
-	fieldIndex: Record<string, number>;
-	fieldTypes: TypedArrayTag[];
-	/** The global name id of each field, in schema order (ref.ts). */
-	fieldGid: Int32Array;
-	// --- Component observers ---
-	// Hot-path flags consulted by the structural flush + the field-write path.
-	// All false unless `ecs.observe(...)` registered a matching observer. The
-	// no-observer flush path is byte-for-byte unchanged (`_structuralObserverCount`
-	// gate in `flushStructural`). See the observers plugin.
-	/** Has an onAdd observer, collect effective adds for this component. */
-	obsAdd: boolean;
-	/** Has an onRemove observer, collect effective removes for this component. */
-	obsRem: boolean;
-	/** Has an onDisable observer, collect effective disables for this
-	 * component at the toggle drain. */
-	obsDisable: boolean;
-	/** Has an onEnable observer, collect effective enables for this
-	 * component at the toggle drain. */
-	obsEnable: boolean;
-	/** Has a row tick plane: every archetype that holds the component keeps
-	 * one change tick for each row, and every write path stamps it. Turned on
-	 * by `trackRows`, which an entity-level onSet implies. Never turned off. */
-	rowTicks: boolean;
-	/** Has a per-entity onSet observer, record dirty rows on the write path
-	 * (the opt-in dirty list). Implies `rowTicks`. */
-	trackDirty: boolean;
-	/** The change tick below which every record was drained. A row tick at or
-	 * below it is stale, so the next record of that row joins the dirty list. */
-	drainTick: number;
-	/** The list length above which a frame switches to the scan: past it, a
-	 * by-id record stamps the row and pushes nothing, and the drain walks the
-	 * plane of every stamped archetype instead. Set at each drain from the live
-	 * entity count, so the switch lands where the two costs cross whatever the
-	 * size of the world. */
-	listCap: number;
-	/** The change tick of the last `cols.ticks(def)` call. Above `drainTick`, a
-	 * chunk loop stamped rows the list does not hold, so the drain scans. */
-	scanTick: number;
-	/** The `run` of the last `drainSet`. A second drain at the same run returns
-	 * the first one's result, so several consumers of the change feed share one
-	 * drain instead of taking the rows away from each other. */
-	lastDrainRun: number;
-}
-
-/** What one consumer of the change feed asks the store to record for a
- * component. Each flag maps to one observer hook. `set` is the row grain:
- * it turns on the row tick plane and the dirty list. */
-export interface ObservationFlags {
-	readonly add: boolean;
-	readonly remove: boolean;
-	readonly disable: boolean;
-	readonly enable: boolean;
-	readonly set: boolean;
-}
-
-/**
- * Effective `(component, entity)` structural events for one fixed-point round,
- * collected during `_flushAdds` and `_flushRemoves`, then handed to the observer
- * dispatch hook. Flat parallel arrays, count-bounded (`*_len`), reused across
- * rounds, never reallocated in the flush. This is a scheduling artifact: it is
- * not part of `stateHash` or snapshot. See the observers plugin.
- */
-export interface StructuralObserverEvents {
-	addComp: number[];
-	addEid: number[];
-	addLen: number;
-	remComp: number[];
-	remEid: number[];
-	remLen: number;
-	/** Effective disable events, collected during the toggle drain
-	 * (`_flushToggles`), one per `(component, entity)` of each net-disabled
-	 * entity's mask. Empty on a structural (add, remove and destroy) round. */
-	disComp: number[];
-	disEid: number[];
-	disLen: number;
-	/** Effective enable events, symmetric with the disable arrays. */
-	enaComp: number[];
-	enaEid: number[];
-	enaLen: number;
-}
-
-
-/** What `Store.drainSet` hands a consumer of the change feed: the rows a
- * tick-plane scan found and the rows the dirty list held.
- *
- * A `scanned` row is alive, a member and enabled by construction, so a
- * consumer fires it with no check. A `listed` entity may hold a duplicate, and
- * it may have died, left the component or been disabled since its record, so a
- * consumer checks each one.
- *
- * Both arrays belong to the store and both are reused. A consumer may sort,
- * dedupe or truncate them in place, and the observer registry does exactly
- * that. The drain is memoized on its run, so a second consumer in the same run
- * sees the arrays as the first consumer left them. Every consumer must plan
- * around that. */
-export interface DrainResult {
-	scanned: EntityID[];
-	listed: EntityID[];
-}
 
 /** Sentinel in a `Template.overrideIndex`: the field name is owned by more
  * than one component, so a flat per-instance override cannot disambiguate
@@ -288,34 +212,6 @@ export type TemplateOverrides<Defs extends readonly ComponentDef[]> = {
 	readonly [K in TemplateFieldNames<Defs>]?: number;
 };
 
-// Phantom slot carrying the template's def-list type so `spawn` can check
-// overrides against it. Optional, and erased at runtime. Deliberately
-// covariant, unlike the invariant `ResourceKey` and `EventKey` phantoms. A
-// `Template<[…]>` must erase to bare `Template` in a system's `spawns` and
-// `despawns` access declaration. Widening only loosens the advisory override
-// check, so there is no write-direction hole to close.
-declare const __templateDefs: unique symbol;
-
-/** A resolved template, an archetype template produced by
- * `ECS.template(...)`. Opaque apart from `defs`. A caller holds it and passes
- * it to `ECS.spawn` or to `ECS.spawnMany`. A caller may also name it in a
- * system's `spawns` or `despawns` access declaration, which the scheduler
- * expands to `defs`. The remaining fields are engine-internal and may change.
- * `spawn` lands an entity directly in `archetype_id` with no archetype
- * transition, and writes `flatValues` (defaults in `_flatColumns` order) in one
- * append pass. */
-export interface Template<Defs extends readonly ComponentDef[] = readonly ComponentDef[]> {
-	readonly archetypeId: ArchetypeID;
-	readonly flatValues: number[];
-	/** `flatValues` converted one time to each column's stored bit pattern
-	 * (`Archetype.widthBits`), so a single `spawn` writes them with no
-	 * conversion, see `Archetype.addEntityWithBits`. */
-	readonly flatBits: Float64Array;
-	readonly overrideIndex: Map<string, number>;
-	/** The component set this template spawns into, in entry order. */
-	readonly defs: readonly ComponentDef[];
-	readonly [__templateDefs]?: Defs;
-}
 
 export interface StoreOptions {
 	initialCapacity?: number;
@@ -463,6 +359,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// transition, dirty and observer machinery they are entangled with, reached
 	// through the collaborator's closure host.
 	private readonly _deferred: DeferredCommandBuffer;
+
+	// --- Snapshot and resume service ---
 	// Snapshot and resume orchestration, serialization, framing,
 	// and fail-closed validation live in the snapshots plugin. The Store keeps
 	// the DETERMINISM_DISABLED gates and the live-world mutation seams
@@ -597,6 +495,11 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		return this._resources;
 	}
 
+	// --- World tick, change tick and trace ---
+	// Shared core state. Every section stamps or reads the change tick, so it
+	// is core the way the entity index is core, not state the deferred buffers
+	// own. It sat under the deferred-buffer banner only because no banner
+	// separated the two.
 	public tick: number = 0;
 
 	/** The change tick. A monotonic counter that the schedule advances before
@@ -3037,9 +2940,10 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		if (this._componentCount >= STORE_DESCRIPTOR_COMPONENT_LIMIT) {
 			throw new ECSError(
 				ECS_ERROR.COMPONENT_LIMIT_EXCEEDED,
-				`Cannot register more than ${STORE_DESCRIPTOR_COMPONENT_LIMIT} components: the SAB ` +
-					`archetype descriptor mask is ${STORE_DESCRIPTOR_COMPONENT_LIMIT} bits wide. Widen ` +
-					`the descriptor mask (descriptor.ts + abi.zig, a SIM_ABI_VERSION bump) to raise it.`,
+				`registerComponent exceeds the dense component limit of ` +
+					`${STORE_DESCRIPTOR_COMPONENT_LIMIT}, because the archetype descriptor mask is ` +
+					`that many bits wide. Register this component with registerSparseComponent, ` +
+					`which keeps its own id space and costs no mask bit.`,
 				{ componentCount: this._componentCount, limit: STORE_DESCRIPTOR_COMPONENT_LIMIT }
 			);
 		}
@@ -3681,7 +3585,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** The sparse membership store a relation rides, which is how a query turns
 	 * a `(R, *)` term into a sparse term. `api` names the query verb the user
-	 * called, because `withRelation` and `withoutRelation` both land here. */
+	 * called, because `andRelation` and `notRelation` both land here. */
 	public relationBackingSparseId(def: RelationDef, api: string): SparseComponentID {
 		return this.requireRelations(api).relationBackingSparseId(def);
 	}

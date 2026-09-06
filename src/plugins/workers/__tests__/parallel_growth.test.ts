@@ -39,7 +39,7 @@ function integrateWorld(backing: Backing) {
 		columnCapacity: COLUMN_CAPACITY
 	});
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const system = ecs.registerSystem({
 		reads: [Vel],
 		writes: [Pos],

@@ -264,7 +264,7 @@ export function oecsSparseCases(lib) {
 			ecs.addSparse(ids[i], Pos, { x: 0, y: 0 });
 			ecs.addSparse(ids[i], Vel, { vx: 1, vy: 1 });
 		}
-		const q = ecs.query(Slot).withSparse(Pos, Vel);
+		const q = ecs.query(Slot).andSparse(Pos, Vel);
 		const p = ecs.sparseCursor(Pos);
 		const v = ecs.sparseCursorRead(Vel);
 		const step = (e) => {
@@ -301,7 +301,7 @@ export function oecsSparseCases(lib) {
 			const ids = ecs.spawnMany(ecs.template(...items), FRAG_PER);
 			for (let i = 0; i < ids.length; i++) ecs.addSparse(ids[i], Pos, { x: 0, y: 0 });
 		}
-		const q = ecs.query(Slot).withSparse(Pos);
+		const q = ecs.query(Slot).andSparse(Pos);
 		const p = ecs.sparseCursor(Pos);
 		const step = (e) => {
 			p.at(e);

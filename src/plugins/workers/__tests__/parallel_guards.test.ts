@@ -33,8 +33,8 @@ afterEach(async () => {
 /** The descriptor carries the plan as an opaque field, because the core
  * neither builds it nor reads inside it. The plugin that built it names the
  * shape, so a test that checks the shape names the plugin's type. */
-function planOf(system: { readonly parallelPlan?: object }): ParallelPlan | undefined {
-	return system.parallelPlan as ParallelPlan | undefined;
+function planOf(system: { readonly routePlan?: object }): ParallelPlan | undefined {
+	return system.routePlan as ParallelPlan | undefined;
 }
 
 function category(fn: () => unknown): string {
@@ -107,7 +107,7 @@ describe("a parallel registration", () => {
 
 	it("refuses a query that carries a sparse term", () => {
 		const { ecs, Pos, Vel, Sparse, base } = fixture();
-		const query = ecs.query(Pos, Vel).withSparse(Sparse);
+		const query = ecs.query(Pos, Vel).andSparse(Sparse);
 		expect(
 			category(() =>
 				ecs.registerSystem({ ...base, parallel: { ...base.parallel, query } } as never)
@@ -165,7 +165,7 @@ describe("a parallel registration", () => {
 			},
 			fn: () => {}
 		});
-		expect(system.parallelPlan).toBeDefined();
+		expect(system.routePlan).toBeDefined();
 
 		// A field the component does not declare fails to compile. The runtime
 		// guard would catch it too, and this catches it a build earlier.

@@ -92,12 +92,12 @@ registerTag(): ComponentDef<Record<string, never>>;
 ```
 
 A tag is a component with no fields. It is part of the archetype match, so you can write
-`query(IsEnemy)` or `.without(Dead)`, but it stores nothing. To attach it, give no values:
+`query(IsEnemy)` or `.not(Dead)`, but it stores nothing. To attach it, give no values:
 
 ```ts
 const Frozen = ecs.registerTag();
 ecs.addComponent(e, Frozen);          // no values argument
-ecs.query(Pos).without(Frozen);       // remove the frozen entities
+ecs.query(Pos).not(Frozen);           // remove the frozen entities
 ```
 
 <a id="the-handle-is-callable--bundles"></a>

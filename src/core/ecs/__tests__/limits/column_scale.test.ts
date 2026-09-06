@@ -116,7 +116,7 @@ describe("Column scale", () => {
 		}
 
 		// Get the archetype containing [Pos] only (not Vel)
-		const posOnlyQuery = world.query(Pos).without(Vel);
+		const posOnlyQuery = world.query(Pos).not(Vel);
 		expect(posOnlyQuery.archetypeCount).toBe(1);
 		const srcArch = posOnlyQuery.archetypes[0];
 		expect(srcArch.entityCount).toBe(1_000);

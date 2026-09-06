@@ -27,7 +27,7 @@
  */
 import type { EntityID } from "./entity";
 import type { SystemDescriptor } from "./system";
-import type { SCHEDULE } from "./schedule";
+import type { PhaseName } from "./schedule";
 
 /** A deferred structural command issued through `ctx.commands.*` (`query.ts`).
  * `spawn`, `despawn`, `enable` and `disable` carry a `null` component. `add` and `remove`
@@ -50,15 +50,15 @@ export interface FrameTraceSink {
 	/** Closes the frame opened by `tickBegin` (after onSet + `clearEvents`). */
 	tickEnd(tick: number): void;
 	/** A scheduled system is about to run, in the given phase. */
-	systemBegin(system: SystemDescriptor, phase: SCHEDULE): void;
+	systemBegin(system: SystemDescriptor, phase: PhaseName): void;
 	/** The system that `systemBegin` opened has returned. */
 	systemEnd(system: SystemDescriptor): void;
 	/** A deferred structural command was enqueued (applied at the next flush). */
 	commandQueued(op: StructuralOp, entity: EntityID, component: number | null): void;
 	/** The deferred command buffer is about to drain for this phase. */
-	flushBegin(phase: SCHEDULE): void;
+	flushBegin(phase: PhaseName): void;
 	/** The deferred command buffer (and any observer cascade) has settled. */
-	flushEnd(phase: SCHEDULE): void;
+	flushEnd(phase: PhaseName): void;
 	/**
 	 * A schedule phase has fully settled, every system in `phase` ran and the
 	 * deferred command buffer (plus any observer cascade) flushed, so the live
@@ -79,7 +79,7 @@ export interface FrameTraceSink {
 	 * per-tick `stateHash` (after `update()` returns) may differ from the
 	 * POST_UPDATE phase hash. A world with no onSet observers reconciles exactly.
 	 */
-	phaseBoundary(phase: SCHEDULE): void;
+	phaseBoundary(phase: PhaseName): void;
 	/** An observer callback fired for one entity (`entity === -1` for an
 	 * archetype-granular onSet, which has no per-entity id). */
 	observerFired(op: ObserverOp, component: number, entity: number, observer: SystemDescriptor): void;
@@ -96,7 +96,7 @@ export interface FrameTraceSink {
 /** One captured event, as plain JSON-serialisable data (string names + numeric
  * ids), so a `FrameTrace[]` streams straight to a browser renderer. */
 export type FrameTraceEvent =
-	| { readonly kind: "system_start"; readonly system: string; readonly phase: SCHEDULE }
+	| { readonly kind: "system_start"; readonly system: string; readonly phase: PhaseName }
 	| { readonly kind: "system_end"; readonly system: string }
 	| {
 			readonly kind: "command_queued";
@@ -104,8 +104,8 @@ export type FrameTraceEvent =
 			readonly entity: number;
 			readonly component: number | null;
 	  }
-	| { readonly kind: "flush_begin"; readonly phase: SCHEDULE }
-	| { readonly kind: "flush_end"; readonly phase: SCHEDULE }
+	| { readonly kind: "flush_begin"; readonly phase: PhaseName }
+	| { readonly kind: "flush_end"; readonly phase: PhaseName }
 	| {
 			readonly kind: "observer_fired";
 			readonly op: ObserverOp;
@@ -150,7 +150,7 @@ export class FrameTraceRecorder implements FrameTraceSink {
 		this._current = null;
 	}
 
-	systemBegin(system: SystemDescriptor, phase: SCHEDULE): void {
+	systemBegin(system: SystemDescriptor, phase: PhaseName): void {
 		this._current?.events.push({ kind: "system_start", system: labelOf(system), phase });
 	}
 
@@ -162,11 +162,11 @@ export class FrameTraceRecorder implements FrameTraceSink {
 		this._current?.events.push({ kind: "command_queued", op, entity, component });
 	}
 
-	flushBegin(phase: SCHEDULE): void {
+	flushBegin(phase: PhaseName): void {
 		this._current?.events.push({ kind: "flush_begin", phase });
 	}
 
-	flushEnd(phase: SCHEDULE): void {
+	flushEnd(phase: PhaseName): void {
 		this._current?.events.push({ kind: "flush_end", phase });
 	}
 
@@ -176,7 +176,7 @@ export class FrameTraceRecorder implements FrameTraceSink {
 	 * run code (e.g. `stateHash()`) at the safe post-flush point. The in-tree
 	 * event-stream recorder has nothing to add, so it stays a stream of causal
 	 * events, not fingerprints. */
-	phaseBoundary(_phase: SCHEDULE): void {}
+	phaseBoundary(_phase: PhaseName): void {}
 
 	observerFired(op: ObserverOp, component: number, entity: number, observer: SystemDescriptor): void {
 		this._current?.events.push({

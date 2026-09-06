@@ -84,9 +84,6 @@ export {
 	pluginInstalledTwiceError
 } from "./core/ecs/utils/plugin_error";
 
-// The base class every `ECSError` extends.
-export { AppError } from "./utils/error";
-
 // Component debug names, one registry per program. `registerComponent` writes
 // it and a dev-mode diagnostic reads it, so an observer message can name a
 // component the core registered.

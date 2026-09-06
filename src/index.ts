@@ -27,6 +27,12 @@ export type { ECSResources, ECSSnapshots } from "./core/ecs";
 // subpath, and a plugin outside this package implements these types.
 // `PluginsOf` computes the world type a plugin list builds.
 export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./core/ecs";
+export type {
+	SystemRoutePlanner,
+	RouteControl,
+	RouteDispatch,
+	PluginMemory
+} from "./core/ecs";
 
 // The change feed a plugin drains. `ChangeFeed` above names the seam.
 // These are the records that cross it.
@@ -56,6 +62,13 @@ export type { ComputeBackend, BackendSystemHandle } from "./core/ecs";
 // Schedule
 export {
 	SCHEDULE,
+	// Phases. The built-in seven spell a `SCHEDULE` member. `ecs.addPhase` adds
+	// one more slot to a loop and hands back a `Phase` handle.
+	type Phase,
+	type PhaseConfig,
+	type PhaseLoop,
+	type PhaseName,
+	type SchedulePhase,
 	type SystemEntry,
 	type SystemOrdering,
 	type SystemOrderingTarget,
@@ -72,9 +85,9 @@ export {
 	runIfResourceEq,
 	runEveryNTicks,
 	runIfAnyMatch,
-	not,
-	allOf,
-	anyOf
+	runIfNot,
+	runIfAll,
+	runIfAny
 } from "./core/ecs";
 
 // Systems
@@ -198,8 +211,8 @@ export type {
 } from "./core/ecs";
 
 // Queries
-export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED } from "./core/ecs";
-export type { HierarchyTerm } from "./core/ecs";
+export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED, and, or, not } from "./core/ecs";
+export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm } from "./core/ecs";
 // forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
 export { ChunkColumns, Commands } from "./core/ecs";
 

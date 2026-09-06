@@ -116,8 +116,8 @@ function maskWords(words: readonly number[]): Uint32Array {
 	return out;
 }
 
-/** The query's without-mask as the worker reads it, or `null` when the query
- * has no without term. A worker resolves the matched archetypes from the masks
+/** The query's exclude-mask as the worker reads it, or `null` when the query
+ * has no `not` term. A worker resolves the matched archetypes from the masks
  * alone, so an empty mask here would make it write rows the query excludes. */
 function excludeWords(query: Query<any>): Uint32Array | null {
 	const words = query.excludeWords;
@@ -187,7 +187,7 @@ export function assertParallelConfig(config: SystemConfig, query: Query<any>): v
 	) {
 		throw new ECSError(
 			ECS_ERROR.PARALLEL_ACCESS,
-			`${who} runs over a query that carries a sparse, relation, hierarchy or disabled term, and a worker resolves a query from the archetype masks alone. Give it a query of with-only or with-and-without terms.`
+			`${who} runs over a query that carries a sparse, relation, hierarchy or disabled term, and a worker resolves a query from the archetype masks alone. Give it a query whose only terms are .and and .not.`
 		);
 	}
 

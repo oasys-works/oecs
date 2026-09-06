@@ -192,7 +192,7 @@ describe(".hierarchy(R), intersection and composition", () => {
 		world.addSparse(b, Marked); // a is NOT marked
 
 		// Only marked nodes, still depth ordered: r(0) then b(2).
-		expect(order(world.query(Node).withSparse(Marked).hierarchy(ChildOf))).toEqual(
+		expect(order(world.query(Node).andSparse(Marked).hierarchy(ChildOf))).toEqual(
 			[r, b].map(Number)
 		);
 	});
@@ -230,9 +230,9 @@ describe(".hierarchy(R), intersection and composition", () => {
 
 		// Spec: marked ∩ Node, depth-ordered → r(0) before b(2).
 		const expected = [r, b].map(Number);
-		expect(order(world.query(Node).hierarchy(ChildOf).withSparse(Marked))).toEqual(expected);
+		expect(order(world.query(Node).hierarchy(ChildOf).andSparse(Marked))).toEqual(expected);
 		// Hierarchy-last form must agree (the term is symmetric under composition).
-		expect(order(world.query(Node).withSparse(Marked).hierarchy(ChildOf))).toEqual(expected);
+		expect(order(world.query(Node).andSparse(Marked).hierarchy(ChildOf))).toEqual(expected);
 	});
 
 	it("survives a require_relation composed after hierarchy (routes through _derive_relation)", () => {
@@ -254,9 +254,9 @@ describe(".hierarchy(R), intersection and composition", () => {
 
 		// Spec: sources holding Tagged ∩ Node, depth-ordered → r(0) before b(2).
 		const expected = [r, b].map(Number);
-		expect(order(world.query(Node).hierarchy(ChildOf).withRelation(Tagged))).toEqual(expected);
+		expect(order(world.query(Node).hierarchy(ChildOf).andRelation(Tagged))).toEqual(expected);
 		// Hierarchy-last form must agree.
-		expect(order(world.query(Node).withRelation(Tagged).hierarchy(ChildOf))).toEqual(expected);
+		expect(order(world.query(Node).andRelation(Tagged).hierarchy(ChildOf))).toEqual(expected);
 	});
 
 	it("excludes disabled entities by default, includes them with include_disabled()", () => {

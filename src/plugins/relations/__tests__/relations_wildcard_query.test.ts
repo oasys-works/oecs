@@ -3,14 +3,14 @@
  * query terms, distinct from the cold materializing helpers `pairsOf(R)` and
  * `sourcesOfAny(T)`.
  *
- *  - `withRelation(R)` and `withoutRelation(R)`, `(R, *)`: match sources that
+ *  - `andRelation(R)` and `notRelation(R)`, `(R, *)`: match sources that
  *    hold (or don't hold) any target under `R`. Membership semantics (each source
  *    once), iterated via `forEachEntity`, reusing the sparse-match path
  *    (insertion order, canonical sorting reserved for `stateHash`/snapshot).
  *  - `forEachRelatedTo(T)`, `(*, T)`: every source related to `T` under any
  *    relation, dedup'd, ascending-EntityID order, composing with the receiver's
  *    dense, sparse and `(R, *)` predicate.
- *  - Access: `withRelation` needs `relationReads: [R]`. `forEachRelatedTo`
+ *  - Access: `andRelation` needs `relationReads: [R]`. `forEachRelatedTo`
  *    needs `relationReads: [ANY_RELATION]`.
  */
 
@@ -37,7 +37,7 @@ function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[
 
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
-// ─────────────────────────── (R, *) withRelation ───────────────────────
+// ─────────────────────────── (R, *) andRelation ───────────────────────
 describe("(R, *) require_relation, membership", () => {
 	it("matches every source holding a target (exclusive), spanning archetypes", () => {
 		const world = ECS.create({ plugins: [relations()] });
@@ -60,7 +60,7 @@ describe("(R, *) require_relation, membership", () => {
 		world.relations.add(b, Targets, target);
 		world.relations.add(c, Targets, target);
 
-		expect(collect(world.query().withRelation(Targets))).toEqual(sorted([a, b, c]));
+		expect(collect(world.query().andRelation(Targets))).toEqual(sorted([a, b, c]));
 	});
 
 	it("matches a multi source once regardless of how many targets it holds", () => {
@@ -77,7 +77,7 @@ describe("(R, *) require_relation, membership", () => {
 		world.relations.add(b, Likes, t1);
 
 		// Membership: a appears once despite three targets (not pair-expansion).
-		expect(collect(world.query().withRelation(Likes))).toEqual(sorted([a, b]));
+		expect(collect(world.query().andRelation(Likes))).toEqual(sorted([a, b]));
 	});
 
 	it("drops a source once its relation is removed", () => {
@@ -89,7 +89,7 @@ describe("(R, *) require_relation, membership", () => {
 		world.relations.add(a, Targets, t);
 		world.relations.add(b, Targets, t);
 		world.relations.remove(a, Targets);
-		expect(collect(world.query().withRelation(Targets))).toEqual(sorted([b]));
+		expect(collect(world.query().andRelation(Targets))).toEqual(sorted([b]));
 	});
 
 	it("equals the distinct sources of pairs_of(R)", () => {
@@ -103,7 +103,7 @@ describe("(R, *) require_relation, membership", () => {
 		const distinct = [...new Set(world.relations.pairsOf(Likes).map(([src]) => src as number))].sort(
 			(a, b) => a - b
 		);
-		expect(collect(world.query().withRelation(Likes))).toEqual(distinct);
+		expect(collect(world.query().andRelation(Likes))).toEqual(distinct);
 	});
 
 	it("still matches an orphan-dangling source (membership row persists, like pairs_of)", () => {
@@ -114,7 +114,7 @@ describe("(R, *) require_relation, membership", () => {
 		world.relations.add(a, Targets, t);
 		world.despawn(t); // deferred...
 		world.flush(); // ...apply: a now dangles at a dead handle, but still "has a pair"
-		expect(collect(world.query().withRelation(Targets))).toEqual(sorted([a]));
+		expect(collect(world.query().andRelation(Targets))).toEqual(sorted([a]));
 		// Consistent with the materializing helper.
 		expect(world.relations.pairsOf(Targets).map(([src]) => src as number)).toEqual([a as number]);
 	});
@@ -132,7 +132,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		world.relations.add(withPos, Targets, t);
 		const noPos = world.spawn(); // related but no Pos
 		world.relations.add(noPos, Targets, t);
-		expect(collect(world.query(Pos).withRelation(Targets))).toEqual(sorted([withPos]));
+		expect(collect(world.query(Pos).andRelation(Targets))).toEqual(sorted([withPos]));
 	});
 
 	it("intersects with a .not() dense exclude", () => {
@@ -148,7 +148,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 		world.relations.add(b, Targets, t);
-		expect(collect(world.query(Pos).without(Vel).withRelation(Targets))).toEqual(sorted([a]));
+		expect(collect(world.query(Pos).not(Vel).andRelation(Targets))).toEqual(sorted([a]));
 	});
 
 	it("exclude_relation drops sources that hold the relation", () => {
@@ -161,7 +161,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		world.relations.add(related, Targets, t);
 		const free = world.spawn();
 		world.addComponent(free, Pos, { x: 1, y: 1 });
-		expect(collect(world.query(Pos).withoutRelation(Targets))).toEqual(sorted([free]));
+		expect(collect(world.query(Pos).notRelation(Targets))).toEqual(sorted([free]));
 	});
 
 	it("composes (R, *) with require_sparse (both must hold)", () => {
@@ -174,7 +174,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		world.addSparse(a, Marked);
 		const b = world.spawn(); // related, not marked
 		world.relations.add(b, Targets, t);
-		expect(collect(world.query().withRelation(Targets).withSparse(Marked))).toEqual(
+		expect(collect(world.query().andRelation(Targets).andSparse(Marked))).toEqual(
 			sorted([a])
 		);
 	});
@@ -192,8 +192,8 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		world.relations.add(b, Targets, t);
 		world.disable(b);
 
-		expect(collect(world.query(Pos).withRelation(Targets))).toEqual(sorted([a]));
-		expect(collect(world.query(Pos).withRelation(Targets).includeDisabled())).toEqual(
+		expect(collect(world.query(Pos).andRelation(Targets))).toEqual(sorted([a]));
+		expect(collect(world.query(Pos).andRelation(Targets).includeDisabled())).toEqual(
 			sorted([a, b])
 		);
 	});
@@ -205,7 +205,7 @@ describe("(R, *) require_relation, cached, stable instances", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const base = world.query();
-		expect(base.withRelation(R)).toBe(base.withRelation(R));
+		expect(base.andRelation(R)).toBe(base.andRelation(R));
 	});
 
 	it("multi-arg require_relation equals the chained form", () => {
@@ -213,7 +213,7 @@ describe("(R, *) require_relation, cached, stable instances", () => {
 		const A = world.relations.register();
 		const B = world.relations.register();
 		const base = world.query();
-		expect(base.withRelation(A, B)).toBe(base.withRelation(A).withRelation(B));
+		expect(base.andRelation(A, B)).toBe(base.andRelation(A).andRelation(B));
 	});
 
 	it("dense composition keeps the (R, *) term regardless of order", () => {
@@ -226,9 +226,9 @@ describe("(R, *) require_relation, cached, stable instances", () => {
 		world.relations.add(a, Targets, t);
 		const b = world.spawn();
 		world.relations.add(b, Targets, t); // related, no Pos
-		// withRelation(R).and(Pos) and query(Pos).withRelation(R) agree.
-		expect(collect(world.query().withRelation(Targets).and(Pos))).toEqual(sorted([a]));
-		expect(collect(world.query(Pos).withRelation(Targets))).toEqual(sorted([a]));
+		// andRelation(R).and(Pos) and query(Pos).andRelation(R) agree.
+		expect(collect(world.query().andRelation(Targets).and(Pos))).toEqual(sorted([a]));
+		expect(collect(world.query(Pos).andRelation(Targets))).toEqual(sorted([a]));
 	});
 });
 
@@ -295,7 +295,7 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 		const b = world.spawn(); // targets T only
 		world.relations.add(b, Targets, T);
 		// sources related to T that also have any Likes pair → only a.
-		expect(collectRelated(world.query().withRelation(Likes), T)).toEqual(sorted([a]));
+		expect(collectRelated(world.query().andRelation(Likes), T)).toEqual(sorted([a]));
 	});
 
 	it("is consistent with sources_of on an orphan-dangling dead target", () => {
@@ -324,7 +324,7 @@ describe("(R, *) determinism, identical histories yield identical order", () => 
 			const out: number[] = [];
 			world
 				.query()
-				.withRelation(R)
+				.andRelation(R)
 				.forEachEntity((e) => out.push(e as number));
 			return out;
 		};
@@ -337,7 +337,7 @@ describe("(R, *), dense-path methods refuse the wildcard query", () => {
 	it("count() / for_each() throw, steering to for_each_entity", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
-		const q = world.query().withRelation(R);
+		const q = world.query().andRelation(R);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
 	});
@@ -372,7 +372,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		const a = world.spawn();
 		const t = world.spawn();
 		world.relations.add(a, R, t);
-		const q = world.query().withRelation(R);
+		const q = world.query().andRelation(R);
 
 		const tick = runOnce(
 			world,
@@ -392,7 +392,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		const a = world.spawn();
 		const t = world.spawn();
 		world.relations.add(a, R, t);
-		const q = world.query().withRelation(R);
+		const q = world.query().andRelation(R);
 
 		let n = -1;
 		const tick = runOnce(
@@ -459,7 +459,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		world.addComponent(a, Pos, { x: 1 });
 		const t = world.spawn();
 		world.relations.add(a, R, t);
-		const q = world.query(Pos).withRelation(R);
+		const q = world.query(Pos).andRelation(R);
 
 		const tick = runOnce(
 			world,

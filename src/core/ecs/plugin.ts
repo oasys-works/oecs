@@ -17,8 +17,8 @@
  * installed no relation plugin has no `relations` member to reach for, and
  * the mistake is a compile error rather than a fault at run time.
  *
- * The change feed is the one seam several plugins share. `ChangeFeed`
- * below names it. `Store` implements it, so the host hands the store itself,
+ * The change feed is the one seam several plugins share. `change_feed.ts`
+ * names it. `Store` implements it, so the host hands the store itself,
  * typed narrowly, and the narrowing costs nothing at run time.
  *
  * `src/plugins` holds every first-party plugin, and the core imports none of
@@ -26,117 +26,79 @@
  * `snapshot.ts` hold the seam each one implements: the handle types the core
  * spells, and the interface the plugin's service satisfies.
  *
- * **What a plugin outside this package gets.** Five members of `PluginHost`
- * are open to anyone: `store`, `world`, `changes`, `context` and `onSettle`.
- * A plugin registers its own components and systems through `world`, drains
- * the change feed through `changes`, and publishes at the tail of `update()`
- * through `onSettle`. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts`
+ * **What a plugin outside this package gets.** Every member of `PluginHost` is
+ * open to anyone: `store`, `world`, `changes`, `context`, `memory`,
+ * `onSettle`, `onPrewarm`, `onDispose` and `installRoute`. A plugin registers
+ * its own components, systems and phases through `world`, drains the change
+ * feed through `changes`, and publishes at the tail of `update()` through
+ * `onSettle`. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts`
  * writes one that way and proves the seam holds from outside.
  *
- * Two more members are fixed, not general. `installObservers` hands the world
- * one observer registry, and `installWorkers` hands it one worker pool. Each
- * is a single named slot, because each sits on a hot path the world drives
- * directly. Turning either into a keyed registry adds a lookup to that path,
- * so it waits on a measurement rather than on a preference.
+ * Every hook point below is named for what it hooks, never for the plugin
+ * that ships it. `onSettle` takes the tail of a frame, `onPrewarm` contributes
+ * the access shapes the archetype closure reads, `onDispose` runs with the
+ * world, and `installRoute` replaces the body of a system the route claims.
+ * Anyone may implement any of them.
+ *
+ * One thing stays a single typed slot rather than a keyed registry: the system
+ * dispatch route. The schedule hoists it per phase and reads one opaque plan
+ * per dispatch, and a keyed read on that path is far slower on a schedule of
+ * short bodies. `bench/` holds the comparison. The registration is keyed and
+ * cold, and the world caches what it resolved into the field the dispatch
+ * already read, so the hot path is unchanged by construction.
  *
  * Cold path throughout. A plugin is installed once, at construction.
  ***/
 
-import type { ArchetypeView } from "./archetype";
-import type { ComponentHandle } from "./component";
-import type { EntityID } from "./entity";
-import type { DrainResult, ObservationFlags, StructuralObserverEvents, Store } from "./store";
+import type { Store } from "./store";
+// The feed itself is a leaf, so a plugin and the store can name it without
+// naming this file.
+import type { ChangeFeed } from "./change_feed";
+export type { ChangeFeed } from "./change_feed";
 import type { SystemContext } from "./system_context";
 import type { ECS } from "./ecs";
-import type { ObserverHooks } from "./observer";
-import type { ParallelRoute } from "./schedule";
-import type { SystemConfig } from "./system";
+import type { RouteDispatch } from "./schedule";
+import type { SystemConfig, SystemDescriptor } from "./system";
 import { ECSError, ECS_ERROR } from "./utils/error";
 
-/** The store's record of what changed, opened to more than one consumer.
+/** How a plugin claims the body of a system, and builds what one dispatch of
+ * it reads.
  *
- * A plugin asks the store to record a grain, then drains what the store
- * recorded. Several plugins share the feed. The store merges every
- * consumer's ask by OR, and the drains are memoized on their run, so one
- * consumer never takes a record away from another.
- *
- * Two costs a consumer plans around. Asking for the row grain of a component
- * turns on its row tick plane and its dirty list, which every by-id write to
- * that component then pays. Draining hands back store-owned arrays that the
- * next drain reuses, so a consumer copies whatever it keeps past the call. */
-export interface ChangeFeed {
-	/** Record what this consumer wants collected for `cid`. `consumer` is the
-	 * plugin name, and it keys the record the store merges. All-false is
-	 * the same as never asking. Cold path. */
-	configureObservation(consumer: string, cid: number, flags: ObservationFlags): void;
-	/** The sparse form: the entity grain of sparse component `sid`, on or off
-	 * for this consumer. Cold path. */
-	configureSparseObservation(consumer: string, sid: number, hasSet: boolean): void;
-	/** The rows of `cid` recorded since the last drain. `run` is the change
-	 * tick of this pass, and it memoizes the drain: two calls at one run give
-	 * the same object. Once per run per component. */
-	drainSet(cid: number, run: number): DrainResult;
-	/** The members of sparse component `sid` recorded since the last drain,
-	 * alive and enabled, in member order. Memoized on `run` like `drainSet`,
-	 * and the array is store-owned. */
-	drainSparseSet(sid: number, run: number): EntityID[];
-	/** Visit every non-empty archetype whose `cid` column changed after
-	 * `baseline`, in canonical order. The archetype grain. Costs one compare
-	 * per archetype that holds `cid`, and no write path pays for it. */
-	forEachChangedArchetype(cid: number, baseline: number, cb: (arch: ArchetypeView) => void): void;
-	/** Every live enabled entity that holds `cid`, for a consumer seeding
-	 * itself with what already exists. Allocates, and walks every row. Cold
-	 * path. */
-	collectEnabledWith(cid: number): EntityID[];
-	/** Take one round's structural events. Every hook runs, in install order,
-	 * on each round of the observed flush. The batch is store-owned scratch
-	 * that the next round overwrites. Cold path to install, hot per round. */
-	addStructuralHook(fn: (ev: StructuralObserverEvents) => void): void;
-	isAlive(id: EntityID): boolean;
-	isDisabled(id: EntityID): boolean;
-	hasComponent(entityId: EntityID, def: ComponentHandle): boolean;
+ * The world asks the planner about every system it registers. A planner that
+ * has nothing to say about one answers `undefined`, and the system keeps its
+ * `fn`. Cold: registration only. */
+export interface SystemRoutePlanner {
+	/** Build what one routed dispatch reads, or `undefined` for a system this
+	 * route does not claim. The world freezes the result onto the descriptor as
+	 * `routePlan` and never looks inside it, so the plan's shape belongs to the
+	 * plugin. The plugin validates its own config here, which is why a world
+	 * without the plugin validates none. */
+	plan(config: SystemConfig): object | undefined;
 }
 
-/** What the world calls into a worker pool it did not build.
+/** What a route holds back from the world after it installs.
  *
- * Both hooks are cold. `plan` runs at registration, and only for a system that
- * declares `parallel`. `dispose` runs once, with the world. */
-export interface WorkerHooks {
-	/** Build what one parallel dispatch reads. The world freezes the result
-	 * onto the descriptor as `parallelPlan` and never looks inside it, so the
-	 * plan's shape belongs to the plugin. The plugin also validates the
-	 * `parallel` config here, which is why a world without the plugin
-	 * validates none. */
-	plan(config: SystemConfig): object;
-	/** Stop the workers. A live worker holds the store bytes and keeps the
-	 * process alive, so it ends with the world. */
-	dispose(): void;
+ * One call, and the world holds one route. `null` puts every claimed system
+ * back on its own `fn`. Cold: an attach and a detach, never a frame. */
+export interface RouteControl {
+	route(dispatch: RouteDispatch | null): void;
 }
 
-/** What a worker pool reads from the world it runs on.
+/** Where the world's bytes are, for a plugin that reads them directly.
  *
- * The bytes, where the header sits inside them, and the one call that routes
- * every parallel system. Nothing else crosses. The pool derives its own row
- * ranges from the published row counts, so the world hands it no plan and no
- * archetype. */
-export interface WorkerWorld {
-	/** The bytes a worker reaches: the `WebAssembly.Memory` on the wasm
-	 * backing, the `SharedArrayBuffer` on the shared backing, `null` on any
-	 * other. The memory travels and not its current buffer, because the two
-	 * grow differently and a worker survives both. Read at attach. */
+ * A worker, a compute backend and a wasm module all need the same three
+ * facts. The memory travels and not its current buffer, because the two grow
+ * differently and a reader survives both. */
+export interface PluginMemory {
+	/** The bytes a foreign reader reaches: the `WebAssembly.Memory` on the
+	 * wasm backing, the `SharedArrayBuffer` on the shared backing, `null` on
+	 * any other. */
 	readonly backing: SharedArrayBuffer | WebAssembly.Memory | null;
-	/** What `memory.backing` resolved to. The refusal on a backing no worker
-	 * can reach names it. */
+	/** What `memory.backing` resolved to. A refusal on a backing the reader
+	 * cannot reach names it. */
 	readonly backingSource: string;
 	/** The byte offset of the store header inside the backing. */
 	readonly storeBase: number;
-	/** Tell the store that a component's row ticks changed outside the dirty
-	 * list, so the next entity-level drain scans the plane. A pool stamps a
-	 * whole archetype at the join, which no dirty list saw. */
-	noteScan(componentId: number): void;
-	/** Route every parallel system through `pool`, or with `null` back to the
-	 * sequential body. */
-	route(pool: ParallelRoute | null): void;
 }
 
 /** What one plugin may reach during `install`, and nothing wider.
@@ -162,13 +124,21 @@ export interface PluginHost {
 	 * frame. `run` is the change tick of the detection point, above every
 	 * stamp the frame made. Hooks run in install order. */
 	onSettle(fn: (run: number) => void): void;
-	/** Hand the world its observer registry. The world drives it once per
-	 * update and at startup, so it holds the reference, not the store. */
-	installObservers(registry: ObserverHooks): void;
-	/** Hand the world the hooks a worker pool needs, and take back what the
-	 * pool reads. One call, because the two directions install together and a
-	 * world holds one pool. */
-	installWorkers(hooks: WorkerHooks): WorkerWorld;
+	/** Contribute the access shapes `startup()` folds into the archetype
+	 * closure, so a callback that spawns or transitions gets its target
+	 * archetype planted rather than first-touched mid-tick. Read once, at
+	 * startup. */
+	onPrewarm(fn: () => readonly SystemDescriptor[]): void;
+	/** Run `fn` when the world goes away. A plugin that holds a thread, a
+	 * timer or a socket ends it here. Hooks run in install order. */
+	onDispose(fn: () => void): void;
+	/** Where the world's bytes are. A plugin that hands the bytes to a worker
+	 * or to a wasm module reads the three facts here. */
+	readonly memory: PluginMemory;
+	/** Claim the body of the systems this plugin routes, and take back the one
+	 * call that turns the route on and off. A world holds one route, so a
+	 * second install is a fault. */
+	installRoute(planner: SystemRoutePlanner): RouteControl;
 }
 
 /** An optional subsystem, and the facade surface it contributes.
@@ -223,6 +193,16 @@ export type PluginsOf<P extends readonly unknown[]> = UnionToIntersection<Surfac
  * bare store has no world, no system context, no schedule tail and nowhere to
  * keep an observer registry, so reaching for one is a mistake worth naming
  * rather than a case to silently support. */
+/** The one refusal every world-level hook point shares. Names what the caller
+ * reached for, and the call that gives it a world. */
+function worldOnly(what: string): ECSError {
+	return new ECSError(
+		ECS_ERROR.PLUGIN_NOT_INSTALLED,
+		`${what} needs a world, and this plugin was installed on a bare store. ` +
+			"Build the world with ECS.create({ plugins: [...] }) instead"
+	);
+}
+
 export function storeOnlyHost(store: Store): PluginHost {
 	return {
 		store,
@@ -248,19 +228,17 @@ export function storeOnlyHost(store: Store): PluginHost {
 					"Build the world with ECS.create({ plugins: [...] }) instead"
 			);
 		},
-		installObservers(): void {
-			throw new ECSError(
-				ECS_ERROR.PLUGIN_NOT_INSTALLED,
-				"observers need a world, and this plugin was installed on a bare store. " +
-					"Build the world with ECS.create({ plugins: [observers()] }) instead"
-			);
+		onPrewarm(): void {
+			throw worldOnly("a prewarm hook");
 		},
-		installWorkers(): WorkerWorld {
-			throw new ECSError(
-				ECS_ERROR.PLUGIN_NOT_INSTALLED,
-				"workers need a world, and this plugin was installed on a bare store. " +
-					"Build the world with ECS.create({ plugins: [workers()] }) instead"
-			);
+		onDispose(): void {
+			throw worldOnly("a dispose hook");
+		},
+		get memory(): PluginMemory {
+			throw worldOnly("the world's memory layout");
+		},
+		installRoute(): RouteControl {
+			throw worldOnly("a system dispatch route");
 		}
 	};
 }

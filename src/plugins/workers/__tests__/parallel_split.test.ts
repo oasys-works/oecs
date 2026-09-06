@@ -38,7 +38,7 @@ afterEach(async () => {
 function integrateWorld(backing: Backing, deterministic: boolean, exportName: string) {
 	const world = buildWorld({ entities: ENTITIES, backing, deterministic });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	// One variable over two bodies whose columns differ in element type. The
 	// lane picks both the body and the element type, and no signature says that,
 	// so the column parameters are open here.

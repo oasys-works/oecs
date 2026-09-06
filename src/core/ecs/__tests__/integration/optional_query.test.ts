@@ -11,7 +11,7 @@
  *  - read-only ⇒ a `stateHash` no-op
  *  - the optional read is access-declared (`reads:[T]`), and the check fires even
  *    on the absent span
- *  - composition with `and`, `not` and `anyOf` is symmetric, the term survives a
+ *  - composition with `and`, `not` and `or` is symmetric, the term survives a
  *    dense compose in either order (the silent-drop regression)
  *  - the term gates the fetch, `getOptionalColumnRead` throws in `__DEV__` if
  *    the component wasn't declared via `.optional(T)`
@@ -386,7 +386,7 @@ describe("ECS optional query terms", () => {
 
 		// optional first, then not(Hp): the term must survive, and the fetch must
 		// not throw the dev-gate.
-		const q = world.query(Pos).optional(Vel).without(Hp);
+		const q = world.query(Pos).optional(Vel).not(Hp);
 		const seen: number[] = [];
 		q.forEach((arch) => {
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
@@ -397,8 +397,8 @@ describe("ECS optional query terms", () => {
 		});
 		expect(seen).toEqual([e1]); // e2 excluded by not(Hp)
 
-		// anyOf preserves it as well (smoke: declared fetch doesn't throw).
-		const q2 = world.query(Pos).optional(Vel).anyOf(Vel, Hp);
+		// or preserves it as well (smoke: declared fetch doesn't throw).
+		const q2 = world.query(Pos).optional(Vel).or(Vel, Hp);
 		expect(() =>
 			q2.forEach((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
@@ -496,8 +496,8 @@ describe("ECS optional query terms", () => {
 		expect(root.and(Hp, Mana)).toBe(multi); // second call: same instance
 
 		// not and any_of multi-arg fold likewise.
-		expect(root.without(Hp, Mana)).toBe(root.without(Hp).without(Mana));
-		expect(root.anyOf(Hp, Mana)).toBe(root.anyOf(Hp).anyOf(Mana));
+		expect(root.not(Hp, Mana)).toBe(root.not(Hp).not(Mana));
+		expect(root.or(Hp, Mana)).toBe(root.or(Hp).or(Mana));
 
 		// And the optional term still gates a fetch through the folded compose.
 		expect(() =>

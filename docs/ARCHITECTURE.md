@@ -77,7 +77,7 @@ ECS  (core/ecs/ecs.ts)              the public facade, and it implements QueryRe
  │     ├── entity → (ArchetypeID, row) mapping (SAB-backed Int32Array pair)
  │     ├── sparse component stores
  │     └── registered live Query result arrays
- ├── Schedule  (core/ecs/schedule.ts)  seven phases, and a topological sort in each phase
+ ├── Schedule  (core/ecs/schedule.ts)  an open phase set, a topological sort in each phase
  ├── SystemContext  (core/ecs/query.ts)  the restricted ctx handed to systems
  └── ObserverRegistry  (plugins/observers/observer_registry.ts)  onAdd, onRemove, onSet, onEnable, onDisable
 ```
@@ -659,13 +659,13 @@ the key from the three mask hashes:
 (`core/ecs/query.ts`). When it finds no match, it does four steps. It registers a live array with
 the store. It puts that array in a `Query` with a new id. It updates the back-reference of the
 store to the query. It then adds an entry to the cache. `ECS.query(...defs)` uses one scratch
-`BitSet` again, so that a call allocates nothing (`core/ecs/ecs.ts`). `QueryBuilder.with(...)`
+`BitSet` again, so that a call allocates nothing (`core/ecs/ecs.ts`). `QueryBuilder.and(...)`
 (`core/ecs/query.ts`) is the entry point at registration time, which
-`registerSystem(fn, qb => qb.with(...))` uses.
+`registerSystem(fn, qb => qb.and(...))` uses.
 
 ### Composition
 
-Each verb that makes a query more exact (`and`, `without`, `anyOf`, `optional`, `changed`,
+Each verb that makes a query more exact (`and`, `not`, `or`, `optional`, `changed`,
 `includeDisabled`, and the sparse, relation, and hierarchy terms) derives a new cached query. The
 engine remembers each one in **shared caches for one term, keyed by
 `(parentQueryId << 16) | componentId`**, or by the equivalent sparse or relation id, inside
@@ -752,9 +752,9 @@ and the ids of the components to watch. The constructor asserts that each id is 
 call*, through `_query.lastRunTick()`. It walks the non-empty archetypes of the base query, and
 it gives each archetype where `arch.changedTick[id] > lastTick` for one or more of the ids that
 it watches. At the first run of a system, `lastRunTick` is 0, so it visits each non-empty matching
-archetype. The `ChangedQuery` itself composes: `and`, `without`, `anyOf`, and `optional` derive the
+archetype. The `ChangedQuery` itself composes: `and`, `not`, `or` and `optional` derive the
 base query again and put the result in a new `ChangedQuery` (`core/ecs/query.ts`). So
-`q.changed(P).without(D)` is equal to `q.without(D).changed(P)`.
+`q.changed(P).not(D)` is equal to `q.not(D).changed(P)`.
 
 **The level of detail is one `(archetype, component)` pair.** A write to one row sets the value for
 the full archetype, for that component. `ChangedQuery` gives full archetypes, and a filter on each
@@ -838,7 +838,7 @@ into that service, for the public facade (`core/ecs/store.ts`).
 `ANY_RELATION` (`core/ecs/relation.ts`) is an authorization value for a `(*, T)` query.
 `forEachRelatedTo` reads the reverse index of each relation, so it cannot name one specific
 relation. So you authorize it with `relationReads: [ANY_RELATION]` instead. The relation terms of a
-query (`withRelation` and `withoutRelation`) resolve the *sparse id below the relation*, and they
+query (`andRelation` and `notRelation`) resolve the *sparse id below the relation*, and they
 use the sparse match driver again. They record the `RelationDef` only for the development access
 check (`core/ecs/query.ts`). `hierarchy(relation, maxDepth)` puts a matched set into depth order,
 with each parent before its children, over an exclusive relation (`core/ecs/query.ts`,
@@ -1036,7 +1036,17 @@ condition gets a variant that permits reads only. So each write that a predicate
 
 `SCHEDULE` is an enum of 7 values (`core/ecs/schedule.ts`): `PRE_STARTUP`, `STARTUP`, and
 `POST_STARTUP` run one time, through `startup()`. `FIXED_UPDATE` runs at a fixed timestep, inside
-`update()`. `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE` run one time in each frame. Each system that
+`update()`. `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE` run one time in each frame.
+
+The set is open. `addPhase(name, config)` makes one more `PhaseNode` and gives it back as the
+`Phase` handle a caller holds. A node carries its systems, its cached plan, its ordering and the
+schedule that made it. That owner field is what turns a handle from another world into
+`UNKNOWN_PHASE` instead of silent cross-world scheduling, and the check is in each build.
+`_resolveOrder` sorts one loop's nodes with the same `topologicalSort`, with declaration order as
+the tiebreaker, and it raises a cycle as `CIRCULAR_PHASE_DEPENDENCY`. It runs once for each
+`addPhase`, so each drive walks a resolved `PhaseNode[]` and reads each plan from a field.
+
+Each system that
 you schedule becomes a `SystemNode` with an `insertionOrder` value that only increases, and with
 `before` and `after` edge sets. Inside a phase, `_sortSystems` builds a map of adjacency from the
 `before` and `after` constraints of each node and of each set, and it removes the edges to a
@@ -1045,8 +1055,9 @@ different phase. It then calls the shared `topologicalSort`, which is Kahn's alg
 a tie. The engine caches the result for each phase as a **phase plan**, and it clears that cache on
 a change. It raises a cycle again as `CIRCULAR_SYSTEM_DEPENDENCY`, and the message names the phase.
 **The build tool never removes cycle detection from a production build**, because the sort needs it
-to be correct. `hasFixedSystems` holds the node list of `FIXED_UPDATE` directly, so a frame makes
-no lookup by key to find out whether a fixed step is necessary.
+to be correct. `hasFixedSystems` reads one counter of the systems in the fixed loop, so a frame
+makes no lookup by key to find out whether a fixed step is necessary. It is a counter and not a
+list length, because the fixed loop may hold more than one phase.
 
 ### System sets and run conditions
 

@@ -1,9 +1,11 @@
 # Schedule
 
-The schedule decides **when** each system runs. A system belongs to one of seven **phases**. In each
+The schedule decides **when** each system runs. A system belongs to one **phase**. In each
 phase, the engine sorts the systems topologically from their `before` and `after` constraints. The
 startup phases run one time. The update phases run in each frame. The fixed-update phase runs at a
 fixed timestep.
+
+A world starts with seven phases. The set is open: `ecs.addPhase` adds one more slot to a loop.
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
@@ -13,7 +15,7 @@ ecs.startup();          // runs the startup phases one time
 ecs.update(1 / 60);     // runs fixed-update (as necessary) and the update phases
 ```
 
-## The seven phases
+## The seven built-in phases
 
 ```ts
 enum SCHEDULE {
@@ -33,6 +35,124 @@ enum SCHEDULE {
 > After each phase, the engine **flushes** the deferred structural changes before the next phase
 > starts. So a component that `ctx.commands.add` added in `PRE_UPDATE` is visible to the queries
 > in `UPDATE`. Inside one phase, the deferred changes are not yet applied.
+
+## Adding a phase
+
+`ecs.addPhase(name, config)` adds one slot to a loop and gives back a `Phase` handle. A plugin owns
+its own slot that way. It no longer contends for insertion order inside a phase that the
+application also writes to.
+
+```ts
+addPhase(name: string, config: PhaseConfig): Phase;
+
+type PhaseLoop = "startup" | "fixed" | "update";
+
+interface PhaseConfig {
+  readonly loop: PhaseLoop;
+  readonly before?: readonly SchedulePhase[];   // run before each of these
+  readonly after?: readonly SchedulePhase[];    // run after each of these
+}
+
+interface Phase {
+  readonly name: string;      // diagnostics and the frame trace
+  readonly loop: PhaseLoop;
+}
+
+type SchedulePhase = SCHEDULE | Phase;       // either spelling, wherever a phase is taken
+type PhaseName = SCHEDULE | (string & {});   // the name a frame trace event carries
+```
+
+`addPhase` is a setup call. Call it before the frame loop starts.
+
+### The three loops
+
+| `loop` | What drives it | Delta time |
+| --- | --- | --- |
+| `"startup"` | `ecs.startup()`, one time | `0` |
+| `"fixed"` | the accumulator inside `ecs.update(dt)`, 0 to `maxFixedSteps` times | `fixedTimestep` |
+| `"update"` | `ecs.update(dt)`, one time in each frame | the `dt` that you gave |
+
+A phase belongs to one loop for its life. The loop decides the delta time that the phase receives,
+and how often it runs. An empty phase runs an empty plan and a flush, the same as an empty built-in.
+A fixed phase with no system leaves the accumulator asleep.
+
+### The order between phases
+
+`before` and `after` order the new phase against the other phases of the **same loop**. The engine
+sorts each loop with Kahn's algorithm, and declaration order breaks a tie. That is the rule the
+systems inside a phase already follow.
+
+A target in another loop expands to nothing, the way an order target in another phase does. A phase
+that names no neighbour runs after every phase declared before it. So it lands at the tail of
+its loop.
+
+The built-in seven keep their chain. `PRE_UPDATE` runs before `UPDATE`, and `UPDATE` runs before
+`POST_UPDATE`. So a phase added `before: [SCHEDULE.UPDATE]` does not also jump ahead of
+`PRE_UPDATE`.
+
+The engine resolves the order at `addPhase`, and not in each frame.
+
+### Either spelling names a phase
+
+The seven built-ins have no handle. `SCHEDULE.UPDATE` names one directly, and `addSystems` takes
+either spelling. So no call that you write today changes.
+
+> [!NOTE]
+> A phase has an identity of **object identity, and not of name**, the rule `systemSet` also
+> follows. Two `addPhase("physics", …)` calls give two different phases. Keep the handle and use it
+> again. The `name` is for diagnostics and for the frame trace.
+
+### The two faults
+
+`UNKNOWN_PHASE` says the phase is not a phase of this world: a name that no built-in spells, or a
+handle that another world made. `CIRCULAR_PHASE_DEPENDENCY` says one loop's phase order holds a
+cycle, so no run order exists.
+
+Both throw in **each** build, and not in a development build alone. A handle from another world
+would otherwise push systems into that world's list, and a production build would then run them
+nowhere.
+
+### A plugin adds a phase
+
+A plugin reaches `addPhase` through `host.world`, the bare world that its `install` receives. It
+returns the handle on its facade, so an application can order its own systems against the slot.
+
+```ts
+import { ECS, SCHEDULE, type Phase, type Plugin, type PluginHost } from "@oasys/oecs";
+
+interface PhysicsPlugin {
+  readonly physics: { readonly phase: Phase };
+}
+
+function physics(): Plugin<PhysicsPlugin> {
+  return {
+    name: "physics",
+    install(host: PluginHost): PhysicsPlugin {
+      const phase = host.world.addPhase("physics", {
+        loop: "update",
+        after: [SCHEDULE.PRE_UPDATE],
+        before: [SCHEDULE.UPDATE]
+      });
+      const integrate = host.world.registerSystem({ reads: [], writes: [], fn: () => {} });
+      host.world.addSystems(phase, integrate);
+      return { physics: { phase } };
+    }
+  };
+}
+
+const game = ECS.create({ plugins: [physics()] });
+// Registered later, and into a phase that runs earlier. The phase order decides,
+// and not the insertion order.
+game.addSystems(SCHEDULE.PRE_UPDATE, game.registerSystem({ reads: [], writes: [], fn: () => {} }));
+game.startup();
+game.update(1 / 60); // PRE_UPDATE, then physics, then UPDATE
+```
+
+A frame trace names the phase by its `name`, so `phase` on a trace event is a `PhaseName` and not a
+`SCHEDULE`. See [traces](./tracing.md).
+
+`src/core/ecs/__tests__/integration/phase.test.ts` locks the order against the built-ins the phase
+names, the identity rule, the three loops and both faults.
 
 ## The frame loop
 
@@ -78,7 +198,7 @@ and a test, can supply `requestFrame` and `cancelFrame`. A validation failure th
 ## How to add systems and set their order
 
 ```ts
-addSystems(phase: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this;
+addSystems(phase: SchedulePhase, ...entries: (SystemDescriptor | SystemEntry)[]): this;
 
 interface SystemEntry {
   system: SystemDescriptor;
@@ -173,15 +293,17 @@ see each edge. It also builds its `name` from the operands. Evaluation stops at 
 operand, in argument order, as `&&` and `||` do:
 
 ```ts
-not(cond: RunCondition): RunCondition;          // run exactly when `cond` would skip
-allOf(...conds: RunCondition[]): RunCondition;  // each condition passes (&&)
-anyOf(...conds: RunCondition[]): RunCondition;  // one condition or more passes (||)
+runIfNot(cond: RunCondition): RunCondition;        // run exactly when `cond` would skip
+runIfAll(...conds: RunCondition[]): RunCondition;  // each condition passes (&&)
+runIfAny(...conds: RunCondition[]): RunCondition;  // one condition or more passes (||)
 ```
 
-An empty argument list follows vacuous truth. `allOf()` always runs the system. `anyOf()` never
-runs it.
+An empty argument list follows vacuous truth. `runIfAll()` always runs the system. `runIfAny()`
+never runs it.
 
-This `anyOf` gates *systems*. It has no relation to the [`Query.anyOf`](./queries.md) filter verb.
+Each name takes the `runIf` prefix, because a combinator here gates a *system*. The bare `and`,
+`or` and `not` belong to the [query engine](./queries.md), where they build an archetype
+expression.
 
 ```ts
 const notPaused = runIfResourceEq(PausedRes, false);
@@ -189,7 +311,7 @@ ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runEveryNTicks(10) });
 ecs.configureSet(physics, { runIf: notPaused });
 
 // composed: run the ai less frequently, but only while the game is not paused
-ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: allOf(notPaused, runEveryNTicks(10)) });
+ecs.addSystems(SCHEDULE.UPDATE, { system: ai, runIf: runIfAll(notPaused, runEveryNTicks(10)) });
 ```
 
 > [!WARNING]
@@ -242,5 +364,6 @@ full `fixedTimestep` in that accumulator: 0 times for a small `dt`, and several 
 ## See also
 
 - [systems](./systems.md), how to declare and write the systems that you schedule here
+- [plugins](./plugins.md), how a plugin owns a phase of its own, through `host.world.addPhase`
 - [resources](./resources.md), the state that `runIfResourceEq` gates on
 - [determinism](./determinism.md), why a run condition must stay pure

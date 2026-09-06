@@ -103,15 +103,15 @@ across the archetypes. So these queries iterate with `forEachEntity` or `forEach
 not with the dense `forEach` or `forEachChunk`.
 
 ```ts
-withRelation(...defs): Query<Defs>;     // (R, *), sources that hold any target under R
-withoutRelation(...defs): Query<Defs>;  // remove those sources
-forEachRelatedTo(target, cb): void;     // (*, T), each source related to `target` under any relation
+andRelation(...defs): Query<Defs>;             // (R, *), sources that hold any target under R
+notRelation(...defs): Query<Defs>;             // remove those sources
+forEachRelatedTo(target, cb): void;            // (*, T), each source related to `target` under any relation
 hierarchy(relation, maxDepth?): Query<Defs>;   // put the matches in parent-before-child depth order
 ```
 
 ```ts
 // "Each enemy that is a child of something", (R, *):
-ecs.query(Enemy).withRelation(ChildOf).forEachEntity((e) => { /* … */ });
+ecs.query(Enemy).andRelation(ChildOf).forEachEntity((e) => { /* … */ });
 
 // "Each entity that targets this boss", (*, T):
 bossQuery.forEachRelatedTo(boss, (attacker) => { /* … */ });
@@ -120,9 +120,9 @@ bossQuery.forEachRelatedTo(boss, (attacker) => { /* … */ });
 > [!IMPORTANT]
 > **A wildcard query needs authorization** in the declarations of the system. The engine checks
 > that authorization at iteration:
-> - `withRelation(R)` needs `relationReads: [R]`.
+> - `andRelation(R)` needs `relationReads: [R]`.
 > - `forEachRelatedTo` (the `(*, T)` wildcard) reads the reverse index of each relation. So it
->   needs `relationReads: [ANY_RELATION]`, plus `[R]` for each `withRelation(R)` that you compose.
+>   needs `relationReads: [ANY_RELATION]`, plus `[R]` for each `andRelation(R)` that you compose.
 >   `ANY_RELATION` does **not** include the specific reads.
 >
 > These checks apply *inside a system* only. The same query from host code does not do them.

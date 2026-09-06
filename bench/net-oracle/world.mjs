@@ -39,7 +39,7 @@
  *     alone maintain a second set, as the redex queue does.
  *
  *   Sparse components, the `Watch` sparse component is present on an agent if and
- *     only if the agent is in an active pair. `withSparse` and `withoutSparse` must
+ *     only if the agent is in an active pair. `andSparse` and `notSparse` must
  *     agree with that rule.
  *
  *   Events and resources, the rewrite system emits one event for each rewrite, and
@@ -265,9 +265,9 @@ export class EcsNet {
 		// query gives the upper bound for that observer.
 		this.qAgeAll = ecs.query(this.Age).includeDisabled();
 		this.qTainted = ecs.query(this.Tainted).includeDisabled();
-		this.qWatch = ecs.query(this.Slot).withSparse(this.Watch);
-		this.qWatchAll = ecs.query(this.Slot).includeDisabled().withSparse(this.Watch);
-		this.qNoWatch = ecs.query(this.Slot).withoutSparse(this.Watch);
+		this.qWatch = ecs.query(this.Slot).andSparse(this.Watch);
+		this.qWatchAll = ecs.query(this.Slot).includeDisabled().andSparse(this.Watch);
+		this.qNoWatch = ecs.query(this.Slot).notSparse(this.Watch);
 		// The change-detection queries. `changed()` needs its component in the include
 		// mask of the query, and it gives back a `ChangedQuery`, which has `forEach`
 		// alone. A `ChangedQuery` also composes, and the two spellings below must give
@@ -281,8 +281,8 @@ export class EcsNet {
 		// for it. Therefore the default arm above cannot report such an archetype, and
 		// this arm must. The pair is the check on `includeDisabled()` under `changed()`.
 		this.qTouchChangedAll = ecs.query(this.Touch).includeDisabled().changed(this.Touch);
-		this.qTouchChangedNoFresh = ecs.query(this.Touch).changed(this.Touch).without(this.Fresh);
-		this.qTouchNoFreshChanged = ecs.query(this.Touch).without(this.Fresh).changed(this.Touch);
+		this.qTouchChangedNoFresh = ecs.query(this.Touch).changed(this.Touch).not(this.Fresh);
+		this.qTouchNoFreshChanged = ecs.query(this.Touch).not(this.Fresh).changed(this.Touch);
 		this.qAgeChanged = ecs.query(this.Age).changed(this.Age);
 
 		// ── the query verbs that the net models exactly ─────────────────────
@@ -291,12 +291,12 @@ export class EcsNet {
 		// only if the agent is a CON or a DUP. The reference already holds the type of
 		// each agent. Therefore these queries need no new model, and their answer moves
 		// with each rewrite.
-		this.qWithP1 = ecs.query(this.Slot).includeDisabled().withRelation(this.P[1]);
-		this.qWithoutP1 = ecs.query(this.Slot).includeDisabled().withoutRelation(this.P[1]);
+		this.qWithP1 = ecs.query(this.Slot).includeDisabled().andRelation(this.P[1]);
+		this.qWithoutP1 = ecs.query(this.Slot).includeDisabled().notRelation(this.P[1]);
 		// The same question over the enabled rows alone. The two arms differ by exactly
 		// the disabled agents. Therefore the pair also reads the row partition, through
 		// a term that is neither a component nor a sparse component.
-		this.qWithP1Enabled = ecs.query(this.Slot).withRelation(this.P[1]);
+		this.qWithP1Enabled = ecs.query(this.Slot).andRelation(this.P[1]);
 		// `optional` spans the archetypes that hold `Age` and the archetypes that do
 		// not. A `Fresh` agent has no `Age` yet, so both spans occur in each run. The
 		// absent span must be exactly the `Fresh` agents, and the present span must

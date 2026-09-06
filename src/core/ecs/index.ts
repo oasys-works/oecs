@@ -44,6 +44,13 @@ export type { ComputeBackend, BackendSystemHandle } from "./compute_backend";
 // Schedule
 export {
 	SCHEDULE,
+	// Phases. The seven built-ins spell a `SCHEDULE` member. `ecs.addPhase`
+	// adds one more slot to a loop and hands back a `Phase` handle.
+	type Phase,
+	type PhaseConfig,
+	type PhaseLoop,
+	type PhaseName,
+	type SchedulePhase,
 	type SystemEntry,
 	type SystemOrdering,
 	type SystemOrderingTarget,
@@ -61,9 +68,9 @@ export {
 	runIfResourceEq,
 	runEveryNTicks,
 	runIfAnyMatch,
-	not,
-	allOf,
-	anyOf
+	runIfNot,
+	runIfAll,
+	runIfAny
 } from "./run_condition";
 
 // Systems
@@ -232,8 +239,8 @@ export type {
 } from "./ref";
 
 // Queries
-export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED } from "./query";
-export type { HierarchyTerm, QueryTerms } from "./query";
+export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED, and, or, not } from "./query";
+export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm, QueryTerms } from "./query";
 // forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
 export { ChunkColumns } from "./query";
 export { Commands } from "./system_context";
@@ -346,6 +353,10 @@ export { ECSError, ECS_ERROR, isEcsError } from "./utils/error";
 // list builds. `storeOnlyHost` is a value, and it stays on `/internal` with the
 // rest of the tooling surface.
 export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./plugin";
+// The route seam a plugin implements. Structural, and exported so a plugin author
+// can name what `installRoute` takes and hands back.
+export type { SystemRoutePlanner, RouteControl, PluginMemory } from "./plugin";
+export type { RouteDispatch } from "./schedule";
 export { storeOnlyHost } from "./plugin";
 
 // The change feed a plugin drains: what it asks the store to record, what

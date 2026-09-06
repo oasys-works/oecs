@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
 import { SCHEDULE } from "../../../core/ecs/schedule";
 import type { SystemContext } from "../../../core/ecs/system_context";
-import { eventKey, signalKey, type EventReader } from "../../../core/ecs/event";
+import { asEventId, eventKey, signalKey, type EventReader } from "../../../core/ecs/event";
 import { ECS_ERROR, ECSError } from "../../../core/ecs/utils/error";
 import { openAccess } from "../../../core/ecs/__tests__/test_helpers";
 import { events } from "../../events";
@@ -294,6 +294,29 @@ describe("Event system", () => {
 	});
 
 	// ==== Error handling ====
+
+	// The registry mints ids from a counter, so only a forged id reaches this.
+	// The fault is an `ECSError` and not an assertion, which keeps the assertion
+	// class out of every plugin bundle.
+	it("a negative event id throws INVALID_EVENT_ID and names the value", () => {
+		try {
+			asEventId(-1);
+			expect.fail("should have thrown");
+		} catch (e) {
+			expect(e).toBeInstanceOf(ECSError);
+			expect((e as ECSError).category).toBe(ECS_ERROR.INVALID_EVENT_ID);
+			expect((e as ECSError).message).toContain("-1");
+		}
+	});
+
+	it("a fractional event id throws INVALID_EVENT_ID", () => {
+		expect(() => asEventId(1.5)).toThrow(ECSError);
+	});
+
+	it("a non-negative integer event id passes through unchanged", () => {
+		expect(asEventId(0)).toBe(0);
+		expect(asEventId(7)).toBe(7);
+	});
 
 	it("duplicate register_event throws EVENT_ALREADY_REGISTERED", () => {
 		const world = ECS.create({ plugins: [events()] });

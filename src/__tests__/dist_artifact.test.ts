@@ -470,6 +470,29 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 		expect(outside).toEqual([]);
 	});
 
+	it("carries no second error base in any plugin bundle", () => {
+		// A plugin bundle that compiled its own `AppError` would give the program
+		// two prototype chains under one error name. Every fault a plugin throws
+		// is an `ECSError` bound from the core artifact, so no plugin file may
+		// name the base or the assertion class that used to reach it.
+		//
+		// Both names survive minification. `AppError` is an import binding from
+		// an external module, and `AssertionError` is the string literal the
+		// class writes to `name`.
+		const files = readdirSync(PLUGINS)
+			.filter((name) => name.endsWith(".js") || name.endsWith(".cjs"))
+			.map((name) => join(PLUGINS, name));
+		expect(files.length).toBeGreaterThan(0);
+		const carriers: string[] = [];
+		for (const file of files) {
+			const text = readFileSync(file, "utf8");
+			if (text.includes("AppError") || text.includes("AssertionError")) {
+				carriers.push(relative(DIST, file));
+			}
+		}
+		expect(carriers).toEqual([]);
+	});
+
 	it("ships the worker entry as its own bundle, in every variant", () => {
 		// `workers.attach` resolves the entry as the sibling of the module the pool
 		// ships in, with the same variant and format suffixes. A missing file, or

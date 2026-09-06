@@ -257,14 +257,14 @@ export class RelationService implements RelationHooks {
 	// `(R, *)` and `(*, T)` as composable query terms (vs the cold materializing
 	// helpers `pairsOf` and `sourcesOfAny` above). Membership semantics: each
 	// matching source is yielded once. Fetch its targets on demand with
-	// `targetsOf`. Insertion order, consistent with the `withSparse` path
+	// `targetsOf`. Insertion order, consistent with the `andSparse` path
 	// (deterministic by construction across lockstep peers, canonical sorting is
 	// reserved for `stateHash` and for snapshot). The measurement shows that
 	// canonical ordering costs much more for each iteration, and that it gives no
 	// advantage for determinism.
 
 	/** The backing sparse component id of relation `R`, the membership store a
-	 * `(R, *)` wildcard term (`Query.withRelation`) drives through the shared
+	 * `(R, *)` wildcard term (`Query.andRelation`) drives through the shared
 	 * sparse-match path. Exclusive relations back a `{ target: f64 }` sparse
 	 * component, multi a tag. Both carry per-source membership, so "has any
 	 * `(R, *)` pair" is exactly membership in this store (including an

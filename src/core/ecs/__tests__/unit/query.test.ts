@@ -152,7 +152,7 @@ describe("ECS query", () => {
 		world.addComponent(e2, Vel, { vx: 7, vy: 8 });
 		world.addComponent(e2, Stat, {});
 
-		const q = world.query(Pos, Vel).without(Stat);
+		const q = world.query(Pos, Vel).not(Stat);
 
 		// Only e1's archetype should match
 		expect(q.archetypeCount).toBe(1);
@@ -172,8 +172,8 @@ describe("ECS query", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Stat = world.registerComponent(Static);
 
-		const q1 = world.query(Pos, Vel).without(Stat);
-		const q2 = world.query(Pos, Vel).without(Stat);
+		const q1 = world.query(Pos, Vel).not(Stat);
+		const q2 = world.query(Pos, Vel).not(Stat);
 
 		expect(q1).toBe(q2);
 	});
@@ -230,7 +230,7 @@ describe("ECS query", () => {
 	});
 
 	//=========================================================
-	// Query.anyOf(), any-of filtering
+	// Query.or(), any-of filtering
 	//=========================================================
 
 	it("any_of() passes archetypes with at least one of the any_of-components", () => {
@@ -253,7 +253,7 @@ describe("ECS query", () => {
 		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 7, y: 8 });
 
-		const q = world.query(Pos).anyOf(Vel, Hp);
+		const q = world.query(Pos).or(Vel, Hp);
 
 		const entityIds: number[] = [];
 		q.forEach((a) => {
@@ -270,8 +270,8 @@ describe("ECS query", () => {
 		const Vel = world.registerComponent(Velocity);
 		const Hp = world.registerComponent(Health);
 
-		const q1 = world.query(Pos).anyOf(Vel, Hp);
-		const q2 = world.query(Pos).anyOf(Vel, Hp);
+		const q1 = world.query(Pos).or(Vel, Hp);
+		const q2 = world.query(Pos).or(Vel, Hp);
 
 		expect(q1).toBe(q2);
 	});

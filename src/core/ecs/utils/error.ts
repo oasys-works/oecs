@@ -8,11 +8,19 @@ export enum ECS_ERROR {
 	ENTITY_NOT_ALIVE = "ENTITY_NOT_ALIVE",
 	CIRCULAR_SYSTEM_DEPENDENCY = "CIRCULAR_SYSTEM_DEPENDENCY",
 	DUPLICATE_SYSTEM = "DUPLICATE_SYSTEM",
+	/** A phase handed to `addSystems` or to `addPhase` is not a phase of this
+	 * schedule: a name no built-in spells, or a handle another world made. */
+	UNKNOWN_PHASE = "UNKNOWN_PHASE",
+	/** The phase ordering of one loop has a cycle, so no run order exists. */
+	CIRCULAR_PHASE_DEPENDENCY = "CIRCULAR_PHASE_DEPENDENCY",
 	ARCHETYPE_NOT_FOUND = "ARCHETYPE_NOT_FOUND",
 	RESOURCE_NOT_REGISTERED = "RESOURCE_NOT_REGISTERED",
 	RESOURCE_ALREADY_REGISTERED = "RESOURCE_ALREADY_REGISTERED",
 	EVENT_ALREADY_REGISTERED = "EVENT_ALREADY_REGISTERED",
 	EVENT_NOT_REGISTERED = "EVENT_NOT_REGISTERED",
+	/** An event id is not an integer >= 0. The events plugin mints ids from a
+	 * counter, so only a forged id reaches this. Dev-only. */
+	INVALID_EVENT_ID = "INVALID_EVENT_ID",
 	FIELD_NOT_REGISTERED = "FIELD_NOT_REGISTERED",
 	RELATION_NOT_REGISTERED = "RELATION_NOT_REGISTERED",
 	RELATION_MODE_INVALID = "RELATION_MODE_INVALID",
@@ -20,6 +28,10 @@ export enum ECS_ERROR {
 	RELATION_CYCLE = "RELATION_CYCLE",
 	SPARSE_CACHE_KEY_OVERFLOW = "SPARSE_CACHE_KEY_OVERFLOW",
 	SPARSE_QUERY_DENSE_PATH = "SPARSE_QUERY_DENSE_PATH",
+	/** A reader that answers from the unfiltered dense archetype list ran on a
+	 * query that carries an archetype term. The term narrows the list, so the
+	 * reader would answer wider than the query matches. */
+	QUERY_TERM_DENSE_PATH = "QUERY_TERM_DENSE_PATH",
 	HIERARCHY_ALREADY_SET = "HIERARCHY_ALREADY_SET",
 	HIERARCHY_INVALID_MAX_DEPTH = "HIERARCHY_INVALID_MAX_DEPTH",
 	OBSERVER_NON_CONVERGENT = "OBSERVER_NON_CONVERGENT",
@@ -49,6 +61,9 @@ export enum ECS_ERROR {
 	/** A run-condition factory was given invalid arguments (dev-only). */
 	INVALID_RUN_CONDITION = "INVALID_RUN_CONDITION",
 	SYSTEM_FN_ARITY = "SYSTEM_FN_ARITY",
+	/** A system id is not an integer >= 0. The schedule and the observers plugin
+	 * mint ids from a counter, so this catches a forged id. Dev-only. */
+	INVALID_SYSTEM_ID = "INVALID_SYSTEM_ID",
 	PARTITION_APPEND_NEEDS_ENTITY_ROW = "PARTITION_APPEND_NEEDS_ENTITY_ROW",
 	PARTITION_BULK_INTO_DISABLED = "PARTITION_BULK_INTO_DISABLED",
 	STRUCTURAL_DURING_ITERATION = "STRUCTURAL_DURING_ITERATION",

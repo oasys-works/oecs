@@ -1,7 +1,7 @@
 /**
  * Sparse storage class, query integration.
  *
- * The second query-match path: a query can `withSparse` or `withoutSparse`
+ * The second query-match path: a query can `andSparse` or `notSparse`
  * a sparse component and iterate the matching entities via `forEachEntity`,
  * across every archetype. Covers the issue's acceptance criteria:
  *  - require a sparse component (members only, regardless of archetype)
@@ -32,7 +32,7 @@ const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((
 
 describe("ECS sparse query integration", () => {
 	//=========================================================
-	// withSparse, members only, across all archetypes
+	// andSparse, members only, across all archetypes
 	//=========================================================
 
 	it("require_sparse yields exactly the members, spanning archetypes", () => {
@@ -61,7 +61,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(c, Marked);
 
 		// query() with no dense terms → match-all dense. The sparse term filters.
-		const q = world.query().withSparse(Marked);
+		const q = world.query().andSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a, b, c]));
 	});
 
@@ -71,7 +71,7 @@ describe("ECS sparse query integration", () => {
 		const a = world.spawn();
 		const b = world.spawn();
 
-		const q = world.query().withSparse(Marked);
+		const q = world.query().andSparse(Marked);
 		expect(collect(q)).toEqual([]);
 
 		world.addSparse(a, Marked);
@@ -85,7 +85,7 @@ describe("ECS sparse query integration", () => {
 	});
 
 	//=========================================================
-	// withoutSparse
+	// notSparse
 	//=========================================================
 
 	it("exclude_sparse drops members, keeps the rest of the dense match", () => {
@@ -102,7 +102,7 @@ describe("ECS sparse query integration", () => {
 
 		world.addSparse(b, Stunned);
 
-		const q = world.query(Pos).withoutSparse(Stunned);
+		const q = world.query(Pos).notSparse(Stunned);
 		expect(collect(q)).toEqual(sorted([a, c]));
 	});
 
@@ -132,7 +132,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(c, Pos, { x: 2, y: 2 });
 		world.addSparse(c, Marked);
 
-		const q = world.query(Pos, Vel).withSparse(Marked);
+		const q = world.query(Pos, Vel).andSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a]));
 	});
 
@@ -152,7 +152,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(b, Vel, { vx: 0, vy: 0 });
 		world.addSparse(b, Marked);
 
-		const q = world.query(Pos).without(Vel).withSparse(Marked);
+		const q = world.query(Pos).not(Vel).andSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a]));
 	});
 
@@ -171,7 +171,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(ents[1], B);
 		world.addSparse(ents[3], B);
 
-		const q = world.query().withSparse(A).withSparse(B);
+		const q = world.query().andSparse(A).andSparse(B);
 		expect(collect(q)).toEqual(sorted([ents[1], ents[3]]));
 	});
 
@@ -188,7 +188,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(c, Alive);
 		world.addSparse(b, Dead);
 
-		const q = world.query().withSparse(Alive).withoutSparse(Dead);
+		const q = world.query().andSparse(Alive).notSparse(Dead);
 		expect(collect(q)).toEqual(sorted([a, c]));
 	});
 
@@ -207,7 +207,7 @@ describe("ECS sparse query integration", () => {
 		const seen = new Map<number, number>();
 		world
 			.query()
-			.withSparse(Cooldown)
+			.andSparse(Cooldown)
 			.forEachEntity((e) => {
 				seen.set(e as number, world.getSparseField(e, Cooldown, "ready_at"));
 			});
@@ -226,7 +226,7 @@ describe("ECS sparse query integration", () => {
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		// Nobody holds Marked.
-		expect(collect(world.query(Pos).withSparse(Marked))).toEqual([]);
+		expect(collect(world.query(Pos).andSparse(Marked))).toEqual([]);
 	});
 
 	it("empty result: members exist but fail the dense term", () => {
@@ -235,7 +235,7 @@ describe("ECS sparse query integration", () => {
 		const Tagged = world.registerSparseTag();
 		const a = world.spawn(); // no Pos
 		world.addSparse(a, Tagged);
-		expect(collect(world.query(Pos).withSparse(Tagged))).toEqual([]);
+		expect(collect(world.query(Pos).andSparse(Tagged))).toEqual([]);
 	});
 
 	//=========================================================
@@ -250,7 +250,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(a, Marked);
 		world.addSparse(b, Marked);
 
-		const q = world.query().withSparse(Marked);
+		const q = world.query().andSparse(Marked);
 		expect(collect(q)).toEqual(sorted([a, b]));
 
 		world.despawn(a);
@@ -259,14 +259,14 @@ describe("ECS sparse query integration", () => {
 	});
 
 	//=========================================================
-	// withSparse and withoutSparse are cached & stable
+	// andSparse and notSparse are cached & stable
 	//=========================================================
 
 	it("require_sparse returns a stable cached query for the same term", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
 		const base = world.query();
-		expect(base.withSparse(Marked)).toBe(base.withSparse(Marked));
+		expect(base.andSparse(Marked)).toBe(base.andSparse(Marked));
 	});
 
 	it("multi-arg require_sparse returns a stable cached query", () => {
@@ -277,7 +277,7 @@ describe("ECS sparse query integration", () => {
 		// The multi-arg form used to mint a fresh Query + id + term arrays on every
 		// call. It now folds through the single-term cache, so repeated calls are
 		// the identical instance.
-		expect(base.withSparse(A, B)).toBe(base.withSparse(A, B));
+		expect(base.andSparse(A, B)).toBe(base.andSparse(A, B));
 	});
 
 	it("multi-arg exclude_sparse returns a stable cached query", () => {
@@ -285,7 +285,7 @@ describe("ECS sparse query integration", () => {
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
 		const base = world.query();
-		expect(base.withoutSparse(A, B)).toBe(base.withoutSparse(A, B));
+		expect(base.notSparse(A, B)).toBe(base.notSparse(A, B));
 	});
 
 	it("multi-arg require_sparse(A, B) is the same instance as the chained form", () => {
@@ -295,8 +295,8 @@ describe("ECS sparse query integration", () => {
 		const base = world.query();
 		// Folding through the single-term cache means the multi-arg call composes
 		// out of the same cached prefixes the chained call builds.
-		expect(base.withSparse(A, B)).toBe(base.withSparse(A).withSparse(B));
-		expect(base.withoutSparse(A, B)).toBe(base.withoutSparse(A).withoutSparse(B));
+		expect(base.andSparse(A, B)).toBe(base.andSparse(A).andSparse(B));
+		expect(base.notSparse(A, B)).toBe(base.notSparse(A).notSparse(B));
 	});
 
 	it("multi-arg require_sparse still yields the correct intersection", () => {
@@ -310,7 +310,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(ents[3], B);
 
 		// Single-call multi-arg form, equivalent to the chained-require test above.
-		const q = world.query().withSparse(A, B);
+		const q = world.query().andSparse(A, B);
 		expect(collect(q)).toEqual(sorted([ents[1], ents[3]]));
 	});
 
@@ -365,7 +365,7 @@ describe("ECS sparse query integration", () => {
 		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 1, y: 1 });
 
-		expect(collect(world.query(Pos).withSparse(Burning))).toEqual(sorted([a]));
+		expect(collect(world.query(Pos).andSparse(Burning))).toEqual(sorted([a]));
 	});
 
 	//=========================================================
@@ -386,7 +386,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
-		const q = world.query(Pos).withSparse(Marked);
+		const q = world.query(Pos).andSparse(Marked);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
@@ -397,7 +397,7 @@ describe("ECS sparse query integration", () => {
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 
-		const q = world.query(Pos).withoutSparse(Stunned);
+		const q = world.query(Pos).notSparse(Stunned);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
@@ -409,7 +409,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
-		const q = world.query(Pos).withSparse(Marked);
+		const q = world.query(Pos).andSparse(Marked);
 		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
 	});
 
@@ -421,7 +421,7 @@ describe("ECS sparse query integration", () => {
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		world.addSparse(a, Marked);
 
-		const q = world.query(Pos).withSparse(Marked);
+		const q = world.query(Pos).andSparse(Marked);
 		expect(() => q.archetypeCount).toThrow(/forEachEntity/);
 	});
 

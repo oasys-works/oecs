@@ -56,7 +56,7 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		const q = world.query(Pos, Vel).without(Stat);
+		const q = world.query(Pos, Vel).not(Stat);
 		const beforeLen = q.archetypeCount;
 
 		// Create a new entity with the excluded component
@@ -70,7 +70,7 @@ describe("ECS query (integration)", () => {
 	});
 
 	//=========================================================
-	// Live .anyOf() acceptance and rejection
+	// Live .or() acceptance and rejection
 	//=========================================================
 
 	it("any_of() live, new matching archetype gets added to live array", () => {
@@ -83,7 +83,7 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		const q = world.query(Pos).anyOf(Vel, Hp);
+		const q = world.query(Pos).or(Vel, Hp);
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp should be picked up
@@ -109,7 +109,7 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		world.addComponent(e1, Vel, { vx: 3, vy: 4 });
 
-		const q = world.query(Pos).anyOf(Vel);
+		const q = world.query(Pos).or(Vel);
 		const beforeLen = q.archetypeCount;
 
 		// New archetype with Pos + Hp. Hp is not in the or-mask
@@ -513,7 +513,7 @@ describe("ECS query (integration)", () => {
 			(q, _ctx, _dt) => {
 				capturedQ = q;
 			},
-			(qb) => qb.with(Pos, Vel)
+			(qb) => qb.and(Pos, Vel)
 		);
 
 		world.addSystems(SCHEDULE.UPDATE, sys);

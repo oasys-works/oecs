@@ -36,32 +36,140 @@ plugin that watches a component takes it later, through its own facade.
 
 ## The host
 
-`install` receives one `PluginHost`. Every seam the world offers a plugin is a member of it.
+`install` receives one `PluginHost`. Every seam the world offers a plugin is a member of it. There
+are nine, and **every one is open to any plugin**. Each hook point is named for what it hooks, and
+never for the plugin that ships it. The two named slots, `installObservers` and `installWorkers`,
+are gone. The observers plugin now uses `onSettle` and `onPrewarm`. The workers plugin now uses
+`memory`, `onDispose` and `installRoute`.
 
 | Member | What it is for | The cost |
 | --- | --- | --- |
 | `store` | the internal store, where the subsystem install seams live | no compatibility promise, it moves between releases |
-| `world` | the bare world, for a system, a field read, a cursor or a resource | a plain reference, taken once |
+| `world` | the bare world, for a system, a phase, a field read, a cursor or a resource | a plain reference, taken once |
 | `changes` | the store's change feed, typed to what a consumer may touch | see [the change feed](#the-change-feed) |
 | `context` | the one system context an observer callback receives | shared with the schedule, so a callback sees the access span a system sees |
-| `onSettle(fn)` | run `fn` at the tail of every `update()` | one call for each hook, for each frame |
-| `installObservers(registry)` | hand the world its observer registry | the observers plugin owns this seam |
-| `installWorkers(hooks)` | hand the world a pool's registration and dispose hooks, and take back the store bytes, the store base, `noteScan` and the route | the workers plugin owns this seam |
-
-The first five are open to any plugin. The last two are one named slot each, and a first-party
-plugin fills each one. The world drives an observer registry and a worker pool on a hot path,
-so each stays a single slot rather than a keyed registry. Reach the same ground with `world`,
-`changes` and `onSettle` instead.
+| `memory` | where the world's bytes are, for a worker or a WASM module | three fields, read at attach time |
+| `onSettle(fn)` | run `fn` at the tail of every `update()`, after every system and flush | one call for each hook, for each frame |
+| `onPrewarm(fn)` | contribute the access shapes that `startup()` folds into the archetype closure | read one time, at startup |
+| `onDispose(fn)` | run `fn` when the world goes away | one call for each hook, at `ecs.dispose()` |
+| `installRoute(planner)` | claim the body of the systems this plugin routes | see [the system dispatch route](#the-system-dispatch-route) |
 
 `host.world` carries no facade of any plugin, including the one installing. Take it to register a
-system, read a field, build a cursor or reach a resource.
+system, register a component, add a phase, read a field, build a cursor or reach a resource.
 
 `host.store` is the internal store. It carries no compatibility promise, and a release may change
 it. Reach for it when the seam you need has no world-level form.
 
+`onPrewarm(fn)` returns `SystemDescriptor` values, and `startup()` folds their declared access into
+the archetype closure. A callback that spawns or transitions then gets its target archetype planted
+in advance, rather than first-touched in the middle of a tick. The observers plugin uses it for the
+observers a world registered before startup.
+
+`onDispose(fn)` is where a plugin ends a thread, a timer or a socket. Hooks run in install order.
+
+`host.memory` names where the bytes are, for a plugin that hands them to a reader outside the
+world.
+
+| Field | What it holds |
+| --- | --- |
+| `backing` | the `WebAssembly.Memory`, the `SharedArrayBuffer`, or `null` on any other backing |
+| `backingSource` | what `memory.backing` resolved to, so a refusal can name it |
+| `storeBase` | the byte offset of the store header inside the backing |
+
+The memory travels, and not its current buffer. The two grow differently, and a reader survives
+both.
+
 `storeOnlyHost(store)`, on `@oasys/oecs/internal`, builds a host around a bare store. `store` and
 `changes` are both the store, so the change feed works. Every world-level member throws
-`PLUGIN_NOT_INSTALLED`, because a bare store has no world and no schedule tail.
+`PLUGIN_NOT_INSTALLED`, because a bare store has no world, no schedule tail and no memory plan.
+
+## The system dispatch route
+
+A route claims the body of a system and runs its own work in place of that body. The workers plugin
+is one, and a plugin of yours uses the same seam. The world holds **one** route, so a second
+`installRoute` throws `PLUGIN_ALREADY_INSTALLED`.
+
+```ts
+import type { SystemConfig, SystemContext } from "@oasys/oecs";
+
+interface SystemRoutePlanner {
+  // Build what one routed dispatch reads. `undefined` leaves the system on its `fn`.
+  plan(config: SystemConfig): object | undefined;
+}
+
+interface RouteControl {
+  route(dispatch: RouteDispatch | null): void;   // null puts every claimed system back
+}
+
+interface RouteDispatch {
+  // True means this route ran the body. False falls back to the system's own `fn`.
+  run(plan: object, ctx: SystemContext, deltaTime: number, runTick: number): boolean;
+}
+```
+
+The world asks the planner about **every** system it registers. A planner that has nothing to say
+about one answers `undefined`. The world freezes what the planner built onto the descriptor and
+never looks inside it, so the shape of the plan belongs to the plugin. The plugin validates its own
+config there, which is why a world without the plugin validates none.
+
+`installRoute` gives back a `RouteControl`. Call `route(dispatch)` to turn the route on, and
+`route(null)` to turn it off. Both are cold calls, and neither belongs in a frame.
+
+> [!NOTE]
+> `SystemRoutePlanner`, `RouteControl`, `RouteDispatch` and `PluginMemory` are structural, and the
+> package root exports all four as types. A plugin satisfies the planner by declaring `plan`, and
+> it holds the control and the memory by inference. Import a name when you want the compiler to
+> check the shape.
+
+The route stays one typed slot and not a keyed registry. The schedule hoists it once for each phase
+and reads one opaque plan for each dispatch. A keyed read on that path is far slower on a schedule
+of short bodies, and `bench/` holds the comparison. The registration is keyed and cold, so a third
+party reaches the same slot the first party does.
+
+```ts
+import { ECS, type Plugin, type PluginHost, type SystemConfig } from "@oasys/oecs";
+
+interface DetourPlugin {
+  readonly detour: { ran: number };
+}
+
+function detour(): Plugin<DetourPlugin> {
+  return {
+    name: "detour",
+    install(host: PluginHost): DetourPlugin {
+      const service = { ran: 0 };
+      // The planner. It claims every system whose name starts with `detour.`.
+      const control = host.installRoute({
+        plan: (config: SystemConfig) =>
+          config.name?.startsWith("detour.") === true ? { label: config.name } : undefined
+      });
+      // The dispatch. True means this route ran the body.
+      control.route({
+        run: () => {
+          service.ran++;
+          return true;
+        }
+      });
+      host.onDispose(() => control.route(null));
+      return { detour: service };
+    }
+  };
+}
+
+const world = ECS.create({ plugins: [detour()] });
+world.detour.ran; // how many claimed dispatches the route took
+```
+
+`src/core/ecs/__tests__/integration/third_party_plugin.test.ts` writes a route in its own body,
+claims one system, and holds the world to the second-route refusal.
+
+## A phase of your own
+
+`host.world.addPhase(name, { loop, before, after })` gives the plugin one slot in the schedule. The
+plugin then owns its order, instead of contending for insertion order inside a phase the
+application also writes to. Return the handle on the facade, so an application can order its own
+systems against the slot. [schedule](./schedule.md) documents `addPhase`, the three loops, the order
+between phases and the two faults.
 
 ## The rules
 
@@ -350,8 +458,11 @@ facade key that names a member the world already carries, `spawn` for instance, 
 
 ## What this page does not cover
 
-- **No lifecycle hook other than settle and the structural rounds.** There is no per-phase hook and
-  no install-time startup hook. Register a system in a startup phase through `host.world` instead.
+- **No per-phase hook.** The lifecycle hooks are settle, prewarm, dispose and the structural
+  rounds. To run at a point of your own inside a frame, add a phase with `host.world.addPhase` and
+  register a system into it.
+- **No install-time startup hook.** Register a system in a startup phase through `host.world`
+  instead.
 - **No snapshot participation.** `capture` and `restore` carry the store's own state. A plugin
   that holds state outside the store serializes it itself.
 - **No uninstall.** A plugin lives as long as the world. A consumer leaves the change feed with

@@ -79,7 +79,7 @@ describe("a bare world names the missing plugin", () => {
 
 	it("registers a parallel system and runs its fn", () => {
 		// The plan builder ships with the plugin. Without it the world builds no
-		// plan, so `parallelPlan` stays undefined and the schedule runs the body.
+		// plan, so `routePlan` stays undefined and the schedule runs the body.
 		const world = new ECS({ memory: { maxBytes: 4 * 1024 * 1024 } });
 		const Pos = world.registerComponent({ x: "i32" }, { name: "Pos" });
 		let ran = 0;
@@ -96,7 +96,7 @@ describe("a bare world names the missing plugin", () => {
 				ran++;
 			}
 		});
-		expect(system.parallelPlan).toBeUndefined();
+		expect(system.routePlan).toBeUndefined();
 		world.addSystems(SCHEDULE.UPDATE, system);
 		world.startup();
 		world.update(1 / 60);

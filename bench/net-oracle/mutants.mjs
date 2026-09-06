@@ -594,15 +594,15 @@ const MUTANTS = [
   }`,
 	},
 	{
-		// `withRelation` narrows the rows by the backing sparse id of the relation.
+		// `andRelation` narrows the rows by the backing sparse id of the relation.
 		// Without that term the query gives every agent, and the answer then holds the
 		// ERA and the ROOT, which have no port 1.
 		id: "with-relation-does-not-narrow",
-		what: "withRelation keeps every row instead of the sources of that relation",
-		find: `    const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
+		what: "andRelation keeps every row instead of the sources of that relation",
+		find: `    const sid = this._resolver.relationBackingSparseId(def, "query.andRelation");
     const result = this._deriveRelation(
       appendSparse(this.terms.sparseIncludes, sid),`,
-		to: `    const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
+		to: `    const sid = this._resolver.relationBackingSparseId(def, "query.andRelation");
     const result = this._deriveRelation(
       this.terms.sparseIncludes,`,
 	},

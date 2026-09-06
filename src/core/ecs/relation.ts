@@ -62,7 +62,7 @@ export type RelationDef<C extends RelationCardinality = RelationCardinality> = R
 /** Access sentinel for the `(*, T)` wildcard query iteration
  * (`Query.forEachRelatedTo`). A `(*, T)` term reads **every** registered
  * relation's reverse index to find sources of `T`, so it can't name a specific
- * relation in `relationReads` the way `withRelation(R)` (`(R, *)`) can. A
+ * relation in `relationReads` the way `andRelation(R)` (`(R, *)`) can. A
  * system that iterates a `(*, T)` wildcard lists `ANY_RELATION` in `relationReads`
  * instead. `accessCheck.assertRelationReadAny` honors it. The numeric value is a
  * reserved sentinel far past any real registration-order relation id (relations are

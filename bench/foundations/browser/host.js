@@ -82,7 +82,7 @@ function buildWorld({ memory, kernel }) {
 		ecs.template(...parts(), TagOne, TagTwo),
 		ecs.template(...parts(), Frozen)
 	];
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 
 	let fnRuns = 0;
 	const system = ecs.registerSystem({

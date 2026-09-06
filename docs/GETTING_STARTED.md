@@ -154,7 +154,7 @@ live as new archetypes appear. The iteration function for the high-frequency loo
 `forEachChunk` with `cols.mut`.
 
 ```ts
-const movers = ecs.query(Pos, Vel).without(Dead);
+const movers = ecs.query(Pos, Vel).not(Dead);
 
 const moveSys = ecs.registerSystem({
   name: "move",
@@ -220,7 +220,7 @@ ecs.registerSystem((ctx, dt) => { frameCount++; });
 // A function with a query builder, the engine resolves the query one time, at registration.
 ecs.registerSystem(
   (q, ctx, dt) => { q.forEach((arch) => { /* read-only, no component access through ctx */ }); },
-  (qb) => qb.with(Pos, Vel).without(Dead),
+  (qb) => qb.and(Pos, Vel).not(Dead),
 );
 ```
 
@@ -404,14 +404,14 @@ To make a query more exact, chain the methods. Each method gives a new query, an
 it.
 
 ```ts
-const alive     = ecs.query(Pos).and(Health);                    // include Pos and Health
-const active    = ecs.query(Pos).and(Health).without(Dead);          // remove Dead
-const afflicted = ecs.query(Health).anyOf(Poison, Fire);        // a minimum of one of these
-const targets   = ecs.query(Pos).and(Health).without(Shield).anyOf(IsEnemy, IsBoss);
+const alive     = ecs.query(Pos).and(Health);            // include Pos and Health
+const active    = ecs.query(Pos).and(Health).not(Dead);  // remove Dead
+const afflicted = ecs.query(Health).or(Poison, Fire);    // a minimum of one of these
+const targets   = ecs.query(Pos).and(Health).not(Shield).or(IsEnemy, IsBoss);
 ```
 
-Inside `registerSystem`, use `qb.with(...)` and chain in the same way:
-`(qb) => qb.with(Pos, Vel).without(Dead)`. An identical set of filters resolves to the same cached
+Inside `registerSystem`, use `qb.and(...)` and chain in the same way:
+`(qb) => qb.and(Pos, Vel).not(Dead)`. An identical set of filters resolves to the same cached
 `Query` instance. So an `ecs.query(...)` call that you write in place has a low cost.
 
 ## 12. A complete example
@@ -447,9 +447,9 @@ const Hit = eventKey<{ target: EntityID; damage: number }>("Hit");
 ecs.events.register(Hit, ["target", "damage"]);
 
 // --- Queries (captured one time at module scope, the store keeps them current) ---
-const movers     = ecs.query(Pos, Vel).without(Dead);
+const movers     = ecs.query(Pos, Vel).not(Dead);
 const movedPos    = ecs.query(Pos).changed(Pos);
-const withHealth  = ecs.query(Health).without(Dead);
+const withHealth  = ecs.query(Health).not(Dead);
 const corpses     = ecs.query(Dead);
 
 // --- Systems ---

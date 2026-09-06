@@ -142,7 +142,7 @@ describe("Tag components", () => {
 		world.addComponent(dead, Pos, { x: 3, y: 4 });
 		world.addComponent(dead, IsDead);
 
-		const q = world.query(Pos).without(IsDead);
+		const q = world.query(Pos).not(IsDead);
 		const entities: number[] = [];
 		q.forEach((a) => {
 			for (let i = 0; i < a.entityCount; i++) entities.push(a.entityIds[i]);

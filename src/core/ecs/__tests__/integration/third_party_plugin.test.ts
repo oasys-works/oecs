@@ -8,6 +8,11 @@
  * whole: the facade lands on the world, the change feed answers a consumer it
  * has never heard of, and the settle hook runs at the tail of `update()`.
  *
+ * A second plugin here installs a system dispatch route, which is the hook
+ * point the workers plugin uses. It is named for what it hooks, so a third
+ * party claims a system body through the same seam and the core names no
+ * plugin.
+ *
  * It also holds `ECS.create` to its three refusals. A duplicate name, a
  * missing `requires` and a facade key that would overwrite a world member each
  * throw, and the message names the plugin.
@@ -21,7 +26,9 @@ import { ECS } from "../../ecs";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 import type { ComponentDef } from "../../component";
 import type { EntityID } from "../../entity";
-import type { ChangeFeed, Plugin, PluginHost } from "../../plugin";
+import type { ChangeFeed, Plugin, PluginHost, RouteControl } from "../../plugin";
+import type { SystemConfig } from "../../system";
+import { SCHEDULE } from "../../schedule";
 import { relations } from "../../../../plugins/relations";
 import { observers } from "../../../../plugins/observers";
 
@@ -83,6 +90,52 @@ function audit(name = "audit"): Plugin<AuditPlugin> {
 	};
 }
 
+/** The surface the route plugin contributes. */
+interface DetourPlugin {
+	readonly detour: Detour;
+}
+
+/** A system dispatch route written outside this package.
+ *
+ * It claims every system whose name starts with `detour.`, and runs a counter
+ * in place of that system's own body. The plan it builds is opaque to the
+ * core, which is the property this proves: the descriptor carries a plugin's
+ * value and the schedule never looks inside it. */
+class Detour {
+	public ran = 0;
+	public disposed = 0;
+	public control: RouteControl | null = null;
+
+	/** The registration seam. `undefined` leaves the system on its own `fn`. */
+	public plan(config: SystemConfig): object | undefined {
+		const name = config.name;
+		if (name === undefined || !name.startsWith("detour.")) return undefined;
+		return { label: name };
+	}
+
+	/** The dispatch seam. True means this route ran the body. */
+	public run(plan: object): boolean {
+		expect(plan).toHaveProperty("label");
+		this.ran++;
+		return true;
+	}
+}
+
+/** A plugin that installs a route, the hook the workers plugin uses. */
+function detour(): Plugin<DetourPlugin> {
+	return {
+		name: "detour",
+		install(host: PluginHost): DetourPlugin {
+			const service = new Detour();
+			service.control = host.installRoute(service);
+			host.onDispose(() => {
+				service.disposed++;
+			});
+			return { detour: service };
+		}
+	};
+}
+
 /** Run `fn` and return the `ECSError` it threw. */
 function thrown(fn: () => unknown): ECSError {
 	try {
@@ -137,6 +190,67 @@ describe("a plugin written outside this package", () => {
 		// Each settle runs at a later change tick than the one before it.
 		expect(world.audit.runs[1]).toBeGreaterThan(world.audit.runs[0]);
 		expect(world.audit.runs[2]).toBeGreaterThan(world.audit.runs[1]);
+	});
+
+	it("lets a plugin outside this package claim a system body", () => {
+		const world = ECS.create({ plugins: [detour()] });
+		const route = world.detour;
+		let own = 0;
+		let plain = 0;
+		world.addSystems(
+			SCHEDULE.UPDATE,
+			world.registerSystem({
+				name: "detour.claimed",
+				reads: [],
+				writes: [],
+				fn: () => {
+					own++;
+				}
+			}),
+			world.registerSystem({
+				name: "kept",
+				reads: [],
+				writes: [],
+				fn: () => {
+					plain++;
+				}
+			})
+		);
+		world.startup();
+
+		// No route is attached yet, so every system runs its own body.
+		world.update(1 / 60);
+		expect(own).toBe(1);
+		expect(plain).toBe(1);
+		expect(route.ran).toBe(0);
+
+		// Attaching the route replaces the claimed body and leaves the other.
+		route.control!.route(route);
+		world.update(1 / 60);
+		expect(route.ran).toBe(1);
+		expect(own).toBe(1);
+		expect(plain).toBe(2);
+
+		// Detaching puts the claimed system back on its own body.
+		route.control!.route(null);
+		world.update(1 / 60);
+		expect(route.ran).toBe(1);
+		expect(own).toBe(2);
+		expect(plain).toBe(3);
+	});
+
+	it("runs a plugin's dispose hook when the world goes away", () => {
+		const world = ECS.create({ plugins: [detour()] });
+		const route = world.detour;
+		expect(route.disposed).toBe(0);
+		world.dispose();
+		expect(route.disposed).toBe(1);
+	});
+
+	it("refuses a second system dispatch route", () => {
+		const err = thrown(() => ECS.create({ plugins: [detour(), { ...detour(), name: "second" }] }));
+		expect(err.category).toBe(ECS_ERROR.PLUGIN_ALREADY_INSTALLED);
+		expect(err.message).toContain("route");
 	});
 
 	it("refuses two plugins of one name", () => {

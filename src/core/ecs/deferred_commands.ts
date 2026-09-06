@@ -23,7 +23,7 @@
 
 import type { ComponentDef } from "./component";
 import type { EntityID } from "./entity";
-import type { StructuralObserverEvents } from "./store";
+import type { StructuralObserverEvents } from "./store_types";
 import { ECS_ERROR, ECSError } from "./utils/error";
 
 /** Runaway guard for the observer cascade fixed point (`flushStructural`). A

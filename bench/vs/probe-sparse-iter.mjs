@@ -1,6 +1,6 @@
 /**
  * A diagnostic for the `iter2` row of the `oecs-sparse` entry. It splits the cost
- * of `query(Slot).withSparse(Pos, Vel).forEachEntity` into its parts, so the table
+ * of `query(Slot).andSparse(Pos, Vel).forEachEntity` into its parts, so the table
  * can give the reason, and not a ratio only.
  *
  * Each variant runs in its own process. All the variants in one process give more
@@ -108,7 +108,7 @@ if (variant === "packed") {
 		ecs.addSparse(ids[i], Pos, { x: 0, y: 0 });
 		ecs.addSparse(ids[i], Vel, { vx: 1, vy: 1 });
 	}
-	const q = ecs.query(Slot).withSparse(Pos, Vel);
+	const q = ecs.query(Slot).andSparse(Pos, Vel);
 	const p = ecs.sparseCursor(Pos);
 	const v = ecs.sparseCursorRead(Vel);
 	const step = (e) => {

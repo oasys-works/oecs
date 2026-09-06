@@ -1,10 +1,18 @@
 /***
  * Schedule. System execution lifecycle with topological ordering.
  *
- * Systems are organized into 7 phases:
+ * A world starts with seven phases:
  *   PRE_STARTUP  → STARTUP → POST_STARTUP  (run once via ecs.startup())
  *   FIXED_UPDATE                            (run at fixed timestep via ecs.update(dt))
  *   PRE_UPDATE   → UPDATE  → POST_UPDATE   (run every frame via ecs.update(dt))
+ *
+ * The set is open. `ecs.addPhase(name, { loop, before, after })` adds one more
+ * slot to a loop and hands back a `Phase` handle. A plugin owns its own slot
+ * that way, instead of contending for insertion order inside a phase the
+ * application also writes to. Phases of one loop are topologically sorted the
+ * same way systems inside a phase are, with declaration order as the
+ * tiebreaker, and the order is resolved once per `addPhase` rather than once
+ * per frame.
  *
  * Within each phase, systems are topologically sorted using Kahn's
  * algorithm, respecting before and after ordering constraints. Insertion
@@ -53,9 +61,10 @@ import { DEV } from "../../dev_flag";
  * This interface is structural, and it erases, so the core graph reaches none
  * of them. `run` answers false below the row threshold, before the kernel is
  * loaded, and after a failed join. Then the sequential body runs. */
-export interface ParallelRoute {
+export interface RouteDispatch {
 	/** `plan` is the opaque value the descriptor carries. The schedule loads
-	 * it and passes it on, and only the pool reads inside it. */
+	 * it and passes it on, and only the route reads inside it. Answering false
+	 * puts this dispatch back on the system's own `fn`. */
 	run(plan: object, ctx: SystemContext, deltaTime: number, runTick: number): boolean;
 }
 
@@ -69,9 +78,104 @@ export enum SCHEDULE {
 	POST_UPDATE = "POST_UPDATE"
 }
 
-const STARTUP_PHASES = [SCHEDULE.PRE_STARTUP, SCHEDULE.STARTUP, SCHEDULE.POST_STARTUP] as const;
+/** Which drive runs a phase.
+ *
+ * `startup` runs once, from `ecs.startup()`. `fixed` runs once per fixed step,
+ * inside the accumulator loop. `update` runs once per `ecs.update(dt)`. A
+ * phase belongs to one loop for its life, because the loop decides the delta
+ * time it receives and how often it runs. */
+export type PhaseLoop = "startup" | "fixed" | "update";
 
-const UPDATE_PHASES = [SCHEDULE.PRE_UPDATE, SCHEDULE.UPDATE, SCHEDULE.POST_UPDATE] as const;
+/**
+ * An opaque handle for one slot in the schedule, returned by `ecs.addPhase`.
+ *
+ * A phase is identified by **object identity**, not by name, exactly like a
+ * `SystemSet`. Two `addPhase` calls with the same name are two phases. The
+ * handle belongs to the world that made it, so passing one to another world's
+ * `addSystems` is a fault and not silent cross-world scheduling.
+ *
+ * The seven built-ins have no handle. `SCHEDULE.UPDATE` names one directly,
+ * and every place that takes a `SchedulePhase` takes either spelling. A string
+ * enum member is already a string, so the built-in needs no wrapper object,
+ * and a plugin author reads `after: [SCHEDULE.PRE_UPDATE]` without an import
+ * of a handle table.
+ */
+export interface Phase {
+	readonly name: string;
+	readonly loop: PhaseLoop;
+}
+
+/** Where a new phase sits. `before` and `after` order it against other phases
+ * of the same loop, and a target in another loop is dropped. A phase with
+ * neither runs after every phase declared before it, so an unordered plugin
+ * phase lands at the tail of its loop. */
+export interface PhaseConfig {
+	readonly loop: PhaseLoop;
+	readonly before?: readonly SchedulePhase[];
+	readonly after?: readonly SchedulePhase[];
+}
+
+/** Either spelling of a phase: a built-in `SCHEDULE` member, or the handle
+ * `addPhase` returned. */
+export type SchedulePhase = SCHEDULE | Phase;
+
+/** The name a trace event carries for a phase. A built-in spells its `SCHEDULE`
+ * member. A phase from `addPhase` spells the name it was given, so the set of
+ * values is open and a consumer switching on it needs a default arm. */
+export type PhaseName = SCHEDULE | (string & {});
+
+/** The loop that drives either spelling of a phase.
+ *
+ * A handle from `addPhase` carries its loop. A built-in is one of seven, and
+ * its loop is fixed at construction. Pure and cold, so a caller outside the
+ * schedule classifies a phase without holding the world. `installHostCommandSeam`
+ * is that caller. It refuses a recorder on a fixed-loop phase, and `addPhase`
+ * can put a phase of any name in that loop. */
+export function phaseLoopOf(phase: SchedulePhase): PhaseLoop {
+	if (typeof phase !== "string") return phase.loop;
+	switch (phase) {
+		case SCHEDULE.PRE_STARTUP:
+		case SCHEDULE.STARTUP:
+		case SCHEDULE.POST_STARTUP:
+			return "startup";
+		case SCHEDULE.FIXED_UPDATE:
+			return "fixed";
+		case SCHEDULE.PRE_UPDATE:
+		case SCHEDULE.UPDATE:
+		case SCHEDULE.POST_UPDATE:
+			return "update";
+	}
+}
+
+/** The name either spelling of a phase carries, for a diagnostic and for a
+ * system name. Pure and cold. */
+export function phaseNameOf(phase: SchedulePhase): PhaseName {
+	return typeof phase === "string" ? phase : phase.name;
+}
+
+/** One phase's whole state: its systems, its cached plan and its ordering.
+ *
+ * The handle a caller holds **is** this object, so `addSystems` reaches the
+ * system list with a field read and no lookup. `plan` is a field and not a
+ * `Map` entry, which is what lets the drive loops read a phase's plan by array
+ * index instead of by a string-keyed `Map.get` once per phase per frame. */
+class PhaseNode implements Phase {
+	public readonly nodes: SystemNode[] = [];
+	/** The sorted plan, or `null` when a system was added or removed since. */
+	public plan: PhasePlan | null = null;
+	public readonly before: SchedulePhase[] = [];
+	public readonly after: SchedulePhase[] = [];
+
+	constructor(
+		/** The schedule that made this phase. A handle from another world is a
+		 * fault, so the owner travels with the handle. */
+		public readonly owner: object,
+		public readonly name: string,
+		public readonly loop: PhaseLoop,
+		/** Declaration order, the tiebreaker when two phases are both ready. */
+		public readonly insertionOrder: number
+	) {}
+}
 
 /**
  * An opaque handle for a named group of systems. A set carries a shared
@@ -217,19 +321,27 @@ function seedDispatchSite(): void {
 seedDispatchSite();
 
 export class Schedule {
-	private readonly _phaseSystems: Map<SCHEDULE, SystemNode[]> = new Map();
-	// Sorted descriptors for a phase, paired with the `_lastRunTicks` slot of each,
-	// cached together so `_runPhase` resolves both with the one `Map.get` it
-	// already paid, and the per-system lookup inside the loop is array indexing.
-	private readonly _phasePlans: Map<SCHEDULE, PhasePlan> = new Map();
-	private readonly _phaseBySystem: Map<SystemDescriptor, SCHEDULE> = new Map();
+	// Every phase this world has, built-in and added, in declaration order. The
+	// drive loops never read this one, they read the three resolved arrays below.
+	private readonly _phases: PhaseNode[] = [];
+	// The built-in seven, keyed by their `SCHEDULE` spelling, so `addSystems`
+	// resolves a string to the node. Cold path, one lookup per add.
+	private readonly _builtins: Map<string, PhaseNode> = new Map();
+	// The phases of one loop, already sorted. Resolved in `addPhase`, which is a
+	// setup call, so a drive walks a plain array and reads each phase's plan as a
+	// field. The `Map<SCHEDULE, PhasePlan>` this replaced cost one string-keyed
+	// `Map.get` per phase per frame, which a dispatch-bound tick pays for.
+	private _startupOrder: PhaseNode[] = [];
+	private _fixedOrder: PhaseNode[] = [];
+	private _updateOrder: PhaseNode[] = [];
+	private readonly _phaseBySystem: Map<SystemDescriptor, PhaseNode> = new Map();
 	// Previous-run tick per scheduled system, a packed array, not a `Map` keyed
 	// on the descriptor. `_runPhase` reads it and writes it back once per system
 	// per phase. A profile of a dispatch-bound schedule shows that those two `Map`
 	// operations, and not the system bodies, are where most of the phase loop goes.
 	// They hash an object identity twice for each system in each frame.
 	//
-	// Indexed by a `SCHEDULE`-local slot, not by `SystemDescriptor.id`. Ids come
+	// Indexed by a `Schedule`-local slot, not by `SystemDescriptor.id`. Ids come
 	// from a per-world counter, so two descriptors registered with two different
 	// worlds both get id 0, scheduling them into a third world would alias them
 	// onto one slot and let the system that runs more often overwrite the other's
@@ -274,29 +386,156 @@ export class Schedule {
 	// hoists this to a local and only reads `desc.backendHandle` when non-null,
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
-	// The attached worker pool, or null (the default). Hoisted in `_runPhase`
-	// exactly as the backend is: `null` means `desc.parallelPlan` is never read.
-	private _workers: ParallelRoute | null = null;
+	// The attached system dispatch route, or null (the default). One typed
+	// slot, not a keyed registry: a keyed read on the dispatch path is far
+	// slower on a schedule of short bodies, and `bench/` holds the comparison.
+	// Hoisted in `_runPhase` exactly as the backend is: `null` means
+	// `desc.routePlan` is never read.
+	private _route: RouteDispatch | null = null;
 
 	/** Dev-diagnostic sink (`ECSOptions.onWarn`). Defaults to `console.warn`.
 	 * The only schedule diagnostic today is `_warnDroppedEdge`. */
 	private readonly _onWarn: (message: string) => void;
 
-	/** The `FIXED_UPDATE` node list, held directly for `hasFixedSystems`. */
-	private readonly _fixedNodes: SystemNode[] = [];
+	// How many systems sit in a `fixed`-loop phase, for `hasFixedSystems`.
+	// `ECS.update` asks once per frame before any phase runs, so the answer is a
+	// field compare. A count and not a list length, because the fixed loop is
+	// open and may hold more than one phase.
+	private _fixedSystemCount = 0;
+
+	// Declaration order for the next phase, the phase sort's tiebreaker.
+	private _nextPhaseOrder = 0;
 
 	constructor(onWarn?: (message: string) => void) {
 		this._onWarn = onWarn ?? ((message) => console.warn(message));
-		for (let i = 0; i < STARTUP_PHASES.length; i++) {
-			this._phaseSystems.set(STARTUP_PHASES[i], []);
-		}
-		this._phaseSystems.set(SCHEDULE.FIXED_UPDATE, this._fixedNodes);
-		for (let i = 0; i < UPDATE_PHASES.length; i++) {
-			this._phaseSystems.set(UPDATE_PHASES[i], []);
-		}
+		// The seven built-ins, declared in the order they run and chained with the
+		// same `after` edges a user phase gets. The chain is what keeps a phase
+		// added `before: [SCHEDULE.UPDATE]` from also jumping ahead of PRE_UPDATE.
+		const preStartup = this._declarePhase(SCHEDULE.PRE_STARTUP, "startup");
+		const startup = this._declarePhase(SCHEDULE.STARTUP, "startup");
+		startup.after.push(preStartup);
+		const postStartup = this._declarePhase(SCHEDULE.POST_STARTUP, "startup");
+		postStartup.after.push(startup);
+		this._declarePhase(SCHEDULE.FIXED_UPDATE, "fixed");
+		const preUpdate = this._declarePhase(SCHEDULE.PRE_UPDATE, "update");
+		const update = this._declarePhase(SCHEDULE.UPDATE, "update");
+		update.after.push(preUpdate);
+		const postUpdate = this._declarePhase(SCHEDULE.POST_UPDATE, "update");
+		postUpdate.after.push(update);
+		for (const node of this._phases) this._builtins.set(node.name, node);
+		this._resolveOrder("startup");
+		this._resolveOrder("fixed");
+		this._resolveOrder("update");
 	}
 
-	public addSystems(phase: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): void {
+	/**
+	 * Add one phase to a loop and hand back its handle. Cold path, setup only.
+	 *
+	 * `before` and `after` order it against the other phases of the same loop.
+	 * A target in another loop is dropped, the way a system ordered against a
+	 * system in another phase is dropped. With neither, the phase runs after
+	 * every phase declared before it, so it lands at the tail of its loop.
+	 *
+	 * The handle is this world's. Two calls with one name make two phases, the
+	 * rule `systemSet` already follows, so hold the handle rather than the name.
+	 */
+	public addPhase(name: string, config: PhaseConfig): Phase {
+		const node = this._declarePhase(name, config.loop);
+		for (const target of config.before ?? EMPTY_ARRAY) {
+			node.before.push(this._checkPhase(target));
+		}
+		for (const target of config.after ?? EMPTY_ARRAY) {
+			node.after.push(this._checkPhase(target));
+		}
+		this._resolveOrder(config.loop);
+		return node;
+	}
+
+	private _declarePhase(name: string, loop: PhaseLoop): PhaseNode {
+		const node = new PhaseNode(this, name, loop, this._nextPhaseOrder++);
+		this._phases.push(node);
+		return node;
+	}
+
+	/** Check that a phase belongs to this schedule, and hand it back unchanged.
+	 * Not a dev guard: a handle from another world would push systems into that
+	 * world's list, and a production build that scheduled them into nothing is
+	 * worse than a named fault on a setup call. */
+	private _checkPhase(phase: SchedulePhase): SchedulePhase {
+		this._resolvePhase(phase);
+		return phase;
+	}
+
+	/** The node behind either spelling of a phase. Cold path. */
+	private _resolvePhase(phase: SchedulePhase): PhaseNode {
+		if (typeof phase === "string") {
+			const found = this._builtins.get(phase);
+			if (found !== undefined) return found;
+			throw new ECSError(
+				ECS_ERROR.UNKNOWN_PHASE,
+				`${phase} is not a phase of this world. Pass a SCHEDULE member, or the handle addPhase returned`
+			);
+		}
+		const node = phase as PhaseNode;
+		if (node.owner !== this) {
+			throw new ECSError(
+				ECS_ERROR.UNKNOWN_PHASE,
+				`phase ${node.name} belongs to another world. Call addPhase on the world you are scheduling into`
+			);
+		}
+		return node;
+	}
+
+	/** Sort one loop's phases and cache the result. Kahn's algorithm with
+	 * declaration order as the tiebreaker, the same rule the systems inside a
+	 * phase follow. Cold path, once per `addPhase`. */
+	private _resolveOrder(loop: PhaseLoop): void {
+		const members: PhaseNode[] = [];
+		for (let i = 0; i < this._phases.length; i++) {
+			if (this._phases[i].loop === loop) members.push(this._phases[i]);
+		}
+		const edges = new Map<PhaseNode, PhaseNode[]>();
+		for (const node of members) edges.set(node, []);
+		const inLoop = new Set(members);
+		for (const node of members) {
+			for (const target of node.before) {
+				const other = this._resolvePhase(target);
+				// A target in another loop expands to nothing, the rule an ordering
+				// target in another phase already follows.
+				if (other !== node && inLoop.has(other)) edges.get(node)!.push(other);
+			}
+			for (const target of node.after) {
+				const other = this._resolvePhase(target);
+				if (other !== node && inLoop.has(other)) edges.get(other)!.push(node);
+			}
+		}
+		let sorted: PhaseNode[];
+		try {
+			sorted = topologicalSort(
+				members,
+				edges,
+				(a, b) => a.insertionOrder - b.insertionOrder,
+				(n) => n.name
+			);
+		} catch (err) {
+			if (err instanceof TypeError) {
+				throw new ECSError(
+					ECS_ERROR.CIRCULAR_PHASE_DEPENDENCY,
+					`the ${loop} phases cannot be ordered: ${err.message}. Drop one before or after from addPhase`
+				);
+			}
+			throw err;
+		}
+		if (loop === "startup") this._startupOrder = sorted;
+		else if (loop === "fixed") this._fixedOrder = sorted;
+		else this._updateOrder = sorted;
+	}
+
+	public addSystems(
+		phase: SchedulePhase,
+		...entries: (SystemDescriptor | SystemEntry)[]
+	): void {
+		const target = this._resolvePhase(phase);
 		for (const entry of entries) {
 			const isEntry = "system" in entry;
 			const descriptor = isEntry ? entry.system : entry;
@@ -322,9 +561,9 @@ export class Schedule {
 				sets
 			};
 
-			// ! safe: the constructor pre-populates every `SCHEDULE` enum key
-			this._phaseSystems.get(phase)!.push(node);
-			this._phaseBySystem.set(descriptor, phase);
+			target.nodes.push(node);
+			if (target.loop === "fixed") this._fixedSystemCount++;
+			this._phaseBySystem.set(descriptor, target);
 			this._assignLastRunSlot(descriptor);
 			// A system is "gated" if it carries its own condition or belongs to a
 			// set (the set may be, or later become, conditioned). Ungated systems
@@ -332,7 +571,7 @@ export class Schedule {
 			if (conditions.length > 0 || sets.length > 0) {
 				this._gatedSystems.set(descriptor, node);
 			}
-			this._phasePlans.delete(phase);
+			target.plan = null;
 		}
 	}
 
@@ -364,7 +603,7 @@ export class Schedule {
 			// Ordering feeds the topo sort. Sets are configured at setup time
 			// (rarely), so clear every cached order rather than tracking which
 			// phases this set's members span, simpler and cheap.
-			this._phasePlans.clear();
+			this._invalidatePlans();
 		}
 	}
 
@@ -372,8 +611,7 @@ export class Schedule {
 		const phase = this._phaseBySystem.get(system);
 		if (phase === undefined) return;
 
-		// ! safe: phase came from systemIndex, which only stores a valid `SCHEDULE` key
-		const nodes = this._phaseSystems.get(phase)!;
+		const nodes = phase.nodes;
 		const index = nodes.findIndex((n) => n.descriptor === system);
 		if (index !== -1) {
 			// Swap-and-pop removal
@@ -382,6 +620,7 @@ export class Schedule {
 				nodes[index] = nodes[last];
 			}
 			nodes.pop();
+			if (phase.loop === "fixed") this._fixedSystemCount--;
 
 			// Clean up ordering references from remaining nodes
 			for (const node of nodes) {
@@ -412,13 +651,19 @@ export class Schedule {
 		// all that can hold it while a descriptor lives in exactly one phase, but
 		// that invariant is only enforced under `DEV` (the duplicate-schedule throw
 		// in `addSystems`), and slot reuse is not something to leave resting on a
-		// check that is compiled out of production. `removeSystem` is cold and there
-		// are seven plans. Re-sorting them is not worth reasoning about.
+		// check that is compiled out of production. `removeSystem` is cold and a
+		// world holds few phases. Re-sorting them is not worth reasoning about.
 		//
 		// This only reaches cached plans. The one a currently-running phase already
 		// hoisted into a local is unreachable from here, and that window is covered
 		// by `_driveDepth` in `_assignLastRunSlot` instead.
-		this._phasePlans.clear();
+		this._invalidatePlans();
+	}
+
+	/** Drop every cached plan. Cold path, and the reason each caller needs it
+	 * sits at that call site. */
+	private _invalidatePlans(): void {
+		for (let i = 0; i < this._phases.length; i++) this._phases[i].plan = null;
 	}
 
 	/** Attach (or, with `null`, detach) the opt-in compute backend. Driven
@@ -428,11 +673,11 @@ export class Schedule {
 		this._backend = backend;
 	}
 
-	/** Attach (or, with `null`, detach) the worker pool. Driven by
-	 * `world.workers.attach`. Routes any scheduled system carrying a `parallel`
-	 * config across the pool in place of its `fn`. */
-	public setWorkerPool(pool: ParallelRoute | null): void {
-		this._workers = pool;
+	/** Attach (or, with `null`, detach) the system dispatch route. Driven by
+	 * the plugin that installed it. Runs any scheduled system carrying a
+	 * `routePlan` through the route in place of its `fn`. */
+	public setRoute(dispatch: RouteDispatch | null): void {
+		this._route = dispatch;
 	}
 
 	// The three drive entry points each bracket their phases with `_driveDepth`,
@@ -452,8 +697,9 @@ export class Schedule {
 	public runStartup(ctx: SystemContext): void {
 		this._driveDepth++;
 		try {
-			for (const phase of STARTUP_PHASES) {
-				this._runPhase(phase, ctx, STARTUP_DELTA_TIME);
+			const order = this._startupOrder;
+			for (let i = 0; i < order.length; i++) {
+				this._runPhase(order[i], ctx, STARTUP_DELTA_TIME);
 			}
 		} finally {
 			this._driveDepth--;
@@ -463,8 +709,12 @@ export class Schedule {
 	public runUpdate(ctx: SystemContext, deltaTime: number): void {
 		this._driveDepth++;
 		try {
-			for (const phase of UPDATE_PHASES) {
-				this._runPhase(phase, ctx, deltaTime);
+			// A plain array of phase objects, sorted at `addPhase` time. The loop
+			// reads each phase's plan as a field, so opening the phase set costs the
+			// frame nothing, and it drops the per-phase `Map.get` the closed set paid.
+			const order = this._updateOrder;
+			for (let i = 0; i < order.length; i++) {
+				this._runPhase(order[i], ctx, deltaTime);
 			}
 		} finally {
 			this._driveDepth--;
@@ -474,25 +724,26 @@ export class Schedule {
 	public runFixedUpdate(ctx: SystemContext, fixedDt: number): void {
 		this._driveDepth++;
 		try {
-			this._runPhase(SCHEDULE.FIXED_UPDATE, ctx, fixedDt);
+			const order = this._fixedOrder;
+			for (let i = 0; i < order.length; i++) {
+				this._runPhase(order[i], ctx, fixedDt);
+			}
 		} finally {
 			this._driveDepth--;
 		}
 	}
 
 	public hasFixedSystems(): boolean {
-		// Direct reference, not `_phaseSystems.get(FIXED_UPDATE)`: `ECS.update`
-		// asks this once per frame before any phase runs, and a string-keyed
-		// `Map.get` there is measurable on a dispatch-bound tick. The list object is
-		// created once in the constructor and never replaced (`clear` truncates
-		// it in place), so the cached reference can't go stale.
-		return this._fixedNodes.length > 0;
+		// A counter, not a list length: `ECS.update` asks this once per frame
+		// before any phase runs, the fixed loop may hold more than one phase, and
+		// summing their lengths there is work the frame should not do.
+		return this._fixedSystemCount > 0;
 	}
 
 	public getAllSystems(): SystemDescriptor[] {
 		const all: SystemDescriptor[] = [];
-		for (const nodes of this._phaseSystems.values()) {
-			for (const node of nodes) {
+		for (const phase of this._phases) {
+			for (const node of phase.nodes) {
 				all.push(node.descriptor);
 			}
 		}
@@ -516,7 +767,7 @@ export class Schedule {
 			// Recycle only outside a running drive. `_runPhase` hoists its plan's
 			// `slots` into a local and writes `_lastRunTicks[slots[i]] = tick` after
 			// each system, so a phase already in its loop keeps writing through the
-			// slots it captured even after `removeSystem` clears `_phasePlans`. Handing
+			// slots it captured even after `removeSystem` drops every cached plan. Handing
 			// one of those to a system added during that same phase would let the
 			// removed system's tail write land on the new system's last-run tick and
 			// silently widen or shift its `changed()` window, cross-talk the `Map`
@@ -543,10 +794,15 @@ export class Schedule {
 	}
 
 	public clear(): void {
-		for (const nodes of this._phaseSystems.values()) {
-			nodes.length = 0;
+		// The phases stay. `clear` drops the systems, and a phase a plugin added is
+		// part of the world's shape, not of its system list. A phase with no
+		// systems runs an empty plan and a flush, which is what an empty built-in
+		// phase already does.
+		for (const phase of this._phases) {
+			phase.nodes.length = 0;
+			phase.plan = null;
 		}
-		this._phasePlans.clear();
+		this._fixedSystemCount = 0;
 		this._phaseBySystem.clear();
 		// Truncating is right between drives, and it is what `clear` normally
 		// does. Inside one it is not: `ECS.dispose` reaches here from a system
@@ -570,8 +826,11 @@ export class Schedule {
 		this._orderingBySet.clear();
 	}
 
-	private _runPhase(phase: SCHEDULE, ctx: SystemContext, deltaTime: number): void {
-		const plan = this._getPlan(phase);
+	private _runPhase(phase: PhaseNode, ctx: SystemContext, deltaTime: number): void {
+		// A field read and a predicted branch, not a `Map.get`. `null` only after
+		// an add, a remove or a `configureSet`, all of them setup calls.
+		const cached = phase.plan;
+		const plan = cached !== null ? cached : this._buildPlan(phase);
 		const sorted = plan.sorted;
 		const slots = plan.slots;
 		// Probe the gate map only when something in the whole schedule is gated.
@@ -583,16 +842,16 @@ export class Schedule {
 		// dispatch shows that this branch is free against the baseline, and that a
 		// Null-Object default makes this no-backend path slower.
 		const backend = this._backend;
-		// Hoisted for the same reason the backend is. A world with no pool never
-		// reads `parallelPlan`.
-		const workers = this._workers;
-		// One test for both routes. A world with neither a backend nor a pool, the
+		// Hoisted for the same reason the backend is. A world with no route never
+		// reads `routePlan`.
+		const route = this._route;
+		// One test for both. A world with neither a backend nor a route, the
 		// common case, reads neither routing field and takes one predicted branch
 		// to the plain call. Two independent tests slow this loop on a schedule of
 		// short bodies, which is where the dispatch is a visible share of the
 		// frame. A comparison of the dispatch against the sequential baseline
 		// shows it.
-		const routed = backend !== null || workers !== null;
+		const routed = backend !== null || route !== null;
 		// The frame tick travels to a backend as a call argument, because it is not
 		// in the store bytes. It is constant across a phase, because `ECS.update`
 		// writes it once before the first phase. Read it once here, and not for
@@ -607,7 +866,7 @@ export class Schedule {
 			? new Map()
 			: undefined;
 		// `slots` is a snapshot: a `removeSystem` from inside a system clears
-		// `_phasePlans`, but this loop keeps running, and keeps writing back through,
+		// every cached plan, but this loop keeps running, and keeps writing back through,
 		// the plan it already captured. The caller, one of `runStartup`, `runUpdate`
 		// and `runFixedUpdate`, holds `_driveDepth` for the whole drive, which is what
 		// stops `_assignLastRunSlot` handing a slot this loop still writes to a
@@ -630,13 +889,13 @@ export class Schedule {
 			ctx.lastRunTick = this._lastRunTicks[slots[i]];
 			const run = ctx.advanceChangeTick();
 			if (DEV) accessCheck.enter(desc);
-			if (DEV) ctx.trace?.systemBegin(desc, phase);
+			if (DEV) ctx.trace?.systemBegin(desc, phase.name);
 			try {
-				// Route to the pool or to the compute backend only when one is
-				// attached and this system opted in. Otherwise run the TS closure.
-				// The access span wraps every path identically, so the system's
-				// declared `writes` authorise whatever shared memory a worker or a
-				// backend touches.
+				// Route to the installed route or to the compute backend only when
+				// one is attached and this system opted in. Otherwise run the TS
+				// closure. The access span wraps every path identically, so the
+				// system's declared `writes` authorise whatever shared memory a
+				// route or a backend touches.
 				if (routed) {
 					// The dispatch sits inside the same access span a TypeScript body
 					// gets, and the host parks on `Atomics.wait` for the length of the
@@ -646,9 +905,9 @@ export class Schedule {
 					// a pass would see neither. The engine gives that guarantee by
 					// construction. `run` answers false below the row threshold and
 					// before the kernel is loaded, and then the sequential body runs.
-					const parallel = workers !== null ? desc.parallelPlan : undefined;
-					if (parallel !== undefined && workers!.run(parallel, ctx, deltaTime, run)) {
-						// The pool ran the body and the join stamped what it wrote.
+					const plan = route !== null ? desc.routePlan : undefined;
+					if (plan !== undefined && route!.run(plan, ctx, deltaTime, run)) {
+						// The route ran the body and stamped what it wrote.
 					} else {
 						const handle = backend !== null ? desc.backendHandle : undefined;
 						if (handle !== undefined) {
@@ -680,16 +939,16 @@ export class Schedule {
 		// columns, and an observer callback writes, and both must sit above the
 		// last run of every system in this phase.
 		ctx.advanceChangeTick();
-		if (DEV) ctx.trace?.flushBegin(phase);
+		if (DEV) ctx.trace?.flushBegin(phase.name);
 		ctx.flush();
-		if (DEV) ctx.trace?.flushEnd(phase);
+		if (DEV) ctx.trace?.flushEnd(phase.name);
 		// The phase has fully settled, systems ran, deferred buffer + observer
 		// cascade flushed, so the live world is at a consistent, fingerprint-able
 		// point. Fire the per-phase boundary so a consumer can read `stateHash()`
 		// between the phases of one frame and bisect a divergence to this phase.
 		// `DEV`-gated like the rest of the seam (zero prod
 		// cost) and read-only, so it never perturbs the hash or ordering.
-		if (DEV) ctx.trace?.phaseBoundary(phase);
+		if (DEV) ctx.trace?.phaseBoundary(phase.name);
 	}
 
 	/**
@@ -748,17 +1007,14 @@ export class Schedule {
 		return true;
 	}
 
-	private _getPlan(phase: SCHEDULE): PhasePlan {
-		const cached = this._phasePlans.get(phase);
-		if (cached !== undefined) return cached;
-
-		// ! safe: the constructor pre-populates every `SCHEDULE` enum key
-		const nodes = this._phaseSystems.get(phase)!;
-		const sorted = this._sortSystems(nodes, phase);
+	/** Sort one phase and cache its plan on the phase. Cold: the drive reads
+	 * `phase.plan` and only lands here when an add or a remove nulled it. */
+	private _buildPlan(phase: PhaseNode): PhasePlan {
+		const sorted = this._sortSystems(phase.nodes, phase.name);
 		const slots = new Int32Array(sorted.length);
 		for (let i = 0; i < sorted.length; i++) slots[i] = this._assignLastRunSlot(sorted[i]);
 		const plan: PhasePlan = { sorted, slots };
-		this._phasePlans.set(phase, plan);
+		phase.plan = plan;
 		return plan;
 	}
 
@@ -767,7 +1023,7 @@ export class Schedule {
 	 * Builds the dependency edge map from before and after constraints, then
 	 * catches any cycle TypeError and re-throws as ECSError.
 	 */
-	private _sortSystems(nodes: SystemNode[], phase: SCHEDULE): SystemDescriptor[] {
+	private _sortSystems(nodes: SystemNode[], phase: string): SystemDescriptor[] {
 		if (nodes.length === 0) return [];
 
 		const descriptors: SystemDescriptor[] = [];
@@ -876,7 +1132,7 @@ export class Schedule {
 		nodeSet: Set<SystemDescriptor>,
 		setMembers: Map<SystemSet, SystemDescriptor[]>,
 		edges: Map<SystemDescriptor, SystemDescriptor[]>,
-		phase: SCHEDULE
+		phase: string
 	): void {
 		for (const target of targets) {
 			if (isSystemSet(target)) {
@@ -929,7 +1185,7 @@ export class Schedule {
 		source: SystemDescriptor,
 		target: SystemDescriptor,
 		relation: "before" | "after",
-		phase: SCHEDULE
+		phase: string
 	): void {
 		// Registered in some other phase → deliberate cross-phase skip, stay quiet.
 		if (this._phaseBySystem.has(target)) return;

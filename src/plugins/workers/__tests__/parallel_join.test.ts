@@ -35,7 +35,7 @@ afterEach(async () => {
 function integrateWorld(entities: number, minRows: number, exportName = "integrateI32") {
 	const world = buildWorld({ entities, backing: "shared" });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const system = ecs.registerSystem({
 		reads: [Vel],
 		writes: [Pos],
@@ -115,7 +115,7 @@ describe("a system registered after the attach", () => {
 		const world = buildWorld({ entities: 512, backing: "shared" });
 		const { ecs, Pos, Vel, Frozen } = world;
 		const pool = await attach(ecs, 2);
-		const query = ecs.query(Pos, Vel).without(Frozen);
+		const query = ecs.query(Pos, Vel).not(Frozen);
 		const system = ecs.registerSystem({
 			reads: [Vel],
 			writes: [Pos],

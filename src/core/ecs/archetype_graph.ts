@@ -30,7 +30,7 @@ import {
 	type ArchetypeID
 } from "./archetype";
 import type { ComponentID } from "./component";
-import type { ComponentMeta } from "./store";
+import type { ComponentMeta } from "./store_types";
 import { ECS_ERROR, ECSError } from "./utils/error";
 import { bucketPush } from "./utils/arrays";
 import {

@@ -12,8 +12,8 @@
  * it ran before.
  ***/
 
-import type { ArchetypeView } from "./archetype";
-import type { ChangeFeed } from "./plugin";
+import type { ArchetypeView } from "./archetype_types";
+import type { ChangeFeed } from "./change_feed";
 import type { EntityID } from "./entity";
 import type { FrameTraceSink } from "./frame_trace";
 import type { SystemContext } from "./system_context";

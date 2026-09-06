@@ -8,9 +8,10 @@
  * shipped and almost no program used.
  *
  * The `parallel` config on a system stays in the core, because it is a type and
- * it erases. So does the routing in the schedule, which reads one opaque field
- * on the frozen descriptor. A world without this plugin builds no plan, leaves
- * that field undefined, and runs the system's own `fn`.
+ * it erases. The routing in the schedule names no plugin: it is one system
+ * dispatch route reading one opaque plan off the frozen descriptor. A world
+ * without this plugin installs no route, leaves that field undefined, and runs
+ * the system's own `fn`.
  *
  * One thing goes with the plugin, and a caller has to know it. A world without
  * the plugin validates no `parallel` config, because the refusals live in the
@@ -21,7 +22,14 @@
 
 import { WorkerPool, type AttachWorkersOptions } from "./pool";
 import { assertParallelConfig, createParallelPlan, type ParallelPlan } from "./plan";
-import type { Plugin, PluginHost, WorkerHooks, WorkerWorld } from "../../core/ecs/plugin";
+import type {
+	ChangeFeed,
+	Plugin,
+	PluginHost,
+	PluginMemory,
+	RouteControl,
+	SystemRoutePlanner
+} from "../../core/ecs/plugin";
 import type { ComponentDef } from "../../core/ecs/component";
 import type { Query } from "../../core/ecs/query";
 import type { SystemConfig } from "../../core/ecs/system";
@@ -35,11 +43,14 @@ export type { AttachWorkersOptions } from "./pool";
  * Start, report and stop the one pool a world runs its parallel systems on.
  *
  * It is also what the world calls back into. `plan` runs at registration, for
- * a system that declares `parallel`. `dispose` runs with the world. Both are
- * the plugin's half of the seam, not surface a caller uses.
+ * every system, and claims the ones that declare `parallel`. The dispose hook
+ * runs with the world. Both are the plugin's half of the seam, not surface a
+ * caller uses.
  */
-export class ECSWorkers implements WorkerHooks {
-	private readonly _world: WorkerWorld;
+export class ECSWorkers implements SystemRoutePlanner {
+	private readonly _memory: PluginMemory;
+	private readonly _changes: ChangeFeed;
+	private readonly _control: RouteControl;
 	/** Resolve the default query of a `parallel` config, which is the first
 	 * entry of `queries` read as a with-only query. */
 	private readonly _resolveQuery: (defs: ComponentDef[]) => Query<any>;
@@ -55,9 +66,14 @@ export class ECSWorkers implements WorkerHooks {
 		const world = host.world;
 		this._resolveQuery = (defs) => world.query(...defs);
 		this._fieldId = (def, field) => store.fieldIdOf(def, field);
+		this._memory = host.memory;
+		this._changes = host.changes;
+		// A live worker holds the store bytes and keeps the process alive, so
+		// the pool ends with the world.
+		host.onDispose(() => this.dispose());
 		// Last, because it hands `this` to the world. The world stores the
 		// reference and calls nothing back during the install.
-		this._world = host.installWorkers(this);
+		this._control = host.installRoute(this);
 	}
 
 	/** The attached pool, or `null`. */
@@ -96,22 +112,22 @@ export class ECSWorkers implements WorkerHooks {
 				"workers.attach: this world already holds a pool. One pool per world, detach it before you attach another."
 			);
 		}
-		const store = this._world.backing;
+		const store = this._memory.backing;
 		if (store === null) {
 			throw new ECSError(
 				ECS_ERROR.WORKERS_NEED_SHARED_BACKING,
-				`workers.attach: this world's backing is '${this._world.backingSource}', and a worker cannot reach its bytes. Build the world with memory.backing "shared" or { wasm }.`
+				`workers.attach: this world's backing is '${this._memory.backingSource}', and a worker cannot reach its bytes. Build the world with memory.backing "shared" or { wasm }.`
 			);
 		}
 		const pool = await WorkerPool.attach(
 			{
 				store,
-				storeBase: this._world.storeBase,
-				noteScan: (componentId: number) => this._world.noteScan(componentId),
+				storeBase: this._memory.storeBase,
+				noteScan: (componentId: number) => this._changes.noteScan(componentId),
 				plans: () => this._plans,
 				released: () => {
 					this._pool = null;
-					this._world.route(null);
+					this._control.route(null);
 				}
 			},
 			options
@@ -120,7 +136,7 @@ export class ECSWorkers implements WorkerHooks {
 		// pool, so the assignment happens after `attach` resolves and never
 		// before.
 		this._pool = pool;
-		this._world.route(pool);
+		this._control.route(pool);
 		return pool;
 	}
 
@@ -133,9 +149,12 @@ export class ECSWorkers implements WorkerHooks {
 	}
 
 	/** @internal The registration seam. Resolves one `parallel` config into the
-	 * plan the dispatch reads, and refuses what a worker cannot serve. */
-	public plan(config: SystemConfig): ParallelPlan {
-		const parallel = config.parallel!;
+	 * plan the dispatch reads, and refuses what a worker cannot serve. The
+	 * world asks about every system, so a system that declares no `parallel`
+	 * answers `undefined` and keeps its own `fn`. */
+	public plan(config: SystemConfig): ParallelPlan | undefined {
+		const parallel = config.parallel;
+		if (parallel === undefined) return undefined;
 		let query = parallel.query;
 		if (query === undefined) {
 			const group = config.queries?.[0];

@@ -327,7 +327,7 @@ async function runOne(backing, entities) {
 	const module = new WebAssembly.Module(emitKernelModule({ minPages: 1, maxPages: MAX_PAGES }));
 	const { ecs, Pos, Vel, Frozen } = await buildWorld(entities, backing);
 	const { SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const rows = query.entityCount;
 
 	const columns = [

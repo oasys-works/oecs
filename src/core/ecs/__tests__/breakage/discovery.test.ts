@@ -679,7 +679,7 @@ describe("Batch operations, data integrity", () => {
 		}
 
 		// Batch add Vel to the [Pos]-only archetype
-		const posOnly = world.query(Pos).without(Vel);
+		const posOnly = world.query(Pos).not(Vel);
 		const srcArch = posOnly.archetypes[0];
 		world.batchAddComponent(srcArch.id, Vel, { vx: 77, vy: 88 });
 

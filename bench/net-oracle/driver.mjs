@@ -601,7 +601,7 @@ function coversSet(where, fail, what, got, want) {
  *     tail is what bounds the report from above.
  *  3. `changed(Touch)`, the same completeness rule. The window is "at or after the
  *     last run of the system", so a write stays visible for two ticks.
- *  4. `changed(Touch).without(Fresh)`, a `ChangedQuery` composes, and the
+ *  4. `changed(Touch).not(Fresh)`, a `ChangedQuery` composes, and the
  *     documentation says that the two orders of the verbs give one set. Both
  *     spellings must agree, and no signature in the result may hold `Fresh`.
  *  5. `changed(Age)` and the `onSet` observer on `Age`, exact, in both directions.
@@ -735,16 +735,16 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	sameSet(
 		where,
 		fail,
-		"changed(Touch).without(Fresh) against without(Fresh).changed(Touch)",
+		"changed(Touch).not(Fresh) against not(Fresh).changed(Touch)",
 		world.changedTouchNoFreshSigs,
 		world.changedTouchNoFreshAltSigs
 	);
 	for (const sig of world.changedTouchNoFreshSigs) {
 		if (sig.includes("F")) {
-			fail(where, `changed(Touch).without(Fresh) reported ${sig}, which holds Fresh`);
+			fail(where, `changed(Touch).not(Fresh) reported ${sig}, which holds Fresh`);
 		}
 		if (!world.changedTouchSigs.has(sig)) {
-			fail(where, `changed(Touch).without(Fresh) reported ${sig}, which changed(Touch) did not`);
+			fail(where, `changed(Touch).not(Fresh) reported ${sig}, which changed(Touch) did not`);
 		}
 	}
 
@@ -894,7 +894,7 @@ export function quarantineCheck(where, ref, world, fail) {
  * immediate and a dense add is deferred, so one system covers two paths and the
  * reference gives one expected set for both.
  *
- * `withSparse` on a default query does not show a disabled row, and on
+ * `andSparse` on a default query does not show a disabled row, and on
  * `includeDisabled()` it does. Therefore this is also a second reading of the
  * quarantine, through a term that is not a dense component.
  */
@@ -914,9 +914,9 @@ export function sparseCheck(where, ref, world, fail) {
 		else wantNone.add(e);
 	}
 	const got = world.watchSets();
-	sameSet(where, fail, "includeDisabled().withSparse(Watch)", got.all, wantAll);
-	sameSet(where, fail, "withSparse(Watch)", got.enabled, wantEnabled);
-	sameSet(where, fail, "withoutSparse(Watch)", got.none, wantNone);
+	sameSet(where, fail, "includeDisabled().andSparse(Watch)", got.all, wantAll);
+	sameSet(where, fail, "andSparse(Watch)", got.enabled, wantEnabled);
+	sameSet(where, fail, "notSparse(Watch)", got.none, wantNone);
 	// The direct probe, for each agent of an active pair, and the value: `hits`
 	// is the low byte of `Touch.seq` (world.mjs gives the rule). Two readers, so
 	// a divergence names the path: `getSparseField` finds the column by name at
@@ -949,7 +949,7 @@ export function sparseCheck(where, ref, world, fail) {
  * Each item below reads a fact that the reference already holds. Therefore this
  * layer adds no model, and it cannot go out of step with the rest of the harness.
  *
- *  1. `withRelation` and `withoutRelation`, `PORTS` is [3, 3, 1, 1], so a CON and a
+ *  1. `andRelation` and `notRelation`, `PORTS` is [3, 3, 1, 1], so a CON and a
  *     DUP hold port 1 and an ERA and the ROOT do not. The relation of port 1
  *     therefore partitions the agents by type, and the reference holds the type of
  *     each agent. The enabled arm is the same set without the disabled agents, so
@@ -1028,9 +1028,9 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		if (age === null) wantNoAge.add(e);
 		else wantAge.set(e, age);
 	}
-	sameSet(where, fail, "includeDisabled().withRelation(P1)", world.withP1, wantWith);
-	sameSet(where, fail, "includeDisabled().withoutRelation(P1)", world.withoutP1, wantWithout);
-	sameSet(where, fail, "withRelation(P1)", world.withP1Enabled, wantWithEnabled);
+	sameSet(where, fail, "includeDisabled().andRelation(P1)", world.withP1, wantWith);
+	sameSet(where, fail, "includeDisabled().notRelation(P1)", world.withoutP1, wantWithout);
+	sameSet(where, fail, "andRelation(P1)", world.withP1Enabled, wantWithEnabled);
 
 	// ── the optional column ─────────────────────────────────────────────────
 	sameSet(where, fail, "optional(Age): the span with no Age", world.optionalAgeAbsent, wantNoAge);

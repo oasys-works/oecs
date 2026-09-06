@@ -673,11 +673,19 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 200_000 }
 		);
 		const base = ecs.query(Pos, Vel);
+		// `without` became `not` inside 0.6.0. Pick the body once, before the
+		// case runs, so a reference build older than the rename still runs this
+		// case and each side keeps a direct call in the measured loop. A shared
+		// body behind a resolved reference would add a frame to both sides.
 		add(
-			"query/compose_without",
-			() => {
-				for (let i = 0; i < 200_000; i++) sink = base.without(Tag);
-			},
+			"query/compose_not",
+			typeof base.not === "function"
+				? () => {
+						for (let i = 0; i < 200_000; i++) sink = base.not(Tag);
+					}
+				: () => {
+						for (let i = 0; i < 200_000; i++) sink = base.without(Tag);
+					},
 			{ iters: 200_000 }
 		);
 	}

@@ -19,8 +19,11 @@
  *
  ***/
 
+// The identity and the read-only window live in a leaf, so the change feed and
+// the plugin seam can name an archetype without naming this file.
+import type { ArchetypeID, ArchetypeView } from "./archetype_types";
+export type { ArchetypeID, ArchetypeView } from "./archetype_types";
 import {
-	Brand,
 	validateAndCast,
 	isNonNegativeInteger,
 	GrowableUint32Array,
@@ -36,8 +39,6 @@ import type {
 	ComponentID,
 	ComponentDef,
 	ComponentSchema,
-	SchemaOf,
-	DeclaredQueryTerm,
 	TagToTypedArray,
 	ColumnsForSchema,
 	MutableColumnsForSchema,
@@ -57,8 +58,6 @@ import type { BitSet } from "../../type_primitives";
 import { NO_COLUMN, type AccessorColumns } from "./ref";
 import { accessCheck } from "./access_check";
 import { DEV } from "../../dev_flag";
-
-export type ArchetypeID = Brand<number, "archetype_id">;
 
 /** Stand-in column capacity for an archetype that has no columns (`_colCap`),
  * so the column term can never win the `min` that yields `_rowCap` and never
@@ -147,68 +146,6 @@ export type ColumnFactory = (
  * `GrowableTypedArray` grows in place.
  */
 export type ArchetypeGrowHandler = (arch: Archetype, additional: number) => void;
-
-/**
- * Public, read-only window onto an archetype's rows. This is the only
- * surface `Query.archetypes`, `Query.forEach`, and `ChangedQuery.forEach`
- * hand to callers, the concrete `Archetype` (with its structural mutators
- * `swapRemoveRow`, `moveEntityFrom`, `writeFields`, `setEdge`, and the
- * mutable `getColumnMut`) stays internal so query iteration can't bypass the
- * deferred-flush path that prevents iterator invalidation. This is the same
- * back door that is closed for `Store` and closed again for `Query`.
- *
- * `id` is the archetype's opaque identity (not a mutator), exposed so the
- * public `ECS.batchAddComponent` and `batchRemoveComponent` API can target an
- * archetype without the caller holding a concrete `Archetype` reference.
- */
-export interface ArchetypeView<
-	out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]
-> {
-	/** Opaque archetype identity. Pass to `ECS.batch_*_component`. */
-	readonly id: ArchetypeID;
-	/** Number of **enabled** entities, the default-iteration bound. Rows
-	 * `0..entityCount-1` are enabled. Disabled rows (if any) sit contiguously at
-	 * `entityCount..totalCount-1`. `forEach` SoA loops read this, so they skip
-	 * disabled rows for free. Use `totalCount` to span disabled rows too. */
-	readonly entityCount: number;
-	/** Total live rows, enabled + disabled. Equal to `entityCount` unless
-	 * some rows are disabled. Use for full-state work (serialization, snapshot,
-	 * determinism) that must see every entity regardless of enabled state. */
-	readonly totalCount: number;
-	/** Number of disabled rows = `totalCount - entityCount`. */
-	readonly disabledCount: number;
-	/** Raw entity ID buffer (packed `EntityID`s). Valid data at indices
-	 * 0..totalCount-1 (enabled rows first, then disabled). */
-	readonly entityIds: ReadonlyEntityIDArray;
-	/** True if this archetype's mask includes the given component. */
-	hasComponent(id: ComponentID): boolean;
-	/** Get a single field's column (read-only). Valid data: indices
-	 * 0..entityCount-1. `def` must be a term of the iterating query
-	 *. The bare-`ArchetypeView` default stays permissive. */
-	getColumnRead<D extends ComponentDef<any>, K extends string & keyof SchemaOf<D>>(
-		def: D & DeclaredQueryTerm<Defs, D>,
-		field: K
-	): ReadonlyColumn;
-	/** Tuple fetch of several of one component's columns,
-	 * `const [q, r] = arch.getColumnsRead(HexPos, "q", "r")`. One small
-	 * array allocation per call. See the class doc on `Archetype`. */
-	getColumnsRead<
-		D extends ComponentDef<any>,
-		const K extends readonly (string & keyof SchemaOf<D>)[]
-	>(
-		def: D & DeclaredQueryTerm<Defs, D>,
-		...fields: K
-	): { [I in keyof K]: ReadonlyColumn };
-	/** Get a single field's column **if this archetype has the component**,
-	 * else `undefined`, the optional-query fetch-if-present accessor.
-	 * The absent branch is expected (resolve the column pointer per archetype
-	 * span: present ⇒ column, absent ⇒ `undefined`), not an error. Same
-	 * advisory-readonly view and `reads`-access-check as `getColumnRead`. */
-	getOptionalColumnRead<S extends ComponentSchema, K extends string & keyof S>(
-		def: ComponentDef<S>,
-		field: K
-	): ReadonlyColumn | undefined;
-}
 
 export class Archetype implements ArchetypeView {
 	public readonly id: ArchetypeID;

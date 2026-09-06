@@ -552,7 +552,7 @@ The state hash alone does not prove the exclusion. Every lane resolves the same
 mask, so a shared misread would agree with itself. The probe folds the excluded
 rows separately and compares that fold against the seed.
 
-Two mutants say the oracles hold. Removing `.without(Frozen)` from the query
+Two mutants say the oracles hold. Removing `.not(Frozen)` from the query
 makes every lane report a touched excluded row. Turning the emitted kernel's
 loop bound from `>=` into `>` runs one row past each range. That makes the hash
 disagree at two, four and eight workers.

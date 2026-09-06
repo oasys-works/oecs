@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
-import { ECS_ERROR, type ECSError } from "../../utils/error";
+import { ECS_ERROR, ECSError } from "../../utils/error";
 import type { Query } from "../../query";
 import type { SystemContext } from "../../system_context";
+import { asSystemId } from "../../system";
 import type { SystemConfig, SystemFn } from "../../system";
 
 function makeConfig(overrides?: Partial<SystemConfig>): SystemConfig {
@@ -19,6 +20,31 @@ function makeConfig(overrides?: Partial<SystemConfig>): SystemConfig {
 		...overrides
 	};
 }
+
+// The schedule and the observers plugin both mint system ids from a counter, so
+// only a forged id reaches this. The fault is an `ECSError` and not an
+// assertion, which keeps the assertion class out of the observers bundle.
+describe("asSystemId", () => {
+	it("a negative system id throws INVALID_SYSTEM_ID and names the value", () => {
+		try {
+			asSystemId(-1);
+			expect.fail("should have thrown");
+		} catch (e) {
+			expect(e).toBeInstanceOf(ECSError);
+			expect((e as ECSError).category).toBe(ECS_ERROR.INVALID_SYSTEM_ID);
+			expect((e as ECSError).message).toContain("-1");
+		}
+	});
+
+	it("a fractional system id throws INVALID_SYSTEM_ID", () => {
+		expect(() => asSystemId(1.5)).toThrow(ECSError);
+	});
+
+	it("a non-negative integer system id passes through unchanged", () => {
+		expect(asSystemId(0)).toBe(0);
+		expect(asSystemId(7)).toBe(7);
+	});
+});
 
 describe("ECS system registration", () => {
 	//=========================================================
@@ -204,7 +230,7 @@ describe("ECS system registration", () => {
 		expect(() =>
 			world.registerSystem(
 				(_q: Query<readonly [typeof Pos]>, _ctx: SystemContext, _dt: number) => {},
-				(qb) => qb.with(Pos)
+				(qb) => qb.and(Pos)
 			)
 		).not.toThrow();
 	});

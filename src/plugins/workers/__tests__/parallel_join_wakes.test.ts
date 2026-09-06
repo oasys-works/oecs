@@ -40,7 +40,7 @@ afterEach(async () => {
 function staggeredWorld() {
 	const world = buildWorld({ entities: ENTITIES, backing: "shared" });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const system = ecs.registerSystem({
 		reads: [Vel],
 		writes: [Pos],

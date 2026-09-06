@@ -113,7 +113,7 @@ const IsEnemy = ecs.registerTag();
 const Frozen = ecs.registerTag();
 
 const enemies = ecs.query(Pos, Health).and(IsEnemy);
-const thawed = ecs.query(Health).without(Frozen);
+const thawed = ecs.query(Health).not(Frozen);
 ```
 
 A `ComponentDef` is **callable**. `Pos({ x: 10, y: 20 })` gives a bundle, and the spawn and add
@@ -151,11 +151,11 @@ ecs.addSparse(e, Cooldown, { ready: 90 });   // immediate, and no archetype chan
 ```
 
 The cost: sparse membership is not in the archetype mask. So a plain dense query does not see it,
-and it has no span of columns in struct-of-arrays form. Filter with `withSparse` or
-`withoutSparse`, and iterate with `forEachEntity`:
+and it has no span of columns in struct-of-arrays form. Filter with `andSparse` or
+`notSparse`, and iterate with `forEachEntity`:
 
 ```ts
-ecs.query(Unit).withSparse(Cooldown).forEachEntity((e) => {
+ecs.query(Unit).andSparse(Cooldown).forEachEntity((e) => {
   const ready = ecs.getSparseField(e, Cooldown, "ready");
 });
 ```
@@ -270,17 +270,17 @@ The rules to remember:
 ### A narrow filter is better than a broad filter plus a test
 
 Use the narrowest include set that expresses what the system needs. `ecs.query(A, B)` agrees with
-each archetype that has *a minimum of* `A` and `B`. Make it more exact with `without`, `anyOf`,
-`optional`, `changed`, `withSparse`, or `withRelation`. Each verb gives a new **cached** query, and
+each archetype that has *a minimum of* `A` and `B`. Make it more exact with `not`, `or`,
+`optional`, `changed`, `andSparse`, or `andRelation`. Each verb gives a new **cached** query, and
 the engine remembers each composition. So equivalent filters give the same instance. There is one
 exception: a `changed(A, B)` call with several arguments makes a new `ChangedQuery`, but the engine
 caches a `changed` call with one argument.
 
 ```ts
 ecs.query(Pos)
-  .and(Vel)             // require Vel also
-  .without(Frozen)      // remove the frozen entities
-  .anyOf(Player, NPC);  // and be a Player or an NPC
+  .and(Vel)            // require Vel also
+  .not(Frozen)         // remove the frozen entities
+  .or(Player, NPC);    // and be a Player or an NPC
 ```
 
 Do not iterate each entity with `Pos` and then make a `has(Vel)` test in the loop. Write a query for
@@ -298,7 +298,7 @@ const movers = ecs.query(Pos, Vel);   // live and cached, build it one time
 const move = ecs.registerSystem({ reads: [Pos, Vel], writes: [Pos], fn: () => movers.forEachChunk(/* … */) });
 ```
 
-The `registerSystem(fn, qb => qb.with(...))` builder form is equivalent, but the closure form puts
+The `registerSystem(fn, qb => qb.and(...))` builder form is equivalent, but the closure form puts
 the query beside the system and reads more clearly. An `ecs.query(...)` call that you write in
 place is still cached, because equivalent filters give the same instance.
 
@@ -630,7 +630,7 @@ const sync = ecs.registerSystem({
 ecs.addSystems(SCHEDULE.UPDATE, writer, { system: sync, ordering: { after: [writer] } });
 ```
 
-`changed()` composes: `ecs.query(Pos).changed(Pos).without(Dead)` operates, and the order of the
+`changed()` composes: `ecs.query(Pos).changed(Pos).not(Dead)` operates, and the order of the
 verbs is not important.
 
 ### Know the risks at the first run, and the level of detail
@@ -790,7 +790,7 @@ ecs.relations.sourcesOf(parent, ChildOf);               // [child, …], the rev
   call replaces the old target with no signal. Give `{ multi: true }` for a *set* of targets. Use
   `targetsOf` for a multi relation, and `targetOf` for an exclusive relation, because `targetOf`
   throws for a multi relation in development.
-- **Compose a relation into a query** with `withRelation` or `withoutRelation`, which is the
+- **Compose a relation into a query** with `andRelation` or `notRelation`, which is the
   `(R, *)` term, and iterate with `forEachEntity`. `forEachRelatedTo(target, cb)` is the `(*, T)`
   wildcard. A wildcard query needs authorization: `relationReads: [R]`, or `[ANY_RELATION]` for
   `forEachRelatedTo`.

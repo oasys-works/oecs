@@ -67,17 +67,17 @@ The `ChangedQuery` has the same dense verbs, so you can continue to make the que
 
 ```ts
 and<D>(...comps): ChangedQuery<[...Defs, ...D]>;
-without(...comps): ChangedQuery<Defs>;
-anyOf(...comps): ChangedQuery<Defs>;
+not(...comps): ChangedQuery<Defs>;
+or(...comps): ChangedQuery<Defs>;
 optional(...defs): ChangedQuery<Defs>;
 forEach(cb: (arch: ArchetypeView) => void): void;   // the terminal, read-only like Query.forEach
 ```
 
 ```ts
-ecs.query(Pos).changed(Pos).without(Dead);   // Pos changed, and the dead entities are removed
+ecs.query(Pos).changed(Pos).not(Dead);   // Pos changed, and the dead entities are removed
 ```
 
-The order is not important. `q.changed(Pos).without(Dead)` and `q.without(Dead).changed(Pos)` give
+The order is not important. `q.changed(Pos).not(Dead)` and `q.not(Dead).changed(Pos)` give
 the same set. A `ChangedQuery` has no `count` and no second `changed`. Iterate it with `forEach`,
 or with `forEachChunk` for the row grain below.
 

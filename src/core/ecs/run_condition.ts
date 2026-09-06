@@ -160,6 +160,10 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 // argument order, and it short-circuits like `&&` and `||`. A condition is a
 // pure function of world state by contract, so a skipped evaluate has no
 // observable effect.
+//
+// Every name here takes the `runIf` prefix the rest of the file takes. The
+// bare `and`, `or` and `not` belong to the query engine, where they build an
+// archetype expression, so a condition combinator cannot borrow them.
 
 /** Merge the declared read surfaces of composed conditions. */
 function mergeDeclares(conds: readonly RunCondition[]): {
@@ -179,27 +183,27 @@ function mergeDeclares(conds: readonly RunCondition[]): {
 }
 
 /** Invert a condition: run exactly when `cond` would skip. */
-export function not(cond: RunCondition): RunCondition {
+export function runIfNot(cond: RunCondition): RunCondition {
 	return {
-		name: `not(${cond.name})`,
+		name: `runIfNot(${cond.name})`,
 		...mergeDeclares([cond]),
 		evaluate: (ctx) => !cond.evaluate(ctx)
 	};
 }
 
 /** Run only when every condition passes (`&&`, short-circuit). */
-export function allOf(...conds: RunCondition[]): RunCondition {
+export function runIfAll(...conds: RunCondition[]): RunCondition {
 	return {
-		name: `allOf(${conds.map((c) => c.name).join(", ")})`,
+		name: `runIfAll(${conds.map((c) => c.name).join(", ")})`,
 		...mergeDeclares(conds),
 		evaluate: (ctx) => conds.every((c) => c.evaluate(ctx))
 	};
 }
 
 /** Run when any condition passes (`||`, short-circuit). */
-export function anyOf(...conds: RunCondition[]): RunCondition {
+export function runIfAny(...conds: RunCondition[]): RunCondition {
 	return {
-		name: `anyOf(${conds.map((c) => c.name).join(", ")})`,
+		name: `runIfAny(${conds.map((c) => c.name).join(", ")})`,
 		...mergeDeclares(conds),
 		evaluate: (ctx) => conds.some((c) => c.evaluate(ctx))
 	};

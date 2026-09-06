@@ -79,7 +79,7 @@ describe("id-indexed sparse store", () => {
 		// the live member list under it, as the docs warn.)
 		const seen: number[] = [];
 		const toRemove: number[] = [];
-		ecs.query(Pos).withSparse(S).forEachEntity((e) => {
+		ecs.query(Pos).andSparse(S).forEachEntity((e) => {
 			seen.push(ecs.getSparseField(e, S, "v"));
 			toRemove.push(e);
 		});
@@ -87,7 +87,7 @@ describe("id-indexed sparse store", () => {
 		expect(seen.length).toBe(10);
 		expect(new Set(seen).size).toBe(10);
 		let left = 0;
-		ecs.query(Pos).withSparse(S).forEachEntity(() => left++);
+		ecs.query(Pos).andSparse(S).forEachEntity(() => left++);
 		expect(left).toBe(0);
 	});
 

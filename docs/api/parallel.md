@@ -428,15 +428,15 @@ Everything else reaches state no worker can see, so `registerSystem` refuses it 
 
 The query must be dense. A sparse term, a relation term, a hierarchy term or `includeDisabled`
 rejects, because a worker resolves the matched archetypes from the archetype masks alone. Give it a
-query of with-only or with-and-without terms.
+query whose only terms are `and` and `not`.
 
 The column list is checked as well. Every component in `parallel.columns` must appear in `reads` or
 `writes` **and** in the query, every component in `writes` must appear in `parallel.columns`, and
 every component of the query must appear in `reads` or `writes`. Each failure names the component
 id and the list that is missing it.
 
-`parallel.query` defaults to the first entry of `queries`, resolved as a with-only query. Pass a
-query you built with `without` to get a with-and-without match.
+`parallel.query` defaults to the first entry of `queries`, resolved as a require-only query. Pass a
+query you built with `not` to get a require-and-exclude match.
 
 ## `minRows`, and why you tune it
 

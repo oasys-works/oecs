@@ -37,7 +37,7 @@ ecs.update(1 / 60);   // the apply system drains the queue at PRE_UPDATE
 installHostCommandSeam(ecs: ECS, opts?: HostCommandSeamOptions): HostCommandQueue;
 
 interface HostCommandSeamOptions {
-  readonly schedules?: readonly SCHEDULE[];   // default [PRE_STARTUP, PRE_UPDATE]
+  readonly schedules?: readonly SchedulePhase[]; // default [PRE_STARTUP, PRE_UPDATE]
   readonly name?: string;                      // default "host_command_apply"
   readonly ring?: HostCommandDispatcher;       // the optional SAB transport between threads
   readonly recorder?: HostCommandSink;         // the optional connection for record and replay
@@ -48,6 +48,12 @@ interface HostCommandSeamOptions {
 > Call it **before** you add your own systems, and **before `startup()`**. The schedule has no
 > reserved "first" position. Insertion order is what puts the apply system at the head of the
 > phase. Also, the `PRE_STARTUP` drain runs only when the system exists before startup.
+
+`schedules` takes either spelling of a phase. A `SCHEDULE` member names a built-in. A handle from
+`ecs.addPhase` names a phase the caller added. So a plugin drains at the slot it owns, instead of
+contending for insertion order inside a phase the application also writes to. The loop of the phase
+decides the bucket: a phase of the startup loop drains at seed time, and a phase of the update loop
+drains each frame.
 
 The equivalent function to remove it:
 
@@ -181,10 +187,11 @@ commands from the initial phase, calls `startup()`, and then, for each tick, pus
 calls `update(dt)`. It does this also for an empty tick, because the `dt` drives the simulation.
 
 > [!WARNING]
-> **The recorder cannot record from `FIXED_UPDATE`.** A drain in a fixed step sees the fixed
-> timestep, and not the frame `dt`, which then makes the replay different. If you call
-> `installHostCommandSeam({ recorder })` with `FIXED_UPDATE` in `schedules`, it throws
-> `INVALID_RECORDER_SCHEDULE`. Record from the variable update phases only.
+> **The recorder cannot record from a phase of the fixed loop.** A drain in a fixed step sees the
+> fixed timestep, and not the frame `dt`, which then makes the replay different. The refusal reads
+> the loop of the phase and not its name, so a phase you added with `loop: "fixed"` is refused the
+> same way `FIXED_UPDATE` is. It throws `INVALID_RECORDER_SCHEDULE`, and the message names the
+> phase. Record from a phase of the update loop.
 
 > [!NOTE]
 > `serializeCommandLog` throws `COMMAND_LOG_TAG_COLLISION` when the `values` map of a command has a

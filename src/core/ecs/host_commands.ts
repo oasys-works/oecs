@@ -33,7 +33,8 @@ import type { ECS } from "./ecs";
 import type { EntityID } from "./entity";
 import type { SystemContext } from "./system_context";
 import type { SystemDescriptor } from "./system";
-import { SCHEDULE } from "./schedule";
+import { SCHEDULE, phaseLoopOf, phaseNameOf } from "./schedule";
+import type { SchedulePhase } from "./schedule";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { assertNever } from "../../type_primitives";
 import {
@@ -574,19 +575,14 @@ export interface HostCommandSink {
 	readonly record: (cmd: HostCommand) => void;
 }
 
-/** Startup-phase labels, a drain at one of these is a seed-time drain, recorded
- * into the sink's startup bucket rather than an update tick. */
-const STARTUP_PHASES: ReadonlySet<SCHEDULE> = new Set([
-	SCHEDULE.PRE_STARTUP,
-	SCHEDULE.STARTUP,
-	SCHEDULE.POST_STARTUP
-]);
-
 /** Options for {@link installHostCommandSeam}. */
 export interface HostCommandSeamOptions {
 	/** Schedule phases whose head drains the queue. Default
-	 * `[PRE_STARTUP, PRE_UPDATE]`, seed-time edits plus every frame. */
-	readonly schedules?: readonly SCHEDULE[];
+	 * `[PRE_STARTUP, PRE_UPDATE]`, seed-time edits plus every frame. Either
+	 * spelling of a phase is accepted, so a plugin drains at the phase its own
+	 * `addPhase` returned. A phase of the startup loop drains at seed time, and
+	 * a recorder buckets it as startup rather than as a tick. */
+	readonly schedules?: readonly SchedulePhase[];
 	/** Apply-system name (diagnostics). Default `"host_command_apply"`. */
 	readonly name?: string;
 	/** When provided, the apply system also drains the world's SAB `command_ring`
@@ -652,28 +648,35 @@ export function installHostCommandSeam(
 	// The drain tap: the recorder's pre-bound `record`, or undefined (tap-free
 	// drain). Stable across ticks, no per-tick allocation.
 	const tap = recorder?.record;
-	const schedules = opts?.schedules ?? [SCHEDULE.PRE_STARTUP, SCHEDULE.PRE_UPDATE];
+	const schedules: readonly SchedulePhase[] = opts?.schedules ?? [
+		SCHEDULE.PRE_STARTUP,
+		SCHEDULE.PRE_UPDATE
+	];
 	// A recorder logs each tick's `ecs.update(dt)` so `replayCommandLog` can
-	// re-issue it. A `FIXED_UPDATE` drain receives the fixed timestep, not the host's
-	// variable update dt, so recording there would replay `update(fixedTimestep)`
-	// and diverge, a different fixed sub-step count plus any dt-integrating system,
-	// breaking the per-tick `stateHash` match that is replay fidelity. Record only
-	// from a variable-update phase, one of `PRE_UPDATE`, `UPDATE` and
-	// `POST_UPDATE`.
-	if (recorder !== undefined && schedules.includes(SCHEDULE.FIXED_UPDATE)) {
-		throw new ECSError(
-			ECS_ERROR.INVALID_RECORDER_SCHEDULE,
-			`install_host_command_seam: a recorder cannot drain on SCHEDULE.FIXED_UPDATE. It would log the fixed-step dt instead of the host update(dt) and diverge on replay. Use a variable-update phase (PRE_UPDATE/UPDATE/POST_UPDATE).`
-		);
+	// re-issue it. A fixed-loop drain receives the fixed timestep and not the
+	// host's variable update dt. Recording there would replay
+	// `update(fixedTimestep)` and diverge, because the fixed sub-step count
+	// changes and any system that integrates dt reads another value. That breaks
+	// the per-tick `stateHash` match which is replay fidelity. The refusal reads
+	// the loop and not the name, because `addPhase` can put a phase of any name
+	// in the fixed loop.
+	if (recorder !== undefined) {
+		for (const phase of schedules) {
+			if (phaseLoopOf(phase) !== "fixed") continue;
+			throw new ECSError(
+				ECS_ERROR.INVALID_RECORDER_SCHEDULE,
+				`installHostCommandSeam: a recorder cannot drain at ${phaseNameOf(phase)}, a phase of the fixed loop. It would log the fixed timestep and not the host update dt, so a replay would diverge. Drain at a phase of the update loop instead.`
+			);
+		}
 	}
 	// One descriptor per phase: a descriptor can only be scheduled once, and we
 	// want the queue drained at the head of each listed phase. All share the one
 	// queue, so a command enqueued before startup drains at `PRE_STARTUP` and a
 	// command enqueued between ticks drains at the next `PRE_UPDATE`.
 	for (const label of schedules) {
-		const isUpdateDrain = !STARTUP_PHASES.has(label);
+		const isUpdateDrain = phaseLoopOf(label) !== "startup";
 		const apply = ecs.registerSystem({
-			name: `${name}:${label}`,
+			name: `${name}:${phaseNameOf(label)}`,
 			// `reads` and `writes` are required by `SystemConfig` but empty here: the
 			// apply system declares nothing because it mutates components not known
 			// at registration. Full world access: the host may queue mutations to

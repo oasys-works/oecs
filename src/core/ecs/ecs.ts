@@ -2,15 +2,18 @@
  * ECS. Public ECS facade.
  *
  * Single entry point that composes Store (data), Schedule (execution),
- * and SystemContext (system interface) into a unified API. External code
- * interacts exclusively through ECS. Systems receive a SystemContext
- * instead, preventing direct access to internals.
+ * and SystemContext (system interface) into a unified API. An application
+ * reaches the world through ECS, and a system body reaches it through the
+ * SystemContext the schedule hands in. A plugin is the third caller, and it
+ * reaches further: `ECS.create` hands each installed plugin a `PluginHost`
+ * that carries the store, the bare world, the change feed and the system
+ * context. See `plugin.ts` for what that host opens and why.
  *
  * Architecture: Facade pattern over an archetype-based ECS.
  * - Entities are generational IDs (no object allocation)
  * - Components are typed array columns grouped by archetype
  * - Queries are cached and live-updated as new archetypes appear
- * - Systems are plain functions scheduled across 7 lifecycle phases
+ * - Systems are plain functions scheduled across the lifecycle phases
  *
  * Usage:
  *
@@ -64,11 +67,16 @@
 
 import { Store, type Template, type TemplateOverrides } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
-import type { ObserverHooks } from "./observer";
 import type { ColumnStore } from "../store";
 import { ECSResources, ECSSnapshots } from "./facades";
-import type { Plugin, PluginHost, PluginsOf, WorkerHooks, WorkerWorld } from "./plugin";
-import { Schedule, type SCHEDULE } from "./schedule";
+import type {
+	Plugin,
+	PluginHost,
+	PluginMemory,
+	PluginsOf,
+	SystemRoutePlanner
+} from "./plugin";
+import { Schedule, type Phase, type PhaseConfig, type SchedulePhase } from "./schedule";
 import type { Archetype, ArchetypeID } from "./archetype";
 import { Query, QueryBuilder, QueryCache, type QueryResolver, type QueryTerms } from "./query";
 import { SystemContext } from "./system_context";
@@ -412,30 +420,34 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			onSettle: (fn) => {
 				this._settleHooks.push(fn);
 			},
-			installObservers: (registry) => {
-				if (this._observers !== null) throw pluginInstalledTwiceError("observers");
-				this._observers = registry;
-				// The registry is one settle consumer among others, and it takes
-				// its place in install order like any other.
-				this._settleHooks.push((run) => registry.dispatchSet(run));
+			onPrewarm: (fn) => {
+				this._prewarmSources.push(fn);
 			},
-			installWorkers: (hooks) => {
-				if (this._workerHooks !== null) throw pluginInstalledTwiceError("workers");
-				this._workerHooks = hooks;
-				return this._workerWorld();
+			onDispose: (fn) => {
+				this._disposeHooks.push(fn);
+			},
+			memory: this._pluginMemory(),
+			installRoute: (planner) => {
+				if (this._routePlanner !== null) throw pluginInstalledTwiceError("route");
+				// Keyed and cold at install. The world caches the planner into
+				// the typed field the registration path already read, so no hot
+				// path learns that a route exists by name.
+				this._routePlanner = planner;
+				const schedule = this._schedule;
+				return { route: (dispatch) => schedule.setRoute(dispatch) };
 			}
 		};
 	}
 
-	/** What the pool reads from this world. Built once, at install.
+	/** Where this world's bytes are, for a plugin that reads them directly.
+	 * Built once, at install.
 	 *
-	 * `backing` is a getter, because an attach can follow a grow, and a grow
-	 * replaces the buffer the world started with. The wasm memory survives a
-	 * grow, so it answers first. Cold path. */
-	private _workerWorld(): WorkerWorld {
+	 * `backing` is a getter, because a reader can attach after a grow, and a
+	 * grow replaces the buffer the world started with. The wasm memory
+	 * survives a grow, so it answers first. Cold path. */
+	private _pluginMemory(): PluginMemory {
 		const memory = this._memory;
 		const store = this._store;
-		const schedule = this._schedule;
 		return {
 			get backing(): SharedArrayBuffer | WebAssembly.Memory | null {
 				if (memory.wasmMemory !== null) return memory.wasmMemory;
@@ -444,22 +456,19 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				return hasShared && buffer instanceof SharedArrayBuffer ? buffer : null;
 			},
 			backingSource: memory.source,
-			storeBase: memory.storeBase,
-			noteScan: (componentId: number) => store.noteScan(componentId),
-			route: (pool) => schedule.setWorkerPool(pool)
+			storeBase: memory.storeBase
 		};
 	}
 
 	private readonly _store: Store;
 	private readonly _schedule: Schedule;
 	private readonly _ctx: SystemContext;
-	/** Component observers. Inert until `observe(...)` is
-	 * called, the structural-flush fast path is byte-for-byte unchanged. */
-	// Installed by the observers plugin, `null` until then. The store's
-	// structural-flush fast path is gated on its own observer counts, so a world
-	// without the plugin runs the flush loops it ran before. The world checks
-	// this once per `update()` and once at startup, both cold.
-	private _observers: ObserverHooks | null = null;
+	/** What each plugin contributes to the archetype closure `startup()`
+	 * plants. Empty on a world that installed no such plugin, and read once, at
+	 * startup. */
+	private readonly _prewarmSources: (() => readonly SystemDescriptor[])[] = [];
+	/** What each plugin ends when the world goes away, in install order. */
+	private readonly _disposeHooks: (() => void)[] = [];
 	/** The consumers of the tick-tail detection point, in install order. Each
 	 * one runs once per `update()` with the change tick of the point. Empty on
 	 * a world that installed no consumer, and the tail reads the length once. */
@@ -522,7 +531,10 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// reads it only inside `if (config.parallel !== undefined)`, so a world
 	// with no parallel system never touches it, and a world without the plugin
 	// builds no plan and runs the system's `fn`.
-	private _workerHooks: WorkerHooks | null = null;
+	// The one system dispatch route, `null` until a plugin installs one. Read
+	// at registration, which is cold. The schedule holds its own typed field
+	// for the dispatch, so nothing on a frame path reads this.
+	private _routePlanner: SystemRoutePlanner | null = null;
 
 	private readonly _memory: ResolvedECSMemory;
 
@@ -1320,7 +1332,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * `defs`. Queries are deduplicated by mask, calling this twice with the
 	 * same terms returns the same instance, so build once at setup and reuse
 	 * the view stays live as archetypes appear. Refine with `.and()`,
-	 * `.without()` or `.anyOf()`. Iterate with `forEachChunk` (mutating hot path),
+	 * `.not()` or `.or()`. Iterate with `forEachChunk` (mutating hot path),
 	 * `forEach` (per-archetype), or `forEachEntity` (per-entity).
 	 *
 	 * @example
@@ -1356,7 +1368,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * retained, the mint path copies each one into the `Query`, into the dedup
 	 * entry, and (via `Store.registerQuery`) into the registered-query record.
 	 * So callers may pass a scratch mask they intend to reuse (`ecs.query`) or
-	 * a live mask they still own (`Query.and`, `.without` and `.anyOf` pass
+	 * a live mask they still own (`Query.and`, `.not` and `.or` pass
 	 * `this._include` etc.). Do not add a caller-side `.copy()` "for safety":
 	 * on the cache-hit path that is a per-call BitSet + `number[]` allocation
 	 * for nothing. */
@@ -1385,7 +1397,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// dedup entry), so the borrow contract documented above has to hold across
 		// all three: a callee that mutated `include` mid-mint would give the copies
 		// different contents and silently mis-key the cache. `ecs.query` passes a
-		// reusable scratch mask, and `Query.and`, `.without` and `.anyOf` pass another
+		// reusable scratch mask, and `Query.and`, `.not` and `.or` pass another
 		// Query's live mask, so a violation corrupts existing queries, not only a
 		// temporary. Everything reachable from here (`getMatchingArchetypes`,
 		// `bucketPush`) only reads them.
@@ -1436,7 +1448,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * // Bare function (no declared access, any component touch throws in dev)
 	 * ecs.registerSystem((ctx, dt) => { ... });
 	 * // Function + query builder (query resolved at registration time)
-	 * ecs.registerSystem((q, ctx, dt) => { q.forEach((arch) => { ... }); }, (qb) => qb.with(Pos, Vel));
+	 * ecs.registerSystem((q, ctx, dt) => { q.forEach((arch) => { ... }); }, (qb) => qb.and(Pos, Vel));
 	 */
 	public registerSystem(fn: SystemFn): SystemDescriptor;
 	public registerSystem<Defs extends readonly ComponentDef[]>(
@@ -1504,7 +1516,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 						`registerSystem was passed a ${fnOrConfig.length}-parameter function with no ` +
 							`query builder. A bare system function is (ctx, dt); a query system is ` +
 							`(q, ctx, dt) and needs the query builder as the second argument: ` +
-							`registerSystem((q, ctx, dt) => …, (qb) => qb.with(…)). ` +
+							`registerSystem((q, ctx, dt) => …, (qb) => qb.and(…)). ` +
 							`Without it, q would receive the SystemContext and dt would be undefined.`
 					);
 				}
@@ -1527,18 +1539,19 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			);
 		}
 
-		// A parallel system resolves its plan here, once. The plugin owns the
-		// plan and its validation, so a world that installed no workers plugin
-		// leaves `parallelPlan` undefined and the system runs its `fn`. The hook
-		// is read only inside this branch, and registration is cold in any case.
-		const parallelPlan: object | undefined =
-			config.parallel !== undefined ? this._workerHooks?.plan(config) : undefined;
+		// The installed route resolves its plan here, once. The plugin owns the
+		// plan and its validation, so a world with no route leaves `routePlan`
+		// undefined and the system runs its `fn`. The planner answers `undefined`
+		// for a system it does not claim, which is why the core spells no
+		// plugin's config member. Registration is cold.
+		const planner = this._routePlanner;
+		const routePlan: object | undefined = planner === null ? undefined : planner.plan(config);
 
 		const id = asSystemId(this._nextSystemId++);
 		const descriptor: SystemDescriptor = Object.freeze({
 			...config,
 			..._normalizeAccess(config),
-			parallelPlan,
+			routePlan,
 			id
 		});
 		this._systems.add(descriptor);
@@ -1612,8 +1625,10 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * `private` because the only caller is `startup()`. Visible to tests via
 	 * the `archetype_count` delta on the public ECS facade. */
 	private _prewarmArchetypes(): void {
-		const observed = this._observers === null ? [] : this._observers.descriptors();
-		const closure = computeArchetypeClosure([...this._systems, ...observed]);
+		const sources = this._prewarmSources;
+		const contributed: SystemDescriptor[] = [];
+		for (let i = 0; i < sources.length; i++) contributed.push(...sources[i]());
+		const closure = computeArchetypeClosure([...this._systems, ...contributed]);
 		if (closure.length === 0) return;
 		this._store.archCreateManyFromMasks(closure);
 	}
@@ -1721,7 +1736,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// stop with the world. `dispose` is synchronous and the stop is not, so
 		// the plugin starts it here and a caller that wants the end awaits
 		// `world.workers.detach()` instead.
-		this._workerHooks?.dispose();
+		const disposers = this._disposeHooks;
+		for (let i = 0; i < disposers.length; i++) disposers[i]();
 		for (const descriptor of this._systems.values()) {
 			descriptor.dispose?.();
 			descriptor.onRemoved?.();
@@ -1951,7 +1967,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	}
 
 	/** QueryResolver implementation, backing sparse id of a relation, for the
-	 * `(R, *)` wildcard term (`Query.withRelation`). */
+	 * `(R, *)` wildcard term (`Query.andRelation`). */
 	public relationBackingSparseId(def: RelationDef, api: string): SparseComponentID {
 		return this._store.relationBackingSparseId(def, api);
 	}
@@ -1991,9 +2007,34 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		);
 	}
 
-	public addSystems(phase: SCHEDULE, ...entries: (SystemDescriptor | SystemEntry)[]): this {
+	public addSystems(
+		phase: SchedulePhase,
+		...entries: (SystemDescriptor | SystemEntry)[]
+	): this {
 		this._schedule.addSystems(phase, ...entries);
 		return this;
+	}
+
+	/**
+	 * Add one phase to a loop, and hand back its handle. Setup only, cold path.
+	 *
+	 * A plugin that owns a slot no longer contends for insertion order inside a
+	 * phase the application also writes to. `before` and `after` order the new
+	 * phase against the other phases of the same loop, built-in or added.
+	 *
+	 * The handle belongs to this world, and identity and not name decides which
+	 * phase it is, the rule `systemSet` follows.
+	 *
+	 * @example
+	 * const physics = ecs.addPhase("physics", {
+	 *   loop: "update",
+	 *   after: [SCHEDULE.PRE_UPDATE],
+	 *   before: [SCHEDULE.UPDATE]
+	 * });
+	 * ecs.addSystems(physics, integrate);
+	 */
+	public addPhase(name: string, config: PhaseConfig): Phase {
+		return this._schedule.addPhase(name, config);
 	}
 
 	/**

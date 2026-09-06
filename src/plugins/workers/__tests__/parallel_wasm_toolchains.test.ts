@@ -90,7 +90,7 @@ interface WorldOptions {
 function kernelWorld({ kernel, body, storeBase = STORE_BASE }: WorldOptions) {
 	const world = buildWorld({ entities: ENTITIES, backing: "wasm", storeBase });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const system = ecs.registerSystem({
 		name: kernel.export,
 		reads: [Vel],
@@ -175,7 +175,7 @@ describe("a wasm kernel from any toolchain", () => {
 function stackThenTableWorld(kernel: { wasm?: WebAssembly.Module; js?: string }) {
 	const world = buildWorld({ entities: ENTITIES, backing: "wasm", storeBase: STORE_BASE });
 	const { ecs, Pos, Vel, Frozen } = world;
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 	const columns = [
 		[Pos, "x"],
 		[Pos, "y"],

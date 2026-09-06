@@ -27,7 +27,7 @@ The harness uses these mechanisms continuously, but the unit tests use them one 
 - **change detection**. `onSet` observers at both granularities, `changed()` queries, and
   `ctx.markChanged`, against a model that says exactly which agents a tick wrote and which agents it
   marked
-- **the verbs of a query**. `withRelation`, `withoutRelation`, `optional`, `singleEntity`,
+- **the verbs of a query**. `andRelation`, `notRelation`, `optional`, `singleEntity`,
   `firstEntity` and `some`, each against a fact that the reference already holds
 - **the partition of the enabled and the disabled rows**. `onDisable` and `onEnable` observers, and
   the rule that a default query must not show a disabled row
@@ -283,7 +283,7 @@ prefix give two different nets, which is correct behaviour that looks like a fau
    - `changed(Touch)` must report the same archetypes. A default query gives the non-empty
      archetypes, and an archetype whose rows are all disabled is empty for it, so the
      `includeDisabled()` arm is what must reach those.
-   - `changed(Touch).without(Fresh)` and `without(Fresh).changed(Touch)` must give one set, and no
+   - `changed(Touch).not(Fresh)` and `not(Fresh).changed(Touch)` must give one set, and no
      archetype in it may hold `Fresh`. The documentation promises that the order of the verbs does
      not matter.
    - `changed(Age)` is **exact in both directions**. `ageTick` asks for the mutable accessor of each
@@ -314,8 +314,8 @@ prefix give two different nets, which is correct behaviour that looks like a fau
     system to run.
 13. **The sparse components.** `Watch` is present if and only if the agent is in an active pair.
     `redexMaintain` maintains it with the same rule that it uses for the `Redex` tag, so one system
-    drives a sparse add, which is immediate, beside a dense add, which is deferred. `withSparse`,
-    `withoutSparse` and `includeDisabled().withSparse` are each compared with the model. The one
+    drives a sparse add, which is immediate, beside a dense add, which is deferred. `andSparse`,
+    `notSparse` and `includeDisabled().andSparse` are each compared with the model. The one
     field of `Watch`, `hits`, mirrors `Touch.seq`: the system writes the raw `seq` into a `u8`
     column, through the values of `addSparse` for a member that joins and through a sparse cursor
     for a member that stays, and the model is the low byte of `seq`. The deep comparison reads
@@ -328,7 +328,7 @@ prefix give two different nets, which is correct behaviour that looks like a fau
 15. **The verbs of a query, against the model that the net already holds.** Each item here
     reads a fact that the reference keeps. Therefore this layer adds no model of its own.
 
-    - `withRelation` and `withoutRelation`, `PORTS` is [3, 3, 1, 1]. Therefore a CON and a
+    - `andRelation` and `notRelation`, `PORTS` is [3, 3, 1, 1]. Therefore a CON and a
       DUP hold port 1, and an ERA and the ROOT do not. The relation of port 1 partitions the
       agents by type, and the reference holds the type of each agent. The arm with no
       `includeDisabled()` is the same set without the disabled agents. Therefore the pair also
@@ -444,7 +444,7 @@ They exist because some parts of the API cannot go into a net that must keep its
 | the templates and the batch paths | `batchAddComponent` takes an archetype and not an entity. The net changes one agent at a time, so it cannot reach that path. |
 | the vocabulary of the write seam | The `spawn` and `despawn` commands, `spawnEntry`, the `onSpawned` callback, `push`, `pendingCount`, `clear`, and `uninstallHostCommandSeam`. The quarantine uses the other five kinds. |
 | the replay of a command log | `replayCommandLog` needs a second, fresh world. Record a session, write it as JSON, read it back, replay it, and require the hash of the state after each tick to be equal, tick for tick. This is a metamorphic oracle, and it needs no reference implementation. |
-| the run conditions and the sets | `runEveryNTicks` reads the tick of the ECS, so the model must know that number. A world of its own makes the model a simple loop. It also covers `not`, `allOf`, `anyOf`, `runIfAnyMatch`, and a `systemSet` with `configureSet`. |
+| the run conditions and the sets | `runEveryNTicks` reads the tick of the ECS, so the model must know that number. A world of its own makes the model a simple loop. It also covers `runIfNot`, `runIfAll`, `runIfAny`, `runIfAnyMatch`, and a `systemSet` with `configureSet`. |
 | the lifecycle of a resource, and the events | The present, absent, present axis, and the named error for a read of an absent key. The simulation registers each resource one time. |
 | the guard on a sparse restore | A restore into a world with a different sparse shape must give `SparseRestoreError`. The simulation restores into the world that made the bytes. |
 | the frame trace | The harness queues an exactly known number of commands, and the observer therefore fires an exactly known number of times. Both numbers must appear in the trace. |
@@ -518,7 +518,7 @@ nonzero exit as a catch by the oracle.
 | a transition zeroes the row tick instead of carrying it | the exact set of `Seen`, for the agents the same system moves | oracle |
 | the mutable sparse cursor does not stamp the row tick on `at()` | the exact set of `Watch`, against the members the harness wrote | oracle |
 | the sparse drain treats every component as idle | the exact set of `Watch` | oracle |
-| `withRelation` keeps every row | the partition by port arity | oracle |
+| `andRelation` keeps every row | the partition by port arity | oracle |
 | `getOptionalColumnRead` reports every optional column as absent | the two spans of `optional(Age)` | oracle |
 | `query.some` visits every archetype and does not stop early | the count of the archetypes that the callback saw | oracle |
 
@@ -649,7 +649,7 @@ more meaning to a successful run than it has:
   `singleEntity` is present in a development build alone: a production build skips the count and
   gives the first match. Therefore the net pins the identity of the one ROOT, which is the assertion
   in both builds, and the arm that must throw belongs in a probe.
-- **`Query.and`, `anyOf` and `optional` with more than one component, and `ChangedQuery.and`.** The
+- **`Query.and`, `Query.or` and `optional` with more than one component, and `ChangedQuery.and`.** The
   harness composes each query one verb at a time. The multi-argument forms fold through the same
   single-term cache, so they take the same path.
 - **The checkpoints inside a tick, in a production build.** `setTrace` keeps an empty body there,
@@ -669,7 +669,7 @@ and disabled reachable. Before that change, no run reached that state, and the r
 test.
 
 The most recent pass closed nine more. Six of them went into the simulation, because the net gives
-each one an exact model. They are `withRelation` and `withoutRelation` through the arity of the
+each one an exact model. They are `andRelation` and `notRelation` through the arity of the
 ports, `optional` through the agents that have no `Age` yet, `singleEntity` through the one ROOT,
 `firstEntity` through the idle tail, `some`, and the pair `ctx.getResource` and
 `ctx.hasResource`.

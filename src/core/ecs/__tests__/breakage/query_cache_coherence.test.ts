@@ -89,7 +89,7 @@ describe("Query cache coherence edge cases", () => {
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 5, y: 10 });
 
-		const qNoTag = world.query(Pos).without(Tag);
+		const qNoTag = world.query(Pos).not(Tag);
 		expect(qNoTag.entityCount).toBe(1);
 
 		let countDuringSystem = -1;

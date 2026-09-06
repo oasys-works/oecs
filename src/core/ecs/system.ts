@@ -42,7 +42,8 @@
  *
  ***/
 
-import { Brand, validateAndCast, isNonNegativeInteger } from "../../type_primitives";
+import { Brand, unsafeCast } from "../../type_primitives";
+import { DEV } from "../../dev_flag";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import type { ComponentDef } from "./component";
 import type { EntityID } from "./entity";
@@ -51,17 +52,23 @@ import type { RelationDef } from "./relation";
 import type { ResourceKey } from "./resource";
 import type { SystemContext } from "./system_context";
 import type { BackendSystemHandle } from "./compute_backend";
-import type { Template } from "./store";
+import type { Template } from "./store_types";
 import type { Query } from "./query";
 
 export type SystemID = Brand<number, "system_id">;
 
-export const asSystemId = (value: number) =>
-	validateAndCast<number, SystemID>(
-		value,
-		isNonNegativeInteger,
-		"SystemID must be a non-negative integer"
-	);
+// The fault is an `ECSError` for the same reason `asEventId` throws one. The
+// observers plugin mints observer ids here, and an assertion class would put a
+// second error base into the observers bundle.
+export const asSystemId = (value: number): SystemID => {
+	if (DEV && !(Number.isInteger(value) && value >= 0)) {
+		throw new ECSError(
+			ECS_ERROR.INVALID_SYSTEM_ID,
+			`system id must be an integer >= 0, got ${value}`
+		);
+	}
+	return unsafeCast<SystemID>(value);
+};
 
 export type SystemFn = (ctx: SystemContext, deltaTime: number) => void;
 
@@ -188,8 +195,8 @@ export interface ParallelConfig<D extends ComponentDef<any> = ComponentDef<any>>
 	 * probes show the crossover is a property of the machine and of the kernel. */
 	readonly minRows?: number;
 	/** The query the kernel runs over. Defaults to the first entry of `queries`,
-	 * resolved as a with-only query. Pass one built with `without` to get a
-	 * with-and-without match. */
+	 * resolved as a require-only query. Pass one built with `not` to get a
+	 * require-and-exclude match. */
 	readonly query?: Query<any>;
 }
 
@@ -474,15 +481,14 @@ export interface TypedSystemConfig<
 
 export interface SystemDescriptor extends Readonly<SystemConfig> {
 	readonly id: SystemID;
-	/** @internal What one parallel dispatch reads, resolved at registration.
+	/** @internal What one routed dispatch reads, resolved at registration.
 	 * It hangs off the descriptor so the dispatch site resolves it with one
-	 * property load instead of a hash of an object identity. Absent on every
-	 * system that declares no `parallel`, and on every world that installed no
-	 * workers plugin.
+	 * property load instead of a keyed lookup. Absent on every system no route
+	 * claims, and on every world that installed no route.
 	 *
 	 * Opaque. The plugin that built it is the only reader, so the core carries
 	 * neither the plan's type nor the module that shapes it. */
-	readonly parallelPlan?: object;
+	readonly routePlan?: object;
 	// Normalized by `_normalizeAccess` at registration: required (never
 	// undefined) and Template-free, so internals consume plain def lists.
 	readonly spawns: readonly (readonly ComponentDef[])[];

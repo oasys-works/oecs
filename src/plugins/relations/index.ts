@@ -2,7 +2,7 @@
  * The relations plugin. Typed `(relation, target)` pairs between entities.
  *
  * Install it to give a world `ecs.relations`, the relation terms on a query
- * (`withRelation`, `hierarchy`, `forEachRelatedTo`), and the relation methods
+ * (`andRelation`, `hierarchy`, `forEachRelatedTo`), and the relation methods
  * on a system context. A world that does not install it carries neither the
  * service nor the relation store, and its destroy paths keep the branch they
  * already took when no relation was registered.

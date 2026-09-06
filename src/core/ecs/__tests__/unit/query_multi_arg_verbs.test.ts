@@ -2,7 +2,7 @@
  * The verbs that take more than one argument, and the two loops behind
  * `singleEntity`.
  *
- * `changed` and `withoutRelation` each split on argument count. The one-argument
+ * `changed` and `notRelation` each split on argument count. The one-argument
  * branch reads a per-term cache keyed on the query id, and the many-argument
  * branch builds a fresh query instead. Both branches are live, and only the
  * one-argument branch had a test. A cache that handed back a one-term result for
@@ -64,8 +64,8 @@ describe("Query.changed with more than one component", () => {
 		const q = world.query(A, B);
 		// A changes everywhere except the right archetype, B everywhere except
 		// the left one. They overlap on the third.
-		const writeA = writer(world, world.query(A).without(Right), A, "a");
-		const writeB = writer(world, world.query(B).without(Left), B, "b");
+		const writeA = writer(world, world.query(A).not(Right), A, "a");
+		const writeB = writer(world, world.query(B).not(Left), B, "b");
 		const reader = world.registerSystem({
 			...openAccess([A, B, Left, Right]),
 			fn() {
@@ -111,7 +111,7 @@ describe("Query.changed with more than one component", () => {
 	});
 });
 
-describe("Query.withoutRelation with more than one relation", () => {
+describe("Query.notRelation with more than one relation", () => {
 	it("excludes a source holding either relation", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent({ x: "f64" });
@@ -137,12 +137,12 @@ describe("Query.withoutRelation with more than one relation", () => {
 		const base = world.query(Pos);
 		const expected = [clean, holdsR1, holdsR2].map(Number).sort((l, r) => l - r);
 		expect(seen(base as never)).toEqual(expected);
-		expect(seen(base.withoutRelation(R1) as never)).toEqual(
+		expect(seen(base.notRelation(R1) as never)).toEqual(
 			[clean, holdsR2].map(Number).sort((l, r) => l - r)
 		);
 		// Both terms at once. The chained form must drop both sources, not the
 		// last relation alone.
-		expect(seen(base.withoutRelation(R1, R2) as never)).toEqual([Number(clean)]);
+		expect(seen(base.notRelation(R1, R2) as never)).toEqual([Number(clean)]);
 	});
 });
 
@@ -151,7 +151,7 @@ describe("Query.singleEntity on a query that is not dense-only", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent({ x: "f64" });
 		const Mark = world.registerSparseComponent({ v: "f64" });
-		const q = world.query(Pos).withSparse(Mark);
+		const q = world.query(Pos).andSparse(Mark);
 
 		// Zero matches: the walk counts nothing, and the dev guard throws.
 		let empty: unknown;

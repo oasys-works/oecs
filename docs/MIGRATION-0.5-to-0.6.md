@@ -16,7 +16,9 @@ install, the removed reactive subpaths, the change tick, and the two reserved fi
    its next run.
 3. **`__cols` and `__row` are reserved field names**. Registration of a component with either
    name now throws.
-4. **The renames on the public surface**. One table, applied by search and replace.
+4. **The renames on the public surface**. One table, applied by search and replace. The query
+   connectives are part of it: `without` is `not`, `anyOf` is `or`, and the sparse and relation
+   forms take the connective word first.
 5. **The fields another module reads lost the underscore**. These were never in the documented
    API, so most callers see nothing.
 6. **A sparse component stores a typed value**. A field declared `i32` now truncates, where it
@@ -26,9 +28,9 @@ install, the removed reactive subpaths, the change tick, and the two reserved fi
 9. **The signals kernel, its bridge and the kernel-to-Solid adapter are gone**. The `solid()`
    plugin is the one path into a UI.
 
-Everything else did not change. That includes the component operations, the query verbs, the
-schedule, the resources, the determinism surface, and the snapshot format. The observer, the
-relation and the event call sites are the same. Only the construction of the world moves.
+Everything else did not change. That includes the component operations, the schedule, the
+resources, the determinism surface, and the snapshot format. The observer, the relation and the
+event call sites are the same. A query's behaviour is the same, and only its verbs are renamed.
 
 ---
 
@@ -73,6 +75,17 @@ registration.
 
 | 0.5 | 0.6 |
 | --- | --- |
+| `query.without(...)` | `query.not(...)` |
+| `query.anyOf(...)` | `query.or(...)` |
+| `query.withSparse(...)` | `query.andSparse(...)` |
+| `query.withoutSparse(...)` | `query.notSparse(...)` |
+| `query.withRelation(...)` | `query.andRelation(...)` |
+| `query.withoutRelation(...)` | `query.notRelation(...)` |
+| `qb.with(...)`, the builder form | `qb.and(...)` |
+| `changed.without(...)`, `changed.anyOf(...)` | `changed.not(...)`, `changed.or(...)` |
+| `not(cond)`, the run condition | `runIfNot(cond)` |
+| `allOf(...conds)` | `runIfAll(...conds)` |
+| `anyOf(...conds)` | `runIfAny(...conds)` |
 | `query.eachChunk(cb)` | `query.forEachChunk(cb)` |
 | `query.forEachUntil(cb)` | `query.some(cb)` |
 | `ctx.read(key)` | `ctx.readEvents(key)` |
@@ -86,6 +99,11 @@ registration.
 
 Why each one moved:
 
+- The query connectives are `and`, `not` and `or`, one word each. `without`, `anyOf` and the four
+  `with*` term verbs spelled the same three ideas in a second vocabulary. The sparse and relation
+  forms now put the connective first, so `andSparse` reads as "and, in sparse storage".
+- The run condition combinators moved into the `runIf` family that `runIfAnyMatch` and
+  `runIfResourceEq` already used, which frees the three bare words for the query engine.
 - `ctx.read` collided with `cols.read(def)` in the same walk, where one verb returned a column
   group and the other an event reader.
 - `forEachUntil` returns whether a callback accepted, so it is a predicate and now reads as one.
@@ -238,7 +256,7 @@ Only the construction line changes. Every call site is the same.
 
 | You call | Install |
 | --- | --- |
-| `ecs.relations.*`, `ctx.addRelation`, `query.withRelation`, `query.hierarchy`, `query.forEachRelatedTo` | `relations()` from `@oasys/oecs/relations` |
+| `ecs.relations.*`, `ctx.addRelation`, `query.andRelation`, `query.hierarchy`, `query.forEachRelatedTo` | `relations()` from `@oasys/oecs/relations` |
 | `ecs.events.*`, `ctx.emit`, `ctx.readEvents` | `events()` from `@oasys/oecs/events` |
 | `ecs.snapshots.capture`, `.restore`, `.captureSparse`, `.restoreSparse` | `snapshots()` from `@oasys/oecs/snapshots` |
 | `ecs.observe` | `observers()` from `@oasys/oecs/observers` |
@@ -259,7 +277,7 @@ In JavaScript nothing stops the call, so the world throws `ECS_ERROR.PLUGIN_NOT_
 the message names the API and the import that supplies it. On a bare world, every member of
 `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the four
 members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The system-side
-seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`, `query.withRelation`,
+seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`, `query.andRelation`,
 `query.hierarchy` and `query.forEachRelatedTo` are among them.
 
 Install one plugin two times and the world throws `ECS_ERROR.PLUGIN_ALREADY_INSTALLED`.
@@ -272,10 +290,83 @@ import type { RelationsPlugin } from "@oasys/oecs/relations";
 type RelationalWorld = ECS<RelationsPlugin> & RelationsPlugin;
 ```
 
-To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
-from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
-plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
-gains. `PluginsOf` is the surface a plugin list adds to the world.
+To write a plugin of your own, read [plugins](api/plugins.md). It documents `Plugin`,
+`PluginHost` and `PluginsOf`, the nine host members, the route seam, and the change feed a plugin
+drains.
+
+## The plugin host renamed and dropped members
+
+This breaks a plugin author, and nobody else. An application that installs plugins sees nothing.
+
+`PluginHost` had two slots named after the plugin that filled them. Both are gone. Every hook point
+now names what it hooks, and any plugin may take any of them.
+
+| Before | After |
+| --- | --- |
+| `host.installObservers(registry)` | `host.onPrewarm(fn)`, plus the `host.onSettle` and `host.changes.addStructuralHook` the registry already used |
+| `host.installWorkers(hooks)` | `host.installRoute(planner)`, `host.memory` and `host.onDispose(fn)` |
+| `WorkerHooks` | `SystemRoutePlanner`, and its method is `plan` |
+| `WorkerWorld` | `PluginMemory` for the bytes, `RouteControl` for the on and off call |
+| `ParallelRoute` | `RouteDispatch` |
+| `SystemDescriptor.parallelPlan` | `SystemDescriptor.routePlan` |
+| `Schedule.setWorkerPool(pool)` | `Schedule.setRoute(dispatch)` |
+
+Inside `install`, with `host` the `PluginHost`:
+
+```ts
+// before
+const seam = host.installWorkers({ plan: (config: SystemConfig) => ({ label: config.name }) });
+const bytes = seam.storeBytes;
+const base = seam.storeBase;
+seam.route({ run: () => true });
+seam.noteScan(Pos.id as number);
+```
+
+```ts
+// after
+import type { SystemConfig } from "@oasys/oecs";
+
+const control = host.installRoute({
+  plan: (config: SystemConfig): object | undefined => ({ label: config.name })
+});
+const bytes = host.memory.backing;
+const base = host.memory.storeBase;
+control.route({ run: (): boolean => true });
+host.changes.noteScan(Pos.id as number);
+host.onDispose(() => control.route(null));
+```
+
+Two rules changed with the rename. A planner answers `undefined` for a system it does not claim,
+where the old hook was asked only about a system that carried a `parallel` config. The world holds
+one route, so a second `installRoute` throws `PLUGIN_ALREADY_INSTALLED`.
+
+`host.memory` is three fields. `backing` is the `WebAssembly.Memory`, the `SharedArrayBuffer` or
+`null`. `backingSource` names what it resolved to, so a refusal can quote it. `storeBase` is the
+byte offset of the store header.
+
+## A frame trace event carries a `PhaseName`
+
+`FrameTraceSink` and `FrameTraceEvent` widen `phase` from `SCHEDULE` to `PhaseName`, which is
+`SCHEDULE | (string & {})`. A phase from `ecs.addPhase` spells the name it was given, so the value
+set is open.
+
+A consumer that switches on `SCHEDULE.UPDATE` keeps working, and now needs a default arm. A
+consumer that assigns `event.phase` to a `SCHEDULE` variable no longer compiles.
+
+```ts
+import { SCHEDULE, type FrameTraceEvent, type PhaseName } from "@oasys/oecs";
+
+function label(e: FrameTraceEvent): string {
+  if (e.kind !== "system_start") return e.kind;
+  // before: const phase: SCHEDULE = e.phase;   this no longer compiles
+  const phase: PhaseName = e.phase;
+  // A built-in still compares against its SCHEDULE member, because the member is a string.
+  return phase === SCHEDULE.UPDATE ? "the update phase" : phase;
+}
+```
+
+`FrameTraceSink` moves the same way. `systemBegin`, `flushBegin`, `flushEnd` and `phaseBoundary`
+each take a `PhaseName`. A sink that annotated the parameter `SCHEDULE` widens it.
 
 ## `registerIsA` and `registerChildOf` come from the relations entry
 
@@ -363,6 +454,10 @@ See [solid](api/solid.md) for the full surface, the refusals, and what the suite
 
 These are additions. None of them is required to upgrade.
 
+- **A phase of your own.** `ecs.addPhase(name, { loop, before, after })` adds one slot to the
+  schedule and gives back a `Phase` handle. The seven built-ins keep their `SCHEDULE` spelling, and
+  `addSystems` takes either spelling. A plugin adds a phase through `host.world.addPhase`. See
+  [schedule](api/schedule.md).
 - **The row grain of change detection.** `ecs.trackRows(def)` keeps one change tick for each row.
   Inside `forEachChunk`, `cols.ticksRead(def)` is that column and `cols.since` is the change tick of
   the previous run of the system, so `t[i] > cols.since` picks the rows that changed. A
@@ -385,3 +480,9 @@ These are additions. None of them is required to upgrade.
 - **A `ref` or a cursor write reaches an entity-level `onSet` observer**, which the change detection
   page always said it did. `ctx.ref` records the entity when you create the ref, and a mutable
   cursor records it on each `at`. `refRead` and `cursorRead` record nothing.
+- **`query.where(term)` and a nested expression.** The free `and`, `or` and `not` build an
+  expression from component definitions and from each other, and `where` narrows a query by it, so
+  `q.where(or(and(Pos, Vel), Frozen))` says what no chain says. A plugin supplies its own
+  `ArchetypeTerm` on the same footing. The three readers that answer from the unfiltered archetype
+  list refuse such a query in development, with `QUERY_TERM_DENSE_PATH`. See
+  [queries](api/queries.md).

@@ -226,7 +226,7 @@ async function runOne(entities) {
 	const { emitted, zig, zigNote } = kernelModules();
 	const { ecs, Pos, Vel, Frozen } = await buildWorld(entities);
 	const { SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const query = ecs.query(Pos, Vel).without(Frozen);
+	const query = ecs.query(Pos, Vel).not(Frozen);
 
 	const lanes = [
 		{ id: "js", label: "js kernel", kernel: (body) => ({ js: KERNELS_URL, export: body.js }) },

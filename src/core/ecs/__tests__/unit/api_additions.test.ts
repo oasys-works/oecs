@@ -3,14 +3,14 @@
  *  - total `has*` probes + `tryGetField` (dead or missing → undefined, no throw)
  *  - `Query.firstEntity` and `Query.singleEntity`
  *  - host-side `ecs.refRead` parity with `ctx.refRead`
- *  - run-condition combinators `not`, `allOf` and `anyOf`
+ *  - run-condition combinators `runIfNot`, `runIfAll` and `runIfAny`
  *  - `ObserverHandle[Symbol.dispose]` (`using` support).
  */
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
-import { not, allOf, anyOf, runEveryNTicks, type ConditionContext } from "../../run_condition";
+import { runIfNot, runIfAll, runIfAny, runEveryNTicks, type ConditionContext } from "../../run_condition";
 import { SCHEDULE } from "../../schedule";
 import { openAccess } from "../test_helpers";
 import { relations } from "../../../../plugins/relations";
@@ -114,7 +114,7 @@ describe("Query.firstEntity and singleEntity", () => {
 		const b = world.spawn();
 		world.addComponent(b, Pos, { x: 2 });
 		world.addSparse(b, Mark, { v: 1 });
-		expect(world.query(Pos).withSparse(Mark).firstEntity()).toBe(b);
+		expect(world.query(Pos).andSparse(Mark).firstEntity()).toBe(b);
 	});
 });
 
@@ -132,14 +132,14 @@ describe("host refRead", () => {
 
 describe("run-condition combinators", () => {
 	const ctx = { ecsTick: 4 } as unknown as ConditionContext;
-	it("not, allOf and anyOf evaluate and merge declares", () => {
+	it("runIfNot, runIfAll and runIfAny evaluate and merge declares", () => {
 		const every2 = runEveryNTicks(2); // true at tick 4
 		const every3 = runEveryNTicks(3); // false at tick 4
-		expect(not(every3).evaluate(ctx)).toBe(true);
-		expect(allOf(every2, every3).evaluate(ctx)).toBe(false);
-		expect(anyOf(every2, every3).evaluate(ctx)).toBe(true);
-		expect(not(every3).name).toBe("not(runEveryNTicks(3))");
-		expect(allOf(every2, every3).name).toContain("allOf(");
+		expect(runIfNot(every3).evaluate(ctx)).toBe(true);
+		expect(runIfAll(every2, every3).evaluate(ctx)).toBe(false);
+		expect(runIfAny(every2, every3).evaluate(ctx)).toBe(true);
+		expect(runIfNot(every3).name).toBe("runIfNot(runEveryNTicks(3))");
+		expect(runIfAll(every2, every3).name).toContain("runIfAll(");
 	});
 });
 

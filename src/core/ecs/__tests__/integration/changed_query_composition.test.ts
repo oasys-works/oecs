@@ -1,10 +1,10 @@
 // ChangedQuery is composable.
 //
 // `q.changed(...)` used to return a terminal `ChangedQuery` exposing only
-// `forEach`, so refining after it (`q.changed(Pos).without(Dead)`) was
+// `forEach`, so refining after it (`q.changed(Pos).not(Dead)`) was
 // impossible. You had to remember to refine before
-// (`q.without(Dead).changed(Pos)`). ChangedQuery now mirrors the dense query
-// verbs `and`, `without`, `anyOf` and `optional`. Each refines the underlying
+// (`q.not(Dead).changed(Pos)`). ChangedQuery now mirrors the dense query
+// verbs `and`, `not`, `or` and `optional`. Each refines the underlying
 // query and re-wraps, so the order no longer matters and the result set is
 // identical either way.
 //
@@ -33,7 +33,7 @@ function posWriter(world: ECS, Pos: ComponentDef): SystemDescriptor {
 }
 
 describe("ChangedQuery composition", () => {
-	it(".without() after .changed() excludes the matching archetype", () => {
+	it(".not() after .changed() excludes the matching archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);
 		const Vel = world.registerComponent(["vx"] as const);
@@ -56,7 +56,7 @@ describe("ChangedQuery composition", () => {
 			fn() {
 				dq.changed(Pos).forEach(() => base++);
 				dq.changed(Pos)
-					.without(Dead)
+					.not(Dead)
 					.forEach(() => filtered++);
 			}
 		});
@@ -66,7 +66,7 @@ describe("ChangedQuery composition", () => {
 		world.update(1 / 60);
 
 		expect(base).toBe(2); // {Pos,Vel} and {Pos,Vel,Dead} both changed Pos
-		expect(filtered).toBe(1); // .without(Dead) drops the {Pos,Vel,Dead} archetype
+		expect(filtered).toBe(1); // .not(Dead) drops the {Pos,Vel,Dead} archetype
 	});
 
 	it("composing after changed() equals refining before it (order-independent)", () => {
@@ -91,9 +91,9 @@ describe("ChangedQuery composition", () => {
 			...openAccess([Pos, Vel, Dead]),
 			fn() {
 				dq.changed(Pos)
-					.without(Dead)
+					.not(Dead)
 					.forEach(() => after++); // refine AFTER changed()
-				dq.without(Dead)
+				dq.not(Dead)
 					.changed(Pos)
 					.forEach(() => before++); // refine BEFORE changed()
 			}
@@ -140,7 +140,7 @@ describe("ChangedQuery composition", () => {
 		expect(narrowed).toBe(1); // .and(Vel) keeps only {Pos,Vel}
 	});
 
-	it(".anyOf() after .changed() keeps archetypes with at least one term", () => {
+	it(".or() after .changed() keeps archetypes with at least one term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x"] as const);
 		const Vel = world.registerComponent(["vx"] as const);
@@ -164,7 +164,7 @@ describe("ChangedQuery composition", () => {
 			fn() {
 				dq.changed(Pos).forEach(() => base++);
 				dq.changed(Pos)
-					.anyOf(Vel, Tag)
+					.or(Vel, Tag)
 					.forEach(() => any++);
 			}
 		});
@@ -174,7 +174,7 @@ describe("ChangedQuery composition", () => {
 		world.update(1 / 60);
 
 		expect(base).toBe(3); // {Pos}, {Pos,Vel}, {Pos,Tag}
-		expect(any).toBe(2); // .anyOf(Vel, Tag) keeps {Pos,Vel} and {Pos,Tag}, drops {Pos}
+		expect(any).toBe(2); // .or(Vel, Tag) keeps {Pos,Vel} and {Pos,Tag}, drops {Pos}
 	});
 
 	it(".optional() carries the optional scope into the changed loop", () => {

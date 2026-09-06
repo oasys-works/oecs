@@ -8,8 +8,8 @@
  *
  * The store's structural flush is gated on its own observer counts, which stay
  * zero when nothing registers, so a world without the plugin runs the same
- * flush loops it ran before. The world checks for the registry once per
- * `update()` and once at startup. Neither is in a loop.
+ * flush loops it ran before. The registry rides the world's settle hooks and
+ * its prewarm hooks, both generic, and neither is in a loop.
  *
  * The registry needs the store and the world's shared system context. An
  * observer callback receives the same context a system does, so it sees the
@@ -46,7 +46,13 @@ export function observers(): Plugin<ObserversPlugin> {
 		name: "observers",
 		install(host: PluginHost): ObserversPlugin {
 			const registry = new ObserverRegistry(host.store, host.context);
-			host.installObservers(registry);
+			// The registry is one settle consumer among others, and it takes its
+			// place in install order like any other.
+			host.onSettle((run) => registry.dispatchSet(run));
+			// An observer that spawns or transitions carries the same access
+			// shape a system does, so its target archetype is planted at startup
+			// rather than first-touched mid-tick.
+			host.onPrewarm(() => registry.descriptors());
 			host.changes.addStructuralHook((ev) => registry.dispatchStructural(ev));
 			return {
 				observe(def: ComponentHandle | SparseComponentDef, config: ObserverConfig): ObserverHandle {

@@ -186,7 +186,7 @@ describe("Batch operation edge cases", () => {
 
 		// Now batch_add Hp to all entities that are still in the Pos-only archetype (e2, e3)
 		// We need the archetype that has only Pos (not Pos+Vel)
-		const posOnlyQuery = world.query(Pos).without(Vel);
+		const posOnlyQuery = world.query(Pos).not(Vel);
 		if (posOnlyQuery.archetypeCount > 0) {
 			const posOnlyArch = posOnlyQuery.archetypes[0];
 			world.batchAddComponent(posOnlyArch.id, Hp, { hp: 50 });

@@ -16,6 +16,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../schedule";
+import { ECS_ERROR, ECSError } from "../../utils/error";
 import {
 	installHostCommandSeam,
 	spawnEntry,
@@ -402,5 +403,68 @@ describe("host command seam, recorder cannot drain on FIXED_UPDATE", () => {
 		expect(() =>
 			installHostCommandSeam(world, { recorder, schedules: [SCHEDULE.PRE_UPDATE] })
 		).not.toThrow();
+	});
+});
+
+describe("host command seam, a phase from addPhase", () => {
+	// The seam takes either spelling of a phase. A plugin that owns a phase
+	// drains at its own slot instead of contending for insertion order inside a
+	// phase the application also writes to.
+
+	it("drains at a plugin-added update phase, and not before it", () => {
+		const world = new ECS();
+		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
+		// Between PRE_UPDATE and UPDATE, so one probe reads each side of it.
+		const drainPhase = world.addPhase("host_drain", {
+			loop: "update",
+			after: [SCHEDULE.PRE_UPDATE],
+			before: [SCHEDULE.UPDATE]
+		});
+		const commands = installHostCommandSeam(world, { schedules: [drainPhase] });
+		const entity = world.spawn();
+		world.addComponent(entity, Cell, { x: 1, heat: 0 });
+
+		const seen: number[] = [];
+		const probe = (ctx: SystemContext) => {
+			seen.push(ctx.getField(entity, Cell, "x"));
+		};
+		world.addSystems(
+			SCHEDULE.PRE_UPDATE,
+			world.registerSystem({ name: "before", reads: [Cell], writes: [], fn: probe })
+		);
+		world.addSystems(
+			SCHEDULE.UPDATE,
+			world.registerSystem({ name: "after", reads: [Cell], writes: [], fn: probe })
+		);
+		world.startup();
+
+		commands.setField(entity, Cell, "x", 7);
+		world.update(1 / 60);
+
+		// The drain sits between the two probes, so the first reads the old value
+		// and the second reads the new one. A seam that registered nothing would
+		// leave both at 1. A seam that fell back to PRE_UPDATE would set both to 7.
+		expect(seen).toEqual([1, 7]);
+	});
+
+	it("refuses a recorder on a phase the caller added to the fixed loop", () => {
+		const world = new ECS({ deterministic: true });
+		const recorder = { openTick: () => {}, record: () => {} };
+		const physics = world.addPhase("physics_apply", { loop: "fixed" });
+		try {
+			installHostCommandSeam(world, { recorder, schedules: [physics] });
+			expect.fail("should have thrown");
+		} catch (e) {
+			expect(e).toBeInstanceOf(ECSError);
+			expect((e as ECSError).category).toBe(ECS_ERROR.INVALID_RECORDER_SCHEDULE);
+			expect((e as ECSError).message).toContain("physics_apply");
+		}
+	});
+
+	it("accepts a recorder on a phase the caller added to the update loop", () => {
+		const world = new ECS({ deterministic: true });
+		const recorder = { openTick: () => {}, record: () => {} };
+		const late = world.addPhase("late_apply", { loop: "update" });
+		expect(() => installHostCommandSeam(world, { recorder, schedules: [late] })).not.toThrow();
 	});
 });

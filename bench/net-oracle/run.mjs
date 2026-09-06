@@ -83,7 +83,7 @@
  *      rewrite, drained and compared with the plan. A resource that gates a system
  *      through `runIfResourceEq` on a set of ticks that the driver picks, and a sparse
  *      component whose membership rule the reference also holds.
- *  12. The verbs of a query, `withRelation` and `withoutRelation` against the arity
+ *  12. The verbs of a query, `andRelation` and `notRelation` against the arity
  *      of the ports, `optional` against the agents that have no `Age` yet,
  *      `singleEntity` against the one ROOT, `firstEntity` against the idle tail, and
  *      `some` against the count of the archetypes that `forEach` gives. Each

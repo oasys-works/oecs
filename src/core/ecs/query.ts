@@ -7,7 +7,7 @@
  * write the inner loop over arch.entityCount.
  *
  * QueryBuilder is the entry point for creating queries inside
- * registerSystem(fn, qb => qb.with(Pos, Vel)).
+ * registerSystem(fn, qb => qb.and(Pos, Vel)).
  *
  * The write side is `system_context.ts`. A system reaches this file for the
  * rows it iterates and that one for the values it changes.
@@ -30,16 +30,32 @@
  *     }
  *   });
  *
- * Queries compose via chaining:
+ * Three words name every connective, in every form. `and` requires, `not`
+ * excludes, `or` requires one of a set. A term outside the archetype takes the
+ * same word with the storage after it:
  *
- *   q.and(Energy)           extend required components
- *   q.without(Frozen)       exclude archetypes with Frozen
- *   q.anyOf(Sprite, Mesh)   require at least one of these
- *   q.optional(Vel)         fetch Vel if present. Still iterate without it
+ *   q.and(Energy)             require Energy
+ *   q.not(Frozen)             exclude archetypes with Frozen
+ *   q.or(Sprite, Mesh)        require one of these, or both
+ *   q.andSparse(Selected)     require sparse membership
+ *   q.notSparse(Selected)     exclude sparse membership
+ *   q.andRelation(ChildOf)    require any (R, *) pair
+ *   q.notRelation(ChildOf)    exclude a source of any (R, *) pair
+ *   q.optional(Vel)           fetch Vel if present. Match either way
+ *
+ * `and`, `not` and `or` are functionally complete over archetype membership.
+ * Every predicate over a component mask is one of their compositions, thus no
+ * fourth connective exists and none is coming.
+ *
+ * The free `and`, `or` and `not` build a nested expression for `where`, over
+ * the same three words: `q.where(or(and(Pos, Vel), Frozen))`. An expression
+ * judges the dense component mask alone. Sparse membership and relation
+ * membership are per entity, outside the archetype, so they stay on
+ * `andSparse`, `notSparse`, `andRelation` and `notRelation`.
  *
  * An optional term (Bevy `Option<&T>`, flecs `?`) does not narrow the
- * matched set. It stays at the required terms, spanning archetypes with and
- * without `T`. Read the column per archetype span via
+ * matched set. It stays at the required terms, spanning archetypes that hold
+ * `T` and archetypes that do not. Read the column per archetype span via
  * `arch.getOptionalColumnRead(T, field)`, which returns the column or
  * `undefined` (absent span). Like the sparse terms, it doesn't touch the dense
  * mask, so the derived query reuses this one's live archetype list.
@@ -50,7 +66,7 @@ import type { FrameTraceSink } from "./frame_trace";
 import type { Archetype, ArchetypeView } from "./archetype";
 import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
-import { componentLabel } from "./debug_names";
+import { componentDebugName, componentLabel } from "./debug_names";
 import type {
 	ComponentDef,
 	ComponentHandle,
@@ -153,8 +169,8 @@ export class QueryCache {
 	// keyed by (parent_query_id << 16) | cid, replacing four nullable Maps per
 	// Query. Drops the per-Query Map footprint from O(#queries × 4) to O(4).
 	public readonly andSingle: Map<number, Query<any>> = new Map();
-	public readonly withoutSingle: Map<number, Query<any>> = new Map();
-	public readonly anyOfSingle: Map<number, Query<any>> = new Map();
+	public readonly notSingle: Map<number, Query<any>> = new Map();
+	public readonly orSingle: Map<number, Query<any>> = new Map();
 	public readonly changedSingle: Map<number, ChangedQuery<any>> = new Map();
 	// Optional fetch-if-present composition cache, dense cid keying,
 	// same shape as the dense single caches above.
@@ -162,14 +178,14 @@ export class QueryCache {
 	// Sparse-membership composition caches, same (parent_id << 16) | id
 	// keying, the id is a SparseComponentID (a separate id space), so these
 	// never collide with the dense maps.
-	public readonly withSparseSingle: Map<number, Query<any>> = new Map();
-	public readonly withoutSparseSingle: Map<number, Query<any>> = new Map();
+	public readonly andSparseSingle: Map<number, Query<any>> = new Map();
+	public readonly notSparseSingle: Map<number, Query<any>> = new Map();
 	// Relation-wildcard `(R, *)` composition caches, keyed
 	// (parent_id << 16) | relation_id, a separate Map from the sparse caches
-	// because a `withRelation(R)` query also carries the relation id for its
+	// because a `andRelation(R)` query also carries the relation id for its
 	// `relationReads` access check.
-	public readonly withRelationSingle: Map<number, Query<any>> = new Map();
-	public readonly withoutRelationSingle: Map<number, Query<any>> = new Map();
+	public readonly andRelationSingle: Map<number, Query<any>> = new Map();
+	public readonly notRelationSingle: Map<number, Query<any>> = new Map();
 	// Include-disabled composition cache, keyed by parent query id so
 	// `q.includeDisabled()` returns a stable instance on repeated calls.
 	public readonly includeDisabledSingle: Map<number, Query<any>> = new Map();
@@ -179,6 +195,11 @@ export class QueryCache {
 	// shape, so it mints fresh (hierarchy queries are built at registration,
 	// not per tick).
 	public readonly hierarchySingle: Map<number, Query<any>> = new Map();
+	// Plugin archetype-term composition cache. A term is an object and carries
+	// no id, so this keys on the term itself and then on the parent query id.
+	// A `WeakMap` because the term belongs to the plugin and outlives nothing
+	// here: a term the plugin drops takes its queries with it.
+	public readonly whereSingle: WeakMap<ArchetypeTerm, Map<number, Query<any>>> = new WeakMap();
 
 	/** Dedup lookup: bucket scan with full mask equality (buckets are
 	 * typically 1 or 2 entries). */
@@ -250,7 +271,7 @@ export interface QueryResolver {
 		cb: (entityId: EntityID) => void
 	): void;
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term
-	 * (`withRelation`) to the membership store the sparse-match path
+	 * (`andRelation`) to the membership store the sparse-match path
 	 * already drives. `api` names the query verb the caller used, so a world
 	 * without the relations plugin faults with the verb it reached. */
 	relationBackingSparseId(def: RelationDef, api: string): SparseComponentID;
@@ -303,7 +324,7 @@ const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
  *
  * Every term here leaves the dense component mask alone, so a query that
  * carries one still shares its parent's live archetype list. They travel
- * together through each derive (`and`, `without`, `anyOf`) and through each
+ * together through each derive (`and`, `not`, `or`) and through each
  * driver seam below, so one parameter replaces the run of positional lists
  * those signatures used to repeat.
  *
@@ -315,6 +336,117 @@ const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
  * `deriveTerms`.
  *
  * Cold path. Read once per `forEach` call, never per row. */
+/** An archetype-level term a plugin contributes.
+ *
+ * The engine already answers three archetype questions with a bit mask: hold
+ * these, hold none of these, hold one of these. A term answers a fourth in
+ * whatever way the plugin wants, over the same input. `or(and(A, B), C)` is
+ * one, and so is any predicate over the component mask.
+ *
+ * Where it runs. Once per archetype, per query, at the rebuild the store's
+ * dirty epoch triggers. Never per row, and never per drive. A query that
+ * carries no term reaches a rebuild body byte-identical to today's.
+ *
+ * What the caller guarantees. `matches` is pure and stable: one archetype
+ * gives one answer for the life of the world. The archetype list is rebuilt
+ * from scratch on each epoch, so an unstable term does not corrupt the list,
+ * but it does make the matched set depend on when the epoch last advanced,
+ * which nothing else in the query engine does.
+ *
+ * Cold path. Build the term once and hold it. */
+export interface ArchetypeTerm {
+	/** Names the term in a dev refusal. Diagnostics only, never a cache key. */
+	readonly name: string;
+	/** True when an archetype whose component mask is `mask` belongs. */
+	matches(mask: BitSet): boolean;
+}
+
+/** The terms of a query that declares no archetype term. Shared, so the
+ * common path allocates nothing. */
+const NO_ARCHETYPE_TERMS: readonly ArchetypeTerm[] = Object.freeze([]);
+
+// ── Archetype expressions ──────────────────────────────────────
+
+/** One operand of `and`, `or` or `not`. A component definition is a leaf, and
+ * holding it is the whole question. Any `ArchetypeTerm` is a node, which is
+ * how one combinator nests inside another. */
+export type ArchetypeExpr = ComponentDef<any> | ArchetypeTerm;
+
+// A definition is callable and a term is a plain object, so one `typeof`
+// separates a leaf from a node. Resolving the matcher once at build time keeps
+// the per-archetype call a direct closure call, not a branch per operand.
+function exprMatcher(e: ArchetypeExpr): (mask: BitSet) => boolean {
+	if (typeof e === "function") {
+		const cid = e.id as number;
+		return (mask: BitSet): boolean => mask.has(cid);
+	}
+	return (mask: BitSet): boolean => e.matches(mask);
+}
+
+// The short label, not `componentLabel`. An expression name nests, so the id
+// suffix would repeat at every leaf and bury the shape the reader wants.
+function exprName(e: ArchetypeExpr): string {
+	if (typeof e === "function") return componentDebugName(e) ?? `component ${e.id as number}`;
+	return e.name;
+}
+
+/** Every operand holds. `and()` over nothing matches every archetype, the
+ * identity of the conjunction, so a fold over an empty list narrows nothing.
+ *
+ * Pair it with `where`: `q.where(and(Pos, Vel))`. Prefer `q.and(Pos, Vel)`
+ * when the operands are a flat list of definitions, because a dense term sets
+ * a mask bit and picks the archetypes, where an expression tests each one.
+ *
+ * Cold path. Build the expression once and hold it, because `where` caches on
+ * the term's identity. */
+export function and(...terms: ArchetypeExpr[]): ArchetypeTerm {
+	const parts = terms.map(exprMatcher);
+	const name = `and(${terms.map(exprName).join(", ")})`;
+	return {
+		name,
+		matches(mask: BitSet): boolean {
+			for (let i = 0; i < parts.length; i++) {
+				if (!parts[i](mask)) return false;
+			}
+			return true;
+		}
+	};
+}
+
+/** One operand holds, or more. `or()` over nothing matches no archetype, the
+ * identity of the disjunction. Cold path, same caching rule as `and`. */
+export function or(...terms: ArchetypeExpr[]): ArchetypeTerm {
+	const parts = terms.map(exprMatcher);
+	const name = `or(${terms.map(exprName).join(", ")})`;
+	return {
+		name,
+		matches(mask: BitSet): boolean {
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i](mask)) return true;
+			}
+			return false;
+		}
+	};
+}
+
+/** No operand holds. Several operands read as one negated disjunction, which
+ * is the same set as the conjunction of each negation, so `not(A, B)` matches
+ * exactly what `Query.not(A, B)` matches. `not()` over nothing matches every
+ * archetype. Cold path, same caching rule as `and`. */
+export function not(...terms: ArchetypeExpr[]): ArchetypeTerm {
+	const parts = terms.map(exprMatcher);
+	const name = `not(${terms.map(exprName).join(", ")})`;
+	return {
+		name,
+		matches(mask: BitSet): boolean {
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i](mask)) return false;
+			}
+			return true;
+		}
+	};
+}
+
 export interface QueryTerms {
 	/** Sparse membership a matched entity must hold. Also carries the backing
 	 * sparse id of each `(R, *)` relation term, which is how the wildcard
@@ -334,6 +466,11 @@ export interface QueryTerms {
 	readonly relationExcludes: readonly RelationDef[];
 	/** Depth-ordering term. Reorders the matched entities, parents first. */
 	readonly hierarchyTerm: HierarchyTerm | null;
+	/** Archetype-level terms a plugin contributed. Narrows the matched set
+	 * without touching the dense mask, so the derived query still shares the
+	 * parent's live archetype list and the narrowing happens at the rebuild.
+	 * Empty for every query the core builds. */
+	readonly archetypeTerms: readonly ArchetypeTerm[];
 }
 
 /** The terms of a query that declares none. Shared by every dense-only query,
@@ -346,14 +483,15 @@ export const NO_TERMS: QueryTerms = Object.freeze({
 	includesDisabled: false,
 	relationIncludes: NO_RELATION_TERMS,
 	relationExcludes: NO_RELATION_TERMS,
-	hierarchyTerm: null
+	hierarchyTerm: null,
+	archetypeTerms: NO_ARCHETYPE_TERMS
 });
 
 /** Build the terms for a derived query.
  *
  * The result never equals `NO_TERMS`, and `_carryNondense` depends on that.
  * Every caller adds a term and none removes one, so a derive always widens the
- * record. The zero-argument forms (`optional()`, `withSparse()`) return the
+ * record. The zero-argument forms (`optional()`, `andSparse()`) return the
  * receiver before they reach here, which is what keeps the rule true. A future
  * term that can be removed breaks it, and must collapse an emptied record back
  * to `NO_TERMS` here.
@@ -367,7 +505,8 @@ export function deriveTerms(base: QueryTerms, patch: Partial<QueryTerms>): Query
 		includesDisabled: patch.includesDisabled ?? base.includesDisabled,
 		relationIncludes: patch.relationIncludes ?? base.relationIncludes,
 		relationExcludes: patch.relationExcludes ?? base.relationExcludes,
-		hierarchyTerm: patch.hierarchyTerm !== undefined ? patch.hierarchyTerm : base.hierarchyTerm
+		hierarchyTerm: patch.hierarchyTerm !== undefined ? patch.hierarchyTerm : base.hierarchyTerm,
+		archetypeTerms: patch.archetypeTerms ?? base.archetypeTerms
 	});
 }
 
@@ -410,7 +549,7 @@ function termCacheKey(queryId: number, sparseId: number): number {
 }
 
 // Append a sparse id to a term list, de-duplicating. Returns the same list
-// (no allocation) when the id is already present, so `q.withSparse(R)`
+// (no allocation) when the id is already present, so `q.andSparse(R)`
 // twice resolves to the identical term set. Term lists are tiny (a query has
 // a handful of sparse terms at most), so the linear scan is free.
 function appendSparse(
@@ -600,9 +739,22 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		) {
 			throw new ECSError(
 				ECS_ERROR.SPARSE_QUERY_DENSE_PATH,
-				`Query.${method} ignores sparse / relation-wildcard / hierarchy terms (withSparse / withoutSparse / withRelation / withoutRelation / hierarchy). It walks only the dense archetype list and would return the wrong result (a hierarchy term has no per-archetype span, its order spans archetypes). Iterate this query with forEachEntity instead.`
+				`Query.${method} walks the dense archetype list alone, and this query carries a term it cannot see: andSparse, notSparse, andRelation, notRelation or hierarchy. Iterate it with forEachEntity instead.`
 			);
 		}
+	}
+
+	/** Refuse a reader that answers from the unfiltered dense list. Three do:
+	 * `archetypeCount`, `archetypes` and `excludeWords`. Each would report the
+	 * archetypes the mask picked and not the ones the term kept, which is a
+	 * wider set and a wrong answer. Dev-only, and prod keeps the reader. */
+	private _assertNoArchetypeTerm(method: string): void {
+		const terms = this.terms.archetypeTerms;
+		if (terms.length === 0) return;
+		throw new ECSError(
+			ECS_ERROR.QUERY_TERM_DENSE_PATH,
+			`Query.${method} answers from the dense archetype list, and this query carries the archetype term ${terms[0].name}, which narrows that list. Read the matched archetypes with forEach instead.`
+		);
 	}
 
 	/** Whether this query carries only dense terms, the precondition for the
@@ -670,6 +822,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** Number of matching archetypes (including empty ones). */
 	public get archetypeCount(): number {
 		if (DEV) this._assertDenseOnly("archetypeCount");
+		if (DEV) this._assertNoArchetypeTerm("archetypeCount");
 		return this._archetypes.length;
 	}
 
@@ -688,20 +841,22 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 		return total;
 	}
-	/** @internal The without-mask as raw words, or `null` when the query has no
-	 * without term. A worker resolves the matched archetypes from the masks
+	/** @internal The exclude-mask as raw words, or `null` when the query has no
+	 * `not` term. A worker resolves the matched archetypes from the masks
 	 * alone, so the parallel plan carries these words to the pool. */
 	public get excludeWords(): readonly number[] | null {
+		if (DEV) this._assertNoArchetypeTerm("excludeWords");
 		return this._exclude === null ? null : this._exclude.words;
 	}
 
 	public get archetypes(): readonly ArchetypeView<Defs>[] {
+		if (DEV) this._assertNoArchetypeTerm("archetypes");
 		return this._archetypes;
 	}
 
 	/** Carry this query's non-dense terms, optional fetch-if-present and
 	 * sparse membership, onto a freshly composed dense query. `and`,
-	 * `not` and `anyOf` build the new dense mask via `resolveQuery`, which is
+	 * `not` and `or` build the new dense mask via `resolveQuery`, which is
 	 * keyed on the mask alone and so hands back a query carrying none of these
 	 * terms. An earlier version silently dropped them, which made composition
 	 * order-dependent (`q.optional(V).and(H)` lost `V`, `q.and(H).optional(V)`
@@ -741,7 +896,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		// `and(A).and(B)`. Without the fold a receiver carrying non-dense terms
 		// (optional and sparse) mints a fresh Query + query-id on every call via
 		// `_carryNondense`, the GC churn and query-id climb toward
-		// `CACHE_KEY_HALF_LIMIT` already fixed for `withSparse`.
+		// `CACHE_KEY_HALF_LIMIT` already fixed for `andSparse`.
 		let q: Query<any> = this;
 		for (let i = 0; i < comps.length; i++) q = q.and(comps[i]);
 		return q as Query<[...Defs, ...D]>;
@@ -751,8 +906,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * the hot `and` body is only key-compute + cache hit. The miss path runs once
 	 * per unique composition, then every repeat is a cache hit. Keeping it out of
 	 * line shrinks `and`'s inlined footprint when several composes share one hot
-	 * function (the `query_compose` shape). Same rationale for `_withoutMiss`,
-	 * `_anyOfMiss` and `_changedMiss`. */
+	 * function (the `query_compose` shape). Same rationale for `_notMiss`,
+	 * `_orMiss` and `_changedMiss`. */
 	private _andMiss(def: ComponentDef, cid: number, key: number): Query<any> {
 		const newInclude = this.include.copy();
 		const newDefs = this.defs.slice() as ComponentDef[];
@@ -768,29 +923,29 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** Exclude archetypes that have any of these components. */
-	public without(...comps: ComponentDef[]): Query<Defs> {
+	public not(...comps: ComponentDef[]): Query<Defs> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this.id << 16) | cid) >>> 0;
-			const cached = this._resolver.caches.withoutSingle.get(key);
+			const cached = this._resolver.caches.notSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
-			return this._withoutMiss(cid, key);
+			return this._notMiss(cid, key);
 		}
 		// Fold through the single-arg cached path, mirroring `and`, keeps the
 		// result stable and avoids minting query-ids on a non-dense receiver.
 		let q: Query<Defs> = this;
-		for (let i = 0; i < comps.length; i++) q = q.without(comps[i]);
+		for (let i = 0; i < comps.length; i++) q = q.not(comps[i]);
 		return q;
 	}
 
 	/** @internal, cold cache-miss path for single-arg `not`. See `_andMiss`. */
-	private _withoutMiss(cid: number, key: number): Query<Defs> {
+	private _notMiss(cid: number, key: number): Query<Defs> {
 		const newExclude = this._exclude ? this._exclude.copy() : new BitSet();
 		newExclude.set(cid);
 		const result = this._carryNondense(
 			this._resolver.resolveQuery(this.include, newExclude, this._anyOf, this.defs)
 		) as Query<Defs>;
-		this._resolver.caches.withoutSingle.set(key, result);
+		this._resolver.caches.notSingle.set(key, result);
 		return result;
 	}
 
@@ -799,26 +954,26 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * the returned (cached) query reuses this one's live archetype list. It is
 	 * iterated via `forEachEntity`, never `forEach` (sparse members are
 	 * scattered within archetypes, so there is no SoA column span to yield). */
-	public withSparse(...defs: SparseComponentDef[]): Query<Defs> {
-		if (defs.length === 1) return this._withSparseOne(defs[0] as unknown as number);
+	public andSparse(...defs: SparseComponentDef[]): Query<Defs> {
+		if (defs.length === 1) return this._andSparseOne(defs[0] as unknown as number);
 		// Multi-arg: fold through the single-term cache one id at a time, so every
-		// prefix is cached. A repeated `withSparse(A, B)` then returns the
+		// prefix is cached. A repeated `andSparse(A, B)` then returns the
 		// identical Query, the multi-arg form used to bypass the cache and
 		// mint a fresh Query + id + term arrays on every call (GC churn on the hot
 		// path, and an unbounded climb toward the SPARSE_CACHE_KEY_OVERFLOW bound).
-		// The fold also makes `withSparse(A, B)` the same instance as the chained
-		// `withSparse(A).withSparse(B)`.
+		// The fold also makes `andSparse(A, B)` the same instance as the chained
+		// `andSparse(A).andSparse(B)`.
 		let q: Query<Defs> = this;
-		for (let i = 0; i < defs.length; i++) q = q._withSparseOne(defs[i] as unknown as number);
+		for (let i = 0; i < defs.length; i++) q = q._andSparseOne(defs[i] as unknown as number);
 		return q;
 	}
 
-	/** One-id `withSparse` composition, cached on `(parent_id, sparseId)` in
+	/** One-id `andSparse` composition, cached on `(parent_id, sparseId)` in
 	 * the resolver's shared single-term map. Both the single- and multi-arg public
 	 * forms fold over this, so all sparse-require composition is deduplicated. */
-	private _withSparseOne(sid: number): Query<Defs> {
+	private _andSparseOne(sid: number): Query<Defs> {
 		const key = termCacheKey(this.id, sid);
-		const cache = this._resolver.caches.withSparseSingle;
+		const cache = this._resolver.caches.andSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -830,22 +985,22 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** Exclude a sparse component: drop entities that hold it. Same
-	 * dense-list reuse and `forEachEntity` iteration as `withSparse`. */
-	public withoutSparse(...defs: SparseComponentDef[]): Query<Defs> {
-		if (defs.length === 1) return this._withoutSparseOne(defs[0] as unknown as number);
-		// Multi-arg: fold through the single-term cache, same as `withSparse`.
-		// Each prefix is cached, so a repeated `withoutSparse(A, B)`
+	 * dense-list reuse and `forEachEntity` iteration as `andSparse`. */
+	public notSparse(...defs: SparseComponentDef[]): Query<Defs> {
+		if (defs.length === 1) return this._notSparseOne(defs[0] as unknown as number);
+		// Multi-arg: fold through the single-term cache, same as `andSparse`.
+		// Each prefix is cached, so a repeated `notSparse(A, B)`
 		// returns the identical Query instead of allocating one per call.
 		let q: Query<Defs> = this;
-		for (let i = 0; i < defs.length; i++) q = q._withoutSparseOne(defs[i] as unknown as number);
+		for (let i = 0; i < defs.length; i++) q = q._notSparseOne(defs[i] as unknown as number);
 		return q;
 	}
 
-	/** One-id `withoutSparse` composition, cached on `(parent_id, sparseId)`. The
-	 * multi-arg form folds over this, mirrors `_withSparseOne`. */
-	private _withoutSparseOne(sid: number): Query<Defs> {
+	/** One-id `notSparse` composition, cached on `(parent_id, sparseId)`. The
+	 * multi-arg form folds over this, mirrors `_andSparseOne`. */
+	private _notSparseOne(sid: number): Query<Defs> {
 		const key = termCacheKey(this.id, sid);
-		const cache = this._resolver.caches.withoutSparseSingle;
+		const cache = this._resolver.caches.notSparseSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
 		const result = this._deriveSparse(
@@ -858,7 +1013,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Build a derived query carrying new sparse terms. Reuses this query's
 	 * dense state by reference, the masks are never mutated in place (`and`,
-	 * `not` and `anyOf` copy before mutating), and `_archetypes` is the same
+	 * `not` and `or` copy before mutating), and `_archetypes` is the same
 	 * live array the store appends to, so the derived query stays live too.
 	 * Carries the existing `optionalTerms` terms through unchanged (the two axes
 	 * compose). */
@@ -878,29 +1033,76 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		);
 	}
 
+	/** Narrow the matched archetypes by an expression, or by a term a plugin
+	 * built.
+	 *
+	 * A chained term asks one flat question of the mask. An expression nests,
+	 * so `q.where(or(and(Pos, Vel), Frozen))` says what no chain says. Build it
+	 * from the free `and`, `or` and `not`, which take a component definition as
+	 * a leaf and each other as a node.
+	 *
+	 * A plugin supplies its own `ArchetypeTerm` instead, and `where` accepts it
+	 * on the same footing.
+	 *
+	 * It composes both ways. `q.where(t).not(D)` and `q.not(D).where(t)`
+	 * are the same set, because the derive threads the terms record forward the
+	 * way every other non-dense term is threaded.
+	 *
+	 * What it costs. One predicate call per archetype, per query, at the
+	 * rebuild the store's dirty epoch triggers. `forEach`, `forEachChunk` and
+	 * `forEachEntity` are untouched: they walk the list the rebuild produced.
+	 *
+	 * What it refuses. `archetypeCount`, `archetypes` and `excludeWords` all
+	 * answer from the unfiltered dense list, so a term-carrying query refuses
+	 * them in a dev build rather than answering too wide.
+	 *
+	 * Cached per (term, parent query), so a repeated call gives one instance. */
+	public where(term: ArchetypeTerm): Query<Defs> {
+		const cache = this._resolver.caches.whereSingle;
+		let byQuery = cache.get(term);
+		if (byQuery === undefined) {
+			byQuery = new Map();
+			cache.set(term, byQuery);
+		}
+		const cached = byQuery.get(this.id);
+		if (cached !== undefined) return cached as Query<Defs>;
+		const result = new Query<Defs>(
+			this._archetypes,
+			this.defs,
+			this._resolver,
+			this.include,
+			this._exclude,
+			this._anyOf,
+			this._resolver.nextQueryId(),
+			deriveTerms(this.terms, { archetypeTerms: [...this.terms.archetypeTerms, term] })
+		);
+		byQuery.set(this.id, result);
+		return result;
+	}
+
 	/** Require the `(R, *)` wildcard: match only sources that hold **any**
 	 * target under relation `R`. "Has any `(R, *)` pair" is exactly membership in
 	 * R's backing sparse store (exclusive `{target}` row and multi tag), so this is a
-	 * relation-typed front door over `withSparse`. It pushes R's backing sparse
+	 * relation-typed front door over `andSparse`. It pushes R's backing sparse
 	 * id onto `sparseIncludes` and reuses the `forEachEntity` sparse-match path
 	 * (insertion order, canonical sorting is reserved for `stateHash`/snapshot, and
 	 * costs much more here for no determinism benefit).
 	 * Membership semantics: each source once. Fetch its targets with
 	 * `ctx.targetsOf(e, R)`. Requires `relationReads: [R]` (checked at iteration).
 	 * Cached per `(parent_id, relation_id)` like the sparse terms. */
-	public withRelation(...defs: RelationDef[]): Query<Defs> {
-		if (defs.length === 1) return this._withRelationOne(defs[0]);
+	public andRelation(...defs: RelationDef[]): Query<Defs> {
+		if (defs.length === 1) return this._andRelationOne(defs[0]);
 		let q: Query<Defs> = this;
-		for (let i = 0; i < defs.length; i++) q = q._withRelationOne(defs[i]);
+		for (let i = 0; i < defs.length; i++) q = q._andRelationOne(defs[i]);
 		return q;
 	}
 
-	private _withRelationOne(def: RelationDef): Query<Defs> {
+	private _andRelationOne(def: RelationDef): Query<Defs> {
 		const key = termCacheKey(this.id, def as unknown as number);
-		const cache = this._resolver.caches.withRelationSingle;
+		const cache = this._resolver.caches.andRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
-		const sid = this._resolver.relationBackingSparseId(def, "query.withRelation");
+		const sid = this._resolver.relationBackingSparseId(def, "query.andRelation");
 		const result = this._deriveRelation(
 			appendSparse(this.terms.sparseIncludes, sid as unknown as number),
 			this.terms.sparseExcludes,
@@ -912,21 +1114,21 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** Exclude the `(R, *)` wildcard: drop sources that hold any target
-	 * under `R`. Mirror of `withRelation` on the exclude side (pushes R's
+	 * under `R`. Mirror of `andRelation` on the exclude side (pushes R's
 	 * backing sparse id onto `sparseExcludes`). */
-	public withoutRelation(...defs: RelationDef[]): Query<Defs> {
-		if (defs.length === 1) return this._withoutRelationOne(defs[0]);
+	public notRelation(...defs: RelationDef[]): Query<Defs> {
+		if (defs.length === 1) return this._notRelationOne(defs[0]);
 		let q: Query<Defs> = this;
-		for (let i = 0; i < defs.length; i++) q = q._withoutRelationOne(defs[i]);
+		for (let i = 0; i < defs.length; i++) q = q._notRelationOne(defs[i]);
 		return q;
 	}
 
-	private _withoutRelationOne(def: RelationDef): Query<Defs> {
+	private _notRelationOne(def: RelationDef): Query<Defs> {
 		const key = termCacheKey(this.id, def as unknown as number);
-		const cache = this._resolver.caches.withoutRelationSingle;
+		const cache = this._resolver.caches.notRelationSingle;
 		const cached = cache.get(key);
 		if (cached !== undefined) return cached as Query<Defs>;
-		const sid = this._resolver.relationBackingSparseId(def, "query.withoutRelation");
+		const sid = this._resolver.relationBackingSparseId(def, "query.notRelation");
 		const result = this._deriveRelation(
 			this.terms.sparseIncludes,
 			appendSparse(this.terms.sparseExcludes, sid as unknown as number),
@@ -980,10 +1182,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * constraint. A multi relation throws `RELATION_MODE_MISMATCH` at iteration, and a
 	 * cycle is a loud `RELATION_CYCLE` in `DEV` (a safe break in production).
 	 * Requires `relationReads: [R]` (checked at iteration). Carried through
-	 * `and`, `not` and `anyOf` like the sparse terms (`_carryNondense`).
+	 * `and`, `not` and `or` like the sparse terms (`_carryNondense`).
 	 *
 	 * `Defs` is unchanged, `R` is an ordering, not a required component (like
-	 * `not` and `anyOf`). Returns a new query. The unbounded form is cached. */
+	 * `not` and `or`). Returns a new query. The unbounded form is cached. */
 	public hierarchy(
 		relation: RelationDef<"exclusive">,
 		maxDepth: number = HIERARCHY_UNBOUNDED
@@ -1059,9 +1261,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * here rather than as a chained term because it is a runtime `EntityID`: baking
 	 * it into a cached `Query` would key the cache on a recycled value and churn
 	 * query-ids, and `(*, T)` is the rare or cold shape. Composes with
-	 * `withRelation`, `withSparse` and dense terms on the receiver. Reads
+	 * `andRelation`, `andSparse` and dense terms on the receiver. Reads
 	 * every relation's reverse index, so the system must declare
-	 * `relationReads: [ANY_RELATION]` (plus `[R]` for any composed `withRelation`).
+	 * `relationReads: [ANY_RELATION]` (plus `[R]` for any composed `andRelation`).
 	 * Cold and structural, not a per-tick hot loop over many targets. */
 	public forEachRelatedTo(target: EntityID, cb: (entityId: EntityID) => void): void {
 		if (DEV) {
@@ -1086,17 +1288,17 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * inside `forEach`, `getOptionalColumnRead` throws in `DEV` if `T` was
 	 * not declared here, the read-side analog of `reads:[T]`, which is also
 	 * still required for access coverage (both checks fire, even on the absent
-	 * span). The term is carried through `and`, `not` and `anyOf` (see
+	 * span). The term is carried through `and`, `not` and `or` (see
 	 * `_carryNondense`), so it survives composition in any order. Returns a new
 	 * (cached) Query.
 	 *
 	 * `Defs` is unchanged (the optional `T` is not a required component, like
-	 * `not` and `anyOf`). Column types come from the accessor's own generics. */
+	 * `not` and `or`). Column types come from the accessor's own generics. */
 	public optional(...defs: ComponentDef[]): Query<Defs> {
 		if (defs.length === 1) return this._optionalOne(defs[0].id);
 		// Multi-arg folds through the single-term cache one id at a time, so every
 		// prefix is cached and `optional(A, B)` is the same instance as the chained
-		// `optional(A).optional(B)` (mirrors `and` and `withSparse`).
+		// `optional(A).optional(B)` (mirrors `and` and `andSparse`).
 		let q: Query<Defs> = this;
 		for (let i = 0; i < defs.length; i++) q = q._optionalOne(defs[i].id);
 		return q;
@@ -1104,7 +1306,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** One-id `optional` composition, cached on `(parent_id << 16) | cid` in the
 	 * resolver's shared single-term map (dense cid <= 128, same packing as the
-	 * `and`, `not` and `anyOf` caches). */
+	 * `and`, `not` and `or` caches). */
 	private _optionalOne(cid: number): Query<Defs> {
 		const key = ((this.id << 16) | cid) >>> 0;
 		const cache = this._resolver.caches.optionalSingle;
@@ -1137,7 +1339,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `forEach` publishes the all-rows flag so the SoA loop's `arch.entityCount`
 	 * reports `length`, and `count` and `forEachEntity` widen accordingly. Does not
 	 * touch the dense mask, so it reuses this query's live archetype list and is
-	 * carried through `and`, `not` or `anyOf` like the sparse or optional terms. */
+	 * carried through `and`, `not` or `or` like the sparse or optional terms. */
 	public includeDisabled(): Query<Defs> {
 		if (this.includesDisabled) return this;
 		const cache = this._resolver.caches.includeDisabledSingle;
@@ -1382,7 +1584,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Iterate the entities this query matches, yielding each `EntityID`
 	 * (the sparse-membership match path). Use this whenever the query
-	 * carries a `withSparse` or a `withoutSparse` term. Members are scattered
+	 * carries a `andSparse` or a `notSparse` term. Members are scattered
 	 * across archetypes, so there is no SoA column span to hand back, read
 	 * fields via `ctx.getField` (dense) or `ctx.getSparseField` (sparse) on
 	 * the yielded entity. A dense-only query also works here (it walks its
@@ -1458,6 +1660,13 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `query_compose` shape): the leaner `nonEmptyArchs` keeps `forEach` under V8's
 	 * per-function cumulative inlining budget. */
 	private _rebuildNonEmpty(epoch: number): void {
+		// A plugin term narrows the set, and it takes its own body. One
+		// predicted test keeps the loops below exactly as they were for every
+		// query the core builds.
+		if (this.terms.archetypeTerms.length !== 0) {
+			this._rebuildFiltered(epoch);
+			return;
+		}
 		const src = this._archetypes;
 		const dst: Archetype[] = [];
 		// Filter on the partition field directly, not the flag-dependent
@@ -1477,32 +1686,53 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		this._lastSeenEpoch = epoch;
 	}
 
+	/** @internal, the rebuild of a query that carries plugin archetype terms.
+	 * Same non-empty filter as `_rebuildNonEmpty`, with every term consulted
+	 * for each surviving archetype. Separate body so a query with no term
+	 * never loads a term list. */
+	private _rebuildFiltered(epoch: number): void {
+		const src = this._archetypes;
+		const terms = this.terms.archetypeTerms;
+		const all = this.includesDisabled;
+		const dst: Archetype[] = [];
+		outer: for (let i = 0; i < src.length; i++) {
+			const arch = src[i];
+			if ((all ? arch.totalCount : arch.enabledCount) === 0) continue;
+			for (let t = 0; t < terms.length; t++) {
+				if (!terms[t].matches(arch.mask)) continue outer;
+			}
+			dst.push(arch);
+		}
+		this._nonEmptyArchetypes = dst;
+		this._lastSeenEpoch = epoch;
+	}
+
 	/** Require at least one of these components. */
-	public anyOf(...comps: ComponentDef[]): Query<Defs> {
+	public or(...comps: ComponentDef[]): Query<Defs> {
 		if (comps.length === 1) {
 			const cid = comps[0].id;
 			const key = ((this.id << 16) | cid) >>> 0;
-			const cached = this._resolver.caches.anyOfSingle.get(key);
+			const cached = this._resolver.caches.orSingle.get(key);
 			if (cached !== undefined) return cached as Query<Defs>;
-			return this._anyOfMiss(cid, key);
+			return this._orMiss(cid, key);
 		}
-		// Fold through the single-arg cached path. Successive `anyOf` calls
+		// Fold through the single-arg cached path. Successive `or` calls
 		// union into one anyOf mask (single-arg copies the mask and adds the bit),
-		// so `anyOf(A, B)` ≡ `anyOf(A).anyOf(B)`, "match at least one of {A,B}",
+		// so `or(A, B)` ≡ `or(A).or(B)`, "match at least one of {A,B}",
 		// and is now cached and stable instead of minting a query-id per call.
 		let q: Query<Defs> = this;
-		for (let i = 0; i < comps.length; i++) q = q.anyOf(comps[i]);
+		for (let i = 0; i < comps.length; i++) q = q.or(comps[i]);
 		return q;
 	}
 
-	/** @internal, cold cache-miss path for single-arg `anyOf`. See `_andMiss`. */
-	private _anyOfMiss(cid: number, key: number): Query<Defs> {
+	/** @internal, cold cache-miss path for single-arg `or`. See `_andMiss`. */
+	private _orMiss(cid: number, key: number): Query<Defs> {
 		const newAnyOf = this._anyOf ? this._anyOf.copy() : new BitSet();
 		newAnyOf.set(cid);
 		const result = this._carryNondense(
 			this._resolver.resolveQuery(this.include, this._exclude, newAnyOf, this.defs)
 		) as Query<Defs>;
-		this._resolver.caches.anyOfSingle.set(key, result);
+		this._resolver.caches.orSingle.set(key, result);
 		return result;
 	}
 
@@ -1519,9 +1749,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 *  system run, so a stamp made by an earlier system this frame is above
 	 *  the reader's last run, and a stamp the reader already saw is not.
 	 *
-	 *  The returned ChangedQuery is composable: `and`, `without` and `anyOf`/
-	 *  `optional` refine it further, so `q.changed(Pos).without(Dead)` works, and
-	 *  is the same set as `q.without(Dead).changed(Pos)`. */
+	 *  The returned ChangedQuery is composable. `and`, `not`, `or` and
+	 *  `optional` refine it further, so `q.changed(Pos).not(Dead)` works, and
+	 *  is the same set as `q.not(Dead).changed(Pos)`. */
 	public changed(...defs: ComponentDef[]): ChangedQuery<Defs> {
 		if (defs.length === 1) {
 			const cid = defs[0].id;
@@ -1566,7 +1796,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 export class QueryBuilder {
 	constructor(private readonly _resolver: QueryResolver) {}
 
-	public with<T extends ComponentDef[]>(...defs: T): Query<T> {
+	/** Require these components. The first link of the chain takes the same
+	 * word as every later link, so `qb.and(Pos).and(Vel)` and `qb.and(Pos, Vel)`
+	 * read alike and mean one thing. */
+	public and<T extends ComponentDef[]>(...defs: T): Query<T> {
 		const mask = new BitSet();
 		for (let i = 0; i < defs.length; i++) mask.set(defs[i].id);
 		return this._resolver.resolveQuery(mask, null, null, defs);
@@ -1598,7 +1831,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 	// the thin wrapper is freshly allocated. `_changedIds` carry through unchanged and
 	// stay ⊆ the include mask (which only ever grows, via `and`), so the
 	// constructor's dev guard always still holds. Same set result as refining
-	// before `changed()`, `q.changed(P).without(D)` ≡ `q.without(D).changed(P)`,
+	// before `changed()`, `q.changed(P).not(D)` ≡ `q.not(D).changed(P)`,
 	// but it no longer matters which order you write it.
 
 	/** Also require these components (mirrors `Query.and`). */
@@ -1606,14 +1839,14 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		return new ChangedQuery(this._query.and(...comps), this._changedIds);
 	}
 
-	/** Exclude archetypes holding any of these (mirrors `Query.without`). */
-	public without(...comps: ComponentDef[]): ChangedQuery<Defs> {
-		return new ChangedQuery(this._query.without(...comps), this._changedIds);
+	/** Exclude archetypes holding any of these (mirrors `Query.not`). */
+	public not(...comps: ComponentDef[]): ChangedQuery<Defs> {
+		return new ChangedQuery(this._query.not(...comps), this._changedIds);
 	}
 
-	/** Require at least one of these (mirrors `Query.anyOf`). */
-	public anyOf(...comps: ComponentDef[]): ChangedQuery<Defs> {
-		return new ChangedQuery(this._query.anyOf(...comps), this._changedIds);
+	/** Require at least one of these (mirrors `Query.or`). */
+	public or(...comps: ComponentDef[]): ChangedQuery<Defs> {
+		return new ChangedQuery(this._query.or(...comps), this._changedIds);
 	}
 
 	/** Permit optional-component data access in the loop (mirrors `Query.optional`). */

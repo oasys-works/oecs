@@ -642,9 +642,9 @@ export function runConditions(lib) {
 		runEveryNTicks,
 		runIfResourceEq,
 		runIfAnyMatch,
-		not,
-		allOf,
-		anyOf,
+		runIfNot,
+		runIfAll,
+		runIfAny,
 		systemSet,
 	} = lib;
 	const ecs = snapshotWorld(lib, { deterministic: true });
@@ -652,7 +652,7 @@ export function runConditions(lib) {
 	const Mode = resourceKey("mode");
 	ecs.resources.register(Mode, 0);
 
-	const runs = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, both: 0, either: 0, anyMark: 0, setA: 0, setB: 0 };
+	const runs = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, allGates: 0, anyGate: 0, anyMark: 0, setA: 0, setB: 0 };
 	const counter = (key) => () => {
 		runs[key]++;
 	};
@@ -672,29 +672,29 @@ export function runConditions(lib) {
 	ecs.addSystems(SCHEDULE.PRE_UPDATE, setMode);
 
 	const qMark = ecs.query(Mark);
-	const setBoth = systemSet("both-of-them");
+	const setAll = systemSet("all-of-them");
 	ecs.addSystems(
 		SCHEDULE.UPDATE,
 		{ system: mk("every2", "every2"), runIf: runEveryNTicks(2) },
 		{ system: mk("every3off1", "every3off1"), runIf: runEveryNTicks(3, 1) },
 		{ system: mk("modeIs1", "modeIs1"), runIf: runIfResourceEq(Mode, 1) },
-		{ system: mk("notMode1", "notMode1"), runIf: not(runIfResourceEq(Mode, 1)) },
-		{ system: mk("both", "both"), runIf: allOf(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
-		{ system: mk("either", "either"), runIf: anyOf(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
+		{ system: mk("notMode1", "notMode1"), runIf: runIfNot(runIfResourceEq(Mode, 1)) },
+		{ system: mk("allGates", "allGates"), runIf: runIfAll(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
+		{ system: mk("anyGate", "anyGate"), runIf: runIfAny(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
 		{ system: mk("anyMark", "anyMark"), runIf: runIfAnyMatch(qMark) },
 		// two members of one set. `configureSet` gives the set one condition, and each
 		// member inherits it.
-		{ system: mk("setA", "setA"), set: setBoth },
-		{ system: mk("setB", "setB"), set: setBoth }
+		{ system: mk("setA", "setA"), set: setAll },
+		{ system: mk("setB", "setB"), set: setAll }
 	);
-	ecs.configureSet(setBoth, { runIf: runIfResourceEq(Mode, 2) });
+	ecs.configureSet(setAll, { runIf: runIfResourceEq(Mode, 2) });
 	ecs.startup();
 
 	// The model. `runEveryNTicks` reads `ctx.ecsTick`. The tick of the ECS during the
 	// N-th call of `update` is N-1, so the index of this loop is that tick. A read of
 	// `getCurrentTick()` before the call gives the tick of the previous update, which
 	// is one step early.
-	const want = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, both: 0, either: 0, anyMark: 0, setA: 0, setB: 0 };
+	const want = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, allGates: 0, anyGate: 0, anyMark: 0, setA: 0, setB: 0 };
 	for (let i = 0; i < 12; i++) {
 		mode = i % 3;
 		// A `Mark` entity exists from tick 4 on, so `runIfAnyMatch` must be false before
@@ -713,8 +713,8 @@ export function runConditions(lib) {
 		if (e3) want.every3off1++;
 		if (m1) want.modeIs1++;
 		if (!m1) want.notMode1++;
-		if (e2 && m1) want.both++;
-		if (e2 || m1) want.either++;
+		if (e2 && m1) want.allGates++;
+		if (e2 || m1) want.anyGate++;
 		if (hasMark) want.anyMark++;
 		if (m2) {
 			want.setA++;

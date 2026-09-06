@@ -26,8 +26,9 @@ libraries, go directly to the page that you need.
   again.
 - A **system** is a plain function that runs over queries in each frame. It declares the components
   that it reads and writes, and development builds check that declaration.
-- The **schedule** runs the systems in seven phases. The startup phases run one time. The update
-  phases run in each frame. The fixed-update phase runs at a fixed timestep.
+- The **schedule** runs the systems in phases. The startup phases run one time. The update
+  phases run in each frame. The fixed-update phase runs at a fixed timestep. A world starts with
+  seven phases, and `ecs.addPhase` adds one more.
 
 ```ts
 import { ECS, SCHEDULE } from "@oasys/oecs";
@@ -90,11 +91,8 @@ still builds a world, and that world holds none of the five. A JavaScript caller
 plugin the world did not install gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs
 one plugin two times gets `PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
 
-To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
-from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
-plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
-gains. `PluginsOf` is the surface a plugin list adds to the world. The
-[plugins](./plugins.md) page documents the host, the rules `ECS.create` checks, and the
+To write a plugin of your own, read [plugins](./plugins.md). It documents `Plugin`, `PluginHost`
+and `PluginsOf`, the nine host members, the route seam, the rules `ECS.create` checks, and the
 change feed a plugin drains.
 
 | Import | What it is |
@@ -111,6 +109,48 @@ change feed a plugin drains.
 | `@oasys/oecs/primitives` | the data structures that oecs is built from (`BitSet`, `SparseSet`, and others) |
 | `@oasys/oecs/worker` | the engine's **worker entry**. `world.workers.attach` starts it, and you never import it. On npm the guarded build is `@oasys/oecs/worker/dev` |
 | `@oasys/oecs/internal` | an **unstable** surface for tools, codecs, ABI constants, memory inspectors, and development singletons. There are no semver guarantees |
+
+### The open phase set
+
+A world starts with seven phases, and a plugin adds one of its own.
+[schedule](./schedule.md) documents each name.
+
+| Name | Where | What it is |
+| --- | --- | --- |
+| `ecs.addPhase(name, config)` | `ECS` | adds one slot to a loop, and gives back its handle |
+| `Phase` | root, type | that handle. Identity, and not name, picks the phase |
+| `PhaseConfig` | root, type | `loop`, and the optional `before` and `after` |
+| `PhaseLoop` | root, type | `"startup"`, `"fixed"` or `"update"` |
+| `SchedulePhase` | root, type | either spelling, a `SCHEDULE` member or a `Phase` |
+| `PhaseName` | root, type | what a frame trace event carries, so a `switch` needs a default arm |
+| `UNKNOWN_PHASE` | `ECS_ERROR` | a name no built-in spells, or a handle another world made |
+| `CIRCULAR_PHASE_DEPENDENCY` | `ECS_ERROR` | one loop's phase order holds a cycle |
+
+### The plugin route seam
+
+A plugin runs a system body itself through one route. [plugins](./plugins.md) documents the seam.
+
+| Name | Where | What it is |
+| --- | --- | --- |
+| `host.installRoute(planner)` | `PluginHost` | claims the bodies this plugin routes, one route per world |
+| `SystemRoutePlanner` | root, type | `plan(config)`, what one routed dispatch reads |
+| `RouteControl` | root, type | `route(dispatch)` and `route(null)` |
+| `RouteDispatch` | root, type | `run(plan, ctx, dt, runTick)`, true when the route took the body |
+| `PluginMemory` | root, type | `host.memory`, the backing, its source and the store base |
+
+The root exports all four as types. Each is structural, so a plugin satisfies one without
+naming it, and names it when it wants the compiler to check the shape.
+
+### The archetype term
+
+| Name | Where | What it is |
+| --- | --- | --- |
+| `query.where(term)` | `Query` | narrows the matched archetypes with a term of your own |
+| `ArchetypeTerm` | root, type | `name` and `matches(mask)`, the term `where` takes |
+| `and`, `or`, `not` | root | build an `ArchetypeTerm` from definitions and other terms |
+| `QUERY_TERM_DENSE_PATH` | `ECS_ERROR` | a dense-list reader on a query that carries a term |
+
+See [queries](./queries.md).
 
 ### The parallel and WASM surface
 
@@ -158,12 +198,14 @@ Read these pages in this order, to get a model that you can use.
    definitions, and bundles
 2. [entities](./entities.md), create, destroy, enable, and disable. Templates, and the `EntityID`
    codec
-3. [queries](./queries.md), `query`, the verbs that make a query more exact, `forEach` compared to
-   `forEachChunk`, and the archetype view
+3. [queries](./queries.md), `query`, the verbs `and`, `not` and `or`, their sparse and relation
+   forms `andSparse`, `notSparse`, `andRelation` and `notRelation`, the `where` expression,
+   `forEach` compared to `forEachChunk`, and the archetype view
 4. [systems](./systems.md), `registerSystem`, `reads` and `writes`, the system context, and
    `ctx.commands`
-5. [schedule](./schedule.md), the seven phases, the order of systems, system sets, run conditions,
-   and the frame loop
+5. [schedule](./schedule.md), the seven built-in phases, `addPhase` for one of your own, the order
+   of systems, system sets, the run conditions with `runIfNot`, `runIfAll` and `runIfAny`, and the
+   frame loop
 6. [resources](./resources.md), typed global values
 7. [events](./events.md), send-and-forget messages, which the ECS clears in each frame
 8. [refs](./refs.md), cached field accessors for one entity (`ctx.ref` and `ctx.refRead`), and
@@ -200,10 +242,12 @@ Read these pages in this order, to get a model that you can use.
 
 22. [primitives](./primitives.md), the data structures under `@oasys/oecs/primitives` that you can
     use again
-23. [errors](./errors.md), the `ECSError` taxonomy
-24. [plugins](./plugins.md), for a plugin author: `Plugin`, `PluginHost`, `PluginsOf`, the
-    rules `ECS.create` checks, and the change feed a plugin drains, which is `ChangeFeed` with
-    `ObservationFlags`, `DrainResult` and `StructuralObserverEvents`
+23. [errors](./errors.md), the `ECSError` taxonomy, including the two development-only id
+    faults `INVALID_EVENT_ID` and `INVALID_SYSTEM_ID`
+24. [plugins](./plugins.md), for a plugin author: `Plugin`, `PluginHost`, `PluginsOf`, the nine
+    host members, the route seam, a phase of your own, the rules `ECS.create` checks, and the
+    change feed a plugin drains, which is `ChangeFeed` with `ObservationFlags`, `DrainResult` and
+    `StructuralObserverEvents`
 
 <a id="dev-vs-prod--read-this-once"></a>
 

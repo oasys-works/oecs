@@ -21,7 +21,6 @@
 
 import type { Store } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
-import { _setIterAllRows } from "./archetype";
 import type { EntityID } from "./entity";
 import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";

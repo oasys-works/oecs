@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-09-06
 
+### Changed (breaking). One vocabulary for the query connectives
+
+The connectives are `and`, `not` and `or`, one word each, everywhere they appear.
+
+| 0.5 | 0.6 |
+| --- | --- |
+| `query.without(...)` | `query.not(...)` |
+| `query.anyOf(...)` | `query.or(...)` |
+| `query.withSparse(...)` | `query.andSparse(...)` |
+| `query.withoutSparse(...)` | `query.notSparse(...)` |
+| `query.withRelation(...)` | `query.andRelation(...)` |
+| `query.withoutRelation(...)` | `query.notRelation(...)` |
+| `qb.with(...)`, the builder form | `qb.and(...)` |
+| `changed.without(...)`, `changed.anyOf(...)` | `changed.not(...)`, `changed.or(...)` |
+| `not(cond)`, the run condition | `runIfNot(cond)` |
+| `allOf(...conds)`, the run condition | `runIfAll(...conds)` |
+| `anyOf(...conds)`, the run condition | `runIfAny(...conds)` |
+
+`without`, `anyOf` and the four `with*` term verbs spelled the same three ideas in a second
+vocabulary. A sparse term and a relation term keep their own verbs, because a sparse id and a
+relation id are both plain numbers at run time and no test tells them apart, so one `and` cannot
+route them. Each now puts the connective word first.
+
+The run condition combinators moved into the `runIf` family that `runIfAnyMatch` and
+`runIfResourceEq` already used. That frees the three bare words for the query engine.
+
+### Added. `Query.where(term)`, and the `and`, `or` and `not` combinators
+
+A chain asks one flat question of the component mask. An expression nests:
+
+```ts
+import { and, or, not } from "@oasys/oecs";
+
+const q = ecs.query(Tag).where(or(and(Pos, Vel), Frozen));
+```
+
+Each combinator takes a component definition as a leaf and takes another expression as a node, and
+returns an `ArchetypeTerm`, which is `{ name, matches }`. A plugin supplies its own term on the
+same footing. The three words are functionally complete over archetype membership, so there is no
+fourth connective. An expression judges the dense component mask alone. Sparse membership and
+relation membership are per entity, outside the archetype, and stay on their own terms.
+
+The term runs one time per archetype, per query, at the rebuild the store's dirty epoch triggers.
+`forEach`, `forEachChunk` and `forEachEntity` walk the list the rebuild produced.
+
+**Added. `ECS_ERROR.QUERY_TERM_DENSE_PATH`.** `archetypeCount`, `archetypes` and `excludeWords`
+answer from the unfiltered archetype list, so a query that carries an archetype term refuses all
+three in a development build. The refusal used to borrow `SPARSE_QUERY_DENSE_PATH`, which named
+the wrong fault.
+
+**Added. The `ArchetypeExpr` type**, the operand of a combinator.
+
 ### Changed (breaking). Four subsystems became plugins a world installs
 
 `new ECS()` no longer carries relations, events, snapshot and restore, or observers. Each is a
@@ -53,7 +105,7 @@ the API and the import that supplies it. The fix is at the construction site. On
 member of `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the
 four members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The
 system-side seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`,
-`query.withRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among them.
+`query.andRelation`, `query.hierarchy` and `query.forEachRelatedTo` are among them.
 
 Installing one plugin two times throws the new `ECS_ERROR.PLUGIN_ALREADY_INSTALLED`.
 
@@ -112,6 +164,97 @@ member without a word. The four reserved slots, `relations`, `events`, `observe`
 Four types are exported from `@oasys/oecs`: `ChangeFeed`, `ObservationFlags`, `DrainResult` and
 `StructuralObserverEvents`. The new [plugins](docs/api/plugins.md) page documents the host,
 the rules and the feed for an author.
+
+### Added. The phase set is open
+
+`ecs.addPhase(name, { loop, before, after })` adds one slot to the schedule and gives back a
+`Phase` handle. A plugin owns its own slot that way. It no longer contends for insertion order
+inside a phase the application also writes to.
+
+`loop` is `"startup"`, `"fixed"` or `"update"`. It decides which drive runs the phase, and what
+delta time the phase receives. `before` and `after` order the new phase against the other phases of
+the same loop, built-in or added. A target in another loop expands to nothing. A phase that names
+no neighbour lands at the tail of its loop. Each loop's phases sort with Kahn's algorithm, and
+declaration order breaks a tie, the rule the systems inside a phase already follow. The order
+resolves at `addPhase`.
+
+A phase has an identity of object identity, and not of name, the rule `systemSet` follows. Two
+calls with one name make two phases. The handle belongs to the world that made it.
+
+The seven built-ins keep their `SCHEDULE` spelling and gain no handle. `addSystems` takes either
+spelling, so no call that you write today changes.
+
+`Phase`, `PhaseConfig`, `PhaseLoop`, `PhaseName` and `SchedulePhase` are exported from
+`@oasys/oecs`. Two error categories are new. `ECS_ERROR.UNKNOWN_PHASE` names a phase this world
+does not hold: a name no built-in spells, or a handle another world made.
+`ECS_ERROR.CIRCULAR_PHASE_DEPENDENCY` names a phase order with a cycle. Both throw in each build.
+A handle from another world would otherwise push systems into that world's list, and a production
+build would then run them nowhere.
+
+A plugin adds a phase through `host.world.addPhase`.
+`src/core/ecs/__tests__/integration/phase.test.ts` locks the order against the built-ins a phase
+names, the identity rule, the three loops and both faults. See
+[schedule](docs/api/schedule.md).
+
+### Changed (breaking). A frame trace event carries a `PhaseName`
+
+`FrameTraceSink` and `FrameTraceEvent` widen `phase` from `SCHEDULE` to `PhaseName`, which is
+`SCHEDULE | (string & {})`. A phase from `addPhase` spells the name it was given, so the value set
+is open. A consumer that switches on `SCHEDULE.UPDATE` keeps working, and it now needs a default
+arm. A consumer that assigns `event.phase` to a `SCHEDULE` variable no longer compiles. On
+`FrameTraceSink`, `systemBegin`, `flushBegin`, `flushEnd` and `phaseBoundary` each take a
+`PhaseName`.
+
+### Changed. The frame loop reads a phase's plan from a field
+
+Each loop holds its phases as one sorted array, resolved at `addPhase`. Each phase holds its own
+sorted plan as a field. The drive loop walks the array and reads the field. It used to key a map by
+the phase string, once for each phase, in each frame. A schedule of short system bodies gets
+faster, which is the case where the scheduler's own work is most of the frame. `bench/` holds the
+comparison.
+
+### Changed (breaking for a plugin author). Every host hook point names what it hooks
+
+`PluginHost` named two plugins. It now carries nine members, and every one is open to any plugin:
+`store`, `world`, `changes`, `context`, `memory`, `onSettle`, `onPrewarm`, `onDispose` and
+`installRoute`.
+
+- `onPrewarm(fn)` contributes the access shapes that `startup()` folds into the archetype closure.
+  The observers plugin takes it, where it used to hand the world a registry.
+- `onDispose(fn)` runs when the world goes away. A plugin ends a thread, a timer or a socket there.
+- `memory` names where the world's bytes are: `backing`, `backingSource` and `storeBase`.
+- `installRoute(planner)` claims the body of the systems a plugin routes, and gives back the one
+  call that turns the route on and off. A world holds one route, so a second install throws
+  `PLUGIN_ALREADY_INSTALLED`.
+
+The renames that go with it: `WorkerHooks` is `SystemRoutePlanner`, `WorkerWorld` splits into
+`PluginMemory` and `RouteControl`, `ParallelRoute` is `RouteDispatch`,
+`SystemDescriptor.parallelPlan` is `routePlan`, and `Schedule.setWorkerPool` is `setRoute`. Of
+these, `PluginHost` alone was ever exported, so the published break reaches a plugin author and
+nobody else. An application that installs plugins sees nothing.
+
+Two rules changed with the rename. The world asks the planner about every system it registers, and
+a planner answers `undefined` for one it does not claim. The old hook was asked only about a system
+carrying a `parallel` config, so a plugin now validates its own config for every candidate.
+`noteScan` moved onto `ChangeFeed`, where a consumer of the feed reaches it.
+
+The dispatch path is unchanged by construction. Registration is keyed and cold, and the world
+caches what it resolved into the field the dispatch already read. The emitted production dispatch
+loop is byte-identical once the rename is undone.
+
+`src/core/ecs/__tests__/integration/third_party_plugin.test.ts` writes a route outside the core,
+claims one system body, runs a dispose hook and holds the world to the second-route refusal. See
+[plugins](docs/api/plugins.md).
+
+### Removed (breaking for a plugin author). `installObservers` and `installWorkers`
+
+Both were named slots on `PluginHost`, one for each first-party plugin. The core named two plugins
+that way, and every other plugin went through the generic path. The generic hook points above
+replace them, and a plugin outside this package now reaches the ground the first parties reach.
+
+The stated reason for the two slots was hot-path lookup cost. It holds for one read alone, the
+system dispatch route, and that read stays one typed slot. Every other read behind the two slots is
+cold.
 
 ### Added. `solid()`, a plugin that writes one Solid signal per row off the change feed
 
@@ -190,6 +333,39 @@ There is **no React path in this release**, and no framework-free reactive path.
 not a Solid app polls the world. Take `ecs.getField`, a cursor, or a `changed()` query.
 `syncJoinToMap` also has no replacement. A view subscribes to one component, so take one view for
 each component and combine them where you read.
+
+### Changed. The host write seam drains at a phase the caller added
+
+`HostCommandSeamOptions.schedules` took `readonly SCHEDULE[]`, so a seam could drain at one of the
+seven built-ins only. It now takes `readonly SchedulePhase[]`, the same union `addSystems` takes, so
+a handle from `ecs.addPhase` works. A plugin drains at the slot it owns rather than contending for
+insertion order inside a phase the application also writes to. Every existing call still compiles,
+because a `SCHEDULE` member is a `SchedulePhase`.
+
+The recorder's refusal now reads the loop of a phase and not its name. A phase added with
+`loop: "fixed"` is refused the same way `SCHEDULE.FIXED_UPDATE` is, with
+`ECS_ERROR.INVALID_RECORDER_SCHEDULE`, and the message names the phase. The reason is unchanged: a
+fixed-loop drain sees the fixed timestep and not the host update dt, so the replay would diverge.
+The seed-time bucket follows the loop too, so a phase of the startup loop records as startup.
+
+### Changed. A malformed event id and a malformed system id throw `ECSError`
+
+The two id minters refused a value that is not an integer >= 0 with an `AssertionError`. They now
+throw an `ECSError` carrying the new `ECS_ERROR.INVALID_EVENT_ID` and
+`ECS_ERROR.INVALID_SYSTEM_ID`. Both checks are development only, and the production build is
+unchanged. Neither minter is on a public entry, so only a `catch` that tested the assertion class
+sees the change.
+
+The reason is the bundle. `AssertionError` extends `AppError`, so a plugin bundle that reached it
+carried a second error class and bound the base from the package. `ECSError` already resolves to
+the package root. The assertion class and its base now leave every plugin bundle, and
+`dist_artifact.test.ts` locks that.
+
+### Removed. `AppError` leaves `@oasys/oecs/internal`
+
+The base class was on the tooling entry because a development plugin bundle bound it there. No
+bundle reaches it now, so the entry drops it. `ECSError` and `isEcsError` are on the package root,
+and they are what a consumer catches.
 
 ### Added. The store can start anywhere in its memory
 

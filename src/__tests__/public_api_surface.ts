@@ -39,8 +39,7 @@ export const ROOT_EXPORTS: readonly string[] = [
 	"StoreRestoreError",
 	"SystemContext",
 	"VERSION",
-	"allOf",
-	"anyOf",
+	"and",
 	"applyHostCommand",
 	"bundle",
 	"deserializeCommandLog",
@@ -49,10 +48,14 @@ export const ROOT_EXPORTS: readonly string[] = [
 	"installHostCommandSeam",
 	"isEcsError",
 	"not",
+	"or",
 	"replayCommandLog",
 	"resourceKey",
 	"runEveryNTicks",
+	"runIfAll",
+	"runIfAny",
 	"runIfAnyMatch",
+	"runIfNot",
 	"runIfResourceEq",
 	"serializeCommandLog",
 	"signalKey",
@@ -63,7 +66,6 @@ export const ROOT_EXPORTS: readonly string[] = [
 ];
 
 export const INTERNAL_EXPORTS: readonly string[] = [
-	"AppError",
 	"BUDGET_DEFAULT_ARCHETYPES",
 	"BUDGET_DEFAULT_BYTES_PER_ENTITY",
 	"BUDGET_GROWTH_HEADROOM",

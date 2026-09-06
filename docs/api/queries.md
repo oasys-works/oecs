@@ -60,11 +60,11 @@ const movers = ecs.query(Pos, Vel);
 // In a system, through the query-builder form of registerSystem:
 const move = ecs.registerSystem(
   (q, ctx, dt) => { q.forEachChunk(/* ... */); },
-  (qb) => qb.with(Pos, Vel),   // resolved one time, at registration
+  (qb) => qb.and(Pos, Vel),   // resolved one time, at registration
 );
 ```
 
-`QueryBuilder.with(...)` is identical to `ecs.query(...)`. It is only the form that a system
+`QueryBuilder.and(...)` is identical to `ecs.query(...)`. It is only the form that a system
 receives. Most code declares its queries with `ecs.query(...)` and holds them in a closure. See
 [systems](./systems.md) for the reason that this form is usually better than the builder form.
 
@@ -73,24 +73,27 @@ receives. Most code declares its queries with `ecs.query(...)` and holds them in
 Each verb gives you a **new cached query**. It never mutates the receiver. The engine remembers
 each composition, so `q.and(A).and(B)` and `q.and(A, B)` are the same instance.
 
+Three words name every connective. `and` requires, `not` excludes, `or` requires one of a set.
+
 ```ts
 and<D>(...comps: D): Query<[...Defs, ...D]>;   // also require these  (makes the set smaller)
-without(...comps): Query<Defs>;                 // remove archetypes that hold any of these
-anyOf(...comps): Query<Defs>;                   // require A minimum of one of these
-optional(...defs): Query<Defs>;                 // fetch if present (does not make the set smaller)
-changed(...defs): ChangedQuery<Defs>;           // only archetypes changed since the last run
-includeDisabled(): Query<Defs>;                 // include the disabled entities again
+not(...comps): Query<Defs>;                    // remove archetypes that hold any of these
+or(...comps): Query<Defs>;                     // require a minimum of one of these
+where(term: ArchetypeTerm): Query<Defs>;       // narrow by a nested expression
+optional(...defs): Query<Defs>;                // fetch if present (does not make the set smaller)
+changed(...defs): ChangedQuery<Defs>;          // only archetypes changed since the last run
+includeDisabled(): Query<Defs>;                // include the disabled entities again
 ```
 
 ```ts
 ecs.query(Pos)
-  .and(Vel)              // require Vel also
-  .without(Frozen)       // remove the frozen entities
-  .anyOf(Player, NPC);   // and be a Player or an NPC
+  .and(Vel)            // require Vel also
+  .not(Frozen)         // remove the frozen entities
+  .or(Player, NPC);    // and be a Player or an NPC
 ```
 
-- **`without`** removes an archetype if it holds *any* component in the list. **`anyOf`** requires
-  *a minimum of one*. Two or more `anyOf` calls join into one "one or more of these" set.
+- **`not`** removes an archetype if it holds *any* component in the list. **`or`** requires
+  *a minimum of one*. Two or more `or` calls join into one "one or more of these" set.
 - **`optional(T)`** increases what you can *read*. It does not change what the query *matches*.
   Iteration still covers the archetypes with `T` and the archetypes without `T`. To read the
   column, use `arch.getOptionalColumnRead(T, field)`, which gives the column when `T` is present
@@ -100,6 +103,51 @@ ecs.query(Pos)
   level of detail is the archetype, and not the row.
 - **`includeDisabled()`** makes iteration cover the [disabled](./entities.md#enable--disable)
   entities, which the query removes by default.
+
+## A nested expression: `where`
+
+A chain asks one flat question of each archetype. `where` asks a nested one. Build the expression
+from the free `and`, `or` and `not`, which take a component definition as a leaf and take each
+other as a node.
+
+```ts
+import { and, or, not } from "@oasys/oecs";
+
+// hold Pos and Vel, or hold Frozen
+const q = ecs.query(Tag).where(or(and(Pos, Vel), Frozen));
+
+// the chain and the expression compose, in either order
+ecs.query(Tag).where(or(Pos, Vel)).not(Dead);
+ecs.query(Tag).not(Dead).where(or(Pos, Vel));
+```
+
+`and`, `or` and `not` are functionally complete over archetype membership. Every predicate over a
+component mask is one of their compositions, so there is no fourth connective.
+
+An expression judges the **dense component mask alone**. Sparse membership and relation membership
+are per entity, outside the archetype, so they stay on `andSparse`, `notSparse`, `andRelation` and
+`notRelation`.
+
+`not(A, B)` matches an archetype that holds neither, exactly as `Query.not(A, B)` does. `and()`
+over nothing matches every archetype, `or()` over nothing matches none.
+
+The term is evaluated one time per archetype, per query, when the store's archetype set changes.
+`forEach`, `forEachChunk` and `forEachEntity` walk the list that the evaluation produced, so the
+iteration path pays nothing.
+
+> [!WARNING]
+> `where` caches on the identity of the term, so build the expression one time and hold it. A fresh
+> expression on each call mints a fresh query on each call.
+
+> [!WARNING]
+> Three readers answer from the unfiltered archetype list: `archetypeCount`, `archetypes` and
+> `excludeWords`. A query that carries a `where` term refuses all three in development, with
+> `QUERY_TERM_DENSE_PATH`. Read the matched archetypes with `forEach` instead. `excludeWords` is
+> what a [parallel](./parallel.md) route reads, so a route cannot take a `where` query.
+
+A plugin can supply its own term instead of an expression. `ArchetypeTerm` is `{ name, matches }`,
+where `matches` takes the archetype's component `BitSet`. It must be pure and stable: one archetype
+gives one answer for the life of the world.
 
 <a id="foreach--read-only"></a>
 
@@ -260,13 +308,13 @@ a sparse, relation, or hierarchy term uses a full `forEachEntity` walk instead.
 
 ## Query terms that are not dense (a summary)
 
-These terms are not part of the dense archetype mask. They compose with `and`, `without`, and
-`anyOf`, but you must iterate them with `forEachEntity` or `forEachRelatedTo`. Each has full detail
+These terms are not part of the dense archetype mask. They compose with `and`, `not` and
+`or`, but you must iterate them with `forEachEntity` or `forEachRelatedTo`. Each has full detail
 on its own page.
 
 ```ts
-withSparse(...defs): Query<Defs>;     withoutSparse(...defs): Query<Defs>;      // → sparse storage
-withRelation(...defs): Query<Defs>;   withoutRelation(...defs): Query<Defs>;    // (R, *) → relations
+andSparse(...defs): Query<Defs>;     notSparse(...defs): Query<Defs>;      // → sparse storage
+andRelation(...defs): Query<Defs>;   notRelation(...defs): Query<Defs>;    // (R, *) → relations
 forEachRelatedTo(target, cb): void;                                             // (*, T) → relations
 hierarchy(relation, maxDepth?): Query<Defs>;                                    // depth order → relations
 ```
