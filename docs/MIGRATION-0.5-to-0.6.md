@@ -277,6 +277,27 @@ from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns,
 plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
 gains. `PluginsOf` is the surface a plugin list adds to the world.
 
+## `registerIsA` and `registerChildOf` come from the relations entry
+
+Both built-in relation presets moved off the package root, and `BuiltinRelationOptions` moved
+with them:
+
+```ts
+// before
+import { ECS, registerChildOf } from "@oasys/oecs";
+const world = new ECS();
+const ChildOf = registerChildOf(world);
+
+// after
+import { ECS } from "@oasys/oecs";
+import { relations, registerChildOf } from "@oasys/oecs/relations";
+const world = ECS.create({ plugins: [relations()] });
+const ChildOf = registerChildOf(world);
+```
+
+Each function calls `world.relations.register`, so it needs the plugin. The defaults are
+unchanged: `ChildOf` deletes the subtree, `IsA` clears the link.
+
 ## The reactive subpaths are gone, take the Solid plugin
 
 `@oasys/oecs/reactive` and `@oasys/oecs/reactive-sync` no longer exist. The adapter functions on

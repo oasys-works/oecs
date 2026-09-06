@@ -35,14 +35,16 @@ import { describe, expect, it } from "vitest";
 import * as core from "../../src/index";
 import { snapshots } from "../../src/plugins/snapshots";
 import { events } from "../../src/plugins/events";
-import { relations } from "../../src/plugins/relations";
+import { relations, registerIsA, registerChildOf } from "../../src/plugins/relations";
 import { observers } from "../../src/plugins/observers";
 import { assertRulesLinear } from "./spec.mjs";
 import { confluence, lockstep, refOnly, runCase } from "./driver.mjs";
 import { assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
 import { PROBES } from "./surface.mjs";
 
-const lib = { ...core, snapshots, events, relations, observers };
+// `registerIsA` and `registerChildOf` ship on the relations entry, not the
+// root, so the shim adds them the way `bench/build.mjs` does.
+const lib = { ...core, snapshots, events, relations, observers, registerIsA, registerChildOf };
 
 describe("interaction-net oracle (deterministic simulation, lockstep vs reference)", () => {
 	it("the rule table is linear, the precondition for every confluence claim", () => {

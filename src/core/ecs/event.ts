@@ -1,5 +1,10 @@
 /***
- * Event. Typed event channels with SoA storage.
+ * The event seam. The keys, the schema types, and what the world calls on an
+ * event registry it did not build.
+ *
+ * The channel storage and the registry live in the events plugin. This file
+ * holds what the core spells: `ctx.emit` and `ctx.readEvents` take an
+ * `EventKey`, and `ECS.update` clears the channels at the tick tail.
  *
  * Events are fire-and-forget messages that systems emit within a frame
  * and other systems can read during the same frame. They are auto-cleared
@@ -37,8 +42,6 @@ import {
 	isNonNegativeInteger,
 	unsafeCast
 } from "../../type_primitives";
-import { ECSError, ECS_ERROR } from "./utils/error";
-import { DEV } from "../../dev_flag";
 
 export type EventID = Brand<number, "event_id">;
 export const asEventId = (value: number) =>
@@ -89,81 +92,40 @@ export type EventDef<S extends EventShape<S> = EventSchema> = EventID & {
  *
  * The "cannot mutate the live channel through the reader" property is
  * **advisory**, the columns are the same live `number[]` objects the channel
- * mutates (see `EventChannel` below), so the `readonly` typing blocks writes
- * at the type layer only. A deliberate cast can still write through.
+ * mutates, so the `readonly` typing blocks writes at the type layer only. A
+ * deliberate cast can still write through.
  */
 export type EventReader<S extends EventShape<S>> = {
 	readonly length: number;
 } & { readonly [K in keyof S]: ReadonlyArray<S[K]> };
 
-export class EventChannel {
-	public readonly fieldNames: string[];
-	public readonly columns: number[][];
-	// any: type-erased storage, channel is stored in Map<number, EventChannel>, S is lost
-	public readonly reader: EventReader<any>;
-	// The one mutable view of the reader's `length`. The public `EventReader`
-	// type declares it readonly (a consumer writing `reader.length = 0` on the
-	// live shared object would permanently desync every other system's view),
-	// so the channel keeps this private alias to the same
-	// object for emit and clear bookkeeping.
-	private readonly _readerLen: { length: number };
-
-	constructor(fieldNames: string[]) {
-		this.fieldNames = fieldNames;
-		this.columns = [];
-		for (let i = 0; i < fieldNames.length; i++) {
-			this.columns.push([]);
-		}
-
-		// Build the reader: a mutable length plus one column per field. The
-		// columns are the same `number[]` objects the channel mutates internally
-		// (emit and clear); the reader's type (EventReader) exposes them as read-only
-		// arrays so consumers don't mutate the channel. That barrier is advisory
-		// (compile-time only), see EventReader.
-		const columnsByField: Record<string, ReadonlyArray<number>> = {};
-		for (let i = 0; i < fieldNames.length; i++) {
-			columnsByField[fieldNames[i]] = this.columns[i];
-		}
-		// boundary: assemble the dynamic per-field columns into EventReader's mapped shape.
-		const reader = { length: 0, ...columnsByField };
-		this._readerLen = reader;
-		this.reader = reader as EventReader<EventSchema>;
-	}
-
-	public emit(values: Record<string, number>): void {
-		const names = this.fieldNames;
-		const cols = this.columns;
-		if (DEV) {
-			// Validate all fields before mutating any column. Pushing per-field and
-			// throwing mid-loop would leave earlier columns one row ahead of
-			// `reader.length` and the un-pushed columns, a permanent desync if the
-			// throw is caught. Validate-then-push leaves the production path (no
-			// DEV) a single tight push loop.
-			for (let i = 0; i < names.length; i++) {
-				if (!(names[i] in values)) {
-					throw new ECSError(
-						ECS_ERROR.FIELD_NOT_REGISTERED,
-						`emit: event field "${names[i]}" missing from values`
-					);
-				}
-			}
-		}
-		for (let i = 0; i < names.length; i++) cols[i].push(values[names[i]]);
-		this._readerLen.length++;
-	}
-
-	/** Emit a signal (zero-field event). */
-	public emitSignal(): void {
-		this._readerLen.length++;
-	}
-
-	public clear(): void {
-		this._readerLen.length = 0;
-		const cols = this.columns;
-		for (let i = 0; i < cols.length; i++) {
-			cols[i].length = 0;
-		}
-	}
+/** The event registry, as everything outside the plugin sees it.
+ *
+ * `Store.events` is public, so this is the whole crossing surface. The
+ * plugin's class implements it, and the compiler holds the two in step.
+ *
+ * `SystemContext` resolves a key and emits or reads through this. `ECS.update`
+ * clears the channels at the tick tail, and a `DEV` build samples the buffered
+ * count either side of the observer drain. */
+export interface EventHooks {
+	/** Register a channel and take its def. The key form is what a caller
+	 * uses, and this is the anonymous one the key form builds on. */
+	register<S extends EventShape<S>>(fields: readonly (keyof S & string)[]): EventDef<S>;
+	/** Register a channel under a module-scope key. Throws on a repeat. */
+	registerByKey<S extends EventShape<S>>(
+		key: symbol,
+		fields: readonly (keyof S & string)[]
+	): EventDef<S>;
+	/** The def a key was registered under. Throws when it was not. */
+	defByKey(key: symbol): EventDef<any>;
+	hasKey(key: symbol): boolean;
+	emit(def: EventDef<any>, values: Record<string, number>): void;
+	emitSignal(def: EventDef<EmptyEventSchema>): void;
+	reader<S extends EventShape<S>>(def: EventDef<S>): EventReader<S>;
+	/** Drop every channel emitted to this tick. Runs once per `update()`. */
+	clear(): void;
+	/** `DEV` only. Events buffered across the dirty channels right now. */
+	devBufferedCount(): number;
 }
 
 // =======================================================

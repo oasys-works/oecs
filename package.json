@@ -40,26 +40,46 @@
 		},
 		"./editor": {
 			"import": {
-				"types": "./dist/plugins/editor/index.d.ts",
-				"development": "./dist/plugins/editor/index.development.js",
-				"default": "./dist/plugins/editor/index.js"
+				"types": "./dist/plugins/editor.d.ts",
+				"development": "./dist/plugins/editor.development.js",
+				"default": "./dist/plugins/editor.js"
 			},
 			"require": {
-				"types": "./dist/plugins/editor/index.d.cts",
-				"development": "./dist/plugins/editor/index.development.cjs",
-				"default": "./dist/plugins/editor/index.cjs"
+				"types": "./dist/plugins/editor.d.cts",
+				"development": "./dist/plugins/editor.development.cjs",
+				"default": "./dist/plugins/editor.cjs"
+			}
+		},
+		"./editor/dev": {
+			"import": {
+				"types": "./dist/plugins/editor.d.ts",
+				"default": "./dist/plugins/editor.development.js"
+			},
+			"require": {
+				"types": "./dist/plugins/editor.d.cts",
+				"default": "./dist/plugins/editor.development.cjs"
 			}
 		},
 		"./solid": {
 			"import": {
-				"types": "./dist/plugins/solid/index.d.ts",
-				"development": "./dist/plugins/solid/index.development.js",
-				"default": "./dist/plugins/solid/index.js"
+				"types": "./dist/plugins/solid.d.ts",
+				"development": "./dist/plugins/solid.development.js",
+				"default": "./dist/plugins/solid.js"
 			},
 			"require": {
-				"types": "./dist/plugins/solid/index.d.cts",
-				"development": "./dist/plugins/solid/index.development.cjs",
-				"default": "./dist/plugins/solid/index.cjs"
+				"types": "./dist/plugins/solid.d.cts",
+				"development": "./dist/plugins/solid.development.cjs",
+				"default": "./dist/plugins/solid.cjs"
+			}
+		},
+		"./solid/dev": {
+			"import": {
+				"types": "./dist/plugins/solid.d.ts",
+				"default": "./dist/plugins/solid.development.js"
+			},
+			"require": {
+				"types": "./dist/plugins/solid.d.cts",
+				"default": "./dist/plugins/solid.development.cjs"
 			}
 		},
 		"./shared": {
@@ -282,10 +302,16 @@
 				"./dist/primitives.d.ts"
 			],
 			"editor": [
-				"./dist/plugins/editor/index.d.ts"
+				"./dist/plugins/editor.d.ts"
+			],
+			"editor/dev": [
+				"./dist/plugins/editor.d.ts"
 			],
 			"solid": [
-				"./dist/plugins/solid/index.d.ts"
+				"./dist/plugins/solid.d.ts"
+			],
+			"solid/dev": [
+				"./dist/plugins/solid.d.ts"
 			],
 			"shared": [
 				"./dist/shared.d.ts"

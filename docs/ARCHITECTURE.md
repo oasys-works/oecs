@@ -70,8 +70,8 @@ ECS  (core/ecs/ecs.ts)              the public facade, and it implements QueryRe
  │     ├── EntityAllocator (core/ecs/entity_allocator.ts)  generational ids, free list, retirement
  │     ├── ArchetypeGraph (core/ecs/archetype_graph.ts)  mask registry, inverted index, transition edges
  │     ├── DeferredCommandBuffer (core/ecs/deferred_commands.ts)  the queues of pending add, remove, destroy and toggle
- │     ├── SnapshotService (core/ecs/snapshot_service.ts)  deterministic snapshot and resume
- │     ├── RelationService (core/ecs/relation_service.ts)  relation registry, traversal, hierarchy matching
+ │     ├── SnapshotService (plugins/snapshots/snapshot_service.ts)  deterministic snapshot and resume
+ │     ├── RelationService (plugins/relations/relation_service.ts)  relation registry, traversal, hierarchy matching
  │     ├── EventRegistry and ResourceRegistry  events and resources, behind Store delegations
  │     ├── component metadata (the field layout and observer flags of each ComponentID)
  │     ├── entity → (ArchetypeID, row) mapping (SAB-backed Int32Array pair)
@@ -79,7 +79,7 @@ ECS  (core/ecs/ecs.ts)              the public facade, and it implements QueryRe
  │     └── registered live Query result arrays
  ├── Schedule  (core/ecs/schedule.ts)  seven phases, and a topological sort in each phase
  ├── SystemContext  (core/ecs/query.ts)  the restricted ctx handed to systems
- └── ObserverRegistry  (core/ecs/observer.ts)  onAdd, onRemove, onSet, onEnable, onDisable
+ └── ObserverRegistry  (plugins/observers/observer_registry.ts)  onAdd, onRemove, onSet, onEnable, onDisable
 ```
 
 `ECS` is the only entry point that external code speaks to (`core/ecs/ecs.ts`). A system receives a
@@ -802,8 +802,9 @@ stores, the number of fields, the identity of the schema, `MAX_INDEX`, or the by
 
 ## 10. Relations
 
-Source: `src/core/ecs/relation.ts`, `src/core/ecs/relation_service.ts`,
-`src/core/ecs/builtin_relations.ts`, with the connections in `src/core/ecs/store.ts`.
+Source: `src/plugins/relations/relation_store.ts`, `src/plugins/relations/relation_service.ts`,
+`src/plugins/relations/builtin_relations.ts`, with the handle types and the seams in
+`src/core/ecs/relation.ts` and the connections in `src/core/ecs/store.ts`.
 
 A relation is a `(relation, target)` pair on a source entity, and it is a first-class object. It is
 built **on the class for sparse storage**. So an add, a remove, or a change of target causes no
@@ -813,23 +814,23 @@ safe during a tick for exactly that reason: no dense row moves. `RelationID` is 
 
 ### Storage
 
-Each `RelationStore` (`core/ecs/relation.ts`) owns a **reverse index** that does not depend on the
+Each `RelationStore` (`plugins/relations/relation_store.ts`) owns a **reverse index** that does not depend on the
 cardinality: `Map<targetEntityID, Set<sourceEntityID>>`. The key is the *full* `EntityID`, which is
 the index and the generation. So a recycled target slot cannot look like the sources of a dead
 target. The store also holds a handle on a sparse store below it. The forward representation is
 virtual:
 
 - **Exclusive** (the default), the forward link *is* a `{ target: f64 }` sparse row
-  (`core/ecs/relation.ts`). A second `addRelation` call writes over the first. There is one target
+  (`plugins/relations/relation_store.ts`). A second `addRelation` call writes over the first. There is one target
   for each source.
 - **Multi**, the membership is a sparse tag, and the set of targets is in a separate
-  `Map<sourceIndex, Set<target>>` (`core/ecs/relation.ts`). Those set values are not in the sparse
+  `Map<sourceIndex, Set<target>>` (`plugins/relations/relation_store.ts`). Those set values are not in the sparse
   store. So the engine folds them into `stateHash` and serializes them explicitly.
 
 A reverse lookup (`sourcesOf`) sorts in ascending order on the low-frequency path
-(`core/ecs/relation.ts`). The public reads, the wildcards (`pairsOf` for `(R, *)`, and
+(`plugins/relations/relation_store.ts`). The public reads, the wildcards (`pairsOf` for `(R, *)`, and
 `sourcesOfAny` for `(*, T)`), the traversal helpers, the arrangement of the cleanup, and the cycle
-detection are on `RelationService` (`core/ecs/relation_service.ts`). `Store` keeps one-line calls
+detection are on `RelationService` (`plugins/relations/relation_service.ts`). `Store` keeps one-line calls
 into that service, for the public facade (`core/ecs/store.ts`).
 
 ### Wildcards and query terms
@@ -841,7 +842,7 @@ query (`withRelation` and `withoutRelation`) resolve the *sparse id below the re
 use the sparse match driver again. They record the `RelationDef` only for the development access
 check (`core/ecs/query.ts`). `hierarchy(relation, maxDepth)` puts a matched set into depth order,
 with each parent before its children, over an exclusive relation (`core/ecs/query.ts`,
-`core/ecs/relation_service.ts`).
+`plugins/relations/relation_service.ts`).
 
 ### The cleanup policies
 
@@ -850,13 +851,13 @@ with each parent before its children, over an exclusive relation (`core/ecs/quer
 `"clear"` removes the link but keeps the sources. `"orphan"`, which is the overall default, leaves
 the link in place. Under `orphan` the reverse index grows until each source points at a different
 target or is destroyed. `compactRelations`, through `pruneDeadReverse`
-(`core/ecs/relation_service.ts`, `core/ecs/relation.ts`), reclaims the reverse entries of destroyed
+(`plugins/relations/relation_service.ts`, `plugins/relations/relation_store.ts`), reclaims the reverse entries of destroyed
 targets at a scene or snapshot boundary. It changes no observable state, and it does not change
 `stateHash`.
 
 ### The supplied relations
 
-`registerChildOf` and `registerIsA` (`core/ecs/builtin_relations.ts`) are small free functions
+`registerChildOf` and `registerIsA` (`plugins/relations/builtin_relations.ts`) are small free functions
 above `registerRelation`, and both are always exclusive. `ChildOf` uses `"delete"` by default, so
 the destruction of a parent destroys the subtree. `IsA` uses `"clear"` by default, and it records
 the link only. There is **no inheritance of components**: an instance does not get the components
@@ -866,13 +867,13 @@ of its exemplar.
 
 ## 11. Observers
 
-Source: `src/core/ecs/observer.ts`.
+Source: `src/plugins/observers/observer_registry.ts`.
 
 An observer runs a callback when the engine adds, removes, or sets a component, or when it enables
 or disables the entity of that component. It is the push equivalent of a `changed()` query, which
 you must poll. Observers are a plugin, so a world installs them with
 `ECS.create({ plugins: [observers()] })` and imports `observers` from `@oasys/oecs/observers`.
-`ecs.observe(def, config)` (`plugins/observers.ts`) registers one, and it gives a handle
+`ecs.observe(def, config)` (`plugins/observers/index.ts`) registers one, and it gives a handle
 that you can dispose of. The shape of the config selects the kind: structural (`onAdd`, `onRemove`,
 `onDisable`, and `onEnable`), `onSet` with archetype granularity (the default), or `onSet` with
 entity granularity. The declared `access` of each observer builds a `SystemDescriptor`. So the
@@ -898,14 +899,14 @@ author-facing form is in [plugins](./api/plugins.md).
 - **`onAdd` and `onRemove`** run at the **structural flush boundary**, after the deferred batch is
   committed. So an observer never sees a state that is only partially applied. The flush repeats
   until it reaches a fixed point, so that a cascade settles (`dispatchStructural`,
-  `core/ecs/observer.ts`, which `core/ecs/deferred_commands.ts` drives).
+  `plugins/observers/observer_registry.ts`, which `core/ecs/deferred_commands.ts` drives).
 - **`onDisable` and `onEnable`** run at the same boundary, one time for each net transition across
   a drain, for each component that the entity carries.
 - **`onSet`** runs at the detection point after the update, which is the end of the tick, from
   `ECS.update` after each phase (`core/ecs/ecs.ts`). *Archetype granularity* uses the change tick,
   which costs nothing more: `store.forEachChangedArchetype` runs the callback one time for each
   archetype column stamped above the observer's baseline, and the baseline becomes the change
-  tick of the dispatch (`core/ecs/observer.ts`, `core/ecs/store.ts`). A host write between frames
+  tick of the dispatch (`plugins/observers/observer_registry.ts`, `core/ecs/store.ts`). A host write between frames
   stamps above it, so the next dispatch reports it. *Entity granularity* reads a row tick plane:
   **registration of it gives every archetype of the component one `Uint32Array` of ticks, one for
   each row** (`Archetype.rowTicks`, `installTicks`, `core/ecs/archetype.ts`), which
@@ -924,7 +925,7 @@ author-facing form is in [plugins](./api/plugins.md).
   crossed the cap, it also walks the plane of each archetype a writer stamped. A row inside the
   enabled partition is alive, a member and enabled by construction, so a scanned row fires with no
   check, and the dispatch checks a listed entity for those three (`_dispatchSetEntity`,
-  `core/ecs/observer.ts`). Both sources are radix-sorted by entity index and merged, so the order
+  `plugins/observers/observer_registry.ts`). Both sources are radix-sorted by entity index and merged, so the order
   stays canonical.
 
 ### The deterministic order
@@ -946,7 +947,8 @@ point raises `OBSERVER_NON_CONVERGENT` if it never settles (`core/ecs/deferred_c
 
 ## 12. Events
 
-Source: `src/core/ecs/event.ts`, with the storage and lifetime in `src/core/ecs/event_registry.ts`,
+Source: `src/core/ecs/event.ts`, with the storage and lifetime in
+`src/plugins/events/event_channel.ts`, `src/plugins/events/event_registry.ts`,
 `src/core/ecs/store.ts`, and `src/core/ecs/ecs.ts`.
 
 Events are a plugin, so a world installs them with `ECS.create({ plugins: [events()] })` and imports
@@ -954,13 +956,13 @@ Events are a plugin, so a world installs them with `ECS.create({ plugins: [event
 
 An event is a typed, send-and-forget message. A system emits it and reads it inside one frame. The
 implementation is one `EventChannel` for each event id, and `EventRegistry` owns them
-(`core/ecs/event_registry.ts`). An `EventChannel` (`core/ecs/event.ts`) holds one plain `number[]`
+(`plugins/events/event_registry.ts`). An `EventChannel` (`plugins/events/event_channel.ts`) holds one plain `number[]`
 column for each field, plus a `reader` that it built in advance. The fields of that reader *are*
 those column arrays, and its `length` is a counter that changes. So `ctx.readEvents(key).amount[i]` reads
 directly from the storage, with no copy. `emit` validates each field before it pushes any of them,
 which is a development-mode check that prevents a loss of synchronization in the middle of the
 loop. It then pushes one value into each column and increases `reader.length`
-(`core/ecs/event.ts`). `emitSignal` increases the counter alone. `clear` sets the counter to zero
+(`plugins/events/event_channel.ts`). `emitSignal` increases the counter alone. `clear` sets the counter to zero
 and shortens each column.
 
 `EventKey<S>` and `SignalKey` are branded symbols that carry a phantom schema
@@ -1130,7 +1132,7 @@ only after the first `update()` call ends.
 
 ## 16. Determinism, snapshot, and replay
 
-Source: `src/core/ecs/store.ts`, `src/core/ecs/snapshot_service.ts`, `src/core/ecs/resume.ts`,
+Source: `src/core/ecs/store.ts`, `src/plugins/snapshots/snapshot_service.ts`, `src/plugins/snapshots/resume.ts`,
 `src/core/store/state_hash.ts`, and `src/core/store/snapshot.ts`.
 
 A deterministic ECS (`new ECS({ deterministic: true })`) guarantees that the same operations give
@@ -1153,13 +1155,13 @@ capacity of the buffer. The digest is opaque. Compare it only at a tick boundary
 ### Snapshot and restore
 
 `Store` controls `snapshot()` (`core/ecs/store.ts`), and `SnapshotService.snapshot` implements it
-(`core/ecs/snapshot_service.ts`). It captures three sections into one frame that is complete in
-itself (`core/ecs/resume.ts`):
+(`plugins/snapshots/snapshot_service.ts`). It captures three sections into one frame that is complete in
+itself (`plugins/snapshots/resume.ts`):
 
 - the **dense** section: the column bytes, the entity index, and the layout descriptors
 - the **sparse** section: the sparse components and the relations, in the canonical order
 - the **host bookkeeping** section (`SnapshotService._collectHostState`,
-  `core/ecs/snapshot_service.ts`). It holds the tick, the free list of recycled entities *in live
+  `plugins/snapshots/snapshot_service.ts`). It holds the tick, the free list of recycled entities *in live
   LIFO order*, the count of live entities, and the length and the number of enabled rows of each
   archetype.
 
@@ -1168,11 +1170,11 @@ is pure history of destruction, with no source in the bytes, and it carries mean
 that is byte-identical.
 
 `Store` controls `restore` (`core/ecs/store.ts`), and `SnapshotService.restore` implements
-it (`core/ecs/snapshot_service.ts`). It **validates completely before it touches the live
+it (`plugins/snapshots/snapshot_service.ts`). It **validates completely before it touches the live
 storage**. It reads the dense magic number and version, the capacity of the entity index, the set
 of archetypes, and the `(componentId, fieldId, typeTag)` identity of each column, directly from the
-incoming bytes (`assertDenseMatchesLive`, `core/ecs/resume.ts`). It also validates the sparse
-section (`core/ecs/snapshot_service.ts`). Only then does it write. Each difference throws
+incoming bytes (`assertDenseMatchesLive`, `plugins/snapshots/resume.ts`). It also validates the sparse
+section (`plugins/snapshots/snapshot_service.ts`). Only then does it write. Each difference throws
 (`ECSRestoreError` or `SparseRestoreError`), and it leaves the live ECS unchanged. It does not
 capture the resources, the events, or the baselines of change detection. The conditions: the target
 ECS must have the same registration of components and archetypes, which means that you must prepare

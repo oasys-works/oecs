@@ -10,11 +10,11 @@
 		"./shared": "./src/shared.ts",
 		"./internal": "./src/internal.ts",
 		"./worker": "./src/worker.ts",
-		"./snapshots": "./src/plugins/snapshots.ts",
-		"./events": "./src/plugins/events.ts",
-		"./relations": "./src/plugins/relations.ts",
-		"./observers": "./src/plugins/observers.ts",
-		"./workers": "./src/plugins/workers.ts"
+		"./snapshots": "./src/plugins/snapshots/index.ts",
+		"./events": "./src/plugins/events/index.ts",
+		"./relations": "./src/plugins/relations/index.ts",
+		"./observers": "./src/plugins/observers/index.ts",
+		"./workers": "./src/plugins/workers/index.ts"
 	},
 	"imports": {
 		"solid-js": "npm:solid-js@^1.9.3"

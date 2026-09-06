@@ -128,7 +128,7 @@ async function assertClientSolid() {
  */
 async function buildWorld(K) {
 	const { ECS, SCHEDULE } = await dist("index.js");
-	const { solid } = await dist("plugins/solid/index.js");
+	const { solid } = await dist("plugins/solid.js");
 	const ecs = ECS.create({ memory: { entities: N }, plugins: [solid()] });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32", y: "f32" });

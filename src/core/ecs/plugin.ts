@@ -21,6 +21,24 @@
  * below names it. `Store` implements it, so the host hands the store itself,
  * typed narrowly, and the narrowing costs nothing at run time.
  *
+ * `src/plugins` holds every first-party plugin, and the core imports none of
+ * them. `src/core/ecs/relation.ts`, `event.ts`, `observer.ts` and
+ * `snapshot.ts` hold the seam each one implements: the handle types the core
+ * spells, and the interface the plugin's service satisfies.
+ *
+ * **What a plugin outside this package gets.** Five members of `PluginHost`
+ * are open to anyone: `store`, `world`, `changes`, `context` and `onSettle`.
+ * A plugin registers its own components and systems through `world`, drains
+ * the change feed through `changes`, and publishes at the tail of `update()`
+ * through `onSettle`. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts`
+ * writes one that way and proves the seam holds from outside.
+ *
+ * Two more members are fixed, not general. `installObservers` hands the world
+ * one observer registry, and `installWorkers` hands it one worker pool. Each
+ * is a single named slot, because each sits on a hot path the world drives
+ * directly. Turning either into a keyed registry adds a lookup to that path,
+ * so it waits on a measurement rather than on a preference.
+ *
  * Cold path throughout. A plugin is installed once, at construction.
  ***/
 
@@ -30,7 +48,7 @@ import type { EntityID } from "./entity";
 import type { DrainResult, ObservationFlags, StructuralObserverEvents, Store } from "./store";
 import type { SystemContext } from "./system_context";
 import type { ECS } from "./ecs";
-import type { ObserverRegistry } from "./observer";
+import type { ObserverHooks } from "./observer";
 import type { ParallelRoute } from "./schedule";
 import type { SystemConfig } from "./system";
 import { ECSError, ECS_ERROR } from "./utils/error";
@@ -146,7 +164,7 @@ export interface PluginHost {
 	onSettle(fn: (run: number) => void): void;
 	/** Hand the world its observer registry. The world drives it once per
 	 * update and at startup, so it holds the reference, not the store. */
-	installObservers(registry: ObserverRegistry): void;
+	installObservers(registry: ObserverHooks): void;
 	/** Hand the world the hooks a worker pool needs, and take back what the
 	 * pool reads. One call, because the two directions install together and a
 	 * world holds one pool. */

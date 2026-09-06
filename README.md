@@ -302,8 +302,9 @@ timestep, the memory options, and the cardinality of a relation).
 `@oasys/oecs` is the production build, with the guards removed. A bundler in development mode
 (`vite dev` or `webpack --mode development`) selects the build with the guards automatically,
 through the `development` export condition. As an alternative, import `@oasys/oecs/dev` directly.
-Each plugin has the same subpath, `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev` and `@oasys/oecs/workers/dev`. Take the
+Each plugin has the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
+`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev`, `@oasys/oecs/workers/dev`,
+`@oasys/oecs/editor/dev` and `@oasys/oecs/solid/dev`. Take the
 plugin from the same channel as the world, because a plugin binds to the core build it was made
 against.
 On **JSR and Deno** there is no bundler, because the package is raw source. The default is also

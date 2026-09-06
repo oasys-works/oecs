@@ -13,7 +13,7 @@ import { bindToCoreArtifact, recordCoreGraph } from "./scripts/core_boundary";
 // the production pass and `emptyOutDir` clears the dir only on that first pass.
 const DEV_BUILD = process.env.OECS_VARIANT === "development";
 
-// The five plugin entries build in their own pass. Declaring them beside the core entries
+// Five of the seven plugin entries build in their own pass. Declaring them beside the core entries
 // put them in one rollup graph, and rollup then split `index.js` into ten small
 // chunks so the plugin bundles could share code with it. Those splits are
 // real module boundaries at run time, and a measurement of `spawn` on the
@@ -84,35 +84,42 @@ export default defineConfig(({ command }) => ({
         ? { worker: path.resolve(__dirname, "src/worker.ts") }
         : PLUGIN_BUILD
         ? {
+            // Every plugin is a directory with an `index.ts`, and every one
+            // emits `dist/plugins/<name>.js`. The emitted shape is the build's
+            // and not the source tree's, because `defaultWorkerUrl` derives the
+            // worker entry from the parent of `dist/plugins`.
             "plugins/snapshots": path.resolve(
               __dirname,
-              "src/plugins/snapshots.ts",
+              "src/plugins/snapshots/index.ts",
             ),
             "plugins/events": path.resolve(
               __dirname,
-              "src/plugins/events.ts",
+              "src/plugins/events/index.ts",
             ),
             "plugins/relations": path.resolve(
               __dirname,
-              "src/plugins/relations.ts",
+              "src/plugins/relations/index.ts",
             ),
             "plugins/observers": path.resolve(
               __dirname,
-              "src/plugins/observers.ts",
+              "src/plugins/observers/index.ts",
             ),
             "plugins/workers": path.resolve(
               __dirname,
-              "src/plugins/workers.ts",
+              "src/plugins/workers/index.ts",
             ),
           }
         : {
             index: path.resolve(__dirname, "src/index.ts"),
             shared: path.resolve(__dirname, "src/shared.ts"),
-            "plugins/editor/index": path.resolve(
+            // The editor and solid plugins emit the same flat path as the
+            // other five. They stay in the core pass: each shares the module
+            // instances of `index.js`, so no classification question arises.
+            "plugins/editor": path.resolve(
               __dirname,
               "src/plugins/editor/index.ts",
             ),
-            "plugins/solid/index": path.resolve(
+            "plugins/solid": path.resolve(
               __dirname,
               "src/plugins/solid/index.ts",
             ),

@@ -72,12 +72,13 @@ const SINGLE: Readonly<Record<string, CoreEntry>> = {
 const DUPLICABLE: Readonly<Record<string, string>> = {
 	"core/ecs/entity.ts": "packed-id codec, pure functions over numbers",
 	"core/ecs/event.ts":
-		"channels and keys, every channel the world reads is one the store holds",
+		"event keys and schema types, and two symbol factories a caller calls for itself",
 	"core/ecs/facades.ts":
 		"delegates to the store and holds no state, and its error, access-check and trace imports are single",
 	"core/ecs/relation.ts":
-		"relation stores, built by the plugin and reached through the store, never by class test",
-	"core/ecs/resume.ts": "snapshot framing, pure functions, and its error class is single",
+		"relation handle types and the seam interfaces, plus three primitive constants two copies agree on",
+	"core/ecs/snapshot.ts": "the frame version and the host-state shapes, constants and types",
+	"core/ecs/utils/arrays.ts": "bucket push and the entity-id radix, pure functions over numbers",
 	"core/ecs/sparse_store.ts":
 		"sparse stores, built by the core and mutated through methods, and its error class is single",
 	"core/ecs/system.ts": "system ids and the empty access record, which is spread and never compared",

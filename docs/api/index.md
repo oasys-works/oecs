@@ -222,7 +222,8 @@ The build tool **removes these checks from a production build**.
 removed. A bundler in development mode selects the build with the guards automatically, through the
 `development` export condition. As an alternative, import `@oasys/oecs/dev`. Each plugin has
 the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev` and `@oasys/oecs/workers/dev`. Take the
+`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev`, `@oasys/oecs/workers/dev`,
+`@oasys/oecs/editor/dev` and `@oasys/oecs/solid/dev`. Take the
 plugin from the same channel as the world. A plugin binds to the core build it was made against. On JSR and Deno the
 default is also production. JSR publishes no `/dev` subpath. Set `globalThis.__DEV__ = true`
 before the first import to turn the guards on. The

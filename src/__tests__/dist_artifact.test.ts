@@ -23,6 +23,7 @@
 
 import { execFileSync } from "node:child_process";
 import {
+	cpSync,
 	existsSync,
 	mkdtempSync,
 	readdirSync,
@@ -208,14 +209,14 @@ console.log(JSON.stringify({ ran, undeclaredAdd }));
  * module landed, and the plugin now lands one directory below the entry the
  * worker sits beside. Every other parallel test passes an explicit URL, so this
  * is the only place that resolution runs. */
-const POOL_FROM_DIST = `
+const poolFromDist = (dist: string, suffix: string) => `
 const { writeFileSync } = await import("node:fs");
 const kernel = new URL("./kernel.mjs", import.meta.url);
 writeFileSync(kernel, "export function step(x, vx, begin, end, dt) { for (let i = begin; i < end; i++) x[i] = x[i] + vx[i] * dt; }");
 
-const { ECS, SCHEDULE } = await import(${JSON.stringify(PROD)});
-const { snapshots } = await import(${JSON.stringify(join(PLUGINS, "snapshots.js"))});
-const { workers } = await import(${JSON.stringify(join(PLUGINS, "workers.js"))});
+const { ECS, SCHEDULE } = await import(${JSON.stringify(join(dist, "index" + suffix + ".js"))});
+const { snapshots } = await import(${JSON.stringify(join(dist, "plugins", "snapshots" + suffix + ".js"))});
+const { workers } = await import(${JSON.stringify(join(dist, "plugins", "workers" + suffix + ".js"))});
 
 function build() {
 	const ecs = ECS.create({
@@ -490,9 +491,32 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 		// specifier, and rollup rewrites a dynamic import in both output formats.
 		// Every other parallel test runs the source, so this is the only place
 		// the emitted form of that call is exercised.
-		const out = probe(POOL_FROM_DIST);
+		const out = probe(poolFromDist(DIST, ""));
 		expect(out.attached).toBe(2);
 		expect(out.parallelHash).toBe(out.sequentialHash);
+	});
+
+	it("sends the development plugin at the development worker", () => {
+		// `defaultWorkerUrl` carries this module's own suffix chain onto the
+		// worker beside the package entry, so `plugins/workers.development.js`
+		// must resolve to `worker.development.js`. A rollup split that moved the
+		// pool into a hashed chunk would drop the `.development` suffix and send
+		// this world at the production worker, and both workers run a kernel, so
+		// a plain end-to-end run would still pass.
+		//
+		// The copy without the production worker is what makes the mistake loud.
+		// The attach fails on a missing module rather than succeeding quietly.
+		const dir = mkdtempSync(join(tmpdir(), "oecs-devworker-"));
+		try {
+			const copy = join(dir, "dist");
+			cpSync(DIST, copy, { recursive: true });
+			rmSync(join(copy, "worker.js"));
+			const out = probe(poolFromDist(copy, ".development"));
+			expect(out.attached).toBe(2);
+			expect(out.parallelHash).toBe(out.sequentialHash);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("leaves the core chunk graph at the three chunks it ships", () => {

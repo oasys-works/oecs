@@ -62,10 +62,10 @@ const esbuild = (() => {
  * it never names. A tool measuring or checking the whole engine wants all of
  * them, so it takes this shim instead. */
 const ENTRY_SHIM = `export * from "./src/index.ts";
-export { snapshots } from "./src/plugins/snapshots.ts";
-export { events } from "./src/plugins/events.ts";
-export { relations } from "./src/plugins/relations.ts";
-export { observers } from "./src/plugins/observers.ts";
+export { snapshots } from "./src/plugins/snapshots/index.ts";
+export { events } from "./src/plugins/events/index.ts";
+export { relations, registerIsA, registerChildOf } from "./src/plugins/relations/index.ts";
+export { observers } from "./src/plugins/observers/index.ts";
 `;
 
 export async function buildLib(outfile, { dev = false, from = root } = {}) {

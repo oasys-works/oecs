@@ -62,6 +62,27 @@ factory such as `relations()` returns, and what a plugin list holds. Its `instal
 `PluginHost` and returns `X`, the surface the world gains. `PluginsOf` is the surface a plugin
 list adds to the world.
 
+### Changed (breaking). `registerIsA` and `registerChildOf` ship on the relations entry
+
+The two built-in relation presets moved off the package root:
+
+```ts
+// before
+import { ECS, registerChildOf } from "@oasys/oecs";
+
+// after
+import { ECS } from "@oasys/oecs";
+import { relations, registerChildOf } from "@oasys/oecs/relations";
+
+const world = ECS.create({ plugins: [relations()] });
+const ChildOf = registerChildOf(world);
+```
+
+`BuiltinRelationOptions` moved with them. Each function calls
+`world.relations.register`, so it needs the plugin, and a bare world cannot call it. Exporting
+them from the root also pulled the relation code into every bundle, which is the thing the plugin
+split set out to stop.
+
 ### Added. A change feed more than one plugin reads, and a richer plugin host
 
 The store's record of what changed is now a seam any plugin drains. `ChangeFeed` names it,

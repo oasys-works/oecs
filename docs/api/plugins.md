@@ -48,6 +48,11 @@ plugin that watches a component takes it later, through its own facade.
 | `installObservers(registry)` | hand the world its observer registry | the observers plugin owns this seam |
 | `installWorkers(hooks)` | hand the world a pool's registration and dispose hooks, and take back the store bytes, the store base, `noteScan` and the route | the workers plugin owns this seam |
 
+The first five are open to any plugin. The last two are one named slot each, and a first-party
+plugin fills each one. The world drives an observer registry and a worker pool on a hot path,
+so each stays a single slot rather than a keyed registry. Reach the same ground with `world`,
+`changes` and `onSettle` instead.
+
 `host.world` carries no facade of any plugin, including the one installing. Take it to register a
 system, read a field, build a cursor or reach a resource.
 
@@ -266,6 +271,82 @@ later, and the settle hook installed at construction drains every watched compon
 
 `listed` may repeat an entity, so this counts records and not distinct rows. Sort and dedupe the
 array when you need distinct rows.
+
+## A plugin from outside the package, end to end
+
+Nothing below imports a path inside `@oasys/oecs`. It is the whole shape: a factory, a
+`requires`, a component the plugin registers for itself, a change-feed ask, a settle hook, and one
+facade key. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts` runs this shape and
+holds `ECS.create` to each of its refusals.
+
+```ts
+import { ECS } from "@oasys/oecs";
+import type { ChangeFeed, ComponentDef, EntityID, Plugin, PluginHost } from "@oasys/oecs";
+import { relations } from "@oasys/oecs/relations";
+
+/** The surface the world gains. One key, and it names the plugin. */
+export interface AuditPlugin {
+  readonly audit: Audit;
+}
+
+/** Records which rows of its own component changed, once for each frame. */
+export class Audit {
+  public readonly seen: EntityID[] = [];
+
+  constructor(
+    private readonly _changes: ChangeFeed,
+    /** The component this plugin registered for itself. */
+    public readonly def: ComponentDef<{ note: "i32" }>
+  ) {}
+
+  public drain(run: number): void {
+    const result = this._changes.drainSet(this.def.id, run);
+    for (const id of result.scanned) this.seen.push(id);
+    for (const id of result.listed) this.seen.push(id);
+  }
+}
+
+export function audit(): Plugin<AuditPlugin> {
+  return {
+    name: "audit",
+    // The list is walked in order, so relations comes first or this throws.
+    requires: ["relations"],
+    install(host: PluginHost): AuditPlugin {
+      // The bare world. Register components and systems through it.
+      const def = host.world.registerComponent({ note: "i32" }, { name: "audit.Note" });
+      const service = new Audit(host.changes, def);
+      // The row grain, keyed by this plugin's name. The store merges every
+      // consumer's ask, so this never takes a flag from another consumer.
+      host.changes.configureObservation("audit", def.id, {
+        add: false,
+        remove: false,
+        disable: false,
+        enable: false,
+        set: true
+      });
+      // The tail of every update(), after every system and flush of the frame.
+      host.onSettle((run) => service.drain(run));
+      return { audit: service };
+    }
+  };
+}
+
+const world = ECS.create({ plugins: [relations(), audit()] });
+const e = world.spawn();
+world.addComponent(e, world.audit.def, { note: 1 });
+world.flush();
+world.startup();
+world.update(1 / 60);
+world.audit.seen; // the rows the frame changed
+```
+
+`world.audit` is typed, because `ECS.create` intersects the world with the facades its plugins
+contribute. Drop `audit()` from the list and the last line is a compile error.
+
+Three mistakes throw at construction, and each message names the plugin. Two `audit()` in one list
+throw `PLUGIN_ALREADY_INSTALLED`. `audit()` before `relations()` throws `PLUGIN_NOT_INSTALLED`. A
+facade key that names a member the world already carries, `spawn` for instance, throws
+`PLUGIN_SURFACE_COLLISION` in a development build.
 
 ## What this page does not cover
 

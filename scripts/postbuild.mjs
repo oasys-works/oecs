@@ -8,11 +8,31 @@
  * 2. Duplicate each fixed `.d.ts` as a `.d.cts` sibling (specifiers rewritten
  *    to `.cjs`) so the `require` condition's `types` no longer points CJS TS
  *    consumers at ESM-flavored declarations, the attw "masquerading" failure.
+ * 3. Write one flat `dist/plugins/<name>.d.ts` per plugin. A plugin is a
+ *    directory with an `index.ts`, so vite-plugin-dts mirrors it to
+ *    `dist/plugins/<name>/index.d.ts`, while rollup emits the code flat. The
+ *    re-export puts the declaration on the same path as the code, which is
+ *    what the `exports` map names.
  */
 import fs from "node:fs";
 import path from "node:path";
 
 const dist = new URL("../dist/", import.meta.url).pathname;
+const pluginsSrc = new URL("../src/plugins/", import.meta.url).pathname;
+
+// Before the walk, so each flat declaration gets its specifiers fixed and its
+// `.d.cts` sibling like every other file.
+let flat = 0;
+for (const entry of fs.readdirSync(pluginsSrc, { withFileTypes: true })) {
+	if (!entry.isDirectory()) continue;
+	const name = entry.name;
+	if (!fs.existsSync(path.join(pluginsSrc, name, "index.ts"))) continue;
+	const emitted = path.join(dist, "plugins", name, "index.d.ts");
+	if (!fs.existsSync(emitted)) continue;
+	fs.writeFileSync(path.join(dist, "plugins", `${name}.d.ts`), `export * from "./${name}/index";\n`);
+	flat++;
+}
+console.log(`postbuild: ${flat} flat plugin declarations written`);
 
 const dtsFiles = [];
 (function walk(dir) {

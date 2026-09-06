@@ -1,9 +1,10 @@
 // ECS
 export { ECS, type ECSOptions } from "./ecs";
-// Grouped facades, type-only: consumers reach the instances
-// via `ecs.relations` / `ecs.events` / `ecs.resources` / `ecs.snapshots`,
-// never construct them.
-export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./facades";
+// The core facades, type-only: a consumer reaches the instances via
+// `ecs.resources` and `ecs.snapshots`, never constructs them. `ECSRelations`
+// and `ECSEvents` belong to their plugin now, and each plugin entry exports
+// its own.
+export type { ECSResources, ECSSnapshots } from "./facades";
 
 // ECS memory sizing, the single surface a consumer sizes an ECS
 // through (`ECSOptions.memory`). `resolveECSMemory` is exported so tests
@@ -200,7 +201,8 @@ export type { FrameStepperOptions } from "./frame_stepper";
 // World resume, `ECSRestoreError` is thrown by `ECS.restore` when a
 // snapshot's shape, field-identity and index-bounds checks fail closed before overwriting the
 // live backing. `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
-export { ECSRestoreError, ECS_SNAPSHOT_VERSION } from "./resume";
+export { ECSRestoreError } from "./utils/error";
+export { ECS_SNAPSHOT_VERSION } from "./snapshot";
 
 // Ref.
 // NOTE: the `Readonly*` types exported from this barrel (ReadonlyComponentRef,
@@ -301,11 +303,6 @@ export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnD
 // `(*, T)` wildcard query access sentinel, list in `relationReads` to
 // authorise `Query.forEachRelatedTo`, which reads every relation's reverse index.
 export { ANY_RELATION } from "./relation";
-
-// Built-in relations, named presets over `ECS.registerRelation`
-// (flecs `IsA` / `ChildOf`, the thin no-inheritance variant). Free functions, a
-// convention layer over the relation primitive.
-export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./builtin_relations";
 
 // Events, the schema is a field → value-type record (`EventSchema`), so a
 // field declared as a branded number (e.g. `EntityID`) round-trips the brand

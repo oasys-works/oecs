@@ -45,8 +45,6 @@ export const ROOT_EXPORTS: readonly string[] = [
 	"installHostCommandSeam",
 	"isEcsError",
 	"not",
-	"registerChildOf",
-	"registerIsA",
 	"replayCommandLog",
 	"resourceKey",
 	"runEveryNTicks",

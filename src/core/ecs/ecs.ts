@@ -64,9 +64,7 @@
 
 import { Store, type Template, type TemplateOverrides } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
-import {
-	ObserverRegistry
-} from "./observer";
+import type { ObserverHooks } from "./observer";
 import type { ColumnStore } from "../store";
 import { ECSResources, ECSSnapshots } from "./facades";
 import type { Plugin, PluginHost, PluginsOf, WorkerHooks, WorkerWorld } from "./plugin";
@@ -461,7 +459,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// structural-flush fast path is gated on its own observer counts, so a world
 	// without the plugin runs the flush loops it ran before. The world checks
 	// this once per `update()` and once at startup, both cold.
-	private _observers: ObserverRegistry | null = null;
+	private _observers: ObserverHooks | null = null;
 	/** The consumers of the tick-tail detection point, in install order. Each
 	 * one runs once per `update()` with the change tick of the point. Empty on
 	 * a world that installed no consumer, and the tail reads the length once. */
@@ -1643,8 +1641,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// disabling dev access enforcement for the rest of A's system body (the
 		// `check*` guards early-return when no span is active). Snapshot the
 		// caller's span and restore it after the tick, the same save and restore the
-		// observer dispatch already performs for nested spans (see observer.ts
-		// `dispatchStructural` / `dispatchSet`). Dev-only. `prevAccessSpan` is
+		// observer dispatch already performs for nested spans (`dispatchStructural`
+		// and `dispatchSet` on the registry). Dev-only. `prevAccessSpan` is
 		// null on the normal host-driven (non-nested) path, so the restore is a
 		// no-op there. This keeps each world isolated.
 		const prevAccessSpan = DEV ? accessCheck.current() : null;

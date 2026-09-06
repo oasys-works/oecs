@@ -58,10 +58,10 @@ import {
 	type SparseComponentDef,
 	type SparseComponentID
 } from "./sparse_store";
-import type { RelationDef } from "./relation";
-// Type-only. The events plugin constructs the registry, so a world that
-// installs none does not carry `event_registry.ts`.
-import type { EventRegistry } from "./event_registry";
+// Type-only, and every one of these is a seam the core declares and a plugin
+// implements. The bodies live under `src/plugins`, which the core never names.
+import type { RelationDef, RelationHooks, RelationServiceHost } from "./relation";
+import type { EventHooks } from "./event";
 import { ResourceRegistry } from "./resource_registry";
 import {
 	unsafeCast,
@@ -77,10 +77,7 @@ import {
 	type ArchetypeID
 } from "./archetype";
 import type { Query, QueryHost, QueryTerms } from "./query";
-// Type-only. The relations plugin constructs the service, so a world that
-// installs none does not carry `relation_service.ts` or `relation.ts`.
-import type { RelationService, RelationServiceHost } from "./relation_service";
-// Type-only: the per-consumer host seams Store implements. observer.ts /
+// Type-only: the per-consumer host seams Store implements. observer.ts and
 // query.ts import only types from store.ts, so neither edge is a runtime cycle.
 import type { ObserverHost } from "./observer";
 import type { ChangeFeed } from "./plugin";
@@ -88,9 +85,7 @@ import { ECS_ERROR, ECSError, ECSRestoreError } from "./utils/error";
 import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
-// Type-only. The store never constructs a `SnapshotService`, so a world that
-// installs no snapshot plugin does not carry `snapshot_service.ts` at all.
-import type { SnapshotService, SnapshotHost } from "./snapshot_service";
+import type { HostState, SnapshotHooks, SnapshotHost } from "./snapshot";
 import { ArchetypeGraph } from "./archetype_graph";
 import { accessCheck } from "./access_check";
 import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
@@ -124,7 +119,6 @@ import {
 	type ColumnStore
 } from "../store";
 import type { ECSMemoryCapContext } from "./ecs_memory";
-import type { HostState } from "./resume";
 import { DEV } from "../../dev_flag";
 
 // Local copies of the entity-id constants. The by-id paths (`_liveIndex`,
@@ -151,7 +145,7 @@ export interface ComponentMeta {
 	// Hot-path flags consulted by the structural flush + the field-write path.
 	// All false unless `ecs.observe(...)` registered a matching observer. The
 	// no-observer flush path is byte-for-byte unchanged (`_structuralObserverCount`
-	// gate in `flushStructural`). See `observer.ts`.
+	// gate in `flushStructural`). See the observers plugin.
 	/** Has an onAdd observer, collect effective adds for this component. */
 	obsAdd: boolean;
 	/** Has an onRemove observer, collect effective removes for this component. */
@@ -203,7 +197,7 @@ export interface ObservationFlags {
  * collected during `_flushAdds` / `_flushRemoves` and handed to the observer
  * dispatch hook. Flat parallel arrays, count-bounded (`*_len`), reused across
  * rounds, never reallocated in the flush. This is a scheduling artifact: it is
- * not part of `stateHash` or snapshot. See `observer.ts`.
+ * not part of `stateHash` or snapshot. See the observers plugin.
  */
 export interface StructuralObserverEvents {
 	addComp: number[];
@@ -418,21 +412,21 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	private readonly _sparseDrains: (EntityID[] | undefined)[] = [];
 
 	// --- Relations (sparse (relation, target) pairs) ---
-	// Registry + traversal algorithms live in `RelationService`. The Store's
+	// Registry + traversal algorithms live in the relations plugin. The Store's
 	// relation methods below are one-line delegations. Wired in the constructor
 	// through the narrow `RelationServiceHost` seam.
 	// Installed by the relations plugin, `null` until then. The destroy
 	// paths test it before the existing `count > 0` gate, which keeps the
 	// no-relation world on the same branch it already took.
-	private _relations: RelationService | null;
+	private _relations: RelationHooks | null;
 
 	// --- Event channels ---
-	// Channel array + key map + per-tick dirty list live in `EventRegistry`
-	// (event_registry.ts); the event methods below delegate.
+	// Channel array + key map + per-tick dirty list live in the events plugin
+	// registry; the event methods below delegate.
 	// Installed by the events plugin, `null` until then. `ECS.update` clears
 	// the channels at the tick tail and checks `hasEvents` first, so a world
 	// without the plugin pays one null test per frame.
-	private _events: EventRegistry | null;
+	private _events: EventHooks | null;
 
 	// --- Archetype management ---
 	// Topology (archetype list, mask→id map, id counter, inverted component
@@ -470,12 +464,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// through the collaborator's closure host.
 	private readonly _deferred: DeferredCommandBuffer;
 	// Snapshot and resume orchestration, serialization, framing,
-	// and fail-closed validation live in `SnapshotService`. The Store keeps
+	// and fail-closed validation live in the snapshots plugin. The Store keeps
 	// the DETERMINISM_DISABLED gates and the live-world mutation seams
 	// (`_mountRestoredDense`, `_reconstructHostRows`).
 	// Installed by the snapshot plugin, `null` until then. Cold path: every
 	// read goes through the `snapshots` accessor, which is never in a loop.
-	private _snapshots: SnapshotService | null;
+	private _snapshots: SnapshotHooks | null;
 
 	// The collaborators a caller reaches by name.
 	//
@@ -489,7 +483,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// Cold path, every one. The hot paths (`forEachSparseMatch`, the destroy
 	// loops, the state digest) still reach `_relationService` through the
 	// private field, so no accessor sits inside a loop.
-	public get relations(): RelationService {
+	public get relations(): RelationHooks {
 		if (this._relations === null) throw pluginMissingError("relations", "ecs.relations");
 		return this._relations;
 	}
@@ -500,7 +494,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * remedy when a system context or a query term reached the service. Every
 	 * seam a user can reach passes its own name here. Error path only. The
 	 * successful read is the same field read the getter makes. */
-	public requireRelations(api: string): RelationService {
+	public requireRelations(api: string): RelationHooks {
 		if (this._relations === null) throw pluginMissingError("relations", api);
 		return this._relations;
 	}
@@ -526,18 +520,18 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	/** Install the relations plugin. Called once, by the plugin. */
-	public installRelations(service: RelationService): void {
+	public installRelations(service: RelationHooks): void {
 		if (this._relations !== null) throw pluginInstalledTwiceError("relations");
 		this._relations = service;
 	}
-	public get events(): EventRegistry {
+	public get events(): EventHooks {
 		if (this._events === null) throw pluginMissingError("events", "ecs.events");
 		return this._events;
 	}
 
 	/** The event registry, for a caller that is not `ecs.events`. Names the
 	 * seam the user reached, the way `requireRelations` does. */
-	public requireEvents(api: string): EventRegistry {
+	public requireEvents(api: string): EventHooks {
 		if (this._events === null) throw pluginMissingError("events", api);
 		return this._events;
 	}
@@ -549,7 +543,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	/** Install the events plugin. Called once, by the plugin. */
-	public installEvents(registry: EventRegistry): void {
+	public installEvents(registry: EventHooks): void {
 		if (this._events !== null) throw pluginInstalledTwiceError("events");
 		this._events = registry;
 	}
@@ -590,12 +584,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	/** Install the snapshot plugin. Called once, by the plugin. */
-	public installSnapshots(service: SnapshotService): void {
+	public installSnapshots(service: SnapshotHooks): void {
 		if (this._snapshots !== null) throw pluginInstalledTwiceError("snapshots");
 		this._snapshots = service;
 	}
 
-	public get snapshots(): SnapshotService {
+	public get snapshots(): SnapshotHooks {
 		if (this._snapshots === null) throw pluginMissingError("snapshots", "snapshot()");
 		return this._snapshots;
 	}
@@ -2633,7 +2627,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// =======================================================
 	// Component observers
 	// =======================================================
-	// The `ObserverRegistry` (observer.ts, owned by ECS) drives ordering +
+	// The observer registry (the observers plugin, owned by ECS) drives ordering +
 	// callback dispatch. The Store owns the hot-path flags, the effective-event
 	// collection (in `_flushAdds` and `_flushRemoves`), the fixed-point loop
 	// (`flushStructural`), and the per-row dirty list for per-entity onSet. All
@@ -3354,7 +3348,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	/**
 	 * Capture the full live world to one self-contained byte buffer that
 	 * `restore` can mount back onto a live, ticking world ("rewind a running
-	 * world and keep ticking"). Three sections (see `resume.ts`): the dense SAB
+	 * world and keep ticking"). Three sections, which the snapshots plugin
+	 * frames: the dense SAB
 	 * column bytes (`columnStoreBytesView`), the sparse + relation bytes
 	 * (`snapshotSparse`), and the host-side bookkeeping the SAB omits, the world
 	 * tick, the entity recycle free-list (in live order, no byte source, and its
@@ -3394,7 +3389,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		this._resetSparseTicks();
 	}
 
-	/** Adopt a restored dense store (`SnapshotService.restore`'s mount
+	/** Adopt a restored dense store (the snapshot service's restore mount
 	 * step): swap the live backing, refresh every buffer-backed archetype's
 	 * views, recover the allocator high-water from the restored region, and
 	 * republish (the grow tail). Store-owned because it assigns
@@ -3472,8 +3467,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// =======================================================
 	// Relations, (relation, target) pairs on the sparse store
 	// =======================================================
-	// Registry, traversal, and hierarchy ordering live in `RelationService`
-	// (relation_service.ts), semantics and rationale are documented there.
+	// Registry, traversal, and hierarchy ordering live in the relation service
+	// (the relations plugin), semantics and rationale are documented there.
 	// These delegations keep the Store surface stable for ecs.ts and the query
 	// internals.
 
@@ -3641,7 +3636,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	/** Fourth query-match path: the matched set in hierarchy depth order
-	 * (parents before children), see `RelationService.forEachHierarchyMatch`. */
+	 * (parents before children), see `forEachHierarchyMatch` on the relation service. */
 	public forEachHierarchyMatch(
 		include: BitSet,
 		exclude: BitSet | null,
@@ -4446,7 +4441,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	// =======================================================
-	// Event channels, delegations to `EventRegistry` (event_registry.ts)
+	// Event channels, delegations to the event registry
 	// =======================================================
 
 

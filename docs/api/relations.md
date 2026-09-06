@@ -29,7 +29,7 @@ operation is **immediate**, and not deferred. They are safe during a tick for ex
 no dense row moves.
 
 ```ts
-import { registerChildOf } from "@oasys/oecs";
+import { registerChildOf } from "@oasys/oecs/relations";
 const ChildOf = registerChildOf(ecs);           // a supplied preset, a free function (see below)
 
 const parent = ecs.spawn();
@@ -156,10 +156,11 @@ There are two presets over `ecs.relations.register`. Each one sets a cardinality
 cleanup policy. Both are always exclusive.
 
 ```text
-import { registerChildOf, registerIsA } from "@oasys/oecs";
-// Free functions, the ECS is their first argument (they are not methods on it):
-registerChildOf(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;   // ChildOf(child → parent). Default "delete"
-registerIsA(ecs: ECS, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;       // IsA(instance → exemplar). Default "clear"
+import { registerChildOf, registerIsA } from "@oasys/oecs/relations";
+// Free functions, the world is their first argument (they are not methods on it).
+// The world has the relations plugin installed, because each one registers a relation:
+registerChildOf(world, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;   // ChildOf(child → parent). Default "delete"
+registerIsA(world, opts?: BuiltinRelationOptions): RelationDef<"exclusive">;       // IsA(instance → exemplar). Default "clear"
 interface BuiltinRelationOptions { readonly onDeleteTarget?: OnDeleteTarget }
 ```
 

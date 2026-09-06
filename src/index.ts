@@ -21,7 +21,7 @@
 
 // ECS
 export { ECS, type ECSOptions } from "./core/ecs";
-export type { ECSRelations, ECSEvents, ECSResources, ECSSnapshots } from "./core/ecs";
+export type { ECSResources, ECSSnapshots } from "./core/ecs";
 
 // The plugin seam. These are type-only. Each plugin module ships on its own
 // subpath, and a plugin outside this package implements these types.
@@ -248,8 +248,10 @@ export { SparseRestoreError } from "./core/ecs";
 export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./core/ecs";
 export { ANY_RELATION } from "./core/ecs";
 
-// Built-in relations, named presets over `ECS.registerRelation`.
-export { registerIsA, registerChildOf, type BuiltinRelationOptions } from "./core/ecs";
+// The built-in relations, `registerIsA` and `registerChildOf`, ship on
+// `@oasys/oecs/relations` beside the plugin they need. They register a
+// relation, so a world without the plugin cannot call them, and exporting them
+// here pulled the relation code into every bundle.
 
 // Events
 export type {

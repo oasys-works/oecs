@@ -779,7 +779,7 @@ Relations are a plugin. Build the world with
 `ECS.create({ plugins: [relations()] })`, and import `relations` from `@oasys/oecs/relations`.
 
 ```ts
-import { registerChildOf } from "@oasys/oecs";
+import { registerChildOf } from "@oasys/oecs/relations";
 const ChildOf = registerChildOf(ecs);        // a supplied preset, a free function
 ecs.relations.add(child, ChildOf, parent);
 ecs.relations.targetOf(child, ChildOf);                 // parent
