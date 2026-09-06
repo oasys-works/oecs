@@ -1,7 +1,10 @@
 /**
  * SAB layout descriptor, the "where is each column in memory" lookup table
- * that both the WASM sim and the TS host read from. Lives in the SAB region
- * at `header.layout_descriptor_off`.
+ * that both a compiled module and the TS host read from. The region sits at
+ * `header.layout_descriptor_off`, which is a byte offset from the store
+ * header and not from the buffer. The header sits at `memory.storeBase`, so a
+ * reader adds that base to every offset it finds here. A version 0 store sat
+ * at byte 0, which is why a version 0 reader could treat the two as one.
  *
  * Layout is locked by `descriptor.test.ts`'s golden bytes the same way
  * `header.test.ts` locks the header. Any schema change is a `SIM_ABI_VERSION`
@@ -28,11 +31,11 @@
 // `./descriptor` importers and the `core/buffer` barrel keep the same surface.
 // Golden bytes in `__tests__/descriptor.test.ts` pin the values.
 //
-//   - COLUMN_DESCRIPTOR_BYTES / _OFFSETS            16-byte per-column record
-//   - ARCHETYPE_DESCRIPTOR_HEADER_BYTES / _OFFSETS  fixed archetype header
-//   - COMPONENT_MASK_WORDS                          u32 words in the mask, and the
-//                                                   one knob the component
-//                                                   limit derives from
+//   - COLUMN_DESCRIPTOR_BYTES and _OFFSETS            16-byte per-column record
+//   - ARCHETYPE_DESCRIPTOR_HEADER_BYTES and _OFFSETS  fixed archetype header
+//   - COMPONENT_MASK_WORDS                            u32 words in the mask, and
+//                                                     the one knob the component
+//                                                     limit derives from
 import {
 	COLUMN_DESCRIPTOR_BYTES,
 	COLUMN_DESCRIPTOR_OFFSETS,
@@ -52,8 +55,7 @@ export {
 };
 
 /** type_tag values for `ColumnDescriptor.type_tag`. The order matches the
- * TypedArrayTag union in `packages/std/type_primitives` so a tag's element
- * width is `TYPE_TAG_STRIDE[tag]`. */
+ * `TypedArrayTag` union, so a tag's element width is `TYPE_TAG_STRIDE[tag]`. */
 export const TYPE_TAG = {
 	u8: 0,
 	i8: 1,

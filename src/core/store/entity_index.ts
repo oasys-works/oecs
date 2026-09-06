@@ -39,8 +39,8 @@
  * exceeds `capacity`) uses `growColumnStore`, slow path, same as
  * descriptor-region overflow.
  *
- * Reading from Zig: see `packages/sim/src/entity_index.zig` for the
- * symmetric reader.
+ * A module reads the region with the symmetric reader: the header first,
+ * then the two i32 arrays it names.
  */
 
 /** Fixed bytes of the region header (length, capacity, two pad u32s for

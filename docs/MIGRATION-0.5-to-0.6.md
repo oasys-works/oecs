@@ -95,6 +95,10 @@ Why each one moved:
 On `@oasys/oecs/internal`, every `accessCheck.check*` method is `assert*`, and
 `dispatchTrace.recordEmit` and `recordRead` are `recordEventEmit` and `recordEventRead`.
 
+`Store` no longer forwards to its collaborators. Thirty methods carried one delegation each and no
+logic. Name the owner instead: `store.relations.addRelation`, `store.events.emit`,
+`store.resources.get`, `store.snapshots.capture`.
+
 Three rules now hold across the package. One verb throws on a bad state, `assert`, and `validate`
 keeps only the helpers that return the value they test. One verb constructs, `create`. The
 underscore prefix marks a private or a protected class member and nothing else.
@@ -169,9 +173,21 @@ new ECS({ memory: { entities: 50_000, backing: "shared" } });  // both, a type e
 new ECS({ memory: { entities: 50_000, maxBytes: 64 * MiB } }); // size from one, ceiling from the other
 ```
 
-The `budget` key is `entities`, and the arm names for the backing are the `backing` field. The
-shared backing is the string `"shared"`. `ResolvedECSMemory.source` names the backing alone, and
-the new field `sizing` names the size axis.
+Each removed arm throws `INVALID_MEMORY_OPTIONS` and names its new spelling. Rewrite it:
+
+| 0.5 | 0.6 |
+| --- | --- |
+| `{ budget: { entities: N } }` | `{ entities: N }` |
+| `{ heap: { maxBytes: X } }` | `{ maxBytes: X, backing: "heap" }` |
+| `{ shared: { maxBytes: X } }` | `{ maxBytes: X, backing: "shared" }` |
+| `{ wasm: W }` | `{ backing: { wasm: W } }` |
+| `{ allocator: A }` | `{ backing: { allocator: A } }` |
+| `{ capBytesHint: X }` | `{ maxBytes: X }` |
+
+`maxBytes` and `columnCapacity` keep their names and their meaning. The types `EntityBudget` and
+`SharedMemoryArm` are gone. The shared backing is the string `"shared"`, and `MemoryBacking` names
+the backing axis. `ResolvedECSMemory.source` names the backing alone, and the new field `sizing`
+names the size axis.
 
 ---
 
@@ -338,10 +354,6 @@ These are additions. None of them is required to upgrade.
   `observe(def, { granularity: "entity", onSet })` as a push.
 - **`fixedSabAllocator(maxBytes)`**, from `@oasys/oecs/shared`. A shared buffer that does not grow.
   See [memory](api/memory.md).
-
-A `ref` or a cursor write now reaches an entity-level `onSet` observer, which the change detection
-page always said it did. `ctx.ref` records the entity when you create the ref, and a mutable cursor
-records it on each `at`. `refRead` and `cursorRead` record nothing.
 - **`memory.storeBase` and `storeBaseAbove(exports, extraBytes)`.** The store header sits at a byte
   offset you choose, above everything a module owns. See [WASM](api/wasm.md).
 - **One system across workers.** `ECS.create({ plugins: [workers()] })` from `@oasys/oecs/workers`
@@ -349,3 +361,6 @@ records it on each `at`. `refRead` and `cursorRead` record nothing.
   config on `registerSystem` names a kernel from any toolchain that the pool runs over disjoint row
   ranges. A world without the plugin builds no plan, validates no `parallel` config, and runs the
   system's own `fn`. See [parallel execution](api/parallel.md).
+- **A `ref` or a cursor write reaches an entity-level `onSet` observer**, which the change detection
+  page always said it did. `ctx.ref` records the entity when you create the ref, and a mutable
+  cursor records it on each `at`. `refRead` and `cursorRead` record nothing.

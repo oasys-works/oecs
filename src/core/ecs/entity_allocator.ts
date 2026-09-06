@@ -166,13 +166,14 @@ export class EntityAllocator {
 		return this._freeIndices.slice();
 	}
 
-	/** Restore path, step 1: adopt the high-water recovered from the restored
-	 * region's length header before the replant republishes it. */
+	/** Restore path. Adopt the high-water recovered from the restored
+	 * region's length header, before the replant republishes it. */
 	public setHighWater(value: number): void {
 		this._highWater = value;
 	}
 
-	/** Restore path, step 2: adopt the captured free-list + alive count. */
+	/** Restore path. Adopt the captured free list and alive count, after
+	 * `setHighWater` has taken the high-water. */
 	public restoreHostState(freeIndices: readonly number[], aliveCount: number): void {
 		this._freeIndices.length = 0;
 		for (let i = 0; i < freeIndices.length; i++) this._freeIndices.push(freeIndices[i]);

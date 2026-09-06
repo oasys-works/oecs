@@ -39,7 +39,7 @@ const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STORE = resolve(HERE, "../../store.ts");
 const RELATIONS = resolve(HERE, "../../../../plugins/relations.ts");
-const CAPABILITY = resolve(HERE, "../../plugin.ts");
+const PLUGIN = resolve(HERE, "../../plugin.ts");
 
 type Outcome = { threw: boolean; leaked: number[] };
 
@@ -74,7 +74,7 @@ async function runProdHarness(): Promise<Record<"exclusive" | "multi", Outcome>>
 			entry,
 			`import { Store } from ${JSON.stringify(STORE)};
 import { relations } from ${JSON.stringify(RELATIONS)};
-import { storeOnlyHost } from ${JSON.stringify(CAPABILITY)};
+import { storeOnlyHost } from ${JSON.stringify(PLUGIN)};
 export function run() {
 	const out = {};
 	for (const [name, opts] of [["exclusive", {}], ["multi", { multi: true }]]) {

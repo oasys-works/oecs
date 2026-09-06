@@ -202,8 +202,7 @@ export {
 	pushAction
 } from "./action_ring";
 
-// terrain / spatial_grid / army_compositions / spawn_anchors / flow_field
-// region modules moved to `@internal/sim` (packages/sim/src/regions/).
-// They are game data structures, not engine substrate. The engine now exposes
-// only the generic region table above. Consumers import the region builders +
-// view helpers from `@internal/sim`.
+// The engine exposes the generic region table above and nothing narrower. A
+// named region, such as a terrain grid or a spawn anchor list, is a game data
+// structure and not engine substrate, so it lives in the consumer that owns
+// its shape and reaches the bytes through the table.

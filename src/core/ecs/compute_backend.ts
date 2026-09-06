@@ -13,7 +13,7 @@
  * pure-TS systems and pays nothing for this seam. A backend is attached opt-in
  * via `ECS.attachBackend(...)`, and a system opts a *single* system into
  * backend execution by carrying a `backendHandle` on its `SystemConfig`
- * (`packages/engine/src/core/ecs/system.ts`). When a backend is attached and a
+ * (see `system.ts`). When a backend is attached and a
  * scheduled system carries a handle, the `Schedule` dispatches
  * `backend.run(handle, deltaTime, tick)`. Otherwise it runs the system's `fn`
  * closure (the default and fallback path).

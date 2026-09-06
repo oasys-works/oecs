@@ -135,6 +135,7 @@ takes as its one observer shape.
 ```ts
 ecs.trackRows(Cooldown);
 const tick = ecs.registerSystem({
+  reads: [], writes: [],
   sparseReads: [Cooldown], sparseWrites: [],
   fn: (ctx) => {
     ready.forEachEntity((e) => {

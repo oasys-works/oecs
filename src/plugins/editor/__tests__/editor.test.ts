@@ -339,7 +339,7 @@ describe("Editor, pending_field self-resolves once the channel catches up", () =
 });
 
 describe("Editor, an aborted transaction leaves no trace (the shadow-poisoning regression)", () => {
-	it("pendingField reflects the committed value, and the next setField's undo restores the TRUE old value", () => {
+	it("pendingField reflects the committed value, and the next setField's undo restores the true old value", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
 		editor.spawn([spawnEntry(Cell, { x: 10, heat: 0 })], (e) => (id = e));

@@ -1039,9 +1039,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			)
 		);
 		// Snapshot and resume orchestration. Closure host, accessors
-		// re-read live fields per call (the column store and entity-index views
-		// are replaced on restore); the allocator rides in whole as its own
-		// snapshot seam (step 3). All cold-path.
+		// re-read live fields per call, because restore replaces the column
+		// store and the entity-index views. The allocator rides in whole and
+		// carries its own snapshot seam. All cold-path.
 		// Archetype topology. Creation-path-only closures, an
 		// edge-cache hit never calls the host.
 		this._archGraph = new ArchetypeGraph({

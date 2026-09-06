@@ -135,7 +135,7 @@ ring between threads, and both resolve through `applyHostCommand(ctx, cmd)`.
 | `"add_component"` | deferred | `eid`, `def`, `values` |
 | `"remove_component"` | deferred | `eid`, `def` |
 | `"set_field"` | **immediate** | `eid`, `def`, `field`, `value` |
-| `"disable"` / `"enable"` | deferred | `eid` |
+| `"disable"` and `"enable"` | deferred | `eid` |
 
 <a id="record--replay"></a>
 

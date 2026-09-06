@@ -62,14 +62,14 @@ export const ACTION_RING_HEADER_BYTES = 16;
 /** Fixed slot size, 1-byte length + 15-byte payload. */
 export const ACTION_RING_SLOT_BYTES = 16;
 
-/** Default ring capacity in slots. Sized for ~250 ms of click-spam at 60
- * Hz on the high end of human input rates. 256 × 16 B = 4 KiB + 16 B
- * header. */
+/** Default ring capacity in slots. It holds a burst of clicks at the high end
+ * of a human input rate, over the frames a host takes to drain it. The region
+ * is the slot count times `ACTION_RING_SLOT_BYTES`, plus the header. */
 export const ACTION_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
-/** Max payload bytes per slot (slot size minus the length prefix). All
- * actions defined in `packages/protocol/src/actions.ts` encode to under
- * 8 bytes, so this is comfortably above today's max. */
+/** Max payload bytes per slot, the slot size minus the length prefix. An
+ * action a host sends encodes to a few bytes, so the slot holds one with
+ * room to spare. */
 export const ACTION_RING_MAX_PAYLOAD_BYTES = ACTION_RING_SLOT_BYTES - 1;
 
 /** Byte offsets within the ring header. Matches `command_ring` so a

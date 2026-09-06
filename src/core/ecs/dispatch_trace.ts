@@ -21,7 +21,7 @@
  * `{ binding, id_expr }` for actions. The matching there is unambiguous.
  *
  * Callsite resolution. `new Error().stack` inside `record()`, walk the
- * frames, drop everything inside `packages/engine/src/core/ecs/` (this
+ * frames, drop every frame inside the engine itself (this
  * file + the dispatcher seam), return the first repo-relative path. Stack-
  * line strings are cached so repeat dispatches from the same site are
  * O(1) after the first hit. The walk itself lives in the pure

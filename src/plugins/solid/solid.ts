@@ -6,8 +6,8 @@
  *
  * A row is one Solid signal, made on the first `cell(id)` and kept. The first
  * design wrote a Solid store keyed by entity id, which gave a reader a nested
- * field read that tracked one field. A probe under `bench/foundations` put that
- * publish above the signal-per-row publish, so the store went. A signal per row
+ * field read that tracked one field. A probe put that publish above the
+ * signal-per-row publish at every density, so the store went. A signal per row
  * costs one setter call to publish and one node to track, and a reader tracks
  * the whole row rather than a field of it.
  *

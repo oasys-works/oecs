@@ -29,7 +29,7 @@ export type AnyTypedArray =
 /**
  * Common surface of a row-addressable column buffer. `GrowableTypedArray<T>`
  * implements it over a heap-allocated TypedArray. SAB-backed columns (see
- * `packages/engine/src/core/sab/sab_backed_column.ts`) implement it over a
+ * `/oecs/shared`) implement it over a
  * `SharedArrayBuffer` view at a known offset. Archetype column storage
  * targets this interface so a single code path serves both backings.
  */

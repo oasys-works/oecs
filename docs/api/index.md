@@ -201,8 +201,9 @@ Read these pages in this order, to get a model that you can use.
 22. [primitives](./primitives.md), the data structures under `@oasys/oecs/primitives` that you can
     use again
 23. [errors](./errors.md), the `ECSError` taxonomy
-24. [plugins](./plugins.md), for a plugin author: `Plugin`, `PluginHost`, the
-    rules `ECS.create` checks, and the change feed a plugin drains
+24. [plugins](./plugins.md), for a plugin author: `Plugin`, `PluginHost`, `PluginsOf`, the
+    rules `ECS.create` checks, and the change feed a plugin drains, which is `ChangeFeed` with
+    `ObservationFlags`, `DrainResult` and `StructuralObserverEvents`
 
 <a id="dev-vs-prod--read-this-once"></a>
 

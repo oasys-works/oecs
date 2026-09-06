@@ -23,9 +23,9 @@ flush at the end of the phase.
 | Operation | On `ecs` (the host) | On `ctx` or `ctx.commands` (in a system) |
 | --- | --- | --- |
 | `spawn` | immediate (you get the id now) | the id is immediate. The bundles attach at the flush |
-| `addComponent` / `removeComponent` | **immediate** | **deferred** to the flush at the end of the phase |
+| `addComponent` and `removeComponent` | **immediate** | **deferred** to the flush at the end of the phase |
 | `despawn` | **immediate** | **deferred** to the flush at the end of the phase |
-| `disable` / `enable` | **immediate** | **deferred** to the flush at the end of the phase |
+| `disable` and `enable` | **immediate** | **deferred** to the flush at the end of the phase |
 | sparse and relation operations | immediate | immediate |
 
 > [!IMPORTANT]

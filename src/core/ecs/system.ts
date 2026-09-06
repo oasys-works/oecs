@@ -111,7 +111,7 @@ export interface SystemAccessConfig {
 	// term is unchanged, a system that does mutate or read undeclared state still
 	// throws in `DEV` (the accessCheck set is empty, so the check fails).
 	// addSparse, removeSparse and setSparseField and addRelation /
-	// removeRelation are WRITES. A write implies a read (mirroring the dense
+	// removeRelation are writes. A write implies a read (mirroring the dense
 	// rule), so a `*_writes` term also authorises reads of that handle.
 
 	/** Sparse components the system reads via `getSparseField`

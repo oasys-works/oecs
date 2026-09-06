@@ -29,7 +29,7 @@ A write sets the change tick of the component. A read does not.
 | `cols.mut(def)` (in `forEachChunk`) | `cols.read(def)` |
 | `ctx.ref(def, e)` | `ctx.refRead(def, e)` |
 | `ctx.cursor(def).at(e)` | `ctx.cursorRead(def).at(e)` |
-| `ctx.setField` / `ctx.updateField` | `ctx.getField` |
+| `ctx.setField` and `ctx.updateField` | `ctx.getField` |
 
 `cols.mut`, `ctx.ref` and a mutable cursor set the tick **immediately**. They set it at the moment
 that you get the mutable accessor, before an actual write, and also if you never write. This keeps

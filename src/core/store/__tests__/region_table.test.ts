@@ -154,7 +154,7 @@ describe("generic consumer region table", () => {
 //   - in-place `growColumnStore` (growable allocator): like the in-place extend,
 //     the region is untouched while only the grown archetype's columns relocate.
 describe("consumer regions survive every grow and extend path", () => {
-	it("carries a consumer region across an in-PLACE extend (growable allocator)", () => {
+	it("carries a consumer region across an in-place extend (growable allocator)", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const store = createColumnStore([ARCH], alloc, {
 			reservedDescriptorBytes: 4096,
@@ -199,7 +199,7 @@ describe("consumer regions survive every grow and extend path", () => {
 		expect(result.store.view.getUint32(off1 + 60, true)).toBe(0x0bad_cafe);
 	});
 
-	it("carries a consumer region across an in-PLACE grow (growable allocator)", () => {
+	it("carries a consumer region across an in-place grow (growable allocator)", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const store = createColumnStore([ARCH], alloc, {
 			reservedDescriptorBytes: 4096,

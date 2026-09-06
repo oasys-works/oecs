@@ -1,4 +1,4 @@
-# Best practices (v0.5)
+# Best practices
 
 This is practical advice for work with oecs: the patterns that agree with the design of the engine,
 the compromises that they cause, and the errors that occur if you ignore them.
@@ -11,10 +11,11 @@ For those, see:
 - The internal parts: [`ARCHITECTURE.md`](./ARCHITECTURE.md), the data layout, the flush model,
   the rules for cache invalidation, and the column store.
 
-The examples name the instance `ecs`, and they use the 0.5 surface: camelCase methods, the config
-form of `registerSystem`, `forEachChunk`, and `ctx.ref`. The canonical example that compiles is the
-quick start in the README. The canonical reference for "does this truly operate" is
-`src/core/ecs/__tests__/` (see [§20](#20-tests)).
+The examples name the instance `ecs`, and they use the 0.6 surface: camelCase methods, the config
+form of `registerSystem`, `forEachChunk`, and `ctx.ref`. A world installs the plugins it uses at
+construction. The canonical example that compiles is the quick start in the README. The canonical
+reference for "does this truly operate" is `src/core/ecs/__tests__/`, which the
+[Tests](#20-tests) section covers.
 
 ## Contents
 
@@ -333,7 +334,7 @@ read. This avoids an incorrect change detection, *and* it shows your intention.
 | The high-frequency column loop | `cols.mut(def)` | `cols.read(def)` |
 | Many entities by id | `ctx.cursor(def)` | `ctx.cursorRead(def)` |
 | One entity by id | `ctx.ref(def, e)` | `ctx.refRead(def, e)` |
-| One field | `ctx.setField` / `ctx.updateField` | `ctx.getField` |
+| One field | `ctx.setField` and `ctx.updateField` | `ctx.getField` |
 
 Each accessor above is also on the host facade, with the same name: `ecs.cursor`, `ecs.refRead`,
 `ecs.getField`. Use the `ctx` form in a system, because it makes the check against the declared
@@ -366,8 +367,8 @@ const pos = ctx.refRead(Pos, player);
 ctx.emit(LogPos, { x: pos.x, y: pos.y });
 
 // Mutable: sets the tick of Pos at creation, also if you never write
-const pos = ctx.ref(Pos, player);
-pos.x += vel.vx * dt;
+const posMut = ctx.ref(Pos, player);
+posMut.x += vel.vx * dt;
 ```
 
 > [!WARNING]
@@ -438,9 +439,9 @@ So use this rule:
 | Your access | Use |
 | --- | --- |
 | The set of entities is a query | `forEachChunk`, see below |
-| A loop over ids, or repeated access by id | `ctx.cursor` / `ctx.cursorRead` |
-| One entity, more than one field, one time | `ctx.ref` / `ctx.refRead` |
-| One entity, one field, one time | `ctx.getField` / `ctx.setField` |
+| A loop over ids, or repeated access by id | `ctx.cursor` and `ctx.cursorRead` |
+| One entity, more than one field, one time | `ctx.ref` and `ctx.refRead` |
+| One entity, one field, one time | `ctx.getField` and `ctx.setField` |
 | Only a test for membership | `ecs.hasComponent` |
 | Only a test that the entity is alive | `ecs.isAlive` |
 
@@ -488,9 +489,9 @@ and it is **deferred** to the flush at the end of the phase.
 | Operation | On `ecs` (the host) | On `ctx.commands` (in a system) |
 | --- | --- | --- |
 | `spawn` | immediate | immediate (the id now, the bundles attach at the flush) |
-| `addComponent` / `removeComponent` | **immediate** | `add` / `remove`, **deferred** to the flush at the end of the phase |
+| `addComponent` and `removeComponent` | **immediate** | `add` and `remove`, **deferred** to the flush at the end of the phase |
 | `despawn` | **immediate** | **deferred** to the flush at the end of the phase |
-| `disable` / `enable` | immediate | deferred |
+| `disable` and `enable` | immediate | deferred |
 | sparse and relation operations (`ctx.addSparse`, `ctx.addRelation`, …) | immediate | immediate (no archetype transition, they are on `ctx` directly) |
 
 Deferral inside a system is what stops an entity from moving to a different archetype during a live

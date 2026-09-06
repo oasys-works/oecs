@@ -19,8 +19,8 @@
  * without knowing its internal shape (no per-region `readOptions` closure to
  * carry forward, unlike the mechanism registry).
  *
- * Layout (mirrors the `RegionTableEntry` extern struct in
- * `packages/sim/src/abi.zig`. Offsets vendored into `vendored_abi/abi.ts`):
+ * Layout. A module reads the same entry as an extern struct, and
+ * `vendored_abi/abi.ts` owns the offsets:
  *
  *   [ entry 0: { region_id: u32, byte_offset: u32, byte_length: u32 } ]
  *   [ entry 1: ... ]

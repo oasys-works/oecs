@@ -58,8 +58,8 @@ export const COMMAND_RING_SLOT_BYTES = 16;
  * in the bench harness. */
 export const COMMAND_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
-/** Byte offsets within the ring header. Mirrored on the Zig side in
- * `packages/sim/src/command_ring.zig`, keep in sync. */
+/** Byte offsets within the ring header. A reader on the module side mirrors
+ * these offsets, so a change here is an ABI change. */
 export const COMMAND_RING_HEADER_OFFSETS = {
 	write_head: 0,
 	read_head: 4,

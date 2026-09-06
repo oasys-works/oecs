@@ -56,8 +56,8 @@ export const EVENT_RING_SLOT_BYTES = 16;
  * plus 16 B header. Mirrors `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`. */
 export const EVENT_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
-/** Byte offsets within the ring header. Mirrored on the Zig side in
- * `packages/sim/src/event_ring.zig`, keep in sync. */
+/** Byte offsets within the ring header. A reader on the module side mirrors
+ * these offsets, so a change here is an ABI change. */
 export const EVENT_RING_HEADER_OFFSETS = {
 	write_head: 0,
 	read_head: 4,

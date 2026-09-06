@@ -1,4 +1,4 @@
-# The architecture of oecs (v0.5.4)
+# The architecture of oecs
 
 This document describes how oecs is built. It covers the division into two layers, which are the
 archetype ECS and the storage-neutral column store. It covers the data layout of the entities, the
@@ -116,6 +116,8 @@ until you import it (`index.ts`, `primitives.ts`, `shared.ts`, `plugins/*`).
 | `@oasys/oecs/events` | `plugins/events` | the events plugin, host-side channels and signals |
 | `@oasys/oecs/snapshots` | `plugins/snapshots` | the snapshots plugin, `capture` and `restore` |
 | `@oasys/oecs/observers` | `plugins/observers` | the observers plugin, `ecs.observe` |
+| `@oasys/oecs/workers` | `plugins/workers` | the workers plugin, `ecs.workers`, one pool for the `parallel` systems |
+| `@oasys/oecs/worker` | `worker.ts` | the worker entry the pool starts, which you never import |
 | `@oasys/oecs/editor` | `plugins/editor` | undo, redo, and field handles |
 | `@oasys/oecs/solid` | `plugins/solid` | the solid plugin, ECS state into Solid signals (`solid-js` is an optional peer dependency) |
 | `@oasys/oecs/internal` | `internal.ts` | the unstable internal parts (codecs, ABI constants, the access checker) |
@@ -265,7 +267,7 @@ growth. But it scales with the `capacity` of the snapshot, and not with the numb
 alone, and that is intentional. `view_stamp` is part of the hash by design: two stores at the same
 logical state, but with a different history of reallocation, give different hashes. For the digest
 of determinism of the simulation, which scales with the live rows and which folds the sparse and
-relation data, use `Store.stateHash()` (§16).
+relation data, use `Store.stateHash()` ([Determinism, snapshot, and replay](#16-determinism-snapshot-and-replay)).
 
 ### The snapshot
 
@@ -369,7 +371,7 @@ identities and which comes from the component mask of 4 words. Past that limit i
 A tag is a component with an empty schema. `registerTag` calls the registration with `{}`. A tag is
 part of the archetype mask, but it stores no column. An archetype with tags alone has
 `hasColumns === false` (`core/ecs/archetype.ts`), and it takes the fast paths that need no column
-(§5). A definition that you do not call is also a bundle of zeros, or a tag, at each position that
+([Archetypes](#5-archetypes)). A definition that you do not call is also a bundle of zeros, or a tag, at each position that
 expects a bundle.
 
 ---
@@ -403,7 +405,7 @@ Each archetype owns a dense flat column store, plus sparse index maps that a `Co
 - `changedTick[cid]`, the tick of the last change of each component. **This is the only level of
   detail for change tracking: one value for each component in each archetype. The archetype has no
   dirty bit for each row.** Tracking at the level of the entity is an optional list on the side of
-  the store (§8 and §11).
+  the store ([Change detection](#8-change-detection) and [Observers](#11-observers)).
 - `_mutGroupCache` and `_readGroupCache`, one object with field keys, for each component, that
   `forEachChunk` uses again. `_syncRowPlane` points these objects at the current buffers. A call to
   `cols.mut` or `cols.read` writes no property, and it makes no test for a stale buffer.
@@ -615,7 +617,7 @@ intersection. With an empty required mask it scans each archetype. If not, it fi
 bucket in `componentIndex`** among the required bits, and it filters that bucket.
 
 A change of membership increases one `queryDirtyEpoch` counter, which only increases. Each `Query`
-caches its subset of non-empty archetypes against the last epoch that it saw (§7). A new archetype,
+caches its subset of non-empty archetypes against the last epoch that it saw ([Queries](#7-queries)). A new archetype,
 which is empty, does **not** increase the epoch (`core/ecs/archetype_graph.ts`,
 `core/ecs/store.ts`). The engine tracks a row count in the `SharedArrayBuffer` descriptors that is
 out of date with a separate flag, `_rowCountsDirty`, and `publishRowCounts` writes
@@ -757,7 +759,7 @@ base query again and put the result in a new `ChangedQuery` (`core/ecs/query.ts`
 **The level of detail is one `(archetype, component)` pair.** A write to one row sets the value for
 the full archetype, for that component. `ChangedQuery` gives full archetypes, and a filter on each
 row is your task. For exact information about each entity, use an `onSet` observer with entity
-granularity (§11).
+granularity ([Observers](#11-observers)).
 
 ---
 
@@ -936,7 +938,7 @@ the edges that enter. `stateHash` and the snapshots do not include the observer 
 engine produces it in a canonical order, so a replay reproduces it.
 
 `yieldExisting: true` runs `onAdd` again over the current *enabled* matches at registration. An
-emission of an event from `onSet` throws `OBSERVER_ONSET_EMIT` (§15). A cyclic dependency between
+emission of an event from `onSet` throws `OBSERVER_ONSET_EMIT` ([The update loop](#15-the-update-loop)). A cyclic dependency between
 observers reduces the quality of the sort but does not break it. But the loop that finds the fixed
 point raises `OBSERVER_NON_CONVERGENT` if it never settles (`core/ecs/deferred_commands.ts`).
 
@@ -946,6 +948,9 @@ point raises `OBSERVER_NON_CONVERGENT` if it never settles (`core/ecs/deferred_c
 
 Source: `src/core/ecs/event.ts`, with the storage and lifetime in `src/core/ecs/event_registry.ts`,
 `src/core/ecs/store.ts`, and `src/core/ecs/ecs.ts`.
+
+Events are a plugin, so a world installs them with `ECS.create({ plugins: [events()] })` and imports
+`events` from `@oasys/oecs/events`.
 
 An event is a typed, send-and-forget message. A system emits it and reads it inside one frame. The
 implementation is one `EventChannel` for each event id, and `EventRegistry` owns them
@@ -1175,7 +1180,7 @@ it, the same capacity of the entity index, and `deterministic: true`.
 
 ### Record and replay
 
-Each mutation from a host or a UI crosses one apply control point (§17). So a log of the applied
+Each mutation from a host or a UI crosses one apply control point ([The host write path](#17-the-host-write-path)). So a log of the applied
 commands for each tick, plus the `dt` of each tick and a seed, is enough to replay a session.
 `replayCommandLog` (`core/ecs/command_log.ts`) pushes the commands from the seed time, calls
 `startup()`, and then, for each tick, pushes the commands and calls `update(dt)`. It does this for
@@ -1364,7 +1369,7 @@ The package also exports the primitives that the ECS is built from, so that they
   same bits, but with different lengths behind them, give the same hash and compare as equal.
 - **`SparseSet` and `SparseMap<V>`**, containers with integer keys and O(1) operations, with dense
   iteration (`type_primitives/sparse_set/` and `sparse_map/`). `SparseMap` supports each sparse
-  component store (§9). The sparse-set pattern also appears in the index maps of an archetype that
+  component store ([Sparse storage](#9-sparse-storage)). The sparse-set pattern also appears in the index maps of an archetype that
   a `ComponentID` keys.
 - **The `GrowableTypedArray` family**, typed arrays with a separate logical length and a backing
   buffer that doubles (`type_primitives/typed_arrays/`). They support the `entityIds` of an
@@ -1404,7 +1409,7 @@ See the [Development guards and production builds](PRODUCTION.md) guide.
   or mutates one specific entity throws `ENTITY_NOT_ALIVE` for a stale handle. A deferred operation
   validates the handle again at the flush.
 - **The access checker**. A system that touches a component, a resource, a sparse component, or a
-  relation that it did not declare throws (§14). The `queries ⊆ reads ∪ writes` check runs at
+  relation that it did not declare throws ([Systems and the scheduler](#14-systems-and-the-scheduler)). The `queries ⊆ reads ∪ writes` check runs at
   registration.
 - **Bounds and identity**. The engine checks the bounds of `createEntityId` (`EID_MAX_*_OVERFLOW`)
   and the bounds of an archetype (`ARCHETYPE_NOT_FOUND`). It checks the membership of a column and

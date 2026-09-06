@@ -113,11 +113,11 @@ interface GrowTarget {
  * O(grown archetype live rows).
  *
  * Tradeoff: the grown archetype's previous column region is abandoned (a
- * hole). With geometric doubling the wasted bytes are bounded by ~1x the
- * archetype's final live size. The growable SAB only ever grows, so holes
- * are not reclaimed within an allocator's lifetime. Acceptable for
- * match-scoped worlds (archetypes reach steady-state capacity and stop
- * growing); a future compaction pass could reclaim them.
+ * hole). Geometric doubling bounds the wasted bytes by the archetype's
+ * final live size. The growable SAB only ever grows, so holes are not
+ * reclaimed within an allocator's lifetime. That suits a match-scoped
+ * world, where an archetype reaches a steady capacity and stops growing.
+ * A compaction pass could reclaim them later.
  */
 function growColumnStoreInPlace(
 	old: ColumnStoreInternal,
@@ -326,7 +326,7 @@ export function growColumnStore(
 		}
 	}
 
-	// In-PLACE fast path (grow-side analogue of extend's fast path).
+	// In-place fast path, the grow-side analogue of extend's fast path.
 	// When the allocator keeps views valid across grow (`isInPlace`) and is
 	// the same one this store was built with, relocate only the growing
 	// archetypes to the SAB tail instead of reallocating + snapshotting the

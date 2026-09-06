@@ -121,17 +121,11 @@ export interface WorkerWorld {
 	route(pool: ParallelRoute | null): void;
 }
 
-/** An optional subsystem, and the facade surface it contributes.
+/** What one plugin may reach during `install`, and nothing wider.
  *
- * `install` receives the store because that is where the seams live: a
- * plugin builds its service from a host record the store hands out, gives
- * the service back through an install method, and returns its facade.
- *
- * `out X` (declared covariance) is what lets a plugin list be typed
- * `readonly Plugin<object>[]`: `X` appears only in `install`'s return, so
- * covariance is the honest direction and a concrete plugin is usable where
- * any plugin is expected. Left unannotated, the compiler measures `X` from
- * the whole interface and the list bound rejects every real plugin. */
+ * The world hands this record out once, at construction. A member that a bare
+ * store cannot answer is a method and not a field, so `storeOnlyHost` below
+ * can throw on the ones a store has no answer for. */
 export interface PluginHost {
 	/** Where the subsystem seams live. A plugin builds its service from a
 	 * host record the store hands out, and gives the service back through an
@@ -159,6 +153,17 @@ export interface PluginHost {
 	installWorkers(hooks: WorkerHooks): WorkerWorld;
 }
 
+/** An optional subsystem, and the facade surface it contributes.
+ *
+ * `install` receives the host because that is where the seams live: a plugin
+ * builds its service from a host record the store hands out, gives the service
+ * back through an install method, and returns its facade.
+ *
+ * `out X` (declared covariance) is what lets a plugin list be typed
+ * `readonly Plugin<object>[]`: `X` appears only in `install`'s return, so
+ * covariance is the honest direction and a concrete plugin is usable where
+ * any plugin is expected. Left unannotated, the compiler measures `X` from
+ * the whole interface and the list bound rejects every real plugin. */
 export interface Plugin<out X extends object> {
 	/** Names the plugin in a `PLUGIN_NOT_INSTALLED` fault. Matches the
 	 * published subpath, so the message can name the import that fixes it. */

@@ -265,9 +265,10 @@ bundler, which is why these live behind an import you make rather than a member 
 To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
 from `@oasys/oecs`. `Plugin<X>` is what a factory such as `relations()` returns, and what a
 plugin list holds. Its `install` takes a `PluginHost` and returns `X`, the surface the world
-gains. `PluginsOf` is the surface a plugin list adds to the world. The
-[plugins](./docs/api/plugins.md) page documents every host member, the rules `ECS.create`
-checks, and the change feed a plugin drains.
+gains. `PluginsOf` is the surface a plugin list adds to the world. `ChangeFeed` is the store's
+record of what changed, and `ObservationFlags`, `DrainResult` and `StructuralObserverEvents` are
+what crosses it. The [plugins](./docs/api/plugins.md) page documents every host member, the rules
+`ECS.create` checks, and the change feed a plugin drains.
 
 | Import | What it is |
 | --- | --- |

@@ -157,9 +157,9 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 // operands' declared read surfaces (`reads` / `resourceReads`) so accessCheck
 // and the future parallel scheduler still see every edge, and derives its
 // `name` from the operands for legible diagnostics. Evaluation order is the
-// argument order, short-circuiting like `&&` / `||`, safe because conditions
-// are pure by contract (rule 1 in the file header), so a skipped evaluate has
-// no observable effect.
+// argument order, and it short-circuits like `&&` and `||`. A condition is a
+// pure function of world state by contract, so a skipped evaluate has no
+// observable effect.
 
 /** Merge the declared read surfaces of composed conditions. */
 function mergeDeclares(conds: readonly RunCondition[]): {
