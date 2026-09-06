@@ -38,9 +38,10 @@ Each plugin keeps its call sites unchanged. Only construction moves.
 - `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
 - `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
 
-On npm, each plugin also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the three others
-serve the build with the development guards on. JSR publishes no `/dev` subpath. A plugin binds
-to the core build it was made against. Take the plugin and the world from the same channel.
+On npm, each plugin also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the six others,
+`@oasys/oecs/editor/dev` and `@oasys/oecs/solid/dev` among them, serve the build with the
+development guards on. JSR publishes no `/dev` subpath. A plugin binds to the core build it was
+made against. Take the plugin and the world from the same channel.
 
 `ecs.snapshots.stateHash()` and `ecs.snapshots.deterministic` stay on every world. They describe the
 world, not the plugin, and the determinism opt-in is still separate: `capture` and `restore`
@@ -166,6 +167,12 @@ proves nothing about a `<For>` re-render.
 the despawn. It locks the disable and the enable, the column grain, and one batch for each update.
 It locks the cell identity across a delete, the `eq` the cell carries, coexistence with observers,
 the singleton reset and the sparse refusal.
+
+### Removed (breaking). `ECS_ERROR.ENTITY_NOT_DISABLED`
+
+The code was declared in 0.4.0 and no path ever threw it. `enable` on a live entity is a no-op by
+contract, so the fault it named cannot occur. A handler that compares against it no longer compiles.
+Delete the branch.
 
 ### Removed (breaking). The signals kernel, its ECS bridge, and the kernel-to-Solid adapter
 

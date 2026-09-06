@@ -7,9 +7,13 @@
  * one test and fail the other, and so a rename shows up as one diff.
  *
  * Type-only exports have no runtime presence and are absent. The explicit
- * export lists in `src/index.ts` and `src/internal.ts` are their review surface.
+ * export list in each entry file is its review surface.
  *
- * Keep both lists sorted. The tests compare against a sorted key list.
+ * Every published entry has a list here: the root, `/internal`, `/primitives`,
+ * `/shared`, `/worker` and one per plugin. A plugin subpath is public API the
+ * same way the root is, so a symbol it gains shows up as a diff in review.
+ *
+ * Keep every list sorted. The tests compare against a sorted key list.
  */
 
 export const ROOT_EXPORTS: readonly string[] = [
@@ -89,3 +93,46 @@ export const INTERNAL_EXPORTS: readonly string[] = [
 	"setComponentDebugName",
 	"storeOnlyHost"
 ];
+
+/** `@oasys/oecs/primitives`, the data structures the engine is built on. */
+export const PRIMITIVES_EXPORTS: readonly string[] = [
+	"BinaryHeap",
+	"BitSet",
+	"GrowableFloat32Array",
+	"GrowableFloat64Array",
+	"GrowableInt16Array",
+	"GrowableInt32Array",
+	"GrowableInt8Array",
+	"GrowableTypedArray",
+	"GrowableUint16Array",
+	"GrowableUint32Array",
+	"GrowableUint8Array",
+	"SparseMap",
+	"SparseSet",
+	"topologicalSort"
+];
+
+/** `@oasys/oecs/shared`, the allocators of the shared and WASM backings. */
+export const SHARED_EXPORTS: readonly string[] = [
+	"DEFAULT_SAB_ALLOCATOR",
+	"SabUnavailableError",
+	"fixedSabAllocator",
+	"growableSabAllocator",
+	"wasmMemoryAllocator"
+];
+
+/** `@oasys/oecs/worker` starts the worker loop on import and exports nothing.
+ * A symbol here would ship in every worker bundle, so the list stays empty. */
+export const WORKER_EXPORTS: readonly string[] = [];
+
+/** One list per plugin, keyed by the plugin name, which is also its subpath
+ * and its emitted file under `dist/plugins`. */
+export const PLUGIN_EXPORTS: Readonly<Record<string, readonly string[]>> = {
+	editor: ["Editor", "TransactionBuilder", "fieldHandle"],
+	events: ["ECSEvents", "events"],
+	observers: ["ObserverRegistry", "observers"],
+	relations: ["ECSRelations", "registerChildOf", "registerIsA", "relations"],
+	snapshots: ["ECSSnapshotsFull", "snapshots"],
+	solid: ["solid"],
+	workers: ["DEFAULT_JOIN_TIMEOUT_MS", "ECSWorkers", "WorkerPool", "workers"]
+};

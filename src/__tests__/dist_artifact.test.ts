@@ -36,7 +36,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { INTERNAL_EXPORTS, ROOT_EXPORTS } from "./public_api_surface";
+import {
+	INTERNAL_EXPORTS,
+	PLUGIN_EXPORTS,
+	PRIMITIVES_EXPORTS,
+	ROOT_EXPORTS,
+	SHARED_EXPORTS,
+	WORKER_EXPORTS
+} from "./public_api_surface";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
@@ -82,12 +89,28 @@ const root = await import(${JSON.stringify(PROD)});
 const internal = await import(${JSON.stringify(join(DIST, "internal.js"))});
 const dev = await import(${JSON.stringify(DEV_BUILD)});
 const { createRequire } = await import("node:module");
-const cjs = createRequire(${JSON.stringify(join(ROOT, "package.json"))})(${JSON.stringify(join(DIST, "index.cjs"))});
+const require = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
+const cjs = require(${JSON.stringify(join(DIST, "index.cjs"))});
+const keys = (m) => Object.keys(m).sort();
+// Every plugin ships three files under one name, and the lock holds all three.
+const plugins = {};
+for (const name of ${JSON.stringify(Object.keys(PLUGIN_EXPORTS))}) {
+	const file = (suffix) => ${JSON.stringify(PLUGINS + "/")} + name + suffix;
+	plugins[name] = {
+		prod: keys(await import(file(".js"))),
+		dev: keys(await import(file(".development.js"))),
+		cjs: keys(require(file(".cjs")))
+	};
+}
 console.log(JSON.stringify({
-	root: Object.keys(root).sort(),
-	internal: Object.keys(internal).sort(),
-	dev: Object.keys(dev).sort(),
-	cjs: Object.keys(cjs).sort()
+	root: keys(root),
+	internal: keys(internal),
+	dev: keys(dev),
+	cjs: keys(cjs),
+	primitives: keys(await import(${JSON.stringify(join(DIST, "primitives.js"))})),
+	shared: keys(await import(${JSON.stringify(join(DIST, "shared.js"))})),
+	worker: keys(await import(${JSON.stringify(join(DIST, "worker.js"))})),
+	plugins
 }));
 `;
 
@@ -342,11 +365,22 @@ describe("the shipped bundle", () => {
 	}, 120_000);
 
 	it("exports the same surface as the sources, on every entry", () => {
-		const keys = probe(SURFACE) as Record<string, string[]>;
+		const keys = probe(SURFACE) as Record<string, string[]> & {
+			plugins: Record<string, Record<"prod" | "dev" | "cjs", string[]>>;
+		};
 		expect(keys.root).toEqual([...ROOT_EXPORTS]);
 		expect(keys.dev).toEqual([...ROOT_EXPORTS]);
 		expect(keys.cjs).toEqual([...ROOT_EXPORTS]);
 		expect(keys.internal).toEqual([...INTERNAL_EXPORTS]);
+		expect(keys.primitives).toEqual([...PRIMITIVES_EXPORTS]);
+		expect(keys.shared).toEqual([...SHARED_EXPORTS]);
+		expect(keys.worker).toEqual([...WORKER_EXPORTS]);
+		expect(Object.keys(keys.plugins).sort()).toEqual(Object.keys(PLUGIN_EXPORTS).sort());
+		for (const [name, list] of Object.entries(PLUGIN_EXPORTS)) {
+			expect(keys.plugins[name].prod, `plugins/${name}.js`).toEqual([...list]);
+			expect(keys.plugins[name].dev, `plugins/${name}.development.js`).toEqual([...list]);
+			expect(keys.plugins[name].cjs, `plugins/${name}.cjs`).toEqual([...list]);
+		}
 	});
 
 	it("keeps the dev guards in the development variant", () => {
