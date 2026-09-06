@@ -473,7 +473,7 @@ export class WorkerPool {
 				if (error !== undefined) {
 					throw new ECSError(
 						ECS_ERROR.PARALLEL_KERNEL_FAILED,
-						`worker ${i} could not load the kernel export '${plan.exportName}': ${error}. Check the module and the export name.`
+						`worker ${i} could not load the kernel export '${plan.exportName}': ${String(error).replace(/\.$/, "")}. Check the module and the export name.`
 					);
 				}
 			}
