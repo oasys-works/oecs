@@ -171,13 +171,13 @@ ecs.memoryPlan.storeBase; // the value the engine resolved
 
 - The heap, shared and allocator backings default it to 0.
 - The WASM backing defaults it to `WASM_STORE_BASE_BYTES`, one page, and **refuses 0**. A compiled
-  module owns the low addresses of its own linear memory, and a safe Zig or Rust build cannot read
+  module owns the low addresses of its own linear memory. A safe Zig or Rust build cannot read
   address 0.
-- It must be an integer and a multiple of the store base alignment, which keeps every column on its
-  element boundary. Anything else throws `INVALID_MEMORY_OPTIONS`.
+- It must be an integer and a multiple of the store base alignment. That alignment keeps every
+  column on its element boundary. Anything else throws `INVALID_MEMORY_OPTIONS`.
 - **The default clears nothing on its own.** A default link places a module's data far above one
   page. Read `__heap_base` from the module with `storeBaseAbove(exports, extraBytes)`, which rounds
-  up to a whole WASM page, or pass the base by hand.
+  up to a whole WASM page. Or pass the base by hand.
 - The base never reaches a digest. A heap world and a module-hosted world with the same history
   agree on `stateHash` and on a snapshot.
 
@@ -211,8 +211,8 @@ It is useful when an error about a limit surprises you.
 ## The limit is absolute
 
 The byte limit is an **absolute limit, and there is no alternative that grows past it**. If you
-exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `entities` count or of the intent
-label the engine resolved, and not in raw bytes.
+exceed it, it throws `STORE_CAP_EXCEEDED`. The message uses the words of your `entities` count, or
+of the intent label the engine resolved. It never uses raw bytes.
 
 > [!WARNING]
 > **A limit that is too small fails at construction, and not later.** The engine reserves the
@@ -249,7 +249,7 @@ label the engine resolved, and not in raw bytes.
 
 ## WASM interoperation and the compute backend
 
-The shared and WASM profile exists so that a WASM simulation can run the bodies of systems directly
+The shared and WASM profile has one purpose. A WASM simulation runs the bodies of systems directly
 against the shared columns. The connection is part of the core. You must supply the WASM module and
 the worker entry point.
 
@@ -274,9 +274,9 @@ type BackendSystemHandle = /* an opaque branded number that the backend makes */
 `ecs.attachBackend(backend)` selects the backend to run the body of a system, in place of its
 TypeScript closure. A system that carries a `backendHandle` on its
 [`SystemConfig`](./systems.md#systemconfig) runs as `backend.run(handle, dt, tick)`. A system with
-no handle is not affected. `run` executes inside the access span of the system, so its declared
-`writes` authorize the shared columns that the backend mutates. There is no backend by default: a plain
-`ECS` is pure TypeScript, and it costs nothing.
+no handle is not affected. `run` executes inside the access span of the system. So its declared
+`writes` authorize the shared columns that the backend mutates. There is no backend by default. A
+plain `ECS` is pure TypeScript, and it costs nothing.
 
 > [!NOTE]
 > There is one backend for each `ECS`. If you attach a second one, it throws

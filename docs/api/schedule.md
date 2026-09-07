@@ -104,12 +104,12 @@ either spelling. So no call that you write today changes.
 
 ### The two faults
 
-`UNKNOWN_PHASE` says the phase is not a phase of this world: a name that no built-in spells, or a
-handle that another world made. `CIRCULAR_PHASE_DEPENDENCY` says one loop's phase order holds a
-cycle, so no run order exists.
+`UNKNOWN_PHASE` says the phase is not a phase of this world. The cause is a name that no built-in
+spells, or a handle that another world made. `CIRCULAR_PHASE_DEPENDENCY` says one loop's phase
+order holds a cycle, so no run order exists.
 
 Both throw in **each** build, and not in a development build alone. A handle from another world
-would otherwise push systems into that world's list, and a production build would then run them
+would otherwise push systems into that world's list. A production build would then run them
 nowhere.
 
 ### A plugin adds a phase
@@ -148,7 +148,7 @@ game.startup();
 game.update(1 / 60); // PRE_UPDATE, then physics, then UPDATE
 ```
 
-A frame trace names the phase by its `name`, so `phase` on a trace event is a `PhaseName` and not a
+A frame trace names the phase by its `name`. So `phase` on a trace event is a `PhaseName` and not a
 `SCHEDULE`. See [traces](./tracing.md).
 
 `src/core/ecs/__tests__/integration/phase.test.ts` locks the order against the built-ins the phase
@@ -157,8 +157,8 @@ names, the identity rule, the three loops and both faults.
 ## The frame loop
 
 **`ecs.startup()`**. Call this one time, after you connect the systems and the observers. It
-prepares the archetypes, runs the `onAdded` hook of each system, runs the three startup phases, and
-clears each event that they emitted. So frame 1 does not see an old startup event.
+prepares the archetypes, and runs the `onAdded` hook of each system. It then runs the three startup
+phases, and clears each event that they emitted. So frame 1 does not see an old startup event.
 
 **`ecs.update(dt)`**. This is one frame. It runs the fixed-update catch-up loop, then
 `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Then it settles. The settle advances the change tick,
@@ -171,7 +171,7 @@ it, because the phase boundaries and `update()` already flush.
 ### How to drive the loop: `FrameStepper`
 
 `update(dt)` is the authoritative "run one frame" primitive. **`FrameStepper`** is an optional
-driver above it, on the host side, so that you do not write the `requestAnimationFrame` loop
+driver above it, on the host side. You then do not write the `requestAnimationFrame` loop
 yourself:
 
 ```ts
@@ -257,9 +257,9 @@ ecs.addSystems(SCHEDULE.FIXED_UPDATE, { system: collide,   set: physics });
 ecs.configureSet(physics, { runIf: notPaused, before: [render] });
 ```
 
-The effective gate of a member is the **and** of its own conditions and the conditions of each set
-that contains it. `configureSet` adds to the configuration, and its order against `addSystems` is
-not important. You can configure the set before you add its members, or after.
+The effective gate of a member is an **and**. It combines its own conditions with the conditions of
+each set that contains it. `configureSet` adds to the configuration, and its order against
+`addSystems` is not important. You can configure the set before you add its members, or after.
 
 > [!NOTE]
 > A set has an identity of **object identity, and not of name**. Two `systemSet("x")` calls give two
@@ -347,8 +347,8 @@ get fixedAlpha(): number;      // accumulator and fixedTimestep, the interpolati
 ```
 
 Each `update(dt)` call adds `dt` to an accumulator. It then runs `FIXED_UPDATE` one time for each
-full `fixedTimestep` in that accumulator: 0 times for a small `dt`, and several times for a large
-`dt`. A fixed system always sees a delta that is equal to `fixedTimestep`, and never the frame
+full `fixedTimestep` in that accumulator. That is 0 times for a small `dt`, and several times for a
+large `dt`. A fixed system always sees a delta that is equal to `fixedTimestep`, and never the frame
 `dt`.
 
 > [!WARNING]

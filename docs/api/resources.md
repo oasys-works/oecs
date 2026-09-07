@@ -7,8 +7,8 @@
 > Version 0.5.0 **removed** the flat `ecs.*` forms of 0.4 and earlier.
 
 A **resource** is a typed global value. There is one value for each `ECS`, and a symbol is its key.
-Use a resource for state that does not belong to an entity: the input state, the camera, the game
-clock, configuration flags, or the seed of a random number generator.
+Use a resource for state that does not belong to an entity. Take the input state, the camera, or
+the game clock. Take configuration flags, or the seed of a random number generator.
 
 ```ts
 import { resourceKey } from "@oasys/oecs";
@@ -32,8 +32,7 @@ type ResourceKey<T> = symbol & { readonly [__resourceValue]: (value: T) => T };
 ```
 
 The phantom slot has a **function type on purpose**. That type makes `T` invariant. A key
-authorizes a read and a write, so you must not be able to assign a key with one `T` to a key with a
-different `T`.
+authorizes a read and a write. So a key with one `T` must not assign to a key with a different `T`.
 
 `resourceKey` makes a unique symbol that carries the value type `T`. The `name` is for diagnostics
 only. The identity of the symbol gives uniqueness, and the string does not. So two
@@ -64,7 +63,7 @@ hasResource<T>(key: ResourceKey<T>): boolean;
 The two surfaces follow two conventions on purpose. The **flat `ctx`** surface puts the noun in
 each accessor name: `getResource`, `setResource`, `removeResource`, and `hasResource`. This agrees
 with `getField`, `setField`, and `hasComponent`. The **grouped `ecs.resources`** facade removes the
-noun and uses `get`, `set`, `remove`, and `has`, because the receiver already gives the noun.
+noun and uses `get`, `set`, `remove`, and `has`. The receiver already gives the noun.
 
 On `ctx`, the type of the key parameter is also limited to the declared access of the system.
 `ctx.getResource` accepts only a key in `resourceReads`. `ctx.setResource` and
@@ -106,7 +105,7 @@ ecs.registerSystem({
 
 ## See also
 
-- [events](./events.md), the other channel for data that is not on an entity (it is for one frame,
-  and it is not persistent)
+- [events](./events.md), the other channel for data that is not on an entity. It is for one frame,
+  and it is not persistent
 - [schedule](./schedule.md), `runIfResourceEq` gates a system on the value of a resource
 - [determinism](./determinism.md), why the state hash does not include resources

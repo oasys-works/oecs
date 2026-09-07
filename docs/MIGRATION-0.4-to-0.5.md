@@ -20,8 +20,8 @@ mechanical rules:
 5. **Small renames, and the division of the internal parts**, `query.count()` becomes the
    `query.entityCount` getter. `WorldRestoreError` becomes `ECSRestoreError`.
    `WORLD_SNAPSHOT_VERSION` becomes `ECS_SNAPSHOT_VERSION`. The `export *` at the root became a
-   selected list, and the internal parts (`HostCommandDispatcher`, the ring codecs,
-   `resolveECSMemory`, and others) moved to `@oasys/oecs/internal` ([the small renames](#5-small-renames)).
+   selected list. The internal parts moved to `@oasys/oecs/internal`: `HostCommandDispatcher`, the
+   ring codecs, `resolveECSMemory`, and others ([the small renames](#5-small-renames)).
 
 Everything else did not change. That includes:
 
@@ -70,8 +70,8 @@ ecs.despawn(e);
 ecs.isAlive(e);   // false, immediately
 ```
 
-If your 0.4 code depended on the deferred period, and destroyed an entity and then continued to
-read it until the flush, that code now reads a dead entity and throws `ENTITY_NOT_ALIVE` in
+Your 0.4 code may have depended on the deferred period. It destroyed an entity, then read it until
+the flush. That code now reads a dead entity and throws `ENTITY_NOT_ALIVE` in
 development. Move the reads before the `despawn` call, or use `ctx.commands.despawn` from inside a
 system, which is explicitly deferred ([`ctx.commands`](#2-inside-a-system-ctxcommands-is-the-only-deferred-surface)).
 
@@ -84,7 +84,7 @@ two updates, is the correct use.
 
 The change to immediate also changes what an observer sees. An observer runs only for a
 **deferred** operation. So a `despawn` call on the host no longer reaches `onRemove`. In 0.4, the
-deferred destroy on the host drained through the flush, and it sent `onRemove` as each other remove
+deferred destroy on the host drained through the flush. It sent `onRemove` as each other remove
 did. Anything that depends on `onRemove` does not see an entity that the host destroyed. Where that is important, destroy the entity through
 `ctx.commands.despawn` or through the host command path.
 
@@ -137,17 +137,17 @@ introduced, keeps its verbs: `spawn`, `add`, `remove`, `despawn`, `disable`, and
 is deferred to the flush at the end of the phase. `add` gains the explicit shape that demands all
 the values (`ctx.commands.add(e, Pos, { x: 0, y: 0 })`), which the removed `ctx.addComponent`
 carried. So the attach path that the compiler checks survives the move. The end state that 0.4
-declared is now real: **a verb on the host is immediate, and a verb on `ctx.commands` is deferred**,
-and there is no third option.
+declared is now real. **A verb on the host is immediate, and a verb on `ctx.commands` is deferred.**
+There is no third option.
 
 ---
 
 ## 3. Grouped facades, `ecs.relations`, `ecs.events`, `ecs.resources`, and `ecs.snapshots`
 
-29 flat methods moved off the `ECS` class, onto four narrow facades. Each one maps one to one, and a
-small number change their name in the move, which the right column shows. The high-frequency path,
-which is the component operations, the queries, spawn and despawn, and the sparse operations, stays
-flat by design. The **names on the system side, on `ctx.*`, did not change** (`ctx.emit`,
+29 flat methods moved off the `ECS` class, onto four narrow facades. Each one maps one to one. A
+small number change their name in the move, which the right column shows. The high-frequency path
+stays flat by design. That path is the component operations, the queries, spawn and despawn, and
+the sparse operations. The **names on the system side, on `ctx.*`, did not change** (`ctx.emit`,
 `ctx.read`, `ctx.resource`, `ctx.setResource`, `ctx.addRelation`, `ctx.sourcesOf`, and others).
 
 ### Relations (14)
@@ -294,11 +294,11 @@ workarounds. Use them as they help you:
   `(e, def, values)` form still demands each value, so an absent field there is still a compile
   error.
 - **Total probes and `tryGetField`**. `hasComponent`, `hasSparse`, and `relations.has` now give
-  `false` for an entity that is not alive, and they do not throw in development. A "has" probe is
+  `false` for an entity that is not alive. They do not throw in development. A "has" probe is
   exactly the call that you make to avoid a dead entity. `ecs.tryGetField(e, def, field)` gives
   `undefined` for an entity that is not alive, or for a component that is absent.
 - **`query.firstEntity()` and `query.singleEntity()`**. These read one entity, such as the player
-  or the camera, without a `forEach` call and a capture that you write. `singleEntity` throws
+  or the camera. They need no `forEach` call, and no capture that you write. `singleEntity` throws
   `QUERY_NOT_SINGLETON` in development when the number of matches is 0 or more than 1.
 - **`ecs.refRead(def, e)` on the host**, a read-only view of a full component, equal to
   `ctx.refRead`.
@@ -311,8 +311,8 @@ workarounds. Use them as they help you:
 - **Debug names for a component**. `registerComponent(schema, { name: "Pos" })` labels a
   development error `'Pos' (component 5)`, so that you do not count the order of registration.
 - **Compile-time types from the declarations**. The config form of `registerSystem` now reads
-  `reads` and `writes` as literal types, and it limits `ctx` to exactly the surface that you
-  declared. So access that you did not declare is a *compile* error, and the development-mode
+  `reads` and `writes` as literal types. It limits `ctx` to exactly the surface that you
+  declared. So access that you did not declare is a *compile* error. The development-mode
   run-time check remains as the second line of defence. The type of a query column comes from the
   terms of the query. A relation handle carries its cardinality (`RelationDef<"exclusive">` or
   `RelationDef<"multi">`). A resource key and an event key are invariant. Code that was already

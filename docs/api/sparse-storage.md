@@ -1,12 +1,15 @@
 # Sparse storage
 
-A **sparse component** stores data *outside* the archetype identity, in **id-indexed** columns: one
-typed array for each field, where the value for an entity sits at the entity's index. An add or a
-remove causes **no archetype transition**: the entity does not move, the engine copies no row, and
-it uses no bit of the dense identity. A read by id is **one load**, with no archetype and no row to
-find first. So sparse storage is the correct place for data that is **rarely present**, that
-**changes constantly**, that a system **looks up by id** more than it sweeps, or that would exceed
-the dense budget of 128 components.
+A **sparse component** stores data *outside* the archetype identity, in **id-indexed** columns. Each
+field is one typed array. The value for an entity sits at the entity's index. An add or a
+remove causes **no archetype transition**. The entity does not move. The engine copies no row. It
+uses no bit of the dense identity. A read by id is **one load**, with no archetype and no row to
+find first. So sparse storage is the correct place for four kinds of data:
+
+- data that is **rarely present**
+- data that **changes constantly**
+- data that a system **looks up by id** more than it sweeps
+- data that would exceed the dense budget of 128 components
 
 ```ts
 const Cooldown = ecs.registerSparseComponent({ ready: "u32" });
@@ -19,8 +22,8 @@ ecs.removeSparse(e, Cooldown);                // immediate
 
 ## Why sparse, the compromise
 
-A dense component keeps its values **packed** by archetype, which is what makes a column loop run
-at the speed of the raw arrays. The same packing makes a read by id expensive: the engine must find
+A dense component keeps its values **packed** by archetype. That packing makes a column loop run
+at the speed of the raw arrays. The same packing makes a read by id expensive. The engine must find
 the archetype and the row of the entity first, through several dependent loads. A sparse component
 keeps its values **addressable**. The value for an entity is at the entity's index, so a read by id
 is one load. A cursor over a sparse component is the fastest read by id that the engine has.
@@ -28,10 +31,10 @@ The price is on the other side. A walk over a sparse component reads through the
 slower than a packed column. Its memory is proportional to the highest entity index that ever held
 it, and not to the number of members.
 
-Each dense archetype transition, which is an add or a remove of a usual component, also copies the
+A dense archetype transition is an add or a remove of a usual component. Each one also copies the
 **full** payload row of the entity into the new archetype. So a component in the identity that
 changes frequently costs more as the data of the entity becomes wider. A sparse add or remove is a
-bit in a sparse set and a write at the index, and its cost is the same for each payload width. So:
+bit in a sparse set and a write at the index. Its cost is the same for each payload width. So:
 
 | Use **sparse** for | Use **dense** for |
 | --- | --- |
@@ -42,7 +45,7 @@ bit in a sparse set and a write at the index, and its cost is the same for each 
 | a way past the limit of 128 dense components | not applicable |
 
 A component chooses one side at registration. The choice of one component does not change the
-cost of the others: a dense column loop never touches a sparse store, and a sparse read never
+cost of the others. A dense column loop never touches a sparse store. A sparse read never
 touches an archetype.
 
 The other cost: sparse membership is not in the archetype mask. So a plain dense query does **not
@@ -51,10 +54,10 @@ see it**, and it has no column span to loop over.
 ## Memory
 
 Each field of a sparse component is one typed array of the field's declared type. The arrays start
-small and double to fit the highest member index. So a sparse component that one entity holds,
-near the end of a large world, costs as much as one that every entity holds. That is the cost of
-the one-load read, and an id-indexed engine pays it for every component. The columns live on the
-JavaScript heap, outside the arena of the dense columns, so they do not count against
+small and double to fit the highest member index. One entity near the end of a large world can hold
+a sparse component. So that component costs as much as one that every entity holds. That is the cost
+of the one-load read, and an id-indexed engine pays it for every component. The columns live on the
+JavaScript heap, outside the arena of the dense columns. So they do not count against
 `maxBytes`.
 
 ## Registration
@@ -122,15 +125,15 @@ for (let i = 0; i < hits.length; i++) {
 The same two functions are on `ctx`, where `sparseCursor` needs the component in `sparseWrites`
 and `sparseCursorRead` needs it in `sparseReads`. Because the columns are id-indexed, `at` writes
 one field and a field access is one load. A dense cursor must find the archetype and the row on
-each `at`. A sparse cursor does not. So a sparse cursor is the read by id to use when a system
-touches many entities from a list of ids.
+each `at`. A sparse cursor does not. So a sparse cursor is the read by id to use. Reach for it when
+a system touches many entities from a list of ids.
 
 A sparse component has no archetype, so it has no archetype-level change tick, no structural
-observer, and no `changed()` term. It has the row grain: `ecs.trackRows(def)` keeps one change tick
-for each entity index, `setSparseField` and `at` on the mutable cursor stamp it, and an add zeroes
-it. Read it with `ctx.sparseChanged(def, entityId)`, which is true for the run after a write, or
-through an [`onSet` observer](./observers.md) with entity granularity, which a sparse component
-takes as its one observer shape.
+observer, and no `changed()` term. It has the row grain. `ecs.trackRows(def)` keeps one change tick
+for each entity index. `setSparseField` and `at` on the mutable cursor stamp it. An add zeroes
+it. Read it with `ctx.sparseChanged(def, entityId)`. That call is true for the run after a write.
+Read it through an [`onSet` observer](./observers.md) with entity granularity as well. A sparse
+component takes that observer as its one observer shape.
 
 ```ts
 ecs.trackRows(Cooldown);
@@ -157,8 +160,8 @@ ecs.observe(Cooldown, {
 > production it does not test, and a read then gives whatever the column holds at that index. Test
 > with `hasSparse` first when the component can be absent.
 
-The field names `__cols` and `__row` are reserved for the state of a ref or cursor, and
-registration refuses them on a dense or a sparse component.
+The field names `__cols` and `__row` are reserved for the state of a ref or cursor. Registration
+refuses them on a dense or a sparse component.
 
 ## How to query sparse membership
 
@@ -197,8 +200,14 @@ Both need the snapshots plugin, from `ECS.create({ plugins: [snapshots()] })`, w
 imported from `@oasys/oecs/snapshots`. Both also need `{ deterministic: true }`, or they throw
 `DETERMINISM_DISABLED`. `restoreSparse` requires
 that you already registered the sparse components in the **same order**. It throws
-`SparseRestoreError` for a difference in the shape, in the identity of a field, in the bounds of an
-index, or in the bytes at the end. The full-world functions
+`SparseRestoreError` for a difference in one of these:
+
+- the shape
+- the identity of a field
+- the bounds of an index
+- the bytes at the end
+
+The full-world functions
 [`ecs.snapshots.capture()` and `restore()`](./determinism.md) include the sparse section
 automatically.
 

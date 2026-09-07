@@ -10,10 +10,10 @@
 >
 > A world built with `new ECS()` has none of it, and reaching for it is a compile error.
 
-An **observer** runs a callback when a component is added, removed, or changed, or when its entity
-is enabled or disabled. It is the push equivalent of a [`changed()`](./change-detection.md) query,
-which you must poll. You register the observer one time, and the ECS calls you at the correct
-moment.
+An **observer** runs a callback when a component is added, removed, or changed. It also runs when
+its entity is enabled or disabled. It is the push equivalent of a
+[`changed()`](./change-detection.md) query, which you must poll. You register the observer one
+time, and the ECS calls you at the correct moment.
 
 ```ts
 const handle = ecs.observe(Health, {
@@ -163,7 +163,7 @@ When the order is important, for example for [deterministic](./determinism.md) r
 observers run in a stable order:
 
 - **Across observers:** the order is topological on the access. A writer of `X` runs before a
-  reader of `X`, and the engine derives this from the declared `access` of each observer. A tie
+  reader of `X`. The engine derives this from the declared `access` of each observer. A tie
   breaks first on the component id, and then on the registration id. This is a "glitch-free" order.
 - **Inside one observer:** the order is ascending `EntityID`.
 - **Inside one structural round:** the order is remove, then add, then disable, then enable. The

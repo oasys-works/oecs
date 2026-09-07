@@ -21,11 +21,11 @@
 > the flat `ecs.*` forms of 0.4 and earlier.
 
 A **deterministic** `ECS` guarantees that the same sequence of operations gives the same state,
-**bit for bit**. This is true across storage types (heap or `SharedArrayBuffer`), across processes
-on the same architecture, and after a snapshot and a restore. That guarantee is the base for
-lockstep multiplayer, replay, deterministic debugging, and save and load.
+**bit for bit**. This is true across storage types, heap or `SharedArrayBuffer`. It holds across
+processes on the same architecture, and after a snapshot and a restore. That guarantee is the base
+for lockstep multiplayer, replay, deterministic debugging, and save and load.
 
-Determinism is **optional**, because it has a cost: the engine keeps a canonical order, and the
+Determinism is **optional**, because it has a cost. The engine keeps a canonical order, and the
 rule that permits integer columns only applies. A plain `ECS` keeps no canonical order, and it does
 not expose the hash and snapshot surface.
 
@@ -64,9 +64,9 @@ This is an FNV-1a-32 digest. The engine folds it over
 `(archetype id, live row count, enabled count, live column bytes)` for each archetype in id order.
 It then folds the sparse stores, in a canonical order of the entity index. It then folds the
 forward target sets of the multi relations, in a canonical order. The digest is **independent of
-the storage type**: a heap `ECS` and a `SharedArrayBuffer` `ECS` with the same history give the same
-number. Its cost is proportional to the number of live entities and to the sparse membership, and
-not to the capacity of the buffer.
+the storage type**. A heap `ECS` and a `SharedArrayBuffer` `ECS` with the same history give the same
+number. Its cost is proportional to the number of live entities and to the sparse membership. It is
+not proportional to the capacity of the buffer.
 
 > [!IMPORTANT]
 > Compare two hashes **at a tick boundary only**, which is between two `update()` calls, or at a
@@ -89,8 +89,8 @@ A snapshot captures three sections into one `Uint8Array` that is complete in its
 
 - **dense**, the column bytes and the entity index
 - **sparse**, the sparse components and the relations, in a canonical order
-- **host bookkeeping**, the tick, the free list of recycled entities *in live order*, the count of
-  live entities, and the partition counts of each archetype.
+- **host bookkeeping**, the tick and the free list of recycled entities *in live order*. It also
+  holds the count of live entities and the partition counts of each archetype.
 
 Take a snapshot at a tick boundary.
 
@@ -112,9 +112,9 @@ checks:
 - the bounds of each index.
 
 Only then does it write. Each difference throws, and it **leaves the live
-`ECS` unchanged**. The error is `ECSRestoreError` for the combined frame and the host sections,
-`StoreRestoreError` on the side of the dense column store, and `SparseRestoreError` on the sparse
-side.
+`ECS` unchanged**. Each section has its own error. `ECSRestoreError` covers the combined frame and
+the host sections. `StoreRestoreError` covers the side of the dense column store.
+`SparseRestoreError` covers the sparse side.
 
 > [!WARNING]
 > The conditions for a restore. The target `ECS` must:
@@ -166,8 +166,8 @@ You must avoid the other sources of divergence yourself:
 
 ## See also
 
-- [memory](./memory.md), how to size two instances the same for a restore, and the shared and heap
-  storage that agree on the hash
+- [memory](./memory.md), how to size two instances the same for a restore. It also covers the
+  shared and heap storage that agree on the hash
 - [the host write path](./host-write-seam.md), the command log that record and replay is built on
 - [components](./components.md), the requirement for integer columns
 - [traces](./tracing.md), `phaseBoundary`, to reduce a divergence to one phase

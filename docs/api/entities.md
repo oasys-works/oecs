@@ -48,7 +48,7 @@ Deferred work applies at the next **phase boundary** flush, or when you call `ec
 yourself. See [schedule](./schedule.md).
 
 The signatures of the attach and detach surface on the host are in
-[components → attach and detach](./components.md#attach--detach), together with `getField` and
+[components → attach and detach](./components.md#attach--detach). That page also has `getField` and
 `tryGetField`. They are `addComponent`, `removeComponent`, the single-transition `addComponents`
 and `removeComponents`, and the full-archetype `batchAddComponent` and `batchRemoveComponent`.
 
@@ -107,7 +107,8 @@ isAlive(entityId: EntityID): boolean;
 with each other mutation on the host facade. In a system, use `ctx.commands.despawn`, which defers
 to the flush at the end of the phase. A call to `ecs.despawn` in a system body throws in
 development. `isAlive` is a check of the **generation**. It reads as not alive for a stale handle
-to a recycled slot, for a retired slot, and for an id that is out of range.
+to a recycled slot. It also reads as not alive for a retired slot, and for an id that is out of
+range.
 
 <a id="enable--disable"></a>
 
@@ -145,8 +146,8 @@ with the slot.
 
 You rarely use the codec. It is public for the snapshot and replication paths, which decode handles
 from bytes that they do not fully trust. The package root exports `getEntityIndex`. The remainder
-of the codec (`createEntityId`, `getEntityGeneration`, and the bounds constants) is at
-**`@oasys/oecs/internal`**, which is unstable and has no semver guarantees.
+of the codec is at **`@oasys/oecs/internal`**, which is unstable and has no semver guarantees. That
+remainder is `createEntityId`, `getEntityGeneration`, and the bounds constants.
 
 ```ts
 getEntityIndex(id: EntityID): number;                     // low 20 bits (dense slot)

@@ -75,7 +75,7 @@ type EventSchema = Readonly<Record<string, number>>;       // the default field 
 ```
 
 A `SignalKey` is a separate kind of event with no field. The type system stops you if you give a
-payload to a signal, or if you read the columns that a signal does not have.
+payload to a signal. It also stops you if you read the columns that a signal does not have.
 
 > [!TIP]
 > Declare the schema as a **type literal or an `interface`**. Both operate correctly. The

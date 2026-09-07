@@ -44,7 +44,7 @@ type ObserverOp   = "add" | "remove" | "set" | "enable" | "disable";
 
 Each `phase` above is a **`PhaseName`**, which is `SCHEDULE | (string & {})`. A built-in spells its
 `SCHEDULE` member. A phase from [`ecs.addPhase`](./schedule.md#adding-a-phase) spells the name it
-was given, so the value set is open and a `switch` on it needs a default arm.
+was given. So the value set is open, and a `switch` on it needs a default arm.
 
 `FrameTraceRecorder` is the sink that oecs supplies. It captures each frame as a flat `FrameTrace`
 that you can serialize to JSON, with string names and numeric ids. So you can send it to a

@@ -13,7 +13,7 @@ this tool only for local work. It is not a part of the package.
 Both sides are the artifacts of the package. `ref.mjs` starts `scripts/build.mjs`
 for each side, and thus each side is the file that npm gives to a user. The
 worktree of the ref goes into `bench/.out/`, and not into the temporary directory
-of the system, because the build then finds `node_modules` in a parent directory.
+of the system. The build then finds `node_modules` in a parent directory.
 `../dist.mjs` gives the full reason.
 
 Give `bundles.mjs` the entry file of a build, and not a single-file bundle from
@@ -24,7 +24,7 @@ side must keep its own directory:
 node bench/ab/bundles.mjs old/dist/index.js new/dist/index.js
 ```
 
-The cases come from `../suite.mjs`. `../run.mjs` uses the same cases, but you must
+The cases come from `../suite.mjs`. `../run.mjs` uses the same cases. But you must
 not compare the `ns` column of `run.mjs` with the `ns` column of this tool. There
 are two reasons, and each one is sufficient:
 
@@ -82,16 +82,16 @@ the results of those changes.
   sides one after the other. Thus the ratio of a round is not sensitive to slow
   changes. A median then removes the round that had a garbage collection in the
   timed part. But the alternation of the sequence gives no protection by itself. A
-  position bias, a difference between the first measurement of a round and the
-  second, multiplies the ratios of one order and divides the ratios of the other.
-  Therefore the ratios make two groups, and a median of all the rounds together
-  falls in one group and keeps the full bias. The tool takes a median in each
+  position bias is a difference between the first measurement of a round and the
+  second. It multiplies the ratios of one order, and it divides the ratios of the
+  other. Therefore the ratios make two groups. A median of all the rounds together
+  falls in one group, and keeps the full bias. The tool takes a median in each
   order, and it then multiplies the two medians and takes the square root. The bias
   cancels. For the same reason the number of the rounds must be even. The default
   is 12, and the tool gives a warning for an odd number.
 - **The columns have a fixed capacity.** The store makes a column larger during a
   timed operation, and the cost of this operation is not stable. These cases gave
-  a very large difference in a null comparison, and that difference was the
+  a very large difference in a null comparison. That difference was the
   largest source of noise in the tool. `suite.mjs` sets
   `columnCapacity`, and the store makes the columns larger during the setup. The
   setup is not part of the timed operation.

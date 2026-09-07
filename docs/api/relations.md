@@ -55,7 +55,7 @@ type RelationOptions =
 // onDeleteTarget: "delete" | "clear" | "orphan", the cleanup policy, and the default is "orphan"
 ```
 
-A relation is **exclusive** by default: there is one target for each source, and a new `add`
+A relation is **exclusive** by default. There is one target for each source, and a new `add`
 **replaces** the old target. Give `{ multi: true }` for a *set* of targets for each source.
 
 > [!WARNING]
@@ -92,8 +92,8 @@ sourcesOfAny(tgt): readonly (readonly [RelationDef, EntityID])[];  // each (rela
   `ecs.relations.register` puts the cardinality into the type of the handle
   (`RelationDef<"exclusive">` or `RelationDef<"multi">`). So `targetOf(src, aMultiRelation)` is a
   **compile error**. The development-mode throw `RELATION_MODE_MISMATCH` remains as the alternative
-  protection for a relation that you register dynamically, because its handle carries the
-  `RelationDef` union with no cardinality. For a multi relation, use `targetsOf`.
+  protection for a relation that you register dynamically. Its handle carries the `RelationDef`
+  union with no cardinality. For a multi relation, use `targetsOf`.
 - `sourcesOf` is the primary reverse query: "which entities point at me?".
 
 ## Query terms for relations
@@ -127,11 +127,11 @@ bossQuery.forEachRelatedTo(boss, (attacker) => { /* … */ });
 >
 > These checks apply *inside a system* only. The same query from host code does not do them.
 
-`hierarchy(relation, maxDepth?)` puts the matched set in depth order over an **exclusive** relation:
-the roots first, and each parent before its children. It can also remove each entity deeper than
-`maxDepth` (`HIERARCHY_UNBOUNDED` means no limit). Apart from that optional depth limit, it does
-not require an entity to carry the relation. An entity with no parent in that relation is a root at
-depth 0, and it is still part of the result. Iterate with `forEachEntity`.
+`hierarchy(relation, maxDepth?)` puts the matched set in depth order over an **exclusive** relation.
+It puts the roots first, and each parent before its children. It can also remove each entity deeper
+than `maxDepth` (`HIERARCHY_UNBOUNDED` means no limit). Apart from that optional depth limit, it
+does not require an entity to carry the relation. An entity with no parent in that relation is a
+root at depth 0. It is still part of the result. Iterate with `forEachEntity`.
 
 ## Traversal helpers
 

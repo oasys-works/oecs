@@ -39,7 +39,7 @@ which mechanism fires in each.
 
 **`run.mjs` measures a bundle of `src/`, and therefore its values are not the values
 of the released package.** The guards are in the code that it measures. Do not
-compare a value from `run.mjs` with a value from `ab/`, and do not put a value from
+compare a value from `run.mjs` with a value from `ab/`. Do not put a value from
 `run.mjs` in a claim about the package. Use `run.mjs` to find a large change, and
 then use `ab/` for the result.
 
@@ -94,8 +94,8 @@ pnpm exec vitest run --config bench/net-oracle/vitest.config.ts
 ```
 
 Use the same filter for a calibration and for the comparison that follows it. Use a
-number of rounds that is a multiple of the number of entries in `vs/`, which is ten,
-and an even number of rounds for `ab/`. Both tools give a warning if you do not.
+number of rounds that is a multiple of the number of entries in `vs/`, which is ten.
+Use an even number of rounds for `ab/`. Both tools give a warning if you do not.
 
 Add `--dev` to `node bench/run.mjs` to give the guards permission to run. Do not
 compare a run that has `--dev` with a run that does not. The guards do work, and
@@ -126,7 +126,7 @@ delete a `.out/` directory at any time, because the tools make the files again.
 3. Do not make a claim about a difference that is smaller than the noise floor.
 4. Read the spread of each row. A large spread shows that the rounds do not agree.
    **One row can be much noisier than the summary number.** `ab/ref.mjs --null`
-   reports the largest |Δ| and the widest middle half separately, and the second
+   reports the largest |Δ| and the widest middle half separately. The second
    number is often many times the first. A delta on one row must clear that row's own
    middle half, and not only the summary.
 5. Look at the cases with a fresh world in the setup. If a timed loop makes the store

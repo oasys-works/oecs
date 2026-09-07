@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - 2026-09-06
+## [0.6.0] - 2026-09-07
 
 ### Changed (breaking). One vocabulary for the query connectives
 
@@ -26,8 +26,8 @@ The connectives are `and`, `not` and `or`, one word each, everywhere they appear
 | `anyOf(...conds)`, the run condition | `runIfAny(...conds)` |
 
 `without`, `anyOf` and the four `with*` term verbs spelled the same three ideas in a second
-vocabulary. A sparse term and a relation term keep their own verbs, because a sparse id and a
-relation id are both plain numbers at run time and no test tells them apart, so one `and` cannot
+vocabulary. A sparse term and a relation term keep their own verbs. A sparse id and a relation id
+are both plain numbers at run time. No test tells them apart, so one `and` cannot
 route them. Each now puts the connective word first.
 
 The run condition combinators moved into the `runIf` family that `runIfAnyMatch` and
@@ -43,7 +43,7 @@ import { and, or, not } from "@oasys/oecs";
 const q = ecs.query(Tag).where(or(and(Pos, Vel), Frozen));
 ```
 
-Each combinator takes a component definition as a leaf and takes another expression as a node, and
+Each combinator takes a component definition as a leaf, and another expression as a node. It
 returns an `ArchetypeTerm`, which is `{ name, matches }`. A plugin supplies its own term on the
 same footing. The three words are functionally complete over archetype membership, so there is no
 fourth connective. An expression judges the dense component mask alone. Sparse membership and
@@ -53,7 +53,7 @@ The term runs one time per archetype, per query, at the rebuild the store's dirt
 `forEach`, `forEachChunk` and `forEachEntity` walk the list the rebuild produced.
 
 **Added. `ECS_ERROR.QUERY_TERM_DENSE_PATH`.** `archetypeCount`, `archetypes` and `excludeWords`
-answer from the unfiltered archetype list, so a query that carries an archetype term refuses all
+answer from the unfiltered archetype list. So a query that carries an archetype term refuses all
 three in a development build. The refusal used to borrow `SPARSE_QUERY_DENSE_PATH`, which named
 the wrong fault.
 
@@ -74,8 +74,8 @@ world.relations.register();
 ```
 
 `ECS.create` returns the world intersected with the facades its plugins contribute. A world that
-did not install a plugin has no member to reach for, so `ecs.relations` on a bare world is a
-compile error and not a fault at run time. `new ECS()` still builds a world, and that world holds
+did not install a plugin has no member to reach for. So `ecs.relations` on a bare world is a
+compile error, and not a fault at run time. `new ECS()` still builds a world, and that world holds
 none of the four.
 
 The reason is that a class method cannot be removed by a bundler. While `ECS` declared `relations`
@@ -133,8 +133,8 @@ const ChildOf = registerChildOf(world);
 
 `BuiltinRelationOptions` moved with them. Each function calls
 `world.relations.register`, so it needs the plugin, and a bare world cannot call it. Exporting
-them from the root also pulled the relation code into every bundle, which is the thing the plugin
-split set out to stop.
+them from the root also pulled the relation code into every bundle. The plugin split set out to
+stop that.
 
 ### Added. A change feed more than one plugin reads, and a richer plugin host
 
@@ -175,7 +175,7 @@ inside a phase the application also writes to.
 delta time the phase receives. `before` and `after` order the new phase against the other phases of
 the same loop, built-in or added. A target in another loop expands to nothing. A phase that names
 no neighbour lands at the tail of its loop. Each loop's phases sort with Kahn's algorithm, and
-declaration order breaks a tie, the rule the systems inside a phase already follow. The order
+declaration order breaks a tie. The systems inside a phase already follow that rule. The order
 resolves at `addPhase`.
 
 A phase has an identity of object identity, and not of name, the rule `systemSet` follows. Two
@@ -188,7 +188,7 @@ spelling, so no call that you write today changes.
 `@oasys/oecs`. Two error categories are new. `ECS_ERROR.UNKNOWN_PHASE` names a phase this world
 does not hold: a name no built-in spells, or a handle another world made.
 `ECS_ERROR.CIRCULAR_PHASE_DEPENDENCY` names a phase order with a cycle. Both throw in each build.
-A handle from another world would otherwise push systems into that world's list, and a production
+A handle from another world would otherwise push systems into that world's list. A production
 build would then run them nowhere.
 
 A plugin adds a phase through `host.world.addPhase`.
@@ -210,7 +210,7 @@ arm. A consumer that assigns `event.phase` to a `SCHEDULE` variable no longer co
 Each loop holds its phases as one sorted array, resolved at `addPhase`. Each phase holds its own
 sorted plan as a field. The drive loop walks the array and reads the field. It used to key a map by
 the phase string, once for each phase, in each frame. A schedule of short system bodies gets
-faster, which is the case where the scheduler's own work is most of the frame. `bench/` holds the
+faster. That is the case where the scheduler's own work is most of the frame. `bench/` holds the
 comparison.
 
 ### Changed (breaking for a plugin author). Every host hook point names what it hooks
@@ -223,7 +223,7 @@ comparison.
   The observers plugin takes it, where it used to hand the world a registry.
 - `onDispose(fn)` runs when the world goes away. A plugin ends a thread, a timer or a socket there.
 - `memory` names where the world's bytes are: `backing`, `backingSource` and `storeBase`.
-- `installRoute(planner)` claims the body of the systems a plugin routes, and gives back the one
+- `installRoute(planner)` claims the body of the systems a plugin routes. It gives back the one
   call that turns the route on and off. A world holds one route, so a second install throws
   `PLUGIN_ALREADY_INSTALLED`.
 
@@ -233,24 +233,24 @@ The renames that go with it: `WorkerHooks` is `SystemRoutePlanner`, `WorkerWorld
 these, `PluginHost` alone was ever exported, so the published break reaches a plugin author and
 nobody else. An application that installs plugins sees nothing.
 
-Two rules changed with the rename. The world asks the planner about every system it registers, and
-a planner answers `undefined` for one it does not claim. The old hook was asked only about a system
-carrying a `parallel` config, so a plugin now validates its own config for every candidate.
+Two rules changed with the rename. The world asks the planner about every system it registers.
+A planner answers `undefined` for one it does not claim. The old hook saw only a system
+carrying a `parallel` config. So a plugin now validates its own config for every candidate.
 `noteScan` moved onto `ChangeFeed`, where a consumer of the feed reaches it.
 
 The dispatch path is unchanged by construction. Registration is keyed and cold, and the world
 caches what it resolved into the field the dispatch already read. The emitted production dispatch
 loop is byte-identical once the rename is undone.
 
-`src/core/ecs/__tests__/integration/third_party_plugin.test.ts` writes a route outside the core,
-claims one system body, runs a dispose hook and holds the world to the second-route refusal. See
+`src/core/ecs/__tests__/integration/third_party_plugin.test.ts` writes a route outside the core.
+It claims one system body, runs a dispose hook, and holds the world to the second-route refusal. See
 [plugins](docs/api/plugins.md).
 
 ### Removed (breaking for a plugin author). `installObservers` and `installWorkers`
 
 Both were named slots on `PluginHost`, one for each first-party plugin. The core named two plugins
 that way, and every other plugin went through the generic path. The generic hook points above
-replace them, and a plugin outside this package now reaches the ground the first parties reach.
+replace them. A plugin outside this package now reaches the ground the first parties reach.
 
 The stated reason for the two slots was hot-path lookup cost. It holds for one read alone, the
 system dispatch route, and that read stays one typed slot. Every other read behind the two slots is
@@ -265,7 +265,7 @@ the one path from ECS state into a UI.
 
 `ecs.solid` has three entry points, and each view carries `dispose()`. `component(def, project)`
 projects one dense component, and `cell(id)` is that row's value as one Solid signal. The first call
-for an id makes the signal and every later call returns the same accessor, so bind it once for each
+for an id makes the signal, and every later call returns the same accessor. So bind it once for each
 row. A `keys()` signal beside it drives a keyed `<For>`. `fields(def, fields)` is sugar that
 publishes a fixed field list as a record, with an `eq` that compares those fields.
 `singleton(def, eid, fields)` publishes one entity's fields into a keyless Solid store, where a fixed
@@ -275,7 +275,7 @@ signal's `equals`, and it defaults to Solid's `===`. `seedExisting` publishes th
 members at creation, and defaults to true.
 
 The first design published into a Solid store keyed by entity id. `bench/foundations/p23-solid.mjs`
-measured that store's publish above the publish that ships, at every density, so a row became a
+measured that store's publish above the publish that ships, at every density. So a row became a
 signal before this release.
 
 Everything publishes at the settle point, the tail of `update()`. A structural event arrives mid-tick
@@ -296,20 +296,20 @@ alone. A projection must not return a function, which a Solid setter reads as an
 kept for the life of the view.
 
 Measured against the path it replaces. `bench/foundations/p23-solid.mjs` times a whole tick on both
-paths with one effect per entity. Once the path is warm, the plugin is the cheaper of the two at
-every dense density the probe measures, and the gap widens with density. Its publish alone, with no
-subscriber, costs less as well. On a tick that moves one row or no row the older path measures
-lower.
+paths with one effect per entity. Once the path is warm, the plugin is the cheaper of the two.
+That holds at every dense density the probe measures, and the gap widens with density. Its publish
+alone, with no subscriber, costs less as well. On a tick that moves one row or no row the older
+path measures lower.
 
-What is untested. Under the test runner, `solid-js` resolves to its server build, where a signal
+What is untested. Under the test runner, `solid-js` resolves to its server build. There a signal
 holds a value, consults no comparator and schedules no effect. The tests assert the value, and they
 assert that `eq` reaches the signal and then run it by hand. The suite renders no component. It
 proves nothing about a `<For>` re-render.
 
 `src/plugins/solid/__tests__/solid.test.ts` locks the seed, the by-id publish, and the spawn and
 the despawn. It locks the disable and the enable, the column grain, and one batch for each update.
-It locks the cell identity across a delete, the `eq` the cell carries, coexistence with observers,
-the singleton reset and the sparse refusal.
+It locks the cell identity across a delete, and the `eq` the cell carries. It locks coexistence
+with observers, the singleton reset and the sparse refusal.
 
 ### Removed (breaking). `ECS_ERROR.ENTITY_NOT_DISABLED`
 
@@ -338,14 +338,14 @@ each component and combine them where you read.
 
 `HostCommandSeamOptions.schedules` took `readonly SCHEDULE[]`, so a seam could drain at one of the
 seven built-ins only. It now takes `readonly SchedulePhase[]`, the same union `addSystems` takes, so
-a handle from `ecs.addPhase` works. A plugin drains at the slot it owns rather than contending for
+a handle from `ecs.addPhase` works. A plugin drains at the slot it owns. It no longer contends for
 insertion order inside a phase the application also writes to. Every existing call still compiles,
 because a `SCHEDULE` member is a `SchedulePhase`.
 
 The recorder's refusal now reads the loop of a phase and not its name. A phase added with
 `loop: "fixed"` is refused the same way `SCHEDULE.FIXED_UPDATE` is, with
-`ECS_ERROR.INVALID_RECORDER_SCHEDULE`, and the message names the phase. The reason is unchanged: a
-fixed-loop drain sees the fixed timestep and not the host update dt, so the replay would diverge.
+`ECS_ERROR.INVALID_RECORDER_SCHEDULE`, and the message names the phase. The reason is unchanged. A
+fixed-loop drain sees the fixed timestep, and not the host update dt. So the replay would diverge.
 The seed-time bucket follows the loop too, so a phase of the startup loop records as startup.
 
 ### Changed. A malformed event id and a malformed system id throw `ECSError`
@@ -356,8 +356,8 @@ throw an `ECSError` carrying the new `ECS_ERROR.INVALID_EVENT_ID` and
 unchanged. Neither minter is on a public entry, so only a `catch` that tested the assertion class
 sees the change.
 
-The reason is the bundle. `AssertionError` extends `AppError`, so a plugin bundle that reached it
-carried a second error class and bound the base from the package. `ECSError` already resolves to
+The reason is the bundle. `AssertionError` extends `AppError`. So a plugin bundle that reached it
+carried a second error class, and bound the base from the package. `ECSError` already resolves to
 the package root. The assertion class and its base now leave every plugin bundle, and
 `dist_artifact.test.ts` locks that.
 
@@ -370,90 +370,92 @@ and they are what a consumer catches.
 ### Added. The store can start anywhere in its memory
 
 `memory.storeBase` places the store header at a caller-chosen byte offset. Every offset the store
-writes, in the header, in the column descriptors, in the region table and in the rings, is now
-relative to that base, and `capacity` is the span from it. The store writes nothing below the base.
-A wasm-backed world defaults to one page and refuses zero, because a compiled module owns the low
-addresses of its own linear memory and a safe Zig or Rust build cannot read address 0. A caller
+writes is now relative to that base. That covers the header, the column descriptors, the region
+table and the rings. `capacity` is the span from the base. The store writes nothing below the base.
+A wasm-backed world defaults to one page and refuses zero. A compiled module owns the low
+addresses of its own linear memory. A safe Zig or Rust build cannot read address 0. A caller
 places the base above the module's `__heap_base` and its run-time heap. `memoryPlan.storeBase`
 reports the value. `WASM_STORE_BASE_BYTES` is exported from `@oasys/oecs/internal`.
 
 `storeBaseAbove(exports, extraBytes)` reads a module's `__heap_base` export, adds the run-time heap
-the caller reserves, and rounds up to a whole page, so the base clears everything the module owns.
+the caller reserves, and rounds up to a whole page. So the base clears everything the module owns.
 
-A checked-in WebAssembly module, built with no toolchain, now reads a live store in the test suite
-and agrees with the TypeScript side on the layout walk, the byte digest, an f32 kernel and the
-deterministic state hash. The layout is a tested ABI, not a fixture that TypeScript compares with
-itself.
+A checked-in WebAssembly module, built with no toolchain, now reads a live store in the test suite.
+It agrees with the TypeScript side on the layout walk and the byte digest. It also agrees on an f32
+kernel and the deterministic state hash. The layout is a tested ABI, not a fixture that TypeScript
+compares with itself.
 
 ### Added. One system across workers
 
 `workers()` from `@oasys/oecs/workers` is a plugin. `ECS.create({ plugins: [workers()] })` gives a
 world `ecs.workers`, which carries `attach(options)`, `pool` and `detach()`. The pool, the plan
-builder and the shim that reaches the node threads module ship in that subpath, so a world that
+builder and the shim that reaches the node threads module ship in that subpath. So a world that
 never names it carries none of them. A JavaScript caller reading `world.workers.attach` on a bare
 world gets `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and the message names the import. `AttachWorkersOptions`,
-`WorkerPool`, `WorkersPlugin` and `DEFAULT_JOIN_TIMEOUT_MS` are exported from the same subpath, and
+`WorkerPool`, `WorkersPlugin` and `DEFAULT_JOIN_TIMEOUT_MS` are exported from the same subpath.
 `ParallelConfig`, `ParallelKernel` and `ParallelColumn` stay on the root, because they erase.
 
 `world.workers.attach({ count })` starts a persistent pool on the package's own worker entry,
-`@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load,
-either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL, and the
-columns the kernel receives in order. The schedule hands the pass to the pool inside the same
-access span a TypeScript body gets, parks the host on `Atomics.wait`, and joins before the phase
-flush. No spawn, no despawn and no grow can overlap the workers, because nothing else runs on the
-main thread while it is parked. Every worker computes its own row range per archetype from the
-descriptor row counts, its index and the worker count, so no plan crosses the wire and the result
-is deterministic. The join stamps every matched archetype for each declared write.
+`@oasys/oecs/worker`. A system that carries a `parallel` config names a kernel a worker can load.
+That kernel is a compiled `WebAssembly.Module` export, or an export of a JavaScript module URL. The
+config also names the columns the kernel receives, in order. The schedule hands the pass to the
+pool inside the same access span a TypeScript body gets. It parks the host on `Atomics.wait`, and
+joins before the phase flush. No spawn, no despawn and no grow can overlap the workers. Nothing
+else runs on the main thread while it is parked. Every worker computes its own row range per
+archetype. It reads the descriptor row counts, its index and the worker count. So no plan crosses
+the wire, and the result is deterministic. The join stamps every matched archetype for each
+declared write.
 
 A parallel system declares only `reads`, `writes` and a dense query. Sparse, relation, resource,
 spawn, despawn and transition declarations, `exclusive`, and `backendHandle` are refused at
-registration with `ECS_ERROR.PARALLEL_ACCESS`. Those refusals ship with the plugin, so a world that
+registration with `ECS_ERROR.PARALLEL_ACCESS`. Those refusals ship with the plugin. So a world that
 installed no workers plugin validates no `parallel` config, builds no plan and runs the system's
-`fn`. Below `parallel.minRows`, and without an attached pool, the system runs its `fn`. A heap world cannot attach workers. A WASM kernel needs the wasm
-backing, because a `SharedArrayBuffer` cannot be imported as a module memory.
+`fn`. Below `parallel.minRows`, and without an attached pool, the system runs its `fn`. A heap
+world cannot attach workers. A WASM kernel needs the wasm backing, because a `SharedArrayBuffer`
+cannot be imported as a module memory.
 
 The split pays only above a row count that depends on the machine, the kernel and the worker count.
-`parallel.minRows` carries a measured default that sits above every crossover the probes found, on
-both bodies, both kernel forms, both backings and every runtime tested. A world that never tunes it
-never pays a pooled frame the sequential frame would have won. It gives up the gain instead. A
-compute-bound kernel crosses far earlier and should set its own value, and a caller's value always
-wins. `bench/` holds the measurements and the tuning method.
+`parallel.minRows` carries a measured default that sits above every crossover the probes found. The
+probes cover both bodies, both kernel forms, both backings and every runtime tested. A world that
+never tunes it never pays a pooled frame the sequential frame would have won. It gives up the gain
+instead. A compute-bound kernel crosses far earlier and should set its own value. A caller's value
+always wins. `bench/` holds the measurements and the tuning method.
 
 With a bundler, pass `workerUrl` from the bundler's own URL import of the `@oasys/oecs/worker` entry, for
 Vite `import workerUrl from "@oasys/oecs/worker?worker&url"`. The default resolution finds the entry beside
 the package as it ships and not inside a bundle. A worker whose script does not load now fails
-`workers.attach` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE` and terminates the pool, instead of
-resolving with workers that never answer. The node threads module is reached through
-`process.getBuiltinModule`, so a browser build sees no node builtin specifier and prints no warning.
+`workers.attach` with `ECS_ERROR.WORKERS_ENTRY_UNREACHABLE`. It terminates the pool, instead of
+resolving with workers that never answer. The pool reaches the node threads module through
+`process.getBuiltinModule`. So a browser build sees no node builtin specifier, and prints no warning.
 
 `workers.attach` takes `joinTimeoutMs`, a safety net and not a budget. A worker that dies inside a pass
 can never report done, and the parked host would wait forever. On timeout the frame throws
-`PARALLEL_KERNEL_FAILED`, the pool enters a failed state in which every later frame runs `fn`, and
+`PARALLEL_KERNEL_FAILED`. The pool enters a failed state in which every later frame runs `fn`.
 `detach` terminates the hung worker.
 
-At the join every worker adds one to a done word, and the worker whose add completes the count
+At the join every worker adds one to a done word. The worker whose add completes the count
 wakes the host. So the host wakes once for a pass, whatever the worker count is. `bench/` holds
 the measurement beside a per-worker done word and a tree join, both of which cost more.
 
 ### Added. A kernel module contract that holds for any toolchain
 
 Every worker of the pool instantiates one module over one memory. `docs/api/parallel.md` now states
-what that costs a module and what a build has to do about it: the one import, the export and its
-arity, the store base, the stack, the data segment and the heap. It carries one build line for Zig,
-for Rust, for C through `zig cc` and for AssemblyScript.
+what that costs a module, and what a build has to do about it. The list is the one import, the
+export and its arity, and the store base. It also covers the stack, the data segment and the heap.
+It carries one build line for Zig, for Rust, for C through `zig cc` and for AssemblyScript.
 
 `registerSystem` refuses a `wasm` kernel module the pool cannot serve, with the new
 `ECS_ERROR.PARALLEL_KERNEL_MODULE`. An import other than `env.memory` is named in the message. A
-module that imports no memory is refused as well, because it addresses a linear memory of its own,
+module that imports no memory is refused as well. It addresses a linear memory of its own,
 writes rows nothing reads, and reports success. An export name the module does not carry, and an
 export that is not a function, are the other two. Development builds only, at registration.
 
-A worker now checks the export's parameter count against the column count plus three, and fails the
+A worker now checks the export's parameter count against the column count plus three. It fails the
 kernel load with both numbers when they disagree.
 
-Five modules are checked into the test suite, built by the four toolchains above and by a
-hand-written emitter that uses no toolchain. Each carries the same bodies, and each runs on the real
-pool across several workers and must leave the bytes the sequential TypeScript body leaves. Five
+Five modules are checked into the test suite. The four toolchains above built them, and so did a
+hand-written emitter that uses no toolchain. Each carries the same bodies. Each runs on the real
+pool across several workers. Each must leave the bytes the sequential TypeScript body leaves. Five
 more carry one fault each, so every refusal above has a real module behind it. The suite proves the
 contract on a machine with no compiler installed.
 
@@ -461,28 +463,28 @@ contract on a machine with no compiler installed.
 
 A worker gives each instance of a `wasm` kernel module its own shadow stack.
 
-An LLVM build, which is Zig, Rust, C and others, keeps a shadow stack in linear memory and addresses
-it through the mutable global `__stack_pointer`. A wasm global is per-instance, and every instance
-starts at the address the linker chose, so every worker wrote its frames to the same bytes. A kernel
-that spilled a local array, a struct passed by pointer, or the address of a local read back what
-another worker wrote. The corruption was silent, it needed no shared column, and no probe before
-this one caught it, because the earlier kernels held every value in a wasm local.
+An LLVM build, which is Zig, Rust, C and others, keeps a shadow stack in linear memory. It addresses
+that stack through the mutable global `__stack_pointer`. A wasm global is per-instance, and every
+instance starts at the address the linker chose. So every worker wrote its frames to the same bytes.
+A kernel could spill a local array, a struct passed by pointer, or the address of a local. It then
+read back what another worker wrote. The corruption was silent, and it needed no shared column. No
+probe before this one caught it. The earlier kernels held every value in a wasm local.
 
-The worker now carves one region for each worker out of `[__heap_base, storeBase)` and moves
+The worker now carves one region for each worker out of `[__heap_base, storeBase)`. It moves
 `__stack_pointer` to the top of its own. The regions come off the top of that span, downward from
-the store base, so worker `i` gets its top at `storeBase - i * stackBytes`.
+the store base. So worker `i` gets its top at `storeBase - i * stackBytes`.
 
 `workers.attach({ stackBytes })` says how big one region is, and everything below the lowest region
 stays the module's heap. Reserve the module's peak run-time heap plus one stack for each worker with
-`storeBaseAbove`, then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
+`storeBaseAbove`. Then pass the same `stackBytes` to the pool. Omit it and the pool divides the whole
 span, which leaves the module no heap. That is the default, and it suits a kernel that allocates
-nothing, which is what the heap rule asks for anyway.
+nothing. The heap rule asks for that anyway.
 
 `stackBytes` must be an integer, a multiple of the frame alignment of 16, and at least one WASM page.
 A value outside that fails the attach with `WORKERS_COUNT_INVALID`. A span too small to hold one
-region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`, and the message names the
+region for each worker fails the kernel load with `PARALLEL_KERNEL_FAILED`. The message names the
 span, the region, the worker count and the remedy. A module that exports no `__stack_pointer` is left
-alone, and the docs say such a kernel may not use a stack. One worker needs no region, because one
+alone. The docs say such a kernel may not use a stack. One worker needs no region, because one
 instance owns the linked stack alone.
 
 The assignment runs once for each kernel load, so a pass pays nothing for it.
@@ -491,16 +493,16 @@ The assignment runs once for each kernel load, so a pass pays nothing for it.
 
 A reader that carries version 0 measured every offset from buffer byte 0. A module that treated a
 `byte_off` as a buffer address must add the store base it receives through `setLayout`. Restore and
-resume accept a version 0 snapshot, because every version 0 store sat at byte 0 and its offsets read
-correctly as offsets from the header, so a snapshot the 0.5 line wrote still restores. Any other
+resume accept a version 0 snapshot. Every version 0 store sat at byte 0, and its offsets read
+correctly as offsets from the header. So a snapshot the 0.5 line wrote still restores. Any other
 version is refused.
 
 The archetype descriptor header grows from 36 bytes to 40 and gains `entity_ids_off` at offset 36.
-The field is reserved for the archetype's row-to-entity table, and the store writes zero, which says
-the archetype carries no such table. A walker steps to the next record by `40 + column_count * 16`,
-and a reader that ignores the field reads every other field as before. A snapshot carries the
-descriptor bytes, so restore rewrites a version 0 region at the new width before it reads anything
-else, and the world's `stateHash` is unchanged because it never folds a descriptor.
+The field is reserved for the archetype's row-to-entity table. The store writes zero, which says
+the archetype carries no such table. A walker steps to the next record by `40 + column_count * 16`.
+A reader that ignores the field reads every other field as before. A snapshot carries the
+descriptor bytes. So restore rewrites a version 0 region at the new width, before it reads anything
+else. The world's `stateHash` is unchanged, because it never folds a descriptor.
 
 ### Changed. `ComputeBackend.run` takes `dt` and the tick
 
@@ -508,15 +510,15 @@ else, and the world's `stateHash` is unchanged because it never folds a descript
 `run(handle)` keeps compiling and keeps running, because the extra arguments are ignored. Only code
 that calls `run` itself sees the new shape. A module body needs `dt`, and
 neither `dt` nor the frame tick lives in the bytes. The schedule also publishes the descriptor row
-counts before every backend dispatch, so a module never reads a stale count after a host spawn
-before `startup()` or a spawn from a run condition.
+counts before every backend dispatch. So a module never reads a stale count. That covers a host
+spawn before `startup()`, and a spawn from a run condition.
 
 A caller-supplied `WebAssembly.Memory` may now carry `maxBytes`. The store needs a cap to promise
 its span, so the cap is `maxBytes` or the default ceiling.
 
 ### Fixed
 
-A kernel that would not load rejected `workers.attach` and left its workers running, so a node
+A kernel that would not load rejected `workers.attach` and left its workers running. So a node
 process never exited on its own. The pool now ends the workers before the fault leaves.
 
 An `ECSError` built on an engine without `Error.captureStackTrace` was a `TypeError` with no
@@ -553,10 +555,11 @@ widened the class for nothing.
 ### Changed. The query terms travel as one record
 
 A query carries two kinds of term. A dense term sets a bit in the component mask and picks the
-archetypes. Every other term (sparse membership, optional fetch, include-disabled, the `(R, *)`
-wildcard, hierarchy ordering, an archetype term from `where`) now rides in one `QueryTerms` record. `Query`'s constructor takes one
-parameter where it took seven, the three driver seams take one where they repeated four, and a query
-that declares no such term shares one frozen record. Adding a term is one edit instead of five.
+archetypes. Every other term now rides in one `QueryTerms` record. Those terms are sparse
+membership, optional fetch, include-disabled, the `(R, *)` wildcard, hierarchy ordering, and an
+archetype term from `where`. `Query`'s constructor takes one parameter where it took seven. The
+three driver seams take one where they repeated four. A query that declares no such term shares
+one frozen record. Adding a term is one edit instead of five.
 
 ### Changed. `Commands` and `SystemContext` moved to their own module
 
@@ -565,9 +568,9 @@ that declares no such term shares one frozen record. Adding a term is one edit i
 
 ### Fixed. The build no longer splits the core entry into small chunks
 
-Declaring the plugin entries beside the core entries put them in one rollup graph, and rollup
+Declaring the plugin entries beside the core entries put them in one rollup graph. Rollup
 then split `index.js` into ten small shared chunks. Those splits are real module boundaries at run
-time, and a measurement of `spawn` against the shipped artifact showed the cost. The plugins
+time. A measurement of `spawn` against the shipped artifact showed the cost. The plugins
 build in their own pass now, and the core chunk graph is unchanged.
 
 ### Changed (breaking). A name that misdescribed its body now says what it does
@@ -602,15 +605,15 @@ On `@oasys/oecs/internal`, every `accessCheck.check*` method is now `assert*`, a
 
 Three rules now hold across the tree. One verb throws on a bad state, `assert`, and `validate`
 keeps only the helpers that return the value they test. One verb constructs, `create`. The
-underscore prefix marks a private or a protected class member and nothing else, so a member that
+underscore prefix marks a private or a protected class member and nothing else. So a member that
 another module reaches carries no prefix.
 
 ### Changed (breaking). A field name now says what it holds
 
 The same audit read every field and every module-scope variable. A field whose name promised one
-content and held another is now the content it holds, and the underscore prefix now marks a private
-or a protected member on a field exactly as it does on a method. A member that another module
-reaches carries no prefix, whatever its role.
+content and held another is now the content it holds. The underscore prefix now marks a private
+or a protected member on a field. It does so exactly as it does on a method. A member that another
+module reaches carries no prefix, whatever its role.
 
 The public surface:
 
@@ -629,15 +632,15 @@ The public surface:
 | `bitset._words`, on `/primitives` | `bitset.words` |
 
 None of these is part of the documented API. Each is public because another module reads it, so the
-prefix claimed a privacy the member never had. Three of them could not drop the prefix alone,
-because `Query` already carries an `optional`, an `includeDisabled` and a `hierarchy` method. Each
+prefix claimed a privacy the member never had. Three of them could not drop the prefix alone.
+`Query` already carries an `optional`, an `includeDisabled` and a `hierarchy` method. Each
 of those three now names the thing it holds: a term list, a flag, a term. The terms that are not
-dense then moved into the one `terms` record described above, and `includesDisabled` stayed on the
+dense then moved into the one `terms` record described above. `includesDisabled` stayed on the
 query as its own copy.
 
 Inside the package the same rule moved about a hundred more members. `Archetype` publishes
 `flatColumns`, `bufs`, `accessorColumns`, `colOffset`, `fieldCount`, `columnIds` and `changedTick`
-without a prefix, and `Store` publishes `tick`, `trace`, `anyDirtyTracked` and `queryDirtyEpoch`.
+without a prefix. `Store` publishes `tick`, `trace`, `anyDirtyTracked` and `queryDirtyEpoch`.
 Every private field of `Store`, `Schedule`, `ECS`, `AccessCheck`, `EventRegistry` and the editor now
 carries one. A table that holds one entry per entity reads as plural, so `Store.entityRow` is
 `_entityRows` and `Store.entityArchetype` is `_entityArchetypes`. `Schedule.setConditions` and
@@ -647,74 +650,75 @@ is `_counts`.
 
 ### Fixed. A fifth column type made every row move in the process slow
 
-Every structural row operation, the copy behind `addComponent` and `removeComponent`, the
-swap-remove behind `despawn`, the swaps behind `disable` and `enable`, walked the columns of an
-archetype through one loop, and that loop had one typed-array access site. The site saw every column
-type that any archetype in the process used. V8 keeps one site fast for at most four typed-array
-classes. At the fifth type the site became megamorphic, and each element move then cost far more,
-in every archetype, and not only in the one that mixed the types. The library offers eight
-column types, so a schema with `f32` positions, an `i32` counter, a `u8` flag, a `u16` team and an
-`f64` timer reached the fifth type without notice.
+Every structural row operation walked the columns of an archetype through one loop. That loop had
+one typed-array access site. The operations are the copy behind `addComponent` and
+`removeComponent`, the swap-remove behind `despawn`, and the swaps behind `disable` and `enable`.
+The site saw every column type that any archetype in the process used. V8 keeps one site fast for
+at most four typed-array classes. At the fifth type the site became megamorphic. Each element move
+then cost far more, in every archetype, and not only in the one that mixed the types. The library
+offers eight column types. Consider a schema with `f32` positions, an `i32` counter, a `u8` flag, a
+`u16` team and an `f64` timer. It reached the fifth type without notice.
 
 The structural operations now move bits through views whose class depends on the element width
-alone (`Uint8Array`, `Uint16Array`, `Uint32Array`, `Float64Array`), so the site sees at most four
-classes. A write of a number must convert to the column's type, so the value-writing paths (`spawn`
-with a template, `addComponent` with values) use the true view through one access site for each
-type. The cost of a row move is now flat across the number of column types, and unchanged for a
-world that uses one type.
+alone (`Uint8Array`, `Uint16Array`, `Uint32Array`, `Float64Array`). So the site sees at most four
+classes. A write of a number must convert to the column's type. So the value-writing paths use the
+true view, through one access site for each type. Those paths are `spawn` with a template, and
+`addComponent` with values. The cost of a row move is now flat across the number of column types.
+It is unchanged for a world that uses one type.
 
 ### Changed. A sparse component is id-indexed, and `sparseCursor` is the fastest read by id
 
-A sparse component kept each entity's values in a small JavaScript array inside a map keyed by
-entity index, so a read by id paid a lookup and a pointer chase, and a value was stored as the
-number given and not as the declared type. The store now keeps one typed array of the declared type
-for each field, indexed by entity index, with a sparse set beside them for membership. A read by id
-is one load, an add or a remove is a bit and a write at the index, and a value converts as the
-field's type converts (an `i32` truncates, a `u8` wraps, an `f32` rounds), as a dense field does.
+A sparse component kept each entity's values in a small JavaScript array. A map keyed by entity
+index held those arrays. So a read by id paid a lookup and a pointer chase. It also stored a value
+as the number given, and not as the declared type. The store now keeps one typed array of the
+declared type for each field, indexed by entity index. A sparse set sits beside them for
+membership. A read by id is one load. An add or a remove is a bit and a write at the index. A value
+converts as the field's type converts, as a dense field does. An `i32` truncates, a `u8` wraps, an
+`f32` rounds.
 
 `sparseCursor` and `sparseCursorRead`, on `ecs` and on `ctx`, are the sparse form of `cursor`.
-`at` writes the entity index alone and a field access is one load, so a sparse cursor is the read
-by id to use when a system touches many entities from a list of ids. In development, `at` throws
-for a dead entity or a non-member. In production it does not test. `ctx.sparseCursor` needs the
+`at` writes the entity index alone, and a field access is one load. So a sparse cursor is the read
+by id to use. Take it when a system touches many entities from a list of ids. In development, `at`
+throws for a dead entity or a non-member. In production it does not test. `ctx.sparseCursor` needs the
 component in `sparseWrites`, and `ctx.sparseCursorRead` in `sparseReads`.
 
-The columns of a store double to fit the highest member index, so the memory of a sparse component
-is proportional to that index and not to the member count. The snapshot format is unchanged. The
+The columns of a store double to fit the highest member index. So the memory of a sparse component
+is proportional to that index, and not to the member count. The snapshot format is unchanged. The
 `indices` view of a store is now a typed view with a fixed length. The query driver walks the live
-member list, so a walk sees an edit made during it as before. That walk (`forEachEntity` over a
-sparse term) now keeps the dense verdict of the last archetype it saw, so members of one archetype
-that sit together in the sparse list pay the mask test one time and not each.
+member list, so a walk sees an edit made during it as before. That walk is `forEachEntity` over a
+sparse term. It now keeps the dense verdict of the last archetype it saw. So members of one
+archetype that sit together in the sparse list pay the mask test one time, not each.
 
 ### Fixed. Every ref and cursor read paid for a property key that the optimizer could not fold
 
 The state of a ref or cursor was keyed by two symbols that other modules imported. The package
-build puts the accessor module and the store in different chunks, and a key read through an import
-binding is not a constant to the optimizer, so every field access through a ref or a cursor was a
-generic keyed load. A symbol has no other way to be reached, so the state is now keyed by two
-reserved names, `__cols` and `__row`, written as literals at each site. Registration refuses those
+build puts the accessor module and the store in different chunks. A key read through an import
+binding is not a constant to the optimizer. So every field access through a ref or a cursor was a
+generic keyed load. A symbol has no other way to be reached. So the state is now keyed by two
+reserved names, `__cols` and `__row`. Each site writes them as literals. Registration refuses those
 two names on a dense or a sparse component.
 
-Two more constants on the by-id paths, the entity index mask and the entity-id bounds that
-`isAlive` compares against, are read through local copies for the same reason, and the `switch`
-over column types in the value-write path compares against local copies of the tags, so it compiles
+Two more constants on the by-id paths are read through local copies, for the same reason. They are
+the entity index mask, and the entity-id bounds that `isAlive` compares against. The `switch`
+over column types in the value-write path compares against local copies of the tags. So it compiles
 to a jump table.
 
 The shape of the accessors is also settled when the module loads. A dense cursor reassigns its
-column array on every `at`, and a ref or a sparse cursor never does, so the first dense `at` in a
-process changed a field of the shared shape from constant to mutable, and every optimized function
-that had read the field under the constant assumption was thrown away and compiled again, slower.
-One throwaway object of each shape now reassigns both fields at load, so nothing compiles under the
-assumption and nothing is thrown away.
+column array on every `at`. A ref or a sparse cursor never does. So the first dense `at` in a
+process changed a field of the shared shape from constant to mutable. Every optimized function
+that had read the field under the constant assumption was thrown away. It compiled again, slower.
+One throwaway object of each shape now reassigns both fields at load. So nothing compiles under the
+assumption, and nothing is thrown away.
 
 ### Fixed. Systems made from one factory ran their hot loops much slower
 
-V8 decides what to inline from the feedback of a call site. When every system in a world came from
-one function literal, a factory such as `makeMover(component)`, or a world with a single system,
-the scheduler's dispatch site saw one target, and the engine inlined the system body, with its
-`eachChunk` callback and its hot loop, into the scheduler's own loop over the systems. That inlined
-loop ran much slower than the same loop compiled on its own. A world whose systems came from two
-or more literals never hit this, so the factory case was slower than the plain case, and nothing in
-the user's code said why.
+V8 decides what to inline from the feedback of a call site. Every system in a world could come from
+one function literal. A factory such as `makeMover(component)` does that, and so does a world with
+a single system. The scheduler's dispatch site then saw one target. The engine inlined the system
+body into the scheduler's own loop over the systems. That body carried its `eachChunk` callback and
+its hot loop. That inlined loop ran much slower than the same loop compiled on its own. A world
+whose systems came from two or more literals never hit this. So the factory case was slower than
+the plain case. Nothing in the user's code said why.
 
 Every system body now runs through one trampoline whose call site the module makes megamorphic
 when it loads. No system body is inlined into the scheduler, whatever the number of literals, and
@@ -724,46 +728,47 @@ A system that does any work gains more than that cost.
 ### Changed. The cost of a new archetype no longer grows with the number of archetypes
 
 A world discovers its archetypes as it runs, and each new one extends the column store. That extend
-took the in-place path, which moves no rows, but it still walked every archetype three times: one
-walk to build a list of row counts that only the realloc path reads, one to sum the descriptor bytes
-in use, and one to copy the archetype map. So the N-th archetype cost N steps, and a world with many
-archetypes paid for that at startup. The list is now built only when the realloc path runs, the
-descriptor bytes in use are cached on the store, and the in-place extend appends to the archetype
-map instead of copying it. The cost of a new archetype is now the cost of its own columns.
+took the in-place path, which moves no rows. But it still walked every archetype three times. One
+walk built a list of row counts that only the realloc path reads. One summed the descriptor bytes
+in use. One copied the archetype map. So the N-th archetype cost N steps, and a world with many
+archetypes paid for that at startup. The list is now built only when the realloc path runs. The
+store caches the descriptor bytes in use. The in-place extend appends to the archetype
+map, instead of copying it. The cost of a new archetype is now the cost of its own columns.
 
 ### Fixed. A fifth component made every ref and cursor in the process slow
 
 A ref got one prototype for each (archetype, component) pair, and a cursor one for each component.
-An engine gives an object a distinct shape for each distinct prototype, so the read of the row inside
-each getter saw one shape for each component that the program read through refs or cursors. At the
-fifth shape that read became megamorphic, and every field access through every ref and every cursor
-in the process became far slower. A world with five components, each with only `f64` fields,
-was enough.
+An engine gives an object a distinct shape for each distinct prototype. So the read of the row
+inside each getter saw one shape for each component. That covers every component the program read
+through refs or cursors. At the fifth shape that read became megamorphic. Every field access
+through every ref and every cursor in the process became far slower. A world with five components,
+each with only `f64` fields, was enough.
 
 Every ref and every cursor now shares one prototype for the whole process. Each distinct field name
-gets one global id and one accessor on the prototype, installed at the first component registration
-that uses the name. An accessor holds the component's columns indexed by that id, so a field read
-costs the same two index operations it did before. The own state of an accessor is the two reserved
-names `__cols` and `__row`, which registration refuses as field names, so no field can collide with
-it. A field the component does not have throws `FIELD_NOT_REGISTERED` under `DEV`, where it read a
-neighbouring column before.
+gets one global id and one accessor on the prototype. The first component registration that uses
+the name installs them. An accessor holds the component's columns indexed by that id. So a field
+read costs the same two index operations it did before. The own state of an accessor is the two
+reserved names `__cols` and `__row`. Registration refuses both as field names, so no field can
+collide with it. A field the component does not have throws `FIELD_NOT_REGISTERED` under `DEV`,
+where it read a neighbouring column before.
 
 `for..in` over a ref or a cursor is no longer a way to list a component's fields. Use the schema.
-The shared prototype carries the field name of every component registered in the process, and the
-two reserved names are own fields, so the walk reports all of them. `Object.keys` and the spread
+The shared prototype carries the field name of every component registered in the process. The
+two reserved names are own fields. So the walk reports all of them. `Object.keys` and the spread
 report the two reserved names alone, where they reported nothing before.
 
-A field name that two components give different types (an `x` that is `f32` in one and `i32` in
-another) reads and writes correctly on both. Its accessor dispatches on the column's class, which
-costs one `switch` more than an accessor for a name with one type.
+Two components may give one field name different types. An `x` may be `f32` in one and `i32` in
+another. That name reads and writes correctly on both. Its accessor dispatches on the column's
+class. That costs one `switch` more than an accessor for a name with one type.
 
 ### Changed (breaking). `memory` is two fields, and not one union of five arms
 
-`ECSOptions.memory` held two questions that do not depend on each other, how big the world is, and
-what holds its bytes, inside one key-discriminated union. A caller could answer only one of them.
-The `budget` arm and the `maxBytes` arm each selected the heap allocator themselves, so "a budget of
-50,000 entities on a shared backing" was not something you could say. `maxBytes` had to appear three
-times, once for each backing arm, because the size axis had nowhere else to live.
+`ECSOptions.memory` held two questions inside one key-discriminated union. The questions do not
+depend on each other: how big the world is, and what holds its bytes. A caller could answer only
+one of them. The `budget` arm and the `maxBytes` arm each selected the heap allocator themselves.
+So "a budget of 50,000 entities on a shared backing" was not something you could say. `maxBytes`
+had to appear three times, once for each backing arm, because the size axis had nowhere else to
+live.
 
 Sizing and backing are now two fields, and every pair of them is legal:
 
@@ -775,8 +780,8 @@ new ECS({ memory: { entities: 50_000, maxBytes: 64 * MiB } });// size from one, 
 ```
 
 Each removed arm throws `INVALID_MEMORY_OPTIONS` and names its new spelling. They are removed and
-not aliased, because a sizing that the engine ignored in silence would build a world of the wrong
-size and show it much later, as a limit error far from its cause.
+not aliased. A sizing that the engine ignored in silence would build a world of the wrong
+size. It would show that much later, as a limit error far from its cause.
 
 | 0.5 | 0.6 |
 | --- | --- |
@@ -787,42 +792,42 @@ size and show it much later, as a limit error far from its cause.
 | `{ allocator: A, capBytesHint: X }` | `{ maxBytes: X, backing: { allocator: A } }` |
 
 `maxBytes` and `columnCapacity` keep their names and their meaning. The types `EntityBudget` and
-`SharedMemoryArm` are removed: the three fields of a budget are now fields of `memory` itself, and
-the shared backing is the string `"shared"`. The new type `MemoryBacking` names the backing axis.
+`SharedMemoryArm` are removed. The three fields of a budget are now fields of `memory` itself. The
+shared backing is the string `"shared"`. The new type `MemoryBacking` names the backing axis.
 `ResolvedECSMemory.source` now names the backing alone, and the new field `sizing` names the size
 axis.
 
 ### Fixed. A custom allocator with a limit below about 12.6 MiB could not build a world
 
 The `allocator` arm reserved the full identity space for the entity index, always, and ignored the
-limit that `capBytesHint` declared. The reservation happens when the store is built, so the index
-alone did not fit under a small limit and the world threw `STORE_CAP_EXCEEDED` before it existed.
+limit that `capBytesHint` declared. The reservation happens when the store is built. So the index
+alone did not fit under a small limit. The world threw `STORE_CAP_EXCEEDED` before it existed.
 The error then blamed the caller for runaway entity growth, in a world that held no entities. Every
 other arm already sized the index from the limit.
 
-The reservation of the entity index now comes from `entities` first, from the byte limit second, and
-from the default last, for each backing equally.
+The reservation of the entity index now comes from `entities` first, then the byte limit, then the
+default. That holds for each backing equally.
 
 ### Fixed. A declared number of entities now sizes the entity index on every backing
 
 Only the `budget` arm derived the index from the entity count, and that arm forced the heap backing.
-On each other backing the index was sized backwards from the byte limit, which reserves much more
+On each other backing the index was sized backwards from the byte limit. That reserves much more
 than a small world needs. A count now reaches the index whichever backing holds the bytes.
 
 ### Added. `fixedSabAllocator`, a shared buffer that does not grow
 
 `fixedSabAllocator(maxBytes)`, from `@oasys/oecs/shared`, reserves one fixed `SharedArrayBuffer` at
-the limit. It is `heapArraybufferAllocator` with a `SharedArrayBuffer`, so the bytes stay shareable
-with a worker or a WASM module and the buffer never moves.
+the limit. It is `heapArrayBufferAllocator` with a `SharedArrayBuffer`. So the bytes stay shareable
+with a worker or a WASM module, and the buffer never moves.
 
 It exists for a measured reason. JavaScriptCore has no fast store path for a TypedArray view over a
-growable `SharedArrayBuffer`: a column read costs what a fixed buffer costs, but every column write
+growable `SharedArrayBuffer`. A column read costs what a fixed buffer costs. Every column write
 costs far more. The cost is for each access and not for each byte, so a small world pays it too.
 V8 shows no such difference. Safari and Bun are JavaScriptCore. A fixed buffer restores the fast
 store path on both engine families and gives up only the growth.
 
 `growableSabAllocator` and `wasmMemoryAllocator` now carry that warning in their own documentation.
-A shared `WebAssembly.Memory` gives a growable `SharedArrayBuffer` and can give nothing else, so the
+A shared `WebAssembly.Memory` gives a growable `SharedArrayBuffer` and can give nothing else. So the
 WASM backing should pay the same cost on JavaScriptCore. That last point is reasoning and not
 measurement, and it is marked as such.
 
@@ -831,10 +836,10 @@ The default backing for `{ backing: "shared" }` is unchanged: it is still `growa
 ### Fixed. The fixed-length rule for a column view is now stated and locked
 
 Each column view is built with an explicit `(byteOffset, length)`. A TypedArray built with no length
-argument tracks the length of its buffer, and measurement puts that shape far behind a fixed-length
+argument tracks the length of its buffer. Measurement puts that shape far behind a fixed-length
 view on every engine tested. `createView` is the only place that builds a column view, but nothing
-said so and nothing tested a view's length. The rule is now in the `createView` documentation, and two
-tests hold it: one walks every column of every archetype, and one proves that a view keeps its
+said so and nothing tested a view's length. The rule is now in the `createView` documentation, and
+two tests hold it. One walks every column of every archetype. One proves that a view keeps its
 length when the buffer below it grows. The second matters most, because a length-tracking view
 survives the identity and data checks that were already there.
 
@@ -850,35 +855,36 @@ checks are development only, and the production build is unchanged.
 
 ### Added. `ECS_ERROR.SNAPSHOT_RESTORE_FAILED`, and `ECSRestoreError` is an `ECSError`
 
-`ecs.snapshots.restore` threw an `ECSRestoreError` that extended `Error` and carried no code, so a
+`ecs.snapshots.restore` threw an `ECSRestoreError` that extended `Error` and carried no code. So a
 caller who sorts faults by `category` saw a restore failure fall through. `ECSRestoreError` now
 extends `ECSError` with the category `SNAPSHOT_RESTORE_FAILED`, and `isEcsError` answers true for
 it. The class, its name and the message are unchanged, so a `catch` by class or by `err.name`
-still holds. `StoreRestoreError` and `SparseRestoreError` stay plain `Error` classes, because the
-module that declares them imports nothing and `core/store` does not see the code enum.
+still holds. `StoreRestoreError` and `SparseRestoreError` stay plain `Error` classes. The
+module that declares them imports nothing, and `core/store` does not see the code enum.
 
 ### Added. `InPlaceBufferAllocator` and `BufferAllocator` are type exports
 
-`memory: { backing: { allocator } }` takes an `InPlaceBufferAllocator`, and the type was declared in
-`core/store` without a published entry that re-exports it, so a caller could not name the interface
+`memory: { backing: { allocator } }` takes an `InPlaceBufferAllocator`. The type was declared in
+`core/store` without a published entry that re-exports it. So a caller could not name the interface
 a custom allocator implements. The root and `@oasys/oecs/shared` now export both types.
 
 ### Fixed. A write was reported on two frames when the writer ran before the reader
 
-`changed()` compared a per-frame tick with the last run of the reader, and it took a stamp at or
-after that run. A frame tick cannot order a writer and a reader inside one frame, so a write by an
-earlier system was reported on that frame and again on the next. Writer before reader is the usual
+`changed()` compared a per-frame tick with the last run of the reader. It took a stamp at or
+after that run. A frame tick cannot order a writer and a reader inside one frame. So a write by an
+earlier system was reported on that frame, and again on the next. Writer before reader is the usual
 order, so the usual order reported every write twice. The same tick missed a host write between
-frames at an archetype-level `onSet`: the observer's baseline was the next frame, which a host
+frames at an archetype-level `onSet`. The observer's baseline was the next frame, which a host
 write never reached.
 
 The engine now keeps a change tick apart from the frame tick. It advances before each system run,
-before each phase flush, before the `onSet` dispatch and at the end of each update. A write stamps
-it, and a consumer reports a stamp above its own last run. One write is reported one time at each
-grain, whichever system runs first, and a host write between frames reaches both grains on the
-next update. `ctx.ecsTick` still counts frames. A system no longer sees its own stamp on its next
-run: a writer that also read `changed()` on the same component fired on every frame, and it now
-fires for the writes of other systems, and for its own inside the run that made them.
+and before each phase flush. It also advances before the `onSet` dispatch, and at the end of each
+update. A write stamps it, and a consumer reports a stamp above its own last run. One write is
+reported one time at each grain, whichever system runs first. A host write between frames reaches
+both grains on the next update. `ctx.ecsTick` still counts frames. A system no longer sees its own
+stamp on its next run. A writer that also read `changed()` on the same component fired on every
+frame. It now fires for the writes of other systems. It also fires for its own writes, inside the
+run that made them.
 
 `ecs.getCurrentTick()` is `ecs.getChangeTick()`, and the schedule's `runStartup`, `runUpdate` and
 `runFixedUpdate` no longer take a tick.
@@ -886,17 +892,17 @@ fires for the writes of other systems, and for its own inside the run that made 
 ### Fixed. A `ref` or `cursor` write never reached an entity-level `onSet`
 
 Only `setField`, `updateField` and `markChanged` recorded an entity for an `onSet` observer with
-entity granularity, while the change detection page said a `ref` write was seen. The accessor
-setters write raw columns and cannot record, so `ctx.ref` records the entity when you create the
-ref, and a mutable cursor records it on each `at`, on the context and on the host. Both are
+entity granularity. The change detection page said a `ref` write was seen. The accessor
+setters write raw columns and cannot record. So `ctx.ref` records the entity when you create the
+ref. A mutable cursor records it on each `at`, on the context and on the host. Both are
 conservative, as the archetype stamp is. `refRead` and `cursorRead` record nothing. The entity
 level drain also no longer allocates a list on each frame.
 
 ### Added. `cols.ticks(def)`, the row record for an entity-level `onSet`
 
-A raw column write in a chunk loop is invisible to the engine, so an `onSet` observer with entity
-granularity needed `ctx.markChanged` for each row, a call and a list push. The loop can now store
-the change tick into the row of `cols.ticks(def)`: `t[i] = cols.tick`. One typed-array store,
+A raw column write in a chunk loop is invisible to the engine. So an `onSet` observer with entity
+granularity needed `ctx.markChanged` for each row. That is a call and a list push. The loop can now
+store the change tick into the row of `cols.ticks(def)`: `t[i] = cols.tick`. One typed-array store,
 which costs about what the write beside it costs. The column exists only while an entity-level
 `onSet` observer tracks the component, and the call throws `ROW_TICKS_NOT_TRACKED` otherwise.
 
@@ -904,48 +910,49 @@ which costs about what the write beside it costs. The column exists only while a
 
 Change detection at the row grain as a pull. `ecs.trackRows(def)` keeps one change tick for each
 row of every archetype that holds `def`, stamped by every write path. A `ChangedQuery` now has
-`forEachChunk`, and inside it `cols.ticksRead(def)` is the row tick column and `cols.since` is the
-change tick of the previous run of the system, so `t[i] > cols.since` picks the rows that changed
+`forEachChunk`. Inside it, `cols.ticksRead(def)` is the row tick column. `cols.since` is the
+change tick of the previous run of the system. So `t[i] > cols.since` picks the rows that changed
 since that run. An `onSet` observer with entity granularity turns the row ticks on as well.
 
 ### Added. Change detection for a sparse component
 
-A sparse component had none. It now has the row grain: `ecs.trackRows(def)` keeps one change tick
-for each entity index in the sparse store, `setSparseField` and `at` on the mutable sparse cursor
-stamp it, and an add zeroes it. `ctx.sparseChanged(def, entityId)` reads it as a pull, true for the
-run after a write. `observe(def, { granularity: "entity", onSet })` reads it as a push, the one
-observer shape a sparse component takes: it has no archetype, so no structural callback and no
-archetype grain, and `observe` names that in its error. A mutable sparse cursor's `at` pays one load
+A sparse component had none. It now has the row grain. `ecs.trackRows(def)` keeps one change tick
+for each entity index in the sparse store. `setSparseField` and `at` on the mutable sparse cursor
+stamp it. An add zeroes it. `ctx.sparseChanged(def, entityId)` reads it as a pull, true for the
+run after a write. `observe(def, { granularity: "entity", onSet })` reads it as a push. That is the
+one observer shape a sparse component takes. It has no archetype, so no structural callback and no
+archetype grain. `observe` names that in its error. A mutable sparse cursor's `at` pays one load
 and one branch while the component keeps no row ticks.
 
 ### Changed. A by-id record stops listing once the list outgrows a fraction of the live entities
 
-An entity-level `onSet` drain paid a push, three checks and a sort slot for each recorded entity,
-so a system that wrote most rows by id paid more than a scan of the rows would cost. Past a cap
-set from the live entity count at each drain, a frame switches to the scan, the by-id record stamps
-the row and pushes nothing, and the drain walks the plane of each archetype a writer stamped. A
+An entity-level `onSet` drain paid a push, three checks and a sort slot for each recorded entity.
+So a system that wrote most rows by id paid more than a scan of the rows would cost. Past a cap
+set from the live entity count at each drain, a frame switches to the scan. The by-id record then
+stamps the row and pushes nothing. The drain walks the plane of each archetype a writer stamped. A
 `markChanged` record stamps no archetype, so it is listed still, and dropped when a scan covers it.
 
 ### Fixed. The observer drain took a slow path on JavaScriptCore
 
-The radix pass that orders a drain by entity index kept its scratch in a plain array grown by a
-length assignment. JavaScriptCore turns such an array into a sparse store, and each element store
-in the pass became a hash insert. The scratch is a typed array now, grown by doubling, in the
-observer registry and in the hierarchy walk of the relation service. V8 did not care either way.
+The radix pass that orders a drain by entity index kept its scratch in a plain array. A length
+assignment grew that array. JavaScriptCore turns such an array into a sparse store, and each
+element store in the pass became a hash insert. The scratch is a typed array now, grown by
+doubling. That holds in the observer registry, and in the hierarchy walk of the relation service.
+V8 did not care either way.
 
 ### Changed. The entity grain keeps a row tick, and not a dedup byte for each entity slot
 
-An entity-level `onSet` observer used to allocate one byte for each entity index slot of the world,
-for each tracked component, whatever the live count. It now gives every archetype of the component
-one word of ticks for each row, which rides the row plane through every move, and the dirty list
-takes an entity one time per drain by comparing that tick. A row carries its tick across a
-transition, so the compare holds for a move. It does not hold when the entity leaves the component
-and joins it again, because the new row has no tick to carry, so the drain drops a repeated id
-after it orders the list. The drain fires a row a chunk loop recorded with no liveness check,
-because a row inside the enabled partition is alive, a member and enabled by construction. A row a
+An entity-level `onSet` observer used to allocate one byte for each entity index slot of the world.
+It did that for each tracked component, whatever the live count. It now gives every archetype of
+the component one word of ticks for each row. That word rides the row plane through every move.
+The dirty list takes an entity one time per drain, by comparing that tick. A row carries its tick
+across a transition, so the compare holds for a move. It does not hold when the entity leaves the
+component and joins it again. The new row has no tick to carry. So the drain drops a repeated id
+after it orders the list. The drain fires a row a chunk loop recorded, with no liveness check. A
+row inside the enabled partition is alive, a member and enabled by construction. A row a
 by-id path recorded is still checked. In a frame where a chunk loop took `cols.ticks(def)`, the
-drain walks each row of every archetype of the component that a writer stamped, so take the column
-only in a loop that stores into it.
+drain walks more rows. It walks each row of every archetype of the component that a writer stamped.
+So take the column only in a loop that stores into it.
 
 A tag keeps no row ticks. It has no field, so no write can record one, and `trackRows` on a tag
 does nothing.

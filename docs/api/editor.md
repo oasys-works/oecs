@@ -6,7 +6,7 @@
 
 The editor makes each edit into a transaction with a **forward** list of commands and an
 **inverse** list. Undo puts the inverse list on the same command queue. Redo puts the forward list
-on it again. So an undo is only one more command: it applies at the head of the next phase, as
+on it again. So an undo is only one more command. It applies at the head of the next phase, as
 each other write from the host does.
 
 ```ts
@@ -86,8 +86,8 @@ the default read for `fieldHandle` when you give no read function.
 
 ## Field handles
 
-`fieldHandle` makes one field into a value that operates in two directions: a tracked read, and a
-write that you can undo. This is correct for an input in an inspector.
+`fieldHandle` makes one field into a value that operates in two directions. Those are a tracked
+read, and a write that you can undo. This is correct for an input in an inspector.
 
 ```ts
 fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: string & keyof S,

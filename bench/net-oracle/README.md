@@ -7,26 +7,26 @@ rule table with the ECS side, and the last section of this file gives the reason
 Two groups of layers run at a different rate. The cheap layers run at each tick: the totals, the
 channel of the events, and the change detection. The full comparison of each live agent runs at each
 verification tick, which `--verify=N` selects. The curated suite uses a value of 1 for the small
-cases, and a larger value for the cases with many agents.
+cases. It uses a larger value for the cases with many agents.
 
 A third group sits between the two. The fingerprint of every agent is one linear scan on each side
-(`fingerprint.mjs`), and its cost permits a check at each tick, also in a case with hundreds of
-thousands of agents. In a development build the same scan runs at each phase of a tick, through the
-trace seam of the engine, so a divergence names the phase and not only the tick. `--fp=N` and
-`--phase=N` select the cadence of each, and the default is each tick. Layer 19 below gives the
-detail, and `--stress` is the preset that runs large nets with this check at each frame.
+(`fingerprint.mjs`). Its cost permits a check at each tick. That holds also in a case with hundreds
+of thousands of agents. In a development build the same scan runs at each phase of a tick. It goes
+through the trace seam of the engine. Then a divergence names the phase, and not only the tick.
+`--fp=N` and `--phase=N` select the cadence of each, and the default is each tick. Layer 19 below
+gives the detail. `--stress` is the preset that runs large nets with this check at each frame.
 
 The harness uses these mechanisms continuously, but the unit tests use them one at a time only:
 
 - **archetype migration**, rows that move between archetypes under continuous change
-- **relation mutation**, a change of target on an exclusive relation, maintenance of the reverse
-  index, sets of targets on a multi relation, and each of the three `onDeleteTarget` policies
-  (`clear`, `delete`, and `orphan`)
+- **relation mutation**, a change of target on an exclusive relation, and maintenance of the
+  reverse index. It also covers sets of targets on a multi relation. It covers each of the three
+  `onDeleteTarget` policies: `clear`, `delete` and `orphan`
 - **structural observers**. `onAdd` and `onRemove` callbacks that maintain a derived set, and this
   includes an entity that a cascade destroys *indirectly*
 - **change detection**. `onSet` observers at both granularities, `changed()` queries, and
-  `ctx.markChanged`, against a model that says exactly which agents a tick wrote and which agents it
-  marked
+  `ctx.markChanged`. The harness compares them against a model. The model says exactly which agents
+  a tick wrote, and which agents it marked
 - **the verbs of a query**. `andRelation`, `notRelation`, `optional`, `singleEntity`,
   `firstEntity` and `some`, each against a fact that the reference already holds
 - **the partition of the enabled and the disabled rows**. `onDisable` and `onEnable` observers, and
@@ -35,12 +35,12 @@ The harness uses these mechanisms continuously, but the unit tests use them one 
   commands on each tick of each case
 - **sparse components, events, resources and run conditions**, each one carries a fact that the
   reference model also holds
-- **each column kind**, the `Mix` component holds `i8`, `i16`, `u16` and `u32` columns on each
-  agent, and `f32` in the float arm, so the row plane and the value paths of each kind run under the
+- **each column kind**. The `Mix` component holds `i8`, `i16`, `u16` and `u32` columns on each
+  agent, and `f32` in the float arm. So the row plane and the value paths of each kind run under the
   same churn as the net
 
 Use this tool only for local work, as you use the other tools in `bench/`. It is not a part of the
-package, **and it is not a part of `pnpm test` or of the release gate.**
+package. **It is not a part of `pnpm test` or of the release gate.**
 
 In this document, **pressure** means continuous use of a mechanism during a run.
 
@@ -60,9 +60,9 @@ pnpm exec vitest run --config bench/net-oracle/vitest.config.ts
 `vitest.config.ts` at the root collects `src/**` and nothing else. `bench/` is a local tool, so
 `pnpm test` does not run the oracle, and no workflow runs it.
 
-`oracle.test.mjs` is still a vitest file, for one reason: vitest resolves the sources in `src/`
-directly and defines `__DEV__ = true`, so that file tests **the code in the tree**, with the access
-checker and each internal assertion active. `run.mjs` tests **a bundle**, which is what
+`oracle.test.mjs` is still a vitest file, for one reason. Vitest resolves the sources in `src/`
+directly, and it defines `__DEV__ = true`. So that file tests **the code in the tree**, with the
+access checker and each internal assertion active. `run.mjs` tests **a bundle**, which is what
 `mutants.mjs` needs. A file outside the `include` list of a configuration cannot run, not even by
 its name. Therefore `bench/net-oracle/vitest.config.ts` exists, and the command above names it. No
 script in `package.json` names it.
@@ -70,7 +70,7 @@ script in `package.json` names it.
 ## The simulation
 
 The simulation is **the interaction combinators of Lafont**. There are three types of agent (γ, or
-`CON`, δ, or `DUP`, and ε, or `ERA`), and the six rewrite rules over their unordered pairs. There is
+`CON`, δ, or `DUP`, and ε, or `ERA`). The six rewrite rules run over their unordered pairs. There is
 also an inactive `ROOT` agent, which holds the one free port of the net.
 
 We did not select this workload because it is interesting. A cellular automaton such as the Game of
@@ -91,7 +91,7 @@ flush, and each flush dispatches the observers. Thus each tick does work.
 
 You can also check this system in a way that rules of our own invention do not permit. The system is
 **strongly confluent**. It has linearity, it has binary interaction, and its rules have no
-ambiguity. Together, these three properties give one result: each sequence of reductions reaches the
+ambiguity. Together, these three properties give one result. Each sequence of reductions reaches the
 same normal form, and it uses the same number of rewrites. Therefore the oracle needs no reference
 implementation, and it needs no known answer. Refer to layer 7 below.
 
@@ -140,8 +140,8 @@ We keep a fixed window of epochs and destroy the remainder. That gives:
 
 The key of an epoch is an **index** that only increases, and it is not an entity id. This choice
 makes a model of the orphan policy possible. The orphan policy is *about* dead handles. A model that
-recycled ids, as the ECS does, cannot find the difference between a dead handle and a handle that it
-used again.
+recycled ids, as the ECS does, cannot find the difference. A dead handle and a handle that it used
+again look the same.
 
 `Fresh` and `Age` have no meaning for the interaction net. They exist to make the archetype graph
 wider. The reference model copies their rules exactly, so we check them, and we do not ignore them.
@@ -165,44 +165,45 @@ This is the strongest assertion about the partition, and it is not a count.
 The phase of the promotion is what makes the second half of that rule possible to break. A `disable`
 command from the write seam is deferred, so it lands at the flush at the end of PRE_UPDATE. With the
 promotion in PRE_UPDATE, the promotion reads the quarantine from before the toggles of the tick.
-Then no agent is `Fresh` and disabled at one time, the skip in `promoteFresh` never runs, and no
+Then no agent is `Fresh` and disabled at one time. The skip in `promoteFresh` never runs, and no
 archetype holds both `Fresh` and `Tainted`. Therefore the promotion is in UPDATE, and it is before
 the rewrites. The floor `ticks with a row that is Fresh and disabled` keeps the state reachable.
 
 **It tests the observers for the toggle.** `onDisable` and `onEnable` fire only for a **deferred**
 toggle, and an immediate `ecs.disable()` from the host fires nothing. Therefore each toggle here goes
 through `HostCommandQueue`, and the seam gets exercised on each tick of each case. A part of the
-picks take the "disable, enable, disable in one drain" path: an observer fires one time for each net
-transition, so the ECS must collapse that sequence to a single `onDisable` call.
+picks take the "disable, enable, disable in one drain" path. An observer fires one time for each net
+transition. So the ECS must collapse that sequence to a single `onDisable` call.
 
 **It widens the archetype graph.** The host adds the `Tainted` tag with the same command that
 disables the row, so the graph gains a dimension.
 
 The quarantine has its own generator. It must not take a number from the generator that selects the
-reduction order: `runCase` compares a run against a run of the reference alone at the same seed, and
-a shared stream would give the two runs different orders. Two different orders of a **bounded**
+reduction order. `runCase` compares a run against a run of the reference alone at the same seed. A
+shared stream would give the two runs different orders. Two different orders of a **bounded**
 prefix give two different nets, which is correct behaviour that looks like a fault.
 
 ## The layers of the oracle
 
 1. **Self-consistency (the ECS alone).** Each port connects to a live port that connects back. A
    port that must not exist holds no relation and no slot. The reverse index of the relations agrees
-   with the forward links, and `pairsOf` gives the same set of pairs that the forward links give. A
+   with the forward links. `pairsOf` gives the same set of pairs that the forward links give. A
    Dead entity holds no key in the reverse index of a `"clear"` relation. `sourcesOfAny` agrees with
    the same question asked one relation at a time. This layer needs no reference. So it continues to
    operate even with a bug in the mapping of ids in the harness itself.
-2. **Lockstep (the ECS against the reference).** At each verification tick, and through a bijection
-   of the ids, we compare the type of each agent, each port link, `Fresh`, `Age`, `Touch.seq`,
-   `Quar.count`, `Tainted`, the census, and the count of wire loops. This finds the first tick that
+2. **Lockstep (the ECS against the reference).** At each verification tick we compare many facts,
+   through a bijection of the ids. They are the type of each agent, each port link, `Fresh`, `Age`
+   and `Touch.seq`. They are also `Quar.count`, `Tainted`, the census, and the count of wire loops.
+   This finds the first tick that
    differs. `--verify=1` makes each tick a verification tick, and `--batch=1` then finds the first
-   rewrite that differs. The layers that run at each tick, whatever `--verify` holds, are the
-   totals, the channel of the events, the change detection of layer 9, and the fingerprint of
-   layer 19.
+   rewrite that differs. Four layers run at each tick, whatever `--verify` holds. They are the
+   totals and the channel of the events. They are also the change detection of layer 9, and the
+   fingerprint of layer 19.
 
    Each rewrite also reads the ECS through the same adapter that drives the rewrite. Therefore a
    read that gives the wrong link changes the wiring on the ECS side, and this layer sees it. With
-   `--batch<=4` the harness also verifies, before each rewrite, that the pair which the plan names
-   is an active pair in the ECS.
+   `--batch<=4` the harness also verifies each rewrite before it runs. The pair which the plan
+   names must be an active pair in the ECS.
 3. **Canonical form (with no bijection).** We give new numbers to both nets by a breadth-first
    search from `ROOT`, and we compare them as strings. Therefore two nets agree if and only if they
    are isomorphic, for each possible allocation of the ids. The bijection of the ids cannot hide an
@@ -216,44 +217,45 @@ prefix give two different nets, which is correct behaviour that looks like a fau
    entities the removal of an epoch destroys. We compare each `Produced` set of targets element by
    element, and we assert that its order increases. We check that `cascadeOf` predicts exactly which
    entities a despawn destroys. Over the `PrevRec` chain we check `ancestorsOf` and `rootOf` across
-   hundreds of edges, we require a walk to give each parent before its children, and we require
+   hundreds of edges. We require a walk to give each parent before its children. We require
    `maxDepth` to truncate to an exactly predicted count. We then make three assertions about
    `compact()`. It reclaims an **exactly predicted** number of dead keys in the reverse index. A
    second call has no effect. It also makes no change to `stateHash`, and no change to any dangling
    forward link.
 6. **A closed form.** You can calculate the number of rewrites of the generator for an erasure tree
    by hand (`2^(depth+1)`). Therefore the two implementations can be incorrect together, and the run
-   still fails. This is the only layer that is external to both implementations, and thus it is the
+   still fails. This is the only layer that is external to both implementations. Thus it is the
    deepest check that this harness has.
 7. **Confluence, across the reduction orders.** `confluence()` reduces one net in several sequences,
    and it requires equal numbers of rewrites and equal normal forms.
 
    This layer sits beside the closed form, and not above it. Layer 2 ends each order with an
-   unconditional `compare(...)`, and that comparison is a complete structural isomorphism: a total
-   bijection over the live agents, the type of each agent, each port link, and each churn column.
+   unconditional `compare(...)`. That comparison is a complete structural isomorphism. It is a
+   total bijection over the live agents. It covers the type of each agent, each port link, and each
+   churn column.
    Each tick also asserts that the ECS applied the number of rewrites that the reference planned.
    Therefore each order already pins its ECS result to its own reference, in the same run. An ECS
-   that loses a link, mis-migrates a row or drops an entity fails layer 2 first, whether or not the
-   fault depends on the order.
+   that loses a link, mis-migrates a row or drops an entity fails layer 2 first. That holds whether
+   or not the fault depends on the order.
 
-   What is left is a comparison of the two reference results with each other. That is a real oracle,
-   and it is the only layer that can find a fault that `spec.mjs` and `ref.mjs` hold together.
+   What is left is a comparison of the two reference results with each other. That is a real oracle.
+   It is the only layer that can find a fault that `spec.mjs` and `ref.mjs` hold together.
    That is the failure mode that a comparison of two implementations cannot see, because the two
    sides agree. Do not bill this layer as the deepest check of the ECS.
-8. **Metamorphism of a snapshot.** We call `stateHash`, then `capture` and `captureSparse`, then we
-   write one deterministic byte into one slot of one agent and one into one sparse entry, then we
+8. **Metamorphism of a snapshot.** We call `stateHash`, then `capture` and `captureSparse`. We then
+   write one deterministic byte into one slot of one agent, and one into one sparse entry. We then
    call `restore` and `restoreSparse`. We then require the same hash and the same data. The two
    writes are what make this check necessary. Without them, a `restore` that did nothing would pass
    the check, and it would give no error. The harness also requires the hash to move for each of the
-   two bytes, and thus the layer cannot become vacuous without a report. One deterministic byte for
+   two bytes. Thus the layer cannot become vacuous without a report. One deterministic byte for
    each store is enough, and it keeps the run reproducible from its seed alone. The partition of the
-   rows and the sparse store must both survive the round trip, so the quarantine and the `Watch` set
-   are verified again after the restore.
-9. **Change detection.** The reference counts `Touch.seq` in its own `setLink`, so the set of agents
+   rows and the sparse store must both survive the round trip. The harness verifies the quarantine
+   and the `Watch` set again after the restore.
+9. **Change detection.** The reference counts `Touch.seq` in its own `setLink`. So the set of agents
    that a tick wrote comes from the model. The first three items below read that set, and thus the
    model gives their expected value. Items four and five compare two reads of the ECS with each
    other. Such a comparison is still an oracle, because the two reads take different paths in the
-   engine, and the mutant `changed-tick-not-set-by-mut` fails item five. But the model does not give
+   engine. The mutant `changed-tick-not-set-by-mut` fails item five. But the model does not give
    their expected value, and this file must not say that it does. The row-level part of item five
    does read the model, at each verification tick.
 
@@ -413,8 +415,8 @@ prefix give two different nets, which is correct behaviour that looks like a fau
 
 ## The arms for the profile
 
-The same layers run over three different worlds. Each arm is a case of the suite, so the arm gets the
-complete oracle and not one call of one function.
+The same layers run over three different worlds. Each arm is a case of the suite. So the arm gets the
+complete oracle, and not one call of one function.
 
 | Arm | The world | Why |
 | --- | --- | --- |
@@ -425,12 +427,12 @@ complete oracle and not one call of one function.
 ## The probes for the API surface
 
 `surface.mjs` holds 15 probes. Each one is small, and each one has an exact expected value. A probe
-that only asked "did this throw" would pass against an ECS that gave the wrong answer, and that is
+that only asked "did this throw" would pass against an ECS that gave the wrong answer. That is
 the failure mode of this whole tool.
 
 Each probe gives back the count of the assertions that it made, and `PROBES` holds a floor for each
-one. The count is the delta of a counter that `eq` and `eqList` increase, so it is the count of the
-comparisons that ran. A number in the text of the file cannot show that: a probe that returns early
+one. The count is the delta of a counter that `eq` and `eqList` increase. So it is the count of the
+comparisons that ran. A number in the text of the file cannot show that. A probe that returns early
 still reports a number that is more than zero. `runSurface` and `oracle.test.mjs` both read the
 floor.
 
@@ -456,16 +458,16 @@ They exist because some parts of the API cannot go into a net that must keep its
 
 ## Proof that the oracle finds a bug
 
-`mutants.mjs` puts known ECS bugs into a **built bundle**, and never into the source tree, so that
-it is safe against a working directory with changes. It requires that the oracle catches each one.
+`mutants.mjs` puts known ECS bugs into a **built bundle**, and never into the source tree. So it
+is safe against a working directory with changes. It requires that the oracle catches each one.
 
 The battery holds one case for the probes of the API surface, and that case is last. Each case
 before it names a `--net=`, and a `--net=` run does not call `surface.mjs`. Therefore the battery
-could not reach a probe before this case existed, and no probe had evidence that it catches a
-fault. The battery also holds one case on the float arm, because `Mix.mf32` and `Mix.bf32` exist in
-that arm alone, and a fault in the `f32` path of the row plane has no other case that can show it.
+could not reach a probe before this case existed. No probe had evidence that it catches a
+fault. The battery also holds one case on the float arm. `Mix.mf32` and `Mix.bf32` exist in
+that arm alone. A fault in the `f32` path of the row plane has no other case that can show it.
 
-The table below names the mechanism that fires first, and it says whether that mechanism is an
+The table below names the mechanism that fires first. It says whether that mechanism is an
 oracle layer or an error of the engine. An engine error is a real detection, the bug is fatal, but
 it is not evidence about the oracle. `mutants.mjs` reports both counts, and it does not treat every
 nonzero exit as a catch by the oracle.
@@ -524,7 +526,7 @@ nonzero exit as a catch by the oracle.
 
 ### The build that the battery uses
 
-The battery uses a development build by default, because the guards of that build give more
+The battery uses a development build by default. The guards of that build give more
 mechanisms a chance to fire. The released package is a production build, so
 `node bench/net-oracle/mutants.mjs --prod` runs the same battery against `__DEV__ = false`. Both
 builds were measured, and this is the result:
@@ -535,25 +537,27 @@ builds were measured, and this is the result:
 | production | 43 of 49 | 6 of 49 | 0 |
 
 The two builds now agree on the mechanism for each mutant, so the choice of the default costs no
-coverage. Of the six that an engine error finds, three are on the growth path of the row plane, and three are in the sparse store, where the relations share the store class and throw before a layer looks. Read
+coverage. Of the six that an engine error finds, three are on the growth path of the row plane.
+Three are in the sparse store. There the relations share the store class, and they throw before a
+layer looks. Read
 those six rows as "this bug is fatal", and not as "the oracle finds this bug". Unit tests
 (`archetype_row_plane.test.ts` and `sparse_id_indexed.test.ts`) hold those paths instead.
 
-The mutants on the growth path **escaped** the first set of mutants, because a small net does not
+The mutants on the growth path **escaped** the first set of mutants. A small net does not
 use more than the prepared capacity of its archetype. Therefore the set now includes `erase:14` and a
 case for growth. This result also shows most clearly why the floors for non-vacuity are a part of the
-harness, and not an addition of no value. `erase:14` alone still catches all three of these mutants.
+harness. They are not an addition of no value. `erase:14` alone still catches all three of these mutants.
 Each other mutant fails on `erase:8`.
 
 A mutant is a patch of text against the bundle that the build makes. Therefore **a change to the
 mechanism of a mutant makes that mutant invalid, and gives no message**. `mutants.mjs` prevents this
 condition. If a pattern does not match one time exactly, `mutants.mjs` reports the mutant as out of
-date, and it counts the mutant as an escape. It does not skip the mutant.
+date. It counts the mutant as an escape. It does not skip the mutant.
 
 There is a second way for a mutant to go stale, and one mutant in this set found it. The first
 version of `changed-tick-not-set-by-mut` removed the line that sets the change tick from `ctx.ref`.
-Its pattern matched exactly one time, so `mutants.mjs` accepted it, and the mutant escaped, because
-the harness wrote `Age` through `forEachChunk` alone, and no case reached `ctx.ref`. **A pattern that
+Its pattern matched exactly one time, so `mutants.mjs` accepted it. The mutant escaped, because
+the harness wrote `Age` through `forEachChunk` alone. No case reached `ctx.ref`. **A pattern that
 matches is not the same as a pattern that names code the harness runs.** The mutant now names
 `columnGroupMut`, which is the path behind `cols.mut`.
 
@@ -561,17 +565,17 @@ The probe for the cursors and the refs closes that gap. The mutant `changed-tick
 holds the `ctx.ref` line, and the probe catches it.
 
 A third way found two more. The rewrite of the row plane and of the accessors changed the text that
-two mutants named, so both went stale at one time: the swap-remove fill and the `ctx.ref` stamp. The
-battery reported both as out of date, which is the behaviour that the paragraph above asks for, and
-both now name the new code. The fourth way is a path that no case reaches. The first form of the
-`f32` mutant escaped on a float case that had the column, because the initial net went through
-`spawnMany` alone, and that path fills each column through the true view. The single `spawn` is the
-path that copies the bits of the template. `load()` now spawns half of each group one at a time, so
-both paths store the constants of `Mix`, and the mutant fails at the first comparison. That mutant then found the same fault in the
-first version of the probe: the probe read `changed()` on the first tick of the world. There the
-baseline of the reader is the start of the run, and the query reports each archetype whatever the
-write path does. The probe now uses three quiet ticks to make the baseline current, and it reads the
-result of one write after that.
+two mutants named. So both went stale at one time. They are the swap-remove fill and the `ctx.ref`
+stamp. The battery reported both as out of date, which is the behaviour that the paragraph above
+asks for. Both now name the new code. The fourth way is a path that no case reaches. The first form
+of the `f32` mutant escaped on a float case that had the column. The initial net went through
+`spawnMany` alone. That path fills each column through the true view. The single `spawn` is the
+path that copies the bits of the template. `load()` now spawns half of each group one at a time. So
+both paths store the constants of `Mix`. The mutant fails at the first comparison. That mutant then
+found the same fault in the first version of the probe. The probe read `changed()` on the first tick
+of the world. There the baseline of the reader is the start of the run. The query reports each
+archetype, whatever the write path does. The probe now uses three quiet ticks to make the baseline
+current. It reads the result of one write after that.
 
 ## Two results that this file records
 
@@ -580,14 +584,14 @@ result of one write after that.
 still carry the dangling dead handles, by design. Each key of a dead target that an earlier
 `compact()` reclaimed therefore returns after a restore.
 
-`relation.ts` documents that behavior, and the behavior is correct. We record it here because it is
-the kind of interaction that a model that a person built from the documentation alone would get
-wrong. `RefProv.noteRestored()` is where the harness accounts for it.
+`relation.ts` documents that behavior, and the behavior is correct. We record it here for one
+reason. It is the kind of interaction that a model gets wrong. A person builds that model from the
+documentation alone. `RefProv.noteRestored()` is where the harness accounts for it.
 
 **A default `changed()` query cannot report an archetype whose rows are all disabled.** A default
 query keeps the archetypes with one or more enabled rows, so an all-disabled archetype is empty for
-it. The `onSet` observer with the granularity of an archetype takes a different path, it visits each
-archetype with one or more rows, so it does report that archetype. Both are correct, and the
+it. The `onSet` observer with the granularity of an archetype takes a different path. It visits each
+archetype with one or more rows. So it does report that archetype. Both are correct, and the
 difference is not obvious from the documentation. `driver.changeCheck` keeps two expected sets for
 that reason, and it checks the `includeDisabled().changed(Touch)` arm against the larger one.
 
@@ -609,22 +613,22 @@ more meaning to a successful run than it has:
 
 - **A compute backend.** `attachBackend` and `backendHandle` route a system to a `ComputeBackend`
   instead of its TypeScript body. The engine ships the seam, and the worker and the compiled module
-  are the consumer's to provide. Therefore this harness has nothing to attach, and the arm for the
+  are the consumer's to provide. Therefore this harness has nothing to attach. The arm for the
   `SharedArrayBuffer` covers the backing that such a backend needs, and not the dispatch to it.
-- **The SAB command ring.** `installHostCommandSeam` takes a `ring` option, and
+- **The SAB command ring.** `installHostCommandSeam` takes a `ring` option.
   `HostCommandDispatcher` with the `ring_*_codec` factories decodes 15-byte slots from another
   thread into the same `applyHostCommand`. The harness drives the typed queue, which is the
   in-process transport. The ring needs a producer on a second thread, so it stays with the unit
   tests.
 - **`FIXED_UPDATE`, and `FrameStepper`.** The harness calls `ecs.update(1)` and reads a variable
-  timestep. The fixed-step accumulator, the limit on the count of the sub-steps, and the stepper for
-  a frame are a separate path.
+  timestep. The fixed-step accumulator is a separate path. So is the limit on the count of the
+  sub-steps, and so is the stepper for a frame.
 - **The Solid read path**, at `@oasys/oecs/solid` and `plugins/solid`. That is a separate entry
   with its own tests, and it is not the core.
 - **The editor plugin**, at `plugins/editor`. Same reason.
 - **A resource that holds a value with a deep shape.** The resources here hold a number or a small
-  record. A resource is out of `stateHash` and out of the snapshot, so its value is opaque to the
-  engine, and the layer that a model could check is the lifecycle. `surface.mjs` checks that.
+  record. A resource is out of `stateHash` and out of the snapshot. So its value is opaque to the
+  engine. The layer that a model could check is the lifecycle. `surface.mjs` checks that.
 - **`configureSet` with an ordering across sets.** `surface.mjs` uses a set with a shared run
   condition, and it does not order one set against another.
 - **A world with more than one `ECS` instance at one time.** `multi_world_isolation.test.ts` holds
@@ -637,18 +641,18 @@ more meaning to a successful run than it has:
   the seam for a compute backend, with `attachBackend` above.
 - **`SabUnavailableError`.** The error needs an environment with no `SharedArrayBuffer`. The arm for
   the `SharedArrayBuffer` runs in an environment that has one.
-- **`removeSystem`.** The schedule is fixed after `startup()`, so the harness never calls it, in the
+- **`removeSystem`.** The schedule is fixed after `startup()`. So the harness never calls it, in the
   middle of a drive or at any other point.
 - **`StoreRestoreError` through the root entry.** The guard of the ECS reads the same dense bytes,
-  and it runs first, because that is what keeps a refused restore non-mutating. Therefore damage in
-  the dense section gives `ECSRestoreError`, and the probe for the restore of the whole world pins
+  and it runs first. That order keeps a refused restore non-mutating. Therefore damage in
+  the dense section gives `ECSRestoreError`. The probe for the restore of the whole world pins
   that order. The dense error class itself belongs to `restoreColumnStore`, which the root entry
   does not reach. The unit tests hold it.
 - **`ctx.removeResource`, and a `singleEntity` call that must throw.** The simulation registers each
   resource one time, and a run that removed one would stop the gate that reads it. The throw of
-  `singleEntity` is present in a development build alone: a production build skips the count and
+  `singleEntity` is present in a development build alone. A production build skips the count, and it
   gives the first match. Therefore the net pins the identity of the one ROOT, which is the assertion
-  in both builds, and the arm that must throw belongs in a probe.
+  in both builds. The arm that must throw belongs in a probe.
 - **`Query.and`, `Query.or` and `optional` with more than one component, and `ChangedQuery.and`.** The
   harness composes each query one verb at a time. The multi-argument forms fold through the same
   single-term cache, so they take the same path.
@@ -657,11 +661,16 @@ more meaning to a successful run than it has:
   builds, and layer 2 runs in both builds. A fault that a production build alone shows gets the
   tick, and not the phase.
 
-This list included eight more gaps before an earlier pass, and the layers above closed them: the
-`onDisable` and `onEnable` observers, the `onSet` observers, the `changed()` queries, `hierarchy()`
-past depth 1 with `maxDepth`, a dead key in the reverse index of a port relation, the float columns
-with the world profile that has no determinism, the sparse components with the events and the
-resources and the host write path, and the `SharedArrayBuffer` profile.
+This list included eight more gaps before an earlier pass. The layers above closed them:
+
+- the `onDisable` and `onEnable` observers
+- the `onSet` observers
+- the `changed()` queries
+- `hierarchy()` past depth 1 with `maxDepth`
+- a dead key in the reverse index of a port relation
+- the float columns with the world profile that has no determinism
+- the sparse components with the events and the resources and the host write path
+- the `SharedArrayBuffer` profile
 
 A later pass closed four more: `relations.remove`, the family of the cursors and the refs, the
 immediate toggle from the host, and `entityIdAtRow`. The same pass made a row that is both `Fresh`
@@ -669,10 +678,14 @@ and disabled reachable. Before that change, no run reached that state, and the r
 test.
 
 The most recent pass closed nine more. Six of them went into the simulation, because the net gives
-each one an exact model. They are `andRelation` and `notRelation` through the arity of the
-ports, `optional` through the agents that have no `Age` yet, `singleEntity` through the one ROOT,
-`firstEntity` through the idle tail, `some`, and the pair `ctx.getResource` and
-`ctx.hasResource`.
+each one an exact model. They are:
+
+- `andRelation` and `notRelation`, through the arity of the ports
+- `optional`, through the agents that have no `Age` yet
+- `singleEntity`, through the one ROOT
+- `firstEntity`, through the idle tail
+- `some`
+- the pair `ctx.getResource` and `ctx.hasResource`
 
 Two more went into the simulation with a model of their own: `ctx.markChanged`, and the pair
 `ctx.removeRelation` and `ctx.hasRelation` over a `Produced` set.
@@ -681,28 +694,28 @@ The last two went into `surface.mjs`. A net that must keep its meaning cannot ho
 the refusal of a damaged snapshot, and the immediate component writes of the host, which call no
 observer.
 
-The combined snapshot of a world is not a gap, and an early reading of this file said that it was.
-`snapshots.capture()` holds three sections, the dense columns, the sparse stores with the relations,
-and the host bookkeeping, and `snapshots.restore()` mounts all three. Therefore layer 8 covers that
+The combined snapshot of a world is not a gap. An early reading of this file said that it was.
+`snapshots.capture()` holds three sections: the dense columns, the sparse stores with the relations,
+and the host bookkeeping. `snapshots.restore()` mounts all three. Therefore layer 8 covers that
 path. `captureSparse` and `restoreSparse` are the second, smaller path for the sparse half alone,
 and layer 8 covers that also.
 
 An earlier reading of this file said that layer 8 covered `ECS_SNAPSHOT_VERSION` and the checks that
-fail closed. That was too strong. Layer 8 does a round trip that must succeed, so it never gives
-`restore` bytes that it must refuse, and it never reads the version word. The probe for the restore
+fail closed. That was too strong. Layer 8 does a round trip that must succeed. So it never gives
+`restore` bytes that it must refuse. It never reads the version word. The probe for the restore
 of the whole world holds that half now.
 
 ## The relation to `bench/fuzz.mjs`
 
 `fuzz.mjs` does random structural operations *from the host*, against a `Map` model. It is an
-addition to this harness, and not a repetition of it, because it cannot reach the mechanisms that
+addition to this harness, and not a repetition of it. It cannot reach the mechanisms that
 this harness covers:
 
 - Each operation in `fuzz.mjs` is **immediate**. But a structural observer runs only for a deferred
   operation in the schedule. Therefore `fuzz.mjs` gives no coverage of the observers.
 - It uses no relation.
-- It runs no system. Therefore it uses no `ctx.commands`, it has no sequence of a flush, and it makes
-  no structural change during an iteration.
+- It runs no system. Therefore it uses no `ctx.commands`. It has no sequence of a flush, and it
+  makes no structural change during an iteration.
 - A random operation has no *semantic* invariant to break. Therefore `fuzz.mjs` finds damage to the
   storage, but it does not find an incorrect result from the simulation.
 
@@ -742,7 +755,7 @@ node bench/net-oracle/run.mjs --net=<case> --seed=<n> --batch=1 --verify=1
 `--batch=1` puts one rewrite in each flush. So the tick number that the harness reports *is* the
 rewrite number. A failure names the agent, the port, and the values on both sides.
 
-Two options make a layer absent, and each one is useful when you want to know which layer sees a
+Two options make a layer absent. Each one is useful when you want to know which layer sees a
 fault first:
 
 ```
@@ -757,12 +770,12 @@ node bench/net-oracle/run.mjs --net=<case> --phase=0     # no checkpoint inside 
 
 The fingerprint runs at each tick by default, and in a development build its three checkpoints run
 inside each tick. Therefore the first report of a divergence names the tick and the phase, before
-`--batch=1` narrows it to the rewrite. `--fp=N` and `--phase=N` give each one a cadence, which a
-case with hundreds of thousands of agents needs for the checkpoints: each one is a scan of each
-agent. `--stress` holds cases of that size, and it gives its checkpoints a cadence of their own.
+`--batch=1` narrows it to the rewrite. `--fp=N` and `--phase=N` give each one a cadence. A case with
+hundreds of thousands of agents needs that cadence for the checkpoints. Each checkpoint is a scan of
+each agent. `--stress` holds cases of that size, and it gives its checkpoints a cadence of their own.
 
-One note about `--steps` with `--soak`. That option caps every case of the soak, and each case of
+One note about `--steps` with `--soak`. That option caps every case of the soak. Each case of
 the soak takes a snapshot on a cadence of hundreds of ticks. Therefore a soak that you cut short
-reaches few ticks and few snapshots, and the floor for the count of the snapshots then reports that
+reaches few ticks and few snapshots. The floor for the count of the snapshots then reports that
 the run applied too little pressure. That report is correct: a short run of the soak is a run with
 little pressure. Give the soak its own step budgets, or read the report as the note that it is.

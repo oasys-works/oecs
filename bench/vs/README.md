@@ -31,21 +31,21 @@ node bench/vs/probe-sparse-spawn.mjs  # find where the `oecs-sparse` entry loses
 
 **Use `npm ci`, and do not use `npm install`.** `package.json` gives a `^` range for
 becsy, koota, miniplex and thyseus. Therefore a plain install can give versions that
-are different from the versions in the table above, and the table is then a record of
-a different measurement. `package-lock.json` pins the documented versions. thyseus is
-a dependency of this directory, but it is not an entry in the table, refer to the
-note about thyseus below.
+differ from the versions in the table above. The table is then a record of a
+different measurement. `package-lock.json` pins the documented versions. The thyseus
+package is a dependency of this directory, but it is not an entry in the table.
+Refer to the note about thyseus below.
 
 The tool uses each other library as its author released it, and it makes no
 changes. The libraries come from `bench/vs/node_modules`. For oecs, the tool starts
-`scripts/build.mjs`, which is the build of the package, and it measures the artifact
-that npm gives to a user. Thus the development guards are not in the measured code,
-and both sides of the comparison have the form of a released build.
+`scripts/build.mjs`, which is the build of the package. It measures the artifact
+that npm gives to a user. Thus the development guards are not in the measured code.
+Both sides of the comparison have the form of a released build.
 
 An earlier method made a bundle of `src/` with esbuild. That bundle gave `__DEV__`
-the value of the release, but it kept each guard as a branch that is always false.
+the value of the release. But it kept each guard as a branch that is always false.
 Therefore the guards were in the measured code, and they made each function larger.
-The table below comes from a run with the artifacts, and the position of oecs in
+The table below comes from a run with the artifacts. The position of oecs in
 each row is the same as the position that the earlier method gave. The guards
 changed the values, but they did not change the order.
 
@@ -59,17 +59,17 @@ one of them.
 - **`oecs-sparse`** keeps the same data in sparse components: one typed array for each field,
   indexed by entity, outside the archetype. That is the layout of bitECS, wolf and piecs. So this
   entry is the equal comparison for the rows that read by id or that move membership. On the two
-  iteration rows it walks the member list through `forEachEntity`, and the driver of that walk,
-  not the layout, is what it pays for. Refer to the section about the sparse rows below. Each
-  entity carries a dense tag, `Slot`, so the sparse walk has a dense base to filter against,
+  iteration rows it walks the member list through `forEachEntity`. The driver of that walk,
+  and not the layout, is what it pays for. Refer to the section about the sparse rows below. Each
+  entity carries a dense tag, `Slot`. The sparse walk then has a dense base to filter against,
   which is the documented form.
 
 Read the two entries as one library with a choice for each component, and not as two competitors.
 
 ## Results
 
-Run the tool to get the values. This file records the positions only, because a
-value is correct for one machine, one version of Node and one release. The last
+Run the tool to get the values. This file records the positions only. A value is
+correct for one machine, one version of Node and one release. The last
 run used node v24.12.0, Darwin arm64 and **oecs 0.5.4**. The `raw` row is a limit,
 and not an entry in the comparison.
 
@@ -84,27 +84,29 @@ and not an entry in the comparison.
 | `add_remove`, tag on or off | **oecs-sparse** | third, with piecs inside the calibration spread | first |
 
 **Read the two oecs rows as one library with a choice for each component.** The packed
-entry is second on the two iteration rows and on `spawn` and `despawn`, first on `has`, and
-last on `read_by_id`. The id-indexed entry is first on `add_remove`, second on `has`, and near
+entry is second on the two iteration rows and on `spawn` and `despawn`. It is first on
+`has`, and last on `read_by_id`. The id-indexed entry is first on `add_remove`, second on `has`, and near
 the raw limit on `read_by_id`. It loses the iteration rows in the driver of `forEachEntity`, and
 the `spawn` row in the row build of `addSparse`. `probe-sparse-iter.mjs` and
 `probe-sparse-spawn.mjs` split both costs, and the section about the sparse rows below gives the
-result. A component that a system reads by id belongs in the second layout, and a component
+result. A component that a system reads by id belongs in the second layout. A component
 that a system sweeps belongs in the first.
 
-Three other libraries give a better result than a packed oecs component in some row. harmony is
-faster for iteration, and piecs is faster for `spawn` and `despawn`. Both had their last release in
-2022. The `spawn` gap to piecs and the `add_remove` gap between the packed entry and piecs are both
-inside the spread of the null run, so those rows are ties. bitECS, wolf and piecs read by id at the
-raw limit, which an id-indexed layout gives and a packed one cannot.
+Three other libraries give a better result than a packed oecs component in some row. The
+harmony entry is faster for iteration, and piecs is faster for `spawn` and `despawn`. Both
+had their last release in 2022. The `spawn` gap to piecs is inside the spread of the null
+run. The `add_remove` gap between the packed entry and piecs is also inside that spread.
+Both rows are ties. Three libraries read by id at the raw limit: bitECS, wolf and piecs. An
+id-indexed layout gives that limit, and a packed layout cannot.
 
-If you compare oecs only with the libraries that have **maintenance**, which are bitECS, koota
-and becsy, the packed entry is first in six of the seven rows and last in `read_by_id`, and the
-id-indexed entry is first in `read_by_id` against koota and second against bitECS.
+Compare oecs only with the libraries that have **maintenance**, which are bitECS, koota
+and becsy. The packed entry is then first in six of the seven rows, and last in
+`read_by_id`. The id-indexed entry is first in `read_by_id` against koota, and second
+against bitECS.
 
-Run `node bench/vs/vs.mjs --null` before you read a row: the spread of the null run is the noise
-floor of that row, and on this machine the `despawn` and `add_remove` rows had a wide floor in the
-last run.
+Run `node bench/vs/vs.mjs --null` before you read a row. The spread of the null run is the
+noise floor of that row. On this machine the `despawn` and `add_remove` rows had a wide
+floor in the last run.
 
 ## How to read the unusual values
 
@@ -120,23 +122,24 @@ last run.
   The two are very different, and the choice changes the position of miniplex in
   that row by a large amount. A property read is the natural idiom for a miniplex
   user, but it is not a call to the library. It prices the layout of miniplex,
-  and this row prices a membership API. wolf-ecs is reported as absent in the same
-  row, because wolf-ecs has no membership call at all. miniplex has one, so the row
-  uses it, and the two libraries then get the same rule. With the property read instead,
-  miniplex is first in this row by a large factor. `cases.mjs` records both.
+  and this row prices a membership API. The table reports wolf-ecs as absent in the
+  same row. That library has no membership call at all. The miniplex library has
+  one, so the row uses it. The two libraries then get the same rule. With the
+  property read instead, miniplex is first in this row by a large factor.
+  `cases.mjs` records both.
   - A miniplex query connects to the world only when something reads its entities,
     and `has()` does not do that read. Therefore the case must call `connect()`.
     Without it, every `has()` gives `false`, and the row measures a search of an
     empty bucket. The cross-library checksum found this condition.
 - **becsy operates far from its design point.** Component access uses an accessor
-  for each entity, and becsy also makes checks against the declared access. becsy
-  exists to run systems on more than one core. This measurement uses one thread and
-  one system. Therefore its `iter2` value shows the cost of the accessor API of
-  becsy. It is not a statement about the library. The table has `iter2` only. The
-  notes about becsy in `cases.mjs` tell you why the other six cases need entity
-  references that the test must hold.
-- **harmony is faster than oecs in both iteration rows.** harmony
-  gives the caller an array of column tuples for each archetype, and the caller can
+  for each entity, and becsy also makes checks against the declared access. The
+  becsy library exists to run systems on more than one core. This measurement uses
+  one thread and one system. Therefore its `iter2` value shows the cost of the
+  accessor API of becsy. It is not a statement about the library. The table has
+  `iter2` only. The notes about becsy in `cases.mjs` give the reason. The other six
+  cases need entity references that the test must hold.
+- **harmony is faster than oecs in both iteration rows.** The library
+  gives the caller an array of column tuples for each archetype. The caller can
   read the array by index. Therefore harmony makes no cursor for each chunk. A
   library with maintenance could use the same method and get the same result. Refer
   to `probe-oecs.mjs`.
@@ -148,8 +151,8 @@ last run.
 ## The two rows that need an explanation
 
 **`read_by_id`: oecs is much slower, and one part of the cause is the layout.**
-bitECS, wolf-ecs and piecs put component data in an array, and the index is the
-entity id. Therefore a read of one field of entity `e` is `x[e]`. This is the raw
+The libraries bitECS, wolf-ecs and piecs put component data in an array. The index
+is the entity id. Therefore a read of one field of entity `e` is `x[e]`. This is the raw
 baseline, and all three libraries operate at it. oecs puts the rows together in each
 archetype. Therefore the same read must first find the archetype and the row of the
 entity. That operation cannot have a cost of zero. So oecs cannot reach the raw
@@ -158,13 +161,13 @@ baseline.
 This row reads the ids in the sequence of their creation, and its name says so. The
 name was `random_read` before, and that name was not correct: no implementation
 makes a permutation of the ids. A measurement with one seeded permutation, equal for
-every library, gives this result: the libraries that use the entity id as the index
-show no change at all, and oecs becomes a little slower. At N = 10,000 the arrays of
-those libraries fit in the cache, and thus the sequence of the reads makes no
-difference to them. But oecs must find the archetype and the row for each entity, and
-a scattered sequence makes that operation more expensive. Therefore a permutation
+every library, gives this result. The libraries that use the entity id as the index
+show no change at all. The oecs entry becomes a little slower. At N = 10,000 the
+arrays of those libraries fit in the cache. Thus the sequence of the reads makes no
+difference to them. But oecs must find the archetype and the row for each entity. A
+scattered sequence makes that operation more expensive. Therefore a permutation
 would make the difference in this row larger, and not smaller. The case keeps the
-sequential form, because `bench/suite.mjs` measures the same paths in the same
+sequential form. `bench/suite.mjs` measures the same paths in the same
 sequence, and `cases.mjs` exists to be comparable with it.
 
 But the layout does not explain the full difference. Run `bench/run.mjs access/` to
@@ -188,14 +191,14 @@ difference between them is not the layout:
 - A **cursor** finds the archetype and the row one time for each entity, and it
   allocates nothing. Therefore it is much faster than the other two.
 
-This row measured `getField` before. That was the incorrect path for a comparison,
-because the rule of this file is that each library uses the method that its own
-documentation recommends, and bitECS puts its column outside the loop. A cursor is
-the equivalent, and it made this row much faster.
+This row measured `getField` before. That was the incorrect path for a comparison.
+The rule of this file is that each library uses the method that its own
+documentation recommends. The bitECS library puts its column outside the loop. A
+cursor is the equivalent, and it made this row much faster.
 
 The iteration rows show the other effect of the same layout. The libraries that use
-the entity id as the index need memory in proportion to the highest entity id. oecs
-needs memory in proportion to the number of entities that are alive.
+the entity id as the index need memory in proportion to the highest entity id. The
+oecs world needs memory in proportion to the number of entities that are alive.
 
 **`iter_frag`: fragmentation increases the cost for oecs, and the cause is the
 construction of a cursor for each chunk.** `probe-oecs.mjs` puts an equal number of
@@ -203,30 +206,32 @@ rows into 1 archetype, then into 8 archetypes, then into 64 archetypes. With an
 empty callback body, the cost stays near zero at each of the three shapes.
 Therefore the dispatch and the callback are not the cost. With `x[i] += 2` in the
 body, the cost increases with each step. The cause is the construction of the
-`cols.mut(Pos)` cursor for each chunk, because the test does this one time for each
-archetype, and not one time for the pass. harmony is faster in this row, because it
-gives the caller an array of tuples for each archetype. harmony makes no cursor.
+`cols.mut(Pos)` cursor for each chunk. The test does this one time for each
+archetype, and not one time for the pass. The harmony library is faster in this row.
+It gives the caller an array of tuples for each archetype. It makes no cursor.
 
 ## The two sparse rows that need an explanation
 
 **`iter2`, the `oecs-sparse` entry: the driver of `forEachEntity` is the cost, and not the
-layout.** `probe-sparse-iter.mjs` runs the entry, then the same driver with an empty callback,
-then a loop over the member list of `Pos` with the filters the query keeps, and then the same
-loop without the filters. The empty callback costs about as much as the real one. So the body of
-`forEachSparseMatch` is the loss: the loops over the term lists, the read of the generation, and
-the id it composes for each entity. The loop with no filter ties bitECS, wolf and piecs. So the
-gather through the id list is not the loss. A loop that keeps the filters of the query recovers
-about half, and it stays far behind those three libraries. Their query returns a member list
-that the library keeps up to date on each add and remove, and a filter at each entity cannot
-reach that. A tighter iteration form closes half of the gap. The rest needs a member list that
-the world maintains for the intersection, or a walk over one store with no dense term.
+layout.** `probe-sparse-iter.mjs` runs the entry, then the same driver with an empty callback.
+It then runs a loop over the member list of `Pos` with the filters the query keeps. It then
+runs the same loop without the filters. The empty callback costs about as much as the real
+one. So the body of `forEachSparseMatch` is the loss. It pays for the loops over the term
+lists, and for the read of the generation. It also composes an id for each entity. The loop
+with no filter ties bitECS, wolf and piecs. So the gather through the id list is not the loss.
+A loop that keeps the filters of the query recovers about half, and it stays far behind those
+three libraries. Their query returns a member list. The library keeps that list up to date on
+each add and remove. A filter at each entity cannot reach that. A tighter iteration form
+closes half of the gap. The rest needs a member list that the world maintains for the
+intersection. The other option is a walk over one store with no dense term.
 
 **`spawn`, the `oecs-sparse` entry: the row build by field name is the cost, and not the number
 of calls.** `probe-sparse-spawn.mjs` spawns the `Slot` template alone, then with one `addSparse`,
-then with two. It then spawns with two direct calls to `setRow` that skip the liveness check and
-the store lookup, and last with two joins and positional column writes. Each `addSparse` costs about as
-much as the whole packed spawn. The direct calls to `setRow` recover about a quarter of the
-excess, and that is all a batched `addSparse` with the same values object can recover. The
+then with two. It then spawns with two direct calls to `setRow`. These calls skip the liveness
+check and the store lookup. It spawns last with two joins and positional column writes. Each
+`addSparse` costs about as much as the whole packed spawn. The direct calls to `setRow` recover
+about a quarter of the excess. A batched `addSparse` with the same values object can recover no
+more. The
 positional writes bring the sparse spawn level with the packed one. The difference is the lookup
 of each field by name in the values object, inside `SparseComponentStore.setRow`. A template that
 carries sparse defaults as a positional row would close this row.
@@ -243,7 +248,7 @@ Each rule below changed a value. Therefore this file records them.
   operates in this condition. `bench/ab/child.mjs` uses the same rule.
 - **Each round changes the sequence of the libraries.** Thus no library is always
   first, when the CPU is cold. No library is always last, when the CPU is hot. The
-  tool shows the median of the best value of each round, and it also shows the
+  tool shows the median of the best value of each round. It also shows the
   spread from the minimum value to the maximum value.
   - **Use a number of rounds that is a multiple of the number of entries.** The
     rotation moves the start of the list by one position for each round. The list
@@ -269,28 +274,28 @@ Each rule below changed a value. Therefore this file records them.
     threshold, so do not rank the iteration row without the calibration.
 - **Each library uses the best method in its own documentation.** oecs makes
   entities from a `template`. Therefore piecs uses `prefabricate`, and bitECS uses
-  `addComponents`. oecs reads `read_by_id` with a **cursor** that the tool makes
-  outside the loop, and not with `getField`. bitECS also puts its column outside
-  its loop, and the cursor is the equivalent operation. This change made the
+  `addComponents`. The oecs entry reads `read_by_id` with a **cursor** that the tool
+  makes outside the loop, and not with `getField`. The bitECS library also puts its
+  column outside its loop, and the cursor is the equivalent operation. This change made the
   `read_by_id` row much faster, and it is the largest single change in this list.
   Two separate calls to `addComponent` made piecs much slower than `prefabricate`.
   The same change made bitECS only a little slower. Thus the change to bitECS is
   inside the noise, but the change to piecs is not. The test reads harmony by
-  index, and not with the `for..of` loop in the README of harmony, because the
+  index, and not with the `for..of` loop in the README of harmony. The
   allocation of the iterator costs much more. If a library has no API for a case,
   the table shows `none`. The test writes no substitute, because a substitute measures
   itself. Where a library has the call, the case must use the call. Refer to the note
   about `Query.has` of miniplex above.
 - **An absent case and a failed measurement are different.** A library with no API
   for a case shows `none (no API for this case)`. A measurement that did not run shows
-  `✗ FAILED`, with the reason, and the tool then says that the table is not complete.
+  `✗ FAILED`, with the reason. The tool then says that the table is not complete.
   The tool put both conditions into one message before. Therefore a library that was
   not installed read as a gap in the design of that library.
 - **Checksums across the libraries.** Four of the seven cases add a value after an
-  equal number of runs, and all the libraries must agree about the sum. The two
+  equal number of runs. All the libraries must agree about the sum. The two
   iteration cases add the column that they change. `read_by_id` and `has` add their
-  own results, and both must give exactly `20 × N` for every library: each library
-  seeds the field to `1` on all N entities, and each library holds the component on
+  own results. Both must give exactly `20 × N` for every library. Each library
+  seeds the field to `1` on all N entities. Each library holds the component on
   all of them. This rule is necessary, because it found three incorrect results that
   looked correct:
   - bitECS `iter2` was **much too slow**. The storage arrays had the size of the
@@ -322,8 +327,8 @@ Each rule below changed a value. Therefore this file records them.
 - **Only the functions that all the APIs have.** Relations, observers, change
   detection, snapshots, determinism and the host write seam have no equivalent in
   most of the seven competitors. A comparison of features must include them, but
-  this comparison cannot. bitECS 0.4 is the only competitor with its own relations
-  and observers.
+  this comparison cannot. The bitECS 0.4 release is the only competitor with its own
+  relations and observers.
 - **Checksums cover 4 of the 7 cases**, the two iteration rows, `read_by_id` and
   `has`. For the three structural cases, the only check is that they do not throw an
   error.

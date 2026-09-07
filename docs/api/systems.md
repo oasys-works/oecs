@@ -108,13 +108,13 @@ The access checker holds you to these rules (in development only):
 - **`queries`** is a *check*, and not a run-time term. At registration it tests that
   `queries ⊆ reads ∪ writes`, and it throws `QUERY_ACCESS_UNDECLARED` if you query a component that
   you did not declare. It cannot find a component that is absent from *both* lists. So keep it
-  equal to the terms of your closed-over `ecs.query(...)` calls, or to the terms of the query
-  builder that you give to `registerSystem`.
+  equal to the terms of your closed-over `ecs.query(...)` calls. Or keep it equal to the terms of
+  the query builder that you give to `registerSystem`.
 
 ### Compile-time enforcement
 
 The config form does more than supply the development-mode checker. `registerSystem` reads your
-declaration lists as literal types, and it gives `fn` and `onAdded` a `SystemContext` that is
+declaration lists as literal types. It gives `fn` and `onAdded` a `SystemContext` that is
 **limited to exactly what you declared**. So access that you did not declare does not *compile*,
 and the error names the declaration that is absent:
 
@@ -163,10 +163,10 @@ ecs.registerSystem({ exclusive: true, reads: [], writes: [], fn: (ctx) => { /* a
 ```
 
 `exclusive: true` gives **full `ECS` access** for the full run of the system. Each access check
-passes, `reads` and `writes` can be empty, and `ctx` stays the permissive `SystemContext` at the
-type level, with no compile-time limits. Use it only for the systems that truly touch everything:
-the [apply system for host commands](./host-write-seam.md), save and load, and debug tools. The
-flag is the grant that bypasses the access check, and nothing else. It is refused beside
+passes, and `reads` and `writes` can be empty. `ctx` stays the permissive `SystemContext` at the
+type level, with no compile-time limits. Use it only for the systems that truly touch everything.
+Those are the [apply system for host commands](./host-write-seam.md), save and load, and debug
+tools. The flag is the grant that bypasses the access check, and nothing else. It is refused beside
 `parallel`, because a system that reaches arbitrary state cannot run on a worker.
 
 <a id="parallel"></a>
@@ -190,9 +190,9 @@ type ParallelColumn<D> =
   D extends ComponentDef<infer S> ? readonly [D, Extract<keyof S, string>] : never;
 ```
 
-A system that carries `parallel` runs its kernel across a pool of workers when a pool is attached
-and the matched row count clears `minRows`. Otherwise `fn` runs, and the two must compute the same
-thing.
+A system that carries `parallel` runs its kernel across a pool of workers. It needs an attached
+pool, and a matched row count that clears `minRows`. Otherwise `fn` runs, and the two must compute
+the same thing.
 
 ```ts
 const move = ecs.registerSystem({
@@ -243,8 +243,8 @@ permits the add and the remove, and the engine prepares the target archetypes.
 ## The system context (`ctx`)
 
 `ctx` is a `SystemContext`, and it is the only handle that a system receives. It divides into
-**deferred** structural operations, which the engine holds until the flush at the end of the phase
-so that iteration stays safe, and **immediate** reads and writes.
+**deferred** structural operations and **immediate** reads and writes. The engine holds a deferred
+operation until the flush at the end of the phase. So iteration stays safe.
 
 ### Reads and writes of components (immediate)
 
@@ -332,11 +332,11 @@ ecs.removeSystem(move);
 
 ## Compute backend (advanced)
 
-If the system carries a `backendHandle` **and** you attached a
-[compute backend](./memory.md#compute-backend) with `ecs.attachBackend(...)`, the schedule runs
-`backend.run(handle, dt, tick)` **in place of** `fn`. Continue to declare `reads` and `writes` correctly,
-because they authorize the shared-memory columns that the backend touches. If you attach no
-backend, `fn` runs as the pure-TypeScript alternative.
+The schedule runs `backend.run(handle, dt, tick)` **in place of** `fn` under two conditions. The
+system carries a `backendHandle`, **and** you attached a
+[compute backend](./memory.md#compute-backend) with `ecs.attachBackend(...)`. Continue to declare
+`reads` and `writes` correctly, because they authorize the shared-memory columns that the backend
+touches. If you attach no backend, `fn` runs as the pure-TypeScript alternative.
 
 ## See also
 

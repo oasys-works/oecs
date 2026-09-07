@@ -3,8 +3,9 @@
 > **Advanced and optional.** A plain `ECS` needs none of this. Use it when a write starts
 > **outside** the schedule: in a UI, an editor, a development tool, a network handler, or a worker.
 
-The problem: those callers run outside the schedule, but a write to the `ECS` during a frame, or
-from a second thread, would corrupt the live iteration. The host write path solves it. It makes each
+The problem: those callers run outside the schedule. A write to the `ECS` during a frame would
+corrupt the live iteration. A write from a second thread would do the same. The host write path
+solves it. It makes each
 write from outside a **typed command**. It holds that command outside the schedule, and it applies
 it at one approved point. The API calls this path a *seam*, as in `installHostCommandSeam`.
 
@@ -14,7 +15,7 @@ queue at the **head of a phase**: `PRE_STARTUP` for the initial values, and `PRE
 frame. It drains through one dispatch function, `applyHostCommand`, which issues the usual deferred
 structural operations on `ctx`. The one exception is `setField`, which applies immediately during
 the drain and sets the change tick. The structural writes then land at the usual flush at the end of
-the phase, the observers run, and, if you installed it, the Solid plugin publishes at the settle
+the phase. The observers run. If you installed it, the Solid plugin publishes at the settle
 point.
 
 ```ts
@@ -50,9 +51,9 @@ interface HostCommandSeamOptions {
 > phase. Also, the `PRE_STARTUP` drain runs only when the system exists before startup.
 
 `schedules` takes either spelling of a phase. A `SCHEDULE` member names a built-in. A handle from
-`ecs.addPhase` names a phase the caller added. So a plugin drains at the slot it owns, instead of
-contending for insertion order inside a phase the application also writes to. The loop of the phase
-decides the bucket: a phase of the startup loop drains at seed time, and a phase of the update loop
+`ecs.addPhase` names a phase the caller added. So a plugin drains at the slot it owns. It does not
+contend for insertion order inside a phase the application also writes to. The loop of the phase
+decides the bucket. A phase of the startup loop drains at seed time. A phase of the update loop
 drains each frame.
 
 The equivalent function to remove it:
@@ -120,14 +121,14 @@ In other places, "a definition and its values" is a
 [bundle](./components.md#the-handle-is-callable-thus-it-makes-bundles), such as `Pos({ x: 1 })`. A bundle takes
 **a subset of the values**, and the engine writes `0` in each absent field at the attach. The host
 write path does not accept a bundle, by design. A `HostCommand` is plain data that you can
-serialize. It can cross a thread or a wire, you can log it for replay, or you can put it on a stack
+serialize. It can cross a thread or a wire. You can log it for replay. You can put it on a stack
 for undo. It is a record that a reader sees far from the place where you wrote it. Each attach path
 writes `0` in an absent field (the `?? 0` in `writeFields`), so a partial entry would
-still *operate*. What it loses is clarity: in the command as a record, "absent because I wanted
-zero" and "absent because I forgot the field" then look the same. `spawnEntry` keeps the record
-explicit at the type level, because it demands each field at the point where you still know what
-the values must be. In-process code that wants the convenience of a bundle does not need the host
-write path: use `ecs.spawnBundle(...)` or `ctx.commands.spawn(...)` directly.
+still *operate*. What it loses is clarity. In the command as a record, two absences then look the
+same. One is "absent because I wanted zero". The other is "absent because I forgot the field".
+`spawnEntry` keeps the record explicit at the type level. It demands each field at the point where
+you still know what the values must be. In-process code that wants the convenience of a bundle does
+not need the host write path. Use `ecs.spawnBundle(...)` or `ctx.commands.spawn(...)` directly.
 
 ## `HostCommand`
 
@@ -147,9 +148,13 @@ ring between threads, and both resolve through `applyHostCommand(ctx, cmd)`.
 
 ## Record and replay
 
-Each mutation crosses `applyHostCommand`. So a log of the applied commands for each tick, plus the
-`dt` of each tick and a seed, is enough to replay a session. See [determinism](./determinism.md)
-for the guarantee.
+Each mutation crosses `applyHostCommand`. So three things are enough to replay a session:
+
+- a log of the applied commands for each tick
+- the `dt` of each tick
+- a seed
+
+See [determinism](./determinism.md) for the guarantee.
 
 ```ts
 import { HostCommandRecorder, serializeCommandLog, deserializeCommandLog, replayCommandLog } from "@oasys/oecs";
@@ -180,11 +185,12 @@ into a `CommandLog`. The entity ids travel as plain numbers. The engine makes ea
 definition into a callable handle again, from its serialized id. This is one more reason that the
 world for the replay must register its components in the same order.
 
-To replay a session: build a **new `ECS` that you did not start**, in the same way as the recorded
-run. Give it the same components in the same order, the same systems, and the same `seed` from
-`log.seed`. Install the seam, then give its `queue` to `replayCommandLog`. That function pushes the
-commands from the initial phase, calls `startup()`, and then, for each tick, pushes the commands and
-calls `update(dt)`. It does this also for an empty tick, because the `dt` drives the simulation.
+To replay a session, build a **new `ECS` that you did not start**. Build it in the same way as the
+recorded run. Give it the same components in the same order, the same systems, and the same `seed`
+from `log.seed`. Install the seam, then give its `queue` to `replayCommandLog`. That function pushes
+the commands from the initial phase, and calls `startup()`. Then, for each tick, it pushes the
+commands and calls `update(dt)`. It does this also for an empty tick, because the `dt` drives the
+simulation.
 
 > [!WARNING]
 > **The recorder cannot record from a phase of the fixed loop.** A drain in a fixed step sees the
@@ -201,9 +207,9 @@ calls `update(dt)`. It does this also for an empty tick, because the `dt` drives
 
 ## The ring transport between threads (advanced)
 
-For a write that comes from a **worker or from the wire**, a second transport decodes ring slots of
-a fixed size into the same `applyHostCommand`. You supply the operation codes. oecs supplies the
-mechanism and the codecs.
+A write can come from a **worker or from the wire**. For that write, a second transport decodes
+ring slots of a fixed size into the same `applyHostCommand`. You supply the operation codes. oecs
+supplies the mechanism and the codecs.
 
 ```ts
 // the ring transport is a wire and ABI surface, @oasys/oecs/internal (no semver guarantees).
@@ -219,8 +225,8 @@ installHostCommandSeam(ecs, { ring: dispatcher }); // drains the ring at the hea
 ```
 
 Each `ring*Codec` holds its component and field inside the codec, because the payload of 15 bytes
-does not carry them. There is deliberately **no ring codec for `spawn` or `add_component`**,
-because field values of a variable width do not fit a slot of a fixed size. So those two commands
+does not carry them. There is deliberately **no ring codec for `spawn` or `add_component`**. Field
+values of a variable width do not fit a slot of a fixed size. So those two commands
 use the typed transport only. Exactly one dispatcher must drain each ring.
 
 ## See also

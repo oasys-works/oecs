@@ -4,8 +4,8 @@ A **component** is a named group of numeric fields that you attach to an entity.
 gives you a **handle**. You then use that handle everywhere: to attach data, to query, and to read
 columns.
 
-Internally, a component is a **struct-of-arrays**. Each field is its own packed typed-array column,
-and the value of an entity for that field is at the row of that entity. There is no component
+Internally, a component is a **struct-of-arrays**. Each field is its own packed typed-array column.
+The value of an entity for that field is at the row of that entity. There is no component
 object for each entity. This is why iteration is a small loop over adjacent memory.
 
 ```ts
@@ -128,9 +128,9 @@ bundle(Pos, { x: 10, y: 20 });  // the free function (an identical result)
 const e = ecs.spawnBundle(Pos({ x: 10, y: 20 }), Vel({ vx: 1 }), IsEnemy);
 ```
 
-A definition that you do **not** call (`IsEnemy` above, or `Pos`) is also a bundle of zeros, or a
-tag, at each position that accepts a bundle. The same shapes go through `ctx.commands.spawn(...)`
-and `ctx.commands.add(...)` in a system (see [systems](./systems.md)).
+A definition that you do **not** call is also a bundle of zeros, or a tag. `IsEnemy` above and
+`Pos` work at each position that accepts a bundle. The same shapes go through
+`ctx.commands.spawn(...)` and `ctx.commands.add(...)` in a system (see [systems](./systems.md)).
 
 > [!TIP]
 > **Absent values become zero.** When you build a bundle, `Pos({ x: 10 })` or
@@ -155,8 +155,8 @@ removeComponent(entityId: EntityID, def: ComponentDef): this;
 ```
 
 There are three attach shapes. A definition alone attaches a tag. A bundle (`Pos({ x: 1 })`) writes
-`0` in each field that you did not give. The explicit `(e, def, values)` form demands each field,
-so a field name that is absent or has a spelling error is a compile error.
+`0` in each field that you did not give. The explicit `(e, def, values)` form demands each field.
+So a field name that is absent or has a spelling error is a compile error.
 
 ### Several components, one transition
 
@@ -171,7 +171,7 @@ archetype for each component. It takes the same callable bundles as
 [`spawnBundle`](./entities.md) and [`ECS.template`](./entities.md#templates), as in
 `ecs.addComponents(e, Pos({ x, y }), Vel({ vx }), Frozen)`. TypeScript checks each item against the
 schema of its own definition. A field name with a spelling error, or a field from a different
-component, is a compile error, and a tag rejects values. The ECS writes `0` in each field that you
+component, is a compile error. A tag rejects values. The ECS writes `0` in each field that you
 did not give. `spawnBundle` only creates a **new** entity, but `addComponents` extends an entity
 that exists. `removeComponents` is the equivalent function for detachment: one transition for the
 full set.
@@ -197,7 +197,7 @@ tryGetField<S>(entityId: EntityID, def: ComponentDef<S>, field: string & keyof S
 ```
 
 `getField` reads one field of one entity. In development it throws for an entity that is not alive.
-`tryGetField` is the **total** equivalent: it gives `undefined` when the entity is not alive, or
+`tryGetField` is the **total** equivalent. It gives `undefined` when the entity is not alive, or
 when the entity does not hold the component. It does not throw in development, and it does not read
 incorrect data in production. So it is the safe way to test and read in one call:
 

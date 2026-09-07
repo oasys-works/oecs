@@ -18,9 +18,9 @@ simulation needs:
 - `ecs.attachBackend(backend)` with `SystemConfig.backendHandle`, send the systems that you select
   to your backend, in place of their TypeScript closure.
 - `SystemConfig.parallel` with `world.workers.attach`, run one export of a compiled module across a
-  pool of workers, over disjoint row ranges of the matched archetypes.
-- `HostCommandDispatcher`, an optional ring transport with fixed slots, for writes from a worker
-  or from the wire back into the host ECS.
+  pool of workers. Each worker takes disjoint row ranges of the matched archetypes.
+- `HostCommandDispatcher`, an optional ring transport with fixed slots. It takes writes from a
+  worker or from the wire back into the host ECS.
 
 ## Select a memory profile
 
@@ -52,8 +52,8 @@ const ecs = new ECS({ memory: { backing: { wasm: { memory } } } });
 > You must construct `memory.backing.wasm.memory` with `shared: true`. The engine rejects a memory that is
 > not shared, at construction, because the WASM path depends on a `SharedArrayBuffer` backing.
 
-If your backend does not need the storage to be a `WebAssembly.Memory`, but does need bytes that a
-worker can see, use the shared profile instead:
+Your backend may not need the storage to be a `WebAssembly.Memory`. It may still need bytes that a
+worker can see. Use the shared profile instead:
 
 ```ts
 const ecs = new ECS({ memory: { maxBytes: 256 * 1024 * 1024, backing: "shared" } });
@@ -72,9 +72,9 @@ Pick one before you write the module. Both share the memory with the engine, and
 store base below.
 
 There is a third path, and it is not a backend at all. A `parallel` system carries a compiled
-module and an export name, and the engine runs that export across a pool of workers over disjoint
-row ranges. It is the kernel contract below, with the dispatch done for you, and
-[the module contract](./parallel.md#the-module-contract) states every rule a toolchain has to
+module and an export name. The engine runs that export across a pool of workers, over disjoint
+row ranges. It is the kernel contract below, with the dispatch done for you.
+[The module contract](./parallel.md#the-module-contract) states every rule a toolchain has to
 follow. See [parallel execution](./parallel.md).
 
 **A kernel over pointers.** The host resolves the query, and calls the module once for each matched
@@ -90,16 +90,16 @@ paths:
   each worker a region of its own. Without the export every instance keeps one stack.
 - **The data.** A data segment is initialised once and every instance reads it. A static the module
   writes is one variable for every instance, not one for each.
-- **The heap.** A module does not allocate while a pool runs it, because every instance draws from
-  one heap and nothing serialises them.
+- **The heap.** A module does not allocate while a pool runs it. Every instance draws from one
+  heap, and nothing serialises them.
 
-**A walker.** The module reads the header and the archetype descriptors itself, resolves its own
-columns by `(componentId, fieldId)`, and loops over the rows of every archetype it matches. It
+**A walker.** The module reads the header and the archetype descriptors itself. It resolves its own
+columns by `(componentId, fieldId)`. It loops over the rows of every archetype it matches. It
 receives the store base through `setLayout` and walks from it on every call. Choose this when one
 crossing has to run several systems.
 
 A walker reads a column at `storeBase + byte_off`, and the descriptor region at `storeBase +
-layout_descriptor_off`. Every offset the store writes is measured from the header, so a module that
+layout_descriptor_off`. The store measures every offset it writes from the header. So a module that
 treats one as a buffer address is wrong at any base but zero.
 
 Each archetype descriptor starts with a 40-byte header, then one 16-byte column descriptor per
@@ -107,9 +107,9 @@ column. The header holds, in order, `archetype_id`, a component mask of 4 words,
 `row_capacity`, `column_count`, `enabled_count` and `entity_ids_off`. A walker steps to the next
 record by `40 + column_count * 16`.
 
-`entity_ids_off` is reserved. It will hold the offset of the archetype's row-to-entity table, so a
-module can name the entity a row belongs to. The store writes zero today, which says the archetype
-carries no such table, and a walker that ignores the field reads every other field as before.
+`entity_ids_off` is reserved. It will hold the offset of the archetype's row-to-entity table. A
+module can then name the entity a row belongs to. The store writes zero today, which says the
+archetype carries no such table. A walker that ignores the field reads every other field as before.
 `descriptor.test.ts` locks the offset, the header width and the zero.
 
 A walker re-walks on every call. A store grow relocates a column inside the buffer. It abandons the
@@ -134,8 +134,8 @@ spawned since.
 
 ## The store base
 
-The store header sits at a byte offset the caller chooses, and every offset in the header and in
-every column descriptor is measured from it. A wasm-backed world defaults the base to one WASM
+The store header sits at a byte offset the caller chooses. The store measures every offset in the
+header and in every column descriptor from it. A wasm-backed world defaults the base to one WASM
 page, and it refuses a base of 0.
 
 ```ts
@@ -155,12 +155,13 @@ region that lands under a module is the entity index, and `stateHash` never fold
 A module built for shared memory fails worse. It initialises its data segment once, behind a guard
 word inside the memory. Inside a store that word belongs to the entity index. So whether the
 module's constants survive depends on what the world holds. Above the base the same mechanism
-works: the guard word and the segment both sit below `__heap_base`, every instance reads the same
-constants, and the store never writes there.
+works. The guard word and the segment both sit below `__heap_base`. Every instance reads the same
+constants. The store never writes there.
 
 The default base clears nothing on its own. It keeps the header off address 0. A safe Zig or Rust
 build cannot read address 0, because a non-optional pointer may not be null. A default link places
-a module's data far above one page, so read `__heap_base` from the module and pass a base above it.
+a module's data far above one page. So read `__heap_base` from the module, and pass a base above
+it.
 
 `storeBaseAbove` does that read for you:
 
@@ -178,8 +179,8 @@ const ecs = new ECS({
 });
 ```
 
-It reads `__heap_base` from the exports, as a `WebAssembly.Global` or as a plain number, adds the
-extra bytes, and rounds up to a whole WASM page. It throws `INVALID_MEMORY_OPTIONS` when the module
+It reads `__heap_base` from the exports, as a `WebAssembly.Global` or as a plain number. It adds
+the extra bytes, and rounds up to a whole WASM page. It throws `INVALID_MEMORY_OPTIONS` when the module
 exports no `__heap_base`, and the message names the link flag `--export=__heap_base`.
 
 **The extra bytes are yours to bound.** `__heap_base` is where the module's data segment and its
@@ -187,9 +188,9 @@ shadow stack end. Whatever the module allocates while it runs sits above that, a
 knows how far. Pass its peak. A store based inside that heap fails the same silent way.
 
 **A pool takes its stack regions from the same span.** The span `[__heap_base, storeBase)` is the
-caller's reserve, and `workers.attach` carves one private shadow stack out of it for each worker,
-downward from the store base. So a world that runs a `wasm` kernel across a pool adds one stack for
-each worker to the extra bytes, and tells the pool how big one stack is:
+caller's reserve. `workers.attach` carves one private shadow stack out of it for each worker,
+downward from the store base. A world can run a `wasm` kernel across a pool. Such a world adds one
+stack for each worker to the extra bytes. It also tells the pool how big one stack is:
 
 ```ts
 import { workers } from "@oasys/oecs/workers";
@@ -213,7 +214,7 @@ name the stack size beside it. See
 `WASM_STORE_BASE_BYTES` is the default base for the wasm backing, one page. It is on
 `@oasys/oecs/internal`.
 
-The base never reaches a digest. Both the snapshot and the state hash ignore it, so a heap world
+The base never reaches a digest. Both the snapshot and the state hash ignore it. So a heap world
 and a module-hosted world with the same history agree.
 
 ## Attach a compute backend
@@ -247,8 +248,8 @@ tick, the count of `update()` calls so far. Neither is in the store bytes, so bo
 arguments.
 
 The engine calls `setLayout(storeBase)` immediately when you attach the backend. It calls it again
-after each growth of the storage, and after each new publication of the layout. If your WASM side
-caches the offsets of the descriptors, the pointers to the columns, or typed views, make them
+after each growth of the storage, and after each new publication of the layout. Your WASM side may
+cache the offsets of the descriptors, the pointers to the columns, or typed views. Make them
 invalid in `setLayout`.
 
 You can attach one backend to an `ECS` at a time. The function that `attachBackend` gives you
@@ -285,7 +286,7 @@ const move = ecs.registerSystem({
 
 Keep `reads`, `writes`, `resourceReads`, and each other access declaration correct. The call to the
 backend runs inside the same access span as a TypeScript body. So those declarations authorize
-the shared columns that the backend mutates, and they document the order constraints that the
+the shared columns that the backend mutates. They document the order constraints that the
 schedule must respect.
 
 ## Send ids across FFI
@@ -320,9 +321,9 @@ sides. Comparing one against the other reports a difference that is not there.
 
 ## Writes from WASM or from a worker
 
-For mutations that the host must see, and that start outside the schedule, do not write to the
+Some mutations must reach the host, and start outside the schedule. For those, do not write to the
 `ECS` directly during a frame. Use the [host write path](./host-write-seam.md). For writes from a
-worker or from the wire, connect a ring dispatcher, and let the host write path drain it at the
+worker or from the wire, connect a ring dispatcher. The host write path drains it at the
 head of the schedule:
 
 ```ts
@@ -343,7 +344,7 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 
 ## Checklist
 
-1. Construct the world with `memory.backing` set to `{ wasm }` for WASM with no copy, or to
+1. Construct the world with `memory.backing` set to `{ wasm }` for WASM with no copy. Set it to
    `"shared"` for shared columns that a worker can see.
 2. Serve browser builds with COOP and COEP, so that `SharedArrayBuffer` exists.
 3. Register the components in the order that the backend expects.
@@ -355,8 +356,8 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 7. Send each write that starts outside the schedule through the host write path. Do not mutate the
    ECS directly.
 8. Call `ecs.publishRowCounts()` before each run of a module that you drive outside the schedule.
-9. Read the base from the module with `storeBaseAbove(instance.exports, extraBytes)`, and pass the
-   module its own peak run-time heap plus one stack for each worker of the pool.
+9. Read the base from the module with `storeBaseAbove(instance.exports, extraBytes)`. Pass the
+   module its own peak run-time heap, plus one stack for each worker of the pool.
 10. Give `workers.attach` the same `stackBytes` you reserved, so the pool leaves the heap alone.
 11. Link a kernel module with `--export=__stack_pointer` when its body spills anything, and keep it
     off the module's heap either way.

@@ -56,15 +56,16 @@ are gone. The observers plugin now uses `onSettle` and `onPrewarm`. The workers 
 | `installRoute(planner)` | claim the body of the systems this plugin routes | see [the system dispatch route](#the-system-dispatch-route) |
 
 `host.world` carries no facade of any plugin, including the one installing. Take it to register a
-system, register a component, add a phase, read a field, build a cursor or reach a resource.
+system, register a component or add a phase. Take it to read a field, build a cursor or reach a
+resource.
 
 `host.store` is the internal store. It carries no compatibility promise, and a release may change
 it. Reach for it when the seam you need has no world-level form.
 
 `onPrewarm(fn)` returns `SystemDescriptor` values, and `startup()` folds their declared access into
 the archetype closure. A callback that spawns or transitions then gets its target archetype planted
-in advance, rather than first-touched in the middle of a tick. The observers plugin uses it for the
-observers a world registered before startup.
+in advance. Without it, the callback first-touches the archetype in the middle of a tick. The
+observers plugin uses it for the observers a world registered before startup.
 
 `onDispose(fn)` is where a plugin ends a thread, a timer or a socket. Hooks run in install order.
 
@@ -109,8 +110,8 @@ interface RouteDispatch {
 ```
 
 The world asks the planner about **every** system it registers. A planner that has nothing to say
-about one answers `undefined`. The world freezes what the planner built onto the descriptor and
-never looks inside it, so the shape of the plan belongs to the plugin. The plugin validates its own
+about one answers `undefined`. The world freezes what the planner built onto the descriptor, and
+never looks inside it. So the shape of the plan belongs to the plugin. The plugin validates its own
 config there, which is why a world without the plugin validates none.
 
 `installRoute` gives back a `RouteControl`. Call `route(dispatch)` to turn the route on, and
@@ -169,8 +170,8 @@ claims one system, and holds the world to the second-route refusal.
 `host.world.addPhase(name, { loop, before, after })` gives the plugin one slot in the schedule. The
 plugin then owns its order, instead of contending for insertion order inside a phase the
 application also writes to. Return the handle on the facade, so an application can order its own
-systems against the slot. [schedule](./schedule.md) documents `addPhase`, the three loops, the order
-between phases and the two faults.
+systems against the slot. The [schedule](./schedule.md) page documents `addPhase`, the three loops,
+the order between phases and the two faults.
 
 ## The rules
 
@@ -187,9 +188,9 @@ One install per name. A list that holds one name twice throws `PLUGIN_ALREADY_IN
 
 A facade key must not name a member the world already carries. `Object.assign` overwrites it without
 a word, and the world loses a method it needs. A development build checks each key and throws
-`PLUGIN_SURFACE_COLLISION`. Rename the member the plugin adds. The five reserved slots,
-`relations`, `events`, `observe`, `snapshots` and `workers`, are the exception, because a plugin is
-meant to fill them.
+`PLUGIN_SURFACE_COLLISION`. Rename the member the plugin adds. The five reserved slots are the
+exception, because a plugin is meant to fill them. They are `relations`, `events`, `observe`,
+`snapshots` and `workers`.
 
 A bare world fills four of them, `relations`, `events`, `observe` and `workers`, with a reader that
 throws. A JavaScript caller who reaches for one gets a fault that names the import. `snapshots`
@@ -386,8 +387,9 @@ array when you need distinct rows.
 ## A plugin from outside the package, end to end
 
 Nothing below imports a path inside `@oasys/oecs`. It is the whole shape: a factory, a
-`requires`, a component the plugin registers for itself, a change-feed ask, a settle hook, and one
-facade key. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts` runs this shape and
+`requires`, and a component the plugin registers for itself. It also has a change-feed ask, a
+settle hook, and one facade key.
+`src/core/ecs/__tests__/integration/third_party_plugin.test.ts` runs this shape and
 holds `ECS.create` to each of its refusals.
 
 ```ts
@@ -462,8 +464,8 @@ facade key that names a member the world already carries, `spawn` for instance, 
 ## What this page does not cover
 
 - **No per-phase hook.** The lifecycle hooks are settle, prewarm, dispose and the structural
-  rounds. To run at a point of your own inside a frame, add a phase with `host.world.addPhase` and
-  register a system into it.
+  rounds. To run at a point of your own inside a frame, add a phase with `host.world.addPhase`.
+  Then register a system into it.
 - **No install-time startup hook.** Register a system in a startup phase through `host.world`
   instead.
 - **No snapshot participation.** `capture` and `restore` carry the store's own state. A plugin

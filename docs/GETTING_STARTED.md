@@ -2,7 +2,7 @@
 
 oecs is an archetype-based ECS for TypeScript. A component is a set of typed-array columns, grouped
 by archetype. A system is a plain function. It declares the component data that it reads and
-writes, and the schedule runs it in one of the lifecycle phases. This guide builds a small
+writes. The schedule runs it in one of the lifecycle phases. This guide builds a small
 simulation from start to end: components, resources, events, systems, the schedule, and change
 detection.
 
@@ -57,8 +57,8 @@ The available field types are `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`
 `"u32"`.
 `as const` on the array shorthand is optional for a literal that you write in place. The overload
 uses a `const` type parameter, so it keeps the type of each field in both conditions. It
-is necessary only when you build the field list in a separate variable, which TypeScript otherwise
-makes as general as `string[]`.
+is necessary only when you build the field list in a separate variable. TypeScript otherwise
+makes that list as general as `string[]`.
 
 ## 4. Define the resources
 
@@ -114,7 +114,7 @@ for (let i = 0; i < dmg.length; i++) {
 
 In a system, use `ctx.emit` and `ctx.readEvents` (section 10). The value of an event field is a number,
 and this includes a number with a brand such as `EntityID`. For richer data, store it on an entity
-that you keep for that purpose, and refer to that entity by its id.
+that you keep for that purpose. Refer to that entity by its id.
 
 ## 6. Create the entities
 
@@ -143,7 +143,7 @@ of the phase.
 
 A system is a plain function. A system that reads or writes component data uses the **config form**,
 and it declares its access at the start. A development-mode access checker holds you to `reads` and
-`writes`, and the build tool removes that checker from a production build. So a touch of a column
+`writes`. The build tool removes that checker from a production build. So a touch of a column
 that you did not declare *throws* while you develop. `registerSystem` always gives a
 `SystemDescriptor`.
 
@@ -307,13 +307,14 @@ requestAnimationFrame(frame);
 
 ## 10. Work inside a system
 
-Each system receives one `SystemContext` (`ctx`). It gives you the deferred structural operations,
-the accessors for one entity, the events, the resources, and the ticks for change detection.
+Each system receives one `SystemContext` (`ctx`). It gives you the deferred structural operations
+and the accessors for one entity. It also gives you the events, the resources, and the ticks for
+change detection.
 
 ### Deferred structural changes
 
 A structural operation inside a system stays in a buffer until the flush at the end of the phase.
-So the iterators stay correct. A deferred destroy inside `forEach` is safe: the entity stays
+So the iterators stay correct. A deferred destroy inside `forEach` is safe. The entity stays
 visible in the current iteration, and the engine removes it at the flush.
 
 ```ts
@@ -342,7 +343,7 @@ vel.vx += 1;
 ```
 
 `ctx.refRead` does not touch the change tick. `ctx.ref` sets the change tick of the component when
-you take the ref, and it does this whether or not you write through the ref. So, take it only at the point where you mutate. A ref stays valid until the next flush
+you take the ref. It does this whether or not you write through the ref. So, take it only at the point where you mutate. A ref stays valid until the next flush
 at the end of a phase. Do not hold one across `ctx.flush()`, or across a structural change that
 moves the entity to a different archetype.
 

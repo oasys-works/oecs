@@ -19,8 +19,8 @@ libraries, go directly to the page that you need.
   you a handle (`Pos`). The data stays in packed typed-array columns. There is no object for each
   entity.
 - Entities that have the **same set of components** share an **archetype**, which is one adjacent
-  block of columns. This is why iteration is a small loop over arrays, and it is the reason for the
-  word "archetype" in the name.
+  block of columns. This is why iteration is a small loop over arrays. It is also the reason for
+  the word "archetype" in the name.
 - A **query** (`ecs.query(Pos, Vel)`) is a **live, cached** view of each archetype that agrees with
   it. The store adds new matching archetypes automatically. Build the query one time, then use it
   again.
@@ -95,8 +95,8 @@ gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs one plugin two times ge
 `PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
 
 To write a plugin of your own, read [plugins](./plugins.md). It documents `Plugin`, `PluginHost`
-and `PluginsOf`, the nine host members, the route seam, the rules `ECS.create` checks, and the
-change feed a plugin drains.
+and `PluginsOf`. It names the nine host members, the route seam, the rules `ECS.create` checks, and
+the change feed a plugin drains.
 
 | Import | What it is |
 | --- | --- |
@@ -142,7 +142,7 @@ A plugin runs a system body itself through one route. [plugins](./plugins.md) do
 | `PluginMemory` | root, type | `host.memory`, the backing, its source and the store base |
 
 The root exports all four as types. Each is structural, so a plugin satisfies one without
-naming it, and names it when it wants the compiler to check the shape.
+naming it. A plugin names it when it wants the compiler to check the shape.
 
 ### The archetype term
 
@@ -151,11 +151,26 @@ naming it, and names it when it wants the compiler to check the shape.
 | `query.where(term)` | `Query` | narrows the matched archetypes with a term of your own |
 | `ArchetypeTerm` | root, type | `name` and `matches(mask)`, the term `where` takes |
 | `and`, `or`, `not` | root | build an `ArchetypeTerm` from definitions and other terms |
+| `ArchetypeExpr` | root, type | the operand of a combinator, a definition or a term |
 | `QUERY_TERM_DENSE_PATH` | `ECS_ERROR` | a dense-list reader on a query that carries a term |
-| `SNAPSHOT_RESTORE_FAILED` | `ECS_ERROR` | `ecs.snapshots.restore` refused a frame, and `ECSRestoreError` carries it |
-| `InPlaceBufferAllocator`, `BufferAllocator` | root and `/shared`, type | the interface a custom allocator implements |
 
 See [queries](./queries.md).
+
+### The error codes and the memory surface
+
+These codes are new in 0.6. [errors](./errors.md) lists every code with its remedy.
+
+| Name | Where | What it is |
+| --- | --- | --- |
+| `INVALID_TEMPLATE` | `ECS_ERROR` | `spawn` or `spawnMany` got a value that is not a template |
+| `ROW_TICKS_NOT_TRACKED` | `ECS_ERROR` | a row-grain read on a component with no row ticks, `trackRows` turns them on |
+| `SPARSE_QUERY_DENSE_PATH` | `ECS_ERROR` | a dense-list reader on a query that carries a sparse, relation or hierarchy term |
+| `PLUGIN_NOT_INSTALLED` | `ECS_ERROR` | a slot was read on a world that never installed its plugin |
+| `PLUGIN_ALREADY_INSTALLED` | `ECS_ERROR` | one plugin reached an install seam twice |
+| `PLUGIN_SURFACE_COLLISION` | `ECS_ERROR` | a plugin facade names a member the world already carries |
+| `SNAPSHOT_RESTORE_FAILED` | `ECS_ERROR` | `ecs.snapshots.restore` refused a frame, and `ECSRestoreError` carries it |
+| `isEcsError(err)` | root | true for every `ECSError`, and now for an `ECSRestoreError` |
+| `InPlaceBufferAllocator`, `BufferAllocator` | root and `/shared`, type | the interface a custom allocator implements |
 
 ### The parallel and WASM surface
 
@@ -188,10 +203,10 @@ The errors are `WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_
 `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`,
 `PARALLEL_KERNEL_MODULE` and `PARALLEL_KERNEL_FAILED`. See [errors](./errors.md).
 
-The root also exports **`VERSION`**, which is the package version as a string constant that you can
-read at run time (`import { VERSION } from "@oasys/oecs"`). It is a literal in the source, and not
-a value that the build inserts. So a consumer of the raw source (JSR) sees the same value as a
-consumer of the npm bundle.
+The root also exports **`VERSION`**, the package version as a string constant that you can read at
+run time. Import it with `import { VERSION } from "@oasys/oecs"`. It is a literal in the source,
+and not a value that the build inserts. So a consumer of the raw source (JSR) sees the same value
+as a consumer of the npm bundle.
 
 ## Pages
 
@@ -203,18 +218,18 @@ Read these pages in this order, to get a model that you can use.
    definitions, and bundles
 2. [entities](./entities.md), create, destroy, enable, and disable. Templates, and the `EntityID`
    codec
-3. [queries](./queries.md), `query`, the verbs `and`, `not` and `or`, their sparse and relation
-   forms `andSparse`, `notSparse`, `andRelation` and `notRelation`, the `where` expression,
+3. [queries](./queries.md), `query`, the verbs `and`, `not` and `or`, and their sparse and relation
+   forms `andSparse`, `notSparse`, `andRelation` and `notRelation`. The `where` expression,
    `forEach` compared to `forEachChunk`, and the archetype view
 4. [systems](./systems.md), `registerSystem`, `reads` and `writes`, the system context, and
    `ctx.commands`
 5. [schedule](./schedule.md), the seven built-in phases, `addPhase` for one of your own, the order
-   of systems, system sets, the run conditions with `runIfNot`, `runIfAll` and `runIfAny`, and the
-   frame loop
+   of systems, and system sets. The run conditions with `runIfNot`, `runIfAll` and `runIfAny`, and
+   the frame loop
 6. [resources](./resources.md), typed global values
 7. [events](./events.md), send-and-forget messages, which the ECS clears in each frame
-8. [refs](./refs.md), cached field accessors for one entity (`ctx.ref` and `ctx.refRead`), and
-   cursors, which you can use again for a different entity (`ctx.cursor` and `ctx.cursorRead`)
+8. [refs](./refs.md), cached field accessors for one entity (`ctx.ref` and `ctx.refRead`).
+   Cursors, which you can use again for a different entity (`ctx.cursor` and `ctx.cursorRead`)
 9. [change detection](./change-detection.md), the change tick and the `changed()` queries at the
    archetype grain. `ecs.trackRows`, `cols.ticks` and `cols.ticksRead`, `cols.since`, and
    `changed(def).forEachChunk` at the row grain

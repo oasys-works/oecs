@@ -25,7 +25,7 @@ hash(): number;   forEach(fn: (bit: number) => void): void;
 
 ## `SparseSet`
 
-This adds, deletes, and tests dense integer keys in O(1) time, and you can iterate the values as a
+This adds, deletes, and tests dense integer keys in O(1) time. You can iterate the values as a
 dense array. It is correct for "which entity ids are in this set", and it needs no hash map.
 
 ```ts

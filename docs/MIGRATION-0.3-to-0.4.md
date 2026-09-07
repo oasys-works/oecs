@@ -4,12 +4,12 @@ Version 0.4 derives oecs again from the ECS of the upstream oasys engine. The fu
 moved to the shape of that engine. So **each consumer meets breaking changes**. But those changes
 group into a small number of mechanical rules:
 
-1. **Names**. Each method, property, and field changed from `snake_case` to `camelCase` ([the camelCase rename](#0-names-from-snake_case-to-camelcase)), and
-   a small number of verbs changed also.
+1. **Names**. Each method, property, and field changed from `snake_case` to `camelCase` ([the camelCase rename](#0-names-from-snake_case-to-camelcase)).
+   A small number of verbs changed also.
 2. **Construction of the world**, `WorldOptions` becomes `ECSOptions`, and `initial_capacity`
    becomes the `memory` surface ([construction of the world](#1-construction-of-the-world-initial_capacity-is-gone)).
-3. **Systems**. A `__DEV__` access checker now requires each system that touches component data to
-   declare `reads` and `writes`, through the config form ([the access declaration](#2-a-system-that-touches-component-data-must-declare-reads-and-writes)).
+3. **Systems**. A `__DEV__` access checker now holds each system that touches component data.
+   Declare `reads` and `writes` through the config form ([the access declaration](#2-a-system-that-touches-component-data-must-declare-reads-and-writes)).
 4. **Iteration and column access**. Mutation is now the default, because the `_mut` suffix is
    gone. The high-frequency loop that mutates is `eachChunk` with `cols.mut` ([column and ref access](#3-column-and-ref-access-mutable-by-default-and-read-only-by-an-explicit-name)).
 5. **Events and resources**. The key factories changed their names, and the shape of an event
@@ -127,8 +127,8 @@ a production build**. But in development it *throws* for each access that you di
 Each path that the engine checks holds you to it: `cols.mut(def)` and `getColumnRead(def)` inside
 iteration, the accessors for one entity (`ctx.ref`, `ctx.refRead`, `ctx.getField`, and
 `ctx.setField`), and `ctx.resource` and `ctx.setResource`. A system that you register through the
-bare `(ctx, dt)` form, or through the `(q, ctx, dt)` form with a query builder, declares **no**
-access. So each component access inside it throws in development. **Move each system that reads
+bare `(ctx, dt)` form declares **no** access. The `(q, ctx, dt)` form with a query builder declares
+none either. So each component access inside it throws in development. **Move each system that reads
 or writes ECS data to the config form**, and declare what it touches:
 
 ```ts
@@ -173,7 +173,7 @@ Notes:
 
 - The `fn` of the config form is `(ctx, dt)`, and it does **not** receive the query. Capture the
   query one time at module scope (`const movers = world.query(...)`), and refer to it inside `fn`.
-  The engine caches each query and keeps it current, so a handle that you captured stays correct as
+  The engine caches each query and keeps it current. So a handle that you captured stays correct as
   new archetypes appear.
 - `reads` and `writes` are **necessary** on the config form. Empty arrays mean "this system touches
   nothing", explicitly. They do not mean "do not check". A write authorizes a read of the same
@@ -206,14 +206,14 @@ carries `Read`. The mutable accessors also handle the tick for you.
   `getColumnRead`, `getColumnsRead`, `getOptionalColumnRead`, `entityIds`, and `entityCount`. The
   mutable `getColumn` is on the concrete archetype, but it is **not** on the view. So a `forEach`
   loop cannot write to a column directly. Use `forEach` for a system that only reads.
-- `query.eachChunk((cols, count) => …)` is the iterator for each archetype that can mutate, and it
-  is the recommended default for the high-frequency path of a system that writes. `cols.mut(def)`
-  and `cols.read(def)` resolve each field column of one component at the same time, into a group
-  that you can destructure (`const { x, y } = cols.mut(Pos)`). `mut` sets the change tick one time,
-  and `read` does not. `count` is the limit of the enabled rows, which is `entityCount`.
+- `query.eachChunk((cols, count) => …)` is the iterator for each archetype that can mutate. It is
+  the recommended default for the high-frequency path of a system that writes. `cols.mut(def)`
+  and `cols.read(def)` resolve each field column of one component at the same time. They give a
+  group that you can destructure (`const { x, y } = cols.mut(Pos)`). `mut` sets the change tick
+  one time, and `read` does not. `count` is the limit of the enabled rows, which is `entityCount`.
 
-If you prefer to write one entity at a time, and not one chunk at a time, `ctx.ref(def, e)` gives a
-mutable ref and sets the change tick, so that `query.changed(...)` sees it.
+You may write one entity at a time, and not one chunk at a time. `ctx.ref(def, e)` gives a
+mutable ref and sets the change tick. So `query.changed(...)` sees it.
 `ctx.refRead(def, e)` is the read-only equivalent.
 
 ---
@@ -221,10 +221,10 @@ mutable ref and sets the change tick, so that `query.changed(...)` sees it.
 ## 4. Events and resources, renamed factories, and a new shape for an event schema
 
 The key factories changed their names: `event_key` → `eventKey`, `signal_key` → `signalKey`, and
-`resource_key` → `resourceKey`. The **type parameter of an event schema also changed**, from a
-tuple of field *names* to a record of field to value *type*. Because the type parameter now carries
-the value type, a field with a brand, for example `EntityID`, keeps that brand through `emit` and
-`read`.
+`resource_key` → `resourceKey`. The **type parameter of an event schema also changed**. It is now a
+record of field to value *type*, and not a tuple of field *names*. The type parameter now carries
+the value type. So a field with a brand, for example `EntityID`, keeps that brand through `emit`
+and `read`.
 
 ```ts
 // 0.3, the schema is a tuple of field names
@@ -286,9 +286,9 @@ try {
 ```
 
 `ECSError` still extends `Error`, with `name === "ECSError"`, and it carries a typed `category`.
-So both the guard and a test on the name or the category operate correctly. The separate
-`SparseRestoreError` and `WorldRestoreError` classes, which the new sparse and snapshot restore
-paths throw, are plain `Error` objects, and the package exports them beside the others.
+So both the guard and a test on the name or the category operate correctly. The new sparse and
+snapshot restore paths throw `SparseRestoreError` and `WorldRestoreError`. Both are plain `Error`
+objects, and the package exports them beside the others.
 
 ---
 
@@ -299,8 +299,8 @@ paths throw, are plain `Error` objects, and the package exports them beside the 
   took an array of entries in 0.3, and it did not change apart from the rename.)
 - **`batchAddComponent` and `batchRemoveComponent` take an `ArchetypeID`, and not an `Archetype`
   object.** This is important only if you drove a batch transition directly.
-- **`SCHEDULE` did not change.** There are the same seven phases (`PRE_STARTUP`, `STARTUP`,
-  `POST_STARTUP`, `FIXED_UPDATE`, `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`), and `startup()`,
+- **`SCHEDULE` did not change.** The same seven phases remain: `PRE_STARTUP`, `STARTUP`,
+  `POST_STARTUP`, `FIXED_UPDATE`, `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. `startup()`,
   `update(dt)`, `flush()`, and `dispose()` keep their names and their behavior.
 
 ---
@@ -334,14 +334,14 @@ increase of the major version. Use them as they help you:
 - **System sets and run conditions**. `systemSet(...)` with `world.configureSet(set, { ... })`,
   plus `runIfResourceEq`, `runEveryNTicks`, and `runIfAnyMatch`, and a `RunCondition` that you
   write.
-- **`ctx.commands`**, a facade in the style of the Bevy `Commands` type, for the *deferred*
-  structural operations (`spawn`, `add`, `remove`, `despawn`, `disable`, and `enable`). It is
+- **`ctx.commands`**, a facade in the style of the Bevy `Commands` type. It holds the *deferred*
+  structural operations: `spawn`, `add`, `remove`, `despawn`, `disable`, and `enable`. It is
   clearly deferred, in contrast to the immediate `world.addComponent`.
 - **A write path from the host into the ECS**. `installHostCommandSeam(world)` applies
   `HostCommand` values from outside the schedule, through one approved `exclusive` system. It
   supports record and replay (`HostCommandRecorder`, `replayCommandLog`, and
-  `serializeCommandLog`), and a ring transport between threads (`HostCommandDispatcher`, which
-  imports from `@oasys/oecs/internal` since 0.5.0).
+  `serializeCommandLog`). It also supports a ring transport between threads
+  (`HostCommandDispatcher`). That dispatcher imports from `@oasys/oecs/internal` since 0.5.0.
 - **A frame trace**. `world.setTrace(sink)` with `FrameTraceRecorder` gives a structured stream of
   the events in each frame. The `__DEV__` flag controls it.
 - **A compute backend connection**. `world.attachBackend(backend)` runs the body of a system on a

@@ -16,9 +16,9 @@ value, a `NaN`, a raw `TypeError`, or quiet corruption, and not a clear error. C
 violation while you develop. Never depend on a check to occur in production.
 
 **Production is the default on both channels.** You must turn the guards on. You never have to turn
-anything off to ship. There is one exception: the cycle detection in the scheduler, and the
-validators that run at construction for the timestep, the memory options, and the cardinality of a
-relation. Those run in each build.
+anything off to ship. There are two exceptions. The cycle detection in the scheduler runs in each
+build. The validators at construction do too, for the timestep, the memory options, and the
+cardinality of a relation.
 
 ---
 
@@ -34,8 +34,8 @@ import { ECS } from "@oasys/oecs"; // production: the guards are removed
 ### Guards while you develop
 
 Most bundlers set the `development` or `production` **export condition** from their mode. So you
-get the build with the guards automatically while you develop, and you get the build with the
-guards removed automatically in your production bundle. You change no code:
+get the build with the guards automatically while you develop. Your production bundle gets the
+build with the guards removed, also automatically. You change no code:
 
 | Your setup | It resolves to |
 | --- | --- |
@@ -45,9 +45,9 @@ guards removed automatically in your production bundle. You change no code:
 
 ### How to select the build with the guards directly
 
-For a `<script>` tag or a CDN, for a short debugging session, or for a bundler that does *not* set
-a condition automatically, import the development build explicitly. Raw esbuild and
-Rollup resolve to `default`, which is production.
+Import the development build explicitly in these cases. Use it for a `<script>` tag or a CDN, and
+for a short debugging session. Use it for a bundler that does *not* set a condition automatically.
+Raw esbuild and Rollup resolve to `default`, which is production.
 
 ```ts
 import { ECS } from "@oasys/oecs/dev"; // always the build with the guards on
@@ -60,7 +60,7 @@ import { ECS } from "@oasys/oecs/dev"; // always the build with the guards on
 ## Consumers on Deno and JSR
 
 JSR gives you **raw TypeScript**. There is no bundler, and so there is no removal of dead code.
-The choice between development and production is a decision at **run time**: the guard code is
+The choice between development and production is a decision at **run time**. The guard code is
 always present, and `DEV` only controls whether the branches run. The default is production
 (`DEV = false`), so the guards are off and there is no cost in each frame.
 
@@ -74,9 +74,9 @@ import { ECS } from "@oasys/oecs";
 
 A module evaluates depth first, in import order. So the assignment must be in a module that
 evaluates before each module of oecs. Usually that is the top of the entry file of your program,
-above the import, or a small module with a side effect that you import first. Because there is no
-bundler, this is a switch, and not a removal: with `DEV = false` the guard code is still in the
-package, but it does not run. That is the physical limit of a runtime with no bundler, and at a
+above the import. A small module with a side effect that you import first also works. Because there
+is no bundler, this is a switch, and not a removal. With `DEV = false` the guard code is still in
+the package, but it does not run. That is the physical limit of a runtime with no bundler. At a
 steady state it costs nothing past the bytes that you already loaded.
 
 > There is deliberately **no `@oasys/oecs/dev` on JSR**. A wrapper subpath cannot change the flag
@@ -87,8 +87,8 @@ steady state it costs nothing past the bytes that you already loaded.
 
 ## A manual override (in any environment)
 
-`dev_flag.ts` tests `typeof __DEV__` first. So a `globalThis.__DEV__` value that you set before
-the first import has priority over each default, on npm **and** on Deno:
+`dev_flag.ts` tests `typeof __DEV__` first. So your `globalThis.__DEV__` value has priority over
+each default, on npm **and** on Deno. Set it before the first import:
 
 ```ts
 globalThis.__DEV__ = true;  // force the guards on  (for example, to reproduce a bug in an application in production mode)
@@ -109,6 +109,8 @@ get the guards on npm, load `@oasys/oecs/dev`, or build in development mode.
 | the guards while I develop | automatic in a bundler in development mode, or `import "@oasys/oecs/dev"` | `globalThis.__DEV__ = true` before the first import |
 | the guards physically removed | the production build (the default) | not possible without a bundler, the switch is at run time only |
 
-See also: [errors](./api/errors.md), which lists the `ECSError` values that are for development only
-and the values that are always active, and the
-[note on development and production](./api/index.md#dev-vs-prod--read-this-once).
+See also:
+
+- [errors](./api/errors.md), which lists the `ECSError` values that are for development only and the
+  values that are always active
+- the [note on development and production](./api/index.md#dev-vs-prod--read-this-once)

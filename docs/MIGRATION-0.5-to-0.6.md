@@ -1,18 +1,18 @@
 # Migration from oecs 0.5 to 0.6
 
-Version 0.6 makes every name state the act it performs, and it fixes the change tick so that one
+Version 0.6 makes every name state the act it performs. It also fixes the change tick, so that one
 write is reported one time. There is **no alias for an old name**. The compiler finds every rename,
 because each old name is gone.
 
-Most of the work is mechanical. Four changes are not, and you must read them: the plugin
+Most of the work is mechanical. Four changes are not. Read these four: the plugin
 install, the removed reactive subpaths, the change tick, and the two reserved field names.
 
 1. **Relations, events, snapshots, observers and workers are plugins the world installs**. Build
    the world with `ECS.create({ plugins: [relations(), events()] })`, and name the ones it uses.
    `new ECS()` still builds a world, and that world holds none of the five.
 2. **The change tick reports a write one time**. `changed()` used to report a write on two
-   frames when the writer ran before the reader, which is the usual order. It no longer does. A
-   system that both writes a component and reads `changed()` on it no longer sees its own stamp on
+   frames when the writer ran before the reader. That is the usual order. It no longer does. A
+   system may write a component and read `changed()` on it. It no longer sees its own stamp on
    its next run.
 3. **`__cols` and `__row` are reserved field names**. Registration of a component with either
    name now throws.
@@ -37,12 +37,12 @@ event call sites are the same. A query's behaviour is the same, and only its ver
 ## The change tick reports a write one time
 
 `changed()` compared a per-frame tick against the last run of the reader. A frame tick cannot order
-two systems inside one frame, so a write by an earlier system was reported on that frame and again
+two systems inside one frame. So a write by an earlier system was reported on that frame, and again
 on the next.
 
 The engine now keeps a change tick apart from the frame tick. It advances before each system run,
-before each phase flush, before the `onSet` dispatch, and at the end of each update. A consumer
-reports a stamp above its own last run.
+and before each phase flush. It also advances before the `onSet` dispatch, and at the end of each
+update. A consumer reports a stamp above its own last run.
 
 What to expect:
 
@@ -103,9 +103,9 @@ Why each one moved:
   `with*` term verbs spelled the same three ideas in a second vocabulary. The sparse and relation
   forms now put the connective first, so `andSparse` reads as "and, in sparse storage".
 - The run condition combinators moved into the `runIf` family that `runIfAnyMatch` and
-  `runIfResourceEq` already used, which frees the three bare words for the query engine.
-- `ctx.read` collided with `cols.read(def)` in the same walk, where one verb returned a column
-  group and the other an event reader.
+  `runIfResourceEq` already used. That frees the three bare words for the query engine.
+- `ctx.read` collided with `cols.read(def)` in the same walk. One verb returned a column
+  group, the other an event reader.
 - `forEachUntil` returns whether a callback accepted, so it is a predicate and now reads as one.
 - `reserve` is the contract of `ColumnBacking`: guarantee room for the count, or throw. A heap
   column grows to keep it. A buffer-backed column cannot grow, so it throws.
@@ -149,7 +149,7 @@ keeps `includesDisabled` as its own copy, because the iteration bound reads it o
 
 ## A sparse component stores a typed value
 
-A sparse component kept each entity's values in a plain array, so a value was stored as the number
+A sparse component kept each entity's values in a plain array. So it stored a value as the number
 you gave. Each field is now one typed array of the declared type, indexed by entity index. A value
 converts as the field's type converts, exactly as a dense field does.
 
@@ -163,8 +163,8 @@ Declare `f64` if you want the old behaviour for a field.
 
 Two more consequences:
 
-- The columns double to fit the highest member index, so the memory of one store is proportional to
-  that index and not to the member count.
+- The columns double to fit the highest member index. So the memory of one store is proportional to
+  that index, and not to the member count.
 - `store.indices` is a typed view with a fixed length, and not an array. A later add or remove is
   not visible through a view you kept.
 
@@ -172,9 +172,9 @@ The snapshot format did not change.
 
 ## `for..in` over a ref no longer lists a component's fields
 
-Every ref and every cursor now shares one prototype for the whole process, which carries the field
-name of every component registered in the process. `for..in` reports all of them, plus the two
-reserved names. `Object.keys` and the spread report the two reserved names alone.
+Every ref and every cursor now shares one prototype for the whole process. That prototype carries
+the field name of every component registered in the process. `for..in` reports all of them, plus
+the two reserved names. `Object.keys` and the spread report the two reserved names alone.
 
 Read the schema instead. It is the value you passed to `registerComponent`, and it is the only
 source that names one component's fields.
@@ -184,8 +184,9 @@ read a neighbouring column.
 
 ## `memory` is two fields, and not one union
 
-`ECSOptions.memory` held two questions that do not depend on each other, how big the world is and
-what holds its bytes, inside one key-discriminated union, so a caller could answer only one.
+`ECSOptions.memory` held two questions inside one key-discriminated union. The questions do not
+depend on each other: how big the world is, and what holds its bytes. So a caller could answer
+only one.
 
 ```ts
 new ECS({ memory: { entities: 50_000 } });                     // size only
@@ -215,8 +216,8 @@ names the size axis.
 ## A module that reads the layout adds the store base
 
 `SIM_ABI_VERSION` is 1. A module that read a version 0 store took every offset it found as a buffer
-address. In a version 1 store every offset in the header, in the column descriptors, in the region
-table and in the rings is measured from the store header, and the header sits at `memory.storeBase`.
+address. In a version 1 store, every offset counts from the store header. That covers the header,
+the column descriptors, the region table and the rings. The header sits at `memory.storeBase`.
 A wasm-backed world defaults that base to one page and refuses zero. Read a column at
 `storeBase + byte_off`, and take the base from `setLayout(storeBase)`. `storeBaseAbove(exports,
 extraBytes)` derives a base above a module's `__heap_base`.
@@ -229,9 +230,9 @@ holds zero. A walker steps to the next record by `40 + column_count * 16`.
 before every backend dispatch. A host that drives a module outside the schedule calls
 `ecs.publishRowCounts()` first.
 
-A snapshot the 0.5 line wrote still restores. Every version 0 store sat at byte 0, so its offsets
-read correctly as offsets from the header, and restore rewrites its descriptor region at the new
-width before it reads anything else.
+A snapshot the 0.5 line wrote still restores. Every version 0 store sat at byte 0. So its offsets
+read correctly as offsets from the header. Restore rewrites its descriptor region at the new
+width, before it reads anything else.
 
 ---
 
@@ -269,15 +270,15 @@ Only the construction line changes. Every call site is the same.
 world. The determinism opt-in is unchanged and still separate: `capture` and `restore` throw
 `DETERMINISM_DISABLED` on a world built without `{ deterministic: true }`.
 
-A world that installs none of the five carries none of their code, which is the point. A class
-method cannot be removed by a bundler, so while `ECS` declared `relations` and `snapshots`, every
-program shipped that code whether or not it named them.
+A world that installs none of the five carries none of their code, which is the point. A bundler
+cannot remove a class method. `ECS` declared `relations` and `snapshots`, so every program shipped
+that code, whether or not it named them.
 
 If you miss one, the compiler says so. In TypeScript, a world built without a plugin has no
-member to reach for, so the mistake is a compile error.
+member to reach for. So the mistake is a compile error.
 
-In JavaScript nothing stops the call, so the world throws `ECS_ERROR.PLUGIN_NOT_INSTALLED`, and
-the message names the API and the import that supplies it. On a bare world, every member of
+In JavaScript nothing stops the call. So the world throws `ECS_ERROR.PLUGIN_NOT_INSTALLED`. The
+message names the API and the import that supplies it. On a bare world, every member of
 `ecs.relations` and of `ecs.events` throws it. So do the call `ecs.observe(...)` and the four
 members `ecs.snapshots.capture`, `restore`, `captureSparse` and `restoreSparse`. The system-side
 seams throw it too. `ctx.emit`, `ctx.readEvents`, `ctx.addRelation`, `query.andRelation`,
@@ -339,8 +340,8 @@ host.changes.noteScan(Pos.id as number);
 host.onDispose(() => control.route(null));
 ```
 
-Two rules changed with the rename. A planner answers `undefined` for a system it does not claim,
-where the old hook was asked only about a system that carried a `parallel` config. The world holds
+Two rules changed with the rename. A planner answers `undefined` for a system it does not claim.
+The old hook saw only a system that carried a `parallel` config. The world holds
 one route, so a second `installRoute` throws `PLUGIN_ALREADY_INSTALLED`.
 
 `host.memory` is three fields. `backing` is the `WebAssembly.Memory`, the `SharedArrayBuffer` or
@@ -462,8 +463,8 @@ These are additions. None of them is required to upgrade.
   `addSystems` takes either spelling. A plugin adds a phase through `host.world.addPhase`. See
   [schedule](api/schedule.md).
 - **The row grain of change detection.** `ecs.trackRows(def)` keeps one change tick for each row.
-  Inside `forEachChunk`, `cols.ticksRead(def)` is that column and `cols.since` is the change tick of
-  the previous run of the system, so `t[i] > cols.since` picks the rows that changed. A
+  Inside `forEachChunk`, `cols.ticksRead(def)` is that column. `cols.since` is the change tick of
+  the previous run of the system. So `t[i] > cols.since` picks the rows that changed. A
   `ChangedQuery` now has `forEachChunk`. See [change detection](api/change-detection.md).
 - **`cols.ticks(def)`.** The record a raw column loop makes for an entity-level `onSet`:
   `t[i] = cols.tick` beside the write, in place of a `ctx.markChanged` call for each row.
@@ -476,16 +477,16 @@ These are additions. None of them is required to upgrade.
 - **`memory.storeBase` and `storeBaseAbove(exports, extraBytes)`.** The store header sits at a byte
   offset you choose, above everything a module owns. See [WASM](api/wasm.md).
 - **One system across workers.** `ECS.create({ plugins: [workers()] })` from `@oasys/oecs/workers`
-  gives a world `ecs.workers`. `ecs.workers.attach({ count })` starts a pool, and the `parallel`
-  config on `registerSystem` names a kernel from any toolchain that the pool runs over disjoint row
-  ranges. A world without the plugin builds no plan, validates no `parallel` config, and runs the
-  system's own `fn`. See [parallel execution](api/parallel.md).
+  gives a world `ecs.workers`. `ecs.workers.attach({ count })` starts a pool. The `parallel`
+  config on `registerSystem` names a kernel from any toolchain. The pool runs that kernel over
+  disjoint row ranges. A world without the plugin builds no plan, validates no `parallel` config,
+  and runs the system's own `fn`. See [parallel execution](api/parallel.md).
 - **A `ref` or a cursor write reaches an entity-level `onSet` observer**, which the change detection
   page always said it did. `ctx.ref` records the entity when you create the ref, and a mutable
   cursor records it on each `at`. `refRead` and `cursorRead` record nothing.
 - **`query.where(term)` and a nested expression.** The free `and`, `or` and `not` build an
-  expression from component definitions and from each other, and `where` narrows a query by it, so
-  `q.where(or(and(Pos, Vel), Frozen))` says what no chain says. A plugin supplies its own
-  `ArchetypeTerm` on the same footing. The three readers that answer from the unfiltered archetype
-  list refuse such a query in development, with `QUERY_TERM_DENSE_PATH`. See
+  expression from component definitions and from each other. `where` narrows a query by that
+  expression. So `q.where(or(and(Pos, Vel), Frozen))` says what no chain says. A plugin supplies
+  its own `ArchetypeTerm` on the same footing. The three readers that answer from the unfiltered
+  archetype list refuse such a query in development, with `QUERY_TERM_DENSE_PATH`. See
   [queries](api/queries.md).

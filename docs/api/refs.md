@@ -46,9 +46,9 @@ ability to mutate, and there is no `refMut`.
 
 The accessor finds the archetype, the row, and the columns **one time, when you create it**. Each
 later read or write of a field is then one index operation on a typed array. To create a ref, the
-engine makes one `Object.create` call over one prototype that every ref and every cursor in the
-process shares. One prototype gives every accessor one shape, so the cost of a field read does not
-increase with the number of components that you read through refs.
+engine makes one `Object.create` call. Every ref and every cursor in the process shares that one
+prototype. One prototype gives every accessor one shape. So a field read does not cost more when
+you read more components through refs.
 
 > [!IMPORTANT]
 > **`ctx.ref` sets the change tick of the component immediately, when you create the ref.** It does
@@ -89,7 +89,7 @@ increase with the number of components that you read through refs.
 ## Cursors, many entities, by id
 
 A ref is created for one entity. When you have a **list of ids** to walk, you pay that creation
-again for each entity, and the loop then discards each ref that it created. A **cursor** is the same
+again for each entity. The loop then discards each ref that it created. A **cursor** is the same
 accessor with the creation lifted out of the loop. You create it one time, and then you move it to
 each entity with `at`:
 
@@ -109,9 +109,14 @@ type ComponentCursor<S>         = { -readonly [K in keyof S]: number } & { at(e:
 type ReadonlyComponentCursor<S> = {  readonly [K in keyof S]: number } & { at(e: EntityID): this };
 ```
 
-The same rules as the rest of the family hold: the definition comes first, the mutable name has no
-suffix, and the read-only name has the `Read` suffix. `at` returns the cursor, so a single read
-stays one expression, `ecs.cursor(Pos).at(e).x`, but in a loop, call it as a statement.
+The same rules as the rest of the family hold:
+
+- the definition comes first
+- the mutable name has no suffix
+- the read-only name has the `Read` suffix
+
+`at` returns the cursor, so a single read stays one expression, `ecs.cursor(Pos).at(e).x`. In a
+loop, call `at` as a statement.
 
 What a cursor does, against the other ways to read by id:
 
@@ -123,7 +128,7 @@ What a cursor does, against the other ways to read by id:
 
 `at` resolves the entity one time, however many fields you then read. A cursor also resolves the
 position of each field when you create the cursor. So a read does not look up the field name at
-all, and a cursor helps even when you read a single field.
+all. A cursor helps even when you read a single field.
 
 > [!NOTE]
 > **A cursor is safer than a ref that you hold, and not more dangerous.** It resolves the archetype
@@ -151,16 +156,19 @@ all, and a cursor helps even when you read a single field.
 > `getField` or a ref for that component, or rename the field.
 
 A cursor removes the allocation. It does not remove the entity → archetype → row resolution, which
-is what dense packing costs. So a query is still the better tool when a query can express the set,
-because an [`forEachChunk`](./queries.md#foreachchunk--mutable-hot-path) column walk resolves nothing for
-each row. Use a cursor when the set of entities comes from somewhere else: a list of ids, the
-payload of an event, or the result of a spatial query.
+is what dense packing costs. So a query is still the better tool when a query can express the set.
+A [`forEachChunk`](./queries.md#foreachchunk--mutable-hot-path) column walk resolves nothing for
+each row. Use a cursor when the set of entities comes from somewhere else:
+
+- a list of ids
+- the payload of an event
+- the result of a spatial query
 
 A cursor over a [sparse component](./sparse-storage.md#cursors-many-entities-by-id)
-(`sparseCursor` and `sparseCursorRead`) removes the resolution too. The columns of a sparse
-component are indexed by entity, so `at` writes one field and a read is one load. When a system
-reads a component by id far more than it sweeps it, register that component as sparse and read it
-through a sparse cursor.
+(`sparseCursor` and `sparseCursorRead`) removes the resolution too. A sparse component indexes its
+columns by entity. So `at` writes one field, and a read is one load. A system can read a component
+by id far more than it sweeps it. Register that component as sparse. Read it through a sparse
+cursor.
 
 ## What to use, and when
 

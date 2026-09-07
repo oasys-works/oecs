@@ -107,7 +107,7 @@ ecs.query(Pos)
 ## A nested expression: `where`
 
 A chain asks one flat question of each archetype. `where` asks a nested one. Build the expression
-from the free `and`, `or` and `not`, which take a component definition as a leaf and take each
+from the free `and`, `or` and `not`. They take a component definition as a leaf, and they take each
 other as a node.
 
 ```ts
@@ -231,14 +231,14 @@ movers.forEachChunk((cols, count) => {
 
 `cols.ticks(def)` is the row record. A raw column write is invisible to the engine, so the loop
 records each row it changes with one store: `t[i] = cols.tick`. That store costs about what the
-write itself costs, where `ctx.markChanged` is a call and a list push for each row. The record
+write itself costs. `ctx.markChanged` instead is a call and a list push for each row. The record
 reaches an [`onSet` observer](./observers.md) with entity granularity and a
 [`changed()`](./change-detection.md) reader at the row grain. The column exists only for a
-component with row ticks, which `ecs.trackRows(def)` or an entity-level `onSet` observer turns
-on, and the call throws `ROW_TICKS_NOT_TRACKED` otherwise. Taking it marks the archetype changed and
-asks the drain of this frame to scan every archetype of `def` that a writer stamped, so take it
+component with row ticks. `ecs.trackRows(def)` or an entity-level `onSet` observer turns them on.
+The call throws `ROW_TICKS_NOT_TRACKED` otherwise. Taking it marks the archetype changed. It also
+asks the drain of this frame to scan every archetype of `def` that a writer stamped. So take it
 only in a loop that stores into it. `cols.ticksRead(def)` is the same column read-only, with no
-stamp and no scan request, for a reader that compares each row with `cols.since`.
+stamp and no scan request. It serves a reader that compares each row with `cols.since`.
 
 ```ts
 movers.forEachChunk((cols, count) => {
@@ -296,8 +296,8 @@ singleEntity(): EntityID;                   // the one match, and in development
 ```
 
 `firstEntity` reads a single entity (`player` or `camera`) without a `forEach` and a closure that
-you write yourself. "First" is the **order of iteration, and not the order of creation**. With more
-than one match, the selection is arbitrary. To assert that there is only one match, use
+you write yourself. The word "first" is the **order of iteration, and not the order of creation**.
+With more than one match, the selection is arbitrary. To assert that there is only one match, use
 `singleEntity`. In development, `singleEntity` throws `QUERY_NOT_SINGLETON` when the number of
 matches is 0 or more than 1. In production the count check is absent, and it gives the first match,
 or `undefined` when there is none.

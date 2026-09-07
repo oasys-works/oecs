@@ -2,9 +2,9 @@
 
 Each error that the `ECS` throws is an **`ECSError`**. It carries a `category` from the `ECS_ERROR`
 enum, which a program can read. Catch the error and select a branch on the category. Do not compare
-the text of the message. A host can then tell the difference between a validation error that it can
-recover from and a fatal error about a limit. A test can assert one specific path that fails
-safely.
+the text of the message. A host can then tell two errors apart. One is a validation error that it
+can recover from. The other is a fatal error about a limit. A test can assert one specific path
+that fails safely.
 
 ```ts
 import { ECSError, ECS_ERROR, isEcsError } from "@oasys/oecs";
@@ -53,8 +53,11 @@ These are the 66 `ECS_ERROR` values, in groups by area:
 **Systems and the schedule**
 `CIRCULAR_SYSTEM_DEPENDENCY`, `DUPLICATE_SYSTEM`, `SYSTEM_FN_ARITY`, `INVALID_SYSTEM_ID`, `UNKNOWN_PHASE`, `CIRCULAR_PHASE_DEPENDENCY`, `QUERY_ACCESS_UNDECLARED`, `ACCESS_UNDECLARED`, `OPTIONAL_TERM_NOT_DECLARED`, `INVALID_RUN_CONDITION`, `INVALID_FIXED_TIMESTEP`, `INVALID_MAX_FIXED_STEPS`, `INVALID_FRAME_STEP`
 
-**Queries, archetypes, sparse storage, and relations**
-`ARCHETYPE_NOT_FOUND`, `ARCHETYPE_ROW_INVARIANT`, `EMPTY_ARCHETYPE_MATERIALIZE`, `QUERY_NOT_SINGLETON`, `QUERY_TERM_DENSE_PATH`, `SPARSE_QUERY_DENSE_PATH`, `SPARSE_CACHE_KEY_OVERFLOW`, `HIERARCHY_ALREADY_SET`, `HIERARCHY_INVALID_MAX_DEPTH`, `RELATION_NOT_REGISTERED`, `RELATION_MODE_INVALID`, `RELATION_MODE_MISMATCH`, `RELATION_CYCLE`, `PARTITION_APPEND_NEEDS_ENTITY_ROW`, `PARTITION_BULK_INTO_DISABLED`, `STRUCTURAL_DURING_ITERATION`
+**Queries and archetypes**
+`ARCHETYPE_NOT_FOUND`, `ARCHETYPE_ROW_INVARIANT`, `EMPTY_ARCHETYPE_MATERIALIZE`, `QUERY_NOT_SINGLETON`, `QUERY_TERM_DENSE_PATH`, `PARTITION_APPEND_NEEDS_ENTITY_ROW`, `PARTITION_BULK_INTO_DISABLED`, `STRUCTURAL_DURING_ITERATION`
+
+**Sparse storage and relations**
+`SPARSE_QUERY_DENSE_PATH`, `SPARSE_CACHE_KEY_OVERFLOW`, `HIERARCHY_ALREADY_SET`, `HIERARCHY_INVALID_MAX_DEPTH`, `RELATION_NOT_REGISTERED`, `RELATION_MODE_INVALID`, `RELATION_MODE_MISMATCH`, `RELATION_CYCLE`
 
 **Resources and events**
 `RESOURCE_NOT_REGISTERED`, `RESOURCE_ALREADY_REGISTERED`, `EVENT_NOT_REGISTERED`, `EVENT_ALREADY_REGISTERED`, `INVALID_EVENT_ID`
@@ -76,7 +79,7 @@ It is easy to confuse a small number of these with a category near them:
 - `PLUGIN_NOT_INSTALLED`. The world never installed the subsystem the call needs: relations,
   events, snapshots, observers, or workers. The message names the API and the import that supplies
   it, and the remedy is at the construction site, `ECS.create({ plugins: [...] })`. This is different from
-  `*_NOT_REGISTERED`, which means that the world has the subsystem and not that one component,
+  `*_NOT_REGISTERED`. That category means the world has the subsystem, and not that one component,
   event, or relation. In TypeScript the same mistake is a compile error, because a world carries
   only the members its plugins contribute.
 - `PLUGIN_SURFACE_COLLISION`. A plugin's facade names a member the world already carries.
@@ -84,13 +87,18 @@ It is easy to confuse a small number of these with a category near them:
   remedy is to rename the member the plugin adds. The five slots a plugin is meant to fill,
   `relations`, `events`, `observe`, `snapshots`, and `workers`, are exempt. This check is in development builds
   only.
-- `UNKNOWN_PHASE`. `addSystems` or `addPhase` was given a phase that this world does not hold: a
-  string that no `SCHEDULE` member spells, or a `Phase` handle that another world made. A handle
+- `SNAPSHOT_RESTORE_FAILED`. `ecs.snapshots.restore` refused a frame. Four causes exist. The frame is
+  too short. It carries the wrong magic or version. A section runs past the buffer. The capture came
+  from a world with a different registration. The live world is unchanged. Capture and restore on
+  worlds that register the same components in the same order. `ECSRestoreError` carries this code.
+  This is in each build.
+- `UNKNOWN_PHASE`. `addSystems` or `addPhase` received a phase that this world does not hold. The
+  phase is a string that no `SCHEDULE` member spells, or a `Phase` handle that another world made. A handle
   belongs to the world whose `addPhase` returned it. This is different from
   `CIRCULAR_PHASE_DEPENDENCY`, which means that the phases exist and that their order holds a
   cycle. Both are in each build.
-- `ACCESS_UNDECLARED`. A system touched a component, a sparse component, a relation, or a resource
-  that it did not declare in its access surface. This is different from `*_NOT_REGISTERED`, which
+- `ACCESS_UNDECLARED`. A system touched a component, a sparse component, a relation, or a resource.
+  It did not declare that item in its access surface. This is different from `*_NOT_REGISTERED`, which
   means that you never registered the item with the world. The engine also throws
   `ACCESS_UNDECLARED` when you call an immediate structural mutator on the host from inside a system
   body. Those mutators are `ecs.despawn`, `ecs.addComponent` and `ecs.removeComponent` with their
@@ -108,20 +116,22 @@ It is easy to confuse a small number of these with a category near them:
   there. This is in each build.
 - `WORKERS_COUNT_INVALID`. `workers.attach` was given a number outside its range. The worker `count`,
   `joinTimeoutMs` and `stackBytes` are the three, and the message names which one and the value.
-  `count` and `joinTimeoutMs` must be positive integers. `stackBytes` must be an integer, a multiple
-  of the frame alignment of 16, and at least one WASM page of 65536 bytes. This is in each build.
+  `count` and `joinTimeoutMs` must be positive integers. `stackBytes` must be an integer, and a
+  multiple of the frame alignment of 16. It must be at least one WASM page of 65536 bytes. This is
+  in each build.
 - `WORKERS_ENTRY_UNREACHABLE`. A worker's script did not load, so the worker answered nothing. A
-  bundled app that kept the default worker URL is the case, because a bundler leaves
+  bundled app that kept the default worker URL is the case. A bundler leaves
   `@oasys/oecs/worker` out of its graph. Pass `workerUrl` with the URL your bundler emits for that
   entry. The message names the URL that failed. This is in each build.
-- `PARALLEL_ACCESS`. A system declares `parallel` beside access a worker cannot serve, or a query a
-  worker cannot resolve from the archetype masks. The message names the field and why. Drop the
+- `PARALLEL_ACCESS`. A system declares `parallel` beside access a worker cannot serve. A system can
+  also declare a query a worker cannot resolve from the archetype masks. The message names the
+  field and why. Drop the
   declaration, or run the system sequentially. This is in development builds only, and it throws at
   registration and not inside a frame.
 - `PARALLEL_KERNEL_MODULE`. A system names a `wasm` kernel whose module the pool cannot serve.
-  A worker instantiates the module with one import, the world memory as `env.memory`, so every
-  other import is refused and the message names it. A module that imports no memory is refused as
-  well, because it addresses a linear memory of its own and never reaches the store. An export name
+  A worker instantiates the module with one import, the world memory as `env.memory`. So the pool
+  refuses every other import, and the message names it. The pool refuses a module that imports no
+  memory as well. Such a module addresses a linear memory of its own, and never reaches the store. An export name
   the module does not carry, and an export that is not a function, are the other two. This is in
   development builds only, and it throws at registration and not inside a frame.
 - `PARALLEL_KERNEL_FAILED`. A kernel would not load, a kernel threw inside a pass, or a worker
@@ -146,7 +156,7 @@ It is easy to confuse a small number of these with a category near them:
 - `QUERY_NOT_SINGLETON`. `Query.singleEntity()` found 0 matching entities, or more than 1. This
   assertion is in development builds only.
 - `INVALID_RUN_CONDITION`. A factory for a run condition, such as `runEveryNTicks`, received an
-  invalid argument, for example an `n` that is not a positive integer. This is in development
+  invalid argument. An `n` that is not a positive integer is one case. This is in development
   builds only.
 - `STRUCTURAL_DURING_ITERATION`. An immediate structural mutation on the host reached an archetype
   that a live query walk is visiting now. The mutations are `despawn`, a transition from
@@ -157,7 +167,7 @@ It is easy to confuse a small number of these with a category near them:
 
 ## The restore errors
 
-The restore paths throw their own classes, because a mismatch between a capture and a restore is a
+The restore paths throw their own classes. A mismatch between a capture and a restore is a
 different case for recovery. There are three classes, one for each layer that can fail:
 
 ```ts
@@ -168,8 +178,8 @@ class SparseRestoreError extends Error {}  // ecs.snapshots.restoreSparse (and t
 
 The package root exports all three. Catch them by class, or by `err.name`. `ECSRestoreError` is an
 `ECSError`, so `isEcsError` answers true and `category` is `SNAPSHOT_RESTORE_FAILED`. The other two
-are plain `Error` classes, because the module that declares them imports nothing. When a failure of
-the byte limit of the store comes out through the `ECS`, it is an `ECSError` with
+are plain `Error` classes, because the module that declares them imports nothing. A failure of the
+byte limit of the store can come out through the `ECS`. It is then an `ECSError` with
 `category === ECS_ERROR.STORE_CAP_EXCEEDED`. See [determinism](./determinism.md).
 
 ## See also
