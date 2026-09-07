@@ -82,7 +82,7 @@ not to the capacity of the buffer.
 ecs.snapshots.capture(): Uint8Array;           // capture the full live ECS
 ecs.snapshots.restore(bytes: Uint8Array): void; // put a snapshot onto this live ECS
 const ECS_SNAPSHOT_VERSION: number;  // this tags the format of the combined frame. Restore throws for a different version
-class ECSRestoreError extends Error {}
+class ECSRestoreError extends ECSError {}  // category SNAPSHOT_RESTORE_FAILED. The live ECS is unchanged
 ```
 
 A snapshot captures three sections into one `Uint8Array` that is complete in itself:

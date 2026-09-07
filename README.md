@@ -105,7 +105,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
   fixed capacity). Size and storage are separate fields, so any pair of them is legal. The shared
   allocators are `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, from
   `@oasys/oecs/shared`. `fixedSabAllocator(maxBytes)` reserves one buffer that never grows, and it
-  keeps the fast write path on JavaScriptCore.
+  keeps the fast write path on JavaScriptCore. A custom allocator implements `InPlaceBufferAllocator`,
+  a type export of the root and of `@oasys/oecs/shared`.
 
 **Queries**
 
@@ -206,7 +207,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
   bytes, the sparse stores, and the target sets of multi relations. The hash is independent of the
   storage type: a heap ECS and a shared ECS with the same history give the same hash.
   `ecs.snapshots.capture()`, `ecs.snapshots.restore(...)`, and the equivalent functions for sparse
-  data need the `snapshots()` plugin beside the flag.
+  data need the `snapshots()` plugin beside the flag. A restore that does not match the world throws
+  `ECSRestoreError`, an `ECSError` with the code `SNAPSHOT_RESTORE_FAILED`, and leaves the world unchanged.
 - **A write path from the host into the ECS**. `installHostCommandSeam(ecs)` applies typed
   `HostCommand` values from outside the schedule, through one approved `exclusive` system. It
   supports record and replay (`HostCommandRecorder` and `replayCommandLog`), and a ring transport

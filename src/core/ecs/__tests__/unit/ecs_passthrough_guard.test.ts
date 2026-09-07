@@ -32,7 +32,7 @@ import ts from "typescript";
 
 const BEGIN_MARKER = "// === BEGIN STORE PASS-THROUGH BAND ===";
 const END_MARKER = "// === END STORE PASS-THROUGH BAND ===";
-const DELEGATES = new Set(["_store", "_schedule", "_ctx", "_observers"]);
+const DELEGATES = new Set(["_store", "_schedule", "_ctx"]);
 // A collaborator the store exposes by name. `this._store.relations.addRelation(…)`
 // is still one mechanical delegation: the extra hop names the object that owns
 // the state, and adds no logic. Every other rule below is unchanged, so a band

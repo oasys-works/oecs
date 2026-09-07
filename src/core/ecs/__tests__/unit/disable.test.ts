@@ -319,7 +319,7 @@ describe("entity enable and disable", () => {
 		world.startup();
 		world.update(1 / 60);
 
-		// All 4 were visited (the disable didn't corrupt the in-flight loop).
+		// All 4 were visited (the disable did not corrupt the in-flight loop).
 		expect(visited).toBe(4);
 		// And the toggle took effect at the flush boundary.
 		expect(q.entityCount).toBe(3);

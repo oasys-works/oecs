@@ -60,7 +60,7 @@ export function unsafeCast<T>(value: unknown): T {
  * Exhaustiveness backstop for tagged-union dispatches. Put it in the
  * `default` arm (or after the final `case`) of a switch over a closed union.
  * The `never` parameter makes "a union gained a variant but this dispatch
- * didn't" a compile error at the call site. The throw catches runtime values
+ * did not" a compile error at the call site. The throw catches runtime values
  * that bypassed the type layer, such as deserialized and foreign data.
  *
  * Deliberately not `DEV`-gated, unlike the rest of this file: it marks a

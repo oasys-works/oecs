@@ -45,7 +45,7 @@ The **package root** (`@oasys/oecs`) exports `ECSError`, `ECS_ERROR`, and `isEcs
 
 ## Categories
 
-These are the 65 `ECS_ERROR` values, in groups by area:
+These are the 66 `ECS_ERROR` values, in groups by area:
 
 **Entities and components**
 `EID_MAX_INDEX_OVERFLOW`, `EID_MAX_GEN_OVERFLOW`, `ENTITY_NOT_ALIVE`, `COMPONENT_NOT_REGISTERED`, `COMPONENT_LIMIT_EXCEEDED`, `FIELD_NOT_REGISTERED`, `COMPONENT_INDEX_INVARIANT`, `INVALID_TEMPLATE`
@@ -69,7 +69,7 @@ These are the 65 `ECS_ERROR` values, in groups by area:
 `WORKERS_ATTACHED`, `WORKERS_NEED_SHARED_BACKING`, `WORKERS_HOST_CANNOT_PARK`, `WORKERS_COUNT_INVALID`, `WORKERS_ENTRY_UNREACHABLE`, `PARALLEL_ACCESS`, `PARALLEL_KERNEL_MODULE`, `PARALLEL_KERNEL_FAILED`
 
 **Determinism, memory, and the host write path**
-`DETERMINISM_DISABLED`, `NON_DETERMINISTIC_COLUMN_TYPE`, `INVALID_MEMORY_OPTIONS`, `STORE_CAP_EXCEEDED`, `REGION_NOT_DECLARED`, `BACKEND_ALREADY_ATTACHED`, `INVALID_RECORDER_SCHEDULE`, `COMMAND_LOG_TAG_COLLISION`
+`DETERMINISM_DISABLED`, `SNAPSHOT_RESTORE_FAILED`, `NON_DETERMINISTIC_COLUMN_TYPE`, `INVALID_MEMORY_OPTIONS`, `STORE_CAP_EXCEEDED`, `REGION_NOT_DECLARED`, `BACKEND_ALREADY_ATTACHED`, `INVALID_RECORDER_SCHEDULE`, `COMMAND_LOG_TAG_COLLISION`
 
 It is easy to confuse a small number of these with a category near them:
 
@@ -155,19 +155,21 @@ It is easy to confuse a small number of these with a category near them:
   would skip an entity, or give it two times, below the iterator. Collect the ids during the walk,
   and mutate after it. This is in development builds only.
 
-## The errors that are *not* an `ECSError`
+## The restore errors
 
 The restore paths throw their own classes, because a mismatch between a capture and a restore is a
 different case for recovery. There are three classes, one for each layer that can fail:
 
 ```ts
-class ECSRestoreError extends Error {}     // ecs.snapshots.restore, a malformed combined frame, an incorrect magic number or version, or a different registration
+class ECSRestoreError extends ECSError {}  // ecs.snapshots.restore, a malformed combined frame, an incorrect magic number or version, or a different registration. category is SNAPSHOT_RESTORE_FAILED
 class StoreRestoreError extends Error {}   // the section of the dense column store, a different header, layout, or shape, reported through restore
 class SparseRestoreError extends Error {}  // ecs.snapshots.restoreSparse (and the sparse section of restore), a difference on the sparse side
 ```
 
-The package root exports all three. Catch them by class, or by `err.name`. When a failure of the
-byte limit of the store comes out through the `ECS`, it is an `ECSError` with
+The package root exports all three. Catch them by class, or by `err.name`. `ECSRestoreError` is an
+`ECSError`, so `isEcsError` answers true and `category` is `SNAPSHOT_RESTORE_FAILED`. The other two
+are plain `Error` classes, because the module that declares them imports nothing. When a failure of
+the byte limit of the store comes out through the `ECS`, it is an `ECSError` with
 `category === ECS_ERROR.STORE_CAP_EXCEEDED`. See [determinism](./determinism.md).
 
 ## See also

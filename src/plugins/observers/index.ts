@@ -32,7 +32,14 @@ import type { SparseComponentDef } from "../../core/ecs/sparse_store";
 export { ObserverRegistry } from "./observer_registry";
 
 /** The world surface this plugin adds. The overloads match the ones `ECS`
- * carried before the split, so a call site does not change. */
+ * carried before the split, so a call site does not change.
+ *
+ * `observe` registers the callbacks in `config` against `def`. `onAdd`,
+ * `onRemove`, `onDisable` and `onEnable` fire at the structural flush, after
+ * the batch commits, in canonical order (access-topological across
+ * observers, entity id order within), and the flush loops to a fixed point
+ * so a cascade settles. `onSet` fires at the settle of `update()`. Register
+ * before `startup()`. The handle's `dispose()` unregisters. Cold path. */
 export interface ObserversPlugin {
 	observe(def: ComponentHandle, config: StructuralObserverConfig): ObserverHandle;
 	observe(def: ComponentHandle, config: EntitySetObserverConfig): ObserverHandle;

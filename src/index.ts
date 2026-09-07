@@ -42,6 +42,8 @@ export type { ObservationFlags, DrainResult, StructuralObserverEvents } from "./
 // through (`ECSOptions.memory`). The resolver + derivation constants are
 // tooling, at `@oasys/oecs/internal`.
 export type { ECSMemoryOptions, MemoryBacking, WasmMemoryArm } from "./core/ecs";
+// The interface a custom allocator implements for `memory: { backing: { allocator } }`.
+export type { BufferAllocator, InPlaceBufferAllocator } from "./core/store";
 
 // The one memory helper a consumer runs, and not an inspector: it reads a
 // module's `__heap_base` and gives back a `memory.storeBase` that clears it.

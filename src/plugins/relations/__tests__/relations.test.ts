@@ -472,7 +472,7 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 
 	it("a destroyed-target cascade works on a restored world (reverse index live)", () => {
 		// Down-traversal (`cascadeOf`) and `delete` or `clear` cleanup both ride the
-		// reverse index. If restore didn't rebuild it, a restored tree would not
+		// reverse index. If restore did not rebuild it, a restored tree would not
 		// cascade, the behavioural symptom of the silent-divergence bug.
 		const make = () => {
 			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });

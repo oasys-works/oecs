@@ -476,7 +476,7 @@ describe("Runtime access validation", () => {
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
 
-		expect(() => world.update(0)).toThrow(/system 'reader'.*didn't declare/);
+		expect(() => world.update(0)).toThrow(/system 'reader'.*did not declare/);
 	});
 
 	it("throws when system writes an undeclared component", () => {
@@ -766,6 +766,6 @@ describe("Runtime access validation", () => {
 			fn() {}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);
-		expect(() => world.startup()).toThrow(/system 'startup_reader'.*didn't declare/);
+		expect(() => world.startup()).toThrow(/system 'startup_reader'.*did not declare/);
 	});
 });

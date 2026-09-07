@@ -245,7 +245,7 @@ describe("Run conditions", () => {
 		world.addSystems(SCHEDULE.UPDATE, { system: sys, runIf: undeclared });
 		world.startup();
 
-		expect(() => world.update(1 / 60)).toThrow(/didn't declare it/);
+		expect(() => world.update(1 / 60)).toThrow(/did not declare it/);
 	});
 
 	it("the built-in runIfResourceEq declares its read, so it does not throw", () => {

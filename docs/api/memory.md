@@ -40,6 +40,8 @@ type MemoryBacking =
   | { allocator: InPlaceBufferAllocator };   // your own, for experts
 ```
 
+`InPlaceBufferAllocator` and `BufferAllocator` are type exports of the root and of `@oasys/oecs/shared`.
+
 | Backing | What it does | Select it when |
 | --- | --- | --- |
 | `"heap"` *(default)* | a fixed `ArrayBuffer`, reserved at the limit | you have no requirement yet |

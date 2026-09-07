@@ -383,7 +383,7 @@ describe("(R, *) and (*, T) access validation", () => {
 				}
 			})
 		);
-		expect(tick).toThrow(/system 'wildcard_reader'.*relation.*didn't declare/);
+		expect(tick).toThrow(/system 'wildcard_reader'.*relation.*did not declare/);
 	});
 
 	it("permits andRelation iteration when relationReads is declared", () => {
@@ -427,7 +427,7 @@ describe("(R, *) and (*, T) access validation", () => {
 				}
 			})
 		);
-		expect(undeclared).toThrow(/system 'related_reader'.*didn't declare/);
+		expect(undeclared).toThrow(/system 'related_reader'.*did not declare/);
 
 		const world2 = ECS.create({ plugins: [relations()] });
 		const R2 = world2.relations.register();
@@ -471,6 +471,6 @@ describe("(R, *) and (*, T) access validation", () => {
 				}
 			})
 		);
-		expect(tick).toThrow(/relation.*didn't declare/);
+		expect(tick).toThrow(/relation.*did not declare/);
 	});
 });

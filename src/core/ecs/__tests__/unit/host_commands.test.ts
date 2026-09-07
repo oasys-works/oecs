@@ -326,7 +326,7 @@ describe("host command seam, two transports, one apply dispatch", () => {
 		// Opcode 99 is bound to nothing, drained and skipped, no throw, no effect.
 		const payload = new Uint8Array(HOST_COMMAND_PAYLOAD_BYTES);
 		pushRing(world, 99, payload);
-		// A valid set behind it still applies (the skipped slot didn't stall the ring).
+		// A valid set behind it still applies (the skipped slot did not stall the ring).
 		pushRing(
 			world,
 			OP_SET,

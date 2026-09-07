@@ -389,7 +389,7 @@ describe(".hierarchy(R), access declaration (relationReads)", () => {
 		);
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
-		expect(() => world.update(0)).toThrow(/relation.*didn't declare/);
+		expect(() => world.update(0)).toThrow(/relation.*did not declare/);
 	});
 
 	it("passes when relationReads declares the hierarchy relation", () => {

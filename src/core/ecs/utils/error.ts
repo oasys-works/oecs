@@ -52,7 +52,7 @@ export enum ECS_ERROR {
 	ARCHETYPE_ROW_INVARIANT = "ARCHETYPE_ROW_INVARIANT",
 	OPTIONAL_TERM_NOT_DECLARED = "OPTIONAL_TERM_NOT_DECLARED",
 	QUERY_ACCESS_UNDECLARED = "QUERY_ACCESS_UNDECLARED",
-	/** A system touched a component, sparse, relation or resource it didn't declare
+	/** A system touched a component, sparse, relation or resource it did not declare
 	 * in its access surface, distinct from *_NOT_REGISTERED (which means the
 	 * thing was never registered with the world at all). */
 	ACCESS_UNDECLARED = "ACCESS_UNDECLARED",
@@ -69,6 +69,11 @@ export enum ECS_ERROR {
 	STRUCTURAL_DURING_ITERATION = "STRUCTURAL_DURING_ITERATION",
 	BACKEND_ALREADY_ATTACHED = "BACKEND_ALREADY_ATTACHED",
 	DETERMINISM_DISABLED = "DETERMINISM_DISABLED",
+	/** `ecs.snapshots.restore` refused a frame: too short, the wrong magic or
+	 * version, a section that runs past the buffer, or a world whose archetype
+	 * and component registration differs from the capture. The live world is
+	 * unchanged. In each build. */
+	SNAPSHOT_RESTORE_FAILED = "SNAPSHOT_RESTORE_FAILED",
 	NON_DETERMINISTIC_COLUMN_TYPE = "NON_DETERMINISTIC_COLUMN_TYPE",
 	INVALID_MEMORY_OPTIONS = "INVALID_MEMORY_OPTIONS",
 	STORE_CAP_EXCEEDED = "STORE_CAP_EXCEEDED",
@@ -139,14 +144,15 @@ export function isEcsError(error: unknown): error is ECSError {
 	return error instanceof ECSError;
 }
 
-/** Thrown by `Store.restore` (and the helpers here) when a combined snapshot
- * is malformed, carries the wrong magic and version, or targets a world whose
- * archetype and component registration doesn't match the snapshot. Mirrors
- * `StoreRestoreError` and `SparseRestoreError` so callers see one error class per
- * restore failure mode. */
-export class ECSRestoreError extends Error {
+/** Thrown by `ecs.snapshots.restore` and its helpers when a combined snapshot
+ * is malformed, carries the wrong magic or version, or targets a world whose
+ * archetype and component registration does not match the capture. An
+ * `ECSError` with category `SNAPSHOT_RESTORE_FAILED`, so `isEcsError` answers
+ * true, and its own class beside `StoreRestoreError` and `SparseRestoreError`
+ * so a caller catches one class per restore layer. */
+export class ECSRestoreError extends ECSError {
 	constructor(message: string) {
-		super(message);
+		super(ECS_ERROR.SNAPSHOT_RESTORE_FAILED, message);
 		this.name = "ECSRestoreError";
 	}
 }

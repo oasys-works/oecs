@@ -58,7 +58,7 @@ describe("Sparse access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'sparse_adder'.*sparse component.*didn't declare/);
+		expect(tick).toThrow(/system 'sparse_adder'.*sparse component.*did not declare/);
 	});
 
 	it("permits a sparse add, remove and set when declared in sparseWrites", () => {
@@ -98,7 +98,7 @@ describe("Sparse access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'sparse_remover'.*sparse component.*didn't declare/);
+		expect(tick).toThrow(/system 'sparse_remover'.*sparse component.*did not declare/);
 	});
 
 	it("throws when a system writes an undeclared sparse field", () => {
@@ -117,7 +117,7 @@ describe("Sparse access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'sparse_field_writer'.*sparse component.*didn't declare/);
+		expect(tick).toThrow(/system 'sparse_field_writer'.*sparse component.*did not declare/);
 	});
 
 	it("throws when a system reads an undeclared sparse field", () => {
@@ -136,7 +136,7 @@ describe("Sparse access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'sparse_reader'.*sparse component.*didn't declare/);
+		expect(tick).toThrow(/system 'sparse_reader'.*sparse component.*did not declare/);
 	});
 
 	it("a declared sparseWrites implicitly authorises reads of the same component", () => {
@@ -180,7 +180,7 @@ describe("Sparse access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'sparse_read_only'.*write.*sparse component.*didn't declare/);
+		expect(tick).toThrow(/system 'sparse_read_only'.*write.*sparse component.*did not declare/);
 	});
 
 	it("hasSparse is a membership probe and is not access-checked", () => {
@@ -221,7 +221,7 @@ describe("Relation access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'relation_adder'.*relation.*didn't declare/);
+		expect(tick).toThrow(/system 'relation_adder'.*relation.*did not declare/);
 	});
 
 	it("permits relation add and remove when declared in relationWrites", () => {
@@ -262,7 +262,7 @@ describe("Relation access validation", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'relation_reader'.*relation.*didn't declare/);
+		expect(tick).toThrow(/system 'relation_reader'.*relation.*did not declare/);
 	});
 
 	it("a declared relationWrites implicitly authorises reads of the same relation", () => {
@@ -331,7 +331,7 @@ describe("Access id spaces are disjoint", () => {
 			})
 		);
 
-		expect(tick).toThrow(/sparse component.*didn't declare/);
+		expect(tick).toThrow(/sparse component.*did not declare/);
 	});
 
 	it("a sparse write declaration does not authorise a same-numbered relation", () => {
@@ -352,7 +352,7 @@ describe("Access id spaces are disjoint", () => {
 			})
 		);
 
-		expect(tick).toThrow(/relation.*didn't declare/);
+		expect(tick).toThrow(/relation.*did not declare/);
 	});
 });
 

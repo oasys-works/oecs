@@ -24,5 +24,7 @@ export {
 	DEFAULT_SAB_ALLOCATOR,
 	SabUnavailableError
 } from "./core/store";
+// The interface a custom allocator implements for `memory: { backing: { allocator } }`.
+export type { BufferAllocator, InPlaceBufferAllocator } from "./core/store";
 // The shared backing is now `memory: { backing: "shared" }`, a string, so it
 // needs no arm type of its own.

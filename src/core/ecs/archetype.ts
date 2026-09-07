@@ -1176,7 +1176,7 @@ export class Archetype implements ArchetypeView {
 		if (DEV) {
 			accessCheck.assertRead(def);
 			// The `.optional(T)` query term authorizes this fetch: reject a
-			// fetch of a component the iterating query didn't declare optional.
+			// fetch of a component the iterating query did not declare optional.
 			accessCheck.assertOptionalFetch(def);
 		}
 		const offset = this.colOffset[cid];

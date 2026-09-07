@@ -848,6 +848,21 @@ gave, and it names the call to make in its place. `ecs.template` rejects the arr
 the same code. The types already reject all four shapes, so this catches an untyped call site. Both
 checks are development only, and the production build is unchanged.
 
+### Added. `ECS_ERROR.SNAPSHOT_RESTORE_FAILED`, and `ECSRestoreError` is an `ECSError`
+
+`ecs.snapshots.restore` threw an `ECSRestoreError` that extended `Error` and carried no code, so a
+caller who sorts faults by `category` saw a restore failure fall through. `ECSRestoreError` now
+extends `ECSError` with the category `SNAPSHOT_RESTORE_FAILED`, and `isEcsError` answers true for
+it. The class, its name and the message are unchanged, so a `catch` by class or by `err.name`
+still holds. `StoreRestoreError` and `SparseRestoreError` stay plain `Error` classes, because the
+module that declares them imports nothing and `core/store` does not see the code enum.
+
+### Added. `InPlaceBufferAllocator` and `BufferAllocator` are type exports
+
+`memory: { backing: { allocator } }` takes an `InPlaceBufferAllocator`, and the type was declared in
+`core/store` without a published entry that re-exports it, so a caller could not name the interface
+a custom allocator implements. The root and `@oasys/oecs/shared` now export both types.
+
 ### Fixed. A write was reported on two frames when the writer ran before the reader
 
 `changed()` compared a per-frame tick with the last run of the reader, and it took a stamp at or

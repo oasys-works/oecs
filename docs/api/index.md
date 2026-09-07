@@ -152,6 +152,8 @@ naming it, and names it when it wants the compiler to check the shape.
 | `ArchetypeTerm` | root, type | `name` and `matches(mask)`, the term `where` takes |
 | `and`, `or`, `not` | root | build an `ArchetypeTerm` from definitions and other terms |
 | `QUERY_TERM_DENSE_PATH` | `ECS_ERROR` | a dense-list reader on a query that carries a term |
+| `SNAPSHOT_RESTORE_FAILED` | `ECS_ERROR` | `ecs.snapshots.restore` refused a frame, and `ECSRestoreError` carries it |
+| `InPlaceBufferAllocator`, `BufferAllocator` | root and `/shared`, type | the interface a custom allocator implements |
 
 See [queries](./queries.md).
 

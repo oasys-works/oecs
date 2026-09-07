@@ -235,7 +235,7 @@ describe("ECS optional query terms", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'undeclared_optional'.*read.*didn't declare/);
+		expect(tick).toThrow(/system 'undeclared_optional'.*read.*did not declare/);
 	});
 
 	it("access check fires on the absent span, not only the present one", () => {
@@ -262,7 +262,7 @@ describe("ECS optional query terms", () => {
 			})
 		);
 
-		expect(tick).toThrow(/system 'absent_span_reader'.*read.*didn't declare/);
+		expect(tick).toThrow(/system 'absent_span_reader'.*read.*did not declare/);
 	});
 
 	//=========================================================
@@ -426,7 +426,7 @@ describe("ECS optional query terms", () => {
 			q.forEach((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
-		).toThrow(/getOptionalColumnRead.*didn't declare it/);
+		).toThrow(/getOptionalColumnRead.*did not declare it/);
 	});
 
 	it("throws when fetching a different optional than the one declared", () => {
@@ -444,7 +444,7 @@ describe("ECS optional query terms", () => {
 			q.forEach((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
-		).toThrow(/getOptionalColumnRead.*didn't declare it/);
+		).toThrow(/getOptionalColumnRead.*did not declare it/);
 	});
 
 	it("a changed-query loop gates the optional fetch too", () => {
@@ -465,7 +465,7 @@ describe("ECS optional query terms", () => {
 			cq.forEach((arch) => {
 				arch.getOptionalColumnRead(Hp, "hp"); // undeclared → must throw now
 			})
-		).toThrow(/getOptionalColumnRead.*didn't declare it/);
+		).toThrow(/getOptionalColumnRead.*did not declare it/);
 
 		// The declared optional does not throw in the same changed-query loop.
 		expect(() =>

@@ -208,7 +208,7 @@ describe("cursor", () => {
 			ecs.addSystems(SCHEDULE.UPDATE, sys);
 			ecs.update(1 / 60);
 
-			expect(String(err)).toMatch(/performed write on .*Pos.*didn't declare it/);
+			expect(String(err)).toMatch(/performed write on .*Pos.*did not declare it/);
 			expect(ecs.getField(e, Pos, "x")).toBe(1); // the write never landed
 		});
 
@@ -251,7 +251,7 @@ describe("cursor", () => {
 			});
 			ecs.update(1 / 60);
 
-			expect(String(err)).toMatch(/performed write on .*Pos.*didn't declare it/);
+			expect(String(err)).toMatch(/performed write on .*Pos.*did not declare it/);
 			expect(ecs.getField(e, Pos, "x")).toBe(1);
 		});
 
@@ -293,7 +293,7 @@ describe("cursor", () => {
 			ecs.update(1 / 60);
 
 			expect(readErr).toBeNull();
-			expect(String(writeErr)).toMatch(/performed write on .*Pos.*didn't declare it/);
+			expect(String(writeErr)).toMatch(/performed write on .*Pos.*did not declare it/);
 		});
 
 		it("stays lenient at host level, where no system is active", () => {
