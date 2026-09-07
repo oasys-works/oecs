@@ -66,6 +66,8 @@ export { snapshots } from "./src/plugins/snapshots/index.ts";
 export { events } from "./src/plugins/events/index.ts";
 export { relations, registerIsA, registerChildOf } from "./src/plugins/relations/index.ts";
 export { observers } from "./src/plugins/observers/index.ts";
+export { workers } from "./src/plugins/workers/index.ts";
+export { fixedSabAllocator, growableSabAllocator, wasmMemoryAllocator } from "./src/shared.ts";
 `;
 
 export async function buildLib(outfile, { dev = false, from = root } = {}) {

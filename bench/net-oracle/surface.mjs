@@ -19,6 +19,14 @@
  *   - the combinators for a run condition, where the model must know the exact set of
  *     ticks. The simulation gates one system on one resource, and that is all that a
  *     tick-accurate model can hold there.
+ *   - a refusal that a development build alone raises. The net runs in both builds,
+ *     so it can hold no assertion that one build does not make. `devBuild` reads
+ *     which build is under test, and a probe with two arms takes the right one.
+ *   - a world with no plugin, and a plugin written outside this package. Each world
+ *     the simulation builds installs four plugins. So no layer there reads what a
+ *     bare slot answers.
+ *   - a phase the caller added. The simulation uses the built-in seven. The order of
+ *     a new phase against them needs a schedule of its own.
  *
  * Each probe below has a model, and it is not a check that the call does not throw.
  * A probe that only asked "did this throw" would pass against an ECS that gave the
@@ -92,6 +100,107 @@ function throwsWith(lib, what, name, category, fn) {
 		bad(what, `${name} threw ${err.name}, which is not an ECSError: ${err.message}`);
 	}
 	if (err.category !== category) bad(what, `${name} threw ${err.category}, want ${category}`);
+}
+
+/** Require the throw, and require the message to name each of `needles`.
+ *
+ * The category alone is a weak test. Several call sites raise one category. A
+ * message that named the wrong value carries the same one. Each needle is a
+ * fact the caller acts on. It names the value that caused the fault, or the
+ * call to make instead. It gives the error back, so a caller reads more. */
+function throwsNaming(lib, what, name, category, needles, fn) {
+	let err = null;
+	try {
+		fn();
+	} catch (e) {
+		err = e;
+	}
+	counted();
+	if (err === null) bad(what, `${name} did not throw, and ${category} was the expected error`);
+	counted();
+	if (!lib.isEcsError(err)) {
+		bad(what, `${name} threw ${err.name}, which is not an ECSError: ${err.message}`);
+	}
+	eq(what, `${name}: the category`, err.category, category);
+	for (const needle of needles) {
+		counted();
+		if (!String(err.message).includes(needle)) {
+			bad(what, `${name}: the message does not name "${needle}": ${err.message}`);
+		}
+	}
+	return err;
+}
+
+/**
+ * Every fact that a refused restore promises about its error.
+ *
+ * `ECSRestoreError` is an `ECSError` with the category
+ * `SNAPSHOT_RESTORE_FAILED`. It keeps its own class beside `StoreRestoreError`
+ * and `SparseRestoreError`. One caller catches a class per restore layer.
+ * Another branches on the category through `isEcsError`. Both routes must
+ * answer, so this reads both.
+ *
+ * The class test alone passed while the category was absent. This replaces
+ * that state.
+ */
+function refusalShape(lib, what, name, err, ECSRestoreError) {
+	counted();
+	if (!lib.isEcsError(err)) {
+		bad(what, `${name}: the restore threw ${err.name}, which is not an ECSError: ${err.message}`);
+	}
+	eq(what, `${name}: the category of the refusal`, err.category, lib.ECS_ERROR.SNAPSHOT_RESTORE_FAILED);
+	eq(what, `${name}: the name of the refusal`, err.name, "ECSRestoreError");
+	counted();
+	if (!(err instanceof ECSRestoreError)) {
+		bad(what, `${name}: the restore threw ${err.name}, want ECSRestoreError: ${err.message}`);
+	}
+}
+
+/**
+ * Whether the build under test keeps its development guards.
+ *
+ * Several refusals below exist in a development build alone. A probe that ran
+ * one against a production build reads a value where it expects a throw. Or it
+ * reaches a path that fails somewhere else. No export answers the question, so
+ * this reads a behaviour that the two builds document differently.
+ *
+ * `Query.singleEntity` is that behaviour. A development build counts the
+ * matches and throws `QUERY_NOT_SINGLETON`. A production build skips the count
+ * and gives the first match, which is `undefined` for a query that matches
+ * nothing. Therefore an empty query separates the two builds, and each arm here
+ * is the documented answer of one of them. That is the arm of `singleEntity`
+ * which the net cannot reach, because the net holds exactly one ROOT.
+ *
+ * The answer is a property of the module under test, so this runs one time. It
+ * counts no assertion of its own. Therefore the work that both builds do
+ * reports one number in both.
+ */
+let DEV_BUILD = null;
+function devBuild(lib) {
+	if (DEV_BUILD !== null) return DEV_BUILD;
+	const what = "build";
+	const ecs = new lib.ECS({ deterministic: true });
+	const Absent = ecs.registerComponent({ v: "i32" }, { name: "Absent" });
+	let err = null;
+	let got;
+	try {
+		got = ecs.query(Absent).singleEntity();
+	} catch (e) {
+		err = e;
+	}
+	ecs.dispose();
+	if (err === null) {
+		if (got !== undefined) {
+			bad(what, `singleEntity on a query with no match gave ${got}, want undefined`);
+		}
+		DEV_BUILD = false;
+		return DEV_BUILD;
+	}
+	if (!lib.isEcsError(err) || err.category !== lib.ECS_ERROR.QUERY_NOT_SINGLETON) {
+		bad(what, `singleEntity on a query with no match threw ${err.category ?? err.name}, want QUERY_NOT_SINGLETON`);
+	}
+	DEV_BUILD = true;
+	return DEV_BUILD;
 }
 
 // ── 1. the guards on a traversal ────────────────────────────────────────────
@@ -1218,6 +1327,12 @@ export function immediateToggle(lib) {
  * The probe also pins `ECS_SNAPSHOT_VERSION`. It reads the version word out of a
  * fresh capture and requires that word to be the exported constant. Therefore a
  * change to the frame format cannot pass this file while the constant stays the same.
+ *
+ * Each refusal also pins the shape of the error. `ECSRestoreError` is an
+ * `ECSError` with the category `SNAPSHOT_RESTORE_FAILED`. Therefore
+ * `isEcsError` answers true for it. A caller that branches on the category
+ * reaches the refusal that a caller catching the class reaches. Refer to
+ * `refusalShape`.
  */
 export function worldRestoreGuard(lib) {
 	const what = "world-restore";
@@ -1270,10 +1385,7 @@ export function worldRestoreGuard(lib) {
 		}
 		counted();
 		if (err === null) bad(what, `${name}: the restore did not throw`);
-		counted();
-		if (!(err instanceof ECSRestoreError)) {
-			bad(what, `${name}: the restore threw ${err.name}, want ECSRestoreError: ${err.message}`);
-		}
+		refusalShape(lib, what, name, err, ECSRestoreError);
 		eq(what, `${name}: the hash after the refused restore`, ecs.snapshots.stateHash(), before);
 		eq(what, `${name}: a live field after the refused restore`, ecs.getField(ents[1], Pos, "x"), beforeField);
 	};
@@ -1342,10 +1454,7 @@ export function worldRestoreGuard(lib) {
 	}
 	counted();
 	if (otherErr === null) bad(what, `a restore into a world with a different registration did not throw`);
-	counted();
-	if (!(otherErr instanceof ECSRestoreError)) {
-		bad(what, `the restore threw ${otherErr.name}, want ECSRestoreError: ${otherErr.message}`);
-	}
+	refusalShape(lib, what, "a world with a different registration", otherErr, ECSRestoreError);
 	eq(what, "the hash of the other world after the refused restore", other.snapshots.stateHash(), otherHash);
 	eq(what, "a field of the other world after the refused restore", other.getField(oe, OPos, "z"), 3);
 
@@ -1486,6 +1595,671 @@ export function immediateComponentWrites(lib) {
 	return CHECKS - at;
 }
 
+// ── 16. the refusal of a value that is not a template ───────────────────────
+/**
+ * `spawn`, `spawnMany` and `template` refuse a value that is not a template.
+ *
+ * The types reject a component definition and a bundle at each of these call
+ * sites. An untyped call site does not. Without the guard the value reaches the
+ * store. The store reads a field that is `undefined`. It then fails with a
+ * `TypeError` that names the store and not the caller.
+ *
+ * Therefore the message is the behaviour under test, and not the throw. Each
+ * refusal here must name the value that arrived and the call to make instead.
+ *
+ * The guard is `if (DEV)`-gated at each call site, so the refusals run in a
+ * development build alone. `devBuild` selects the arm. A production build still
+ * runs the first half. A valid template spawns, and it gives the fields the
+ * caller declared. Without that half, an ECS that refused every template would
+ * pass the refusals below.
+ */
+export function templateRefusals(lib) {
+	const what = "invalid-template";
+	const at = CHECKS;
+	const { ECS_ERROR, bundle } = lib;
+	const ecs = snapshotWorld(lib, { deterministic: true });
+	const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
+	const Vel = ecs.registerComponent({ dx: "i32" }, { name: "Vel" });
+
+	// ── a valid template still spawns ───────────────────────────────────────
+	const tpl = ecs.template(bundle(Pos, { x: 3, y: 4 }), bundle(Vel, { dx: 5 }));
+	const one = ecs.spawn(tpl);
+	eq(what, "Pos.x of a spawn from a template", ecs.getField(one, Pos, "x"), 3);
+	eq(what, "Pos.y of a spawn from a template", ecs.getField(one, Pos, "y"), 4);
+	eq(what, "Vel.dx of a spawn from a template", ecs.getField(one, Vel, "dx"), 5);
+	const many = ecs.spawnMany(tpl, 3, { dx: 6 });
+	eq(what, "the count of the rows that spawnMany made", many.length, 3);
+	eq(what, "Vel.dx of the last row of spawnMany", ecs.getField(many[2], Vel, "dx"), 6);
+	eq(what, "Pos.x of the last row of spawnMany", ecs.getField(many[2], Pos, "x"), 3);
+
+	if (!devBuild(lib)) {
+		ecs.dispose();
+		return CHECKS - at;
+	}
+
+	// ── the refusals ────────────────────────────────────────────────────────
+	// A component definition is callable, and a bundle is a plain object with
+	// `values`. The message separates the two, because the remedy differs from
+	// the one for a value of any other shape.
+	const spawnBundleFix = "ecs.spawnBundle(...)";
+	throwsNaming(
+		lib,
+		what,
+		"spawn with a component definition",
+		ECS_ERROR.INVALID_TEMPLATE,
+		["spawn:", "a component definition", spawnBundleFix, "ecs.template("],
+		() => ecs.spawn(Pos)
+	);
+	throwsNaming(
+		lib,
+		what,
+		"spawn with a bundle",
+		ECS_ERROR.INVALID_TEMPLATE,
+		["spawn:", "a bundle", spawnBundleFix],
+		() => ecs.spawn(bundle(Pos, { x: 1, y: 2 }))
+	);
+	throwsNaming(
+		lib,
+		what,
+		"spawnMany with a component definition",
+		ECS_ERROR.INVALID_TEMPLATE,
+		["spawnMany:", "a component definition", spawnBundleFix],
+		() => ecs.spawnMany(Vel, 4)
+	);
+	// The array is the shape that `template` took before the callable bundles.
+	// It reaches the store and fails there, so the guard names the new spelling.
+	throwsNaming(
+		lib,
+		what,
+		"template with an array of entries",
+		ECS_ERROR.INVALID_TEMPLATE,
+		["template:", "got an array", "template(Pos({ x: 0 }), Vel)"],
+		() => ecs.template([{ def: Pos, values: { x: 0 } }])
+	);
+
+	// The refusals changed nothing. A guard that threw after it took a slot
+	// leaves a dead entity behind. The count of the live rows shows it.
+	eq(what, "Pos.x of the first row after the refusals", ecs.getField(one, Pos, "x"), 3);
+	eq(what, "the rows of the template archetype after the refusals", ecs.query(Pos, Vel).entityCount, 4);
+	ecs.dispose();
+	return CHECKS - at;
+}
+
+// ── 17. the readers that a term-carrying query refuses ──────────────────────
+/**
+ * The dense-path refusals, and the readers that still answer.
+ *
+ * `archetypeCount`, `archetypes` and `excludeWords` answer from the unfiltered
+ * dense archetype list. A `where` term narrows that list at the rebuild. Those
+ * three would then answer wider than the query matches, so each one refuses a
+ * term-carrying query with `QUERY_TERM_DENSE_PATH`. `forEach`, `some`,
+ * `entityCount` and `forEachEntity` walk the list the rebuild produced. They
+ * answer, and this probe gives each one an exact count.
+ *
+ * A sparse term is the other half, and the set of readers is different.
+ * `andSparse` and `andRelation` leave the dense list alone. They filter each
+ * entity instead. So `archetypeCount`, `entityCount`, `forEach`, `forEachChunk`
+ * and `some` refuse with `SPARSE_QUERY_DENSE_PATH`. `forEachEntity` is the one
+ * reader that honours the term. `archetypes` answers, because the dense list is
+ * the right list for a sparse term.
+ *
+ * Both guards are `if (DEV)`-gated. A production build keeps the reader, and it
+ * answers from the unfiltered dense list. The production arm below reads that,
+ * so the difference between the builds is measured and not assumed.
+ */
+export function denseReaderRefusals(lib) {
+	const what = "dense-path";
+	const at = CHECKS;
+	const { ECS_ERROR, or } = lib;
+	const ecs = snapshotWorld(lib, { deterministic: true });
+	const Base = ecs.registerComponent({ v: "i32" }, { name: "Base" });
+	const A = ecs.registerComponent({}, { name: "A" });
+	const B = ecs.registerComponent({}, { name: "B" });
+	const Sp = ecs.registerSparseComponent({ k: "i32" }, { name: "Sp" });
+	const R = ecs.relations.register({ exclusive: true, onDeleteTarget: "clear" });
+
+	// Three archetypes over `Base`: {Base}, {Base, A} and {Base, B}.
+	const group = (n, extra) => {
+		const out = [];
+		for (let i = 0; i < n; i++) {
+			const e = ecs.spawn();
+			ecs.addComponent(e, Base, { v: i });
+			if (extra !== null) ecs.addComponent(e, extra);
+			out.push(e);
+		}
+		return out;
+	};
+	const plain = group(4, null);
+	const withA = group(3, A);
+	const withB = group(2, B);
+	// The sparse member and the relation source are two of the `Base` rows. So
+	// the filtered set is smaller than the dense one. A reader that ignored the
+	// term gives another number.
+	ecs.addSparse(withA[0], Sp, { k: 1 });
+	ecs.addSparse(withB[0], Sp, { k: 2 });
+	ecs.relations.add(plain[0], R, plain[1]);
+
+	const q = ecs.query(Base);
+	const walk = (query) => {
+		let n = 0;
+		query.forEachEntity(() => n++);
+		return n;
+	};
+	const archWalk = (query) => {
+		let n = 0;
+		query.forEach(() => n++);
+		return n;
+	};
+	eq(what, "the entities of the base query", q.entityCount, 9);
+	eq(what, "the archetypes of the base query", archWalk(q), 3);
+
+	// ── the archetype term ──────────────────────────────────────────────────
+	const qWhere = q.where(or(A, B));
+	// These four honour the term in both builds, because the rebuild produced
+	// the list that each of them walks.
+	eq(what, "forEachEntity on a where query", walk(qWhere), 5);
+	eq(what, "entityCount on a where query", qWhere.entityCount, 5);
+	eq(what, "forEach on a where query", archWalk(qWhere), 2);
+	let stopped = 0;
+	counted();
+	if (!qWhere.some(() => ++stopped > 0)) bad(what, `some on a where query found no archetype`);
+	eq(what, "the archetypes that some visited before it stopped", stopped, 1);
+
+	// ── the sparse term and the relation term ───────────────────────────────
+	const qSparse = q.andSparse(Sp);
+	const qRel = q.andRelation(R);
+	eq(what, "forEachEntity on an andSparse query", walk(qSparse), 2);
+	eq(what, "forEachEntity on an andRelation query", walk(qRel), 1);
+
+	if (!devBuild(lib)) {
+		// The production arm. The guard is compiled out, so the reader keeps the
+		// unfiltered dense answer. That is the documented behaviour. It is also
+		// the reason the guard exists. The number below is wider than the term.
+		eq(what, "entityCount on an andSparse query in a production build", qSparse.entityCount, 9);
+		ecs.dispose();
+		return CHECKS - at;
+	}
+
+	// A term-carrying query refuses the three readers that answer from the
+	// unfiltered list. The message names the term, so the caller knows which one.
+	const termName = `or(A, B)`;
+	for (const [name, read] of [
+		["archetypeCount", () => qWhere.archetypeCount],
+		["archetypes", () => qWhere.archetypes],
+		["excludeWords", () => qWhere.excludeWords],
+	]) {
+		throwsNaming(
+			lib,
+			what,
+			`${name} on a where query`,
+			ECS_ERROR.QUERY_TERM_DENSE_PATH,
+			[`Query.${name}`, termName, "forEach"],
+			read
+		);
+	}
+
+	// The sparse guard covers a different set, and `archetypes` is not in it.
+	for (const [label, query] of [["andSparse", qSparse], ["andRelation", qRel]]) {
+		for (const [name, read] of [
+			["archetypeCount", () => query.archetypeCount],
+			["entityCount", () => query.entityCount],
+			["forEach", () => query.forEach(() => undefined)],
+			["forEachChunk", () => query.forEachChunk(() => undefined)],
+			["some", () => query.some(() => true)],
+		]) {
+			throwsNaming(
+				lib,
+				what,
+				`${name} on an ${label} query`,
+				ECS_ERROR.SPARSE_QUERY_DENSE_PATH,
+				[`Query.${name}`, "forEachEntity"],
+				read
+			);
+		}
+		eq(what, `archetypes on an ${label} query answers`, query.archetypes.length >= 1, true);
+	}
+	ecs.dispose();
+	return CHECKS - at;
+}
+
+// ── 18. the plugin host ─────────────────────────────────────────────────────
+/**
+ * A bare world, and a plugin written outside this package.
+ *
+ * Every other probe here builds a world with four plugins installed. None of
+ * them reads what a world without one does. A bare world keeps a slot for each
+ * plugin it never installed. A read of a member of that slot must name the
+ * plugin and the import that supplies it. A `TypeError` about a property of
+ * `undefined` names neither.
+ *
+ * The determinism surface is not a plugin. `snapshots.deterministic` and
+ * `snapshots.stateHash` belong to the world. A bare deterministic world still
+ * answers both, and this probe reads them, so the refusals stay narrow.
+ *
+ * The second half writes a plugin from the published seam alone. That seam is a
+ * `name`, an `install` that takes the host, and a facade the world carries. It
+ * then holds `ECS.create` to two of its refusals. A second plugin of one name is
+ * `PLUGIN_ALREADY_INSTALLED`, in each build. A facade that names a member of
+ * the world is `PLUGIN_SURFACE_COLLISION`, in a development build.
+ */
+function tallyPlugin(name) {
+	return {
+		name,
+		install(host) {
+			// The bare world, the change feed and the settle hook. Those three are
+			// the whole seam that a plugin outside this package gets.
+			const def = host.world.registerComponent({ n: "i32" }, { name: `${name}.N` });
+			const seen = [];
+			const runs = [];
+			host.changes.configureObservation(name, def.id, {
+				add: false,
+				remove: false,
+				disable: false,
+				enable: false,
+				set: true,
+			});
+			host.onSettle((run) => {
+				runs.push(run);
+				const result = host.changes.drainSet(def.id, run);
+				for (const id of result.scanned) seen.push(id);
+				for (const id of result.listed) seen.push(id);
+			});
+			return { tally: { def, seen, runs } };
+		},
+	};
+}
+
+export function pluginHost(lib) {
+	const what = "plugins";
+	const at = CHECKS;
+	const { ECS, ECS_ERROR } = lib;
+
+	// ── the bare world ──────────────────────────────────────────────────────
+	const bare = new ECS({ deterministic: true });
+	const Pos = bare.registerComponent({ x: "i32" }, { name: "Pos" });
+	const e = bare.spawn();
+	bare.addComponent(e, Pos, { x: 1 });
+	for (const [slot, api, read] of [
+		["relations", "ecs.relations.count", () => bare.relations.count],
+		["events", "ecs.events.register", () => bare.events.register],
+		["workers", "ecs.workers.attach", () => bare.workers.attach],
+		["observers", "ecs.observe", () => bare.observe(Pos, { name: "w", access: {} })],
+		["snapshots", "ecs.snapshots.capture", () => bare.snapshots.capture()],
+	]) {
+		throwsNaming(
+			lib,
+			what,
+			`a bare world at ${api}`,
+			ECS_ERROR.PLUGIN_NOT_INSTALLED,
+			[api, slot, `@oasys/oecs/${slot}`],
+			read
+		);
+	}
+	// The determinism surface belongs to the world, so a bare world answers it.
+	eq(what, "deterministic on a bare world", bare.snapshots.deterministic, true);
+	const hash0 = bare.snapshots.stateHash();
+	eq(what, "stateHash is a number on a bare world", typeof hash0, "number");
+	eq(what, "stateHash with no change between the reads", bare.snapshots.stateHash(), hash0);
+	bare.setField(e, Pos, "x", 2);
+	counted();
+	if (bare.snapshots.stateHash() === hash0) {
+		bad(what, `stateHash did not move after a write, so it reads no live state`);
+	}
+	bare.dispose();
+
+	// ── a plugin from outside this package ──────────────────────────────────
+	const world = ECS.create({ plugins: [tallyPlugin("tally")] });
+	const tally = world.tally;
+	const Note = tally.def;
+	const n = world.spawn();
+	world.addComponent(n, Note, { n: 1 });
+	world.flush();
+	world.startup();
+	// The facade answers through the world. The plugin registered its component
+	// on the bare world it was handed, and this world holds that component.
+	eq(what, "the field of the component that the plugin registered", world.getField(n, Note, "n"), 1);
+	eq(what, "the settle hooks before the first update", tally.runs.length, 0);
+	world.update(1);
+	eq(what, "the settle hooks after one update", tally.runs.length, 1);
+	// The feed reports a write, and it reports nothing on a tick with no write.
+	tally.seen.length = 0;
+	world.setField(n, Note, "n", 7);
+	world.update(1);
+	eqList(what, "the entities the feed reported after a write", tally.seen, [n]);
+	tally.seen.length = 0;
+	world.update(1);
+	eqList(what, "the entities the feed reported on a quiet tick", tally.seen, []);
+	eq(what, "the settle hooks after three updates", tally.runs.length, 3);
+	counted();
+	if (!(tally.runs[2] > tally.runs[1])) {
+		bad(what, `the settle hook read ${tally.runs[2]} after ${tally.runs[1]}, and each settle is at a later change tick`);
+	}
+	world.dispose();
+
+	// One name, two plugins. The second install would replace the first service,
+	// and every handle the first minted would then address state nothing reads.
+	throwsNaming(
+		lib,
+		what,
+		"two plugins of one name",
+		ECS_ERROR.PLUGIN_ALREADY_INSTALLED,
+		["tally"],
+		() => ECS.create({ plugins: [tallyPlugin("tally"), tallyPlugin("tally")] })
+	);
+	// A plugin whose dependency is not installed yet. The list is walked in
+	// order, so a dependency has to come first.
+	throwsNaming(
+		lib,
+		what,
+		"a plugin whose requires is absent",
+		ECS_ERROR.PLUGIN_NOT_INSTALLED,
+		["relations"],
+		() => ECS.create({ plugins: [{ ...tallyPlugin("needs"), requires: ["relations"] }] })
+	);
+
+	if (!devBuild(lib)) return CHECKS - at;
+	// A facade that names a member of the world. `Object.assign` is silent about
+	// it, and the world would lose the method. The reserved slots are the
+	// exception, and `update` is not one of them.
+	throwsNaming(
+		lib,
+		what,
+		"a facade that names a world member",
+		ECS_ERROR.PLUGIN_SURFACE_COLLISION,
+		["collide", "update"],
+		() =>
+			ECS.create({
+				plugins: [{ name: "collide", install: () => ({ update: () => undefined }) }],
+			})
+	);
+	return CHECKS - at;
+}
+
+// ── 19. the open phase set ──────────────────────────────────────────────────
+/**
+ * `addPhase`, the order it gives, and its two faults.
+ *
+ * The seven built-in phases carry the same `after` edges a new phase gets. So a
+ * phase added `before: [UPDATE]` lands after `PRE_UPDATE` and not ahead of it.
+ * One system in each phase writes an order log, and this probe predicts the
+ * complete list.
+ *
+ * The two faults are not dev guards, and `schedule.ts` gives the reason. A
+ * handle from another world pushes systems into that world's list. A production
+ * build that scheduled them into nothing is worse than a named fault on a setup
+ * call. Therefore both arms run in each build.
+ */
+export function openPhases(lib) {
+	const what = "phases";
+	const at = CHECKS;
+	const { ECS, SCHEDULE, ECS_ERROR } = lib;
+	const ecs = snapshotWorld(lib, { deterministic: true });
+	const early = ecs.addPhase("early", { loop: "update", before: [SCHEDULE.UPDATE] });
+	const late = ecs.addPhase("late", { loop: "update", after: [SCHEDULE.UPDATE] });
+	eq(what, "the name of a phase from addPhase", early.name, "early");
+	eq(what, "the loop of a phase from addPhase", early.loop, "update");
+	eq(what, "two calls with one loop give two phases", early === late, false);
+
+	const log = [];
+	const mark = (label) =>
+		ecs.registerSystem({
+			name: `mark-${label}`,
+			reads: [],
+			writes: [],
+			fn: () => log.push(label),
+		});
+	ecs.addSystems(SCHEDULE.PRE_UPDATE, mark("PRE_UPDATE"));
+	ecs.addSystems(early, mark("early"));
+	ecs.addSystems(SCHEDULE.UPDATE, mark("UPDATE"));
+	ecs.addSystems(SCHEDULE.POST_UPDATE, mark("POST_UPDATE"));
+	ecs.addSystems(late, mark("late"));
+	ecs.startup();
+	ecs.update(1);
+	// `early` sits between PRE_UPDATE and UPDATE, because the built-in chain
+	// keeps it behind PRE_UPDATE. `late` has one edge, from UPDATE, and
+	// declaration order is the tiebreaker, so POST_UPDATE goes first.
+	eqList(what, "the phases of one update, in order", log, [
+		"PRE_UPDATE",
+		"early",
+		"UPDATE",
+		"POST_UPDATE",
+		"late",
+	]);
+	log.length = 0;
+	ecs.update(1);
+	eqList(what, "the phases of the second update", log, [
+		"PRE_UPDATE",
+		"early",
+		"UPDATE",
+		"POST_UPDATE",
+		"late",
+	]);
+
+	// ── a handle from another world ─────────────────────────────────────────
+	const other = snapshotWorld(lib, { deterministic: true });
+	const foreign = other.addPhase("foreign", { loop: "update" });
+	throwsNaming(
+		lib,
+		what,
+		"addPhase with a handle from another world",
+		ECS_ERROR.UNKNOWN_PHASE,
+		["foreign", "another world"],
+		() => ecs.addPhase("borrowed", { loop: "update", before: [foreign] })
+	);
+	throwsNaming(
+		lib,
+		what,
+		"addSystems with a handle from another world",
+		ECS_ERROR.UNKNOWN_PHASE,
+		["foreign", "another world"],
+		() => ecs.addSystems(foreign, mark("never"))
+	);
+	// A name that no built-in spells. A phase from `addPhase` is a handle, so a
+	// string reaches the built-in table and nothing else.
+	throwsNaming(
+		lib,
+		what,
+		"addPhase ordered against a name that is not a built-in",
+		ECS_ERROR.UNKNOWN_PHASE,
+		["MID_UPDATE", "SCHEDULE"],
+		() => ecs.addPhase("typo", { loop: "update", after: ["MID_UPDATE"] })
+	);
+	// The refused call changed no order. The schedule still runs the five phases
+	// that the log above named.
+	log.length = 0;
+	ecs.update(1);
+	eqList(what, "the phases after the refused calls", log, [
+		"PRE_UPDATE",
+		"early",
+		"UPDATE",
+		"POST_UPDATE",
+		"late",
+	]);
+	other.dispose();
+	ecs.dispose();
+
+	// ── the cycle ───────────────────────────────────────────────────────────
+	// A world of its own. The refusal leaves the phase declared and its loop
+	// unordered, so nothing else may run in this world.
+	const cyc = snapshotWorld(lib, { deterministic: true });
+	const first = cyc.addPhase("first", { loop: "update" });
+	throwsNaming(
+		lib,
+		what,
+		"two phases that order each other",
+		ECS_ERROR.CIRCULAR_PHASE_DEPENDENCY,
+		["update", "second", "first"],
+		() => cyc.addPhase("second", { loop: "update", before: [first], after: [first] })
+	);
+	cyc.dispose();
+	return CHECKS - at;
+}
+
+// ── 20. the write seam at a phase the caller added ──────────────────────────
+/**
+ * `installHostCommandSeam` draining at a phase from `addPhase`.
+ *
+ * The seam takes `[PRE_STARTUP, PRE_UPDATE]` by default, and `world.mjs` uses
+ * that default. A plugin drains at the phase its own `addPhase` returned
+ * instead, and nothing read that. The phase here sits between `UPDATE` and
+ * `POST_UPDATE`. So one system reads the field before the drain, and one reads
+ * it after, in the same tick.
+ *
+ * A `set_field` command applies during the drain. An add or a remove waits for
+ * the flush of the phase. Therefore the value is the assertion, and the two
+ * logs give the exact numbers of each tick.
+ */
+export function seamAtAddedPhase(lib) {
+	const what = "seam-phase";
+	const at = CHECKS;
+	const { SCHEDULE, installHostCommandSeam } = lib;
+	const ecs = snapshotWorld(lib, { deterministic: true });
+	const drain = ecs.addPhase("drain", {
+		loop: "update",
+		after: [SCHEDULE.UPDATE],
+		before: [SCHEDULE.POST_UPDATE],
+	});
+	const queue = installHostCommandSeam(ecs, { schedules: [drain], name: "phase-seam" });
+	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
+	const e = ecs.spawn();
+	ecs.addComponent(e, Pos, { x: 0 });
+	const before = [];
+	const after = [];
+	const reader = (label, sink) =>
+		ecs.registerSystem({
+			name: `read-${label}`,
+			reads: [Pos],
+			writes: [],
+			fn: (ctx) => sink.push(ctx.getField(e, Pos, "x")),
+		});
+	ecs.addSystems(SCHEDULE.UPDATE, reader("before", before));
+	ecs.addSystems(SCHEDULE.POST_UPDATE, reader("after", after));
+	ecs.startup();
+
+	queue.setField(e, Pos, "x", 42);
+	eq(what, "the pending count before the tick", queue.pendingCount, 1);
+	ecs.update(1);
+	eq(what, "the pending count after the drain", queue.pendingCount, 0);
+	queue.setField(e, Pos, "x", 43);
+	ecs.update(1);
+	// The command was queued before the first tick, and the phase before the
+	// drain still reads the old value. That is the half which says "and not
+	// before": a seam that drained at PRE_UPDATE would give [42, 43] here.
+	eqList(what, "the field a system in the phase before the drain read", before, [0, 42]);
+	eqList(what, "the field a system in the phase after the drain read", after, [42, 43]);
+	eq(what, "the field between the ticks", ecs.getField(e, Pos, "x"), 43);
+	// A tick with nothing queued changes nothing.
+	ecs.update(1);
+	eqList(what, "the field before the drain on a quiet tick", before, [0, 42, 43]);
+	eqList(what, "the field after the drain on a quiet tick", after, [42, 43, 43]);
+	ecs.dispose();
+	return CHECKS - at;
+}
+
+// ── 21. the shape of a where term ───────────────────────────────────────────
+/**
+ * `Query.where`, the free `and`, `or` and `not`, and a term a plugin builds.
+ *
+ * A dense term sets a bit in the component mask. An archetype term answers a
+ * question the mask cannot ask, once per archetype at the rebuild. The probe
+ * builds five archetypes with a known population. Therefore each expression
+ * below has an exact count of the entities and of the archetypes.
+ *
+ * `and()` over nothing matches every archetype, and `or()` over nothing matches
+ * none. Those are the two identities. A count of zero is a real answer here.
+ * The population separates it from a query that matched nothing by mistake.
+ *
+ * It also pins the record. `terms.archetypeTerms` carries the term the caller
+ * gave, by identity. `where` caches on that identity, so a repeated call gives
+ * one query instance.
+ */
+export function whereTerms(lib) {
+	const what = "where";
+	const at = CHECKS;
+	const { and, or, not } = lib;
+	const ecs = snapshotWorld(lib, { deterministic: true });
+	const Base = ecs.registerComponent({ v: "i32" }, { name: "Base" });
+	const A = ecs.registerComponent({}, { name: "A" });
+	const B = ecs.registerComponent({}, { name: "B" });
+	const C = ecs.registerComponent({}, { name: "C" });
+
+	// Five archetypes over `Base`, with a different count in each one. A wrong
+	// set of archetypes therefore gives a wrong count of the entities as well.
+	const group = (n, extras) => {
+		for (let i = 0; i < n; i++) {
+			const e = ecs.spawn();
+			ecs.addComponent(e, Base, { v: i });
+			for (const def of extras) ecs.addComponent(e, def);
+		}
+	};
+	group(2, [A, B]);
+	group(3, [A, C]);
+	group(4, [A]);
+	group(5, [B, C]);
+	group(6, []);
+
+	const q = ecs.query(Base);
+	const walk = (query) => {
+		let n = 0;
+		query.forEachEntity(() => n++);
+		return n;
+	};
+	const archWalk = (query) => {
+		let n = 0;
+		query.forEach(() => n++);
+		return n;
+	};
+	eq(what, "the entities of the base query", q.entityCount, 20);
+	eq(what, "the archetypes of the base query", archWalk(q), 5);
+
+	// ── a term a plugin builds ──────────────────────────────────────────────
+	// `matches` reads the component mask of an archetype, and nothing else.
+	const holdsA = { name: "holdsA", matches: (mask) => mask.has(A.id) };
+	const qa = q.where(holdsA);
+	eq(what, "the count of the terms the record carries", qa.terms.archetypeTerms.length, 1);
+	counted();
+	if (qa.terms.archetypeTerms[0] !== holdsA) {
+		bad(what, `the terms record holds ${qa.terms.archetypeTerms[0]?.name}, want the term the caller gave`);
+	}
+	eq(what, "the base query carries no term", q.terms.archetypeTerms.length, 0);
+	eq(what, "the entities a plugin term matched", walk(qa), 9);
+	eq(what, "entityCount honours a plugin term", qa.entityCount, 9);
+	eq(what, "the archetypes a plugin term matched", archWalk(qa), 3);
+	// `where` caches on the term and the parent, so a repeated call is one query.
+	counted();
+	if (q.where(holdsA) !== qa) bad(what, `a second where with one term gave a second query`);
+
+	// ── the combinators ─────────────────────────────────────────────────────
+	const expr = and(A, or(B, C));
+	// The name nests, and a refusal quotes it, so the caller reads the shape.
+	eq(what, "the name of a nested expression", expr.name, "and(A, or(B, C))");
+	const qe = q.where(expr);
+	eq(what, "the entities and(A, or(B, C)) matched", walk(qe), 5);
+	eq(what, "the archetypes and(A, or(B, C)) matched", archWalk(qe), 2);
+	const qn = q.where(not(A));
+	eq(what, "the entities not(A) matched", walk(qn), 11);
+	eq(what, "the archetypes not(A) matched", archWalk(qn), 2);
+	const qo = q.where(or(B, C));
+	eq(what, "the entities or(B, C) matched", walk(qo), 10);
+	eq(what, "the archetypes or(B, C) matched", archWalk(qo), 3);
+	// The two identities. `and()` narrows nothing, and `or()` keeps nothing.
+	eq(what, "the entities and() matched", walk(q.where(and())), 20);
+	eq(what, "the entities or() matched", walk(q.where(or())), 0);
+	eq(what, "the archetypes or() matched", archWalk(q.where(or())), 0);
+
+	// ── composition, in both orders ─────────────────────────────────────────
+	// The derive threads the terms record forward. So the dense verb and the
+	// term give one set, whichever one comes first.
+	eq(what, "where then not", walk(qe.not(B)), 3);
+	eq(what, "not then where", walk(q.not(B).where(expr)), 3);
+	eq(what, "the archetypes of where then not", archWalk(qe.not(B)), 1);
+	eq(what, "the archetypes of not then where", archWalk(q.not(B).where(expr)), 1);
+	// Two terms on one query narrow together.
+	eq(what, "two terms on one query", walk(qa.where(or(B, C))), 5);
+	ecs.dispose();
+	return CHECKS - at;
+}
+
 // ── the runner ──────────────────────────────────────────────────────────────
 /**
  * Each probe: its name, its function, and a floor on the count of the assertions
@@ -1497,9 +2271,12 @@ export function immediateComponentWrites(lib) {
  * gives a smaller number and the floor fails. Without the floor, the number is a
  * report only.
  *
- * Each floor is the count that a production build makes. `frameTrace` reads a sink
- * that a `DEV` guard controls, so that probe makes fewer comparisons in a production
- * build. A development build makes the same count or more.
+ * Each floor is the count that a production build makes. A development build makes
+ * the same count or more. Four probes read a guard that a `DEV` build alone keeps.
+ * Each of the four makes fewer comparisons in a production build. `frameTrace` reads its
+ * trace sink. `templateRefusals` and `denseReaderRefusals` read a refusal that a
+ * production build does not raise. `pluginHost` reads one refusal of its three.
+ * `devBuild` selects the arm.
  */
 export const PROBES = [
 	["traversal guards (cycle, maxDepth)", traversalGuards, 11],
@@ -1515,8 +2292,14 @@ export const PROBES = [
 	["the explicit removal of a relation", relationRemoval, 18],
 	["the cursors and the single-entity refs", cursorsAndRefs, 23],
 	["the immediate toggle from the host", immediateToggle, 12],
-	["the guard on a restore of the whole world", worldRestoreGuard, 36],
+	["the guard on a restore of the whole world", worldRestoreGuard, 57],
 	["the immediate component writes of the host", immediateComponentWrites, 29],
+	["the refusal of a value that is not a template", templateRefusals, 6],
+	["the dense-path refusals of a query", denseReaderRefusals, 10],
+	["the plugin host, bare slots and a third-party plugin", pluginHost, 49],
+	["the open phase set", openPhases, 27],
+	["the write seam at a phase the caller added", seamAtAddedPhase, 7],
+	["the shape of a where term", whereTerms, 24],
 ];
 
 /** Run each probe. It gives back the count of the probes and the count of the

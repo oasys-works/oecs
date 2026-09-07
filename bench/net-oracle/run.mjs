@@ -94,15 +94,34 @@
  *  14. `ctx.removeRelation` and `ctx.hasRelation`, one system removes one `Produced`
  *      pair on each verification tick, and the model applies the same removal. A port
  *      of the net is exclusive, so a rewrite replaces its target instead.
+ *  15. The archetype terms. One set of agents, in three spellings. They are a chain
+ *      of verbs, a nested expression through `where`, and a term of the harness's
+ *      own making. The expression nests the free `and`, `or` and `not`. The model
+ *      holds the set, and the three must also report one archetype list.
+ *  16. Two phases that the harness adds. A census before UPDATE reads the count of
+ *      the live agents at the start of the tick. A census after UPDATE reads the
+ *      count after the rewrites. Both read `Age.ticks` of the ROOT before the bump
+ *      of POST_UPDATE. So the position of each phase has an exact expected value.
+ *  17. The row grain. `ecs.trackRows(Mix)` gives `Mix` a row tick column.
+ *      `cols.ticksRead(Mix)` against `cols.since` must report exactly the agents
+ *      that the reference wrote in its own `setLink`. `changed(Mix).forEachChunk`
+ *      reaches the same rows behind the filter on the archetype.
+ *  18. The sparse row grain. `ctx.sparseChanged(Watch)` must report exactly the
+ *      members that `redexMaintain` wrote through the mutable sparse cursor.
+ *  19. The pool. The age bump of the net runs as a `js` kernel across two workers.
+ *      The pooled world gets the complete oracle. Three of its numbers must equal
+ *      those of the same run with no pool. They are `stateHash`, the normal form
+ *      and the count of the rewrites. The sequential body must not run there, which
+ *      says the pool took each pass.
  *
- * `surface.mjs` holds 15 more probes. They cover the parts of the API that a net
+ * `surface.mjs` holds 21 more probes. They cover the parts of the API that a net
  * which must keep its meaning cannot reach. Those parts are a cycle in a
  * relation, a named error, a replay into a second world, the batch paths, the
  * combinators for a run condition, the explicit removal of a relation, the
  * cursors, the immediate toggle from the host, the refusal of a damaged
  * snapshot, and the immediate component writes of the host.
  *
- * `mutants.mjs` shows that this tool is necessary. It puts 38 known ECS bugs into a
+ * `mutants.mjs` shows that this tool is necessary. It puts known ECS bugs into a
  * built bundle, and it requires the oracle to find each one. It also reports how many
  * of them an oracle layer found, and how many an engine error found first.
  *
@@ -113,6 +132,9 @@
  *   node bench/net-oracle/run.mjs --net=erase:14 --batch=64
  *   node bench/net-oracle/run.mjs --net=random:1,30,18,20 --steps=2000000 --verify=200
  *   node bench/net-oracle/run.mjs --net=dup:6 --batch=1   # per-rewrite attribution
+ *   node bench/net-oracle/run.mjs --surface            # the probes for the API surface
+ *   node bench/net-oracle/run.mjs --memory             # the store base, the cap and the fixed buffer
+ *   node bench/net-oracle/run.mjs --workers            # one system across a pool
  *
  * Options:
  *   --net=spec     erase:D | dup:D | random:seed,nCon,nDup,nEra
@@ -132,6 +154,11 @@
  *                  `capture` and `restore`, which all need determinism.
  *   --sab          put the column store on a `SharedArrayBuffer`. That is the opt-in
  *                  profile that a worker or a WASM compute backend needs.
+ *   --base=N       the byte offset of the store header inside the backing. A WASM
+ *                  module owns the low addresses of its own linear memory. A world
+ *                  that shares bytes with one starts its store above them.
+ *   --cap=N        the byte ceiling of the backing. A grow that passes it throws
+ *                  `STORE_CAP_EXCEEDED`, and there is no fallback.
  *   --record       log each host command, and check the log's round trip through JSON.
  *   --fp=N         the fingerprint of every agent at each N ticks (default 1, and 0 is never).
  *                  One linear scan on each side, so it runs where the deep comparison
@@ -147,6 +174,11 @@
  *   --lib=path     use an already-built bundle (how `mutants.mjs` injects bugs)
  *   --prod         build with __DEV__=false (default is dev: guards on)
  *   --surface      run the API-surface probes alone, and no simulation
+ *   --memory       run the arms for the layout of the memory alone: the store base,
+ *                  a cap that the case fits inside, a fixed buffer, and a cap that
+ *                  the case does not fit inside
+ *   --workers      run the arm for the pool alone: the age bump of the net as a
+ *                  `js` kernel across two workers, against the same run with no pool
  *   --quiet        less per-case detail
  *
  * The default build is a development build, and the released package is not. A
@@ -160,7 +192,7 @@ import path from "node:path";
 import url from "node:url";
 import { buildLib } from "../build.mjs";
 import { netFromArg, assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
-import { Divergence, Pressure, confluence, fail, lockstep, report, runCase } from "./driver.mjs";
+import { Divergence, Pressure, confluence, fail, lockstep, memoryArms, report, runCase, workersArm } from "./driver.mjs";
 import { runSurface } from "./surface.mjs";
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
@@ -186,6 +218,8 @@ const OPT = {
 	compactEvery: num("compact", 16),
 	float: argv.includes("--float"),
 	sab: argv.includes("--sab"),
+	base: num("base", 0),
+	cap: num("cap", 0),
 	record: argv.includes("--record"),
 	fp: num("fp", 1),
 	phase: num("phase", 1),
@@ -214,6 +248,85 @@ if (preBuilt !== null) {
 }
 const lib = await import(url.pathToFileURL(outfile).href);
 
+
+/** The arms for the layout of the memory: the store base, and the two halves of
+ * the byte ceiling. `pressure` may be `null`, which is the `--memory` arm, where
+ * the floors of the suite do not apply. */
+function runMemoryArms(lib, pressure) {
+	const spec = assertNetSpecValid(dupTree(6));
+	// A net that does not fit inside the ceiling below. The load spawns every
+	// agent, so the grow that crosses the ceiling happens there.
+	const capSpec = assertNetSpecValid(dupTree(12));
+	const r = memoryArms(lib, {
+		spec,
+		capSpec,
+		cap: 8 * 1024 * 1024,
+		tooSmall: 1024 * 1024,
+		seed: OPT.seed,
+		maxBatch: OPT.batch,
+		verifyEvery: 2,
+		snapEvery: 8,
+		steps: OPT.steps,
+		prov: OPT.prov,
+		compactEvery: OPT.compactEvery,
+		fpEvery: OPT.fp,
+		phaseEvery: OPT.phase,
+	});
+	report("SharedArrayBuffer", r.atZero);
+	report("at a store base", r.atBase);
+	report("under a declared cap", r.underCap);
+	report("on a fixed buffer", r.onFixed);
+	console.log(
+		`  ${"the store base".padEnd(26)} base 0 and base ${r.base} agree on stateHash ` +
+			`${r.atZero.finalHash}, on the normal form and on ${r.atZero.rewrites} rewrites`
+	);
+	console.log(
+		`  ${"the cap on the backing".padEnd(26)} STORE_CAP_EXCEEDED at ${r.refused.cap} bytes, and the ` +
+			`message names the ${r.refused.live} live entities that the world holds`
+	);
+	console.log(
+		`  ${"the fixed allocator".padEnd(26)} one stateHash with the growable buffer, and the same ` +
+			`refusal at ${r.refusedFixed.live} live entities`
+	);
+	if (pressure !== null) {
+		pressure.absorb(spec, r.atZero);
+		pressure.absorb(spec, r.atBase);
+		pressure.absorb(spec, r.underCap);
+		pressure.absorb(spec, r.onFixed);
+	}
+	return { cases: 6 };
+}
+
+/** One system of the net across a pool of workers, against the same run with no
+ * pool. `pressure` may be `null`, which is the `--workers` arm. */
+async function runWorkersArm(lib, pressure) {
+	const spec = assertNetSpecValid(dupTree(6));
+	const r = await workersArm(lib, spec, {
+		count: 2,
+		seed: OPT.seed,
+		maxBatch: OPT.batch,
+		verifyEvery: 2,
+		snapEvery: 8,
+		steps: OPT.steps,
+		prov: OPT.prov,
+		compactEvery: OPT.compactEvery,
+		fpEvery: OPT.fp,
+		phaseEvery: OPT.phase,
+	});
+	report("the age bump, one thread", r.sequential);
+	report(`the age bump, ${r.count} workers`, r.pooled);
+	console.log(
+		`  ${"the workers arm".padEnd(26)} one stateHash ${r.pooled.finalHash}, one normal form, ` +
+			`${r.pooled.rewrites} rewrites, and the sequential body ran ` +
+			`${r.pooled.ageSequentialRuns} times in the pooled world`
+	);
+	if (pressure !== null) {
+		pressure.absorb(spec, r.sequential);
+		pressure.absorb(spec, r.pooled);
+	}
+	return { cases: 2 };
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 const t0 = process.hrtime.bigint();
 let cases = 0;
@@ -227,6 +340,18 @@ try {
 		const surface = runSurface(lib, { quiet: OPT.quiet });
 		console.log(`  ${surface.probes} probes, ${surface.checks} checks`);
 		cases = surface.probes;
+	} else if (argv.includes("--memory")) {
+		// The arms for the layout of the memory alone, and no suite. `mutants.mjs`
+		// needs this arm. Each other case of its battery names a `--net=`. Such a run
+		// reaches neither the store base nor the refusal at the cap.
+		console.log(`net-oracle memory arms (${OPT.prod ? "prod" : "dev"} build)`);
+		cases = runMemoryArms(lib, null).cases;
+	} else if (argv.includes("--workers")) {
+		// The pool alone, and no suite. `mutants.mjs` needs this arm. Each other case
+		// of its battery runs one thread. A fault in the host half of the pool is
+		// inert there.
+		console.log(`net-oracle workers arm (${OPT.prod ? "prod" : "dev"} build)`);
+		cases = (await runWorkersArm(lib, null)).cases;
 	} else if (OPT.net !== null) {
 		// ── single explicit case ────────────────────────────────────────────
 		const spec = netFromArg(OPT.net, OPT.seed);
@@ -245,6 +370,8 @@ try {
 			float: OPT.float,
 			sab: OPT.sab,
 			record: OPT.record,
+			storeBase: OPT.base,
+			maxBytes: OPT.cap,
 			fpEvery: OPT.fp,
 			phaseEvery: OPT.phase,
 		});
@@ -498,7 +625,11 @@ try {
 
 		// 5. The arms for the profile. Each one runs the same oracle over a different
 		//    world, so the layers above cover the profile and not one call of it.
-		console.log(`\n[5] profiles, the f64 arm, the SharedArrayBuffer arm, and the command log`);
+		console.log(
+			`\n[5] profiles, the f64 arm, the SharedArrayBuffer arm, the store base, the cap, the fixed ` +
+				`buffer, the pool, and the command log`
+		);
+		const armStats = new Map();
 		for (const arm of [
 			// A world with no determinism, and an `f64` mirror column. A deterministic
 			// world rejects a float column, so this is the only arm that covers one. It
@@ -506,8 +637,9 @@ try {
 			// so `snapEvery` is 0 here.
 			{ label: "f64, no determinism", spec: dupTree(6), float: true, snap: 0 },
 			{ label: "f64, with churn", spec: randomNet(21, 24, 14, 16), float: true, snap: 0, steps: 4000 },
-			// the opt-in `SharedArrayBuffer` backing, with every layer on.
-			{ label: "SharedArrayBuffer", spec: dupTree(6), sab: true, snap: 8 },
+			// the opt-in `SharedArrayBuffer` backing, with every layer on. The arms of
+			// `runMemoryArms` below carry the rest of that backing. They are the store
+			// base, the fixed buffer, and the two halves of the cap.
 			{ label: "SharedArrayBuffer, with churn", spec: randomNet(22, 24, 14, 16), sab: true, snap: 16, steps: 4000 },
 			// the recorder for the host commands. It keeps the complete stream, so this
 			// arm is small, and `commandLogCheck` reads it at the end.
@@ -527,13 +659,25 @@ try {
 				float: arm.float === true,
 				sab: arm.sab === true,
 				record: arm.record === true,
+				storeBase: arm.storeBase ?? 0,
+				maxBytes: arm.maxBytes ?? 0,
 				fpEvery: OPT.fp,
 				phaseEvery: OPT.phase,
 			});
 			report(arm.label, stats);
+			armStats.set(arm.label, stats);
 			pressure.absorb(spec, stats);
 			cases++;
 		}
+
+		// The store base and the two halves of the cap. Each arm runs the complete
+		// oracle, and the comparison between them is what makes the base a check.
+		const mem = runMemoryArms(lib, pressure);
+		cases += mem.cases;
+		// One system of the net across a pool. The pooled world gets the complete
+		// oracle, and the pair of runs must agree on every number.
+		const par = await runWorkersArm(lib, pressure);
+		cases += par.cases;
 
 		// 6. The probes for the API surface. Each one is small, and each one has an
 		//    exact expected value. They cover the parts of the API that a net which

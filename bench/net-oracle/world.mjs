@@ -55,6 +55,17 @@
 import { ROOT, MAX_PORTS, NO_SLOT, PORTS, TYPE_NAME, applyRewrite, reduces } from "./spec.mjs";
 import { mirrorF32Of, mirrorOf, mixDefaults, mixSchema } from "./mirror.mjs";
 import { fingerprintEcs } from "./fingerprint.mjs";
+import { ageStepI32 } from "./kernels.mjs";
+
+/** The module that a `js` kernel names. The worker loads it by URL, and the
+ * system body imports it, so one source serves both paths. */
+export const KERNELS_URL = new URL("./kernels.mjs", import.meta.url).href;
+
+/** The worker entry of the engine, as the unit tests reach it. Node resolves a
+ * relative specifier by its extension. It strips the types itself. So the
+ * worker runs the sources of the tree. A mutant lives in the bundle that the
+ * host loads. It therefore reaches the host half of the pool alone. */
+export const WORKER_URL = new URL("../../src/worker.ts", import.meta.url);
 
 const SLOT_F = ["s0", "s1", "s2"];
 
@@ -82,14 +93,41 @@ export class EcsNet {
 	 *   which is a much better test of it than one unit test of the allocator.
 	 * @param opts.record log each host command into a `HostCommandRecorder`. It
 	 *   keeps the complete run, so a soak must leave it off.
+	 * @param opts.storeBase the byte offset inside the backing where the store
+	 *   header goes. Every offset the store writes is then relative to it. A WASM
+	 *   module needs that, because a module owns the low addresses of its own
+	 *   linear memory. A world at a non-zero base must give the same results as a
+	 *   world at base 0.
+	 * @param opts.maxBytes the byte ceiling of the backing. It is a hard ceiling
+	 *   with no fallback, so a grow that passes it throws `STORE_CAP_EXCEEDED`.
+	 * @param opts.allocator an `InPlaceBufferAllocator` to pass through
+	 *   `memory: { backing: { allocator } }`. `fixedSabAllocator` reserves the
+	 *   whole cap at construction and never grows.
+	 * @param opts.parallel give the age bump a `parallel` config and install the
+	 *   workers plugin. The system then runs as a `js` kernel across a pool, when
+	 *   the caller attaches one. It runs its own body when the caller does not.
+	 *   Both paths execute the body of `kernels.mjs`.
 	 */
 	constructor(
 		lib,
-		{ strict = true, prov = null, float = false, record = false, sab = false } = {}
+		{
+			strict = true,
+			prov = null,
+			float = false,
+			record = false,
+			sab = false,
+			storeBase = 0,
+			maxBytes = 0,
+			allocator = null,
+			parallel = false,
+		} = {}
 	) {
 		const {
 			ECS,
 			SCHEDULE,
+			and,
+			or,
+			not,
 			getEntityIndex,
 			eventKey,
 			signalKey,
@@ -102,6 +140,7 @@ export class EcsNet {
 			events,
 			relations,
 			observers,
+			workers,
 		} = lib;
 		// Kept for the names that only one check reads, such as `HIERARCHY_UNBOUNDED`.
 		this._lib = lib;
@@ -118,11 +157,28 @@ export class EcsNet {
 		// both backings, which is the point: the oracle then tests the whole engine over
 		// the opt-in profile and not one allocator alone.
 		const options = float ? {} : { deterministic: true };
-		if (sab) options.memory = { backing: "shared" };
+		const memory = {};
+		if (sab) memory.backing = "shared";
+		// An allocator of the caller wins over the string form. It owns the real
+		// ceiling, and `maxBytes` beside it is the declaration that the derivation
+		// of the entity index reads.
+		if (allocator !== null) memory.backing = { allocator };
+		// A non-zero base moves every offset the store writes. The store then owns
+		// `[storeBase, storeBase + capacity)` and it writes nothing below that.
+		if (storeBase > 0) memory.storeBase = storeBase;
+		if (maxBytes > 0) memory.maxBytes = maxBytes;
+		if (sab || storeBase > 0 || maxBytes > 0) options.memory = memory;
+		this.storeBase = storeBase;
 		// The oracle drives capture and restore, so it installs the snapshot
 		// plugin. A world that never captures does not, and does not carry
 		// the serialization code.
-		this.ecs = ECS.create({ ...options, plugins: [snapshots(), events(), relations(), observers()] });
+		// The workers plugin joins the list for the parallel arm alone. A world that
+		// never attaches a pool carries neither the pool nor the plan builder. The
+		// other arms keep the shape that the package ships.
+		this.parallel = parallel;
+		const plugins = [snapshots(), events(), relations(), observers()];
+		if (parallel) plugins.push(workers());
+		this.ecs = ECS.create({ ...options, plugins });
 		const ecs = this.ecs;
 
 		// ── the host write seam ─────────────────────────────────────────────
@@ -196,6 +252,12 @@ export class EcsNet {
 		// component in `sparseWrites`, which it does.
 		this.watchWrite = ecs.sparseCursor(this.Watch);
 		this.watchRead = ecs.sparseCursorRead(this.Watch);
+		// The row grain of the change detection, on a component that carries no
+		// `onSet` observer. `Touch` and `Seen` get a tick plane from their
+		// observers, so neither one can show what `trackRows` does. `Mix` has no
+		// observer. Thus this call is the only reason it holds a plane. The reader
+		// below reads that plane through `cols.ticksRead`.
+		ecs.trackRows(this.Mix);
 
 		// ── the template for a new agent ────────────────────────────────────
 		// `ecs.template` makes an opaque archetype template, and `spawn` and
@@ -311,6 +373,51 @@ export class EcsNet {
 		// must give a member while the net reduces, and `undefined` in the idle tail.
 		this.qRedexAll = ecs.query(this.Redex).includeDisabled();
 
+		// ── the archetype terms, three spellings of one set ─────────────────
+		// `freshPromote` removes `Fresh` and adds `Age` in one command batch.
+		// Therefore an agent holds exactly one of the two, and "holds `Age`" and
+		// "does not hold `Fresh`" name one set. The reference holds the age of each
+		// agent, so the model gives that set, and it gives the complement.
+		//
+		// The chained form is the first spelling. The second nests `and`, `or` and
+		// `not` inside one `where`. The third is a term of the harness's own making,
+		// the shape a plugin contributes. All three must give the same archetypes
+		// and the same entities.
+		const termBase = ecs.query(this.Slot).includeDisabled();
+		this.qAgedChain = termBase.and(this.Age).not(this.Fresh);
+		// Every agent holds `Touch`, so `and(Age, Touch)` is "holds Age". The `or`
+		// arm widens it to the active pairs, and the outer `not` takes the `Fresh`
+		// ones back out. A `Fresh` agent in an active pair is what makes the `or`
+		// arm and the `not` arm both do work.
+		this.qAgedExpr = termBase.where(
+			and(or(and(this.Age, this.Touch), this.Redex), not(this.Fresh))
+		);
+		// A term of the harness's own making. `matches` reads the component mask,
+		// which is the whole interface a plugin term has.
+		this.AgedTerm = {
+			name: "aged",
+			matches: (mask) => mask.has(this.Age.id) && !mask.has(this.Fresh.id),
+		};
+		this.qAgedTerm = termBase.where(this.AgedTerm);
+		// The complement, over the same parent query. `where` caches on the identity
+		// of the term. A cache that ignored the term would give this query the list
+		// of the one above. The two sets are disjoint and they cover the net.
+		this.UnagedTerm = { name: "unaged", matches: (mask) => !mask.has(this.Age.id) };
+		this.qUnagedTerm = termBase.where(this.UnagedTerm);
+
+		// ── the row grain of the change detection ───────────────────────────
+		// `setLink` writes `Mix` for both endpoints, through `ctx.ref` and through
+		// `ctx.cursor`. Both record the row. Therefore the rows of `Mix` that a tick
+		// stamps are the agents that the reference counted in its own `setLink`.
+		// That is the touched set of the model.
+		//
+		// The default arm drops a disabled row, as a chunk loop does. The
+		// `includeDisabled()` arm keeps it. The `changed(Mix)` arm reaches the same
+		// rows through the archetype filter first.
+		this.qMixAll = ecs.query(this.Mix).includeDisabled();
+		this.qMixEnabled = ecs.query(this.Mix);
+		this.qMixChanged = ecs.query(this.Mix).includeDisabled().changed(this.Mix);
+
 		// ── the observer-maintained redex queue ─────────────────────────────
 		// The whole point: this Set is never recomputed, only pushed to by the two
 		// callbacks. If a structural observer misses a transition, fires twice, or
@@ -399,6 +506,9 @@ export class EcsNet {
 		// set must equal `watchStayed`, and the comparison is exact both ways.
 		this.watchSetEntities = new Set();
 		this.watchStayed = new Set();
+		// The same record, with the disabled members kept. `ctx.sparseChanged` reads
+		// the sparse tick directly, and it applies no rule about a disabled row.
+		this.watchStamped = new Set();
 		this.watchEntityObserver = ecs.observe(this.Watch, {
 			name: "watch-entity",
 			granularity: "entity",
@@ -744,6 +854,9 @@ export class EcsNet {
 						// The sparse row grain reports this write, unless the agent is
 						// disabled, which the dispatch hides as a default query does.
 						if (!this.ecs.isDisabled(e)) this.watchStayed.add(e);
+						// `ctx.sparseChanged` reads the same tick and applies no such rule,
+						// so its expected set holds the disabled members as well.
+						this.watchStamped.add(e);
 					}
 				}
 				this._touched.clear();
@@ -829,18 +942,36 @@ export class EcsNet {
 		// `changeRead` below lists the same archetypes through `forEach`, which walks
 		// the same set. That list is the expected value, and it needs no model of the
 		// archetype graph.
+		//
+		// The body is `ageStepI32` of `kernels.mjs`, and the `parallel` config below
+		// names the same export. Therefore the sequential path and the pooled path
+		// execute one source. A difference between them comes from the split.
+		// `ageSequentialRuns` counts the runs of this body. It must stay at zero in a
+		// world that holds a pool.
+		this.ageSequentialRuns = 0;
+		const ageParallel = parallel
+			? {
+					parallel: {
+						kernel: { js: KERNELS_URL, export: "ageStepI32" },
+						columns: [[this.Age, "ticks"]],
+						minRows: 1,
+						query: this.qAge,
+					},
+				}
+			: {};
 		const ageTick = ecs.registerSystem({
 			name: "net-age-tick",
 			reads: [],
 			writes: [this.Age],
-			fn: () => {
+			...ageParallel,
+			fn: (ctx, dt) => {
+				this.ageSequentialRuns++;
 				this.qAge.forEachChunk((cols, count) => {
 					const c = cols.mut(this.Age);
-					const ticks = c.ticks;
-					for (let i = 0; i < count; i++) ticks[i] += 1;
+					ageStepI32(c.ticks, 0, count, dt);
 					if (float) {
 						const f = c.fticks;
-						for (let i = 0; i < count; i++) f[i] += 1;
+						for (let i = 0; i < count; i++) f[i] += dt;
 					}
 				});
 			},
@@ -912,6 +1043,32 @@ export class EcsNet {
 			},
 		});
 
+		// ── the reader for the row grain ────────────────────────────────────
+		// `cols.ticksRead(Mix)` is the row tick column that `ecs.trackRows(Mix)`
+		// installed. `cols.since` is the change tick of the previous run of this
+		// system. Therefore a row above it changed during this tick. The model says
+		// which agents those are, because `setLink` writes `Mix` for both endpoints.
+		//
+		// Three arms. The default query drops a disabled row. The `includeDisabled()`
+		// arm keeps it. `changed(Mix).forEachChunk` reaches the same rows behind the
+		// filter on the archetype. The body runs on the cadence of the deep
+		// comparison. The system runs at each tick, so `cols.since` still spans one
+		// tick.
+		this.rowChangedAll = new Set();
+		this.rowChangedEnabled = new Set();
+		this.rowChangedFiltered = new Set();
+		const rowGrainRead = ecs.registerSystem({
+			name: "net-row-grain",
+			reads: [this.Mix],
+			writes: [],
+			fn: () => {
+				if (!this._deep) return;
+				collectChangedRows(this.qMixAll, this.Mix, this.rowChangedAll);
+				collectChangedRows(this.qMixEnabled, this.Mix, this.rowChangedEnabled);
+				collectChangedRows(this.qMixChanged, this.Mix, this.rowChangedFiltered);
+			},
+		});
+
 		// ── the reader for the query verbs ──────────────────────────────────
 		// These verbs need a system, and not a call of the harness between the ticks.
 		// `getOptionalColumnRead` runs two checks in a development build: the read needs
@@ -936,12 +1093,23 @@ export class EcsNet {
 		this.untilStopped = false;
 		this.resourcePhase = -2;
 		this.resourceHas = false;
+		// The three spellings of the archetype term, and the complement.
+		this.termChainEnts = new Set();
+		this.termExprEnts = new Set();
+		this.termPluginEnts = new Set();
+		this.termUnagedEnts = new Set();
+		this.termChainArchs = new Set();
+		this.termExprArchs = new Set();
+		this.termPluginArchs = new Set();
+		// The members that `ctx.sparseChanged` reports for `Watch`.
+		this.sparseChangedEnts = new Set();
 		this._deep = false;
 		const verifyRead = ecs.registerSystem({
 			name: "net-verify-read",
 			reads: [this.Slot, this.Age, this.Redex, ...allTags],
 			writes: [],
 			relationReads: [this.P[1]],
+			sparseReads: [this.Watch],
 			resourceReads: [this.PhaseRes],
 			fn: (ctx) => {
 				// `hasResource` and `getResource` from inside a system. The facade
@@ -993,6 +1161,22 @@ export class EcsNet {
 					}
 					this.optionalSpansWithAge++;
 					for (let i = 0; i < arch.entityCount; i++) this.optionalAgeSeen.set(ids[i], ticks[i]);
+				});
+
+				// The archetype terms. Each spelling reports its archetypes and its
+				// entities. The driver requires all three to agree. It also requires
+				// them to equal the set that the model holds.
+				collect(this.qAgedChain, this.termChainArchs, this.termChainEnts);
+				collect(this.qAgedExpr, this.termExprArchs, this.termExprEnts);
+				collect(this.qAgedTerm, this.termPluginArchs, this.termPluginEnts);
+				collect(this.qUnagedTerm, null, this.termUnagedEnts);
+
+				// The sparse row grain. `redexMaintain` recorded each member that it
+				// wrote through the mutable sparse cursor. So the expected set is a
+				// record of the harness, and the read here is a second path to it.
+				this.sparseChangedEnts.clear();
+				this.qAgentsAll.forEachEntity((e) => {
+					if (ctx.sparseChanged(this.Watch, e)) this.sparseChangedEnts.add(e);
 				});
 			},
 		});
@@ -1122,6 +1306,58 @@ export class EcsNet {
 			},
 		});
 
+		// ── two phases of the harness, whose position is observable ─────────
+		// The phase set is open, so the harness owns a slot of its own. It does not
+		// contend for insertion order inside UPDATE. Each phase holds one census
+		// system, and the model gives the exact value that each one must read.
+		//
+		// The census before UPDATE reads the count of the live agents at the start of
+		// the tick. The census after UPDATE reads the count after the rewrites. That
+		// is a different number on any tick whose rules do not cancel. Both read
+		// `Age.ticks` of the ROOT, which `ageTick` increases in POST_UPDATE. So a
+		// phase that drifted past POST_UPDATE reads one more.
+		//
+		// The order of the two `addPhase` calls is a requirement. A phase with no
+		// constraint lands at the tail of its loop. Declaration order breaks the tie,
+		// and every built-in is declared first. Therefore the census after UPDATE is
+		// declared first. With its `after` dropped, its `before` alone puts it ahead
+		// of UPDATE. It then reads the count of the wrong point. Declared second, it
+		// would keep its place and the fault would hide.
+		this.censusPostPhase = ecs.addPhase("net-census-post", {
+			loop: "update",
+			after: [SCHEDULE.UPDATE],
+			before: [SCHEDULE.POST_UPDATE],
+		});
+		this.censusPrePhase = ecs.addPhase("net-census-pre", {
+			loop: "update",
+			before: [SCHEDULE.UPDATE],
+		});
+		this.censusPreLive = -1;
+		this.censusPreRootAge = -1;
+		this.censusPostLive = -1;
+		this.censusPostRootAge = -1;
+		// The ROOT never dies and no rule makes one, so this entity is fixed for the
+		// whole run. `load` binds it.
+		this.rootEntity = -1;
+		const censusPre = ecs.registerSystem({
+			name: "net-census-pre",
+			reads: [this.Age],
+			writes: [],
+			fn: (ctx) => {
+				this.censusPreLive = this._countAgents();
+				this.censusPreRootAge = ctx.getField(this.rootEntity, this.Age, "ticks");
+			},
+		});
+		const censusPost = ecs.registerSystem({
+			name: "net-census-post",
+			reads: [this.Age],
+			writes: [],
+			fn: (ctx) => {
+				this.censusPostLive = this._countAgents();
+				this.censusPostRootAge = ctx.getField(this.rootEntity, this.Age, "ticks");
+			},
+		});
+
 		this._pendingRoll = null;
 		// PRE_UPDATE holds the apply system of the write seam at its head, because
 		// `installHostCommandSeam` ran first. The two systems below therefore read the
@@ -1165,8 +1401,13 @@ export class EcsNet {
 			{ system: changeRead, ordering: { after: [ageTick, markWrite] } },
 			// after `ageTick` as well, so the `Age` values that the optional column gives
 			// are the values of this tick, which is what `compare` reads.
-			{ system: verifyRead, ordering: { after: [ageTick] } }
+			{ system: verifyRead, ordering: { after: [ageTick] } },
+			// the row grain. It must run after each write of `Mix` of this tick. Every
+			// one of those is in UPDATE, so any place in POST_UPDATE serves.
+			rowGrainRead
 		);
+		ecs.addSystems(this.censusPrePhase, censusPre);
+		ecs.addSystems(this.censusPostPhase, censusPost);
 
 		// ── the checkpoints inside a tick ───────────────────────────────────
 		// the engine fires `phaseBoundary(phase)` at the point where a phase has run
@@ -1203,6 +1444,13 @@ export class EcsNet {
 			phaseBoundary: (phase) => {
 				this.phaseSinkFired = true;
 				if (!this.phaseFpOn) return;
+				// The two phases of the harness get no fingerprint. Each one is a scan
+				// of every agent. The three built-in checkpoints already name the
+				// segment of the tick that a divergence belongs to. The census systems
+				// write nothing, so a checkpoint beside them would repeat one.
+				if (phase !== SCHEDULE.PRE_UPDATE && phase !== SCHEDULE.UPDATE && phase !== SCHEDULE.POST_UPDATE) {
+					return;
+				}
 				this.phaseSinkCalls++;
 				this.phaseFp.set(phase, fingerprintEcs(this, { redex: phase !== SCHEDULE.PRE_UPDATE }));
 			},
@@ -1319,7 +1567,21 @@ export class EcsNet {
 			this._hostMirror(ea, sa);
 			this._hostMirror(eb, sb);
 		}
+		// The one ROOT. `nets.mjs` rejects a specification with any other number, no
+		// rule makes a ROOT, and no rule destroys one. Therefore this entity holds
+		// for the whole run, and the census systems read its `Age` by id.
+		this.rootEntity = this.qRoot.singleEntity();
 		return this;
+	}
+
+	/** The count of the live agents, the disabled ones included. One read for each
+	 * archetype, and none for each row, so a census system pays it at each tick. */
+	_countAgents() {
+		let n = 0;
+		this.qAgentsAll.forEach((arch) => {
+			n += arch.entityCount;
+		});
+		return n;
 	}
 
 	/** Write the mirrors of `seq` into `Mix` of `e`, from the host. */
@@ -1352,6 +1614,7 @@ export class EcsNet {
 		this.seenEntities.clear();
 		this.watchSetEntities.clear();
 		this.watchStayed.clear();
+		this.watchStamped.clear();
 		this.setArchSigs.clear();
 		this.setAgeArchIds.clear();
 		this._plan = plan;
@@ -2074,4 +2337,31 @@ export class EcsNet {
  * not allocate a closure for each endpoint of each link. */
 function inc(v) {
 	return v + 1;
+}
+
+/** The archetype ids and the entity ids that one query gives. Pass `null` for
+ * `archs` when the caller compares the entities alone. */
+function collect(query, archs, ents) {
+	if (archs !== null) archs.clear();
+	ents.clear();
+	query.forEach((arch) => {
+		if (archs !== null) archs.add(arch.id);
+		const ids = arch.entityIds;
+		for (let i = 0; i < arch.entityCount; i++) ents.add(ids[i]);
+	});
+}
+
+/** The rows of one chunk pass whose row tick of `def` is above `cols.since`,
+ * into `out`. The row grain of the change detection, read through the column
+ * that `ecs.trackRows(def)` installs. */
+function collectChangedRows(query, def, out) {
+	out.clear();
+	query.forEachChunk((cols, count) => {
+		const t = cols.ticksRead(def);
+		const since = cols.since;
+		const eids = cols.arch.entityIds;
+		for (let i = 0; i < count; i++) {
+			if (t[i] > since) out.add(eids[i]);
+		}
+	});
 }

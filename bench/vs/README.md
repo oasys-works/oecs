@@ -70,7 +70,7 @@ Read the two entries as one library with a choice for each component, and not as
 
 Run the tool to get the values. This file records the positions only. A value is
 correct for one machine, one version of Node and one release. The last
-run used node v24.12.0, Darwin arm64 and **oecs 0.5.4**. The `raw` row is a limit,
+run used node v24.12.0, Darwin arm64 and **oecs 0.6.0**. The 0.6.0 run gave every position the 0.5.4 run gave. The `raw` row is a limit,
 and not an entry in the comparison.
 
 | case | the fastest library | `oecs` (packed) | `oecs-sparse` (id-indexed) |

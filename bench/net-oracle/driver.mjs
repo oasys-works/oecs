@@ -15,7 +15,7 @@
 import { applyRewrite, assertRulesLinear, rng, PORTS, ROOT, RULE_ID, TYPE_NAME } from "./spec.mjs";
 import { RefNet } from "./ref.mjs";
 import { RefProv } from "./prov.mjs";
-import { EcsNet } from "./world.mjs";
+import { EcsNet, WORKER_URL } from "./world.mjs";
 import { fingerprintRef } from "./fingerprint.mjs";
 import { BORN, BORN_F32, BORN_INT_FIELDS, MIRROR_INT_FIELDS, mirrorF32Of, mirrorOf } from "./mirror.mjs";
 
@@ -82,6 +82,16 @@ export function lockstep(
 		float = false,
 		record = false,
 		sab = false,
+		// the byte offset of the store header inside the backing, and the byte
+		// ceiling of the backing. Refer to `EcsNet`.
+		storeBase = 0,
+		maxBytes = 0,
+		allocator = null,
+		parallel = false,
+		// A world that the caller built and did not load. `workers.attach` is
+		// asynchronous and this function is not. So the workers arm attaches its pool
+		// outside, and it hands the world in here.
+		world: given = null,
 		// the fingerprint of the agents runs at each `fpEvery` ticks (`0` is never).
 		// `phaseEvery` adds the three checkpoints inside a tick, at each `phaseEvery`
 		// ticks (`0` is never), when the build has the trace seam. Each checkpoint
@@ -103,7 +113,9 @@ export function lockstep(
 	const markRand = rng((seed ^ 0x1d872b41) >>> 0);
 	const ref = RefNet.load(spec);
 	const provRef = prov === null ? null : new RefProv(prov);
-	const world = new EcsNet(lib, { strict: true, prov, float, record, sab });
+	const world =
+		given ??
+		new EcsNet(lib, { strict: true, prov, float, record, sab, storeBase, maxBytes, allocator, parallel });
 	world.load(spec);
 
 	ref.assertConsistent(`${label} t0 (ref load)`);
@@ -170,9 +182,27 @@ export function lockstep(
 		sparseScribbles: 0,
 		gatedRuns: 0,
 		expectedGated: 0,
+		storeBase,
+		maxBytes,
+		parallel,
+		fixedBuffer: allocator !== null,
 		events: 0,
 		hashable: world.hashable,
 		sab,
+		// the ticks whose rewrites changed the count of the live agents. The two
+		// census phases read one count each. A tick whose rules cancel gives the same
+		// number at both points. Without this count, a run could pass the census
+		// layer with a phase in the wrong place.
+		censusSplitTicks: 0,
+		// the rows that the row grain reported, and the members that the mutable
+		// sparse cursor stamped. A run with none of either passes both layers with
+		// two empty sets.
+		rowGrainRows: 0,
+		sparseStamps: 0,
+		// the deep ticks on which the archetype term kept some agents and dropped
+		// some. A term that matched every archetype passes the comparison on a tick
+		// where no agent is `Fresh`.
+		termSplitTicks: 0,
 		// the fingerprint at the end of a tick, and the checkpoints inside a tick.
 		// `phaseSink` says if the build gave the trace seam at all: a production
 		// build has none, and a run on it cannot count a checkpoint.
@@ -237,6 +267,14 @@ export function lockstep(
 			}
 		}
 
+		// The census before UPDATE reads this count, and the census after UPDATE
+		// reads the count after the plan below. The rewrites are the only thing
+		// between the two phases that changes the population.
+		const liveAtStart = ref.live;
+		// The age of the ROOT before the bump of POST_UPDATE. Both census phases run
+		// before that bump, so both must read this number.
+		const rootAge = ref.ageOf(rootRef);
+
 		// ── plan: the reference reduces up to `batch` pairs, recording each ──
 		const plan = [];
 		for (let i = 0; i < batch && stats.rewrites + plan.length < steps; i++) {
@@ -268,6 +306,8 @@ export function lockstep(
 			break;
 		}
 		ref.settleRedex();
+		const liveAfterPlan = ref.live;
+		if (liveAfterPlan !== liveAtStart) stats.censusSplitTicks++;
 		// The reference after the plan: the state that the ECS holds at the end of
 		// UPDATE, before the age bump of POST_UPDATE.
 		const refUpd = world.phaseFpOn ? fingerprintRef(ref, { float }) : null;
@@ -327,9 +367,22 @@ export function lockstep(
 		// cannot wait for the cadence of the deep verification. The `deep` part is the
 		// comparison over each live agent, and that part follows the cadence.
 		changeCheck(where, ref, world, fail, touched, { deep, quiesce: false, marked: marks });
+		// The position of the two phases that the harness added. Both readings are
+		// O(archetypes), so this runs at each tick.
+		censusCheck(where, world, fail, { liveAtStart, liveAfterPlan, rootAge });
+		// The row grain of the change detection. The reader walks every row, so it
+		// follows the cadence of the deep comparison.
+		if (deep) {
+			rowGrainCheck(where, ref, world, fail, touched);
+			stats.rowGrainRows += world.rowChangedAll.size;
+			stats.sparseStamps += world.watchStamped.size;
+		}
 		// The query verbs. The cheap items run at each tick, and the sets over each
 		// agent follow the same cadence as the deep comparison.
 		queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef });
+		if (deep && world.termChainEnts.size > 0 && world.termUnagedEnts.size > 0) {
+			stats.termSplitTicks++;
+		}
 		if (world.untilStopped) stats.untilStops++;
 		// `ctx.hasRelation` around the explicit unlink. It asks whether the source holds
 		// any target, so the value after the call is "the set still holds something",
@@ -430,6 +483,10 @@ export function lockstep(
 			// agents, and each archetype layer must give nothing.
 			const idleMarks = makeMarks(markRand, ref);
 			stats.markCalls += idleMarks.length;
+			// An idle tick applies no rewrite, so the two census phases must read one
+			// count. The ROOT still ages, so the reading of `Age.ticks` still moves.
+			const idleLive = ref.live;
+			const idleRootAge = ref.ageOf(rootRef);
 			world.runTick([], null, release, -1, true, idleMarks);
 			ref.ageTick();
 			stats.ticks++;
@@ -448,6 +505,12 @@ export function lockstep(
 				quiesce: k >= IDLE_TAIL - 2,
 				marked: idleMarks,
 			});
+			censusCheck(iw, world, fail, {
+				liveAtStart: idleLive,
+				liveAfterPlan: idleLive,
+				rootAge: idleRootAge,
+			});
+			rowGrainCheck(iw, ref, world, fail, idleTouched);
 			// The tail is where `firstEntity` must give `undefined`: the net reached its
 			// normal form, so no active pair is left. A query that always gave its first
 			// row passes each tick above and fails here.
@@ -489,6 +552,13 @@ export function lockstep(
 	}
 	for (const s of world.archetypeSignatures()) stats.archetypes.add(s);
 
+	// The runs of the sequential body of the age bump. A world that holds a pool
+	// must leave this at zero. That is the assertion that the pool took each pass.
+	stats.ageSequentialRuns = world.ageSequentialRuns;
+	// The digest of the whole world at the end of the run. Two runs of one case over
+	// two different backings must agree on it. That is what makes `storeBase` a
+	// comparison and not a smoke test.
+	stats.finalHash = world.hashable ? world.ecs.snapshots.stateHash() : null;
 	stats.canonical = world.canonical();
 	stats.census = ref.census();
 	stats.live = ref.live;
@@ -1041,6 +1111,102 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		if (got !== age) {
 			fail(where, `optional(Age): getOptionalColumnRead gave ${got} for ${e}, the model holds ${age}`);
 		}
+	}
+
+	// ── the archetype terms ─────────────────────────────────────────────────
+	// The agents that carry `Age` are the agents that are not `Fresh`.
+	// `freshPromote` swaps the two in one command batch. The model holds the age
+	// of each agent, so it holds both sets.
+	const wantAged = new Set(wantAge.keys());
+	sameSet(where, fail, "query.and(Age).not(Fresh), the chained form", world.termChainEnts, wantAged);
+	sameSet(where, fail, "where(and(or(and(Age, Touch), Redex), not(Fresh)))", world.termExprEnts, wantAged);
+	sameSet(where, fail, "where(a term of the harness)", world.termPluginEnts, wantAged);
+	// The complement, through a second term over the same parent query. A `where`
+	// cache that ignored the identity of the term would give this query the list
+	// of the one above.
+	sameSet(where, fail, "where(the complement term)", world.termUnagedEnts, wantNoAge);
+	// The archetypes, and not the entities alone. A term narrows the archetype
+	// list at the rebuild, so this is the assertion about the list itself.
+	sameSet(where, fail, "the archetypes of the expression against the chained form",
+		world.termExprArchs, world.termChainArchs);
+	sameSet(where, fail, "the archetypes of the harness term against the chained form",
+		world.termPluginArchs, world.termChainArchs);
+
+	// ── the sparse row grain ────────────────────────────────────────────────
+	// `redexMaintain` recorded each member that it wrote through the mutable
+	// sparse cursor. `ctx.sparseChanged` reads the sparse tick that the same call
+	// stamped, and it applies no rule about a disabled row. Therefore the two must
+	// hold the same members, and the comparison is exact in both directions.
+	sameSet(where, fail, "ctx.sparseChanged(Watch) against the members the cursor wrote",
+		world.sparseChangedEnts, world.watchStamped);
+}
+
+// ── the oracle for the row grain ────────────────────────────────────────────
+/**
+ * The row grain of the change detection, against the model.
+ *
+ * `ecs.trackRows(Mix)` gives `Mix` a row tick column, and nothing else does:
+ * `Mix` carries no `onSet` observer. `setLink` writes `Mix` for both endpoints of
+ * each link, through `ctx.ref` and through a cursor, and both record the row.
+ * Therefore the rows that a tick stamps are exactly the agents that the reference
+ * counted in its own `setLink`.
+ *
+ * Three arms read that one set:
+ *
+ *  1. `includeDisabled()`, every touched agent.
+ *  2. the default query, the touched agents that are not disabled. A chunk loop
+ *     over a default query stops at the enabled count. So this arm also reads the
+ *     partition of the rows.
+ *  3. `changed(Mix).forEachChunk`, the same rows behind the filter on the
+ *     archetype. The filter is conservative, and the row tick narrows it. So the
+ *     result must be equal to the first arm.
+ */
+export function rowGrainCheck(where, ref, world, fail, touched) {
+	const wantAll = new Set();
+	const wantEnabled = new Set();
+	for (const a of touched) {
+		const e = world.byRef.get(a);
+		if (e === undefined) fail(where, `the model wrote ref agent ${a}, which has no ECS entity`);
+		wantAll.add(e);
+		if (!ref.isDisabled(a)) wantEnabled.add(e);
+	}
+	sameSet(where, fail, "includeDisabled(): the rows above cols.since of ticksRead(Mix)",
+		world.rowChangedAll, wantAll);
+	sameSet(where, fail, "a default query: the rows above cols.since of ticksRead(Mix)",
+		world.rowChangedEnabled, wantEnabled);
+	sameSet(where, fail, "changed(Mix).forEachChunk: the rows above cols.since",
+		world.rowChangedFiltered, wantAll);
+}
+
+// ── the oracle for the position of an added phase ───────────────────────────
+/**
+ * The two phases that `world.mjs` adds, against the model.
+ *
+ * A phase before UPDATE sees the net at the start of the tick. A phase after
+ * UPDATE sees it after the rewrites. The reference holds both counts. Therefore
+ * the position of each phase has an exact expected value. It is not a comparison
+ * of one reading of the ECS with another.
+ *
+ * Both phases also read `Age.ticks` of the ROOT, which `ageTick` increases in
+ * POST_UPDATE. Therefore a phase that drifted past POST_UPDATE reads one more.
+ * The model holds the value before the increase.
+ */
+export function censusCheck(where, world, fail, { liveAtStart, liveAfterPlan, rootAge }) {
+	if (world.censusPreLive !== liveAtStart) {
+		fail(where, `the census in the phase before UPDATE counted ${world.censusPreLive} agents, ` +
+			`the model holds ${liveAtStart} at the start of the tick (${liveAfterPlan} after the rewrites)`);
+	}
+	if (world.censusPostLive !== liveAfterPlan) {
+		fail(where, `the census in the phase after UPDATE counted ${world.censusPostLive} agents, ` +
+			`the model holds ${liveAfterPlan} after the rewrites (${liveAtStart} at the start of the tick)`);
+	}
+	if (world.censusPreRootAge !== rootAge) {
+		fail(where, `the census before UPDATE read Age.ticks ${world.censusPreRootAge} on the ROOT, ` +
+			`the model holds ${rootAge} before the age bump of POST_UPDATE`);
+	}
+	if (world.censusPostRootAge !== rootAge) {
+		fail(where, `the census after UPDATE read Age.ticks ${world.censusPostRootAge} on the ROOT, ` +
+			`the model holds ${rootAge} before the age bump of POST_UPDATE`);
 	}
 }
 
@@ -1607,6 +1773,238 @@ export function confluence(
 	return { checked: true, orders: normalised.length, rewrites: base.rewrites };
 }
 
+// ── the arms for the layout of the memory ───────────────────────────────────
+/**
+ * The store base and the cap, over the `SharedArrayBuffer` backing.
+ *
+ * Three runs and one refusal:
+ *
+ *   - one net at a store base of 0, the layout the package ships
+ *   - the same net, at a base of one WASM page. A module owns the low addresses
+ *     of its own linear memory, so a world that shares bytes with one starts its
+ *     store above them. Every offset the store writes moves with the base.
+ *     Therefore the two runs must agree on three numbers. They are `stateHash`,
+ *     the normal form and the count of the rewrites. Each run also gets the
+ *     complete oracle of its own.
+ *   - the same net under a declared byte ceiling that it fits inside
+ *   - the same net over a `fixedSabAllocator`, which reserves the whole cap at
+ *     construction and never grows. It must agree with the first run on all three
+ *     numbers. A buffer that is born at the ceiling then holds the same world as a
+ *     buffer that grows into it
+ *   - a larger net under a ceiling that it does not fit inside, which must give
+ *     `STORE_CAP_EXCEEDED` and name the world that it refused
+ *   - the same larger net over a fixed buffer of that size, which must give the
+ *     same refusal. The fixed allocator reserves the cap. So the request that
+ *     passes the cap is refused before `growTo` is reached. The code is the one
+ *     the growable allocator gives
+ *
+ * The caller absorbs the three sets of stats, so the arms meet the floors as the
+ * other arms do.
+ */
+export function memoryArms(lib, { spec, capSpec, cap, tooSmall, ...opts }) {
+	const base = 65536;
+	const atZero = runCase(lib, spec, { ...opts, label: `SharedArrayBuffer ${spec.name}`, sab: true });
+	const atBase = runCase(lib, spec, {
+		...opts,
+		label: `SharedArrayBuffer at a store base ${spec.name}`,
+		sab: true,
+		storeBase: base,
+	});
+	if (atZero.finalHash !== atBase.finalHash) {
+		fail("the store base", `stateHash at base 0 is ${atZero.finalHash}, and at a base of ${base} ` +
+			`it is ${atBase.finalHash}. The base moves every offset, and it must move no result`);
+	}
+	if (atZero.canonical.form !== atBase.canonical.form) {
+		fail("the store base", `the normal form at base 0 differs from the form at a base of ${base}`);
+	}
+	if (atZero.rewrites !== atBase.rewrites) {
+		fail("the store base", `the run at base 0 took ${atZero.rewrites} rewrites, and the run at a ` +
+			`base of ${base} took ${atBase.rewrites}`);
+	}
+	const underCap = runCase(lib, spec, {
+		...opts,
+		label: `a cap the case fits inside ${spec.name}`,
+		sab: true,
+		maxBytes: cap,
+	});
+	if (underCap.canonical.form !== atZero.canonical.form) {
+		fail("the cap on the backing", `the normal form under a ${cap}-byte cap differs from the form ` +
+			`with no cap declared`);
+	}
+	// The fixed buffer. It is born at the ceiling and it never grows. The growable
+	// one starts small and grows into the ceiling. Both must hold one world.
+	const onFixed = runCase(lib, spec, {
+		...opts,
+		label: `a fixed shared buffer ${spec.name}`,
+		allocator: lib.fixedSabAllocator(cap),
+		maxBytes: cap,
+	});
+	if (onFixed.finalHash !== atZero.finalHash) {
+		fail("the fixed allocator", `stateHash over a fixed buffer is ${onFixed.finalHash}, and over a ` +
+			`growable one it is ${atZero.finalHash}`);
+	}
+	if (onFixed.canonical.form !== atZero.canonical.form) {
+		fail("the fixed allocator", `the normal form over a fixed buffer differs from the form over a ` +
+			`growable one`);
+	}
+	if (onFixed.rewrites !== atZero.rewrites) {
+		fail("the fixed allocator", `the run over a fixed buffer took ${onFixed.rewrites} rewrites, and ` +
+			`the run over a growable one took ${atZero.rewrites}`);
+	}
+	const refused = capRefusal(lib, capSpec, { cap: tooSmall, label: "the cap on the backing" });
+	// The same refusal, from a buffer that is fixed at that size. The allocator
+	// refuses the request before it reaches its own `growTo`. So the code and the
+	// message are the ones above.
+	const refusedFixed = capRefusal(lib, capSpec, {
+		cap: tooSmall,
+		allocator: lib.fixedSabAllocator(tooSmall),
+		label: "the fixed allocator",
+	});
+	if (refusedFixed.live !== refused.live) {
+		fail("the fixed allocator", `the fixed buffer refused at ${refusedFixed.live} live entities, and ` +
+			`the growable one refused at ${refused.live}`);
+	}
+	return { atZero, atBase, underCap, onFixed, refused, refusedFixed, base };
+}
+
+// ── one system of the net across a pool of workers ──────────────────────────
+/**
+ * The age bump, as a `js` kernel across a pool, against the same run with no pool.
+ *
+ * `world.mjs` gives that system a `parallel` config in this arm. Its own body and
+ * the kernel are one export of `kernels.mjs`. So a difference between the two runs
+ * comes from the split, and not from two copies of a loop. The step is an integer
+ * step, so the world stays deterministic and `stateHash` stays an oracle.
+ *
+ * Two runs, and four assertions:
+ *
+ *   - the complete oracle runs over the pooled world. `Age.ticks` is compared
+ *     exactly against the reference at each verification tick. A row that a worker
+ *     missed, or aged two times, is then a divergence that names the agent
+ *   - `stateHash`, the normal form and the count of the rewrites are equal across
+ *     the two runs
+ *   - the sequential body of the pooled world ran zero times. That is what says
+ *     the pool took every pass. Without it, a pool that claimed no pass would meet
+ *     every check above
+ *   - the sequential body of the other world ran on each tick, which is the floor
+ *     that keeps the counter above from being trivially zero
+ *
+ * The harness detaches the pool before it returns. A live worker holds the store
+ * bytes and keeps the process alive.
+ */
+export async function workersArm(lib, spec, { count, ...opts }) {
+	// The caller builds the pooled world here, so this function has to resolve the
+	// provenance layer the way `lockstep` does. An unresolved `undefined` would give
+	// the world no layer and the driver its default. The epoch roll would then have
+	// no system to run it.
+	const prov = opts.prov === undefined ? PROV_DEFAULT : opts.prov;
+	const sequential = runCase(lib, spec, {
+		...opts,
+		prov,
+		label: `the age bump on one thread ${spec.name}`,
+		sab: true,
+		parallel: true,
+	});
+	if (sequential.ageSequentialRuns !== sequential.ticks) {
+		fail("the workers arm", `the world with no pool ran the sequential body ` +
+			`${sequential.ageSequentialRuns} times over ${sequential.ticks} ticks. The counter must ` +
+			`follow the ticks, or a zero in the pooled world says nothing`);
+	}
+	const pooledWorld = new EcsNet(lib, { strict: true, prov, sab: true, parallel: true });
+	const pool = await pooledWorld.ecs.workers.attach({ count, workerUrl: WORKER_URL });
+	let pooled;
+	try {
+		if (pool.count !== count) {
+			fail("the workers arm", `the pool holds ${pool.count} workers, the arm asked for ${count}`);
+		}
+		pooled = runCase(lib, spec, {
+			...opts,
+			prov,
+			label: `the age bump across ${count} workers ${spec.name}`,
+			sab: true,
+			parallel: true,
+			world: pooledWorld,
+		});
+	} finally {
+		await pool.detach();
+	}
+	if (pooled.ageSequentialRuns !== 0) {
+		fail("the workers arm", `the pooled world ran the sequential body ` +
+			`${pooled.ageSequentialRuns} times. The pool must take every pass, or the equal results ` +
+			`below say nothing about it`);
+	}
+	if (pooled.finalHash !== sequential.finalHash) {
+		fail("the workers arm", `stateHash across ${count} workers is ${pooled.finalHash}, and on one ` +
+			`thread it is ${sequential.finalHash}`);
+	}
+	if (pooled.canonical.form !== sequential.canonical.form) {
+		fail("the workers arm", `the normal form across ${count} workers differs from the form on one thread`);
+	}
+	if (pooled.rewrites !== sequential.rewrites) {
+		fail("the workers arm", `the run across ${count} workers took ${pooled.rewrites} rewrites, and ` +
+			`the run on one thread took ${sequential.rewrites}`);
+	}
+	return { sequential, pooled, count };
+}
+
+// ── the cap on the backing ──────────────────────────────────────────────────
+/**
+ * A byte ceiling that the net outgrows must refuse a grow, by name.
+ *
+ * `memory.maxBytes` is a hard ceiling with no fallback. The load of a net spawns
+ * every agent. So a cap below the bytes that the columns need makes the grow that
+ * crosses it throw. Three things get a check, and none of them is "it threw":
+ *
+ *   - the category is `STORE_CAP_EXCEEDED`
+ *   - the message names the count of the live entities that the world holds. The
+ *     world still holds that count after the refusal, so the number is not a
+ *     constant of the message
+ *   - the refusal leaves the world usable. The count of the live entities reads
+ *     back, and it is the number the message named.
+ *
+ * The last one is the point of a hard ceiling. A refused grow must not corrupt the
+ * world. It must stop it.
+ */
+export function capRefusal(lib, spec, { cap, allocator = null, label = "cap refusal" }) {
+	const world = new EcsNet(lib, {
+		strict: true,
+		prov: null,
+		sab: allocator === null,
+		allocator,
+		maxBytes: cap,
+	});
+	let thrown = null;
+	try {
+		world.load(spec);
+	} catch (err) {
+		thrown = err;
+	}
+	if (thrown === null) {
+		world.ecs.dispose();
+		fail(label, `a load of ${spec.types.length} agents under a ${cap}-byte cap did not throw`);
+	}
+	const category = thrown.category;
+	if (category !== "STORE_CAP_EXCEEDED") {
+		world.ecs.dispose();
+		fail(label, `the refusal carries the category ${category}, want STORE_CAP_EXCEEDED ` +
+			`(the message is ${thrown.message})`);
+	}
+	// The count the world holds after the refusal. The message must name it, which
+	// is what makes the diagnostic a fact about this world and not a constant.
+	const live = world.ecs.entityCount;
+	if (live <= 0) {
+		world.ecs.dispose();
+		fail(label, `the world holds ${live} live entities after the refusal, and the load spawned agents`);
+	}
+	if (!thrown.message.includes(`${live} live entities`)) {
+		world.ecs.dispose();
+		fail(label, `the refusal does not name the ${live} live entities that the world holds. ` +
+			`The message is ${thrown.message}`);
+	}
+	world.ecs.dispose();
+	return { live, cap };
+}
+
 // ── non-vacuity ─────────────────────────────────────────────────────────────
 /**
  * Suite-wide pressure accumulator.
@@ -1652,6 +2050,10 @@ export class Pressure {
 		this.idleTicks = 0;
 		this.floatCases = 0;
 		this.sabCases = 0;
+		this.storeBaseCases = 0;
+		this.capCases = 0;
+		this.fixedBufferCases = 0;
+		this.pooledCases = 0;
 		this.freshDisabledTicks = 0;
 		this.peakFreshDisabled = 0;
 		this.sparseScribbles = 0;
@@ -1660,6 +2062,10 @@ export class Pressure {
 		this.untilStops = 0;
 		this.markCalls = 0;
 		this.unlinkCalls = 0;
+		this.censusSplitTicks = 0;
+		this.termSplitTicks = 0;
+		this.rowGrainRows = 0;
+		this.sparseStamps = 0;
 		// the fingerprint
 		this.fpChecks = 0;
 		this.phaseChecks = 0;
@@ -1690,11 +2096,22 @@ export class Pressure {
 		this.optionalSpansWithoutAge += stats.optionalSpansWithoutAge;
 		this.untilStops += stats.untilStops;
 		this.markCalls += stats.markCalls;
+		this.censusSplitTicks += stats.censusSplitTicks;
+		this.termSplitTicks += stats.termSplitTicks;
+		this.rowGrainRows += stats.rowGrainRows;
+		this.sparseStamps += stats.sparseStamps;
 		this.fpChecks += stats.fpChecks;
 		this.phaseChecks += stats.phaseChecks;
 		if (stats.phaseSink) this.phaseSinkCases++;
 		if (stats.hashable === false) this.floatCases++;
 		if (stats.sab === true) this.sabCases++;
+		if (stats.storeBase > 0) this.storeBaseCases++;
+		if (stats.maxBytes > 0) this.capCases++;
+		if (stats.fixedBuffer === true) this.fixedBufferCases++;
+		// A case whose age bump ran across the pool. The sequential body counts its
+		// own runs. A zero on a world with a `parallel` config marks a pass that the
+		// pool took.
+		if (stats.parallel === true && stats.ageSequentialRuns === 0) this.pooledCases++;
 		const p = stats.provStats;
 		if (p !== null && p !== undefined) {
 			this.records += p.recordsCreated;
@@ -1767,6 +2184,19 @@ export class Pressure {
 		// and leaves each archetype layer quiet. With no mark, the two layers agree, and
 		// the difference between them has no test.
 		floor("calls of ctx.markChanged", this.markCalls, 2000);
+		// The ticks whose rewrites changed the count of the live agents. On any other
+		// tick the census before UPDATE and the census after UPDATE read one number.
+		// The position of each phase is then untested.
+		floor("ticks where the two census phases must differ", this.censusSplitTicks, 500);
+		// The deep ticks where the archetype term kept some agents and dropped some.
+		// A term that matched every archetype passes on a tick with no `Fresh` agent.
+		floor("ticks where the archetype term split the agents", this.termSplitTicks, 500);
+		// The rows that `cols.ticksRead(Mix)` reported. A run with none of them
+		// compares two empty sets, and a reader that reports nothing passes.
+		floor("rows reported by the row grain", this.rowGrainRows, 10000);
+		// The members that the mutable sparse cursor stamped. Same reason:
+		// `ctx.sparseChanged` must have something to report.
+		floor("members stamped through the mutable sparse cursor", this.sparseStamps, 250);
 		// The fingerprint at the end of a tick. A run with none of them checks the
 		// agents on the cadence of the deep comparison alone.
 		floor("fingerprints at the end of a tick", this.fpChecks, 1000);
@@ -1785,6 +2215,23 @@ export class Pressure {
 			// `SharedArrayBuffer` profile is what a worker or a WASM backend needs, and a
 			// suite that never builds it leaves that backing with no cover from this tool.
 			floor("cases on the SharedArrayBuffer profile", this.sabCases, 1);
+			// The store header above the start of the backing. A WASM module owns the
+			// low addresses of its own linear memory. So this is the layout that a
+			// module shares bytes with. A suite that never builds it leaves every
+			// offset of the store pinned to a base of 0.
+			floor("cases with a non-zero store base", this.storeBaseCases, 1);
+			// A declared byte ceiling. Without a case that carries one, two things
+			// have no cover. They are the derivation of the index from the cap, and
+			// the hard-ceiling rule.
+			floor("cases with a declared byte cap", this.capCases, 1);
+			// A buffer that is born at the ceiling and never grows. The growable
+			// allocator relocates columns into new bytes. The fixed one relocates them
+			// inside the bytes it reserved. So the two take different paths.
+			floor("cases on a fixed shared buffer", this.fixedBufferCases, 1);
+			// A case whose age bump ran across a pool of workers. Without one, three
+			// things have no cover from this tool. They are the route of the schedule,
+			// the split, and the stamp of the pool.
+			floor("cases with the age bump across a pool", this.pooledCases, 1);
 			// A snapshot round trip that wrote into the sparse store. Without that write,
 			// a `restoreSparse` that makes no change passes the round trip.
 			floor("snapshot round trips that wrote a sparse byte", this.sparseScribbles, 5);
@@ -1841,6 +2288,15 @@ export class Pressure {
 				`${this.optionalSpansWithoutAge} without, ${this.untilStops} query.some early stops`
 		);
 		console.log(`  markChanged         ${this.markCalls} marks that no archetype layer may report`);
+		console.log(
+			`  added phases        ${this.censusSplitTicks} ticks where the census before UPDATE ` +
+				`and the census after it must differ`
+		);
+		console.log(`  archetype terms     ${this.termSplitTicks} ticks where the term split the agents`);
+		console.log(
+			`  row grain           ${this.rowGrainRows} rows above cols.since, ` +
+				`${this.sparseStamps} members that ctx.sparseChanged must report`
+		);
 		console.log(`  ctx.removeRelation  ${this.unlinkCalls} explicit unlinks of a Produced pair`);
 		console.log(
 			`  fingerprint         ${this.fpChecks} ticks, ${this.phaseChecks} checkpoints inside a tick ` +
@@ -1851,6 +2307,11 @@ export class Pressure {
 		console.log(`  sparse scribbles    ${this.sparseScribbles} snapshot round trips wrote the sparse store`);
 		console.log(`  f64 arm             ${this.floatCases} cases with no determinism`);
 		console.log(`  SharedArrayBuffer   ${this.sabCases} cases on the opt-in backing`);
+		console.log(
+			`  memory layout       ${this.storeBaseCases} cases above a store base, ` +
+				`${this.capCases} cases under a declared cap, ${this.fixedBufferCases} on a fixed buffer`
+		);
+		console.log(`  workers             ${this.pooledCases} cases with the age bump across a pool`);
 		if (this.provCases > 0) {
 			console.log(`  provenance layer    ${this.provCases} cases`);
 			console.log(`    records           ${this.records} logged, ${this.cascaded} destroyed by cascade`);
@@ -1891,6 +2352,11 @@ export function runCase(
 		float,
 		record,
 		sab,
+		storeBase,
+		maxBytes,
+		allocator,
+		parallel,
+		world,
 		fpEvery,
 		phaseEvery,
 	}
@@ -1910,6 +2376,11 @@ export function runCase(
 		float,
 		record,
 		sab,
+		storeBase,
+		maxBytes,
+		allocator,
+		parallel,
+		world,
 		fpEvery,
 		phaseEvery,
 	});

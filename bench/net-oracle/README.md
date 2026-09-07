@@ -38,6 +38,11 @@ The harness uses these mechanisms continuously, but the unit tests use them one 
 - **each column kind**. The `Mix` component holds `i8`, `i16`, `u16` and `u32` columns on each
   agent, and `f32` in the float arm. So the row plane and the value paths of each kind run under the
   same churn as the net
+- **the archetype terms**. `query.where` with the free `and`, `or` and `not`, and a term of the
+  harness's own making. A chain of verbs names the same set, and it is the expected value
+- **two phases that the harness adds**, whose position in the frame the model predicts exactly
+- **the row grain**, `ecs.trackRows`, `cols.ticksRead` against `cols.since`, and
+  `changed().forEachChunk`, with the sparse half through `ctx.sparseChanged`
 
 Use this tool only for local work, as you use the other tools in `bench/`. It is not a part of the
 package. **It is not a part of `pnpm test` or of the release gate.**
@@ -49,6 +54,8 @@ node bench/net-oracle/run.mjs            # the selected suite, a short run
 node bench/net-oracle/run.mjs --soak     # millions of rewrites
 node bench/net-oracle/run.mjs --stress   # large nets, the fingerprint at each tick
 node bench/net-oracle/run.mjs --surface  # the probes for the API surface, and no simulation
+node bench/net-oracle/run.mjs --memory   # the store base, the cap and the fixed buffer, and no suite
+node bench/net-oracle/run.mjs --workers  # one system of the net across a pool, and no suite
 node bench/net-oracle/mutants.mjs        # show that the oracle finds a bug
 
 # the same layers against the live TypeScript sources, through vitest
@@ -413,6 +420,74 @@ prefix give two different nets, which is correct behaviour that looks like a fau
     end of each tick runs in both builds, and the floor for the checkpoints applies to a development
     build alone.
 
+20. **The archetype terms.** `freshPromote` removes `Fresh` and adds `Age` in one command batch.
+    Therefore an agent holds exactly one of the two, and "holds `Age`" and "does not hold `Fresh`"
+    name one set. The model holds it, and it holds the complement.
+
+    Four queries read that set. The first chains the verbs, `and(Age).not(Fresh)`. The second nests
+    an expression inside `where`, `and(or(and(Age, Touch), Redex), not(Fresh))`. The third gives
+    `where` a term of the harness's own making, a `{ name, matches(mask) }` object, which is the
+    shape a plugin contributes. The fourth gives `where` the complement term.
+
+    The first three must give one entity set, which the model holds, and one archetype list. The
+    fourth must give the complement, and it shares its parent query with the second and the third.
+    Therefore a `where` cache that ignored the identity of the term hands one of them another
+    term's list, and the sets then disagree. A floor counts the ticks on which the term kept some
+    agents and dropped some, because a term that matched every archetype passes on a tick with no
+    `Fresh` agent.
+
+21. **The position of a phase that the harness added.** The phase set is open, so the harness owns
+    two slots of its own. One census system runs in each.
+
+    The census before UPDATE reads the count of the live agents at the start of the tick. The
+    census after UPDATE reads the count after the rewrites. Each rewrite destroys two agents and
+    creates none, two or four, so the two counts differ on most ticks, and a floor counts those
+    ticks. Both census systems also read `Age.ticks` of the ROOT, which `ageTick` increases in
+    POST_UPDATE, so a phase that drifted past POST_UPDATE reads one more.
+
+    The order of the two `addPhase` calls is a requirement, and not a style. A phase with no
+    constraint lands at the tail of its loop, because declaration order breaks the tie and every
+    built-in is declared first. The census after UPDATE is therefore declared first: with its
+    `after` dropped, its `before` alone puts it ahead of UPDATE, and it then reads the count of the
+    wrong point. Declared second it would keep its place, and the fault would hide.
+
+22. **The row grain of the change detection.** `ecs.trackRows(Mix)` gives `Mix` a row tick column,
+    and nothing else does: `Mix` carries no `onSet` observer, where `Touch` and `Seen` get a plane
+    from theirs. `setLink` writes `Mix` for both endpoints of each link, through `ctx.ref` and
+    through a cursor, and both record the row. Therefore the rows that a tick stamps are exactly
+    the agents that the reference counted in its own `setLink`.
+
+    Three arms read that one set through `cols.ticksRead(Mix)` against `cols.since`. The
+    `includeDisabled()` arm gives every touched agent. The default arm drops a disabled row, as a
+    chunk loop does, so it also reads the partition of the rows. The
+    `changed(Mix).forEachChunk` arm reaches the same rows behind the filter on the archetype, which
+    is conservative, and the row tick narrows it back to the exact set.
+
+23. **The sparse row grain.** `redexMaintain` writes `hits` through the mutable sparse cursor for
+    each member that stays in an active pair, and it records each such member itself.
+    `ctx.sparseChanged(Watch)` reads the sparse tick that the same `at()` stamped. The two must
+    hold the same members, and the comparison is exact in both directions. A joiner takes its value
+    through `addSparse`, which stamps nothing, so a joiner is in neither set. This compares two
+    reads of the ECS, and the model does not give the expected value. A floor counts the members,
+    because two empty sets are equal.
+
+24. **One system of the net across a pool of workers.** The age bump carries a
+    `parallel` config in that arm. Its own body and the `js` kernel are one export of
+    `kernels.mjs`, so a difference between the two paths comes from the split.
+
+    The oracle is the whole harness, and not one comparison. The pooled world runs
+    every layer above. Layer 2 compares `Age.ticks` exactly against the reference at
+    each verification tick, so a row that a worker missed, or aged two times, is a
+    divergence that names the agent. Layer 9 then reads `changed(Age)`, which the
+    join of the pool must stamp as a chunk loop does.
+
+    Three numbers must also match the same run with no pool: `stateHash`, the normal
+    form and the count of the rewrites. One more assertion carries the arm. The
+    system counts the runs of its own body, and that count must be zero in the pooled
+    world. Without it a pool that claimed no pass would meet every check above. The
+    same counter must follow the ticks in the world with no pool, which keeps the
+    zero from being trivial.
+
 ## The arms for the profile
 
 The same layers run over three different worlds. Each arm is a case of the suite. So the arm gets the
@@ -422,11 +497,24 @@ complete oracle, and not one call of one function.
 | --- | --- | --- |
 | the default | `{ deterministic: true }` over a plain `ArrayBuffer` | this is what the package ships |
 | `f64` | `new ECS()`, with an `Age.fticks` column of type `f64` | A deterministic world rejects a float column, so this is the only arm that can cover one. `fticks` holds the same integer that `ticks` holds, and an integer below 2^53 is exact in `f64`. Therefore the comparison stays exact and the run stays reproducible. This arm gives up `stateHash`, `capture` and `restore`, because all three need determinism, so layer 8 is absent from it and `compactCheck` keeps the count and the idempotence alone. |
-| `SharedArrayBuffer` | `{ deterministic: true, memory: { shared: {} } }` | This is the opt-in profile that a worker or a WASM compute backend needs. The option is on the ROOT entry, and `@oasys/oecs/shared` carries the allocators for a caller that wants to pass one. Each line of `world.mjs` after the constructor is the same for both backings, which is the point. |
+| `SharedArrayBuffer` | `{ deterministic: true, memory: { backing: "shared" } }` | This is the opt-in profile that a worker or a WASM compute backend needs. The option is on the ROOT entry, and `@oasys/oecs/shared` carries the allocators for a caller that wants to pass one. Each line of `world.mjs` after the constructor is the same for both backings, which is the point. |
+| a store base | the same, with `memory: { storeBase: 65536 }` | A WASM module owns the low addresses of its own linear memory, and a safe build traps on a read of address 0. A world that shares bytes with one therefore starts its store above them, and every offset the store writes moves with the base. This arm runs the same net at base 0 and at a base of one WASM page, and it requires the two runs to agree on `stateHash`, on the normal form and on the count of the rewrites. Each run also gets the complete oracle of its own. |
+| a declared cap | the same, with `memory: { maxBytes }` | The ceiling is hard, and there is no grow-beyond fallback. One arm declares a ceiling that the case fits inside, and it must give the same normal form. A second load, of a net that does not fit, must throw `STORE_CAP_EXCEEDED`. The message must name the count of the live entities that the world holds. The harness reads that count back off the world after the refusal, so the number is a fact about this world. |
+| a fixed buffer | `memory: { backing: { allocator: fixedSabAllocator(bytes) }, maxBytes: bytes }` | The fixed allocator reserves the whole cap at construction and never grows. The growable one starts small and grows into the cap. A store relocates a column to the tail of the buffer, and the tail comes from the header capacity here rather than from the byte length. Therefore the two allocators take different paths to one world, and this arm requires them to agree on `stateHash`, on the normal form and on the count of the rewrites. A load that does not fit must give the same refusal at the same live count. |
+| the pool | the shared backing, with `workers()` installed and a pool of two | The age bump of the net carries a `parallel` config, so it runs as a `js` kernel across the pool. Its own body and the kernel are one export of `kernels.mjs`, so a difference between the two runs comes from the split. The step is an integer step, so the world stays deterministic. The pooled world gets the complete oracle, and `Age.ticks` is compared exactly against the reference at each verification tick. A row that a worker missed is then a divergence that names the agent. The two runs must also agree on `stateHash`, on the normal form and on the count of the rewrites, and the sequential body must not run in the pooled world. |
+
+`node bench/net-oracle/run.mjs --memory` runs the four arms and the two refusals alone. It runs no
+suite. `mutants.mjs` names that arm. Each other case of its battery runs at a base of 0, and under
+the default ceiling. A fault in either one is inert there.
+
+`node bench/net-oracle/run.mjs --workers` runs the pair for the pool alone. `mutants.mjs` names it
+for the same reason. One point about a mutant here. The worker thread loads `src/worker.ts`, the
+source of the tree. A mutant lives in the bundle that the host loads. So a mutant reaches the host
+half of the pool. It does not reach the split, which each worker computes for itself.
 
 ## The probes for the API surface
 
-`surface.mjs` holds 15 probes. Each one is small, and each one has an exact expected value. A probe
+`surface.mjs` holds 21 probes. Each one is small, and each one has an exact expected value. A probe
 that only asked "did this throw" would pass against an ECS that gave the wrong answer. That is
 the failure mode of this whole tool.
 
@@ -455,6 +543,12 @@ They exist because some parts of the API cannot go into a net that must keep its
 | the immediate toggle | `ecs.disable` and `ecs.enable`, from the host. An observer fires for a deferred toggle only. The complete quarantine layer depends on that sentence, so the probe measures it: the immediate call moves the row and calls no observer, and the deferred call in the same world calls one. |
 | the guard on a restore of the whole world | A mistake. Layer 8 does a round trip that must succeed, so it reads the good path alone. This probe damages the frame in six ways, the version, the magic, a buffer that is too short, one byte removed, one byte added, and damage inside the dense section, and it restores into a world with a different registration. Each call must give `ECSRestoreError`, and it must leave the world unchanged: the probe reads `stateHash` and a live field again after each refusal. It also pins `ECS_SNAPSHOT_VERSION` against the version word of a fresh capture. |
 | the immediate component writes of the host | `ecs.removeComponent`, `ecs.addComponents` and `ecs.removeComponents`, called from the host and between the ticks. These call no structural observer, so the simulation cannot use them: the sets that the observers maintain are the oracle of layer 4, and they would go out of step by design. The probe measures that difference against a deferred `ctx.commands` pair in the same world. It also compares the plural forms with the singular forms, which must give the same archetype. `fieldId` is here as well. |
+| the refusal of a value that is not a template | `spawn`, `spawnMany` and `template` refuse a value that is not a template, in a development build. The net spawns from a template that is always valid, so no case reaches the guard. The message is the behaviour under test. It must name the value that arrived and the call to make instead. |
+| the dense-path refusals of a query | `archetypeCount`, `archetypes` and `excludeWords` refuse a query that carries a `where` term. `archetypeCount`, `entityCount`, `forEach`, `forEachChunk` and `some` refuse a query with `andSparse` or `andRelation`. The probe pins the readers that answer as well, with an exact count for each. A production build keeps each reader, and the probe reads the wider answer that the guard exists to prevent. |
+| the plugin host | A bare world, which no other probe here builds. A read of a slot the world never filled must name the plugin and the import that supplies it. A plugin written outside the package installs, registers its own component, drains the change feed at its settle hook, and holds `ECS.create` to `PLUGIN_ALREADY_INSTALLED` and to `PLUGIN_SURFACE_COLLISION`. |
+| the open phase set | `addPhase`, the order it gives against the built-in seven, and its two faults. The simulation adds two phases of its own, and it reads their position against the model. It does not read a handle from another world, a phase name that no built-in spells, or a cycle. |
+| the write seam at a phase the caller added | `installHostCommandSeam` with a phase from `addPhase`. `world.mjs` takes the default drain, so the option had no cover. A system in the phase before the drain reads the old value, and a system in the phase after reads the new one. |
+| the shape of a where term | `Query.where`, the free `and`, `or` and `not`, and a term a plugin builds. Five archetypes with a known population give each expression an exact count of the entities and of the archetypes. |
 
 ## Proof that the oracle finds a bug
 
@@ -462,10 +556,14 @@ They exist because some parts of the API cannot go into a net that must keep its
 is safe against a working directory with changes. It requires that the oracle catches each one.
 
 The battery holds one case for the probes of the API surface, and that case is last. Each case
-before it names a `--net=`, and a `--net=` run does not call `surface.mjs`. Therefore the battery
+before it names a `--net=` or `--memory`, and neither one calls `surface.mjs`. Therefore the battery
 could not reach a probe before this case existed. No probe had evidence that it catches a
 fault. The battery also holds one case on the float arm. `Mix.mf32` and `Mix.bf32` exist in
 that arm alone. A fault in the `f32` path of the row plane has no other case that can show it.
+
+The `memory` case and the `workers` case are there for the same reason. Each `--net=` case runs at
+a store base of 0, under the default ceiling, and on one thread. A reader that dropped the base is
+inert there. So is a refusal that named no world, and so is a fault in the host half of the pool.
 
 The table below names the mechanism that fires first. It says whether that mechanism is an
 oracle layer or an error of the engine. An engine error is a real detection, the bug is fatal, but
@@ -523,6 +621,36 @@ nonzero exit as a catch by the oracle.
 | `andRelation` keeps every row | the partition by port arity | oracle |
 | `getOptionalColumnRead` reports every optional column as absent | the two spans of `optional(Age)` | oracle |
 | `query.some` visits every archetype and does not stop early | the count of the archetypes that the callback saw | oracle |
+| `or` requires every operand instead of one | the archetype terms, against the model | oracle |
+| `not` accepts an archetype that one operand accepts | the archetype terms, against the model | oracle |
+| the `where` cache returns another term's archetype list | the complement term, over the same parent query | oracle |
+| `cols.ticksRead` returns the tick plane of another component | the row grain, against the model | oracle |
+| `forEachChunk` sets `cols.since` to the tick of this pass | the row grain, against the model | oracle |
+| `changed().forEachChunk` sets `cols.since` to the tick of this pass | the row grain, against the model | oracle |
+| `addPhase` ignores the `before` targets | the census in the phase before UPDATE | oracle |
+| `addPhase` ignores the `after` targets | the census in the phase after UPDATE | oracle |
+| `ctx.sparseChanged` compares the sparse row tick with the wrong tick | the sparse row grain | oracle |
+| a column view ignores the store base | the arm at a store base of one WASM page, through the check on the order of the descriptors | engine |
+| the refusal at the byte ceiling names no live count | the refusal at a ceiling the net outgrows | oracle |
+| the fixed allocator grows its buffer instead of reserving the cap | the arm on a fixed buffer, through the refusal that the allocator itself throws | engine |
+| the byte ceiling is applied at twice the declared value | the refusal at a ceiling the net outgrows, which then carries no code | oracle |
+| the published enabled row count is one short, so no worker owns the last row | `Age.ticks` of the pooled world against the reference | oracle |
+| the join of the pool leaves the archetype change tick alone | `changed(Age)` of the pooled world against the archetypes that the query gives | oracle |
+| `assertTemplate` accepts every value | the probe for the refusal of a value that is not a template | oracle |
+| the pre-0.5 array shape reaches the store | the same probe | oracle |
+| `ECSRestoreError` carries another category | the probe for the restore of the whole world | oracle |
+| `ECSRestoreError` keeps the name of its base class | the same probe | oracle |
+| the archetype-term guard never fires | the probe for the dense-path refusals | oracle |
+| the dense-path guard ignores a sparse term | the same probe | oracle |
+| a slot for a plugin that is absent answers `undefined` | the probe for the plugin host | oracle |
+| a second plugin of one name installs | the same probe | oracle |
+| the surface guard accepts a facade that overwrites a member of the world | the same probe | oracle |
+| a phase handle from another world is accepted | the probe for the open phase set | oracle |
+| a cycle in the phases throws the `TypeError` of the sort | the same probe | oracle |
+| a `before` edge between two phases points the wrong way | the census in the phase before UPDATE | oracle |
+| the write seam drains at its default phases, not the one the caller named | the probe for the seam at an added phase | oracle |
+| the rebuild of a query keeps every archetype the mask picked | the archetype terms, against the model | oracle |
+| a derive of a query drops the archetype terms | the archetype terms, against the model | oracle |
 
 ### The build that the battery uses
 
@@ -531,17 +659,33 @@ mechanisms a chance to fire. The released package is a production build, so
 `node bench/net-oracle/mutants.mjs --prod` runs the same battery against `__DEV__ = false`. Both
 builds were measured, and this is the result:
 
-| build | caught by an oracle layer | caught by an engine error | escaped |
-| --- | --- | --- | --- |
-| development | 43 of 49 | 6 of 49 | 0 |
-| production | 43 of 49 | 6 of 49 | 0 |
+| build | mutants run | caught by an oracle layer | caught by an engine error | escaped | skipped |
+| --- | --- | --- | --- | --- | --- |
+| development | 79 | 71 | 8 | 0 | 0 |
+| production | 74 | 66 | 8 | 0 | 5 |
 
-The two builds now agree on the mechanism for each mutant, so the choice of the default costs no
-coverage. Of the six that an engine error finds, three are on the growth path of the row plane.
-Three are in the sparse store. There the relations share the store class, and they throw before a
-layer looks. Read
-those six rows as "this bug is fatal", and not as "the oracle finds this bug". Unit tests
-(`archetype_row_plane.test.ts` and `sparse_id_indexed.test.ts`) hold those paths instead.
+The two builds agree on the mechanism for each mutant that both run. So the choice of the default
+costs no coverage. An engine error finds eight of them, and they come from four places:
+
+- three on the growth path of the row plane
+- three in the sparse store, where the relations share the store class and throw first
+- one on the store base, where a view that drops the base reads the header of another region.
+  The check on the order of the descriptors fires before a layer looks
+- one on the fixed buffer, where the allocator refuses the grow itself
+
+Read those eight rows as "this bug is fatal", and not as "the oracle finds this bug". Unit tests
+(`archetype_row_plane.test.ts` and `sparse_id_indexed.test.ts`) hold the first six paths instead.
+
+Five mutants carry `devOnly`, and a production build skips them. Each one names a guard that a
+production build does not run:
+
+- `assertTemplate`, and the array shape of a template
+- the refusal of a dense reader on a query that carries an archetype term
+- the same refusal for a sparse term
+- the surface guard of a plugin
+
+There the flag is false, so the branch and the mutation are both inert. A skip is the honest
+result, and an escape would be a false report.
 
 The mutants on the growth path **escaped** the first set of mutants. A small net does not
 use more than the prepared capacity of its archetype. Therefore the set now includes `erase:14` and a
@@ -614,7 +758,25 @@ more meaning to a successful run than it has:
 - **A compute backend.** `attachBackend` and `backendHandle` route a system to a `ComputeBackend`
   instead of its TypeScript body. The engine ships the seam, and the worker and the compiled module
   are the consumer's to provide. Therefore this harness has nothing to attach. The arm for the
-  `SharedArrayBuffer` covers the backing that such a backend needs, and not the dispatch to it.
+  `SharedArrayBuffer` covers the backing that such a backend needs. The arm at a store base covers
+  the layout that a WASM module needs. Neither one covers the dispatch to it.
+- **The split of a pool, and a wasm kernel.** The workers arm runs a `js` kernel across two
+  workers. Each worker computes its own row range inside the worker thread, from `src/worker.ts`,
+  which is the source of the tree. A mutant lives in the bundle that the host loads. Therefore no
+  mutant here reaches the split itself. The arm reads the host half of the pool instead. That half
+  holds three things. They are the counts it publishes, the stamp it makes at the join, and the
+  route that replaces the body. A compiled kernel, the shadow stack and `stackBytes` are outside
+  this tool as well.
+- **`wasmMemoryAllocator`.** The memory arms use the growable shared allocator and the fixed one.
+  A `WebAssembly.Memory` backing has no cover here.
+- **`memory.storeBase` on the wasm backing, and `storeBaseAbove`.** The arm at a store base runs
+  over the shared backing. Three things stay outside this tool. They are a `WebAssembly.Memory`
+  backing, the default base of one page that it takes, and the helper that reads `__heap_base`.
+- **`addPhase` on the `startup` and the `fixed` loops.** The harness adds two phases to the
+  `update` loop. The rule that a fixed-loop phase receives the fixed timestep has no cover here. A
+  startup-loop phase from `addPhase` has none either.
+- **An archetype term on `forEachChunk`.** No guard reads the archetype terms there, and the row
+  grain of this harness reads a query with no term.
 - **The SAB command ring.** `installHostCommandSeam` takes a `ring` option.
   `HostCommandDispatcher` with the `ring_*_codec` factories decodes 15-byte slots from another
   thread into the same `applyHostCommand`. The harness drives the typed queue, which is the
@@ -648,11 +810,8 @@ more meaning to a successful run than it has:
   the dense section gives `ECSRestoreError`. The probe for the restore of the whole world pins
   that order. The dense error class itself belongs to `restoreColumnStore`, which the root entry
   does not reach. The unit tests hold it.
-- **`ctx.removeResource`, and a `singleEntity` call that must throw.** The simulation registers each
-  resource one time, and a run that removed one would stop the gate that reads it. The throw of
-  `singleEntity` is present in a development build alone. A production build skips the count, and it
-  gives the first match. Therefore the net pins the identity of the one ROOT, which is the assertion
-  in both builds. The arm that must throw belongs in a probe.
+- **`ctx.removeResource`.** The simulation registers each resource one time, and a run that removed
+  one would stop the gate that reads it.
 - **`Query.and`, `Query.or` and `optional` with more than one component, and `ChangedQuery.and`.** The
   harness composes each query one verb at a time. The multi-argument forms fold through the same
   single-term cache, so they take the same path.
@@ -677,7 +836,25 @@ immediate toggle from the host, and `entityIdAtRow`. The same pass made a row th
 and disabled reachable. Before that change, no run reached that state, and the rule about it had no
 test.
 
-The most recent pass closed nine more. Six of them went into the simulation, because the net gives
+A later pass closed the 0.6.0 features that the layers above now hold:
+
+- the archetype terms, with `where` and the free combinators
+- the open phase set, through two phases of the harness
+- the row grain, with `trackRows`, `ticksRead` and `since`
+- the sparse row grain, with `ctx.sparseChanged`
+- `memory.storeBase`, a declared byte ceiling with its refusal, and `fixedSabAllocator`
+- one system of the net across a pool of workers
+
+The same pass put six more into `surface.mjs`:
+
+- the refusal of a value that is not a template
+- the dense-path refusals of a query
+- the plugin host, with its three faults
+- the two faults of the phase set
+- the write seam at a phase the caller added
+- the category of `ECSRestoreError`
+
+An earlier pass closed nine more. Six of them went into the simulation, because the net gives
 each one an exact model. They are:
 
 - `andRelation` and `notRelation`, through the arity of the ports
@@ -731,6 +908,7 @@ this harness covers:
 | `fingerprint.mjs` | the fingerprint of the agents: one scan of the reference, one scan of the ECS, and the word for one agent that both scans use |
 | `nets.mjs` | the generators, and validation of a `NetSpec` |
 | `driver.mjs` | the oracles: lockstep, comparison, the change detection, the marks, the quarantine, the events, the sparse set, the verbs of a query, confluence, the snapshot, compact, the idle tail, and the floors for pressure |
+| `kernels.mjs` | the kernel bodies of the workers arm. A worker loads it by URL, and the system body imports it, so one source serves both paths |
 | `surface.mjs` | the probes for the parts of the API that the simulation cannot reach, with a floor on the count of the assertions of each one |
 | `run.mjs` | the CLI: the selected suite, `--soak`, and one case |
 | `mutants.mjs` | injection of a bug, it proves that the oracle fails when it must. Its battery holds one case for the probes of the API surface, and that case is last. |

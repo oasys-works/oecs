@@ -27,9 +27,10 @@
  * sparse components and the command log. Therefore the import below is a namespace.
  *
  * The world under test installs each optional subsystem, so the module it receives
- * must carry the four plugin constructors beside the root entry. `build.mjs`
- * composes that same shape for the bundle that `run.mjs` and `mutants.mjs` load.
- * This file composes it here, because vitest reads `src/` and builds nothing.
+ * must carry the five plugin constructors beside the root entry, and the three
+ * allocators of the shared profile. `build.mjs` composes that same shape for the
+ * bundle that `run.mjs` and `mutants.mjs` load. This file composes it here, because
+ * vitest reads `src/` and builds nothing.
  */
 import { describe, expect, it } from "vitest";
 import * as core from "../../src/index";
@@ -37,14 +38,28 @@ import { snapshots } from "../../src/plugins/snapshots";
 import { events } from "../../src/plugins/events";
 import { relations, registerIsA, registerChildOf } from "../../src/plugins/relations";
 import { observers } from "../../src/plugins/observers";
+import { workers } from "../../src/plugins/workers";
+import { fixedSabAllocator, growableSabAllocator, wasmMemoryAllocator } from "../../src/shared";
 import { assertRulesLinear } from "./spec.mjs";
-import { confluence, lockstep, refOnly, runCase } from "./driver.mjs";
+import { confluence, lockstep, memoryArms, refOnly, runCase, workersArm } from "./driver.mjs";
 import { assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
 import { PROBES } from "./surface.mjs";
 
 // `registerIsA` and `registerChildOf` ship on the relations entry, not the
 // root, so the shim adds them the way `bench/build.mjs` does.
-const lib = { ...core, snapshots, events, relations, observers, registerIsA, registerChildOf };
+const lib = {
+	...core,
+	snapshots,
+	events,
+	relations,
+	observers,
+	workers,
+	registerIsA,
+	registerChildOf,
+	fixedSabAllocator,
+	growableSabAllocator,
+	wasmMemoryAllocator,
+};
 
 describe("interaction-net oracle (deterministic simulation, lockstep vs reference)", () => {
 	it("the rule table is linear, the precondition for every confluence claim", () => {
@@ -398,6 +413,55 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 		expect(stats.normalised).toBe(true);
 		expect(stats.sab).toBe(true);
 		expect(stats.snapshots).toBeGreaterThan(0);
+	});
+
+	// ── the layout of the memory ────────────────────────────────────────────
+	it("gives one world at a store base, under a cap, and on a fixed buffer", () => {
+		const spec = assertNetSpecValid(dupTree(5));
+		const r = memoryArms(lib, {
+			spec,
+			capSpec: assertNetSpecValid(dupTree(12)),
+			cap: 8 * 1024 * 1024,
+			tooSmall: 1024 * 1024,
+			seed: 1,
+			maxBatch: 8,
+			verifyEvery: 2,
+			snapEvery: 8,
+			steps: 100000,
+		});
+		// `memoryArms` fails inside on any disagreement, so these read the facts it
+		// leaves. The base moves every offset the store writes, and the digest of
+		// the two worlds is still one number.
+		expect(r.atBase.storeBase).toBe(65536);
+		expect(r.atBase.finalHash).toBe(r.atZero.finalHash);
+		expect(r.onFixed.fixedBuffer).toBe(true);
+		expect(r.onFixed.finalHash).toBe(r.atZero.finalHash);
+		// The refusal at a ceiling the net outgrows, from both allocators, and the
+		// world holds rows when it fires.
+		expect(r.refused.live).toBeGreaterThan(0);
+		expect(r.refusedFixed.live).toBe(r.refused.live);
+	});
+
+	// ── one system across a pool ────────────────────────────────────────────
+	it("runs the age bump across a pool and leaves the sequential world", async () => {
+		const spec = assertNetSpecValid(dupTree(5));
+		const r = await workersArm(lib, spec, {
+			count: 2,
+			seed: 1,
+			maxBatch: 8,
+			verifyEvery: 2,
+			snapEvery: 8,
+			steps: 100000,
+			prov: undefined,
+			compactEvery: 16,
+		});
+		// The pooled world ran the complete oracle, so `Age.ticks` was compared
+		// against the reference at each verification tick. These read what is left.
+		expect(r.pooled.finalHash).toBe(r.sequential.finalHash);
+		expect(r.pooled.rewrites).toBe(r.sequential.rewrites);
+		// The pool took every pass, and the body of the system never ran there.
+		expect(r.pooled.ageSequentialRuns).toBe(0);
+		expect(r.sequential.ageSequentialRuns).toBe(r.sequential.ticks);
 	});
 });
 

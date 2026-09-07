@@ -33,12 +33,14 @@
  * build give more mechanisms a chance to fire. But the released package is a
  * production build, so `--prod` runs the same battery against `__DEV__ = false`.
  *
- * Both builds catch each mutant in the list, and both give the same mechanism for
- * each one. A measurement of the two builds gives these numbers: 38 mutants that an
- * oracle layer catches, 6 that an engine error catches, and 0 that escape. Three of
- * the six that an engine error catches are on the path that makes a row plane
- * larger, and three are in the sparse store, where the relations share the store
- * class and throw first. `README.md` holds the table.
+ * A mutant that names a guard a production build does not run carries `devOnly`.
+ * The flag is false there, so the branch and the mutation are both inert. A skip
+ * is the honest result. `--prod` skips those. It counts them in neither the
+ * catches nor the escapes.
+ *
+ * An engine error catches some of the mutants. Some of those are on the path that
+ * makes a row plane larger. Some are in the sparse store, where the relations share
+ * the store class and throw first. `README.md` holds the table of both builds.
  *
  *   node bench/net-oracle/mutants.mjs           # development build (more guards)
  *   node bench/net-oracle/mutants.mjs --prod    # the build that the package ships
@@ -644,6 +646,315 @@ const MUTANTS = [
     return hit;
   }`,
 	},
+	{
+		// `or` must accept an archetype that one operand accepts. This mutant makes it
+		// require every operand. The harness runs `or(and(Age, Touch), Redex)` inside
+		// a `where`. The mutant narrows the result to the aged agents of an active
+		// pair. The model holds every aged agent.
+		id: "or-matches-like-and",
+		what: "or requires every operand instead of one",
+		find: `function or(...terms) {
+  const parts = terms.map(exprMatcher);
+  const name = \`or(\${terms.map(exprName).join(", ")})\`;
+  return {
+    name,
+    matches(mask) {
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i](mask)) return true;
+      }
+      return false;
+    }
+  };
+}`,
+		to: `function or(...terms) {
+  const parts = terms.map(exprMatcher);
+  const name = \`or(\${terms.map(exprName).join(", ")})\`;
+  return {
+    name,
+    matches(mask) {
+      for (let i = 0; i < parts.length; i++) {
+        if (!parts[i](mask)) return false;
+      }
+      return true;
+    }
+  };
+}`,
+	},
+	{
+		// `where` caches on the identity of the term. This mutant keys the cache on
+		// the cache itself. Every term of one parent query then shares one entry, and
+		// the first term wins. The harness builds three `where` queries over one
+		// parent, and the complement is the one whose set changes.
+		id: "where-cache-ignores-the-term",
+		what: "the where cache returns another term's archetype list",
+		find: `  where(term) {
+    const cache = this._resolver.caches.whereSingle;
+    let byQuery = cache.get(term);
+    if (byQuery === void 0) {
+      byQuery = /* @__PURE__ */ new Map();
+      cache.set(term, byQuery);
+    }`,
+		to: `  where(term) {
+    const cache = this._resolver.caches.whereSingle;
+    let byQuery = cache.get(cache);
+    if (byQuery === void 0) {
+      byQuery = /* @__PURE__ */ new Map();
+      cache.set(cache, byQuery);
+    }`,
+	},
+	{
+		// The row grain reads one component's tick plane. This mutant gives the first
+		// plane of the archetype instead, which is `Touch`. `Touch` also carries the
+		// rows that `ctx.markChanged` recorded, and `Mix` does not. So the reported
+		// set grows by the marks of the tick.
+		id: "ticksread-wrong-component-plane",
+		what: "cols.ticksRead returns the tick plane of another component",
+		find: `  ticksRead(def) {
+    const arch = this.arch;
+    const cid = def.id;
+    const t = arch.rowTicks[cid];`,
+		to: `  ticksRead(def) {
+    const arch = this.arch;
+    const cid = def.id;
+    const t = arch.rowTicks.find((p) => p !== void 0);`,
+	},
+	{
+		// `cols.since` is the change tick of the previous run of the system. This
+		// mutant makes it the tick of this pass. No row is then above it, and the row
+		// grain reports nothing.
+		id: "chunk-since-is-the-current-tick",
+		what: "forEachChunk sets cols.since to the tick of this pass, so no row reports",
+		find: `    view.since = this._resolver.getLastRunTick();`,
+		to: `    view.since = this._resolver.getChangeTick();`,
+	},
+	{
+		// The same fault on the `changed()` path. It also silences the filter on the
+		// archetype, so `changed(def).forEachChunk` visits nothing.
+		id: "changed-chunk-since-is-the-current-tick",
+		what: "changed().forEachChunk sets cols.since to the tick of this pass",
+		find: `    view.since = q.lastRunTick();`,
+		to: `    view.since = q.changeTick();`,
+	},
+	{
+		// `addPhase` must order the new phase against the phases it names. Declaration
+		// order breaks a tie, and every built-in is declared first. So a phase that
+		// lost its `before` falls to the tail of its loop. The census that must run
+		// before UPDATE then reads the count after the rewrites.
+		id: "addphase-drops-before",
+		what: "addPhase ignores the before targets",
+		find: `    for (const target of config.before ?? EMPTY_ARRAY) {
+      node.before.push(this._checkPhase(target));
+    }`,
+		to: `    for (const target of []) {
+      node.before.push(this._checkPhase(target));
+    }`,
+	},
+	{
+		// The other half. The census after UPDATE is declared before the census
+		// before UPDATE. With its `after` dropped, its `before` alone puts it ahead
+		// of UPDATE. It then reads the count at the start of the tick.
+		id: "addphase-drops-after",
+		what: "addPhase ignores the after targets",
+		find: `    for (const target of config.after ?? EMPTY_ARRAY) {
+      node.after.push(this._checkPhase(target));
+    }`,
+		to: `    for (const target of []) {
+      node.after.push(this._checkPhase(target));
+    }`,
+	},
+	{
+		// `ctx.sparseChanged` compares the sparse row tick with the previous run of
+		// the system. This mutant compares it with the tick of this run, which no
+		// stamp can pass, so every member reports unchanged.
+		id: "sparse-changed-reads-the-wrong-tick",
+		what: "ctx.sparseChanged compares the sparse row tick with the wrong tick",
+		find: `    return this._store.sparseTickOf(def, entityId) > this.lastRunTick;`,
+		to: `    return this._store.sparseTickOf(def, entityId) > this._store.changeTick;`,
+	},
+	// ── the mutants for the probes of the API surface ───────────────────────
+	// The battery reaches these through its last case. The report of the
+	// oracle-surface agent gives the find and the replace text of each one. Five of
+	// them name a guard that a production build removes, and `devOnly` marks those.
+	// The mutation is inert there, so a skip is the honest result.
+	{
+		id: "assert-template-accepts-anything",
+		what: "assertTemplate accepts every value, so a bundle reaches the store as a template",
+		devOnly: true,
+		find: `typeof value.archetypeId === "number"`,
+		to: `true`,
+	},
+	{
+		id: "template-array-guard-never-fires",
+		what: "the pre-0.5 array shape reaches the store instead of a named refusal",
+		devOnly: true,
+		find: `if (DEV && items.length === 1 && Array.isArray(items[0])) {`,
+		to: `if (false) {`,
+	},
+	{
+		id: "restore-error-carries-another-category",
+		what: "ECSRestoreError carries another category",
+		find: `super("SNAPSHOT_RESTORE_FAILED" /* SNAPSHOT_RESTORE_FAILED */, message);`,
+		to: `super("DETERMINISM_DISABLED" /* DETERMINISM_DISABLED */, message);`,
+	},
+	{
+		id: "restore-error-keeps-the-base-name",
+		what: "ECSRestoreError keeps the name of its base class",
+		find: `    this.name = "ECSRestoreError";`,
+		to: `    this.name = "ECSError";`,
+	},
+	{
+		id: "archetype-term-guard-never-fires",
+		what: "a reader of the dense list answers a query that carries an archetype term",
+		devOnly: true,
+		find: `    if (terms.length === 0) return;`,
+		to: `    if (terms.length >= 0) return;`,
+	},
+	{
+		id: "dense-guard-ignores-a-sparse-term",
+		what: "the dense-path guard ignores a sparse term",
+		devOnly: true,
+		// The bundle folds the condition onto one line. So the pattern names the
+		// whole line, and not the first term of it.
+		find: `    if (this.terms.sparseIncludes.length > 0 || this.terms.sparseExcludes.length > 0 ||`,
+		to: `    if (this.terms.sparseIncludes.length > 99 || this.terms.sparseExcludes.length > 0 ||`,
+	},
+	{
+		id: "missing-plugin-slot-answers-undefined",
+		what: "a slot for a plugin that is absent answers undefined",
+		find: `throw pluginMissingError(plugin, `+"`ecs.${plugin}.${key}`"+`);`,
+		to: `return undefined;`,
+	},
+	{
+		id: "a-second-plugin-of-one-name-installs",
+		what: "a second plugin of one name installs",
+		find: `if (installed.has(plugin.name)) throw pluginInstalledTwiceError(plugin.name);`,
+		to: `if (false) throw pluginInstalledTwiceError(plugin.name);`,
+	},
+	{
+		id: "the-surface-guard-accepts-a-collision",
+		what: "the surface guard accepts a facade that overwrites a member of the world",
+		devOnly: true,
+		find: `    if (key in world) {`,
+		to: `    if (false) {`,
+	},
+	{
+		id: "a-foreign-phase-handle-is-accepted",
+		what: "a phase handle from another world is accepted",
+		find: `    if (node.owner !== this) {`,
+		to: `    if (false) {`,
+	},
+	{
+		// The bare `if (err instanceof TypeError) {` matches two times, because the
+		// sort of the systems raises its own fault through the same shape. The three
+		// lines below match one time.
+		id: "a-phase-cycle-throws-the-raw-type-error",
+		what: "a cycle in the phases throws the TypeError of the sort instead of a named fault",
+		find: `      if (err instanceof TypeError) {
+        throw new ECSError(
+          "CIRCULAR_PHASE_DEPENDENCY"`,
+		to: `      if (false) {
+        throw new ECSError(
+          "CIRCULAR_PHASE_DEPENDENCY"`,
+	},
+	{
+		id: "a-before-edge-points-the-wrong-way",
+		what: "a before edge between two phases points the wrong way",
+		find: `        if (other !== node && inLoop.has(other)) edges.get(node).push(other);`,
+		to: `        if (other !== node && inLoop.has(other)) edges.get(other).push(node);`,
+	},
+	{
+		id: "the-seam-ignores-the-phase-the-caller-named",
+		what: "the host write seam drains at its default phases and not at the one the caller named",
+		find: `  const schedules = opts?.schedules ?? [`,
+		to: `  const schedules = [`,
+	},
+	{
+		id: "the-rebuild-ignores-every-archetype-term",
+		what: "the rebuild of a query keeps every archetype that the mask picked",
+		find: `if (!terms[t].matches(arch.mask)) continue outer;`,
+		to: `if (false) continue outer;`,
+	},
+	{
+		id: "not-matches-where-it-must-refuse",
+		what: "not accepts an archetype that one operand accepts",
+		find: `        if (parts[i](mask)) return false;`,
+		to: `        if (parts[i](mask)) return true;`,
+	},
+	{
+		id: "a-derive-drops-the-archetype-terms",
+		what: "a derive of a query drops the archetype terms",
+		find: `    archetypeTerms: patch.archetypeTerms ?? base.archetypeTerms`,
+		to: `    archetypeTerms: base.archetypeTerms`,
+	},
+	// ── the layout of the memory ────────────────────────────────────────────
+	// The battery reaches these through its `memory` case. Each other case runs at
+	// a store base of 0 and under the default cap. Neither mutant below changes
+	// anything there.
+	{
+		// A column view starts at `storeBase + relOff`. A view that drops the base
+		// reads and writes the bytes of another region of the backing. At a base of
+		// 0 the mutation is inert, which is why the battery needs the memory case.
+		id: "a-reader-ignores-the-store-base",
+		what: "a column view ignores the store base and addresses the start of the backing",
+		find: `function createView(buffer, storeBase, typeTag, relOff, rowCapacity) {
+  const byteOff = storeBase + relOff;`,
+		to: `function createView(buffer, storeBase, typeTag, relOff, rowCapacity) {
+  const byteOff = relOff;`,
+	},
+	{
+		// The refusal at the cap must name the world that it refused. Without the
+		// count of the live entities the message says only that a number of bytes was
+		// too large. The caller then cannot tell a budget that is too small from
+		// growth that ran away.
+		id: "the-cap-refusal-names-no-live-count",
+		what: "the refusal at the byte ceiling does not name the live entities of the world",
+		find: `      intent = \` Declared \${ctx.intentLabel}. The ECS holds \${live} live entities.\`;`,
+		to: `      intent = \` Declared \${ctx.intentLabel}.\`;`,
+	},
+	// ── the fixed buffer and the pool ───────────────────────────────────────
+	// The battery reaches the first two through its `memory` case, and the last
+	// two through its `workers` case.
+	{
+		// A fixed buffer is born at the ceiling and it never grows. The store
+		// relocates a column to the tail inside that buffer. It reads the tail from
+		// the header capacity, because `reservedAtCap` says the byte length is the
+		// cap. This mutant makes the buffer grow instead. The byte length is then the
+		// current need, and the tail lies outside it.
+		id: "the-fixed-allocator-grows",
+		what: "the fixed allocator grows its buffer instead of reserving the whole cap",
+		find: `      create: (_byteLength, maxByteLength) => new SharedArrayBuffer(maxByteLength),`,
+		to: `      create: (byteLength, maxByteLength) => new SharedArrayBuffer(byteLength, { maxByteLength }),`,
+	},
+	{
+		// The ceiling is a hard ceiling. This mutant applies it at twice the value
+		// the caller declared. A request that must be refused then reaches the
+		// allocator's own grow. The fault it gives carries no `ECS_ERROR` code.
+		id: "the-cap-check-lets-a-grow-through",
+		what: "the byte ceiling is applied at twice the value the caller declared",
+		find: `    if (bytes > maxBytes) {`,
+		to: `    if (bytes > maxBytes * 2) {`,
+	},
+	{
+		// A worker reads the enabled row count of each archetype out of its
+		// descriptor. It takes its own share of that count. A count that is one short
+		// leaves the last enabled row of every archetype to no worker. That agent
+		// never ages. Nothing outside a worker or a compute backend reads the
+		// descriptor. So this is inert in each other case of the battery.
+		id: "the-pool-skips-the-last-row-of-a-partition",
+		what: "the published enabled row count is one short, so no worker owns the last row",
+		find: `        a.hasColumns ? a.enabledCount : 0,`,
+		to: `        a.hasColumns ? Math.max(0, a.enabledCount - 1) : 0,`,
+	},
+	{
+		// The join stamps what the pass wrote, because a worker writes columns and
+		// makes no record. Without the stamp the archetype carries no change tick,
+		// and a `changed()` query over the written component goes quiet.
+		id: "the-pool-does-not-stamp-what-it-wrote",
+		what: "the join of the pool leaves the archetype change tick of the written columns alone",
+		find: `        archetype.columnGroupMut(def, runTick);
+        const ticks = archetype.rowTicks[def.id];`,
+		to: `        const ticks = archetype.rowTicks[def.id];`,
+	},
 ];
 
 // ── the battery each mutant is run against ──────────────────────────────────
@@ -673,6 +984,13 @@ const BATTERY = [
 	// the float arm. `Mix.mf32` and `Mix.bf32` exist in this arm alone, so a fault in
 	// the `f32` path of the row plane has no other case that can show it.
 	{ name: "float:dup6", args: ["--net=dup:6", "--float", "--batch=4", "--verify=1", "--snap=0"] },
+	// the arms for the layout of the memory. Each case above runs at a store base of
+	// 0, and under the default cap. A fault in either one is inert there.
+	{ name: "memory", args: ["--memory"] },
+	// the pool. Each case above runs one thread, so a fault in the host half of the
+	// pool is inert there. The worker itself runs the sources of the tree, and a
+	// mutant lives in the bundle. So this case reads the host half alone.
+	{ name: "workers", args: ["--workers"] },
 	// the probes of the API surface. This case is last for a reason: each case above
 	// keeps the mechanism that it had, and this case adds the parts of the API that no
 	// simulation reaches. Before this case, each case named a `--net=`. Therefore
@@ -728,8 +1046,17 @@ for (const c of BATTERY) {
 // ── run every mutant ────────────────────────────────────────────────────────
 console.log(`\n${MUTANTS.length} mutants x ${BATTERY.length} cases\n`);
 const escaped = [];
+const skipped = [];
 const byMechanism = { oracle: [], engine: [] };
 for (const m of MUTANTS) {
+	// A mutant that names a guard of a development build cannot fire in a
+	// production build. The flag is false there, so the branch and the mutation are
+	// both inert. A skip is the honest result, and an escape is not.
+	if (PROD && m.devOnly === true) {
+		skipped.push(m.id);
+		console.log(`  skipped  ${m.id.padEnd(28)} names a guard that a production build does not run`);
+		continue;
+	}
 	const hits = baseSrc.split(m.find).length - 1;
 	if (hits !== 1) {
 		console.error(`  ${m.id}: pattern matched ${hits}x in the bundle (want exactly 1), mutant is stale`);
@@ -763,18 +1090,23 @@ console.log("");
 // Both counts, always. "14 of 14 caught" is true and it is not the whole answer:
 // the mutants that only the engine found say nothing about the layers of the
 // oracle, and one of them needs a guard that the released package removes.
+const ran = MUTANTS.length - skipped.length;
 console.log(
-	`${byMechanism.oracle.length}/${MUTANTS.length} caught by an ORACLE layer, ` +
-		`${byMechanism.engine.length}/${MUTANTS.length} caught by an ENGINE error, ` +
+	`${byMechanism.oracle.length}/${ran} caught by an ORACLE layer, ` +
+		`${byMechanism.engine.length}/${ran} caught by an ENGINE error, ` +
 		`${escaped.length} escaped   (${PROD ? "production" : "development"} build)`
 );
+if (skipped.length > 0) {
+	console.log(`  skipped: ${skipped.join(", ")}`);
+	console.log(`  Each one names a guard that a production build does not run.`);
+}
 if (byMechanism.engine.length > 0) {
 	console.log(`  engine-caught: ${byMechanism.engine.join(", ")}`);
 	console.log(`  These prove that the bug is fatal. They do not prove that the oracle sees it.`);
 }
 if (escaped.length > 0) {
-	console.error(`\n${escaped.length}/${MUTANTS.length} mutants ESCAPED, the oracle has blind spots:`);
+	console.error(`\n${escaped.length}/${ran} mutants ESCAPED, the oracle has blind spots:`);
 	for (const e of escaped) console.error(`  ${e.id}: ${e.what} (${e.why})`);
 	process.exit(1);
 }
-console.log(`ok, all ${MUTANTS.length} mutants caught`);
+console.log(`ok, all ${ran} mutants caught`);

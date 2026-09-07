@@ -49,7 +49,7 @@ then use `ab/` for the result.
 | --- | --- |
 | `ab/` | Compares two builds of oecs. Use it to find if a change made the code faster. |
 | `vs/` | Compares oecs with seven other ECS libraries for JavaScript. |
-| `net-oracle/` | Reduces an interaction net, and compares each step with a reference model. It also covers the change detection, the row partition, the host write seam, the events, the resources, the sparse components, each column kind, and the `f64` and `SharedArrayBuffer` profiles. A fingerprint of every agent runs at each tick, and at each phase of a tick in a development build. |
+| `net-oracle/` | Reduces an interaction net, and compares each step with a reference model. It also covers the change detection at the archetype, row and sparse row grains, the row partition, the host write seam, the events, the resources, the sparse components, each column kind, the archetype terms, two added phases, and the `f64` and `SharedArrayBuffer` profiles. Memory arms run the same net at a non-zero store base, on a fixed shared buffer, and past a cap that must refuse. A workers arm runs one system across a Node pool. A fingerprint of every agent runs at each tick, and at each phase of a tick in a development build. |
 
 Each directory has a `README.md` file with more data about the tool.
 
@@ -58,7 +58,7 @@ Each directory has a `README.md` file with more data about the tool.
 | file | function |
 | --- | --- |
 | `dist.mjs` | Makes the artifacts of the package, and copies them for one tool. `ab/` and `vs/` use it. |
-| `build.mjs` | Makes one ESM bundle with esbuild. The entry is a generated shim. It re-exports `src/index.ts` and the snapshots, events, relations and observers plugin factories, so a tool can install any subsystem. The correctness tools use it. |
+| `build.mjs` | Makes one ESM bundle with esbuild. The entry is a generated shim. It re-exports `src/index.ts`, the five plugin factories (snapshots, events, relations, observers, workers) and the three shared allocators, so a tool can install any subsystem and pick any backing. The correctness tools use it. |
 | `suite.mjs` | Holds the benchmark cases. `run.mjs` and `ab/` use the same cases. |
 | `harness.mjs` | Does the warmup and the timed samples for `run.mjs`. |
 | `run.mjs` | Measures one build. It can also keep a baseline, and compare with a baseline. |
