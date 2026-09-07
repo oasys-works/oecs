@@ -16,16 +16,14 @@
  * type_tag }] }` for every archetype, it computes byte offsets, writes the
  * header + descriptor, and hands back the views in one shot.
  *
- * Not yet wired into `Archetype` and `Store`, that lands in a follow-up
- * once `view_stamp` invalidation is in place. The intent
- * here is to lock the offset math against a binary fixture so the
- * Archetype migration can lean on a tested primitive instead of inventing
- * its own arithmetic.
+ * The offset math is locked against a binary fixture, so `Archetype` and
+ * `Store` lean on a tested primitive instead of inventing their own
+ * arithmetic.
  *
  * Alignment: each column starts at its `type_tag` stride boundary. This is
  * the minimum needed for TypedArray construction (`new Float32Array(buffer,
- * off, n)` throws on a misaligned `off`) and matches what a Zig `*f32`
- * etc. expects.
+ * off, n)` throws on a misaligned `off`) and matches the alignment a module's
+ * typed pointer expects.
  */
 
 import {
@@ -111,8 +109,8 @@ export interface ColumnStore {
 	/** The backing buffer. `ArrayBufferLike` because the store is backing-agnostic:
 	 * a `SharedArrayBuffer` for the SAB, WASM and worker profile, or a plain fixed
 	 * `ArrayBuffer` for the pure-TS heap profile (`heapArrayBufferAllocator`).
-	 * Consumers that genuinely require sharing (worker transfer, WASM memory)
-	 * narrow back to `SharedArrayBuffer` at their boundary. */
+	 * A consumer that genuinely requires sharing (worker transfer, WASM memory)
+	 * narrows back to `SharedArrayBuffer` at its own boundary. */
 	readonly buffer: ArrayBufferLike;
 	/** A `DataView` whose start is the store base, so every relative offset the
 	 * header and the descriptors carry indexes it directly. */
@@ -163,7 +161,7 @@ export function columnKey(componentId: number, fieldId: number): number {
  * `new Uint8Array(buffer, byte_off, …)`, either a thrown `RangeError` deep in
  * the TypedArray ctor or, worse, a silently wrong view overlapping another
  * column. The 256 MiB default allocator cap (`growableSabAllocator`) keeps
- * real matches three orders of magnitude below this, but the cap is tunable
+ * a real world far below this, but the cap is tunable
  * and callers are invited to raise it for bigger worlds, so the layout step
  * guards the hard 2³¹ ceiling explicitly rather than relying on the policy
  * cap to stay in front of it. */
@@ -178,16 +176,16 @@ export class StoreLayoutOverflowError extends Error {
 		super(
 			`SAB column layout offset ${byteOff} reaches or exceeds the 2³¹ ` +
 				`(${STORE_MAX_BYTE_OFFSET}-byte) ceiling. Past 2 GiB the signed-32-bit ` +
-				`bitwise alignment math wraps to negative/misaligned offsets. This is a ` +
-				`structural limit independent of the (default 256 MiB) allocator cap, a ` +
-				`single SAB cannot back more than ~2 GiB of column data.`
+				`bitwise alignment math wraps to a negative or misaligned offset. This ` +
+				`is a structural limit independent of the allocator cap, so a single ` +
+				`store cannot back more than 2 GiB of column data.`
 		);
 		this.name = "StoreLayoutOverflowError";
 	}
 }
 
 /** Round `off` up to the next multiple of `align`. `align` must be a power
- * of two (1/2/4/8 here, all `TYPE_TAG_STRIDE` values).
+ * of two (1, 2, 4 or 8 here, all `TYPE_TAG_STRIDE` values).
  *
  * Throws {@link StoreLayoutOverflowError} when the rounded offset would reach
  * {@link STORE_MAX_BYTE_OFFSET}, because the `& ~(align-1)` step coerces to a
@@ -208,8 +206,8 @@ export function alignUp(off: number, align: number): number {
  * Every view gets an explicit `(byteOffset, length)`, and it must stay that
  * way. A TypedArray built with no length argument tracks the length of its
  * buffer. Measurement shows that a length-tracking view over a buffer that can
- * grow is the worst of all the access shapes: each element access costs many
- * times what the same access costs through a fixed-length view, on every engine
+ * grow is the worst of all the access shapes: each element access costs far
+ * more than the same access through a fixed-length view, on every engine
  * tested. A fixed-length view over the same growable buffer does not pay that.
  *
  * The store never reaches the bad shape, because this function is the only
@@ -322,8 +320,8 @@ function planLayout(
 	}
 	// The last column's `cursor += stride * row_capacity` isn't followed by
 	// another `alignUp`, so the final total can land at and above 2³¹ even when
-	// every per-column guard passed. This total becomes the SAB byteLength
-	// guard it too.
+	// every per-column guard passed. This total becomes the backing's
+	// byteLength, so guard it too.
 	if (cursor > STORE_MAX_BYTE_OFFSET) {
 		throw new StoreLayoutOverflowError(cursor);
 	}
@@ -355,8 +353,8 @@ export interface CreateColumnStoreOptions {
 	 * going permanently slow. */
 	readonly reservedDescriptorBytes?: number;
 	/** When provided, allocates a command ring inside
-	 * the SAB at a stable offset right after the 48-byte header. Slot
-	 * count must be a power of two. `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`
+	 * the SAB at a stable offset right after the `STORE_HEADER_BYTES` header.
+	 * Slot count must be a power of two. `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `command_ring_off`
 	 * stays at 0 ("absent"). An existing test fixture with a hand-rolled SAB
 	 * sees the legacy layout, with the descriptor region right after the header.
@@ -371,7 +369,7 @@ export interface CreateColumnStoreOptions {
 	 * (or header) and the descriptor region. Holds `(generations,
 	 * archetypes, rows)` triples indexed by entity slot. The engine's
 	 * `Store` populates them as entities are created, moved and destroyed,
-	 * and Zig systems read them to resolve cross-entity targets without
+	 * and a compute backend reads them to resolve cross-entity targets without
 	 * a callback. Capacity is in *slots* (entities), not bytes. Each
 	 * slot is 12 bytes. Omitted ⇒ no region. `entity_index_off` stays
 	 * at 0 ("absent"). The engine's Store always sets it to
@@ -380,9 +378,9 @@ export interface CreateColumnStoreOptions {
 	readonly entityIndexCapacity?: number;
 	/** When provided, allocates the event ring
 	 * inside the SAB at a stable offset between the entity-index region
-	 * and the descriptor region. Same SPSC shape as the command ring
-	 * carries ECS signal payloads so Zig systems can emit and consume
-	 * them during `tick()` without callbacks into TS.
+	 * and the descriptor region. It has the same SPSC shape as the command
+	 * ring. It carries ECS signal payloads, so a module's systems emit and
+	 * consume them during a tick without callbacks into TS.
 	 *
 	 * Slot count must be a power of two. `EVENT_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `event_ring_off`
@@ -391,8 +389,8 @@ export interface CreateColumnStoreOptions {
 	readonly eventRingCapacitySlots?: number;
 	/** When provided, allocates the action ring
 	 * inside the SAB at a stable offset between the entity-index and event-ring
-	 * and the region-table directory. Main writes encoded actions to it
-	 * the sim worker drains them on each apply.
+	 * and the region-table directory. The main thread writes encoded actions to
+	 * it, and the worker drains them on each apply.
 	 *
 	 * Slot count must be a power of two. `ACTION_RING_DEFAULT_CAPACITY_SLOTS`
 	 * (256) is the canonical value. Omitted ⇒ no ring. `action_ring_off`
@@ -404,22 +402,21 @@ export interface CreateColumnStoreOptions {
 	 * engine lays them out after the mechanism regions, writes a generic
 	 * region-table directory (`region_table.ts`) keyed by `region_id`, and
 	 * snapshots and restores them across a grow or extend. The engine never
-	 * interprets `region_id`, a game (e.g. `@internal/sim`'s region specs)
-	 * owns it. Omitted ⇒ no consumer regions. `region_table_off` stays 0. */
+	 * interprets `region_id`. The consumer that declared the region owns it.
+	 * Omitted ⇒ no consumer regions. `region_table_off` stays 0. */
 	readonly regions?: readonly StoreRegionSpec[];
-	/** Byte size of the always-before-descriptor sim-bindings region (v5 /
-	 * "SAB-is-the-interface"). A consumer that opts into a WASM backend supplies
-	 * its own size here, `@internal/sim`'s `SIM_BINDINGS_BYTES`, computed from
-	 * the game's binding manifest. The engine treats the region as opaque bytes:
+	/** Byte size of the always-before-descriptor sim-bindings region. A consumer
+	 * that opts into a WASM backend supplies its own size here, computed from
+	 * its own binding manifest. The engine treats the region as opaque bytes:
 	 * it reserves the block at `bindings_off` (right before the descriptor
-	 * region, so the offset is stable across grow and extend) and the host writes the
-	 * `(component_id, field_id)` IDs into it via `write_sim_bindings`.
+	 * region, so the offset is stable across grow and extend) and the host
+	 * writes the `(component_id, field_id)` ids into it.
 	 *
 	 * Omitted or 0 ⇒ no bindings region (`bindings_off` stays 0, "absent"), the
-	 * default for a pure-TS game that pays nothing for the WASM seam. This used
-	 * to be the engine-baked `SIM_BINDINGS_BYTES` ABI constant reflected from the
-	 * game's Zig struct. It is now de-welded, so a manifest edit no longer dirties
-	 * the engine ABI golden. Re-derived across realloc by `optionsFromOld`
+	 * default for a pure-TS world that pays nothing for the WASM seam. This size
+	 * used to be an engine-baked ABI constant reflected from the consumer's
+	 * binding struct. It is now a runtime input, so a manifest edit no longer
+	 * dirties the engine ABI golden. Re-derived across realloc by `optionsFromOld`
 	 * (= `layout_descriptor_off - bindings_off`), so it survives grow and extend
 	 * without a carried policy field. */
 	readonly bindingsRegionBytes?: number;
@@ -572,10 +569,10 @@ export function createColumnStore(
 	// and gets no region (`bindings_off` = 0, "absent"). Sits right before the
 	// descriptor region so its offset is stable across `extendColumnStore` and
 	// `growColumnStore` (those grow the descriptor region and the column tail,
-	// never the bytes before it). The host writes the `(component_id, field_id)` ids into it
-	// once per layout via `write_sim_bindings`. The Zig per-system exports read
-	// from here. Engine-opaque, the size is a runtime input, not an
-	// ABI constant reflected from the game's binding struct.
+	// never the bytes before it). The host writes the `(component_id, field_id)`
+	// ids into it once per layout, and the module's per-system exports read from
+	// here. Engine-opaque, and the size is a runtime input, not an ABI constant
+	// reflected from the consumer's binding struct.
 	const bindingsBytes = options.bindingsRegionBytes ?? 0;
 	const bindingsOff = bindingsBytes === 0 ? 0 : cursor;
 	cursor += bindingsBytes;
@@ -612,8 +609,8 @@ export function createColumnStore(
 	writeStoreHeader(view, header);
 	// Zero-fill the sim-bindings region defensively (when present). A fresh
 	// allocator buffer is already zeroed, but `growableSabAllocator` may hand
-	// back a reused arena slice, zero it so a stale layout's IDs can't bleed
-	// through before the host's first `write_sim_bindings`.
+	// back a reused arena slice, so zero it and a stale layout's ids cannot
+	// bleed through before the host's first write.
 	if (bindingsBytes > 0) new Uint8Array(buffer, storeBase + bindingsOff, bindingsBytes).fill(0);
 	// Initialise each present region's header. `off !== 0` ⇒ that region's
 	// `sizeFromOptions` returned > 0, so `options` carries the knobs its
@@ -651,15 +648,15 @@ export function createColumnStore(
 	return store;
 }
 
-/** Default command-ring slot count used by `ECS.Store` when constructing
+/** Default command-ring slot count used by `Store` when constructing
  * its SAB. Re-exported here so the Store doesn't reach across modules. */
 export { COMMAND_RING_DEFAULT_CAPACITY_SLOTS };
 
-/** Default entity-index capacity used by `ECS.Store` when constructing
+/** Default entity-index capacity used by `Store` when constructing
  * its SAB. Re-exported alongside `COMMAND_RING_DEFAULT_CAPACITY_SLOTS`. */
 export { ENTITY_INDEX_DEFAULT_CAPACITY };
 
-/** Default event-ring slot count used by `ECS.Store` when constructing
+/** Default event-ring slot count used by `Store` when constructing
  * its SAB. Re-exported alongside the other defaults. */
 export { EVENT_RING_DEFAULT_CAPACITY_SLOTS };
 

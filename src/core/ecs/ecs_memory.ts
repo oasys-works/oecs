@@ -131,8 +131,8 @@ export function storeBaseAbove(exports: Record<string, unknown>, extraBytes = 0)
 export const DEFAULT_ECS_CAP_BYTES = 256 * MiB;
 
 /** Headroom multiplier applied to an entity count's live column bytes: capacity
- * doubling plus abandoned in-place holes bound worst-case footprint at ~3×
- * live data (footprint analysis in `growableSabAllocator`'s doc). */
+ * doubling plus abandoned in-place holes bound the worst-case footprint at
+ * this multiple of the live data (footprint analysis in `growableSabAllocator`'s doc). */
 export const BUDGET_GROWTH_HEADROOM = 3;
 
 /** Default average fully-populated row stride assumed when the caller gives an
@@ -150,8 +150,8 @@ export const BUDGET_DEFAULT_ARCHETYPES = 8;
  * doesn't model. */
 const BUDGET_CAP_FLOOR_BYTES = 4 * MiB;
 
-/** WASM-backed memory. Either bring your own shared `WebAssembly.Memory` (the
- * server match context does, its sim factory owns the memory), or declare page
+/** WASM-backed memory. Either bring your own shared `WebAssembly.Memory`, which
+ * a consumer that instantiates the module itself already owns, or declare page
  * bounds and let the engine construct it. */
 export type WasmMemoryArm =
 	| {
@@ -259,7 +259,7 @@ export interface ResolvedECSMemory {
 	readonly storeBase: number;
 	/** The backing `WebAssembly.Memory` when the wasm backing was used (both
 	 * bring-your-own and engine-constructed), the consumer hands this to its
-	 * WASM `ComputeBackend` so the sim and the columns share bytes. */
+	 * WASM `ComputeBackend` so the module and the columns share bytes. */
 	readonly wasmMemory: WebAssembly.Memory | null;
 }
 
@@ -320,8 +320,8 @@ function assertPositiveInt(name: string, n: number): void {
  *
  * These are removed, not aliased. A silently-ignored `budget` would size a world
  * wrong and only show up as a cap failure much later, and a silently-ignored
- * `allocator` would put the columns in a different buffer than a WASM consumer's
- * sim reads. So the guard throws and names the rewrite, the same way the
+ * `allocator` would put the columns in a different buffer than a WASM
+ * consumer's module reads. So the guard throws and names the rewrite, the same way the
  * `initial_capacity` and `buffer_allocator` guard in `ECS`'s constructor does.
  */
 const REMOVED_ARMS: Readonly<Record<string, string>> = {
@@ -339,9 +339,10 @@ function rejectRemovedArms(opts: ECSMemoryOptions): void {
 	if (found.length === 0) return;
 	throw new ECSError(
 		ECS_ERROR.INVALID_MEMORY_OPTIONS,
-		`memory.${found.join(" / memory.")} was removed in 0.6: sizing and backing are now two ` +
-			`independent fields, so every combination of them is expressible. Rewrite as, ` +
-			found.map((k) => REMOVED_ARMS[k]).join("; ")
+		`${found.map((k) => `memory.${k}`).join(" and ")} ${found.length > 1 ? "were" : "was"} removed in 0.6. ` +
+			`Sizing and backing are now two independent fields, so every combination of them ` +
+			`is expressible. Rewrite as: ` +
+			found.map((k) => REMOVED_ARMS[k]).join(". ")
 	);
 }
 
@@ -398,8 +399,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			);
 		}
 		// Size columns so the expected per-archetype row count fits without a
-		// doubling, the same way the 1024 default already covers the typical
-		// ~1000-row workload.
+		// doubling, the same way `DEFAULT_COLUMN_CAPACITY` already covers a
+		// small world.
 		columnCapacity = pinnedColumns ?? clamp(ceilPow2(Math.ceil(entities / archetypes)), 64, 1 << 20);
 		// 2× headroom over the count before EID_MAX_INDEX_OVERFLOW, enough slack
 		// for churn, small enough that runaway creation still fails fast.
@@ -520,7 +521,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				intentLabel: `caller-supplied WebAssembly.Memory (declared cap ${fmtBytes(callerCap)})`,
 				budgetEntities: entities ?? null,
 				derivation: [
-					"backing = wasm_memory_allocator(memory), zero-copy with the sim (is_in_place ✓)",
+					"backing = wasm_memory_allocator(memory), zero-copy with a WASM compute backend (is_in_place ✓)",
 					declaredCap !== undefined
 						? `cap = ${fmtBytes(callerCap)} (caller-declared maxBytes; the Memory's own maximum is not readable from JS)`
 						: `cap = ${fmtBytes(callerCap)} (default; the Memory's own maximum is not readable from JS)`,
@@ -642,9 +643,9 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 			capBytes,
 			"shared",
 			growableSabAllocator(capBytes),
-			`shared SharedArrayBuffer backing (${fmtBytes(capBytes)} growable cap, needs COOP/COEP)`,
+			`shared SharedArrayBuffer backing (${fmtBytes(capBytes)} growable cap, needs COOP and COEP)`,
 			[
-				`backing = growable_sab_allocator(${fmtBytes(capBytes)}), growable SharedArrayBuffer (is_in_place ✓); needs cross-origin isolation`,
+				`backing = growable_sab_allocator(${fmtBytes(capBytes)}), growable SharedArrayBuffer (is_in_place ✓), needs cross-origin isolation`,
 				"enables worker offload + a WASM compute backend (transferable SharedArrayBuffer)"
 			]
 		);
@@ -669,7 +670,7 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 				? `budget of ${entities} entities`
 				: `explicit cap of ${fmtBytes(capBytes)}`,
 		[
-			`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}), fixed ArrayBuffer reserved at the cap, no SAB / no COOP+COEP (is_in_place ✓)`,
+			`backing = heap_arraybuffer_allocator(${fmtBytes(capBytes)}), fixed ArrayBuffer reserved at the cap, no SAB and no COOP+COEP (is_in_place ✓)`,
 			"trade-off: no worker offload and no WASM backend (both need a transferable SharedArrayBuffer)"
 		]
 	);

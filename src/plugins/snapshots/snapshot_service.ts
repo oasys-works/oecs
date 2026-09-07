@@ -2,7 +2,7 @@
  * SnapshotService, world snapshot and resume orchestration.
  *
  * Owns the serialization, framing, and fail-closed validation of the
- * determinism-gated snapshot surface: the sparse+relation section
+ * determinism-gated snapshot surface: the sparse and relation section
  * (`snapshotSparse` and `restoreSparse`), and the full-world capture and mount
  * (`snapshot` and `restore`). The `DETERMINISM_DISABLED` gate stays
  * on `Store`'s public delegations. This service assumes the gate
@@ -46,8 +46,8 @@ import {
 
 export class SnapshotService implements SnapshotHooks {
 	private readonly _host: SnapshotHost;
-	/** The allocator is its own snapshot seam: free-list copy on
-	 * capture. `setHighWater` + `restoreHostState` on mount. */
+	/** The allocator is its own snapshot seam: a free-list copy on
+	 * capture, `setHighWater` and `restoreHostState` on mount. */
 	private readonly _allocator: EntityAllocator;
 
 	constructor(host: SnapshotHost, allocator: EntityAllocator) {
@@ -58,7 +58,7 @@ export class SnapshotService implements SnapshotHooks {
 	/** Serialize the sparse stores **and** relation side data to a self-contained
 	 * byte buffer, the sparse half of a world snapshot (the dense half is the
 	 * SAB snapshot). Two framed sections: the sparse stores (`snapshotSparseStores`,
-	 * exclusive relation targets + multi membership ride here) followed
+	 * where the exclusive relation targets and the multi membership ride) followed
 	 * by the relation side data (`snapshotRelations`, multi forward target
 	 * sets, which live outside the sparse store). Both are written in canonical
 	 * entity-index order, so two worlds with identical contents inserted in
@@ -78,7 +78,7 @@ export class SnapshotService implements SnapshotHooks {
 	}
 
 	/** Repopulate the sparse stores from `snapshotSparse` bytes, replacing all
-	 * current sparse data (full-equality round-trip of membership + data), then
+	 * current sparse data (full-equality round-trip of membership and data), then
 	 * rebuild every relation's derived side indices: multi forward sets from the
 	 * relation section, and the reverse index for both cardinalities (exclusive
 	 * from the newly restored sparse target field, multi from the rebuilt forward
@@ -111,7 +111,7 @@ export class SnapshotService implements SnapshotHooks {
 
 	/** Rebuild every relation's derived side indices after the sparse stores have
 	 * been restored. `restoreRelations` resets all relations, rebuilds the multi
-	 * forward sets + their reverse edges from `relBytes`, and validates shape.
+	 * forward sets and their reverse edges from `relBytes`, and validates shape.
 	 * The exclusive reverse index can't be carried in the bytes (it's derivable),
 	 * so it's rebuilt here from the backing sparse store: every member row holds
 	 * `(source index → target EntityID)`, which is exactly one reverse edge. */
@@ -128,12 +128,12 @@ export class SnapshotService implements SnapshotHooks {
 
 	/** Capture the full live world to one self-contained byte buffer that
 	 * `restore` can mount back onto a live, ticking world. Three
-	 * sections (see `resume.ts`): the dense SAB column bytes, the sparse +
+	 * sections (see `resume.ts`): the dense SAB column bytes, the sparse and
 	 * relation bytes, and the host-side bookkeeping the SAB omits. */
 	public snapshot(): Uint8Array {
-		// Keep the dense descriptors self-consistent for any bare dense reader (our
-		// own restore reconstructs from host-state + a region scan, not from the
-		// descriptor row counts).
+		// Keep the dense descriptors self-consistent for any bare dense reader.
+		// The restore below reconstructs from the host state and a region scan,
+		// not from the descriptor row counts.
 		this._host.publishRowCounts();
 		// columnStoreBytesView returns a view that tracks later writes, copy it so
 		// the combined buffer is a stable owned snapshot.
@@ -143,8 +143,9 @@ export class SnapshotService implements SnapshotHooks {
 		return frameWorldSnapshot(dense, sparse, host);
 	}
 
-	/** Gather the host-side state a snapshot carries alongside the dense + sparse
-	 * bytes, see `snapshot()`. The free-list is copied (it's a live mutable). */
+	/** Gather the host-side state a snapshot carries alongside the dense and
+	 * sparse bytes, see `snapshot()`. The free-list is copied, because it is a
+	 * live mutable. */
 	private _collectHostState(): HostState {
 		const archetypeRows: ArchetypeRowState[] = [];
 		const archs = this._host.archetypes();
@@ -192,8 +193,8 @@ export class SnapshotService implements SnapshotHooks {
 		this._assertSparseMatchesLive(sections.sparse);
 
 		// --- Mount: build the restored dense store (now safe to overwrite the
-		//     live backing) and hand it to the Store to adopt (view refresh +
-		//     high-water recovery + republish, the grow tail). ---
+		//     live backing) and hand it to the Store to adopt (the grow tail: a
+		//     view refresh, a high-water recovery and a republish). ---
 		// Restore at the live world's base. The snapshot carries none, so a world
 		// hosted inside a WASM memory reads a heap world's bytes and the reverse.
 		const restored = restoreColumnStore(sections.dense, this._host.bufferAllocator(), {
@@ -201,7 +202,7 @@ export class SnapshotService implements SnapshotHooks {
 		});
 		this._host.mountRestoredDense(restored);
 
-		// --- Reconstruct host-side row bookkeeping + allocator state + tick ---
+		// --- Reconstruct the host-side rows, the allocator state and the tick ---
 		this._host.reconstructHostRows(host);
 		this._allocator.restoreHostState(host.freeIndices, host.entityAliveCount);
 		this._host.setTick(host.tick);
@@ -210,7 +211,7 @@ export class SnapshotService implements SnapshotHooks {
 		// caches and force the next descriptor publish.
 		this._host.invalidateCaches();
 
-		// Restore the sparse + relation half in place (rebuilds relation reverse
+		// Restore the sparse and relation half in place (rebuilds relation reverse
 		// indices). Its shape was already validated above, so this only commits data
 		// (a registration mismatch would have failed closed before the dense mount).
 		this.restoreSparse(sections.sparse);

@@ -184,7 +184,7 @@ describe("Observers, onDisable and onEnable", () => {
 		expect(world.hasComponent(survivor, Marker)).toBe(true);
 	});
 
-	it("registering toggle observers does not change state_hash (signal is out of the hash)", () => {
+	it("registering toggle observers does not change stateHash (signal is out of the hash)", () => {
 		const build = (observe: boolean) => {
 			const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 			const P = world.registerComponent(Pos);
@@ -214,7 +214,7 @@ describe("Observers, onDisable and onEnable", () => {
 		expect(build(true)).toBe(build(false));
 	});
 
-	it("yield_existing seeds enabled members only, a disabled entity is absent", () => {
+	it("yieldExisting seeds enabled members only, a disabled entity is absent", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [observers()] });
 		const P = world.registerComponent(Pos);
 		const enabledEntity = world.spawn();

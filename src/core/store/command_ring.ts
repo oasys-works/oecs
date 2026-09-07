@@ -13,7 +13,7 @@
  *   ...
  *
  * SPSC contract (single host thread):
- *   - Producer: WASM `sim.tick()`. Pushes 0..N commands during one tick
+ *   - Producer: the WASM tick. It pushes 0..N commands during one tick and
  *     bumps `write_head` after each.
  *   - Consumer: TS host, immediately after `wasm.tick()` returns. Drains
  *     0..N pending commands. Bumps `read_head` after each.
@@ -30,18 +30,17 @@
  *
  * Slot format:
  *   byte 0:       opCode (u8). 0 is reserved as the empty-slot marker
- *                 (`COMMAND_OP_EMPTY`); all other codes are consumer-defined.
- *                 The engine never interprets a code. It drains
- *                 `(opCode, payload)` and hands them to the attached
- *                 consumer, which owns the opcode enum + payload codecs (the
- *                 game's live in `@internal/sim`'s `command_payloads.ts`).
+ *                 (`COMMAND_OP_EMPTY`), and every other code is
+ *                 consumer-defined. The engine never interprets a code. It
+ *                 drains `(opCode, payload)` and hands them to the attached
+ *                 consumer, which owns the opcode enum and the payload codecs.
  *   bytes 1..15:  payload, op-specific. Multi-byte fields may be
  *                 unaligned within the payload. Readers must use byte-
- *                 oriented helpers (DataView in TS, `mem.readInt` in Zig).
+ *                 oriented helpers, such as a `DataView` in TS.
  *
  * The ring lives before the layout-descriptor region in the SAB (right
- * after the 32-byte header) so its offset is stable across descriptor growth
- * and column-region growth. The host writes `header.command_ring_off` to
+ * after the `STORE_HEADER_BYTES` header) so its offset is stable across
+ * descriptor growth and column-region growth. The host writes `header.command_ring_off` to
  * point at it during `createColumnStore`. Absent ring is signalled by
  * `command_ring_off === 0`.
  */
@@ -53,9 +52,8 @@ export const COMMAND_RING_HEADER_BYTES = 16;
 export const COMMAND_RING_SLOT_BYTES = 16;
 
 /** Default ring capacity in slots. 256 × 16 B = 4 KiB of ring data plus
- * 16 B header. Sized for the worst-case burst (peak spawn intents per
- * tick) × small safety margin. Tune up if a burst pushes past it
- * in the bench harness. */
+ * 16 B header. Sized for the worst-case burst of spawn intents in one tick,
+ * with a small safety margin. Tune it up when a burst pushes past it. */
 export const COMMAND_RING_DEFAULT_CAPACITY_SLOTS = 256;
 
 /** Byte offsets within the ring header. A reader on the module side mirrors
@@ -69,9 +67,8 @@ export const COMMAND_RING_HEADER_OFFSETS = {
 
 /** Op-code `0` is reserved across the SAB layer as the empty-slot marker
  * so a zero-initialised SAB doesn't appear to hold a valid command (mirror
- * of `EVENT_OP_EMPTY`). All non-zero codes are opaque to the engine,
- * the attached consumer owns the opcode enum + payload codecs (the game's
- * `COMMAND_OP` + `SpawnUnitFields` live in `@internal/sim`). */
+ * of `EVENT_OP_EMPTY`). Every non-zero code is opaque to the engine, and
+ * the attached consumer owns the opcode enum and the payload codecs. */
 export const COMMAND_OP_EMPTY = 0;
 
 /** Total bytes the ring occupies for `capacity_slots` slots. */
@@ -124,16 +121,16 @@ export function commandRingOverflow(view: DataView, ringOff: number): boolean {
 }
 
 /** Pending command count = `(write_head - read_head) mod 2^32`. The
- * `>>> 0` keeps the result a u32 in the wrap-around case (rings live for
- * the host's lifetime. 2^32 commands at 50 Hz ≈ 2 years, but the
- * arithmetic should be correct regardless). */
+ * `>>> 0` keeps the result a u32 in the wrap-around case. A ring lives for
+ * the host's lifetime, so a long-lived host can reach the wrap, and the
+ * arithmetic has to stay correct there. */
 export function pendingCommandCount(view: DataView, ringOff: number): number {
 	return (commandRingWriteHead(view, ringOff) - commandRingReadHead(view, ringOff)) >>> 0;
 }
 
-/** Push a command into the ring from the TS side. Production producer is
- * WASM, through `command_ring.zig`. This is for host-side tests and for
- * symmetric tests across the two sides. Returns `false` on overflow and
+/** Push a command into the ring from the TS side. The production producer is
+ * the WASM module, through its own ring writer. This is for host-side tests
+ * and for symmetric tests across the two sides. Returns `false` on overflow and
  * sets the overflow flag. Payload must be exactly 15 bytes. */
 export function pushCommand(
 	view: DataView,

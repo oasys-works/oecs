@@ -33,7 +33,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 				if (!query.include.has(changedIds[i])) {
 					throw new ECSError(
 						ECS_ERROR.COMPONENT_NOT_REGISTERED,
-						`changed() component ${changedIds[i]} is not in query's include mask`
+						`changed() component ${changedIds[i]} is not in the query's include mask. Require it with and() before changed()`
 					);
 				}
 			}

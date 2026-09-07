@@ -14,22 +14,22 @@ describe("assertions", () => {
   // isNonNegativeInteger
   //=========================================================
 
-  it("is_non_negative_integer returns true for zero", () => {
+  it("isNonNegativeInteger returns true for zero", () => {
     expect(isNonNegativeInteger(0)).toBe(true);
   });
 
-  it("is_non_negative_integer returns true for positive integers", () => {
+  it("isNonNegativeInteger returns true for positive integers", () => {
     expect(isNonNegativeInteger(1)).toBe(true);
     expect(isNonNegativeInteger(42)).toBe(true);
     expect(isNonNegativeInteger(999_999)).toBe(true);
   });
 
-  it("is_non_negative_integer returns false for negative numbers", () => {
+  it("isNonNegativeInteger returns false for negative numbers", () => {
     expect(isNonNegativeInteger(-1)).toBe(false);
     expect(isNonNegativeInteger(-100)).toBe(false);
   });
 
-  it("is_non_negative_integer returns false for non-integer numbers", () => {
+  it("isNonNegativeInteger returns false for non-integer numbers", () => {
     expect(isNonNegativeInteger(1.5)).toBe(false);
     expect(isNonNegativeInteger(0.1)).toBe(false);
     expect(isNonNegativeInteger(NaN)).toBe(false);
@@ -40,16 +40,16 @@ describe("assertions", () => {
   // isNotNull
   //=========================================================
 
-  it("is_non_null returns false for null", () => {
+  it("isNotNull returns false for null", () => {
     expect(isNotNull(null)).toBe(false);
   });
 
-  it("is_non_null returns true for undefined", () => {
+  it("isNotNull returns true for undefined", () => {
     // isNotNull only checks !== null, not == null
     expect(isNotNull(undefined)).toBe(true);
   });
 
-  it("is_non_null returns true for non-null values", () => {
+  it("isNotNull returns true for non-null values", () => {
     expect(isNotNull(0)).toBe(true);
     expect(isNotNull("")).toBe(true);
     expect(isNotNull(false)).toBe(true);
@@ -60,7 +60,7 @@ describe("assertions", () => {
   // assertNonNull
   //=========================================================
 
-  it("assert_non_null does not throw for a defined value", () => {
+  it("assertNonNull does not throw for a defined value", () => {
     expect(() => assertNonNull(42)).not.toThrow();
     expect(() => assertNonNull("hello")).not.toThrow();
     expect(() => assertNonNull(0)).not.toThrow();
@@ -68,15 +68,15 @@ describe("assertions", () => {
     expect(() => assertNonNull("")).not.toThrow();
   });
 
-  it("assert_non_null throws AssertionError for null", () => {
+  it("assertNonNull throws AssertionError for null", () => {
     expect(() => assertNonNull(null)).toThrow(AssertionError);
   });
 
-  it("assert_non_null throws AssertionError for undefined", () => {
+  it("assertNonNull throws AssertionError for undefined", () => {
     expect(() => assertNonNull(undefined)).toThrow(AssertionError);
   });
 
-  it("assert_non_null error has ASSERTION_FAIL_NON_NULLABLE category", () => {
+  it("assertNonNull error has ASSERTION_FAIL_NON_NULLABLE category", () => {
     try {
       assertNonNull(null);
     } catch (e) {
@@ -122,16 +122,16 @@ describe("assertions", () => {
   // validateAndCast
   //=========================================================
 
-  it("validate_and_cast returns the value when validation passes", () => {
+  it("validateAndCast returns the value when validation passes", () => {
     const result = validateAndCast(42, (v) => Number.isInteger(v) && v > 0, "positive integer");
     expect(result).toBe(42);
   });
 
-  it("validate_and_cast throws AssertionError when validation fails", () => {
+  it("validateAndCast throws AssertionError when validation fails", () => {
     expect(() => validateAndCast(-1, (v) => v > 0, "positive number")).toThrow(AssertionError);
   });
 
-  it("validate_and_cast error has VALIDATION_FAIL_CONDITION category", () => {
+  it("validateAndCast error has VALIDATION_FAIL_CONDITION category", () => {
     try {
       validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
@@ -140,7 +140,7 @@ describe("assertions", () => {
     }
   });
 
-  it("validate_and_cast error message includes the provided description", () => {
+  it("validateAndCast error message includes the provided description", () => {
     try {
       validateAndCast(-1, (v) => v > 0, "positive number");
     } catch (e) {
@@ -152,19 +152,19 @@ describe("assertions", () => {
   // unsafeCast
   //=========================================================
 
-  it("unsafe_cast returns the same value unchanged", () => {
+  it("unsafeCast returns the same value unchanged", () => {
     const value = 42;
     const result = unsafeCast<number>(value);
     expect(result).toBe(42);
   });
 
-  it("unsafe_cast returns the same reference for objects", () => {
+  it("unsafeCast returns the same reference for objects", () => {
     const obj = { x: 1 };
     const result = unsafeCast<{ x: number }>(obj);
     expect(result).toBe(obj);
   });
 
-  it("unsafe_cast passes through null and undefined", () => {
+  it("unsafeCast passes through null and undefined", () => {
     expect(unsafeCast<string>(null)).toBeNull();
     expect(unsafeCast<string>(undefined)).toBeUndefined();
   });

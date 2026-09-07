@@ -22,7 +22,7 @@ function find(events: readonly FrameTraceEvent[], pred: (e: FrameTraceEvent) => 
 }
 
 describe("frame-trace seam", () => {
-	it("captures one frame per update, bracketed by tick_begin and tick_end", () => {
+	it("captures one frame per update, bracketed by tickBegin and tickEnd", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Pos = world.registerComponent({ x: "i32" });
 		const sys = world.registerSystem({
@@ -252,7 +252,7 @@ describe("frame-trace seam", () => {
 		expect(rec.frames().length).toBe(1);
 	});
 
-	it("fires phase_boundary at each phase's post-flush settle point, in order", () => {
+	it("fires phaseBoundary at each phase's post-flush settle point, in order", () => {
 		// A sink that records flushEnd and phaseBoundary into one stream, so we can
 		// pin that phaseBoundary fires immediately after its phase's flushEnd, the
 		// consistent, fingerprint-able point.
@@ -287,7 +287,7 @@ describe("frame-trace seam", () => {
 		]);
 	});
 
-	it("the POST_UPDATE phase_boundary hash reconciles with the per-tick state_hash", () => {
+	it("the POST_UPDATE phaseBoundary hash reconciles with the per-tick stateHash", () => {
 		// stateHash() read at the POST_UPDATE boundary equals the post-update per-tick
 		// hash, for a world with no onSet observers, proving the seam fires at the
 		// settled point and the in-frame read sees the same state the tick-end hash does.
@@ -375,7 +375,7 @@ describe("frame-trace seam", () => {
 		);
 	});
 
-	it("is inert: the per-tick state_hash matches a world with no trace", () => {
+	it("is inert: the per-tick stateHash matches a world with no trace", () => {
 		const build = (): ECS => {
 			const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 			const Pos = world.registerComponent({ x: "i32" });

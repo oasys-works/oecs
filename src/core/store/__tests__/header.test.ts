@@ -3,9 +3,8 @@
  * 48 B, then 56 B, then 60 B, then 64 B, and then shrank to 52 B when the
  * five game-named region offsets became a generic region table.
  *
- * The bytes in `GOLDEN_HEX` are the contract: any unintentional change to
- * field order, width, or endianness will flip them and fail this test. Treat
- * it the same as `wire_fingerprint.test.ts` treats the wire codec.
+ * The bytes in `GOLDEN_HEX` are the contract. A change to field order, to a
+ * field width or to the endianness flips them and fails this test.
  *
  * `sim_abi_version` is 1. Version 1 makes every `*_off` relative to the store
  * base and `capacity` the store span from that base.
@@ -105,7 +104,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(readStoreHeader(view)).toEqual(FIXTURE);
 	});
 
-	it("bump_view_stamp increments in place and returns the new value", () => {
+	it("bumpViewStamp increments in place and returns the new value", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, viewStamp: 7 });
@@ -117,7 +116,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(readStoreHeader(view).viewStamp).toBe(9);
 	});
 
-	it("bump_view_stamp wraps at u32 (mod 2^32)", () => {
+	it("bumpViewStamp wraps at u32 (mod 2^32)", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, viewStamp: 0xff_ff_ff_ff });
@@ -128,7 +127,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(bumpViewStamp(view)).toBe(0);
 	});
 
-	it("is_valid_sab accepts a freshly written header", () => {
+	it("isValidStoreHeader accepts a freshly written header", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
 		writeStoreHeader(view, FIXTURE);
@@ -136,7 +135,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(isValidStoreHeader(view)).toBe(true);
 	});
 
-	it("is_valid_sab rejects wrong magic", () => {
+	it("isValidStoreHeader rejects wrong magic", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, magic: 0xdead_beef });
@@ -144,7 +143,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(isValidStoreHeader(view)).toBe(false);
 	});
 
-	it("is_valid_sab rejects wrong ABI version", () => {
+	it("isValidStoreHeader rejects wrong ABI version", () => {
 		const buf = new ArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buf);
 		writeStoreHeader(view, { ...FIXTURE, simAbiVersion: SIM_ABI_VERSION + 1 });
@@ -152,7 +151,7 @@ describe("SAB header, locked binary layout", () => {
 		expect(isValidStoreHeader(view)).toBe(false);
 	});
 
-	it("is_valid_sab rejects a buffer too small to hold the header", () => {
+	it("isValidStoreHeader rejects a buffer too small to hold the header", () => {
 		const view = new DataView(new ArrayBuffer(STORE_HEADER_BYTES - 1));
 
 		expect(isValidStoreHeader(view)).toBe(false);
@@ -160,10 +159,9 @@ describe("SAB header, locked binary layout", () => {
 
 	it("header layout matches when written through a SharedArrayBuffer view", () => {
 		// SAB and ArrayBuffer share the same DataView API and the same
-		// little-endian guarantee, but the eventual real-world target is
-		// a SAB shared with WASM. Hold both code paths under test so a
-		// future SAB-only divergence doesn't slip past the ArrayBuffer
-		// fixture above.
+		// little-endian guarantee. A worker and a WASM module both read the
+		// header off a SAB, so both paths stay under test and a SAB-only
+		// divergence cannot slip past the ArrayBuffer fixture above.
 		const buffer = new SharedArrayBuffer(STORE_HEADER_BYTES);
 		const view = new DataView(buffer);
 		writeStoreHeader(view, FIXTURE);

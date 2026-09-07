@@ -9,9 +9,9 @@
  *
  * BufferBackedColumn wraps a view at a known `(byte_off, row_capacity)` inside
  * a SAB and tracks a logical length on top of it. Capacity is the view's
- * length. Overrun throws. Growth uses a SAB realloc plus a `view_stamp`
- * bump. Until that is available, callers must size `row_capacity` for the
- * worst case at construction time.
+ * length, and an overrun throws. The column never grows itself. Growth is the
+ * store's job: `growColumnStore` relocates the column, bumps `view_stamp`, and
+ * the owner then calls `refreshView` with the wider view.
  *
  * Surface intentionally mirrors `GrowableTypedArray<T>` so the same archetype
  * code paths work against either backing without per-call branching.
@@ -21,10 +21,10 @@ import type { ColumnBacking } from "../../type_primitives";
 
 import type { AnyTypedArray } from "./column_store";
 
-/** Thrown when an operation would grow a fixed-capacity SAB column. The
- * grow path (re-allocate the SAB, bump `view_stamp`, rebuild views) is a
- * separate sub-task. Until it lands, hitting capacity is a hard error so
- * the symptom surfaces immediately rather than silently corrupting state. */
+/** Thrown when an operation would grow a fixed-capacity SAB column. The column
+ * does not own its buffer, so it cannot grow. The store's grow path
+ * (`growColumnStore`, then `refreshView`) is the only way capacity rises, and
+ * this throw makes a missed grow surface at once rather than corrupt state. */
 export class StoreColumnOverflowError extends Error {
 	public readonly capacity: number;
 	public readonly requested: number;
@@ -58,7 +58,7 @@ export class BufferBackedColumn<T extends AnyTypedArray> implements ColumnBackin
 	 *
 	 * Used to honour the `view_stamp` invariant after a host-side SAB realloc:
 	 * every cached column view must be rebuilt before
-	 * the next read/write. */
+	 * the next read or write. */
 	public refreshView(newView: T): void {
 		if (newView.length < this._len) {
 			throw new StoreColumnOverflowError(newView.length, this._len);

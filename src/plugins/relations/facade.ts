@@ -29,10 +29,9 @@ export class ECSRelations {
 	 * `{ onDeleteTarget: "delete" | "clear" | "orphan" }` selects target-death
 	 * cleanup (default `orphan`).
 	 *
-	 * The overloads stamp the cardinality into the handle type, exactly like
-	 * the flat `registerRelation`:
-	 * the exclusive-only surfaces (`targetOf`, `ancestorsOf` and `rootOf`/
-	 * `cascadeOf`, `Query.hierarchy`) accept only `RelationDef<"exclusive">`,
+	 * The overloads stamp the cardinality into the handle type:
+	 * the exclusive-only surfaces (`targetOf`, `ancestorsOf`, `rootOf`,
+	 * `cascadeOf` and `Query.hierarchy`) accept only `RelationDef<"exclusive">`,
 	 * so passing a `{ multi: true }` relation is a compile error. A
 	 * dynamically-built options value falls to the erased overload and keeps
 	 * the runtime check as its only guard. */
@@ -124,8 +123,8 @@ export class ECSRelations {
 
 	/** Reclaim relation reverse-index memory: drop every reverse entry whose
 	 * target has been destroyed, returning the total dropped. Purely
-	 * cold-path, no observable state change, call at a scene or snapshot
-	 * boundaries. */
+	 * cold-path, no observable state change, call it at a scene boundary or at
+	 * a snapshot boundary. */
 	public compact(): number {
 		return this._service.compactRelations();
 	}

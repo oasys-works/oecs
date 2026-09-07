@@ -171,7 +171,7 @@ describe("command log, recorder buckets startup vs ticks", () => {
 		expect(log.ticks[0].tick).not.toBe(log.ticks[1].tick);
 	});
 
-	it("strips the non-serializable on_spawned callback at record time", () => {
+	it("strips the non-serializable onSpawned callback at record time", () => {
 		const recorder = new HostCommandRecorder();
 		const { world, Cell, commands } = buildWorld(recorder);
 		world.startup();
@@ -199,9 +199,10 @@ describe("command log, serialize ↔ deserialize round-trips", () => {
 		const restored = deserializeCommandLog(serializeCommandLog(log));
 
 		// Lossless round-trip: re-serializing the restored log yields byte-identical
-		// JSON. (Deep object-equality won't work, a `ComponentDef` is a callable, so
-		// the reviver reconstructs a fresh def with the same id but a new identity
-		// the serialized form, which carries only the id, is the stable comparison.)
+		// JSON. Deep object-equality does not work, because a `ComponentDef` is a
+		// callable and the reviver rebuilds a fresh def with the same id and a new
+		// identity. The serialized form carries only the id, so it is the stable
+		// comparison.
 		expect(serializeCommandLog(restored)).toBe(serializeCommandLog(log));
 		expect(restored.seed).toBe(log.seed);
 		expect(restored.startup).toHaveLength(log.startup.length);
@@ -278,7 +279,7 @@ describe("command log, serialize ↔ deserialize round-trips", () => {
 });
 
 describe("command log, replay reaches the same state", () => {
-	it("replaying a deserialized log reproduces per-tick state_hash bit-for-bit", () => {
+	it("replaying a deserialized log reproduces per-tick stateHash bit-for-bit", () => {
 		const { recorder, hashes: original } = recordSession();
 
 		// Persist → restore the log, then replay against a brand-new world.

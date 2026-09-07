@@ -42,7 +42,7 @@ describe("Query cache coherence edge cases", () => {
 
 		const q = world.query(Pos);
 
-		// Phase 1: create and populate
+		// Create and populate.
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 1, y: 2 });
 		const e2 = world.spawn();
@@ -50,7 +50,7 @@ describe("Query cache coherence edge cases", () => {
 
 		expect(q.entityCount).toBe(2);
 
-		// Phase 2: destroy all via deferred + flush
+		// Destroy them all, deferred, then flush.
 		world.despawn(e1);
 		world.despawn(e2);
 		world.flush();
@@ -62,7 +62,7 @@ describe("Query cache coherence edge cases", () => {
 		});
 		expect(countAfterDestroy).toBe(0);
 
-		// Phase 3: add new entities to the same archetype shape
+		// Add new entities of the same archetype shape.
 		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 10, y: 20 });
 

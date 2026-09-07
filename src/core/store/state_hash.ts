@@ -43,7 +43,7 @@ export const FNV1A_PRIME = 0x01000193;
 /** One FNV-1a round folding a single **byte** (the low 8 bits of `b`) into the
  * running `hash`: `hash = imul((hash ^ (b & 0xff)) >>> 0, PRIME) >>> 0`. The
  * single canonical definition of the byte step, reused by `fnv1a32`
- * here, by the sparse-store `schemaFingerprint`, and by the server determinism
+ * here, by the sparse-store `schemaFingerprint`, and by the determinism
  * byte and u32 folds, so the constants and the round live in exactly one place.
  *
  * Trivially inlinable, monomorphic and allocation-free. The intermediate `>>> 0`s

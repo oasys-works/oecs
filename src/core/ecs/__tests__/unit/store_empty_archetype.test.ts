@@ -7,8 +7,8 @@
  * occupies no row, exactly like a freshly `createEntity`'d one. Before the fix,
  * an entity that *reached* the empty archetype by losing its last component was
  * instead given a real row there, so the empty archetype's live row count, and
- * therefore `stateHash` and zero-require query iteration, depended on add/
- * remove history rather than logical state. These tests pin every path into the
+ * therefore `stateHash` and zero-require query iteration, depended on the add
+ * and remove history rather than logical state. These tests pin every path into the
  * empty archetype (bare create, single, multi and tag remove, batch remove, empty
  * template spawn) to the same rowless form, plus the destroy and re-add lifecycle.
  */
@@ -60,7 +60,7 @@ describe("empty archetype is rowless", () => {
 		expect(emptyArchOf(s, e).length).toBe(0);
 	});
 
-	it("remove_components dropping all components lands in the rowless empty archetype", () => {
+	it("removeComponents dropping all components lands in the rowless empty archetype", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
 		const Vel = s.registerComponent(Velocity);
@@ -76,7 +76,7 @@ describe("empty archetype is rowless", () => {
 		expect(emptyArchOf(s, e).length).toBe(0);
 	});
 
-	it("batch_remove_component to the empty archetype unplaces every entity", () => {
+	it("batchRemoveComponent to the empty archetype unplaces every entity", () => {
 		const s = new Store({ deterministic: true });
 		const Tag = s.registerComponent({});
 		const es = [s.createEntity(), s.createEntity(), s.createEntity()];
@@ -104,7 +104,7 @@ describe("empty archetype is rowless", () => {
 		expect(emptyArchOf(s, e).length).toBe(0);
 	});
 
-	it("spawn_many from an empty template yields unplaced entities", () => {
+	it("spawnMany from an empty template yields unplaced entities", () => {
 		const s = new Store({ deterministic: true });
 		const p = s.createTemplate([]);
 		const es = s.spawnMany(p, 4);
@@ -143,7 +143,7 @@ describe("empty archetype is rowless", () => {
 	});
 });
 
-describe("state_hash is independent of add and remove history", () => {
+describe("stateHash is independent of add and remove history", () => {
 	it("losing the last component returns to the create-time hash", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);

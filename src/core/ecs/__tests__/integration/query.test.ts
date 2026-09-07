@@ -73,7 +73,7 @@ describe("ECS query (integration)", () => {
 	// Live .or() acceptance and rejection
 	//=========================================================
 
-	it("any_of() live, new matching archetype gets added to live array", () => {
+	it("or() live, new matching archetype gets added to live array", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -99,7 +99,7 @@ describe("ECS query (integration)", () => {
 		expect(entityIds).toContain(e2);
 	});
 
-	it("any_of() live, archetype with none of the any_of-components is not added", () => {
+	it("or() live, archetype with none of the or-components is not added", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -261,7 +261,7 @@ describe("ECS query (integration)", () => {
 	// Deferred structural changes + query consistency (via systems)
 	//=========================================================
 
-	it("deferred add_component does not change query result length until flush", () => {
+	it("deferred addComponent does not change query result length until flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -296,7 +296,7 @@ describe("ECS query (integration)", () => {
 		expect(after.nonEmptyArchs()[0].rowEntityIds).toContain(e1);
 	});
 
-	it("deferred remove_component does not change query result until flush", () => {
+	it("deferred removeComponent does not change query result until flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -408,7 +408,7 @@ describe("ECS query (integration)", () => {
 	// forEach iteration
 	//=========================================================
 
-	it("for_each yields non-empty archetypes with correct columns and count", () => {
+	it("forEach yields non-empty archetypes with correct columns and count", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -440,7 +440,7 @@ describe("ECS query (integration)", () => {
 		expect(totalEntities).toBe(2);
 	});
 
-	it("for_each skips archetypes with zero entities", () => {
+	it("forEach skips archetypes with zero entities", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -462,7 +462,7 @@ describe("ECS query (integration)", () => {
 		expect(archCount).toBe(0);
 	});
 
-	it("for_each iteration allows column mutation", () => {
+	it("forEach iteration allows column mutation", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -499,7 +499,7 @@ describe("ECS query (integration)", () => {
 	// registerSystem with QueryBuilder
 	//=========================================================
 
-	it("register_system with query builder resolves query at registration time", () => {
+	it("registerSystem with query builder resolves query at registration time", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -524,7 +524,7 @@ describe("ECS query (integration)", () => {
 		expect(capturedQ.archetypeCount).toBe(1);
 	});
 
-	it("register_system with config object still works", () => {
+	it("registerSystem with config object still works", () => {
 		const world = new ECS();
 		let ran = false;
 		const sys = world.registerSystem({

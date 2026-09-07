@@ -1,10 +1,9 @@
 /**
- * Command dispatch, the generic drain surface a consumer registers against
- * (a game-agnostic ECS).
+ * Command dispatch, the generic drain surface a consumer registers against.
  *
  * The command ring (`command_ring.ts`) carries opaque `(opCode, payload)`
- * slots. The engine never interprets a code. This module is the thin,
- * game-free glue that lets a consumer bind a payload codec + typed handler to
+ * slots. The engine never interprets a code. This module is the thin glue that
+ * lets a consumer bind a payload codec and a typed handler to
  * each opcode and drain the ring in one call. The opcode enum and the codecs
  * themselves stay consumer-owned. A consumer names its own opcode table, its
  * own payload fields and its own encode and decode pair. The engine knows none
@@ -45,9 +44,9 @@ interface OpcodeBinding {
 }
 
 /**
- * Registry mapping command opcodes to a payload codec + handler. Generic over
- * the consumer's opcodes, the engine ships the mechanism. The game supplies
- * the codes and codecs.
+ * Registry mapping command opcodes to a payload codec and a handler. Generic
+ * over the consumer's opcodes: the engine ships the mechanism, and the consumer
+ * supplies the codes and the codecs.
  */
 export class CommandDispatcher {
 	private readonly _bindings = new Map<number, OpcodeBinding>();

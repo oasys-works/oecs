@@ -6,7 +6,7 @@
  * speed, but the smallest surprise. Major collections went to **zero**, total
  * pause dropped 32.5x, and the longest single pause, the number a person
  * actually feels, went from **13.04 ms to 0.33 ms**. A 13 ms pause blows a
- * 16.7 ms frame; 0.33 ms does not.
+ * 16.7 ms frame. 0.33 ms does not.
  *
  * One caveat this probe cannot remove: experiment 21's hybrid included an
  * interned string table and a decode cache. `oecs` has no string columns, so

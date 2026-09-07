@@ -71,7 +71,7 @@ export { observers } from "./src/plugins/observers/index.ts";
 export async function buildLib(outfile, { dev = false, from = root } = {}) {
 	const fs = await import("node:fs");
 	// Written beside `src/` so its relative specifiers resolve, and named so a
-	// stray copy is obviously generated.
+	// stray copy reads as generated.
 	const shim = path.join(from, ".bench-entry.generated.ts");
 	fs.writeFileSync(shim, ENTRY_SHIM);
 	try {

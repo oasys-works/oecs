@@ -185,7 +185,7 @@ describe("SparseMap", () => {
     expect(new Set(m.keys)).toEqual(new Set([1, 2, 3]));
   });
 
-  it("for_each visits all entries", () => {
+  it("forEach visits all entries", () => {
     const m = new SparseMap<number>();
     m.set(1, 10);
     m.set(2, 20);

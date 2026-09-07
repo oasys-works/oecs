@@ -47,7 +47,7 @@
  * cursor one for each component. An engine gives an object a distinct shape
  * for each distinct prototype, so five components gave the getter's read of
  * `this` five shapes. V8 keeps one access site fast for at most four shapes.
- * At the fifth, every ref and every cursor in the process paid a large multiple
+ * At the fifth, every ref and every cursor in the process got far slower
  * on each field access, in a world with only five components, and with every
  * column of one type. Measured, not inferred.
  *
@@ -69,7 +69,7 @@
  * constant. A property key that comes from an imported binding is not a
  * constant to the optimizer: the bundle puts this file and the store in
  * different chunks, and a key read through the import cell makes every access
- * a generic keyed load, which costs several times a field load. A symbol has
+ * a generic keyed load, which is far slower than a field load. A symbol has
  * the same problem, because a symbol can only be reached through a binding.
  * Measured, and it was the whole cost of a field read before this note.
  *
@@ -78,8 +78,8 @@
  * V8 shares one feedback vector between every closure made from the same
  * function literal. One getter literal would give every accessor in the
  * process one typed-array access site, and that site would see every column
- * type in the world. V8 keeps a site fast for at most four typed-array kinds
- * at the fifth, every accessor becomes slow. JavaScriptCore pays a smaller
+ * type in the world. V8 keeps a site fast for at most four typed-array kinds.
+ * At the fifth, every accessor becomes slow. JavaScriptCore pays a smaller
  * cost from the second kind. So there is one literal for each kind, and the
  * first registration of a field name selects the literal by that field's type.
  * When a later component gives the same name a different type, the name's
@@ -249,7 +249,7 @@ function checkedCol(cols: AccessorColumns, gid: number, name: string): AnyTypedA
 	if (cols === EMPTY_COLS) {
 		throw new ECSError(
 			ECS_ERROR.FIELD_NOT_REGISTERED,
-			`Field "${name}" was read from a cursor before its first at(entity), point the cursor at an entity first`,
+			`Field "${name}" was read from a cursor before its first at(entity). Point the cursor at an entity first`,
 			{ field: name }
 		);
 	}
@@ -257,7 +257,7 @@ function checkedCol(cols: AccessorColumns, gid: number, name: string): AnyTypedA
 	if (c === undefined || c === NO_COLUMN) {
 		throw new ECSError(
 			ECS_ERROR.FIELD_NOT_REGISTERED,
-			`Field "${name}" is not a field of the component this accessor reads, check the schema passed to registerComponent`,
+			`Field "${name}" is not a field of the component this accessor reads. Check the schema passed to registerComponent`,
 			{ field: name }
 		);
 	}
@@ -479,7 +479,7 @@ export function createCursor<S extends ComponentSchema>(
 				ECS_ERROR.FIELD_NOT_REGISTERED,
 				`A component with a field named "${CURSOR_RESERVED}" cannot be read through a cursor, ` +
 					`the name collides with the cursor's own \`${CURSOR_RESERVED}(entity)\` method. Rename the ` +
-					`field, or read this component with getField / ref instead.`,
+					`field, or read this component with getField or ref instead.`,
 				{ field: fieldNames[i] }
 			);
 		}

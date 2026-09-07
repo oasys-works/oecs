@@ -27,7 +27,7 @@ describe("Run conditions", () => {
 	// Acceptance 1, a false gate == the system being absent that tick
 	//=========================================================
 
-	it("a false run-condition skips the body: state_hash identical to removing the system", () => {
+	it("a false run-condition skips the body: stateHash identical to removing the system", () => {
 		const Flag = resourceKey<boolean>("Flag");
 
 		// World A: system gated off (resource is false → condition never fires).
@@ -102,7 +102,7 @@ describe("Run conditions", () => {
 	// Built-ins
 	//=========================================================
 
-	it("run_if_resource_eq gates on a resource value", () => {
+	it("runIfResourceEq gates on a resource value", () => {
 		const Paused = resourceKey<boolean>("Paused");
 		const world = new ECS({ deterministic: true });
 		world.resources.register(Paused, true);
@@ -126,7 +126,7 @@ describe("Run conditions", () => {
 		expect(runs).toBe(2);
 	});
 
-	it("run_every_n_ticks fires on tick % n === 0 (deterministic, tick-keyed)", () => {
+	it("runEveryNTicks fires on tick % n === 0 (deterministic, tick-keyed)", () => {
 		const world = new ECS({ deterministic: true });
 		const ranOn: number[] = [];
 		const sys = world.registerSystem((ctx) => {
@@ -139,7 +139,7 @@ describe("Run conditions", () => {
 		expect(ranOn).toEqual([0, 3, 6]);
 	});
 
-	it("run_every_n_ticks honours an offset phase-shift", () => {
+	it("runEveryNTicks honours an offset", () => {
 		const world = new ECS({ deterministic: true });
 		const ranOn: number[] = [];
 		const sys = world.registerSystem((ctx) => {
@@ -152,7 +152,7 @@ describe("Run conditions", () => {
 		expect(ranOn).toEqual([1, 4]);
 	});
 
-	it("run_every_n_ticks folds an out-of-range or negative offset into [0, n)", () => {
+	it("runEveryNTicks folds an out-of-range or negative offset into [0, n)", () => {
 		const runWith = (n: number, offset: number): number[] => {
 			const world = new ECS({ deterministic: true });
 			const ranOn: number[] = [];
@@ -165,19 +165,20 @@ describe("Run conditions", () => {
 			return ranOn;
 		};
 
-		// offset is a phase mod n: 7 ≡ 1, 6 ≡ 0, −1 ≡ 2 (mod 3). No spurious early
-		// fire from signed-zero modulo, each equals its in-range phase.
+		// The offset folds into [0, n) at construction: 7 ≡ 1, 6 ≡ 0, −1 ≡ 2
+		// (mod 3). No spurious early fire from signed-zero modulo, each folded
+		// offset runs on the ticks its in-range twin runs on.
 		expect(runWith(3, 7)).toEqual(runWith(3, 1)); // [1, 4, 7]
 		expect(runWith(3, 7)).toEqual([1, 4, 7]);
 		expect(runWith(3, 6)).toEqual([0, 3, 6]); // ≡ offset 0
 		expect(runWith(3, -1)).toEqual([2, 5]); // ≡ offset 2
 	});
 
-	it("run_every_n_ticks rejects a non-integer offset in __DEV__", () => {
+	it("runEveryNTicks rejects a non-integer offset in __DEV__", () => {
 		expect(() => runEveryNTicks(3, 1.5)).toThrow(/offset must be an integer/);
 	});
 
-	it("run_if_any_match gates on whether a query matches an entity", () => {
+	it("runIfAnyMatch gates on whether a query matches an entity", () => {
 		const world = new ECS({ deterministic: true });
 		const Marker = world.registerComponent([] as const);
 		const q = world.query(Marker);
@@ -247,7 +248,7 @@ describe("Run conditions", () => {
 		expect(() => world.update(1 / 60)).toThrow(/didn't declare it/);
 	});
 
-	it("the built-in run_if_resource_eq declares its read, so it does not throw", () => {
+	it("the built-in runIfResourceEq declares its read, so it does not throw", () => {
 		const Flag = resourceKey<boolean>("Flag");
 		const world = new ECS({ deterministic: true });
 		world.resources.register(Flag, true);
@@ -323,7 +324,7 @@ describe("System sets", () => {
 		expect(runOnce(false, false)).toBe(0); // both false → skip
 	});
 
-	it("configure_set works regardless of order relative to add_systems", () => {
+	it("configureSet works regardless of order relative to addSystems", () => {
 		const On = resourceKey<boolean>("On");
 		const world = new ECS({ deterministic: true });
 		world.resources.register(On, false);

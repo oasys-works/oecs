@@ -4,7 +4,7 @@
  * One instance per pass, re-pointed at each matched archetype. Its four
  * methods run once per archetype per pass, never per row, so the inner loop
  * of a chunk body pays nothing for them. `query.ts` and `changed_query.ts`
- * both allocate one, and `ECS.eachChunk` hands it to the caller.
+ * both allocate one, and each hands it to the chunk body of `forEachChunk`.
  *
  * The class is public API, so a field added here widens the shipped surface.
  ***/
@@ -25,7 +25,7 @@ import { DEV } from "../../dev_flag";
 
 /**
  * forEachChunk cursor. One instance is allocated per `forEachChunk`
- * pass and reused across every matched archetype in that pass, only `arch`/
+ * pass and reused across every matched archetype in that pass. Only `arch` and
  * `tick` are re-pointed per archetype, so the inner loop allocates nothing.
  * Per-call (not cached on the query) so a nested `forEachChunk` on the same query
  * gets its own cursor and can't re-point an outer pass's position. `.mut(def)`

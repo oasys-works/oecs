@@ -44,7 +44,7 @@ describe("entity_index, constants", () => {
 });
 
 describe("entity_index, sizing", () => {
-	it("region_bytes = header + capacity * 12", () => {
+	it("entityIndexRegionBytes = header + capacity * 12", () => {
 		expect(entityIndexRegionBytes(0)).toBe(16);
 		expect(entityIndexRegionBytes(1)).toBe(16 + 12);
 		expect(entityIndexRegionBytes(100)).toBe(16 + 1200);
@@ -71,7 +71,7 @@ describe("entity_index, init + readers", () => {
 		expect(entityIndexCapacity(view, 0)).toBe(8);
 	});
 
-	it("set_entity_index_length writes through", () => {
+	it("setEntityIndexLength writes through", () => {
 		const { view } = freshRegion(8);
 		setEntityIndexLength(view, 0, 5);
 		expect(entityIndexLength(view, 0)).toBe(5);

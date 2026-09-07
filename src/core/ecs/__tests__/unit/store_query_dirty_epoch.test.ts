@@ -1,5 +1,5 @@
 /**
- * `Store._queryDirtyEpoch`, coalesced query-dirty signal.
+ * `Store.queryDirtyEpoch`, coalesced query-dirty signal.
  *
  * Replaces the per-mutation walk over `registeredQueries` that wrote one
  * dirty bit per query. The epoch is a monotonic integer bumped by every
@@ -27,7 +27,7 @@ const Position = ["x", "y"] as const;
 const Velocity = ["vx", "vy"] as const;
 
 describe("Store._query_dirty_epoch", () => {
-	it("coalesces N immediate add_component calls into zero epoch bumps once the target archetype is non-empty", () => {
+	it("coalesces N immediate addComponent calls into zero epoch bumps once the target archetype is non-empty", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
@@ -105,9 +105,9 @@ describe("Store._query_dirty_epoch", () => {
 		});
 		expect(count).toBe(1);
 
-		// Drain the archetype, _mark_queries_dirty fires via destroyEntity's
-		// _rowCountsDirty path? It does (immediate destroyEntity sets the
-		// flag and bumps the epoch through that path).
+		// Drain the archetype. Immediate `destroyEntity` reaches `_onArchShrink`,
+		// which sets the row-count flag and bumps the epoch on the 1 to 0
+		// crossing.
 		const store = (world as unknown as { _store: Store })._store;
 		store.destroyEntity(e);
 

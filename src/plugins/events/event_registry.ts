@@ -1,10 +1,11 @@
 /***
- * EventRegistry, event channel registry + the per-tick dirty list.
+ * EventRegistry, the event channel registry and the per-tick dirty list.
  *
  * Owns the `EventChannel` array (parallel, indexed by EventID), the
  * symbol-key → def map behind `eventKey` and `signalKey` registration, and the
- * dirty-channel list `clearEvents` drains. Extracted from `Store`, which keeps
- * one-line delegations. Fully self-contained (no Store reach-back).
+ * dirty-channel list `clear` drains. The store holds this registry in its
+ * events slot and calls it through the `EventHooks` seam. The registry reaches
+ * back into the store never.
  ***/
 
 import { unsafeCast } from "../../type_primitives";
@@ -22,9 +23,9 @@ import { ECS_ERROR, ECSError } from "../../core/ecs/utils/error";
 export class EventRegistry implements EventHooks {
 	// Parallel array indexed by EventID: each channel holds SoA columns + reader.
 	private readonly _channels: EventChannel[] = [];
-	// IDs of channels emitted to since the last `clearEvents()`. An `emit*`
+	// IDs of channels emitted to since the last `clear()`. An `emit*`
 	// only pushes when the channel was empty (`reader.length === 0`), so each
-	// dirty channel appears at most once per tick, `clearEvents` then walks
+	// dirty channel appears at most once per tick, `clear` then walks
 	// only these instead of every registered channel.
 	private readonly _dirtyChannels: number[] = [];
 	private _nextEventId = 0;
@@ -82,9 +83,9 @@ export class EventRegistry implements EventHooks {
 	}
 
 	/** `DEV`-only: total events currently buffered across the dirty channels.
-	 * `ECS.update` samples this either side of `dispatchSet` to assert an onSet
-	 * observer emitted nothing, its emissions would be wiped by the tick-tail
-	 * `clearEvents` and break the empty-channel-at-boundary invariant that
+	 * `ECS.update` samples this either side of the settle hooks to assert an
+	 * onSet observer emitted nothing, its emissions would be wiped by the
+	 * tick-tail `clear` and break the empty-channel-at-boundary invariant that
 	 * snapshot and restore rely on. Walks only the dirty list, never the hot emit path. */
 	public devBufferedCount(): number {
 		const dirty = this._dirtyChannels;

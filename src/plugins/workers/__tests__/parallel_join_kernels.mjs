@@ -7,7 +7,7 @@
  *
  * `begin` is the first row of the worker's range, so it names the worker
  * without any channel of its own. The body spins for a stretch proportional to
- * it, which orders the reports and spreads them over milliseconds. Worker zero
+ * it, which orders the reports and spreads them far apart. Worker zero
  * reports at once and the last worker reports well after it.
  *
  * A worker imports this file by URL, which is why it is a plain module and not

@@ -4,17 +4,17 @@ Version 0.4 derives oecs again from the ECS of the upstream oasys engine. The fu
 moved to the shape of that engine. So **each consumer meets breaking changes**. But those changes
 group into a small number of mechanical rules:
 
-1. **Names**. Each method, property, and field changed from `snake_case` to `camelCase` (§0), and
+1. **Names**. Each method, property, and field changed from `snake_case` to `camelCase` ([the camelCase rename](#0-names-from-snake_case-to-camelcase)), and
    a small number of verbs changed also.
 2. **Construction of the world**, `WorldOptions` becomes `ECSOptions`, and `initial_capacity`
-   becomes the `memory` surface (§1).
+   becomes the `memory` surface ([construction of the world](#1-construction-of-the-world-initial_capacity-is-gone)).
 3. **Systems**. A `__DEV__` access checker now requires each system that touches component data to
-   declare `reads` and `writes`, through the config form (§2).
+   declare `reads` and `writes`, through the config form ([the access declaration](#2-a-system-that-touches-component-data-must-declare-reads-and-writes)).
 4. **Iteration and column access**. Mutation is now the default, because the `_mut` suffix is
-   gone. The high-frequency loop that mutates is `eachChunk` with `cols.mut` (§3).
+   gone. The high-frequency loop that mutates is `eachChunk` with `cols.mut` ([column and ref access](#3-column-and-ref-access-mutable-by-default-and-read-only-by-an-explicit-name)).
 5. **Events and resources**. The key factories changed their names, and the shape of an event
-   schema changed (§4).
-6. **Errors**. The vocabulary is still public. `is_ecs_error` became `isEcsError` (§5).
+   schema changed ([events and resources](#4-events-and-resources-renamed-factories-and-a-new-shape-for-an-event-schema)).
+6. **Errors**. The vocabulary is still public. `is_ecs_error` became `isEcsError` ([errors](#5-errors-still-public-and-is_ecs_error-is-now-isecserror)).
 
 Types and handles stay **PascalCase** (`ECS`, `EntityID`, `SCHEDULE`, and your own `Pos` and
 `Vel`). The SCREAMING_SNAKE constants (`SCHEDULE.UPDATE`, and others) did not change.
@@ -67,13 +67,13 @@ snake_case alias.
 | `query.any_of(...)` | `query.anyOf(...)` | the term for a minimum of one |
 | `query.for_each(...)` | `query.forEach(...)` | read-only iteration of the archetypes |
 | `arch.get_column(def, field)` | `arch.getColumnRead(def, field)` | a read-only column |
-| `arch.get_column_mut(def, field, tick)` | *(internal)*, mutate with `query.eachChunk` and `cols.mut(def)` | see §3 |
+| `arch.get_column_mut(def, field, tick)` | *(internal)*, mutate with `query.eachChunk` and `cols.mut(def)` | see [column and ref access](#3-column-and-ref-access-mutable-by-default-and-read-only-by-an-explicit-name) |
 | `ctx.ref(def, e)` *(was read-only)* | `ctx.refRead(def, e)` | a read-only ref |
 | `ctx.ref_mut(def, e)` | `ctx.ref(def, e)` | the mutable ref is now the name with no suffix |
 | `world.destroy_entity_deferred(id)` | `world.destroyEntity(id)` | still deferred to the flush at the end of the phase |
-| `event_key(...)` / `signal_key(...)` | `eventKey(...)` / `signalKey(...)` | see §4 |
-| `resource_key(...)` | `resourceKey(...)` | see §4 |
-| `is_ecs_error(...)` | `isEcsError(...)` | still public, see §5 |
+| `event_key(...)` and `signal_key(...)` | `eventKey(...)` and `signalKey(...)` | see [events and resources](#4-events-and-resources-renamed-factories-and-a-new-shape-for-an-event-schema) |
+| `resource_key(...)` | `resourceKey(...)` | see [events and resources](#4-events-and-resources-renamed-factories-and-a-new-shape-for-an-event-schema) |
+| `is_ecs_error(...)` | `isEcsError(...)` | still public, see [errors](#5-errors-still-public-and-is_ecs_error-is-now-isecserror) |
 
 > **The meaning of the `ref` name changed.** In 0.3, `ctx.ref` gave a *read-only* ref, and
 > `ctx.ref_mut` gave the writable one. In 0.4 the name with no suffix is the **mutable** default
@@ -364,14 +364,14 @@ increase of the major version. Use them as they help you:
 
 ## A quick checklist
 
-- [ ] Change each `snake_case` call to `camelCase` (§0).
-- [ ] `every` → `with`, `not` → `without`, `any_of` → `anyOf`, and `for_each` → `forEach` (§0).
-- [ ] Change `ctx.ref` (a read) → `ctx.refRead`, and `ctx.ref_mut` (a write) → `ctx.ref` (§0 and
-      §3).
-- [ ] `WorldOptions` → `ECSOptions`. Replace `initial_capacity` with an arm of `memory` (§1).
-- [ ] Move each system that touches a component to the config form, with `reads` and `writes` (§2).
-- [ ] Change each mutating `get_column_mut` loop to `eachChunk` with `cols.mut` (§3).
+- [ ] Change each `snake_case` call to `camelCase` ([the camelCase rename](#0-names-from-snake_case-to-camelcase)).
+- [ ] `every` → `with`, `not` → `without`, `any_of` → `anyOf`, and `for_each` → `forEach` ([the camelCase rename](#0-names-from-snake_case-to-camelcase)).
+- [ ] Change `ctx.ref` (a read) → `ctx.refRead`, and `ctx.ref_mut` (a write) → `ctx.ref` ([the camelCase rename](#0-names-from-snake_case-to-camelcase) and
+      [column and ref access](#3-column-and-ref-access-mutable-by-default-and-read-only-by-an-explicit-name)).
+- [ ] `WorldOptions` → `ECSOptions`. Replace `initial_capacity` with an arm of `memory` ([construction of the world](#1-construction-of-the-world-initial_capacity-is-gone)).
+- [ ] Move each system that touches a component to the config form, with `reads` and `writes` ([the access declaration](#2-a-system-that-touches-component-data-must-declare-reads-and-writes)).
+- [ ] Change each mutating `get_column_mut` loop to `eachChunk` with `cols.mut` ([column and ref access](#3-column-and-ref-access-mutable-by-default-and-read-only-by-an-explicit-name)).
 - [ ] `event_key`, `signal_key`, and `resource_key` → `eventKey`, `signalKey`, and `resourceKey`.
-      Change each event schema to a record of field to type (§4).
-- [ ] `is_ecs_error` → `isEcsError` (it is still public) (§5).
-- [ ] `remove_components(e, A, B)` → `removeComponents(e, [A, B])` (§6).
+      Change each event schema to a record of field to type ([events and resources](#4-events-and-resources-renamed-factories-and-a-new-shape-for-an-event-schema)).
+- [ ] `is_ecs_error` → `isEcsError` (it is still public) ([errors](#5-errors-still-public-and-is_ecs_error-is-now-isecserror)).
+- [ ] `remove_components(e, A, B)` → `removeComponents(e, [A, B])` ([small changes to a signature](#6-small-changes-to-a-signature)).

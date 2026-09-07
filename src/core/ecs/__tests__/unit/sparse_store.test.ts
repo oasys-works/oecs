@@ -58,7 +58,7 @@ describe("SparseComponentStore (substrate)", () => {
 		expect(tag.indices).toContain(2);
 	});
 
-	it("set_field on an absent index is a no-op returning false", () => {
+	it("setField on an absent index is a no-op returning false", () => {
 		const store = new SparseComponentStore(["hp"], ["f64"]);
 		expect(store.setField(3, 0, 5, 0)).toBe(false);
 	});
@@ -110,7 +110,7 @@ describe("ECS sparse component API", () => {
 });
 
 describe("sparse no-transition invariant", () => {
-	it("add and remove churn leaves archetype_count and the entity's archetype_id stable", () => {
+	it("add and remove churn leaves archetypeCount and the entity's archetypeId stable", () => {
 		const store = new Store();
 		const Position = store.registerComponent(Pos);
 		const Health = store.registerSparseComponent(Hp);

@@ -722,7 +722,7 @@ this harness covers:
 | `run.mjs` | the CLI: the selected suite, `--soak`, and one case |
 | `mutants.mjs` | injection of a bug, it proves that the oracle fails when it must. Its battery holds one case for the probes of the API surface, and that case is last. |
 | `oracle.test.mjs` | the same layers against the live TypeScript sources, through vitest |
-| `vitest.config.ts` | the configuration that makes `oracle.test.mjs` reachable. The root configuration keeps `bench/` Out of `pnpm test`. |
+| `vitest.config.ts` | the configuration that makes `oracle.test.mjs` reachable. The root configuration keeps `bench/` out of `pnpm test`. |
 
 Both sides share `spec.mjs`, and this is intentional. The item under test is the *storage* of a net
 in the ECS. It is not our ability to write the rules of an interaction net two times. Examine the

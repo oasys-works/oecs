@@ -87,19 +87,19 @@ describe("heap backing: construct + grow + tick", () => {
 		expect(isSab(world.columnStore.buffer)).toBe(false);
 	});
 
-	it("the live world's buffer is fixed (non-resizable). V8 fast-path guard (0.5.3)", () => {
-		// The user-facing end of the 0.5.3 fix: a real heap world's column buffer
-		// must be non-resizable so every `col[i]` in a system stays on V8's fast
-		// element-access path. Reverting the allocator to a resizable buffer would
-		// silently make the iteration of every system far slower. Assert the shape here.
+	it("the live world's buffer is fixed (non-resizable), the V8 fast-path guard", () => {
+		// A real heap world's column buffer must be non-resizable, so every
+		// `col[i]` in a system stays on V8's fast element-access path. An
+		// allocator that went back to a resizable buffer would silently make
+		// the iteration of every system far slower. Assert the shape here.
 		const { world } = worldWithMovers({ memory: { backing: "heap" } }, 2000, 1);
 		const buffer = world.columnStore.buffer as unknown as { resizable: boolean };
 		expect(buffer.resizable).toBe(false);
 	});
 
-	it("constructs + ticks + grows under a small heap.maxBytes cap", () => {
+	it("constructs + ticks + grows under a small maxBytes cap on the heap backing", () => {
 		// Regression: the heap arm used to hardcode the full entity-index
-		// reservation (~12 MiB), so any `heap.maxBytes` below that threw
+		// reservation (~12 MiB), so any `memory.maxBytes` below that threw
 		// StoreCapExceededError at `new ECS(...)`, before the world even existed.
 		// A small-cap heap world must construct, tick, and grow like the
 		// equivalent maxBytes SAB world (whose arm always clamped the index).
@@ -147,7 +147,7 @@ describe("heap backing: construct + grow + tick", () => {
 describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
 	// Why this backing exists: JavaScriptCore has no fast store path for a
 	// TypedArray view over a growable `SharedArrayBuffer`. Reads cost what a
-	// fixed buffer costs. Every column write costs several times more, so an
+	// fixed buffer costs. Every column write costs far more, so an
 	// iteration-bound system on the shared profile runs far slower on Safari and
 	// Bun than the same system on the heap profile. A fixed SAB removes that,
 	// and it keeps the sharing the profile exists for. V8 shows no difference,
@@ -209,7 +209,7 @@ describe("fixed SAB backing: a shared buffer reserved at the cap", () => {
 		}
 	});
 
-	it("agrees with a heap world on state_hash", () => {
+	it("agrees with a heap world on stateHash", () => {
 		const heap = worldWithMovers({ memory: { backing: "heap" }, deterministic: true }, 200, 3);
 		const fixed = worldWithMovers({ ...fixedSabWorld(), deterministic: true }, 200, 3);
 		expect(fixed.world.snapshots.stateHash()).toBe(heap.world.snapshots.stateHash());
@@ -222,13 +222,13 @@ describe("heap backing: determinism is backing-agnostic", () => {
 		return world.snapshots.stateHash();
 	};
 
-	it("two heap worlds with identical history agree on state_hash", () => {
+	it("two heap worlds with identical history agree on stateHash", () => {
 		expect(build({ memory: { backing: "heap" }, deterministic: true })).toBe(
 			build({ memory: { backing: "heap" }, deterministic: true })
 		);
 	});
 
-	it("a heap world and a shared (SharedArrayBuffer) world agree on state_hash", () => {
+	it("a heap world and a shared (SharedArrayBuffer) world agree on stateHash", () => {
 		// The digest folds column bytes, not the buffer kind, so swapping the
 		// backing must not perturb it.
 		expect(build({ memory: { backing: "heap" }, deterministic: true })).toBe(

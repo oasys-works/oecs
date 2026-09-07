@@ -1,18 +1,17 @@
 /**
- * Generic SAB region table, the de-gamed replacement for the five game-named
- * header offset fields (`terrain_off`, `spatial_grid_off`, … ) the substrate
- * used to hard-code.
+ * Generic SAB region table, the de-gamed replacement for the five
+ * consumer-named header offset fields the substrate used to hard-code.
  *
  * The engine ships only genuinely-generic mechanism regions (the command,
  * event and action rings and the entity-index) as named `StoreHeader` fields. A
- * Consumer (a game) declares the named regions it wants, terrain, a spatial
- * grid, whatever, as `StoreRegionSpec`s. The engine lays each out after the
+ * consumer declares the named regions it wants, a terrain grid, a spatial
+ * index, whatever, as `StoreRegionSpec`s. The engine lays each out after the
  * mechanism regions, writes a `RegionTableEntry` `(region_id, byte_offset,
  * byte_length)` into a directory at `header.region_table_off`, snapshots and
  * restores it across a SAB grow and extend, and exposes a generic
  * `regionHandle(id)`. The engine never interprets `region_id`. It is a
- * consumer-owned token the consumer also resolves on the read side
- * (`findRegionOffset` here, `abi.find_region` in Zig).
+ * consumer-owned token the consumer also resolves on the read side, with
+ * `findRegionOffset` here or the matching module-side lookup.
  *
  * The directory is self-describing: each entry carries the region's full byte
  * length, so the realloc snapshot and restore path copies a region across a grow
@@ -45,7 +44,7 @@ export { REGION_TABLE_ENTRY_BYTES, REGION_TABLE_ENTRY_OFFSETS };
  * firing per realloc. */
 export interface StoreRegionSpec {
 	/** Consumer-owned region id (nonzero, distinct). Written to the directory
-	 * resolved by the consumer through `findRegionOffset` or `abi.find_region`. */
+	 * resolved by the consumer through `findRegionOffset`. */
 	readonly id: number;
 	/** Human label for diagnostics and the self-documenting directory dump. */
 	readonly name: string;
@@ -189,8 +188,8 @@ export function readHeaderRegionTable(view: DataView): RegionTableEntry[] {
 }
 
 /** Resolve a consumer region's store-relative byte offset by `region_id`, or 0
- * when absent (no directory, or no matching entry). The TS twin of Zig
- * `abi.find_region(header_addr, region_id)`. 0 is an unambiguous "absent"
+ * when absent (no directory, or no matching entry). The TS twin of the
+ * module-side lookup. 0 is an unambiguous "absent"
  * sentinel because a real region never starts at relative offset 0, which the
  * header occupies. */
 export function findRegionOffset(view: DataView, regionId: number): number {

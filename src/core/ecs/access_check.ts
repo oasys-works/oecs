@@ -121,7 +121,8 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	}
 	// Sparse and relation terms are optional, a dense-only system omits
 	// them entirely, so coalesce undefined to a no-op. Write implies read, same
-	// as dense. Add, remove and set_field all consult the `*_writes` set (sparse and
+	// as dense. Add, remove and set-field all consult `sparseWrites` or
+	// `relationWrites` (sparse and
 	// relation mutations are not split into add, remove and write like the dense
 	// archetype path, because they trigger no archetype transition).
 	const sparseW = desc.sparseWrites;
@@ -249,7 +250,7 @@ class AccessCheck {
 
 	/** Open a reads-only span for a run condition. No descriptor, a
 	 * condition can gate a whole SystemSet, so it isn't attributable to one
-	 * system, only its declared reads and resource_reads and a name for diagnostics.
+	 * system, only its declared `reads` and `resourceReads` and a name for diagnostics.
 	 * Paired with `leave()`. */
 	enterCondition(cond: ConditionAccess): void {
 		this._activeSystem = null;
@@ -288,13 +289,13 @@ class AccessCheck {
 	assertAdd(def: ComponentHandle): void {
 		if (this._activeSets === null) return;
 		if (this._activeSets.addAllowed.has(def.id)) return;
-		this._failComponent("addComponent", def, "spawns / transitions.add / writes");
+		this._failComponent("addComponent", def, "spawns, transitions.add or writes");
 	}
 
 	assertRemove(def: ComponentHandle): void {
 		if (this._activeSets === null) return;
 		if (this._activeSets.removeAllowed.has(def.id)) return;
-		this._failComponent("removeComponent", def, "despawns / transitions.remove");
+		this._failComponent("removeComponent", def, "despawns or transitions.remove");
 	}
 
 	assertDespawn(): void {
@@ -304,7 +305,7 @@ class AccessCheck {
 		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' called despawn but didn't declare any despawns, declare the components this system removes via despawn in its 'despawns'`,
+			`system '${name}' called despawn but didn't declare any despawns. Name the components it removes in 'despawns'`,
 			{ system: name, op: "despawn" }
 		);
 	}
@@ -373,8 +374,8 @@ class AccessCheck {
 	}
 
 	// --- Optional query-term scope ---
-	// `Query.forEach` and `ChangedQuery.forEach` push the iterating query's
-	// `_optional` term list for the span of the callback
+	// The dense iterators of `Query` and `ChangedQuery` push the iterating
+	// query's `terms.optionalTerms` list for the span of the callback.
 	// `Archetype.getOptionalColumnRead` then verifies the fetched component was
 	// declared via `.optional(T)`, the term that authorizes the optional fetch.
 	// This is what makes the optional term *consumed* rather than decorative: like
@@ -412,7 +413,7 @@ class AccessCheck {
 		}
 		throw new ECSError(
 			ECS_ERROR.OPTIONAL_TERM_NOT_DECLARED,
-			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it, add .optional(component) to the query before fetching it`
+			`getOptionalColumnRead fetched optional component ${cid} but the iterating query didn't declare it. Add .optional(component) to the query before the fetch`
 		);
 	}
 
@@ -423,7 +424,7 @@ class AccessCheck {
 		const label = componentLabel(def);
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on ${label} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on ${label} but didn't declare it. Add it to '${missingField}'`,
 			{ system: name, op, component: def.id }
 		);
 	}
@@ -433,7 +434,7 @@ class AccessCheck {
 		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on sparse component ${sid} but didn't declare it. Add it to '${missingField}'`,
 			{ system: name, op, sparse: sid }
 		);
 	}
@@ -443,7 +444,7 @@ class AccessCheck {
 		const name = this._activeName!;
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed ${op} on relation ${rid} but didn't declare it, add it to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed ${op} on relation ${rid} but didn't declare it. Add it to '${missingField}'`,
 			{ system: name, op, relation: rid }
 		);
 	}
@@ -454,7 +455,7 @@ class AccessCheck {
 		const label = (key as unknown as symbol).description ?? "<unnamed>";
 		throw new ECSError(
 			ECS_ERROR.ACCESS_UNDECLARED,
-			`system '${name}' performed resource ${op} on '${label}' but didn't declare it, add the resource key to '${missingField}' (see docs/api/systems.md)`,
+			`system '${name}' performed resource ${op} on '${label}' but didn't declare it. Add the resource key to '${missingField}'`,
 			{ system: name, op, resource: label }
 		);
 	}

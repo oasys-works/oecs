@@ -29,7 +29,7 @@ class FakeBackend implements ComputeBackend {
 const handle = (n: number): BackendSystemHandle => unsafeCast<BackendSystemHandle>(n);
 
 /** A full SystemConfig with empty access (so the config-form `backendHandle`
- * field is reachable, the bare/2-arg overloads can't carry it). */
+ * field is reachable, the bare and 2-arg overloads can't carry it). */
 function config(fn: SystemFn, backendHandle?: BackendSystemHandle): SystemConfig {
 	return {
 		reads: [],
@@ -54,7 +54,7 @@ describe("ComputeBackend seam", () => {
 		expect(ran).toBe(1);
 	});
 
-	it("attach seeds the layout immediately (set_layout(0))", () => {
+	it("attach seeds the layout immediately (setLayout(0))", () => {
 		const ecs = new ECS();
 		const backend = new FakeBackend();
 		ecs.attachBackend(backend);
@@ -62,7 +62,7 @@ describe("ComputeBackend seam", () => {
 		expect(backend.runCalls).toEqual([]);
 	});
 
-	it("a system with a backend_handle routes to backend.run instead of fn", () => {
+	it("a system with a backendHandle routes to backend.run instead of fn", () => {
 		const ecs = new ECS();
 		const backend = new FakeBackend();
 		ecs.attachBackend(backend);

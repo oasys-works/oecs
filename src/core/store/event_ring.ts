@@ -1,13 +1,13 @@
 /**
  * Event ring. SPSC ring buffer for ECS signal and event payloads shared
- * between TS and the Zig sim.
+ * between TS and a compute backend.
  *
  * Same byte layout as the command ring (`command_ring.ts`). The two
  * could share a primitive, but keeping them separate makes the
  * direction of flow explicit. The command ring is WASM→TS, and carries
  * structural intents to drain post-tick. The event ring is bidirectional during
- * `tick()`. Zig systems push events, TS readers (or other Zig
- * systems) drain.
+ * a tick. A module's systems push events, and TS readers or sibling module
+ * systems drain.
  *
  * Layout (identical to command ring):
  *
@@ -18,26 +18,24 @@
  *   [ slot 0:        16 B ]  opCode: u8, payload: [15]u8
  *   [ slot 1:        16 B ]  ...
  *
- * Op codes: event-def IDs (assigned by `ECS.registerEvent()` at
- * registration time). The 0 op-code is
- * reserved as the empty-slot marker so a zero-initialised SAB does not
- * appear to hold a valid event. Event-def registration starts numbering
- * from 1 to honour this. The engine integration in 4D+ enforces it.
+ * Op codes: event-def ids, assigned when an event is registered. The 0
+ * op-code is reserved as the empty-slot marker so a zero-initialised SAB does
+ * not appear to hold a valid event. Event-def registration starts numbering
+ * from 1 to honour this.
  *
  * SPSC contract (single host thread):
- *   - Producer: Zig sim `tick()` (post-4D) or TS host (a test producer, or an
+ *   - Producer: a WASM tick, or the TS host (a test producer, or an
  *     existing JS-side emitter bridged into the ring).
- *   - Consumer: TS host drain (post-4D) or Zig system that reads
+ *   - Consumer: the TS host drain, or a module system that reads
  *     queued events from a sibling system.
  *   - The two never run concurrently (one host thread orchestrates
  *     both). A later worker offload promotes the head
  *     bumps to `Atomics.store`. That's an additive change without
  *     altering the layout.
  *
- * Payload size: fixed 15 bytes per slot. Today's events all fit
- * (e.g. a 12-byte 3-field event, a 4-byte 1-field event, a 0-field
- * signal). Larger payloads require a separate variable-size ring
- * design, out of scope here.
+ * Payload size: fixed 15 bytes per slot. Every event the engine carries today
+ * fits, because an event holds a few numeric fields at most. A larger payload
+ * needs a separate variable-size ring design, out of scope here.
  *
  * Region placement: between the entity-index region and the descriptor
  * region so its offset is stable across descriptor and column growth.
@@ -65,9 +63,9 @@ export const EVENT_RING_HEADER_OFFSETS = {
 	overflow_flag: 12
 } as const;
 
-/** Op-code = `0` is reserved across the SAB layer as "empty slot"
- * (see file header). Event-def IDs start at 1. `ECS.registerEvent`
- * shifts to honour this when wiring SAB-backed channels in 4D+. */
+/** Op-code `0` is reserved across the SAB layer as "empty slot"
+ * (see file header). Event-def ids start at 1, so a SAB-backed channel never
+ * writes a code that reads as an empty slot. */
 export const EVENT_OP_EMPTY = 0;
 
 /** Total bytes the ring occupies for `capacity_slots` slots. */

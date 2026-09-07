@@ -24,11 +24,11 @@
  *     near-exact analog: an optional override on the system descriptor.
  *   - Unity dots `ISystem` (Burst-native) vs `SystemBase` (managed), the
  *     backend is a property of the system. The scheduler routes.
- *   - Onnx Runtime execution providers and PyTorch's dispatcher boxed fallback,
+ *   - ONNX Runtime execution providers and PyTorch's dispatcher boxed fallback,
  *     the framework owns routing and a default guarantees completeness.
- * A measurement of the dispatch selected the explicit `backend === null`
- * fast-path branch, and not a Null-Object default. A Null-Object default makes
- * the no-backend common case slower, and that case gives no advantage in return.
+ * The dispatch keeps an explicit `backend === null` fast-path branch, and not a
+ * Null-Object default. A Null-Object default makes the no-backend common case
+ * slower, and that case gains nothing in return.
  */
 
 import { Brand } from "../../type_primitives";

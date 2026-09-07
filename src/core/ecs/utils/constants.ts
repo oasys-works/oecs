@@ -6,7 +6,7 @@ export const EMPTY_VALUES: Record<string, number> = Object.freeze(Object.create(
 export const HASH_GOLDEN_RATIO = 0x9e3779b9;
 export const HASH_SECONDARY_PRIME = 0x517cc1b7;
 
-// Default archetype column capacity (user can override via ECSOptions.initialCapacity)
+// Default archetype column capacity (a caller overrides it with memory.columnCapacity)
 export const DEFAULT_COLUMN_CAPACITY = 1024;
 
 // Entity generation

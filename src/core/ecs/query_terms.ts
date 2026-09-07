@@ -252,13 +252,13 @@ export interface HierarchyTerm {
 // site rather than a silent wrong-cache-hit. 2^16 = 65536 distinct sparse
 // components or live queries in one ECS is the trigger. Realistic counts are
 // in the tens. The dense caches share the same packing and the same (smaller,
-// since cid <= 128) latent risk on the query-id half.
+// since cid < 128) latent risk on the query-id half.
 const CACHE_KEY_HALF_LIMIT = 0x10000;
 export function termCacheKey(queryId: number, sparseId: number): number {
 	if (DEV && (queryId >= CACHE_KEY_HALF_LIMIT || sparseId >= CACHE_KEY_HALF_LIMIT)) {
 		throw new ECSError(
 			ECS_ERROR.SPARSE_CACHE_KEY_OVERFLOW,
-			`sparse query cache key would overflow: queryId=${queryId}, sparseId=${sparseId} (each must be < ${CACHE_KEY_HALF_LIMIT})`
+			`sparse query cache key would overflow, queryId=${queryId} and sparseId=${sparseId} must each be < ${CACHE_KEY_HALF_LIMIT}`
 		);
 	}
 	return ((queryId << 16) | sparseId) >>> 0;

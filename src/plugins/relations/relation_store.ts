@@ -7,7 +7,7 @@
  *   - **exclusive** (default), one target per source. The target `EntityID`
  *     lives directly in a **sparse field** (`{ target: f64 }`), so the forward
  *     index *is* the sparse store row. This is the load-bearing reason
- *     exclusive relations inherit determinism + snapshot and restore + query
+ *     exclusive relations inherit determinism, snapshot and restore, and query
  *     membership *for free*: everything written through the sparse store is
  *     folded into `Store.stateHash()` and round-trips via `snapshotSparse`,
  *     and matches `Query.andSparse(R)`. Adding a second target overwrites the
@@ -15,7 +15,7 @@
  *
  *   - **multi**, a set of targets per source. A set can't fit a fixed-width
  *     sparse row, so membership uses a sparse **tag** (still free query
- *     integration + destroy-purge + `has`) and the target set lives in a side
+ *     integration, destroy-purge and `has`) and the target set lives in a side
  *     `Map<source index, Set<target EntityID>>` this module owns. Because that
  *     side map is *not* in the sparse store, the target-set *values* are folded
  *     into `stateHash` and serialized through `snapshotRelations` and
@@ -34,11 +34,12 @@
  * re-targets or is removed, which is the dangling-target class that
  * configurable `OnDeleteTarget` cleanup owns, deliberately out of scope here.
  *
- * **Cardinality is polymorphic, not branched.** The exclusive-vs-multi
- * split used to be an open-coded `if (rs.exclusive)` at ~12 mutation and read
- * sites in `Store`, every one of which had to keep forward link + reverse index
- * + sparse membership in lockstep, a missed site silently corrupted the
- * reverse index. It is now **virtual dispatch** on `RelationStore`: an abstract
+ * **Cardinality is polymorphic, not branched.** The exclusive and multi split
+ * used to be an open-coded `if (rs.exclusive)` at every mutation and read
+ * site in `Store`, each of which had to keep the forward link, the reverse
+ * index and the sparse membership in lockstep, and a missed site silently
+ * corrupted the reverse index. It is now **virtual dispatch** on
+ * `RelationStore`: an abstract
  * base owns the cardinality-agnostic reverse index, and `ExclusiveRelationStore`
  * and `MultiRelationStore` (built by `createRelationStore`) each own their forward
  * representation and the backing `SparseComponentStore` interaction for it.
@@ -80,7 +81,7 @@ const EMPTY_TAG_VALUES: Readonly<Record<string, number>> = Object.freeze({});
  * its sparse interaction are owned by the concrete `ExclusiveRelationStore` and
  * `MultiRelationStore` (built by `createRelationStore`).
  *
- * The registry level (`Store` + `RelationService`) owns what is genuinely its
+ * The registry level (`Store` and `RelationService`) owns what is genuinely its
  * own, entity liveness, registration, and destroy orchestration, and drives
  * a relation through the virtual `link`,
  * `unlink`, `purgeSource`, `forEachCanonicalPair` and their peers, without ever
@@ -149,7 +150,7 @@ export abstract class RelationStore implements RelationStoreView {
 	 * leaves a destroyed target's reverse entry intact (the link dangles
 	 * safely), so a long-lived source that orphan-points at a stream of
 	 * short-lived targets and never re-targets or dies accumulates dead-target keys
-	 * without bound. This is the reclaim primitive behind `Store.compactRelations`,
+	 * without bound. This is the reclaim primitive behind `ecs.relations.compact`,
 	 * a cold path the host calls at scene and snapshot boundaries. It is
 	 * cardinality-free (reverse-index only), so it lives on the base unchanged.
 	 *
@@ -200,22 +201,23 @@ export abstract class RelationStore implements RelationStoreView {
 		this._resetForward();
 	}
 
-	// --- virtual forward-link ops (own the cardinality + sparse interaction) ---
+	// --- virtual forward-link ops (own the cardinality and sparse interaction) ---
 
-	/** Clear this relation's forward representation (multi: the side map
-	 * exclusive: nothing, its forward links live in the sparse store, cleared by
-	 * `restoreSparseStores`). */
+	/** Clear this relation's forward representation. Multi clears the side map.
+	 * Exclusive clears nothing, because its forward links live in the sparse
+	 * store, which `restoreSparseStores` clears. */
 	protected abstract _resetForward(): void;
 
-	/** Add a `(R, tgt)` link from `src`, keeping forward link + membership +
-	 * reverse index in lockstep. Exclusive: replaces any existing target
+	/** Add a `(R, tgt)` link from `src`, keeping the forward link, the membership
+	 * row and the reverse index in lockstep. Exclusive: replaces any existing target
 	 * (idempotent if `tgt` is already the target). Multi: adds to the set
 	 * (idempotent on a duplicate), establishing the membership tag on the first
 	 * target. `src` must be live, `Store` checks before delegating. */
 	public abstract link(src: EntityID, tgt: EntityID): void;
 
 	/** Remove `(R, tgt)` from `src`, or, when `tgt` is omitted, every target of
-	 * `src`, keeping forward link + membership + reverse index in lockstep. A
+	 * `src`, keeping the forward link, the membership row and the reverse index
+	 * in lockstep. A
 	 * no-op when the link isn't present. */
 	public abstract unlink(src: EntityID, tgt?: EntityID): void;
 
@@ -269,7 +271,7 @@ export abstract class RelationStore implements RelationStoreView {
 
 /** Exclusive relation (one target per source): the forward link **is** the
  * `{ target: f64 }` backing sparse row, so this class drives that row directly
- * and inherits query membership + `stateHash`/snapshot for free. */
+ * and inherits query membership, `stateHash` and snapshot for free. */
 class ExclusiveRelationStore extends RelationStore {
 	constructor(sparse: SparseComponentDef, store: SparseComponentStore, policy: OnDeleteTarget) {
 		super(true, sparse, store, policy);
@@ -409,7 +411,7 @@ class MultiRelationStore extends RelationStore {
 	}
 
 	public singleTargetAt(): EntityID | undefined {
-		return undefined; // multi has no single target (matches prod targetOf read)
+		return undefined; // multi has no single target, matching the production targetOf read
 	}
 
 	public targetsAt(index: number): EntityID[] {

@@ -151,9 +151,9 @@ It is easy to confuse a small number of these with a category near them:
 - `STRUCTURAL_DURING_ITERATION`. An immediate structural mutation on the host reached an archetype
   that a live query walk is visiting now. The mutations are `despawn`, a transition from
   `addComponent` or `removeComponent`, and `disable` or `enable`. The walks are `forEach`,
-  `forEachChunk`, `some`, and `changed(...).forEach`. The row swap would skip an entity, or
-  give it two times, below the iterator. Collect the ids during the walk, and mutate after it. This
-  is in development builds only.
+  `forEachChunk`, `some`, `changed(...).forEach`, and `changed(...).forEachChunk`. The row swap
+  would skip an entity, or give it two times, below the iterator. Collect the ids during the walk,
+  and mutate after it. This is in development builds only.
 
 ## The errors that are *not* an `ECSError`
 

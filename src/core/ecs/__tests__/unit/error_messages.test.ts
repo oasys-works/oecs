@@ -9,9 +9,7 @@
  *  - access violations use the dedicated `ACCESS_UNDECLARED` category, not
  *    the registration categories, so catch-and-branch works
  *  - resource and event "not registered" messages interpolate `key.description`
- *    and hint at the registration call
- *  - no user-facing message references snake_case option names or private
- *    tracker issue numbers.
+ *    and hint at the registration call.
  */
 
 import { describe, expect, it } from "vitest";
@@ -74,12 +72,11 @@ describe("component debug names", () => {
 });
 
 describe("ENTITY_NOT_ALIVE context", () => {
-	it("names the op and decodes index/generation, with the id in context", () => {
+	it("names the op and decodes index and generation, with the id in context", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Pos = world.registerComponent({ x: "f64" }, { name: "Pos" });
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 1 });
-		// immediate destroy via the store to get a genuinely dead handle
 		let caught: unknown;
 		try {
 			// getField on an out-of-range (never-created) handle
@@ -105,7 +102,7 @@ describe("registry messages interpolate the key name", () => {
 		expect(() => world.resources.get(Config)).toThrow(/'config'.*resources\.register/);
 	});
 
-	it("event emit of an unregistered key names it and hints registration", () => {
+	it("event read of an unregistered key names it and hints registration", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Hit = eventKey<{ dmg: number }>("hit");
 		expect(() => world.events.read(Hit)).toThrow(/'hit'.*events\.register/);

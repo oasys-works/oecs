@@ -14,8 +14,8 @@ export {
 } from "./header";
 
 // Generic consumer-declared region registry (it de-games the SAB
-// substrate). The engine ships only the mechanism regions. A game declares its
-// own regions as `StoreRegionSpec`s addressed by an opaque `region_id`.
+// substrate). The engine ships only the mechanism regions. A consumer declares
+// its own regions as `StoreRegionSpec`s addressed by an opaque `region_id`.
 export {
 	type StoreRegionSpec,
 	type RegionTableEntry,
@@ -202,6 +202,6 @@ export {
 } from "./action_ring";
 
 // The engine exposes the generic region table above and nothing narrower. A
-// named region, such as a terrain grid or a spawn anchor list, is a game data
-// structure and not engine substrate, so it lives in the consumer that owns
-// its shape and reaches the bytes through the table.
+// named region, such as a terrain grid or a spawn anchor list, is consumer data
+// and not engine substrate, so it lives in the consumer that owns its shape and
+// reaches the bytes through the table.

@@ -62,8 +62,8 @@ already be in the include mask of the query.
 
 ## A `ChangedQuery` composes
 
-The `ChangedQuery` has the same dense verbs, so you can continue to make the query more exact after
-`changed()`:
+A `ChangedQuery` carries four of the dense verbs, so you can continue to make the query more exact
+after `changed()`:
 
 ```ts
 and<D>(...comps): ChangedQuery<[...Defs, ...D]>;
@@ -78,7 +78,7 @@ ecs.query(Pos).changed(Pos).not(Dead);   // Pos changed, and the dead entities a
 ```
 
 The order is not important. `q.changed(Pos).not(Dead)` and `q.not(Dead).changed(Pos)` give
-the same set. A `ChangedQuery` has no `count` and no second `changed`. Iterate it with `forEach`,
+the same set. A `ChangedQuery` has no count getter and no second `changed`. Iterate it with `forEach`,
 or with `forEachChunk` for the row grain below.
 
 ## The row grain

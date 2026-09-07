@@ -35,7 +35,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(pos.y).toBe(20);
 	});
 
-	it("reads updated values after set_field", () => {
+	it("reads updated values after setField", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const e = world.spawn();
@@ -235,8 +235,9 @@ describe("ComponentRef (ctx.ref)", () => {
 	});
 
 	it("ref reads and writes through the live column buffer after a grow", () => {
-		// A held ref reads `col.buf` live (not a buffer snapshot taken at creation),
-		// so it stays correct when the column grows and refreshes its view in place.
+		// A held ref reads through `Archetype._accCols`, which the archetype
+		// refills in place whenever a buffer moves, so the ref stays correct
+		// across a grow without holding a snapshot of its own.
 		// A tiny columnCapacity forces the grow within a handful of appends.
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = world.registerComponent(Position);
@@ -274,7 +275,7 @@ describe("ComponentRef (ctx.ref)", () => {
 	// changes are deferred until flush.
 	//=========================================================
 
-	it("ref remains valid after deferred add_component (entity has not moved yet)", () => {
+	it("ref remains valid after deferred addComponent (entity has not moved yet)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -316,7 +317,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(world.getField(e, Vel, "vx")).toBe(1);
 	});
 
-	it("ref remains valid after deferred remove_component", () => {
+	it("ref remains valid after deferred removeComponent", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -352,7 +353,7 @@ describe("ComponentRef (ctx.ref)", () => {
 		expect(world.getField(e, Pos, "x")).toBe(5);
 	});
 
-	it("ref remains valid after deferred destroy_entity", () => {
+	it("ref remains valid after deferred destroyEntity", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 

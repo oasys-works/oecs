@@ -1,11 +1,13 @@
 /**
- * Four toolchains, one kernel contract, one answer.
+ * Five toolchains, one kernel contract, one answer.
  *
- * The modules in `fixtures/` carry the same four bodies. One is emitted byte by
- * byte with no compiler, and three come from Zig, from Rust and from C through
- * `zig cc`. Every one of them runs on the real pool over several workers, and
- * every one must leave the bytes the sequential TypeScript body leaves. So what
- * passes here is the claim "any module", not the claim "this compiler".
+ * The modules in `fixtures/` carry the same four bodies, and the AssemblyScript
+ * module carries two of them. One module is emitted byte by byte with no
+ * compiler, and the rest come from Zig, from Rust, from C through `zig cc` and
+ * from AssemblyScript. Every one of them runs on the real pool over several
+ * workers, and every one must leave the bytes the sequential TypeScript body
+ * leaves. So what passes here is the claim "any module", not the claim "this
+ * compiler".
  *
  * The binaries are checked in. A compiler is not a dependency of this suite, so
  * a machine with no toolchain still proves the contract. Rebuild them with

@@ -58,7 +58,7 @@ and `removeComponents`, and the full-archetype `batchAddComponent` and `batchRem
 spawn(): EntityID;                                                           // empty entity
 spawn<Defs>(template: Template<Defs>, overrides?: TemplateOverrides<Defs>): EntityID;
 spawnMany<Defs>(template: Template<Defs>, count: number, overrides?: TemplateOverrides<Defs>): EntityID[];  // bulk
-spawnBundle(...items: BundleOrDef[]): EntityID;                              // bundles as varargs
+spawnBundle<Items extends readonly BundleOrDef[]>(...items: StrictBundles<Items>): EntityID;   // bundles as varargs
 ```
 
 - **`spawn()`** gives you an empty entity in the empty archetype. Add the components after it.
@@ -99,8 +99,8 @@ const swarm = ecs.spawnMany(Bullet, 500);   // 500 bullets, O(columns) writes
 ## How to destroy entities
 
 ```ts
-despawn(id: EntityID): void;   // immediate on the host facade
-isAlive(id: EntityID): boolean;
+despawn(entityId: EntityID): this;   // immediate on the host facade
+isAlive(entityId: EntityID): boolean;
 ```
 
 `despawn` destroys the entity immediately. `isAlive(id)` is `false` on the next line, which agrees
@@ -116,9 +116,9 @@ to a recycled slot, for a retired slot, and for an id that is out of range.
 If you disable an entity, queries do not see it, but it keeps its data and its id.
 
 ```ts
-disable(id: EntityID): this;        // immediate on the host facade. You can call it again safely
-enable(id: EntityID): this;         // immediate on the host facade. You can call it again safely
-isDisabled(id: EntityID): boolean;
+disable(entityId: EntityID): this;   // immediate on the host facade. You can call it again safely
+enable(entityId: EntityID): this;    // immediate on the host facade. You can call it again safely
+isDisabled(entityId: EntityID): boolean;
 ```
 
 A disabled entity keeps its components, its relations, its sparse data, and its stable `EntityID`.

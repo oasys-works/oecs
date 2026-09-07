@@ -12,10 +12,10 @@
  * collapse to one event per *net* transition across a drain (disable→enable→
  * disable in a tick = a single onDisable. Required so the radix canonical order
  * never reorders a duplicate eid).
- * bitECS and flecs expose first-class component observers. We had only system
- * lifecycle hooks, so reactions ("on `Death` added → spawn corpse", "on
- * `HexPos` set → mark spatial index") were hand-polled every tick. Observers
- * express them directly.
+ *
+ * bitECS and flecs expose first-class component observers. Without them a
+ * reaction ("on `Death` added → spawn corpse", "on `HexPos` set → mark spatial
+ * index") is a poll on every tick. An observer expresses it directly.
  *
  * The mechanism avoids two measured traps:
  *
@@ -27,8 +27,8 @@
  *   2. **onAdd and onRemove ordering is a comparator sort.** `Array.sort` for the
  *      canonical firing order costs more than the entire flush. An O(K) LSD
  *      radix on the bounded 20-bit entity index gives the same order for a
- *      small part of that cost. Determinism is cheap *only* if you do not
- *      compare-sort.
+ *      small part of that cost. Determinism is cheap only without a comparator
+ *      sort.
  *
  * Firing order is two composed layers, both deterministic:
  *   - **across observers**, access-topological (writer-of-X before readers-of-X,
@@ -43,10 +43,11 @@
  * `stateHash` and snapshot (like `_changedTick`), but produced in canonical
  * order so replays reproduce.
  *
- * This module owns the registry + ordering + dispatch. The hot-path event
- * collection and the deferred fixed-point loop live in `store.ts` (it owns the
- * flush). The access-topological order built here is the same write-disjointness
- * graph a later multithreaded execution can reuse.
+ * This module owns the registry, the ordering and the dispatch. The hot-path
+ * event collection lives in `store.ts`, which owns the batch appliers, and the
+ * deferred fixed-point loop lives in `deferred_commands.ts`, which owns the
+ * drain policy. The access-topological order built here is the same
+ * write-disjointness graph a later multithreaded execution can reuse.
  ***/
 
 import { unsafeCast } from "../../type_primitives";
@@ -209,9 +210,11 @@ function topoOrder(entries: readonly ObserverEntry[]): ObserverEntry[] {
 }
 
 /**
- * Registry of component observers. Owned by `ECS`. The `Store` calls back into
- * `dispatchStructural` between fixed-point rounds during `flushStructural`,
- * and `ECS.update` calls `dispatchSet` at the post-update detection point.
+ * Registry of component observers. Owned by the observers plugin, which builds
+ * it at install. The store calls `dispatchStructural` through its structural
+ * hook between fixed-point rounds of `flushStructural`, and the world calls
+ * `dispatchSet` through the plugin's settle hook at the post-update detection
+ * point.
  */
 export class ObserverRegistry implements ObserverHooks {
 	private readonly _entries: ObserverEntry[] = [];
@@ -238,7 +241,7 @@ export class ObserverRegistry implements ObserverHooks {
 	// The radix scratch is a typed array, grown by doubling, and never a plain
 	// array grown by a length assignment: JavaScriptCore turns the latter into a
 	// sparse store, and each element store in the pass becomes a hash insert.
-	// Measured at an order of magnitude on the drain of a large frame there.
+	// The drain of a large frame is far slower there for that reason.
 	private _radixOut = new Uint32Array(1024);
 	private readonly _radixC0 = new Int32Array(1024);
 	private readonly _radixC1 = new Int32Array(1024);
@@ -444,17 +447,18 @@ export class ObserverRegistry implements ObserverHooks {
 	/**
 	 * Fire onAdd, onRemove, onDisable and onEnable for one fixed-point round's
 	 * effective events, in canonical order: access-topological across observers,
-	 * entity-id order (radix) within each observer. Called by
-	 * `Store.flushStructural` after the batch commits. Observer callbacks may
+	 * entity-id order (radix) within each observer. Called through the store's
+	 * structural hook after the batch commits. Observer callbacks may
 	 * enqueue further structural ops (or toggles) onto the deferred buffers (the
 	 * store loops until quiescent).
 	 *
 	 * The events arrive as flat `(comp, eid)` parallel arrays collected during the
-	 * flush. We bucket by component once (O(K)), then walk observers in topo order
-	 * so a producer's writes are visible to a consumer (glitch-free). A round
+	 * flush. This dispatch buckets by component once (O(K)), then walks observers
+	 * in topo order so a producer's writes are visible to a consumer
+	 * (glitch-free). A round
 	 * carries either structural (add, remove) or toggle (disable, enable) events, never both,
 	 * toggles drain only once add, remove and destroy are quiescent (`flushStructural`),
-	 * but we bucket all four uniformly. The empty pairs are no-ops. Within an
+	 * but all four bucket uniformly. The empty pairs are no-ops. Within an
 	 * observer the fire order is remove, add, disable, enable (the "leaving" edges
 	 * before the "entering" edges).
 	 */
@@ -543,7 +547,8 @@ export class ObserverRegistry implements ObserverHooks {
 	 * onSet drains the opt-in dirty list, once for each changed entity.
 	 * Archetype-granular onSet scans the change tick, once for each changed
 	 * archetype column.
-	 * Called by `ECS.update` after all phases. `run` is the change tick advanced
+	 * Called through the plugin's settle hook, after every phase of the frame.
+	 * `run` is the change tick advanced
 	 * for this dispatch: above every system run of the frame, and the baseline
 	 * each archetype-granular observer keeps for its next dispatch.
 	 */

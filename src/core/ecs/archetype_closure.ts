@@ -29,8 +29,7 @@ import type { SystemDescriptor } from "./system";
  * outpacing remove), monotonically shrinks it, or returns a mask the
  * `seen` map already holds. Because the universe of masks is bounded by
  * `2^|components|` (and in practice the in-tree spawn and transition set is
- * tiny, ~20 masks at most), the worklist is finite and we exit when it
- * empties.
+ * small), the worklist is finite and we exit when it empties.
  *
  * Liberal `whenHas`, over-approximation is fine. An
  * unreachable transition target costs one descriptor row at the SAB tail,

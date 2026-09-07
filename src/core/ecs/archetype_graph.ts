@@ -106,8 +106,8 @@ export class ArchetypeGraph {
 	 * Also updates the componentIndex and pushes into matching registered queries.
 	 *
 	 * Hot single-mask path. The bulk batched variant, used by the prewarm
-	 * pass at `ecs.startup()`, is `getOrCreateFromMasks`
-	 * see `ECS.startup()` for how it gets called and why.
+	 * pass at `ecs.startup()`, is `getOrCreateFromMasks`. See `ECS.startup()`
+	 * for how it gets called and why.
 	 */
 	public getOrCreateFromMask(mask: BitSet): ArchetypeID {
 		const hash = mask.hash();
@@ -132,8 +132,8 @@ export class ArchetypeGraph {
 	 *
 	 * Given a set of masks, creates Archetypes for the ones not already
 	 * planted, in a single `extendColumnStore` call (instead of one per
-	 * archetype). Single-mask creation is O(N) in archetypes-so-far because
-	 * the extend has to copy every existing archetype's live rows forward
+	 * archetype). Single-mask creation is O(N) in archetypes-so-far, because
+	 * the extend has to copy every existing archetype's live rows forward.
 	 * N such calls compound to O(N²). Batching collapses the per-archetype
 	 * setup-and-copy down to one pass, the per-startup cost goes from
 	 * O(N²) to O(N) for in-tree systems whose archetype
@@ -292,7 +292,7 @@ export class ArchetypeGraph {
 		});
 
 		// Push new archetype into any registered query whose masks it satisfies
-		// (Store-side seam, the query registry stays on Store). No epoch bump.
+		// (a host seam, the store routes it to `QueryRegistry`). No epoch bump.
 		// The new archetype is empty, so any cached
 		// `_nonEmptyArchetypes` list is still correct (it skips empty entries
 		// when it rebuilds). The first mutation that puts an entity into this

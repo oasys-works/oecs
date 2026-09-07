@@ -22,11 +22,11 @@
  * id space from the dense archetype mask). An absent optional field reads
  * as empty, the same precedent as the sparse terms, so the
  * majority of systems needn't spell out five empty arrays. Safety is
- * unchanged: Schedule wraps each `fn` and `onAdded` call in
- * `accessCheck.enter` and `accessCheck.leave`. SystemContext + Archetype consult
- * `accessCheck` on every read and write, structural change, sparse and relation
- * mutation, and resource read/write. Undeclared access throws an `ECSError`
- * in `DEV`. The same declarations pre-warm the
+ * unchanged. The schedule wraps each `fn` call, and `ecs.startup()` wraps each
+ * `onAdded` call, in `accessCheck.enter` and `accessCheck.leave`. SystemContext
+ * and Archetype consult `accessCheck` on every read and write, structural
+ * change, sparse and relation mutation, and resource access. Undeclared access
+ * throws an `ECSError` in `DEV`. The same declarations pre-warm the
  * archetype graph (sparse and relations cause no archetype transition, so
  * they do not feed prewarm).
  *
@@ -36,9 +36,9 @@
  *
  * Bare-fn (`registerSystem(fn)`) and 2-arg (`registerSystem(fn, qb)`)
  * overloads internally fill empty declarations. Such systems are subject
- * to the same runtime checks, any read/write/etc. they perform will
- * throw, so they remain useful only for trivial no-access systems (e.g.
- * "only bump a counter"). Production work uses the config form.
+ * to the same runtime checks, and any read, write or structural change they
+ * perform throws, so they remain useful only for trivial no-access systems
+ * (e.g. "only bump a counter"). Production work uses the config form.
  *
  ***/
 
@@ -191,8 +191,9 @@ export interface ParallelConfig<D extends ComponentDef<any> = ComponentDef<any>>
 	 * component in `writes` must appear here. */
 	readonly columns: readonly ParallelColumn<D>[];
 	/** The total matched row count below which the system runs `fn` on the main
-	 * thread. The default is a placeholder, and the caller must tune it: the
-	 * probes show the crossover is a property of the machine and of the kernel. */
+	 * thread. The default is a placeholder, and the caller must tune it. The
+	 * crossover is a property of the machine and of the kernel, not of the
+	 * engine, so no default is right for every world. */
 	readonly minRows?: number;
 	/** The query the kernel runs over. Defaults to the first entry of `queries`,
 	 * resolved as a require-only query. Pass one built with `not` to get a
@@ -222,16 +223,16 @@ export interface SystemConfig extends SystemAccessConfig {
 	 * at the first iteration's `accessCheck`. */
 	queries?: readonly (readonly ComponentDef[])[];
 
-	/** Grant this system full world access. It may read, write, add, remove and destroy
-	 * any component, sparse, relation, or resource without declaring them. The
-	 * `DEV` access check is bypassed for its whole span (a no-op in
-	 * production, where the check is already compiled out). For trusted engine or
-	 * host machinery that mutates components not known at registration, the
-	 * host→ECS command-apply system is the canonical case. A save and load or
-	 * debug system is another. Bevy's "exclusive system" in spirit: full access,
-	 * and, under any future parallel scheduler. It would run alone. The schedule
-	 * is sequential today, so here it is purely the access grant. Use sparingly
-	 * a normal system should declare exactly what it touches. */
+	/** Grant this system full world access. It may read, write, add, remove and
+	 * destroy any component, sparse, relation, or resource without declaring
+	 * them. `accessCheck` skips its whole span in `DEV`, and a production build
+	 * compiles that check out already. Trusted engine or host machinery that
+	 * mutates components unknown at registration needs this. The host→ECS
+	 * command-apply system is the canonical case, and a save and load or a debug
+	 * system is another. It matches Bevy's "exclusive system" in spirit, where
+	 * full access also means the system runs alone. This schedule is sequential
+	 * today, so here it is purely the access grant. Use it sparingly. A normal
+	 * system declares exactly what it touches. */
 	exclusive?: boolean;
 
 	/** Opt this system into pluggable-backend execution. When set **and**
@@ -608,9 +609,9 @@ export function _createBareSystemConfig(fn: SystemFn): SystemConfig {
 	if (DEV && fn.length >= 3) {
 		throw new ECSError(
 			ECS_ERROR.SYSTEM_FN_ARITY,
-			`registerSystem was passed a ${fn.length}-parameter function with no ` +
-				`query builder. A bare system function is (ctx, dt); a query system is ` +
-				`(q, ctx, dt) and needs the query builder as the second argument: ` +
+			`registerSystem got a ${fn.length}-parameter function with no query ` +
+				`builder. A bare system function is (ctx, dt), and a query system is ` +
+				`(q, ctx, dt) with the query builder as the second argument, as in ` +
 				`registerSystem((q, ctx, dt) => …, (qb) => qb.and(…)). ` +
 				`Without it, q would receive the SystemContext and dt would be undefined.`
 		);
@@ -625,7 +626,7 @@ export function _assertSystemRunnable(config: SystemConfig): void {
 	if (config.fn === undefined && config.backendHandle === undefined) {
 		throw new ECSError(
 			ECS_ERROR.SYSTEM_FN_ARITY,
-			`registerSystem: config${config.name ? ` '${config.name}'` : ""} has neither 'fn' nor 'backendHandle', provide a system body, or a backend handle for backend execution`
+			`registerSystem: config${config.name ? ` '${config.name}'` : ""} has neither 'fn' nor 'backendHandle'. Provide a system body, or a backend handle for backend execution`
 		);
 	}
 }

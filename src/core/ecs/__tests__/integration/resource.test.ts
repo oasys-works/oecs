@@ -27,7 +27,7 @@ describe("Resource system", () => {
 		expect(world.resources.get(Counter).value).toBe(42);
 	});
 
-	it("set_resource replaces the value entirely", () => {
+	it("resources.set replaces the value entirely", () => {
 		const world = new ECS();
 		const Config = resourceKey<{ speed: number }>("Config");
 		world.resources.register(Config, { speed: 10 });
@@ -35,7 +35,7 @@ describe("Resource system", () => {
 		expect(world.resources.get(Config).speed).toBe(99);
 	});
 
-	it("has_resource returns false before insert, true after", () => {
+	it("resources.has returns false before insert, true after", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		expect(world.resources.has(Res)).toBe(false);
@@ -68,7 +68,7 @@ describe("Resource system", () => {
 		}
 	});
 
-	it("set_resource on missing key throws RESOURCE_NOT_REGISTERED", () => {
+	it("resources.set on missing key throws RESOURCE_NOT_REGISTERED", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Missing");
 		try {
@@ -125,7 +125,7 @@ describe("Resource system", () => {
 		expect(readSpeed).toBe(42);
 	});
 
-	it("ctx.set_resource replaces key-based resources within systems", () => {
+	it("ctx.setResource replaces key-based resources within systems", () => {
 		const world = new ECS();
 		const State = resourceKey<{ phase: number }>("State");
 		world.resources.register(State, { phase: 0 });
@@ -159,7 +159,7 @@ describe("Resource system", () => {
 		expect(world.resources.get(Counter).value).toBe(3);
 	});
 
-	it("ctx.has_resource returns correct values within systems", () => {
+	it("ctx.hasResource returns correct values within systems", () => {
 		const world = new ECS();
 		const Inserted = resourceKey<{ x: number }>("Inserted");
 		const NotInserted = resourceKey<{ x: number }>("NotInserted");
@@ -182,7 +182,7 @@ describe("Resource system", () => {
 });
 
 describe("Resource lifecycle, remove then re-insert", () => {
-	it("removeResource drops the resource, hasResource is false afterwards", () => {
+	it("resources.remove drops the resource, resources.has is false afterwards", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
@@ -205,7 +205,7 @@ describe("Resource lifecycle, remove then re-insert", () => {
 		}
 	});
 
-	it("registerResource works again after remove, present → absent → present", () => {
+	it("resources.register works again after remove, present → absent → present", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });
@@ -217,7 +217,7 @@ describe("Resource lifecycle, remove then re-insert", () => {
 		expect(world.resources.get(Res).x).toBe(99);
 	});
 
-	it("removeResource on a missing key throws RESOURCE_NOT_REGISTERED", () => {
+	it("resources.remove on a missing key throws RESOURCE_NOT_REGISTERED", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Missing");
 		try {
@@ -229,7 +229,7 @@ describe("Resource lifecycle, remove then re-insert", () => {
 		}
 	});
 
-	it("removeResource on an already-removed key throws (idempotent removal is not allowed)", () => {
+	it("resources.remove on an already-removed key throws (idempotent removal is not allowed)", () => {
 		const world = new ECS();
 		const Res = resourceKey<{ x: number }>("Res");
 		world.resources.register(Res, { x: 1 });

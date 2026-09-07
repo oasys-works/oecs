@@ -19,16 +19,18 @@
  * imports nothing, so a trace consumer or a host seam reads a phase name
  * without pulling the schedule behind it.
  *
- * Within each phase, systems are topologically sorted using Kahn's
- * algorithm, respecting before and after ordering constraints. Insertion
- * order is used as a stable tiebreaker for deterministic execution.
+ * Within each phase, Kahn's algorithm sorts the systems, and it respects the
+ * before and after ordering constraints. Insertion order breaks a tie, so
+ * execution is deterministic.
  *
- * After all systems in a phase complete, SystemContext.flush() is called
- * automatically, applying deferred structural changes before the next phase.
+ * After every system in a phase returns, the schedule calls
+ * `SystemContext.flush()`. Deferred structural changes apply before the next
+ * phase runs.
  *
- * The sort result is cached per phase and invalidated when systems are
- * added or removed. `schedule_plan.ts` runs the sort and owns the plan shape.
- * This file owns when the plan is thrown away and when it is rebuilt.
+ * Each phase caches its sort result. An add, a remove, or a `configureSet`
+ * that changes ordering drops the cache. `schedule_plan.ts` runs the sort and
+ * owns the plan shape. This file owns when the plan is thrown away and when it
+ * is rebuilt.
  *
  * Run conditions and system sets. A system (via `SystemEntry.runIf`) or a
  * whole `SystemSet` (via `configureSet`) can carry a `RunCondition` evaluated
@@ -134,8 +136,8 @@ function toArray<T>(value: T | readonly T[] | undefined): readonly T[] {
  * phase, so it shows up when the scheduler's own work is a visible share of the
  * frame: a small world, or many systems with short bodies. It disappears once
  * the system body dominates the frame. It appears on V8 and not on
- * JavaScriptCore. Twenty closures made from one literal are already enough
- * targets to keep the site polymorphic, so the seed guards the single-system
+ * JavaScriptCore. A world whose systems come from many closures of one literal
+ * already keeps the site polymorphic, so the seed guards the single-system
  * world and the true factory, and not every world that looks repetitive.
  *
  * The remedy is to give the site many targets on purpose. `seedDispatchSite`
@@ -143,9 +145,9 @@ function toArray<T>(value: T | readonly T[] | undefined): readonly T[] {
  * loads, enough times for the engine to allocate the feedback and record them.
  * From then on the site is megamorphic for the life of the process, every
  * system body is compiled on its own, and the factory case runs at the speed
- * of the plain case. A megamorphic call costs a few nanoseconds more than an
- * inlined one for each system in each phase. A system body that does any work
- * repays that many times over.
+ * of the plain case. A megamorphic call costs more than an inlined one, for
+ * each system in each phase. A system body that does any work repays that
+ * many times over.
  *
  * The seed is observed engine behaviour and not a guarantee. If an engine
  * ignores it, the dispatch is exactly the plain call it always was.
@@ -165,7 +167,7 @@ function seedDispatchSite(): void {
 	];
 	// The engine allocates feedback for a function lazily, after it has run for
 	// a while, so one call for each seed is not enough to be recorded. The
-	// count below is far past that point and costs microseconds one time.
+	// count below is far past that point, and it runs once at module load.
 	const none = null as unknown as SystemContext;
 	for (let round = 0; round < 500; round++) {
 		for (let i = 0; i < seeds.length; i++) invokeSystem(seeds[i], none, 0);
@@ -238,10 +240,9 @@ export class Schedule {
 	// so a no-backend ECS never touches the routing field.
 	private _backend: ComputeBackend | null = null;
 	// The attached system dispatch route, or null (the default). One typed
-	// slot, not a keyed registry: a keyed read on the dispatch path is far
-	// slower on a schedule of short bodies, and `bench/` holds the comparison.
-	// Hoisted in `_runPhase` exactly as the backend is: `null` means
-	// `desc.routePlan` is never read.
+	// slot, not a keyed registry, because a keyed read on the dispatch path is
+	// far slower on a schedule of short bodies. Hoisted in `_runPhase` exactly
+	// as the backend is: `null` means `desc.routePlan` is never read.
 	private _route: RouteDispatch | null = null;
 
 	/** Dev-diagnostic sink (`ECSOptions.onWarn`). Defaults to `console.warn`.
@@ -713,7 +714,7 @@ export class Schedule {
 		// set's conditions at most once per phase and reuse the verdict for every
 		// member, instead of re-evaluating per member. Run conditions are pure reads
 		// and deferred changes aren't flushed until the phase ends, so the memo is
-		// observationally identical within a phase while removing the N×-per-set work.
+		// observationally identical within a phase, and it drops the repeat per member.
 		const setVerdicts: Map<SystemSet, boolean> | undefined = hasGates
 			? new Map()
 			: undefined;
@@ -727,10 +728,10 @@ export class Schedule {
 			const desc = sorted[i];
 			if (hasGates) {
 				const node = this._gatedSystems.get(desc);
-				// A false run condition skips the body in canonical order, and
-				// leaves last_run unadvanced + enqueues nothing, so a skipped tick is
-				// indistinguishable from the system being absent that tick (the
-				// `stateHash` equality the acceptance requires).
+				// A false run condition skips the body in canonical order. It
+				// leaves the last-run tick unadvanced and enqueues nothing, so a
+				// skipped tick is indistinguishable from the system being absent
+				// that tick, and `stateHash` matches a world without it.
 				if (node !== undefined && !this._shouldRun(node, ctx, setVerdicts!)) continue;
 			}
 			// lastRunTick exposes the system's *previous* run to ChangedQuery, so
@@ -811,11 +812,11 @@ export class Schedule {
 	 * memo lives only for a single `_runPhase` pass. Short-circuits on the first
 	 * `false`. The system's own conditions evaluate per system, in canonical order.
 	 *
-	 * Semantic NOTE: this evaluates a set's conditions once-per-set-per-phase
-	 * rather than once-per-member. Equivalent for pure RunConditions. Observably
-	 * different only if a set condition reads state mutated earlier in the same
-	 * phase (resources write immediately). That is intentional, the set gates as a
-	 * unit, so all its members share one verdict for the phase.
+	 * This evaluates a set's conditions once for each set in each phase, and not
+	 * once for each member. The two agree for a pure `RunCondition`. They differ
+	 * only when a set condition reads state a system mutated earlier in the same
+	 * phase (a resource writes immediately). That is intentional. The set gates
+	 * as a unit, so every member shares one verdict for the phase.
 	 */
 	private _shouldRun(
 		node: SystemNode,

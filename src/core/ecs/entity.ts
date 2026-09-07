@@ -98,6 +98,6 @@ export const entityNotAliveError = (op: string, id: EntityID, detail?: string): 
 		ECS_ERROR.ENTITY_NOT_ALIVE,
 		`${op}: entity ${id} (index ${getEntityIndex(id)}, generation ${getEntityGeneration(
 			id
-		)}) is not alive${detail ? `, ${detail}` : ""} (destroyed, never created, or a stale handle; guard with isAlive() first)`,
+		)}) is not alive${detail ? `, ${detail}` : ""}. It was destroyed, never created, or the handle is stale. Guard with isAlive() first`,
 		{ entity: id, index: getEntityIndex(id), generation: getEntityGeneration(id), op }
 	);

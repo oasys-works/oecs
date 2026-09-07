@@ -1,14 +1,14 @@
 /**
  * Editor layer, reified undo and redo over the typed `HostCommandQueue`.
  *
- * Asserts the properties the issue's acceptance criteria name, against the real
- * engine (real `installHostCommandSeam`, real deferred flush):
+ * Asserts these properties against the real engine, with a real
+ * `installHostCommandSeam` and a real deferred flush:
  *   - undo and redo enqueue the inverse and forward on the same bus (applied at the next
  *     schedule head), never a direct mutation
- *   - spawn → edit → edit → undo×N walks state back, then undo removes the spawn
- *     (the spawn inverse is finalized in `onSpawned`);
- *   - setField and despawn round-trip (despawn restores data under a new id, and
- *     redo removes the respawned entity, not the dead original);
+ *   - spawn → edit → edit → undo×N walks state back, then undo removes the spawn,
+ *     and `onSpawned` finalizes the spawn inverse
+ *   - setField and despawn round-trip, despawn restores data under a new id, and
+ *     redo removes the respawned entity, not the dead original
  *   - the full vocabulary (add and remove component, disable and enable) round-trips
  *   - a transaction groups several actions into one undo entry.
  */
@@ -82,7 +82,7 @@ describe("Editor, spawn → edit → edit → undo×N (the acceptance walk-back)
 	});
 });
 
-describe("Editor, set_field undo and redo round-trips", () => {
+describe("Editor, setField undo and redo round-trips", () => {
 	it("redo re-applies the edit, undo reverts it again", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -158,7 +158,7 @@ describe("Editor, despawn undo and redo (data round-trips, identity does not)", 
 });
 
 describe("Editor, add and remove component round-trips", () => {
-	it("add_component undo removes it, redo re-adds it, remove_component undo restores values", () => {
+	it("add undo removes the component, redo re-adds it, remove undo restores its values", () => {
 		const { world, Cell, editor } = setup();
 		const Vel = world.registerComponent({ vx: "i32" }) as VelDef;
 		let id: EntityID | undefined;
@@ -256,9 +256,9 @@ describe("Editor, more than one undo and redo per frame (the stale-id regression
 		expect(world.isAlive(id!)).toBe(false);
 
 		// Two more editor actions before the next world.update, the multi undo and redo
-		// per-frame sequence that once regressed. redo re-enqueues the spawn (respawns
-		// under a new id once it applies. The immediately-following undo re-enqueues
-		// the same stable inverse-despawn object by reference. Pre-fix, the redo's
+		// per-frame sequence that once regressed. redo re-enqueues the spawn, which
+		// respawns under a new id once it applies. The immediately-following undo
+		// re-enqueues the same stable inverse-despawn object by reference. Pre-fix, the redo's
 		// `onSpawned` replaced the inverse slot with a fresh object, so this already-
 		// enqueued despawn still pointed at the dead original `id` → ENTITY_NOT_ALIVE
 		// when the queue drained. With the stable-object fix, the respawn's `onSpawned`
@@ -317,7 +317,7 @@ describe("Editor, an empty transaction is a no-op", () => {
 	});
 });
 
-describe("Editor, pending_field self-resolves once the channel catches up", () => {
+describe("Editor, pendingField self-resolves once the channel catches up", () => {
 	it("returns the edit before commit, then undefined after, and an external write is not shadowed", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;
@@ -373,7 +373,7 @@ describe("Editor, an aborted transaction leaves no trace (the shadow-poisoning r
 	});
 });
 
-describe("Editor, pending_field self-resolves when the slot dies", () => {
+describe("Editor, pendingField self-resolves when the slot dies", () => {
 	it("a shadowed slot on a despawned entity resolves to undefined instead of echoing forever", () => {
 		const { world, Cell, editor } = setup();
 		let id: EntityID | undefined;

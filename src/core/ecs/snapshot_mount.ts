@@ -114,8 +114,8 @@ export function reconstructHostRows(
 		if (DEV) {
 			if (rows.length !== meta.length) {
 				throw new ECSRestoreError(
-					`archetype ${meta.archetypeId} row-count mismatch on restore: scan found ` +
-						`${rows.length} rows, host-state recorded ${meta.length}`
+					`archetype ${meta.archetypeId} row-count mismatch on restore. The scan ` +
+						`found ${rows.length} rows and the host state recorded ${meta.length}`
 				);
 			}
 			for (let k = 0; k < rows.length; k++) {

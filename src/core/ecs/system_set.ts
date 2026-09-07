@@ -40,7 +40,8 @@ export function systemSet(name: string): SystemSet {
 export type SystemOrderingTarget = SystemDescriptor | SystemSet;
 
 /** Shared configuration applied to a `SystemSet` via `configureSet`.
- * Accumulates across calls, conditions and together, ordering targets union. */
+ * It accumulates across calls. Conditions combine with and, and ordering
+ * targets union. */
 export interface SystemSetConfig {
 	/** Condition(s) every member is gated by (ANDed with each member's own). */
 	runIf?: RunCondition | readonly RunCondition[];

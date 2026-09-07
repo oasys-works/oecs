@@ -3,7 +3,7 @@ import { _dispatchTraceInternals } from "../../dispatch_trace";
 
 const { parseFrameFile, resolveCallsiteFromStack, create } = _dispatchTraceInternals;
 
-describe("dispatch_trace.parse_frame_file", () => {
+describe("dispatch_trace.parseFrameFile", () => {
 	it("parses parenthesised V8 frame format", () => {
 		const line = "    at fn_name (file:///abs/path/foo.ts:12:34)";
 		expect(parseFrameFile(line)).toBe("file:///abs/path/foo.ts");
@@ -25,7 +25,7 @@ describe("dispatch_trace.parse_frame_file", () => {
 	});
 });
 
-describe("dispatch_trace.resolve_callsite_from_stack", () => {
+describe("dispatch_trace.resolveCallsiteFromStack", () => {
 	// Synthetic stack: the tracer's own frames (a source checkout of the engine)
 	// stacked above the actual user dispatch site. The walk must drop every
 	// engine frame and attribute the first non-engine (user) frame.
@@ -103,7 +103,7 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 		expect(snap.channels.resources.read).toEqual([]);
 	});
 
-	it("is_active reflects VISUAL_INTEL_TRACE and caches until reset", () => {
+	it("isActive reflects VISUAL_INTEL_TRACE and caches until reset", () => {
 		const t = create();
 		delete process.env.VISUAL_INTEL_TRACE;
 		t.reset();
@@ -149,7 +149,7 @@ describe("dispatch_trace tracer (constructed instance)", () => {
 		const snap = t.snapshot();
 		expect(snap.channels.resources.remove.length).toBe(1);
 		expect(snap.channels.resources.remove[0]!.key).toBe("Mode");
-		// A remove is its own op. It does not leak into register/write.
+		// A remove is its own op. It does not leak into register or write.
 		expect(snap.channels.resources.register.length).toBe(0);
 		expect(snap.channels.resources.write.length).toBe(0);
 	});

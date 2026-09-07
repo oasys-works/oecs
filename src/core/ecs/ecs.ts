@@ -355,7 +355,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/** The backing `WebAssembly.Memory` when `memory.wasm` was used (both
 	 * bring-your-own and engine-constructed), else `null`. A consumer hands
-	 * this to its WASM `ComputeBackend` so the sim and the live columns
+	 * this to its WASM `ComputeBackend` so the module and the live columns
 	 * share the same bytes. */
 	public get wasmMemory(): WebAssembly.Memory | null {
 		return this._memory.wasmMemory;
@@ -365,7 +365,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// Loud migration guard: the pre-release sizing knobs were
 		// *replaced*, not aliased. An untyped JS caller still passing them
 		// would otherwise be silently ignored, and a silently-dropped
-		// `bufferAllocator` means a WASM consumer's sim would read a different
+		// `bufferAllocator` means a WASM consumer's module would read a different
 		// buffer than the columns live in.
 		const hasOwn = Object.prototype.hasOwnProperty;
 		if (
@@ -374,9 +374,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		) {
 			throw new ECSError(
 				ECS_ERROR.INVALID_MEMORY_OPTIONS,
-				"ECSOptions.initial_capacity / buffer_allocator were replaced by ECSOptions.memory: " +
-					"initial_capacity → memory.columnCapacity (or memory.budget); " +
-					"buffer_allocator → memory.wasm (WASM-backed) or memory.allocator (custom in-place)."
+				"ECSOptions.initial_capacity and buffer_allocator were replaced by ECSOptions.memory. " +
+					"Pass initial_capacity as memory.columnCapacity (or memory.budget), " +
+					"and buffer_allocator as memory.wasm (WASM-backed) or memory.allocator (custom in-place)"
 			);
 		}
 		// Typo tripwire: an unknown key (e.g. `initialCapacity`) would otherwise
@@ -394,7 +394,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		const memory: ResolvedECSMemory = resolveECSMemory(options?.memory);
 		this._memory = memory;
 		// `onBufferReplaced` fires after every extend and grow so any subscribed
-		// listener (typically the WASM sim module) can re-walk the layout
+		// listener (typically a compute backend) can re-walk the layout
 		// descriptor. The callback is captured here rather than in Store
 		// so Store has no reason to know about layout listeners, the
 		// layering stays one-way.
@@ -467,7 +467,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		if (missing !== null) {
 			throw new ECSError(
 				ECS_ERROR.REGION_NOT_DECLARED,
-				`region_handles: region id(s) [${missing.join(", ")}] not declared, pass them via ECSOptions.regions`
+				`regionHandles: region ids [${missing.join(", ")}] are not declared. Pass them in ECSOptions.regions`
 			);
 		}
 		return out;
@@ -512,7 +512,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		if (DEV && this._backend !== null) {
 			throw new ECSError(
 				ECS_ERROR.BACKEND_ALREADY_ATTACHED,
-				"A ComputeBackend is already attached; detach it before attaching another (one backend per ECS)."
+				"a ComputeBackend is already attached to this world. Detach it before attaching another, because a world holds one backend"
 			);
 		}
 		this._backend = backend;
@@ -734,11 +734,13 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	}
 
 	/** DEV-only: throw when an *immediate* host structural mutator is called
-	 * from inside one of this world's system bodies (or an observer and onAdded
-	 * hook. They run in the same access spans). One rule covers every host
-	 * structural mutator: despawn, add and remove(Components), batchAdd and
-	 * Remove, disable and enable, and the spawn family (spawn, spawnBundle and
-	 * spawnMany). An immediate structural op mid-schedule can move or swap rows
+	 * from inside one of this world's system bodies. An observer callback and an
+	 * `onAdded` hook run in the same access span, so the guard covers them too.
+	 * One rule covers every host structural mutator: `despawn`, `addComponent`,
+	 * `addComponents`, `removeComponent`, `removeComponents`,
+	 * `batchAddComponent`, `batchRemoveComponent`, `disable`, `enable`, and the
+	 * spawn family (`spawn`, `spawnBundle` and `spawnMany`).
+	 * An immediate structural op mid-schedule can move or swap rows
 	 * a running query is walking. A spawn-append into that archetype can trip a
 	 * column realloc under it. Neither is visible to observers. The archetype-level
 	 * `_iterDepth` guard only catches mutations touching the archetype currently
@@ -755,7 +757,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			const name = desc.name ?? `system_${desc.id}`;
 			throw new ECSError(
 				ECS_ERROR.ACCESS_UNDECLARED,
-				`ecs.${op} called from inside system '${name}', host ${op} is immediate and unsafe mid-iteration (and invisible to observers); use ${alternative} instead`,
+				`ecs.${op} was called from inside system '${name}'. The host ${op} is immediate, unsafe mid-iteration, and invisible to observers. Use ${alternative} instead`,
 				{ op }
 			);
 		}
@@ -849,8 +851,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** Batch-attach several components in one archetype transition. Takes the
 	 * same callable-bundle varargs as `spawnBundle`, `world.addComponents(e,
 	 * Pos({ x, y }), Vel({ vx }), Frozen)`, each item checked against its own
-	 * def's schema (a misspelled or cross-component field is a compile error
-	 * tags refuse values). Omitted fields zero-fill. */
+	 * def's schema (a misspelled or cross-component field is a compile error,
+	 * and a tag refuses values). Omitted fields zero-fill. */
 	public addComponents<Items extends readonly BundleOrDef[]>(
 		entityId: EntityID,
 		...items: StrictBundles<Items>
@@ -959,8 +961,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/** Host-side parity with `SystemContext.refRead`: a
 	 * read-only whole-component view for tooling and tests, instead of reading
-	 * field-by-field. Same advisory-`readonly` semantics as the ctx variant
-	 * no `_changedTick` bump. Dev-throws on a dead entity, or when the entity
+	 * field-by-field. Same advisory-`readonly` semantics as the ctx variant,
+	 * and no `_changedTick` bump. Dev-throws on a dead entity, or when the entity
 	 * doesn't hold the component (tags included, no fields, nothing to ref).
 	 *
 	 * **Staleness:** unlike ctx refs (protected by deferred structural changes
@@ -1137,8 +1139,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/**
 	 * Get the live, cached query matching entities that have **all** of
 	 * `defs`. Queries are deduplicated by mask, calling this twice with the
-	 * same terms returns the same instance, so build once at setup and reuse
-	 * the view stays live as archetypes appear. Refine with `.and()`,
+	 * same terms returns the same instance, so build once at setup and reuse.
+	 * The view stays live as archetypes appear. Refine with `.and()`,
 	 * `.not()` or `.or()`. Iterate with `forEachChunk` (mutating hot path),
 	 * `forEach` (per-archetype), or `forEachEntity` (per-entity).
 	 *
@@ -1401,7 +1403,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * observer that spawns and transitions gets its target archetype prewarmed
 	 * too rather than first-touching lazily mid-tick. Exposed as
 	 * `private` because the only caller is `startup()`. Visible to tests via
-	 * the `archetype_count` delta on the public ECS facade. */
+	 * the `archetypeCount` delta on the public ECS facade. */
 	private _prewarmArchetypes(): void {
 		const sources = this._prewarmSources;
 		const contributed: SystemDescriptor[] = [];
@@ -1473,7 +1475,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			// change tick, above every run this frame, so an observer's baseline
 			// orders against every system's stamps and against the previous host
 			// window. onSet runs inside the event
-			// window, and `clearEvents` is the tick's last act. So onSet reads the
+			// window, and `events.clear()` is the tick's last act. So onSet reads the
 			// settled component snapshot *and* this tick's events. The channel is
 			// then empty at the tick boundary, which snapshot and restore relies on,
 			// because it excludes event state. Any structural ops an onSet observer enqueues flush at the next
@@ -1486,13 +1488,13 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			const settle = this._settleHooks;
 			for (let i = 0; i < settle.length; i++) settle[i](setTick);
 			if (DEV && this._store.hasEvents && this._store.events.devBufferedCount() !== evBefore) {
-				// An onSet observer emitted: `clearEvents` below would wipe it before
-				// any reader, so it is silently dropped, and would break snapshot/
-				// restore determinism if it survived. Bridge a detected change to
+				// An onSet observer emitted: `events.clear()` below would wipe it before
+				// any reader, so it is silently dropped, and it would break snapshot
+				// and restore determinism if it survived. Bridge a detected change to
 				// a next-tick event from a system reading the dirty list, not from onSet.
 				throw new ECSError(
 					ECS_ERROR.OBSERVER_ONSET_EMIT,
-					"onSet observer emitted an event; onSet runs at the tick tail and its emissions would be dropped at clearEvents. Emit from a system instead."
+					"an onSet observer emitted an event. onSet runs at the tick tail, and events.clear() drops what it emits. Emit from a system instead"
 				);
 			}
 			if (this._store.hasEvents) this._store.events.clear();
@@ -1568,7 +1570,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// === BEGIN STORE PASS-THROUGH BAND ===
 	//
 	// Every member below is a single mechanical delegation to a collaborator,
-	// one of `this._store`, `this._schedule`, `this._ctx` and `this._observers`.
+	// one of `this._store`, `this._schedule` and `this._ctx`.
 	// It may also delegate to one the store exposes by name, one of
 	// `this._store.relations`, `.events`, `.resources` and `.snapshots`. Each is
 	// exactly one call or property read,
@@ -1605,8 +1607,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** Look up the field index a component reserves for `fieldName`. The
 	 * index is assigned by `registerComponent` in insertion order and is
 	 * stable for the lifetime of the ECS. Used by systems that need to
-	 * pass `(component_id, field_id)` pairs across the WASM FFI, the Zig
-	 * side identifies columns by these numeric IDs. */
+	 * pass `(component_id, field_id)` pairs across the WASM FFI, because the
+	 * module identifies columns by these numeric ids. */
 	public fieldId<S extends Record<string, TypedArrayTag>>(
 		def: ComponentDef<S>,
 		fieldName: Extract<keyof S, string>
@@ -1824,47 +1826,6 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		this._schedule.configureSet(set, config);
 		return this;
 	}
-
-	/**
-	 * Register a per-component observer. Reactions that were
-	 * hand-polled every tick, "on `Death` added → spawn corpse", "on `HexPos`
-	 * set → mark the spatial index", become declarative.
-	 *
-	 * - `onAdd` and `onRemove` `(eid, ctx)` fire at the structural-flush
-	 *   boundary, after the batch commits, in canonical order (access-topological
-	 *   across observers, entity-id order within), looping to a fixed point so
-	 *   cascades settle. Determinism: a `stateHash` replay reproduces regardless
-	 *   of the order ops were queued.
-	 * - `onDisable` and `onEnable` `(eid, ctx)` fire at the same flush boundary
-	 *   when an entity carrying the component is disabled or enabled, once
-	 *   per net transition, for every component the entity carries
-	 *   (a disable is a soft remove of the whole mask from default queries). Like
-	 *   `onAdd` and `onRemove`, an *immediate* `ecs.disable()` does not fire, only
-	 *   the deferred `ctx.commands.disable()` toggle does. `yieldExisting` seeds enabled
-	 *   members only, so a disabled entity is correctly absent at seed.
-	 * - **`onSet`** fires at the post-update detection point. Default
-	 *   `granularity: "archetype"` fires `(arch, ctx)` once per changed
-	 *   archetype-column (the consumer iterates `arch.entityCount` rows), free,
-	 *   reusing the change tick. `granularity: "entity"` fires `(eid, ctx)` once
-	 *   per changed entity, draining the opt-in per-row dirty list (registering it
-	 *   enables dirty tracking for the component. The producer records via
-	 *   `ctx.setField` automatically, or `ctx.markChanged` in a `getColumnMut`
-	 *   hot loop).
-	 *
-	 * Observer callbacks that touch ECS state must declare it via `access`
-	 * (merged over an all-empty declaration), undeclared access throws in
-	 * `DEV`, and those decls drive the firing order. `yieldExisting` replays
-	 * `onAdd` over current matches on registration. Register at world-build time
-	 * (before `startup()`). The returned handle's `dispose()` unregisters.
-	 */
-	// Deliberately non-generic: the callbacks receive `(eid, ctx)` or `(arch,
-	// ctx)` and read data through def-carrying APIs (`ctx.getField(eid, def,
-	// …)`), which are already schema-checked, a `<S>` here would bind from
-	// `def` and flow nowhere. `ComponentHandle` (not the erased `ComponentDef`)
-	// so generic callers holding a `ComponentDef<S>` can register without a
-	// cast, only the `.id` is read. If a schema-typed row and column argument is
-	// ever handed to `onSet`, that's a runtime feature (cursor resolution on
-	// the observer hot path), not a signature change.
 
 	/**
 	 * Keep a change tick for each row of `def`, the row grain of change

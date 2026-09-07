@@ -228,20 +228,19 @@ export interface StoreOptions {
 	bufferAllocator?: InPlaceBufferAllocator;
 	/** Sizing intent the world was constructed with, used to phrase
 	 * allocator-cap and entity-index-overflow errors in the caller's own
-	 * terms ("3.2× the declared budget") instead of raw bytes. Wired by
+	 * terms (a multiple of the declared budget) instead of raw bytes. Wired by
 	 * `ECS` from `resolveECSMemory`. Absent for bare test Stores. */
 	capContext?: ECSMemoryCapContext;
 	/** Fired after every SAB resize (extend or grow). The new SAB has
 	 * already been built and archetypes have already refreshed their
-	 * views by the time this fires. Used by ECS to call
-	 * `sim.setLayout(0)` so WASM-side cached pointers re-walk. */
+	 * views by the time this fires. `ECS` uses it to call `setLayout` on every
+	 * subscribed layout listener, so a WASM-side cached pointer re-walks. */
 	onBufferReplaced?: () => void;
 	/** Max live entities the SAB entity-index region holds.
 	 * Default `ENTITY_INDEX_DEFAULT_CAPACITY` (`1 << 20`, the full EntityID
 	 * index space). Exceeding this at runtime throws `EID_MAX_INDEX_OVERFLOW`.
-	 * Tests with small entity counts may set lower to bench the SAB region size
-	 * or to make index exhaustion reachable. A 1000-entity workload fits
-	 * comfortably in the default. */
+	 * Tests with small entity counts may set lower to shrink the SAB region or
+	 * to make index exhaustion reachable. */
 	entityIndexCapacity?: number;
 	/** Byte offset inside the backing where the store header goes. Default 0.
 	 * Forwarded verbatim to `createColumnStore`, and every offset in the bytes
@@ -271,8 +270,8 @@ export interface StoreOptions {
 	 * flag: it does not touch the per-tick path, the in-place-allocator invariant
 	 * (a memory-safety requirement that holds regardless), or the
 	 * always-on `enabled_count` partition maintenance. The flag's value is a
-	 * plugin gate, not a hot-path switch, `stateHash`/snapshot are never
-	 * called per tick. */
+	 * plugin gate, not a hot-path switch. `stateHash` and the snapshot are
+	 * never called per tick. */
 	deterministic?: boolean;
 }
 
@@ -360,9 +359,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	private readonly _queries: QueryRegistry;
 
 	// --- Deferred operation buffers ---
-	// the pending buffers and the phase-flush drain policy (fast path,
-	// observed fixed point, re-entrancy guard) live in `DeferredCommandBuffer`
-	//. The batch appliers (`_flushAdds` etc.) stay here with the
+	// The pending buffers and the phase-flush drain policy (fast path,
+	// observed fixed point, re-entrancy guard) live in `DeferredCommandBuffer`.
+	// The batch appliers (`_flushAdds` etc.) stay here with the
 	// transition, dirty and observer machinery they are entangled with, reached
 	// through the collaborator's closure host.
 	private readonly _deferred: DeferredCommandBuffer;
@@ -642,7 +641,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * `_flushToggles` emit one event per *net* transition (disable→enable→disable
 	 * within a tick = a single onDisable) instead of one per buffered op, required
 	 * because the radix canonical-order pass would otherwise reorder duplicate eids
-	 * and mis-sequence a consumer's delete/republish. */
+	 * and mis-sequence a consumer's delete and republish. */
 	private readonly _toggleInitial = new Map<EntityID, boolean>();
 
 	// --- The row grain: the row tick plane and the dirty list ---
@@ -753,14 +752,14 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		}
 		// No cap-fallback, by design. If `_bufferAllocator` is the default
 		// `growableSabAllocator`, this call throws once the requested size
-		// crosses the allocator's 256 MiB cap. We deliberately let that throw
-		// propagate (the match dies) rather than catching it to realloc into a
-		// fresh allocator or compact holes. A real workload uses ~16 MiB
-		// and columns never grow (1024 initial capacity > the typical ~1000-row
-		// budget), and the entity-ID space (`1<<20`) caps total entities below the
-		// point where columns could fill 256 MiB. So hitting the cap means runaway
+		// crosses the allocator's 256 MiB cap. The throw propagates, rather than
+		// being caught to realloc into a fresh allocator or compact holes. A
+		// world sized for the default column capacity stays far below the cap,
+		// and the entity-ID space (`1<<20`) caps total entities below the point
+		// where columns could fill 256 MiB. So hitting the cap means runaway
 		// entity creation upstream, a defect to diagnose, not a limit to paper
-		// over. See `growableSabAllocator`'s doc comment for the full numbers.
+		// over. See `growableSabAllocator`'s doc comment for the footprint
+		// analysis.
 		// The catch below does not soften that: a cap hit is re-thrown, still
 		// fatal, with the caller's declared sizing intent attached so
 		// the failure is diagnosable in the caller's own terms.
@@ -797,7 +796,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	/** Build the intent-aware fatal for an allocator cap hit. The
 	 * allocator can only name raw bytes. The Store knows what the caller
 	 * declared (`capContext`) and how many entities are live, so the error
-	 * says "3.2× the declared budget, runaway creation upstream?" instead
+	 * names the live count as a multiple of the declared budget instead
 	 * of leaving the caller to reverse-engineer byte counts. Fatality is
 	 * unchanged (no grow-beyond-cap fallback). */
 	private _capExceededError(cause: StoreCapExceededError): ECSError {
@@ -812,12 +811,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		} else if (ctx.budgetEntities !== null) {
 			const ratio = (live / ctx.budgetEntities).toFixed(1);
 			intent =
-				` Declared ${ctx.intentLabel}; the ECS holds ${live} live entities ` +
-				`(${ratio}× the budget), runaway entity creation upstream, or an ` +
-				`under-declared budget. Raise the budget only if a ${live}-entity ` +
-				`ECS is intended.`;
+				` Declared ${ctx.intentLabel}. The ECS holds ${live} live entities ` +
+				`(${ratio}× the budget), so either entity creation ran away upstream ` +
+				`or the budget is under-declared. Raise the budget only if a ` +
+				`${live}-entity ECS is intended.`;
 		} else {
-			intent = ` Declared ${ctx.intentLabel}; the ECS holds ${live} live entities.`;
+			intent = ` Declared ${ctx.intentLabel}. The ECS holds ${live} live entities.`;
 		}
 		return new ECSError(
 			ECS_ERROR.STORE_CAP_EXCEEDED,
@@ -844,11 +843,11 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// hot extend path skips the realloc-and-republish work that
 		// dominated lazy archetype registration. Callers wanting the
 		// classical per-extend fresh-SAB behavior (or `wasmMemoryAllocator`
-		// for the sim FFI) pass an explicit `bufferAllocator`. Default cap is
-		// 256 MiB, plenty for a 1000-entity workload (~2 MiB live SAB), well
-		// below browser per-origin SAB ceilings, and quicker to construct than a
-		// 1 GiB cap (V8 does per-byte bookkeeping at the `maxByteLength`
-		// reservation. See the allocator.ts header note).
+		// for the WASM FFI) pass an explicit `bufferAllocator`. The default cap
+		// of 256 MiB sits well below browser per-origin SAB ceilings, and a
+		// larger cap is slower to construct, because V8 does per-byte
+		// bookkeeping at the `maxByteLength` reservation. See the allocator.ts
+		// header note.
 		this._bufferAllocator = opts.bufferAllocator ?? growableSabAllocator();
 		// Enforced at the boundary: a live Store's flush loops
 		// hoist entity-index views across grows, which is only correct for an
@@ -913,10 +912,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// Always-on command ring. Same reasoning as the
 		// always-on event ring: a consumer's WASM structural-change drain
 		// needs it. Bare-SAB tests pay the negligible 4 KiB + 16 B cost.
-		// Without it, the drain returns 0 (RingAbsent) and the parity test
-		// cannot drain commands.
+		// Without it, the drain reports the ring absent and returns nothing.
 		// Always-on action ring. Was an opt-in `actionRingCapacitySlots`
-		// ECS option. Now de-gamed to an always-on engine mechanism region at the
+		// ECS option. Now an always-on engine region at the
 		// default capacity (like the command and event rings), so the public surface
 		// carries no ring-sizing knob. The TS→WASM action drain finds it present.
 		this._columnStore = createColumnStore([], this._bufferAllocator, {
@@ -930,8 +928,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			bindingsRegionBytes: this._bindingsRegionBytes
 		});
 		// Build the initial Int32Array views over the SAB entity-index
-		// region. Mutated by every entity create/destroy/move. Refreshed
-		// inside `_handleBufferResized` after extend/grow.
+		// region. Mutated by every entity create, destroy and move. Refreshed
+		// inside `_handleBufferResized` after an extend and a grow.
 		const views = createEntityIndexViews(
 			this._columnStore.buffer,
 			this._storeBase + this._columnStore.header.entityIndexOff,
@@ -992,8 +990,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * (`extend.ts` snapshot and restore), so this is only the layout recipe. */
 	private readonly _regions: readonly StoreRegionSpec[] | undefined;
 	/** Byte size of the opt-in sim-bindings region. 0 ⇒ no region (the
-	 * pure-TS default). Captured so the initial `createColumnStore` reserves it
-	 * across a realloc the size is re-derived from the old header by
+	 * pure-TS default). Captured so the initial `createColumnStore` reserves it.
+	 * Across a realloc the size is re-derived from the old header by
 	 * `optionsFromOld`, so it is not threaded through the grow and extend path. */
 	private readonly _bindingsRegionBytes: number;
 	/** Determinism opt-in. When `false` (the default), the canonical-ordering
@@ -1019,23 +1017,22 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		if (!this._deterministic) {
 			throw new ECSError(
 				ECS_ERROR.DETERMINISM_DISABLED,
-				`${method} requires determinism, construct the Store/ECS with ` +
+				`${method} requires determinism. Construct the world with ` +
 					`{ deterministic: true }. The canonical-ordering determinism surface ` +
-					`(stateHash / snapshotSparse / restoreSparse) is opt-in.`
+					`is opt-in: stateHash, snapshotSparse, restoreSparse.`
 			);
 		}
 	}
 
 	/** Rebuild the Int32Array views over the SAB entity-index region
 	 * after a host-side SAB realloc (extend and grow). Called from
-	 * `_handleBufferResized` Before the user-supplied `onBufferReplaced`
-	 * callback fires so any downstream reader sees coherent views. */
+	 * `_handleBufferResized`, before the user-supplied `onBufferReplaced`
+	 * callback fires, so any downstream reader sees coherent views. */
 	private _refreshEntityIndexViews(): void {
 		const off = this._columnStore.view.getUint32(STORE_HEADER_OFFSETS.entity_index_off, true);
-		// boundary: TypedArray interop. Capacity didn't change in this PR's
-		// scope. The new region's bytes were either preserved (slow path
-		// via snapshot+restore in extend and grow) or untouched (in-place fast
-		// path). Re-derive the views from the new SAB.
+		// boundary: TypedArray interop. The new region's bytes were either
+		// preserved (slow path via snapshot and restore in extend and grow) or
+		// untouched (in-place fast path). Re-derive the views from the new SAB.
 		const base = this._columnStore.storeBase;
 		const views = createEntityIndexViews(
 			this._columnStore.buffer,
@@ -1066,8 +1063,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** SAB backing every archetype's column views. Read-only handle. The
 	 * live mutation happens through `_archGetOrCreateFromMask`.
-	 * Exposed for tests, snapshot and restore, and the upcoming
-	 * `columnStoreStateHash` wire-up. Production reads of column data should
+	 * Exposed for tests, snapshot and restore, and `columnStoreStateHash`.
+	 * Production reads of column data should
 	 * still go through `Archetype.getColumnRead` (which sources from this
 	 * SAB under the hood). */
 	public get columnStore(): ColumnStore {
@@ -1113,9 +1110,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * `growColumnStore` are the only other writers of `row_count`, and they
 	 * record the count at the moment of the resize, `Archetype.addEntity`
 	 * does not update it, so any insertion after the most recent resize
-	 * leaves the descriptor stale. Zig systems that drive their per-row loop
-	 * off `arch_hdr.row_count` (every `tick_*` export)
-	 * read those stale bytes and silently skip the newly spawned rows.
+	 * leaves the descriptor stale. A compute backend that drives its per-row
+	 * loop off the descriptor's `row_count` reads those stale bytes and
+	 * silently skips the newly spawned rows.
 	 *
 	 * Lockstep walk: SAB descriptors are written by `extendColumnStore` in
 	 * the order non-SAB archetypes are promoted, which is the same id-order
@@ -1160,7 +1157,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				a.hasColumns ? a.length : 0,
 				true
 			);
-			// Publish the enabled-row count too so the WASM sim's
+			// Publish the enabled-row count too so a compute backend's
 			// per-row scan loops skip disabled rows. Mirrors row_count: 0 for a
 			// column-less archetype (no SAB rows to scan).
 			view.setUint32(
@@ -1212,15 +1209,15 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * rather than wire contract.
 	 *
 	 * Determinism: same store ⇒ same digest within a process, and across
-	 * processes on the same architecture (which is all `replay_match`
-	 * needs, both replays run the same algorithm on the same words).
+	 * processes on the same architecture, which is all a lockstep replay
+	 * needs, because both replays run the same algorithm on the same words.
 	 *
 	 * **Opt-in.** Throws `DETERMINISM_DISABLED` unless the
 	 * Store was constructed with `{ deterministic: true }`. The canonical
 	 * ordering this fold relies on (sparse `canonicalIndices`, sorted relation
 	 * target sets) is the determinism tax the flag gates. */
 	public stateHash(): number {
-		this._assertDeterministic("state_hash()");
+		this._assertDeterministic("stateHash()");
 		let h = FNV1A_OFFSET_BASIS;
 		const archs = this._archGraph.archetypes;
 		for (let i = 0; i < archs.length; i++) {
@@ -1352,17 +1349,15 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		return this._archGraph.get(id);
 	}
 
-	/** Look up the `EntityID` at `row` in archetype `archetype_id`. Used
-	 * by a WASM system to resolve an
-	 * `EntityID` from an event-ring payload. Zig writes
-	 * `(archId, row, …)` to the event ring,
-	 * and TS bridges it back through `ctx.emit(...)` via this method.
+	/** Look up the `EntityID` at `row` in archetype `archetype_id`. A compute
+	 * backend resolves an `EntityID` from an event-ring payload through it. The
+	 * backend writes `(archId, row, …)` to the event ring, and TS bridges it
+	 * back through `ctx.emit(...)` via this method.
 	 *
 	 * Throws `ECSError` if `archetype_id` is out of range or `row` is
-	 * past the archetype's live row count, these would indicate a
-	 * ring-payload corruption or a stale row index (extend or grow
-	 * happened mid-tick), both of which are bugs the parity test would
-	 * surface. */
+	 * past the archetype's live row count. Either one means a corrupt
+	 * ring payload or a stale row index (an extend or a grow happened
+	 * mid-tick), and both are defects. */
 	public entityIdAtRow(archetypeId: number, row: number): EntityID {
 		const arch = this._archGet(archetypeId as ArchetypeID);
 		if (DEV) {
@@ -1782,7 +1777,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * then recycle (or retire) its slot. Shared by both immediate-destroy entry
 	 * points (the fast no-cascade path and the work-list driver in
 	 * `destroyEntity`). When `cascade` is non-null, a `delete`-policy target's
-	 * surviving sources are appended to it for the driver to drain
+	 * surviving sources are appended to it for the driver to drain.
 	 * `null` skips that collection for callers that cannot cascade. The caller
 	 * must have already confirmed `id` is alive. */
 	private _destroyOne(id: EntityID, cascade: EntityID[] | null): void {
@@ -1907,11 +1902,11 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * or `removeComponent` calls it once or twice. The mutation hot path depends
 	 * on the inline at every call site.
 	 * An earlier change added an `if (_registeredQueries.length === 0) return;`
-	 * gate to skip the bump for no-query workloads. The bench showed a large
-	 * regression of the mutation churn loop, because the extra statement pushed
-	 * the function past V8's per-call inlining budget. The gate is no longer in
-	 * the code. Do a bench run before you merge a change here. Code review
-	 * alone is not sufficient. */
+	 * gate to skip the bump for no-query workloads. The mutation churn loop got
+	 * far slower, because the extra statement pushed the function past V8's
+	 * per-call inlining budget. The gate is no longer in the code. Measure the
+	 * mutation hot path before you merge a change here. Code review alone is
+	 * not sufficient. */
 	private _onArchShrink(arch: Archetype, preLen: number): void {
 		this._rowCountsDirty = true;
 		if ((preLen === 0) !== (arch.length === 0)) this.queryDirtyEpoch++;
@@ -1932,7 +1927,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * **Precondition: ≥1 row was appended** (every caller adds at least one row),
 	 * so `arch.length > 0` afterward, which is why the crossings simplify and the
 	 * body stays inlinable (the inlining caveat on `_onArchShrink` applies
-	 * here too. This is bench-verified). The general
+	 * here too). The general
 	 * `(pre === 0) !== (post === 0)` boundary test collapses given the post side:
 	 *   - `length`: post > 0 always ⇒ a crossing iff `preLen === 0`.
 	 *   - `enabledCount`: non-decreasing on a grow ⇒ a 0-crossing iff it was 0
@@ -1947,8 +1942,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** Dirty bookkeeping for an enable and disable toggle. `length` is
 	 * unchanged (no row added or removed) but `enabled_count` moved, so: republish
-	 * row counts, because the descriptor's `enabled_count` changed and the WASM
-	 * sim and snapshot must see the new partition. Bump the query epoch only when
+	 * row counts, because the descriptor's `enabled_count` changed and a compute
+	 * backend and the snapshot must see the new partition. Bump the query epoch only when
 	 * the *enabled* count crossed 0. That is the boundary at which an archetype
 	 * enters and leaves a query's non-empty set, because `Query.nonEmptyArchs`
 	 * filters on `entityCount`, which is now `enabled_count`. */
@@ -1964,9 +1959,10 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// A disabled entity keeps its components, relations, sparse data, and stable
 	// `EntityID`. It is only moved to the disabled tail of its archetype so the
 	// default-iteration bound (`Archetype.entityCount` = `enabled_count`) skips
-	// it. No archetype transition, no data loss. Host-side calls are immediate
-	// the system-side mirror buffers (see `*_deferred`) because the row swap would
-	// corrupt an in-flight `forEach` over that archetype.
+	// it. No archetype transition, no data loss. Host-side calls are immediate.
+	// The system-side mirrors (`disableEntityDeferred`, `enableEntityDeferred`)
+	// buffer instead, because the row swap would corrupt an in-flight `forEach`
+	// over that archetype.
 
 	/** Immediately disable an entity (idempotent). The entity must hold at least
 	 * one component, a component-less entity occupies no archetype row, so it
@@ -2072,7 +2068,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** Buffer an enable and disable toggle for the phase flush. The row swap a
 	 * toggle performs would corrupt a `forEach` over that archetype if applied
-	 * mid-system, so it is deferred like add/remove. */
+	 * mid-system, so it is deferred like an add and a remove. */
 	public disableEntityDeferred(id: EntityID): void {
 		if (DEV && !this.isAlive(id)) throw entityNotAliveError("disableEntityDeferred", id);
 		this._deferred.queueToggle(id, true);
@@ -2115,7 +2111,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 		// Observed path: snapshot each distinct entity's pre-drain disabled state,
 		// apply every toggle in operation order (idempotent), then emit one event per
-		// net transition. A toggle never adds, removes and destroys, so every snapshotted
+		// net transition. A toggle never adds, removes or destroys, so every snapshotted
 		// entity is still alive at the diff (the guards are defensive).
 		const init = this._toggleInitial;
 		for (let i = 0; i < n; i++) {
@@ -2257,7 +2253,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			entRow[idx] = UNASSIGNED;
 			// Generation bump, tombstone retire, free-list push,
 			// the inline block this loop carried before the extraction lives in
-			// `EntityAllocator.release` now (monomorphic call, bench-gated).
+			// `EntityAllocator.release` now (monomorphic call).
 			alloc.release(idx, gen);
 		}
 
@@ -2303,8 +2299,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** Phase-boundary structural flush. The drain policy, no-observer fast
 	 * path, observed fixed point (adds and removes → destroys → toggles),
-	 * convergence guard, re-entrancy, lives in `DeferredCommandBuffer`
-	 *. The batch appliers it drives are the `_flush*` and
+	 * convergence guard, re-entrancy, lives in `DeferredCommandBuffer`.
+	 * The batch appliers it drives are the `_flush*` and
 	 * `_flushDestroys` methods below. */
 	public flushStructural(): void {
 		this._deferred.flushStructural();
@@ -2500,7 +2496,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// callback dispatch. The Store owns the hot-path flags, the effective-event
 	// collection (in `_flushAdds` and `_flushRemoves`), the fixed-point loop
 	// (`flushStructural`), and the per-row dirty list for per-entity onSet. All
-	// of this is a scheduling artifact, never folded into `stateHash`/snapshot.
+	// of this is a scheduling artifact, never folded into `stateHash` or the
+	// snapshot.
 
 	/** Record what one consumer of the change feed asks the store to collect
 	 * for `cid`, then apply the OR of every consumer's ask.
@@ -3104,8 +3101,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	/** Serialize the sparse stores **and** relation side data to a self-contained
 	 * byte buffer, the sparse half of a world snapshot (the dense half is the
-	 * SAB snapshot). Two framed sections: the sparse stores (`snapshot_sparse_-
-	 * stores`, exclusive relation targets + multi membership ride here) followed
+	 * SAB snapshot). Two framed sections: the sparse stores
+	 * (`snapshotSparseStores`, exclusive relation targets and multi membership
+	 * ride here) followed
 	 * by the relation side data (`snapshotRelations`, multi forward target
 	 * sets, which live outside the sparse store). Both are written in canonical
 	 * entity-index order, so two worlds with identical contents inserted in
@@ -3484,7 +3482,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		const currentArchetypeId = this._entityArchetypes[entityIndex] as ArchetypeID;
 		const currentArch = this._archGet(currentArchetypeId);
 
-		// Single edge probe (#hot-add). The steady state, a repeated (source
+		// Single edge probe. The steady state, a repeated (source
 		// archetype, added component) pair, used to pay four redundant lookups
 		// before touching a row: `mask.has(cid)`, then `_archResolveAdd` (which
 		// re-reads `mask.has(cid)` and the same `edges[cid]` slot), then
@@ -3685,7 +3683,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// Build the src→target map once and plant the composite edge so the next
 		// add of this set from this archetype skips straight to the move. The map
 		// is unused when the source is rowless (append, not move), but caching it
-		// now primes the live-entity case the issue targets.
+		// now primes the live-entity case that follows.
 		const map = currentArch.transitionMapTo(targetArch);
 		if (key !== COMPOSITE_ADD_UNKEYABLE) {
 			currentArch.cacheCompositeAddEdge(key, targetArchetypeId, map);

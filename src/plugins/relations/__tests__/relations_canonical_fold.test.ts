@@ -1,14 +1,14 @@
 /**
  * Relations, canonical fold is the single source of truth.
  *
- * After the polymorphic `RelationStore` refactor, the canonical multi traversal
- * (sources ascending by index, each source's targets ascending by id, empty
- * sets skipped) lives in exactly one place, `RelationStore.for_each_canonical_-
- * target_set`, and `stateHash`, `snapshotRelations`, and `pairsOf` all fold
- * through it. These tests lock in that they can no longer disagree:
+ * The canonical multi traversal (sources ascending by index, each source's
+ * targets ascending by id, empty sets skipped) lives in exactly one place,
+ * `RelationStore.forEachCanonicalTargetSet`, and `stateHash`,
+ * `snapshotRelations` and `pairsOf` all fold through it. These tests lock in
+ * that they can no longer disagree:
  *
- *  - the digest + the `(R,*)` enumeration are insertion-order-independent (the
- *    determinism property the canonical ordering exists to give);
+ *  - the digest and the `(R,*)` enumeration are insertion-order-independent,
+ *    the determinism property the canonical ordering exists to give
  *  - snapshot → restore round-trips the multi forward sets so `stateHash` and
  *    `pairsOf` are preserved across the wire-shaped buffer
  *  - `compactRelations` is pure reverse-index reclaim. It
@@ -40,7 +40,7 @@ const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, n
 	pairs.map(([s, t]) => [s as number, t as number]);
 
 describe("relations canonical fold, single source of truth", () => {
-	it("state_hash + pairs_of are insertion-order-independent for a multi relation", () => {
+	it("stateHash + pairsOf are insertion-order-independent for a multi relation", () => {
 		// World A and B hold identical logical content reached by different
 		// add orders. The canonical fold must make them hash + enumerate the same.
 		const build = (order: "forward" | "scrambled"): { store: Store; pairs: [number, number][] } => {
@@ -87,7 +87,7 @@ describe("relations canonical fold, single source of truth", () => {
 		expect(flat).toEqual([...flat].sort((x, y) => x - y));
 	});
 
-	it("snapshot → restore preserves state_hash and pairs_of (multi forward sets round-trip)", () => {
+	it("snapshot → restore preserves stateHash and pairsOf (multi forward sets round-trip)", () => {
 		const src = capStore({ deterministic: true });
 		const Likes = src.relations.registerRelation({ multi: true });
 		const Targets = src.relations.registerRelation({ exclusive: true });
@@ -123,7 +123,7 @@ describe("relations canonical fold, single source of truth", () => {
 		expect(dst.relations.sourcesOf(t[0], Targets2).map((e) => e as number)).toEqual([s[1] as number]);
 	});
 
-	it("compact_relations reclaims dead-target reverse entries without changing state_hash or pairs_of", () => {
+	it("compactRelations reclaims dead-target reverse entries without changing stateHash or pairsOf", () => {
 		const store = capStore({ deterministic: true });
 		const Likes = store.relations.registerRelation({ multi: true }); // default orphan policy
 		const Targets = store.relations.registerRelation({ exclusive: true }); // default orphan policy

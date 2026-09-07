@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  // GrowableTypedArray,
   GrowableFloat32Array,
   GrowableFloat64Array,
   GrowableInt32Array,
@@ -44,7 +43,7 @@ describe("GrowableTypedArray", () => {
   // get and setAt
   //=========================================================
 
-  it("set_at overwrites value at index", () => {
+  it("setAt overwrites value at index", () => {
     const a = new GrowableFloat32Array();
     a.push(1.0);
     a.push(2.0);
@@ -57,7 +56,7 @@ describe("GrowableTypedArray", () => {
   // swapRemove
   //=========================================================
 
-  it("swap_remove on the last element only decrements length", () => {
+  it("swapRemove on the last element only decrements length", () => {
     const a = new GrowableFloat32Array();
     a.push(1.0);
     a.push(2.0);
@@ -69,7 +68,7 @@ describe("GrowableTypedArray", () => {
     expect(a.getAt(1)).toBeCloseTo(2.0);
   });
 
-  it("swap_remove on middle element moves last to that slot", () => {
+  it("swapRemove on middle element moves last to that slot", () => {
     const a = new GrowableFloat32Array();
     a.push(10.0);
     a.push(20.0);
@@ -82,7 +81,7 @@ describe("GrowableTypedArray", () => {
     expect(a.getAt(1)).toBeCloseTo(20.0);
   });
 
-  it("swap_remove on sole element leaves array empty", () => {
+  it("swapRemove on sole element leaves array empty", () => {
     const a = new GrowableFloat32Array();
     a.push(5.0);
     a.swapRemove(0);

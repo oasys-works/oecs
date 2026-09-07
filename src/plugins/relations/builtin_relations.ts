@@ -2,10 +2,11 @@
  * Built-in relations, named presets over the generic relation primitive.
  *
  * flecs ships `IsA` and `ChildOf` as builtin relationships the core special-cases
- * (component inheritance, name-scoping). We deliberately do not: our relations
- * carry no engine-integrated semantics (the SoA and WASM hot loop
- * disfavours traversal-per-read), so these are *thin*, each is only
- * `ecs.relations.register(...)` with a chosen cardinality + cleanup policy, and
+ * (component inheritance, name-scoping). This engine special-cases neither. A
+ * relation here carries no engine-integrated semantics, because the SoA and
+ * WASM hot loop disfavours traversal-per-read. So these are *thin*, each is
+ * only `ecs.relations.register(...)` with a chosen cardinality and cleanup
+ * policy, and
  * the generic relation surface does the rest, through `targetOf`, `sourcesOf`,
  * `ancestorsOf`, `cascadeOf` and cleanup. They live here as free functions, a
  * convention layer over the primitive, rather than as `ECS` methods, so the
@@ -18,8 +19,7 @@
  * intentionally not offered (it'd break traversal and isn't the IsA or ChildOf
  * shape). `onDeleteTarget` is overridable. The defaults follow flecs.
  *
- * IsA and ChildOf are siblings in the relations work. No live inheritance
- * is introduced.
+ * Neither relation introduces live inheritance.
  ***/
 
 import type { ECS } from "../../core/ecs/ecs";
@@ -46,9 +46,9 @@ export interface BuiltinRelationOptions {
  * - the IsA chain (`instance → exemplar → …`) is walked with
  *   `ecs.relations.ancestorsOf(instance, IsA)`, `rootOf` and `cascadeOf(exemplar, IsA)`.
  * - **No component inheritance**. IsA records the link only. Materialization of
- *   an instance from its exemplar stays a spawn-time copy (the template path,
- *   deliberately decoupled. An exemplar is a real entity,
- *   not a `Template` (a non-entity template can't be a relation target).
+ *   an instance from its exemplar stays a spawn-time copy on the template path,
+ *   deliberately decoupled. An exemplar is a real entity and not a `Template`,
+ *   because a non-entity template cannot be a relation target.
  *
  * Default `onDeleteTarget: "clear"`, destroying an exemplar drops its
  * instances' IsA link but leaves the instances alive (the thin analog of

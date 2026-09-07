@@ -1,10 +1,8 @@
 /**
  * `CommandDispatcher`, the generic register-a-handler-per-opcode drain surface
  * (a game-agnostic ECS). The engine ships no game opcodes. A consumer binds
- * a payload codec + handler to each opcode and round-trips a fabricated,
- * non-game command through the ring. This is the acceptance test for "a consumer
- * can register opcodes + payload codecs and round-trip a fabricated non-game
- * command through the ring".
+ * a payload codec and a handler to each opcode, and round-trips a fabricated,
+ * non-game command through the ring.
  */
 
 import { describe, expect, it, vi } from "vitest";

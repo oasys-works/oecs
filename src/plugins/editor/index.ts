@@ -1,10 +1,11 @@
 /**
- * The host write seam's editor layer, layer 2 of the seam.
+ * The host write seam's editor layer.
  *
  * Reified undo and redo, and the inspector field handle, built on the shipped
- * typed `HostCommandQueue`. Undo and redo are application policy, so this is a
- * plugin and not part of the world core. It pulls no third-party dependency,
- * because the field handle reads through a caller-supplied thunk.
+ * typed `HostCommandQueue`. Undo and redo are application policy, so this ships
+ * on its own subpath and not in the world core. A caller constructs an `Editor`
+ * itself, and a world installs nothing for it. It pulls no third-party
+ * dependency, because the field handle reads through a caller-supplied thunk.
  *
  *   - `Editor`, reified `EditorTransaction`s on undo and redo stacks, with
  *     transaction grouping. `undo()` and `redo()` enqueue the inverse and forward on the

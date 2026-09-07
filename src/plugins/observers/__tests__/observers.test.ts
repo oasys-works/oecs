@@ -1,14 +1,15 @@
 /**
  * Component observers, onAdd, onRemove and onSet.
  *
- * Ports the two locked proofs to the real engine:
+ * Two properties carry the file:
  *   - determinism: one logical op-set in several input orderings → identical
- *     `stateHash` (the `observer_determinism_sim` scenario);
+ *     `stateHash`
  *   - glitch-freedom: a producer and consumer pair yields the glitch-free result
- *     under access-topological order (the `observer_ordering_sim` scenario).
- * Plus the acceptance-criteria guards: no-observer fast path, radix (not
- * comparator) ordering, access enforcement, dirty-state-out-of-hash, cascade
- * convergence + the non-convergence guard, and yieldExisting.
+ *     under access-topological order
+ *
+ * The rest guard the no-observer fast path, radix ordering rather than
+ * comparator ordering, access enforcement, dirty state out of the hash, cascade
+ * convergence, the non-convergence guard, and yieldExisting.
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
@@ -68,7 +69,7 @@ describe("Observers, onAdd and onRemove basics", () => {
 		expect(removed).toEqual([e as number]);
 	});
 
-	it("immediate (top-level) add_component does not fire onAdd (fires only at the flush boundary)", () => {
+	it("immediate (top-level) addComponent does not fire onAdd (fires only at the flush boundary)", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Tag = world.registerTag();
 		let fires = 0;
@@ -118,7 +119,7 @@ describe("Observers, onAdd and onRemove basics", () => {
 // ============================================================================
 
 describe("Observers, dispose mid-round", () => {
-	it("an observer disposed from a sibling's on_add does not fire later the same round", () => {
+	it("an observer disposed from a sibling's onAdd does not fire later the same round", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const A = world.registerTag(); // registered first → lower cid → fires first
 		const B = world.registerTag();
@@ -154,7 +155,7 @@ describe("Observers, dispose mid-round", () => {
 		expect(world.hasComponent(e, B)).toBe(true); // the add still committed
 	});
 
-	it("an observer disposed from a sibling's on_remove does not fire later the same round", () => {
+	it("an observer disposed from a sibling's onRemove does not fire later the same round", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const A = world.registerTag(); // lower cid → fires first
 		const B = world.registerTag();
@@ -433,7 +434,7 @@ describe("Observers, canonical ordering", () => {
 		// Dropping the radix's defensive `& INDEX_MASK` alone is a behavioural
 		// no-op. The index is exactly 20 bits, and the two 10-bit passes never
 		// read the generation bits above bit 19. So the catchable regression is
-		// a sort that *does* consider those bits, such as a comparator on raw ids.
+		// a sort that reads those bits, such as a comparator on raw ids.
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Tag = world.registerTag();
 		const fired: number[] = [];
@@ -487,18 +488,18 @@ describe("Observers, canonical ordering", () => {
 	});
 });
 
-describe("Observers, determinism (observer_determinism_sim, real engine)", () => {
-	// Cross-component-reading, cascading observers, the three things that make
-	// firing order matter. A correct (commit → observe canonical → fixed-point)
-	// design produces the same derived per-entity state across input orderings.
+describe("Observers, determinism, on the real engine", () => {
+	// Cross-component reads and cascades are the two things that make firing
+	// order matter. A correct design (commit → observe canonical → fixed point)
+	// produces the same derived per-entity state across input orderings.
 	//
-	// Two distinct digests, matching the sim:
-	//   - `stateHash` (raw) hashes archetype rows in insertion order, so it is
-	//     legitimately queue-order-sensitive, even with no observers (that's how
-	//     lockstep works: identical input order → identical hash for divergence
-	//     detection). It is the *replay* (same-order) guarantee.
-	//   - the sim's `hashState` folds the world in canonical entity-ID order, so
-	//     it isolates the observer-derived values from row layout. That is the
+	// Two distinct digests:
+	//   - `stateHash` hashes archetype rows in insertion order, so it is
+	//     queue-order-sensitive even with no observers. That is how lockstep
+	//     works: identical input order gives an identical hash, and a divergence
+	//     shows. It is the replay guarantee, and not the order-invariance one.
+	//   - `hashState` below folds the world in canonical entity-id order, so it
+	//     isolates the observer-derived values from row layout. That is the
 	//     order-invariance measure.
 	function build(): {
 		world: ECS;
@@ -546,8 +547,7 @@ describe("Observers, determinism (observer_determinism_sim, real engine)", () =>
 		return { world, A, B, C, ids };
 	}
 
-	// FNV-1a over the world in canonical entity-id order, the real-engine analog
-	// of the sim's `hashState`.
+	// FNV-1a over the world in canonical entity-id order.
 	function canonicalDigest(b: ReturnType<typeof build>): number {
 		const { world, A, B, C, ids } = b;
 		let h = 0x811c9dc5;
@@ -613,12 +613,12 @@ describe("Observers, determinism (observer_determinism_sim, real engine)", () =>
 		expect(new Set(digests).size).toBe(1);
 	});
 
-	it("replay reproduces the same state_hash (identical op order → identical hash)", () => {
+	it("replay reproduces the same stateHash (identical op order → identical hash)", () => {
 		expect(run((o) => o).raw).toBe(run((o) => o).raw);
 	});
 });
 
-describe("Observers, glitch-free ordering (observer_ordering_sim, real engine)", () => {
+describe("Observers, glitch-free ordering, on the real engine", () => {
 	// Producer P (onAdd C) writes D=50. Consumer Q (onAdd B) reads D → A = D+1.
 	// Access-topological order fires P before Q ⇒ A = 51 (glitch-free).
 	function run(perm: (ids: EntityID[]) => EntityID[]): number[] {
@@ -684,7 +684,7 @@ describe("Observers, no-observer fast path", () => {
 		world.update(1 / 60);
 	}
 
-	it("a side-effect-free observer does not perturb state_hash vs no observer", () => {
+	it("a side-effect-free observer does not perturb stateHash vs no observer", () => {
 		const w1 = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const T1 = w1.registerTag();
 		const id1: EntityID[] = [w1.spawn(), w1.spawn()];
@@ -794,7 +794,7 @@ describe("Observers, cascades", () => {
 	});
 });
 
-describe("Observers, yield_existing", () => {
+describe("Observers, yieldExisting", () => {
 	it("replays onAdd over current matches on registration, in entity-id order", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Tag = world.registerTag();
@@ -813,7 +813,7 @@ describe("Observers, yield_existing", () => {
 		expect(fired).toEqual(ids.map((e) => getEntityIndex(e)).sort((a, b) => a - b));
 	});
 
-	it("a yield_existing registration mid-system does not disable access_check for the rest of the frame", () => {
+	it("a yieldExisting registration mid-system does not disable accessCheck for the rest of the frame", () => {
 		// The replay enters and leaves the observer's access frame. A bare leave
 		// nulls the caller's frame (leave() doesn't pop), silently disabling
 		// dev-mode enforcement for the remainder of the registering system. The
@@ -879,10 +879,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 		);
 	});
 
-	it("records a dirty row from a ctx.ref write via ctx.mark_changed", () => {
-		// A `ctx.ref` or `ctx.getColumnMut` write bypasses setField's auto-record, so a
-		// per-entity onSet consumer marks the row explicitly (the bench's winning
-		// `tick+list`: raw write + an int push).
+	it("records a dirty row from a ctx.ref write via ctx.markChanged", () => {
+		// A `ctx.ref` or `ctx.getColumnMut` write bypasses setField's auto-record. A
+		// per-entity onSet consumer marks the row itself, which costs one raw write
+		// and one int push.
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
@@ -964,7 +964,7 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 		expect(b.slice().sort((x, y) => x - y)).toEqual(expected);
 	});
 
-	it("records a host-side ECS.set_field write for the per-entity onSet observer", () => {
+	it("records a host-side ECS.setField write for the per-entity onSet observer", () => {
 		// A mutation through the host facade (outside a system, between updates)
 		// must still be seen by an entity-granular onSet observer, `ECS.setField`
 		// records the dirty row exactly like `SystemContext.setField`.
@@ -1016,8 +1016,8 @@ describe("Observers, onSet (archetype-granular, change tick)", () => {
 	});
 });
 
-describe("Observers, dirty state stays out of state_hash", () => {
-	it("a populated dirty list does not change state_hash vs no tracking", () => {
+describe("Observers, dirty state stays out of stateHash", () => {
+	it("a populated dirty list does not change stateHash vs no tracking", () => {
 		// Capture the hash mid-tick (after writes, before the post-update drain),
 		// with and without an entity-onSet observer enabling dirty tracking.
 		function hashAfterWrite(observe: boolean): number {
@@ -1050,9 +1050,9 @@ describe("Observers, dirty state stays out of state_hash", () => {
 
 describe("Observers, onSet and the one-tick event window", () => {
 	it("onSet reads events emitted earlier in the same tick (it fires inside the window)", () => {
-		// `clearEvents` is the tick's last act (after `dispatchSet`), so onSet sees
-		// the settled component snapshot and this tick's events. (Was 0 before,
-		// when the clear ran before `dispatchSet`.)
+		// `events.clear()` is the tick's last act, after `dispatchSet`, so onSet
+		// sees the settled component snapshot and this tick's events. The count
+		// was 0 while the clear ran before `dispatchSet`.
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
@@ -1118,9 +1118,10 @@ describe("Observers, onSet and the one-tick event window", () => {
 	});
 
 	it("throws if an onSet observer emits an event (its emission would be silently dropped)", () => {
-		// onSet runs at the tick tail. Anything it emits is wiped by `clearEvents`
-		// before any reader, and would break snapshot and restore determinism if it
-		// survived. A __DEV__ guard turns the silent drop into a loud error.
+		// onSet runs at the tick tail. Anything it emits is wiped by
+		// `events.clear()` before any reader, and it would break snapshot and
+		// restore determinism if it survived. A __DEV__ guard turns the silent
+		// drop into a loud error.
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");

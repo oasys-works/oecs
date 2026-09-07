@@ -5,8 +5,9 @@
  * mechanics. This service owns the registry-level algorithms that used to live
  * directly on `Store`: registration, the pair mutators and readers, the
  * `(R, *)` and `(*, T)` wildcard drivers, parent-chain traversal, destroy-path
- * cleanup, and the hierarchy depth-ordering query driver. `Store` keeps
- * one-line delegations so `ecs.ts` and the query internals are untouched.
+ * cleanup, and the hierarchy depth-ordering query driver. The store holds the
+ * service in its relations slot, and the query internals reach it through
+ * `requireRelations`, which names the surface the caller asked for.
  *
  * The service reaches back into `Store` only through the narrow
  * `RelationServiceHost` seam, which the core declares. `RelationHooks`, also
@@ -59,13 +60,13 @@ export class RelationService implements RelationHooks {
 
 	// Reused radix scratch for the hierarchy depth-ordering driver.
 	// The motivating use case, transform propagation, is a per-tick depth-ordered
-	// pass, so `forEachHierarchyMatch` allocating two 1024-entry histograms + an
-	// `out` array per call would be per-tick GC churn. `radixSortByIndex` fully
+	// pass, so `forEachHierarchyMatch` allocating two 1024-entry histograms and
+	// an `out` array per call would be per-tick GC churn. `radixSortByIndex` fully
 	// consumes these three before any `cb` fires, so unlike
 	// the call-local `matched`, `buckets`, `depthMemo` and `visiting` (which stay
 	// live across the emit loop and would corrupt under a re-entrant callback) they
-	// are safe to share as instance state. Mirrors the observer's `_radix_*` scratch,
-	// which `ObserverRegistry` owns privately and so is not reachable from here.
+	// are safe to share as instance state. The observers plugin keeps the same
+	// scratch privately, so this one cannot be shared with it.
 	private _hierarchyRadixOut = new Uint32Array(1024);
 	private readonly _hierarchyRadixC0 = new Int32Array(1024);
 	private readonly _hierarchyRadixC1 = new Int32Array(1024);
@@ -110,7 +111,7 @@ export class RelationService implements RelationHooks {
 		if (wantMulti && wantExclusive) {
 			throw new ECSError(
 				ECS_ERROR.RELATION_MODE_INVALID,
-				`register_relation: a relation cannot be both exclusive and multi-target`
+				`relations.register: a relation cannot be both exclusive and multi-target`
 			);
 		}
 		const exclusive = !wantMulti;
@@ -149,9 +150,10 @@ export class RelationService implements RelationHooks {
 		const rs = this._relationOf(def);
 		// Liveness must be checked for both ends symmetrically before any
 		// linking: a dead `src` or `tgt` throws in `DEV` and is a silent
-		// no-op in production, so a prod build never seeds a reverse-index entry
-		// keyed by a destroyed handle. The forward + reverse + membership
-		// lockstep is the relation's (cardinality).
+		// no-op in production, so a production build never seeds a reverse-index
+		// entry keyed by a destroyed handle. The relation owns the lockstep of
+		// the forward link, the reverse index and the membership row, because
+		// that lockstep is cardinality-specific.
 		if (!this._host.isAlive(src)) {
 			if (DEV) throw entityNotAliveError("addRelation", src, "source");
 			return;
@@ -259,9 +261,8 @@ export class RelationService implements RelationHooks {
 	// matching source is yielded once. Fetch its targets on demand with
 	// `targetsOf`. Insertion order, consistent with the `andSparse` path
 	// (deterministic by construction across lockstep peers, canonical sorting is
-	// reserved for `stateHash` and for snapshot). The measurement shows that
-	// canonical ordering costs much more for each iteration, and that it gives no
-	// advantage for determinism.
+	// reserved for `stateHash` and for snapshot). Canonical ordering costs far
+	// more for each iteration and buys no determinism here.
 
 	/** The backing sparse component id of relation `R`, the membership store a
 	 * `(R, *)` wildcard term (`Query.andRelation`) drives through the shared
@@ -277,7 +278,8 @@ export class RelationService implements RelationHooks {
 
 	/** Drive a `(*, T)` wildcard query (`Query.forEachRelatedTo`): every source
 	 * related to `target` under **any** relation, intersected with the query's
-	 * dense mask + sparse require and exclude terms + the default enabled-row filter,
+	 * dense mask, its sparse require and exclude terms, and the default
+	 * enabled-row filter,
 	 * each source yielded once. Unions `sourcesOf(target, R)` across every
 	 * relation into a `Set` (dedup by full `EntityID`, a source related to `T`
 	 * via two relations is yielded once), then sorts ascending: the cross-relation
@@ -354,7 +356,8 @@ export class RelationService implements RelationHooks {
 	 * dangling (so `orphan`'s `targetOf`-returns-the-dead-handle contract is
 	 * unchanged), `stateHash` is unaffected (the reverse index is derived, never
 	 * folded), and the dropped entries are faithfully rebuilt by snapshot and restore
-	 * from the surviving forward links (`Store._rebuildRelationIndices`). The only
+	 * from the surviving forward links (the snapshot plugin's
+	 * `_rebuildRelationIndices`). The only
 	 * difference a caller can see is `sourcesOf(deadHandle, R)` going from the
 	 * dangling sources to `[]`, both meaningless once the target is gone.
 	 * No-op (returns 0) when no relations are registered. */
@@ -425,7 +428,7 @@ export class RelationService implements RelationHooks {
 				if (DEV) {
 					throw new ECSError(
 						ECS_ERROR.RELATION_CYCLE,
-						`ancestors_of: cycle in relation chain at entity index ${nextIdx}`
+						`ancestorsOf: cycle in relation chain at entity index ${nextIdx}`
 					);
 				}
 				break;
@@ -478,7 +481,7 @@ export class RelationService implements RelationHooks {
 					if (DEV) {
 						throw new ECSError(
 							ECS_ERROR.RELATION_CYCLE,
-							`cascade_of: cycle in relation chain at entity index ${childIdx}`
+							`cascadeOf: cycle in relation chain at entity index ${childIdx}`
 						);
 					}
 					continue;
@@ -538,8 +541,8 @@ export class RelationService implements RelationHooks {
 		}
 	}
 
-	/** Fourth query-match path: yield the matched entities, the exact
-	 * sparse-match intersection (dense mask + sparse require and exclude + the
+	/** A query-match path: yield the matched entities, the exact
+	 * sparse-match intersection (dense mask, sparse require and exclude, and the
 	 * default enabled-row filter), in canonical **hierarchy depth order** over
 	 * exclusive relation `R`: depth ascending (parents before children), **entity
 	 * index ascending within each depth band**. Entities deeper than `maxDepth`
@@ -552,8 +555,8 @@ export class RelationService implements RelationHooks {
 	 * still counts toward depth), computed by a memoised upward walk shared across
 	 * the whole batch, so a shared or deep chain costs O(nodes), not O(nodes²).
 	 *
-	 * The canonical order is produced without a comparator sort (which the observer
-	 * bench measured as far slower): (1) collect the matched ids via
+	 * The canonical order is produced without a comparator sort, which is far
+	 * slower: (1) collect the matched ids via
 	 * the host's `forEachSparseMatch`, (2) `radixSortByIndex` → entity-index
 	 * ascending, and (3) stable-bucket by depth, since the input is index-ascending
 	 * and the bucket append is stable, each depth band stays index-ascending.
@@ -584,8 +587,9 @@ export class RelationService implements RelationHooks {
 			);
 		}
 		// 1. Collect the matched set, reusing the full sparse-match intersection so
-		//    dense mask + sparse require and exclude (which carries any composed `(R, *)`
-		//    backing ids) + the enabled-row filter all apply identically.
+		//    the dense mask, the sparse require and exclude (which carries any
+		//    composed `(R, *)` backing ids) and the enabled-row filter all apply
+		//    identically.
 		const matched: number[] = [];
 		this._host.forEachSparseMatch(include, exclude, anyOf, terms, denseArchetypes, (e) =>
 			matched.push(e as number)

@@ -90,7 +90,7 @@ Each plugin keeps its call sites unchanged. Only construction moves.
 - `@oasys/oecs/snapshots`, `snapshots()`, gives `ecs.snapshots.capture` and `.restore`.
 - `@oasys/oecs/observers`, `observers()`, gives `ecs.observe`.
 
-On npm, each plugin also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the six others,
+On npm, each plugin also has a `/dev` subpath. `@oasys/oecs/relations/dev` and the seven others,
 `@oasys/oecs/editor/dev` and `@oasys/oecs/solid/dev` among them, serve the build with the
 development guards on. JSR publishes no `/dev` subpath. A plugin binds to the core build it was
 made against. Take the plugin and the world from the same channel.
@@ -158,8 +158,8 @@ the plugin list in order, so a dependency comes earlier in the list. A missing o
 
 `ECS.create` now checks the facade a plugin returns. A key that names a member the world already
 carries throws the new `ECS_ERROR.PLUGIN_SURFACE_COLLISION`. `Object.assign` would overwrite that
-member without a word. The four reserved slots, `relations`, `events`, `observe` and
-`snapshots`, are the exception. The check is development-only.
+member without a word. The five reserved slots, `relations`, `events`, `observe`, `snapshots` and
+`workers`, are the exception. The check is development-only.
 
 Four types are exported from `@oasys/oecs`: `ChangeFeed`, `ObservationFlags`, `DrainResult` and
 `StructuralObserverEvents`. The new [plugins](docs/api/plugins.md) page documents the host,
@@ -375,7 +375,7 @@ relative to that base, and `capacity` is the span from it. The store writes noth
 A wasm-backed world defaults to one page and refuses zero, because a compiled module owns the low
 addresses of its own linear memory and a safe Zig or Rust build cannot read address 0. A caller
 places the base above the module's `__heap_base` and its run-time heap. `memoryPlan.storeBase`
-reports the value. `WASM_STORE_BASE_BYTES` is exported.
+reports the value. `WASM_STORE_BASE_BYTES` is exported from `@oasys/oecs/internal`.
 
 `storeBaseAbove(exports, extraBytes)` reads a module's `__heap_base` export, adds the run-time heap
 the caller reserves, and rounds up to a whole page, so the base clears everything the module owns.
@@ -547,14 +547,14 @@ install order of both hook lists.
 
 Thirty methods on the internal `Store` forwarded one operation each to a collaborator, and carried
 no logic. A caller now names the owner: `store.relations.addRelation`, `store.events.emit`,
-`store.resources.get`, `store.snapshots.capture`. The forwarding hid which object held the state and
+`store.resources.get`, `store.snapshots.snapshot`. The forwarding hid which object held the state and
 widened the class for nothing.
 
 ### Changed. The query terms travel as one record
 
 A query carries two kinds of term. A dense term sets a bit in the component mask and picks the
 archetypes. Every other term (sparse membership, optional fetch, include-disabled, the `(R, *)`
-wildcard, hierarchy ordering) now rides in one `QueryTerms` record. `Query`'s constructor takes one
+wildcard, hierarchy ordering, an archetype term from `where`) now rides in one `QueryTerms` record. `Query`'s constructor takes one
 parameter where it took seven, the three driver seams take one where they repeated four, and a query
 that declares no such term shares one frozen record. Adding a term is one edit instead of five.
 
@@ -619,11 +619,11 @@ The public surface:
 | `query._defs` | `query.defs` |
 | `query._include` | `query.include` |
 | `query._id` | `query.id` |
-| `query._sparseInclude`, `query._sparseExclude` | `query.sparseIncludes`, `query.sparseExcludes` |
-| `query._optional` | `query.optionalTerms` |
+| `query._sparseInclude`, `query._sparseExclude` | `query.terms.sparseIncludes`, `query.terms.sparseExcludes` |
+| `query._optional` | `query.terms.optionalTerms` |
 | `query._includeDisabled` | `query.includesDisabled` |
-| `query._relationIncludes`, `query._relationExcludes` | `query.relationIncludes`, `query.relationExcludes` |
-| `query._hierarchy` | `query.hierarchyTerm` |
+| `query._relationIncludes`, `query._relationExcludes` | `query.terms.relationIncludes`, `query.terms.relationExcludes` |
+| `query._hierarchy` | `query.terms.hierarchyTerm` |
 | `cols._arch`, `cols._tick`, on `ChunkColumns` | `cols.arch`, `cols.tick` |
 | `ecs._caches` | `ecs.caches` |
 | `bitset._words`, on `/primitives` | `bitset.words` |
@@ -631,7 +631,9 @@ The public surface:
 None of these is part of the documented API. Each is public because another module reads it, so the
 prefix claimed a privacy the member never had. Three of them could not drop the prefix alone,
 because `Query` already carries an `optional`, an `includeDisabled` and a `hierarchy` method. Each
-of those three now names the thing it holds: a term list, a flag, a term.
+of those three now names the thing it holds: a term list, a flag, a term. The terms that are not
+dense then moved into the one `terms` record described above, and `includesDisabled` stayed on the
+query as its own copy.
 
 Inside the package the same rule moved about a hundred more members. `Archetype` publishes
 `flatColumns`, `bufs`, `accessorColumns`, `colOffset`, `fieldCount`, `columnIds` and `changedTick`
@@ -830,8 +832,8 @@ The default backing for `{ backing: "shared" }` is unchanged: it is still `growa
 
 Each column view is built with an explicit `(byteOffset, length)`. A TypedArray built with no length
 argument tracks the length of its buffer, and measurement puts that shape far behind a fixed-length
-view on every engine tested. `makeView` is the only place that builds a column view, but nothing
-said so and nothing tested a view's length. The rule is now in the `makeView` documentation, and two
+view on every engine tested. `createView` is the only place that builds a column view, but nothing
+said so and nothing tested a view's length. The rule is now in the `createView` documentation, and two
 tests hold it: one walks every column of every archetype, and one proves that a view keeps its
 length when the buffer below it grows. The second matters most, because a length-tracking view
 survives the identity and data checks that were already there.
@@ -1127,7 +1129,7 @@ investigation. To remove the lookup, the caller must hold the ordinal of the fie
   `isInPlace: true` and the entity-index-hoist-across-grow invariant hold
   unchanged. The store keys its tail cursor off the header `capacity` (the
   logical high-water) rather than `buffer.byteLength` (now always the cap).
-- Only the heap backing changed. The `growable_sab` / `wasm_memory` backings
+- Only the heap backing changed. The `growable_sab` and `wasm_memory` backings
   keep their resizable buffers and page-rounded tail layout byte-for-byte
   (their determinism and layout goldens are unchanged).
 
@@ -1160,7 +1162,7 @@ investigation. To remove the lookup, the caller must hold the ordinal of the fie
 ### Changed (breaking). One attach grammar
 
 `addComponents` and `template` now take the same callable-bundle varargs as `spawnBundle`
-and `ctx.commands.spawn` / `add`, replacing the `{ def, values }[]` entry-object array, one
+and `ctx.commands.spawn` and `add`, replacing the `{ def, values }[]` entry-object array, one
 grammar across every authoring surface:
 
 ```ts
@@ -1179,10 +1181,10 @@ To migrate: drop the array brackets, wrap a valued entry in its def's call
   (`{ [K in keyof Items]: … }`), a misspelled or cross-component field, including a
   hand-written raw `{ def, values }` literal, is a compile error. `spawnBundle` gains this
   per-item checking (it previously had none).
-- `ctx.commands.spawn` / `ctx.commands.add` now schema-check their bundle values in
+- `ctx.commands.spawn` and `ctx.commands.add` now schema-check their bundle values in
   declared-access systems as well (the `DeclaredBundleOrDef` type distributes over the
-  declared add set). A permissive / `exclusive` context stays loose, as before.
-- The `TemplateEntry` / `TemplateEntries` public types are removed (they encoded the retired
+  declared add set). A permissive context and an `exclusive` context stay loose, as before.
+- The `TemplateEntry` and `TemplateEntries` public types are removed (they encoded the retired
   entry-object grammar). The host command seam (`HostCommandQueue.spawn`, the record and replay
   and editor-undo transport) deliberately keeps its entry-object + complete-values shape.
 
@@ -1199,8 +1201,8 @@ Cheap alignments from a public-API vocabulary audit that followed the grammar un
 - Source-compatible widenings: `ecs.despawn`, `ecs.removeSystem`, and the `HostCommandQueue`
   mutators now return `this` for chaining.
 
-The `ref` / `refRead` argument order was reviewed and **deliberately kept** def-first
-(`ctx.ref(def, entityId)`): these are the outside-iteration members of the `cols.mut` /
+The `ref` and `refRead` argument order was reviewed and **deliberately kept** def-first
+(`ctx.ref(def, entityId)`): these are the outside-iteration members of the `cols.mut` and
 `cols.read` column-cursor family, so def-first is the cursor convention, not an inconsistency
 to fix, flipping it would align with `getField` while breaking alignment with `cols.mut`.
 Documented as such (`refs.md`, `queries.md`) rather than flipped.
@@ -1208,30 +1210,30 @@ Documented as such (`refs.md`, `queries.md`) rather than flipped.
 ### Changed (breaking). Host-write-seam verb grammar
 
 The host-write-seam handles are namespaced command buffers, so they drop the component noun
-to match `ctx.commands.add` / `remove`, and their own already-bare
+to match `ctx.commands.add` and `remove`, and their own already-bare
 `spawn`, `despawn`, `disable`, `enable` and `setField`:
 
-- `HostCommandQueue.addComponent` / `removeComponent` → `add` / `remove`.
-- `Editor` and `TransactionBuilder` `.addComponent` / `.removeComponent` → `add` / `remove`
+- `HostCommandQueue.addComponent` and `removeComponent` → `add` and `remove`.
+- `Editor` and `TransactionBuilder` `.addComponent` and `.removeComponent` → `add` and `remove`
   (the two surfaces are designed to match, so they move together).
 - The editor extension's entity-id parameters and its `FieldReader` type now read `entityId`,
   completing the core's `eid` → `entityId` pass.
 
-The wire-format `kind` discriminants (`"add_component"` / `"remove_component"`), the ring
+The wire-format `kind` discriminants (`"add_component"` and `"remove_component"`), the ring
 codecs, and the `HostCommand` record's `eid` field are unchanged, transport vocabulary.
 
 ### Changed (breaking). `ctx.getResource`
 
 The in-system resource getter is now `ctx.getResource(key)` (was the verb-less `ctx.resource(key)`),
-matching its flat-surface siblings `setResource` / `removeResource` / `hasResource` and the
-`getField` / `setField` / `hasComponent` convention. The rule is now explicit: the flat `ctx`
-surface verbs every accessor. The grouped `ecs.resources` facade drops the noun (`get` / `set` /
-`remove` / `has`) because its receiver already names it. `ConditionContext` (run-condition
+matching its flat-surface siblings `setResource`, `removeResource` and `hasResource` and the
+`getField`, `setField` and `hasComponent` convention. The rule is now explicit: the flat `ctx`
+surface verbs every accessor. The grouped `ecs.resources` facade drops the noun (`get`, `set`,
+`remove` and `has`) because its receiver already names it. `ConditionContext` (run-condition
 predicates) moves in lockstep.
 
 ### Fixed
 
-- The immediate host spawn family (`spawn` / `spawnBundle` / `spawnMany`) now throws in DEV
+- The immediate host spawn family (`spawn`, `spawnBundle` and `spawnMany`) now throws in DEV
   when called from inside a system body, redirecting to `ctx.commands.spawn`, like every
   other immediate host structural mutator. Previously it was silently unguarded (the archetype
   iteration guard does not cover the append path), a live mid-iteration footgun. Its guard
@@ -1250,17 +1252,17 @@ renames and the removals:
 
 | 0.4 | 0.5 |
 | --- | --- |
-| `ecs.createEntity()` / `ecs.createEntity(template, overrides?)` | `ecs.spawn()` / `ecs.spawn(template, overrides?)` |
+| `ecs.createEntity()` and `ecs.createEntity(template, overrides?)` | `ecs.spawn()` and `ecs.spawn(template, overrides?)` |
 | `ecs.createEntities(template, count)` | `ecs.spawnMany(template, count, overrides?)` |
 | `ecs.destroyEntity(e)` *(deferred)* | `ecs.despawn(e)`, **now immediate** |
 | `ctx.createEntity()` | `ctx.commands.spawn()` |
 | `ctx.destroyEntity(e)` | `ctx.commands.despawn(e)` |
 | `ctx.addComponent(e, def, values?)` | `ctx.commands.add(e, def, values)` or `ctx.commands.add(e, def({ … }))` |
 | `ctx.removeComponent(e, def)` | `ctx.commands.remove(e, def)` |
-| `ctx.disable(e)` / `ctx.enable(e)` | `ctx.commands.disable(e)` / `ctx.commands.enable(e)` |
-| `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)`, matches `targetOf` / `targetsOf` |
+| `ctx.disable(e)` and `ctx.enable(e)` | `ctx.commands.disable(e)` and `ctx.commands.enable(e)` |
+| `sourcesOf(def, tgt)` | `sourcesOf(tgt, def)`, matches `targetOf` and `targetsOf` |
 | `query.count()` | `query.entityCount` (getter, beside `archetypeCount`) |
-| `WorldRestoreError` / `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` / `ECS_SNAPSHOT_VERSION` |
+| `WorldRestoreError` and `WORLD_SNAPSHOT_VERSION` | `ECSRestoreError` and `ECS_SNAPSHOT_VERSION` |
 
 - **Host `despawn` is immediate**, `ecs.despawn(e); ecs.isAlive(e)` is `false` on the next
   line. This removes the inconsistency: host `addComponent` was immediate, but destroy was
@@ -1279,7 +1281,7 @@ renames and the removals:
   another world's system is unaffected, the guard is scoped to the mutated world.
 - **The bare deferred duplicates on `ctx` are removed**, `ctx.addComponent`,
   `ctx.removeComponent`, `ctx.disable`, `ctx.enable` join the already-removed
-  `ctx.createEntity` / `ctx.destroyEntity`. `ctx.commands` is now the *only* deferred surface,
+  `ctx.createEntity` and `ctx.destroyEntity`. `ctx.commands` is now the *only* deferred surface,
   completing the receiver-implies-timing rule with zero exceptions. `ctx.commands.add` gains
   the explicit complete-values shape (`ctx.commands.add(e, Pos, { x: 0, y: 0 })`) the removed
   `ctx.addComponent` carried, so compile-checked complete attaches survive the move.
@@ -1305,26 +1307,26 @@ renames and the removals:
   `Template<Defs>` as `spawn` plus one optional `TemplateOverrides<Defs>` object applied to
   every row (contiguous batches use one `fill` per overridden column).
 - **JSDoc `@example` on the core surface**, `registerComponent`, `spawn`, `addComponent`,
-  `query`, `registerSystem`, `startup`, `update`, `ctx.emit` / `ctx.read`,
+  `query`, `registerSystem`, `startup`, `update`, `ctx.emit` and `ctx.read`,
   `events.register`, `resources.register` now carry hover-visible examples.
 - **Component debug names**, `registerComponent(schema, { name: "Pos" })` (and the sparse
   sibling) records a diagnostic label, so access-violation and liveness errors read
   `'Pos' (component 5)` instead of leaving you to count registration order
   (`ComponentRegisterOptions`).
-- **Total probes + `tryGetField`**, `hasComponent` / `hasSparse` / `relations.has` now return
+- **Total probes + `tryGetField`**, `hasComponent`, `hasSparse` and `relations.has` now return
   `false` for a dead entity instead of dev-throwing (a "has" probe is exactly the call made to
   avoid dead entities). `ecs.tryGetField(e, def, field)` returns `undefined` for a dead entity or
   missing component, and `ctx.tryGetField` mirrors it inside systems (declared-read checked).
 - **Plural host mutators chain**, `addComponents`, `removeComponents`, `batchAddComponent`,
   `batchRemoveComponent` return `this` (previously `void`), matching their singular siblings.
-- **`Query.firstEntity()` / `Query.singleEntity()`**, singleton reads (player, camera) without a
+- **`Query.firstEntity()` and `Query.singleEntity()`**, singleton reads (player, camera) without a
   hand-rolled `forEach` + capture. `singleEntity` dev-throws `QUERY_NOT_SINGLETON` on 0 or >1.
 - **Host-side `ecs.refRead(def, e)`**, whole-component read-only view, parity with
   `ctx.refRead`.
-- **Run-condition combinators**, `not()` / `allOf()` / `anyOf()`, merging the operands' declared
+- **Run-condition combinators**, `not()`, `allOf()` and `anyOf()`, merging the operands' declared
   read surfaces.
 - **Editor change notification**, `editor.onChange(cb)` (fires on commit, undo, redo and clear) plus
-  `canUndo` / `canRedo` getters. No more per-frame `depths()` polling.
+  `canUndo` and `canRedo` getters. No more per-frame `depths()` polling.
 - **`using` support**, `ObserverHandle` implements `Symbol.dispose`.
 - **Write-seam lifecycle**, `uninstallHostCommandSeam(world, queue)`,
   `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)`,
@@ -1369,13 +1371,13 @@ renames and the removals:
   spawns and despawns were visible. With `ctx.commands` as the only deferred surface every queued
   command is traced, and `ctx.commands.spawn` now also traces each bundle attach it queues
   (previously only the spawn itself).
-- **Stale deferred-attach docs**, `host_commands.ts` / the host-write-seam page claimed the
+- **Stale deferred-attach docs**, `host_commands.ts` and the host-write-seam page claimed the
   deferred add path does not zero-fill omitted fields (NaN readback). Every attach path
   zero-fills (`writeFields`'s `?? 0`). The complete-values requirement on
   `SpawnEntry` is documented as what it is, explicit intent in a reified, replayable record.
   The observer docs now scope "immediate ops fire no observers" to *structural* observers
   (`onSet` is derived change detection and sees host `setField` writes).
-- **`ecs.refRead` / `ctx.ref` / `ctx.refRead` on a missing component or tag def**, threw a raw
+- **`ecs.refRead`, `ctx.ref` and `ctx.refRead` on a missing component or tag def**, threw a raw
   `TypeError` from the ref internals. Now a dev `ECSError` (`COMPONENT_NOT_REGISTERED`) naming the
   op and component, matching `getField`. Host `refRead`'s docstring now states the single-
   expression lifetime rule (any immediate structural mutation can row-swap under a held ref).
@@ -1401,9 +1403,9 @@ renames and the removals:
 - **Type-level closures**, `EventShape<S>` homomorphic bound (interface-declared event schemas
   now accepted). `RelationOptions` is a union so `{ exclusive: true, multi: true }` is a compile
   error. `ResourceKey`'s phantom is a unique symbol (no `.__phantom` in autocomplete)
-  `pairsOf` / `sourcesOfAny` return readonly tuples. `SystemConfig.fn` optional when
+  `pairsOf` and `sourcesOfAny` return readonly tuples. `SystemConfig.fn` optional when
   `backendHandle` is present.
-- Dev-mode diagnostics: ownerless `computed()` / `onCleanup()` warn (kernel). ECSOptions warns on
+- Dev-mode diagnostics: ownerless `computed()` and `onCleanup()` warn (kernel). ECSOptions warns on
   unknown keys. `runIfResourceEq` warns on object-valued `expected` (reference-identity `===`)
   `runEveryNTicks` validation throws `ECSError` (`INVALID_RUN_CONDITION`).
 - **Docs standardized on the `ecs` receiver**. README, GETTING_STARTED, BEST_PRACTICES, the
@@ -1423,7 +1425,7 @@ renames and the removals:
   `SystemContext<DeclaredAccess<…>>` narrowed to exactly the declared surface, undeclared access
   is a compile error naming the missing declaration, with the dev-mode runtime check remaining as
   the backstop for dynamic values. Query columns are typed by the query's terms
-  (`ChunkColumns<Defs>` / `ArchetypeView<Defs>`, `.and(...)` extends the term set), relation
+  (`ChunkColumns<Defs>` and `ArchetypeView<Defs>`, `.and(...)` extends the term set), relation
   handles carry their cardinality (`RelationDef<"exclusive">` vs `RelationDef<"multi">`, the
   exclusive-only traversal surfaces reject a multi handle at compile time), and
   `ResourceKey`, `EventKey` and `EventDef` are invariant so a key can no longer widen through
@@ -1440,7 +1442,7 @@ renames and the removals:
   `addComponents` takes schema-checked entries (`TemplateEntries<Defs>`), so a misspelled or
   cross-component field key is a compile error instead of a silent zero-fill. Host-seam
   `queue.spawn` entries (`SpawnEntries<Defs>`) are checked complete against each def's own
-  schema (`ValuesArg` / `CompleteFieldValues` exported), and `events.register` requires the
+  schema (`ValuesArg` and `CompleteFieldValues` exported), and `events.register` requires the
   field list to cover the event schema (`EventFieldsCover`), a partial list silently dropped
   columns and read back `undefined` at runtime. Smaller closures in the same vein: `observe`
   accepts any `ComponentHandle`, `NoInfer` pins key-typed value params (`events.emit`,
@@ -1454,7 +1456,7 @@ renames and the removals:
   `removeResource` and `hasResource`, `snapshot`, `restoreInto`, `snapshotSparse` and `restoreSparse`/
   `stateHash` and `deterministic`, `relationCount` and `compactRelations`). Each maps 1:1 onto its
   grouped replacement, `ecs.relations.add(...)`, `ecs.events.emit(...)`, `ecs.resources.get(...)`,
-  `ecs.snapshots.capture()` (was `snapshot()`) / `ecs.snapshots.restore(...)` (was
+  `ecs.snapshots.capture()` (was `snapshot()`) and `ecs.snapshots.restore(...)` (was
   `restoreInto(...)`), `ecs.relations.count` (was `relationCount`), `ecs.relations.compact()`
   (was `compactRelations()`). System-side `ctx.*` and all `Store`-level methods are unchanged.
 
@@ -1462,13 +1464,13 @@ renames and the removals:
 
 - **`Store` decomposed into seven focused collaborators** (RelationService, EventRegistry +
   ResourceRegistry, EntityAllocator, DeferredCommandBuffer, SnapshotService, ArchetypeGraph) with
-  `Store` as the coordinator. The hot-path extractions were A/B-benchmarked against
-  identical-code controls with no regression. The `ECS` facade's pure delegations now live in a
+  `Store` as the coordinator. Each hot-path extraction was benchmarked against a control that
+  carries identical code, and none regressed. The `ECS` facade's pure delegations now live in a
   marker-delimited pass-through band whose logic-free invariant is enforced by an ast guard test.
 - Typed per-consumer host seams (`ObserverHost`, `QueryHost`) replace underscore-convention
   reach-through on `Store`. `QueryCache` now owns all 12 query-resolution cache maps.
 - Store layer consolidation: one strategy-parameterized factory behind
-  `growableSabAllocator` / `heapArraybufferAllocator`. A typed `isColumnStoreInternal` guard
+  `growableSabAllocator` and `heapArraybufferAllocator`. A typed `isColumnStoreInternal` guard
   replaces six structural casts. Grow and extend's ~200 duplicated lines moved to a shared
   `layout_ops.ts` (bit-identical layouts pinned by a golden differential test across the
   full allocator matrix).
@@ -1494,16 +1496,16 @@ the engine's surface, so **every consumer touches breaking changes**, chiefly a 
   PascalCase and SCREAMING_SNAKE constants are unchanged. A `vitest` casing guard prevents regressions.
 - **Renamed query and context verbs.** `QueryBuilder.every` → `with`. `query.not` → `without`
   `query.any_of` → `anyOf`. `query.for_each` → `forEach`. `archetype.get_column` → `getColumnRead`
-  `event_key` / `signal_key` / `resource_key` → `eventKey` / `signalKey` / `resourceKey`
+  `event_key`, `signal_key` and `resource_key` → `eventKey`, `signalKey` and `resourceKey`
   `is_ecs_error` → `isEcsError`. `destroy_entity_deferred` → `destroyEntity` (still deferred).
 - **Ref mutability flipped on the unsuffixed name.** `ctx.ref` is now the **mutable** default (was
   read-only in 0.3). The read-only variant is `ctx.refRead` (was `ctx.ref_mut` for the mutable one).
   Same rule for columns: mutable `getColumn` (internal) vs read-only `getColumnRead`.
 - **`WorldOptions` → `ECSOptions`. `fixed_timestep` → `fixedTimestep`.**
-- **`initial_capacity` removed**, replaced by the `memory` surface (`memory: { budget }` /
-  `{ maxBytes }` / `{ columnCapacity }` pin / `{ shared }` / `{ wasm }` / `{ allocator }`). Passing the
+- **`initial_capacity` removed**, replaced by the `memory` surface (`memory: { budget }`,
+  `{ maxBytes }`, the `{ columnCapacity }` pin, `{ shared }`, `{ wasm }` and `{ allocator }`). Passing the
   old option keys throws at construction, pointing at `memory`.
-- **Component-touching systems must declare `reads` / `writes`.** A new `__DEV__` access checker
+- **Component-touching systems must declare `reads` and `writes`.** A new `__DEV__` access checker
   (tree-shaken from production) validates every column, ref, field and resource access against a
   system's declared surface. The bare `(ctx, dt)` and `(q, ctx, dt)` + query-builder `registerSystem`
   overloads declare no access, so a system that touches ECS data through them throws in dev, move it
@@ -1511,33 +1513,33 @@ the engine's surface, so **every consumer touches breaking changes**, chiefly a 
   checker. A registration-time lint (`QUERY_ACCESS_UNDECLARED`) additionally checks any declared
   `queries ⊆ reads ∪ writes`.
 - **`removeComponents` takes an array, not varargs** (`removeComponents(e, [A, B])`)
-  `batchAddComponent` / `batchRemoveComponent` key on `ArchetypeID` instead of an `Archetype` object.
+  `batchAddComponent` and `batchRemoveComponent` key on `ArchetypeID` instead of an `Archetype` object.
 - **Event schema shape.** `eventKey`'s type parameter is now a field → value-type record
   (`eventKey<{ target: EntityID; amount: number }>("Damage")`) rather than a tuple of field names, so
-  branded fields round-trip through `emit` / `read`. `registerEvent(key, [...fieldNames])` unchanged
+  branded fields round-trip through `emit` and `read`. `registerEvent(key, [...fieldNames])` unchanged
   otherwise.
 
 ### Added
 
 - **Two storage profiles over one backing-neutral `ColumnStore`.** Default is pure-TS **heap** (a plain
   resizable `ArrayBuffer`), no `SharedArrayBuffer`, no cross-origin isolation. Opt-in
-  `@oasys/oecs/shared` (`memory: { shared: {} }`) uses a `SharedArrayBuffer` for worker offload / a WASM
+  `@oasys/oecs/shared` (`memory: { shared: {} }`) uses a `SharedArrayBuffer` for worker offload or a WASM
   compute backend. Same code path. Identical state hash.
-- **Determinism** (opt-in `deterministic: true`): a state hash over column bytes + `snapshot()` /
-  `restoreInto()` (and `snapshotSparse` / `restoreSparse`), **backing-agnostic**, a heap world and a
-  shared world with identical history agree. `WorldRestoreError` / `SparseRestoreError` fail closed
+- **Determinism** (opt-in `deterministic: true`): a state hash over column bytes plus `snapshot()` and
+  `restoreInto()` (and `snapshotSparse` and `restoreSparse`), **backing-agnostic**, a heap world and a
+  shared world with identical history agree. `WorldRestoreError` and `SparseRestoreError` fail closed
   before overwriting live backing.
 - **Observers**, `world.observe(def, { onAdd, onRemove, onSet, onDisable, onEnable })`, structural +
   per-entity.
-- **Relations**, `(relation, target)` pairs, `ChildOf` / `IsA` presets (`registerChildOf` /
-  `registerIsA`), `(R,*)` / `(*,T)` wildcard queries (`withRelation`, `forEachRelatedTo`,
-  `ANY_RELATION`), hierarchy queries (`query.hierarchy`), traversal (`ancestorsOf` / `rootOf` /
+- **Relations**, `(relation, target)` pairs, `ChildOf` and `IsA` presets (`registerChildOf` and
+  `registerIsA`), `(R,*)` and `(*,T)` wildcard queries (`withRelation`, `forEachRelatedTo`,
+  `ANY_RELATION`), hierarchy queries (`query.hierarchy`), traversal (`ancestorsOf`, `rootOf` and
   `cascadeOf`), and on-delete cleanup policies.
-- **Sparse component storage** (`registerSparseComponent` / `addSparse` / `query.withSparse`),
-  **run conditions and system sets** (`systemSet` + `configureSet`, `runIfResourceEq` / `runEveryNTicks`
-  / `runIfAnyMatch`), **entity enable and disable** (row-partitioned. `disable` / `enable` /
+- **Sparse component storage** (`registerSparseComponent`, `addSparse` and `query.withSparse`),
+  **run conditions and system sets** (`systemSet` + `configureSet`, `runIfResourceEq`, `runEveryNTicks`
+  and `runIfAnyMatch`), **entity enable and disable** (row-partitioned. `disable`, `enable` and
   `includeDisabled`), and **templates** (`world.template([...])` + `createEntity(template, overrides)`
-  / `createEntities(template, count)` for zero-transition spawns).
+  and `createEntities(template, count)` for zero-transition spawns).
 - **Typed host→ECS write seam**, `installHostCommandSeam(world)` + `applyHostCommand` + a
   `HostCommandQueue` drained by a blessed `exclusive` apply system. A cross-thread ring transport
   (`HostCommandDispatcher`). Record and replay (`HostCommandRecorder`, `replayCommandLog`,
@@ -1548,27 +1550,27 @@ the engine's surface, so **every consumer touches breaking changes**, chiefly a 
 - **Reactive UI seam (optional):** zero-dependency kernel at `@oasys/oecs/reactive`. ECS→reactive
   bridge at `@oasys/oecs/reactive-sync` (publish-only-dirty, O(changed)). SolidJS adapter at
   `@oasys/oecs/solid` with `solid-js` as an **optional** peer dependency.
-- **`memory` sizing surface** on the constructor: `budget` (by expected `entities`) / `maxBytes` /
-  `columnCapacity` / `shared` / `wasm` / `allocator` arms. `resolveECSMemory(...)` exported to inspect
+- **`memory` sizing surface** on the constructor: `budget` (by expected `entities`), `maxBytes`,
+  `columnCapacity`, `shared`, `wasm` and `allocator` arms. `resolveECSMemory(...)` exported to inspect
   what an intent resolves to.
 - **Hot-path iteration ergonomics:**
-  - **`query.eachChunk((cols, count) => …)`**, the mutable per-archetype iterator. `cols.mut(def)` /
+  - **`query.eachChunk((cols, count) => …)`**, the mutable per-archetype iterator. `cols.mut(def)` and
     `cols.read(def)` resolve a whole component's field columns at once into a destructurable group
     (`const { x, y } = cols.mut(Pos)`), stamping the change tick once inside `mut` and handing back
     `count` (= `entityCount`). The only mutable column accessor reachable through iteration (the
     `ArchetypeView` from `forEach` stays read-only). Honours `includeDisabled()`. Dense-only like `forEach`.
   - **`ctx.commands`**, a Bevy-`Commands`-style facade namespacing the **deferred** structural ops
-    (`spawn` / `add` / `remove` / `despawn` / `disable` / `enable`), unambiguously deferred vs the
+    (`spawn`, `add`, `remove`, `despawn`, `disable` and `enable`), unambiguously deferred vs the
     immediate `world.addComponent`.
   - **Callable bundles**, `bundle(def, values)` pairs a def with field values (omitted fields
-    zero-fill). `world.spawnBundle(...)` (immediate) and `ctx.commands.spawn` / `.add` (deferred)
-    accept a `bundle(...)` or a bare def (tag / all-zero), unifying the attach shapes.
-  - **`ctx.updateField` / `ctx.markChanged`**, and optional-component queries (`query.optional(...)` +
+    zero-fill). `world.spawnBundle(...)` (immediate) and `ctx.commands.spawn` and `.add` (deferred)
+    accept a `bundle(...)` or a bare def (a tag, or all-zero values), unifying the attach shapes.
+  - **`ctx.updateField` and `ctx.markChanged`**, and optional-component queries (`query.optional(...)` +
     `getOptionalColumnRead`).
 - **Composable change-detection queries**, `query.changed(...)` returns a `ChangedQuery` that now
-  mirrors the dense query verbs (`and` / `without` / `anyOf` / `optional`), so
+  mirrors the dense query verbs (`and`, `without`, `anyOf` and `optional`), so
   `q.changed(Pos).without(Dead)` works (refining *after* `changed()`, previously a dead end).
-- **New public exports**, entity-ID codec (`createEntityId` / `getEntityIndex` / `getEntityGeneration`
+- **New public exports**, entity-ID codec (`createEntityId`, `getEntityIndex` and `getEntityGeneration`
   + `MAX_*` bounds) for snapshot and replication decode. The error taxonomy (`ECSError`, `ECS_ERROR`,
   `isEcsError`) for catch-and-branch, and `@oasys/oecs/primitives` (`BitSet`, `SparseSet`, `SparseMap`,
   growable typed arrays, `BinaryHeap`, `topologicalSort`).
@@ -1577,7 +1579,7 @@ the engine's surface, so **every consumer touches breaking changes**, chiefly a 
 
 - **Multi-entry build** → `dist/` emits ESM + CJS + `.d.ts` for every subpath (`.`, `/primitives`,
   `/shared`, `/reactive`, `/reactive-sync`, `/editor`, `/solid`). `sideEffects:false` + tree-shaking
-  keep core consumers from pulling SAB / Solid. `solid-js` is an optional peer dependency. `jsr.json`
+  keep core consumers from pulling SAB or Solid. `solid-js` is an optional peer dependency. `jsr.json`
   exports updated.
 
 ## [0.3.3] - 2026-04-30
@@ -1596,7 +1598,7 @@ Documentation-only release. No runtime changes.
 ### Added
 
 - **Module overview on `src/index.ts`.** A `@module` block now renders as the JSR Overview tab.
-- **JSDoc on the full public surface.** `ECS` and its public methods, `Query` / `QueryBuilder` / `SystemContext` / `ChangedQuery`, all type aliases and interfaces, the event and resource key minters, and the `SCHEDULE` phases are now documented in-source.
+- **JSDoc on the full public surface.** `ECS` and its public methods, `Query`, `QueryBuilder`, `SystemContext` and `ChangedQuery`, all type aliases and interfaces, the event and resource key minters, and the `SCHEDULE` phases are now documented in-source.
 - **`@internal` tags on internal-but-public TS members** (e.g. `_resolve_query`, `Query._include`, `SystemContext.store`) so JSR hides them from the rendered docs.
 
 ## [0.3.1] - 2026-04-23
@@ -1605,7 +1607,7 @@ Performance-only patch release. Two targeted allocation-elimination changes on h
 
 ### Performance
 
-- **Cache multi-component transition maps on `Archetype`.** `add_components` / `remove_components` on already-populated entities previously allocated a fresh `Int16Array` per call via `build_transition_map`. A per-archetype `batch_transition_maps: Map<ArchetypeID, Int16Array>` now caches the map on first use. Single-component paths unchanged. Measured on the same workload: a higher throughput of `add_components` on an already-populated entity, a much smaller peak heap, and a much smaller peak RSS. ([#9](https://github.com/oasys-works/oecs/pull/9))
+- **Cache multi-component transition maps on `Archetype`.** `add_components` and `remove_components` on already-populated entities previously allocated a fresh `Int16Array` per call via `build_transition_map`. A per-archetype `batch_transition_maps: Map<ArchetypeID, Int16Array>` now caches the map on first use. Single-component paths unchanged. Measured on the same workload: a higher throughput of `add_components` on an already-populated entity, a much smaller peak heap, and a much smaller peak RSS. ([#9](https://github.com/oasys-works/oecs/pull/9))
 - **Per-Query composition cache for single-component composition shapes.** `q.and(X)`, `q.not(X)`, `q.any_of(X)`, and `q.changed(X)` previously allocated a BitSet copy, a defs slice (and, for `.changed`, a new `ChangedQuery`) on every call, even though the resolver already cached the resulting `Query` object. Single-component calls now short-circuit through a per-parent-`Query` Map and skip the allocation path entirely. Multi-component compositions fall through unchanged. Measured on a compose loop with four shapes: a much higher throughput, a much smaller peak heap, and almost no growth of RSS during the workload. ([#10](https://github.com/oasys-works/oecs/pull/10))
 
 ## [0.3.0] - 2026-04-21
@@ -1650,7 +1652,7 @@ entry points change shape. See the migration notes under *Breaking changes*.
 
 - `EventKey<F>`, symbol-typed key that carries the event's field schema as
   a phantom type.
-- `event_key<F>(name)` / `signal_key(name)`, factories for module-scope
+- `event_key<F>(name)` and `signal_key(name)`, factories for module-scope
   event keys. `signal_key` is a convenience wrapper for zero-field events.
 
 #### Key-based Resource API
@@ -1697,7 +1699,7 @@ entry points change shape. See the migration notes under *Breaking changes*.
 - Query iteration is callback-based. `Query` no longer implements
   `[Symbol.iterator]`. Iterate with `query.for_each((archetype) => { ... })`.
 - `world.register_event`, `world.register_signal`, and `world.register_resource`
-  return `void` and take an `EventKey` / `ResourceKey` as their first argument.
+  return `void` and take an `EventKey` or a `ResourceKey` as their first argument.
 - `world.emit`, `world.read`, `world.resource`, and `world.set_resource`
   accept keys instead of definition objects. `world.resource(key)` returns
   the typed value `T` directly rather than a field-reader wrapper.
@@ -1747,7 +1749,7 @@ entry points change shape. See the migration notes under *Breaking changes*.
    world.emit(DAMAGE, { amount: 5 });
    ```
 
-2. **Resource registration / access.**
+2. **Resource registration and access.**
    ```ts
    // before
    const clock = world.register_resource({ ms: "u32" } as const, { ms: 0 });

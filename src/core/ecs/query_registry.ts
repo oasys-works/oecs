@@ -171,7 +171,7 @@ export class QueryRegistry {
 
 	/** Push a newly-installed archetype into every registered query whose
 	 * masks it satisfies. No epoch bump, see the note in
-	 * `ArchetypeGraph.install`. Once per archetype creation. */
+	 * `ArchetypeGraph._install`. Once per archetype creation. */
 	public fanIn(archetype: Archetype): void {
 		const registered = this._registered;
 		for (let i = 0; i < registered.length; i++) {

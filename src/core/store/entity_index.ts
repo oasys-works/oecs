@@ -1,12 +1,12 @@
 /**
  * Entity-index SAB region, `EntityID` → `(archetype_id, row, generation)`
- * lookup table shared with the Zig sim.
+ * lookup table shared with a compute backend.
  *
- * Every hot fixed-update system that needs to resolve an `EntityID`
- * held in a column (e.g. a component field that points at another
- * entity → that entity's columns) has to do
- * `entityId → archetype + row` translation. WASM-into-TS callbacks
- * during `tick()` are forbidden, so the lookup
+ * Every hot fixed-update system that resolves an `EntityID`
+ * held in a column (a component field that points at another
+ * entity, and through it at that entity's columns) has to do
+ * `entityId → archetype + row` translation. A WASM-into-TS callback
+ * during a tick is forbidden, so the lookup
  * tables must live in shared memory.
  *
  * Layout:
@@ -28,10 +28,10 @@
  *   - `rows[i]      = -1` (`UNASSIGNED`) on a destroy, or when not placed.
  *
  * Field width: i32 (signed) on the TS side so `-1` round-trips through
- * `Int32Array` without unsigned coercion. Zig reads as i32 too, bit
+ * `Int32Array` without unsigned coercion. A module reads i32 too. The bit
  * pattern is identical to u32 `0xFFFFFFFF` for the `UNASSIGNED` case, and
- * for valid archetype_ids (bounded by `MAX_INDEX = 2^20`) the sign bit
- * is never set, so signed or unsigned interpretation agrees.
+ * for a valid archetype id (bounded by `MAX_INDEX`) the sign bit
+ * is never set, so signed and unsigned interpretation agree.
  *
  * Region placement: between command ring and descriptor region so the
  * offset is stable across descriptor growth and column-region growth (same
@@ -59,18 +59,17 @@ export const ENTITY_INDEX_HEADER_OFFSETS = {
 	// 8..16: pad to 16-byte alignment so the i32 arrays start aligned.
 } as const;
 
-/** Default initial slot count when the engine creates a Store. Matches
- * `MAX_INDEX = (1 << 20) - 1 + 1 = 1_048_576` (the EntityID 20-bit index
- * range, see `entity.ts`), so the region pre-sizes to the entire
- * addressable entity space and `createEntity` can never run out under
- * the default. That is a 12 MiB SAB region, and it is virtual memory only.
- * Physical pages allocate lazily, through an OS page fault on first touch. A
- * small workload therefore pays for a few KiB of physical memory, even though
- * the virtual reservation is 12 MiB.
+/** Default initial slot count when the engine creates a Store. It is
+ * `MAX_INDEX + 1`, the whole `EntityID` 20-bit index range (see `entity.ts`),
+ * so the region pre-sizes to the entire addressable entity space and
+ * `createEntity` can never run out under the default. That reservation is
+ * virtual memory only. Physical pages allocate lazily, through an OS page
+ * fault on first touch, so a small workload keeps a small resident footprint
+ * whatever the reservation is.
  *
- * Tests and benches can pass a smaller `StoreOptions.entityIndexCapacity`
- * to bench tighter reservations. A future PR will replace this with
- * on-demand growth via `growColumnStore` so the default can drop. */
+ * A caller can pass a smaller `CreateColumnStoreOptions.entityIndexCapacity`
+ * for a tighter reservation. On-demand growth through `growColumnStore` would
+ * let the default drop. */
 export const ENTITY_INDEX_DEFAULT_CAPACITY = 1 << 20;
 
 /** Total region bytes for `capacity` slots: header + 3 i32 columns. */

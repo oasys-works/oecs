@@ -1,15 +1,13 @@
 /**
  * Store SAB shadow.
  *
- * The Store now maintains a parallel ColumnStore alongside its heap-backed
- * archetype columns. The shadow is built incrementally, every new
- * archetype discovered via `archGetOrCreateFromMask` plants a
- * matching region in the SAB via `extendColumnStore`. Heap columns remain
- * the source of truth. The shadow is not read yet.
+ * The Store builds its ColumnStore incrementally. Every new archetype
+ * discovered via `archGetOrCreateFromMask` plants a matching region in the SAB
+ * via `extendColumnStore`, and `Archetype.fromColumnStore` then reads its
+ * columns out of that region.
  *
- * These tests pin the discovery path so a later flip to
- * `Archetype.fromColumnStore` lands on top of a shadow whose archetype
- * graph already matches the heap-side one one-for-one.
+ * These tests pin the discovery path, so the SAB archetype graph matches the
+ * graph the world walks, one-for-one.
  */
 
 import { describe, expect, it } from "vitest";
@@ -40,7 +38,7 @@ describe("Store. SAB shadow", () => {
 		expect(emptyArch!.columns.size).toBe(0);
 	});
 
-	it("mirrors Store.archetype_count after sequential single-component adds", () => {
+	it("mirrors Store.archetypeCount after sequential single-component adds", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);

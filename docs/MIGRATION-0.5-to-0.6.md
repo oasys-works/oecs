@@ -115,7 +115,7 @@ On `@oasys/oecs/internal`, every `accessCheck.check*` method is `assert*`, and
 
 `Store` no longer forwards to its collaborators. Thirty methods carried one delegation each and no
 logic. Name the owner instead: `store.relations.addRelation`, `store.events.emit`,
-`store.resources.get`, `store.snapshots.capture`.
+`store.resources.get`, `store.snapshots.snapshot`.
 
 Three rules now hold across the package. One verb throws on a bad state, `assert`, and `validate`
 keeps only the helpers that return the value they test. One verb constructs, `create`. The
@@ -131,11 +131,11 @@ prefix claimed a privacy the member never had.
 | `query._defs` | `query.defs` |
 | `query._include` | `query.include` |
 | `query._id` | `query.id` |
-| `query._sparseInclude`, `query._sparseExclude` | `query.sparseIncludes`, `query.sparseExcludes` |
-| `query._optional` | `query.optionalTerms` |
+| `query._sparseInclude`, `query._sparseExclude` | `query.terms.sparseIncludes`, `query.terms.sparseExcludes` |
+| `query._optional` | `query.terms.optionalTerms` |
 | `query._includeDisabled` | `query.includesDisabled` |
-| `query._relationIncludes`, `query._relationExcludes` | `query.relationIncludes`, `query.relationExcludes` |
-| `query._hierarchy` | `query.hierarchyTerm` |
+| `query._relationIncludes`, `query._relationExcludes` | `query.terms.relationIncludes`, `query.terms.relationExcludes` |
+| `query._hierarchy` | `query.terms.hierarchyTerm` |
 | `cols._arch`, `cols._tick`, on `ChunkColumns` | `cols.arch`, `cols.tick` |
 | `ecs._caches` | `ecs.caches` |
 | `bitset._words`, on `/primitives` | `bitset.words` |
@@ -143,6 +143,9 @@ prefix claimed a privacy the member never had.
 Three could not drop the prefix alone, because `Query` already carries an `optional`, an
 `includeDisabled` and a `hierarchy` method. Each of those three now names the thing it holds: a
 term list, a flag, a term.
+
+The terms that are not dense sit in one frozen `terms` record, and not on the query. `Query`
+keeps `includesDisabled` as its own copy, because the iteration bound reads it on each call.
 
 ## A sparse component stores a typed value
 

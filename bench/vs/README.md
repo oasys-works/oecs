@@ -245,14 +245,15 @@ Each rule below changed a value. Therefore this file records them.
   first, when the CPU is cold. No library is always last, when the CPU is hot. The
   tool shows the median of the best value of each round, and it also shows the
   spread from the minimum value to the maximum value.
-  - **Use a number of rounds that divides by the number of libraries.** The rotation
-    moves the start of the list by one position for each round. Therefore each
-    library gets an equal share of the positions only at 9 rounds, 18 rounds, and so
-    on. At 5 rounds the last four libraries are never first, and three of those four
-    are the libraries that give a better result than oecs. The tool gives a warning
-    for that condition. A measurement at 5 rounds and at 9 rounds moved no ratio
-    outside its own spread, so the effect is small here. Use the multiple anyway,
-    because the claim above is then true and not approximately true.
+  - **Use a number of rounds that is a multiple of the number of entries.** The
+    rotation moves the start of the list by one position for each round. The list
+    holds ten entries. Therefore each entry gets an equal share of the positions
+    only at 10 rounds, 20 rounds, and so on. At the default of 5 rounds the last
+    five entries are never first. Two of those five, harmony and piecs, give a
+    better result than oecs in some row. The tool gives a warning for that
+    condition, and it names the multiple to use. An earlier measurement at 5 rounds and at 9 rounds moved no
+    ratio outside its own spread, so the effect is small here. Use the multiple
+    anyway, because the claim above is then true and not approximately true.
 - **Calibration, at the full width of the comparison.** `--null` runs oecs in every
   position of the library list, and it gives each position a different label. Each
   ratio must show approximately 1.00×. **The spread of that run is the noise

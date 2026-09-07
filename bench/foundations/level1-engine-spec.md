@@ -1,9 +1,14 @@
 # Level 1 engine specification: one system across workers
 
-This is the build brief for the first parallel form of oecs. It follows
-`direction-parallel-wasm.md` and rests on the probes in `findings-parallel.md`.
-It assumes the address-space fix (`storeBase`, relative offsets, `setLayout(base)`,
+This is the build brief for the first parallel form of oecs, written before the
+work. It rests on the probes in `findings-parallel.md`. It assumes the
+address-space fix (`storeBase`, relative offsets, `setLayout(base)`,
 `run(handle, dt, tick)`) has landed.
+
+The phase shipped, and it shipped under other names. The pool is the workers
+plugin: `ECS.create({ plugins: [workers()] })`, then `world.workers.attach()` and
+`world.workers.detach()`. Read `src/plugins/workers/` and `docs/api/parallel.md`
+for the surface a caller has. Read this file for the reasoning behind it.
 
 ## Scope
 
@@ -13,7 +18,7 @@ host, and a browser host that itself runs inside a worker.
 
 Out: two different systems at once, a conflict graph, sparse or relation or
 resource access from a worker, structural intent from a worker, a browser main
-thread as host, reductions across workers. Each is named in the direction file.
+thread as host, reductions across workers.
 
 ## Public surface
 
@@ -182,6 +187,8 @@ the shipped path. Numbers stay under `bench/`.
 
 ## Open after this phase
 
-Everything in the direction file's open list, plus: the default `minRows`
-placeholder, a browser main-thread host, and a tree join once the pool exists to
+Everything this phase leaves out: two different systems at once, a conflict
+graph, sparse or relation or resource access from a worker, structural intent
+from a worker, a browser main thread as host, and reductions across workers. Two
+more: the default `minRows` placeholder, and a tree join once the pool exists to
 measure it on.

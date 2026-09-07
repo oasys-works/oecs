@@ -10,8 +10,8 @@
  *
  * These tests pin the surface, capacity doubling, view-stamp bump per
  * grow, data preservation across grow on the growing archetype and on its
- * unaffected neighbours, and SAB-identity replacement (the realloc-and-
- * republish strategy).
+ * unaffected neighbours, and SAB identity under the default in-place
+ * allocator.
  */
 
 import { describe, expect, it } from "vitest";

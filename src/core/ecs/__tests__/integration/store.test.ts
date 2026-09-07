@@ -174,7 +174,7 @@ describe("Store (integration)", () => {
 	// Query matching
 	//=========================================================
 
-	it("get_matching_archetypes returns archetypes with required components", () => {
+	it("getMatchingArchetypes returns archetypes with required components", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -211,7 +211,7 @@ describe("Store (integration)", () => {
 		expect(hpMatches[0].rowEntityIds).toContain(e2);
 	});
 
-	it("get_matching_archetypes returns empty for unregistered component combo", () => {
+	it("getMatchingArchetypes returns empty for unregistered component combo", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -225,7 +225,7 @@ describe("Store (integration)", () => {
 		expect(matches.length).toBe(0);
 	});
 
-	it("get_matching_archetypes with empty required returns all archetypes", () => {
+	it("getMatchingArchetypes with empty required returns all archetypes", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 
@@ -259,7 +259,7 @@ describe("Store (integration)", () => {
 		expect(archetypes[0].rowEntityIds).toContain(e2);
 	});
 
-	it("destroy_entity handles swap-and-pop for remaining entity data", () => {
+	it("destroyEntity handles swap-and-pop for remaining entity data", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 

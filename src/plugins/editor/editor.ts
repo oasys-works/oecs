@@ -1,5 +1,5 @@
 /**
- * editor, the host write seam's editor layer, layer 2 of the seam.
+ * editor, the host write seam's editor layer.
  *
  * Reified undo and redo built on the shipped typed `HostCommandQueue`. Each
  * editor action becomes a transaction carrying its `forward` commands and their
@@ -7,15 +7,16 @@
  * enqueue the inverse and forward like any other write, so they apply at the next
  * schedule head through the same `applyHostCommand` dispatch, undo is **only
  * another command**, never a direct mutation. That is the whole point: an editor
- * gets structural safety + coalescing for free because it never leaves the bus.
+ * gets structural safety and coalescing for free, because it never leaves the
+ * bus.
  *
- * Lives in a plugin, not in the world core: undo and redo is application policy,
- * and the core has nothing to gain from it. The only dependency is
+ * Lives on its own subpath, not in the world core: undo and redo is application
+ * policy, and the core has nothing to gain from it. The only dependency is
  * `../../core/ecs`, and no UI framework. The field handle reads through a
  * caller-supplied thunk, see `field_handle.ts`.
  *
- * Two findings the original write-seam prototype surfaced (now removed. This
- * layer supersedes it), both folded in:
+ * Two findings the original write-seam prototype surfaced, both folded in. This
+ * layer supersedes that prototype, which is gone.
  *
  *   1. **Spawn-undo needs the apply-time id.** A spawn's inverse is "despawn the
  *      created entity," but the id only exists after the deferred create flushes.

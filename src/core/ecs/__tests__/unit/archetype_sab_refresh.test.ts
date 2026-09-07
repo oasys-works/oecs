@@ -14,10 +14,10 @@ import {
 	type TypedArrayTag
 } from "../../../../type_primitives";
 
-// Heap factory for the "heap vs SAB" comparison cases below. The
-// production path no longer takes the heap branch
-// this factory is purely a test convenience to keep `isBufferBacked` and
-// `refreshViews` invariants pinned against a heap counterpart.
+// Heap factory for the heap-against-SAB comparison cases below. The store
+// builds every archetype through `Archetype.fromColumnStore`, so this factory
+// is a test convenience. It keeps the `isBufferBacked` and `refreshViews`
+// invariants pinned against a heap counterpart.
 const heapFactory: ColumnFactory = (_cid, _fidx, tag) => new TypedArrayFor[tag](16);
 
 import {
@@ -89,8 +89,8 @@ function specFromLayouts(
 	};
 }
 
-describe("Archetype.refresh_views", () => {
-	it("is_buffer_backed reports true only for from_column_store archetypes", () => {
+describe("Archetype.refreshViews", () => {
+	it("isBufferBacked reports true only for fromColumnStore archetypes", () => {
 		const layouts = [makeLayout(1, ["x"], "i32")];
 		const columnStore = createColumnStore([specFromLayouts(0, 4, layouts)]);
 
@@ -101,7 +101,7 @@ describe("Archetype.refresh_views", () => {
 		expect(buffer.isBufferBacked).toBe(true);
 	});
 
-	it("refresh_views on a heap-backed archetype throws", () => {
+	it("refreshViews on a heap-backed archetype throws", () => {
 		const layouts = [makeLayout(1, ["x"], "i32")];
 		const columnStore = createColumnStore([specFromLayouts(0, 4, layouts)]);
 		const heap = new Archetype(archId(0), makeMask(1), layouts, 4, heapFactory);

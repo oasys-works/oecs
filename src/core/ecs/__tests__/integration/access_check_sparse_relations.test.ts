@@ -61,7 +61,7 @@ describe("Sparse access validation", () => {
 		expect(tick).toThrow(/system 'sparse_adder'.*sparse component.*didn't declare/);
 	});
 
-	it("permits a sparse add, remove and set when declared in sparse_writes", () => {
+	it("permits a sparse add, remove and set when declared in sparseWrites", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
@@ -139,7 +139,7 @@ describe("Sparse access validation", () => {
 		expect(tick).toThrow(/system 'sparse_reader'.*sparse component.*didn't declare/);
 	});
 
-	it("a declared sparse_write implicitly authorises reads of the same component", () => {
+	it("a declared sparseWrites implicitly authorises reads of the same component", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
@@ -162,7 +162,7 @@ describe("Sparse access validation", () => {
 		expect(observed).toBe(7);
 	});
 
-	it("a sparse_reads-only declaration permits reads but still blocks writes", () => {
+	it("a sparseReads-only declaration permits reads but still blocks writes", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
@@ -183,7 +183,7 @@ describe("Sparse access validation", () => {
 		expect(tick).toThrow(/system 'sparse_read_only'.*write.*sparse component.*didn't declare/);
 	});
 
-	it("has_sparse is a membership probe and is not access-checked", () => {
+	it("hasSparse is a membership probe and is not access-checked", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Cooldown = world.registerSparseComponent(["ready_at"] as const);
 		const e = world.spawn();
@@ -194,7 +194,7 @@ describe("Sparse access validation", () => {
 			base({
 				name: "sparse_prober",
 				fn(ctx) {
-					seen = ctx.hasSparse(e, Cooldown); // undeclared, must NOT throw
+					seen = ctx.hasSparse(e, Cooldown); // undeclared, must not throw
 				}
 			})
 		);
@@ -224,7 +224,7 @@ describe("Relation access validation", () => {
 		expect(tick).toThrow(/system 'relation_adder'.*relation.*didn't declare/);
 	});
 
-	it("permits relation add and remove when declared in relation_writes", () => {
+	it("permits relation add and remove when declared in relationWrites", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -245,7 +245,7 @@ describe("Relation access validation", () => {
 		expect(tick).not.toThrow();
 	});
 
-	it("throws when a system reads an undeclared relation via target_of", () => {
+	it("throws when a system reads an undeclared relation via targetOf", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -265,7 +265,7 @@ describe("Relation access validation", () => {
 		expect(tick).toThrow(/system 'relation_reader'.*relation.*didn't declare/);
 	});
 
-	it("a declared relation_write implicitly authorises reads of the same relation", () => {
+	it("a declared relationWrites implicitly authorises reads of the same relation", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -288,7 +288,7 @@ describe("Relation access validation", () => {
 		expect(observed).toBe(b);
 	});
 
-	it("has_relation is a membership probe and is not access-checked", () => {
+	it("hasRelation is a membership probe and is not access-checked", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
 		const a = world.spawn();
@@ -299,7 +299,7 @@ describe("Relation access validation", () => {
 			base({
 				name: "relation_prober",
 				fn(ctx) {
-					seen = ctx.hasRelation(a, Targets); // undeclared, must NOT throw
+					seen = ctx.hasRelation(a, Targets); // undeclared, must not throw
 				}
 			})
 		);
@@ -364,7 +364,7 @@ describe("Sparse and relation access outside any system", () => {
 		const a = world.spawn();
 		const b = world.spawn();
 
-		// No active system → access_check is a no-op for all of these.
+		// No active system → accessCheck is a no-op for all of these.
 		expect(() => {
 			world.addSparse(a, Cooldown, { ready_at: 3 });
 			world.setSparseField(a, Cooldown, "ready_at", 4);

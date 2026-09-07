@@ -2,7 +2,7 @@
  * Dual-variant library build.
  *
  * Emits two production artifacts from the single `vite.config.ts`:
- *   1. `production` , `__DEV__:false`, dev guards DCE'd, plain `*.js` and `*.cjs`
+ *   1. `production`, `__DEV__:false`, dev guards DCE'd, plain `*.js` and `*.cjs`
  *      (the package default, `main` and `module` and the no-condition `exports`
  *      fallback point here). Runs first: clears `dist` and emits declarations.
  *   2. `development`, `__DEV__:true`, guards retained, `*.development.js`/
@@ -11,8 +11,8 @@
  *
  * The variant is passed to `vite.config.ts` via `OECS_VARIANT`. `vite`'s config
  * factory is re-evaluated on each `build()` call, so it reads the current value.
- * Declaration files are identical across variants and are emitted once (in the
- * production pass); `scripts/postbuild.mjs` then fixes them up.
+ * Declaration files are identical across variants and are emitted once, in the
+ * production pass. `scripts/postbuild.mjs` then fixes them up.
  */
 import { build } from "vite";
 import fs from "node:fs";

@@ -44,20 +44,20 @@ describe("Store", () => {
 		expect(getEntityIndex(b)).toBe(1);
 	});
 
-	it("is_alive returns true for living entities", () => {
+	it("isAlive returns true for living entities", () => {
 		const store = new Store();
 		const id = store.createEntity();
 		expect(store.isAlive(id)).toBe(true);
 	});
 
-	it("is_alive returns false after destroy", () => {
+	it("isAlive returns false after destroy", () => {
 		const store = new Store();
 		const id = store.createEntity();
 		store.destroyEntity(id);
 		expect(store.isAlive(id)).toBe(false);
 	});
 
-	it("entity_count tracks create and destroy", () => {
+	it("entityCount tracks create and destroy", () => {
 		const store = new Store();
 		expect(store.entityCount).toBe(0);
 
@@ -84,8 +84,8 @@ describe("Store", () => {
 	//=========================================================
 
 	// Drive slot 0 through every live generation (0..MAX_LIVE_GENERATION) so the
-	// next destroy exhausts its counter. `destroy` cycles the slot one step
-	// returns the freshly recreated handle occupying slot 0 each time.
+	// next destroy exhausts its counter. `destroy` cycles the slot one step, and
+	// the helper returns the freshly recreated handle occupying slot 0.
 	function churnSlotToExhaustion(
 		store: Store,
 		destroy: (store: Store, id: ReturnType<Store["createEntity"]>) => void
@@ -180,7 +180,7 @@ describe("Store", () => {
 	// Component add & archetype transitions (single)
 	//=========================================================
 
-	it("add_component transitions entity to new archetype", () => {
+	it("addComponent transitions entity to new archetype", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const id = store.createEntity();
@@ -196,7 +196,7 @@ describe("Store", () => {
 		expect(arch.readField(row, Pos.id, "z")).toBe(3);
 	});
 
-	it("add_component overwrites data without transition when component already present", () => {
+	it("addComponent overwrites data without transition when component already present", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const id = store.createEntity();
@@ -218,7 +218,7 @@ describe("Store", () => {
 	// Component remove (single)
 	//=========================================================
 
-	it("remove_component transitions entity to smaller archetype", () => {
+	it("removeComponent transitions entity to smaller archetype", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -240,7 +240,7 @@ describe("Store", () => {
 		expect(arch.readField(row, Pos.id, "z")).toBe(3);
 	});
 
-	it("remove_component is a no-op when component not present", () => {
+	it("removeComponent is a no-op when component not present", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -266,7 +266,7 @@ describe("Store", () => {
 		expect(store.pendingDestroyCount).toBe(1);
 	});
 
-	it("flush_destroyed actually destroys entities", () => {
+	it("flushDestroys actually destroys entities", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 
@@ -298,7 +298,7 @@ describe("Store", () => {
 		expect(store.pendingDestroyCount).toBe(0);
 	});
 
-	it("immediate destroy_entity still works as before", () => {
+	it("immediate destroyEntity still works as before", () => {
 		const store = new Store();
 		const id = store.createEntity();
 
@@ -307,7 +307,7 @@ describe("Store", () => {
 		expect(store.pendingDestroyCount).toBe(0);
 	});
 
-	it("pending_destroy_count reflects buffer state", () => {
+	it("pendingDestroyCount reflects buffer state", () => {
 		const store = new Store();
 		const a = store.createEntity();
 		const b = store.createEntity();
@@ -328,7 +328,7 @@ describe("Store", () => {
 	// Deferred structural changes
 	//=========================================================
 
-	it("add_component_deferred keeps entity in old archetype until flush", () => {
+	it("addComponentDeferred keeps entity in old archetype until flush", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -354,7 +354,7 @@ describe("Store", () => {
 		expect(arch.readField(row, Vel.id, "vz")).toBe(6);
 	});
 
-	it("remove_component_deferred keeps component present until flush", () => {
+	it("removeComponentDeferred keeps component present until flush", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -373,7 +373,7 @@ describe("Store", () => {
 		expect(store.hasComponent(id, Pos)).toBe(true);
 	});
 
-	it("flush_structural applies adds before removes (same-component add+remove: remove wins)", () => {
+	it("flushStructural applies adds before removes (same-component add+remove: remove wins)", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -441,7 +441,7 @@ describe("Store", () => {
 		expect(arch.readField(row, Pos.id, "z")).toBe(30);
 	});
 
-	it("pending_structural_count tracks buffer state", () => {
+	it("pendingStructuralCount tracks buffer state", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -481,7 +481,7 @@ describe("Store", () => {
 		expect(() => store.removeComponentDeferred(id, Pos)).toThrow();
 	});
 
-	it("flush_structural skips dead entities", () => {
+	it("flushStructural skips dead entities", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -508,7 +508,7 @@ describe("Store", () => {
 	// Dev-mode errors
 	//=========================================================
 
-	it("throws on add_component to dead entity", () => {
+	it("throws on addComponent to dead entity", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const id = store.createEntity();
@@ -517,7 +517,7 @@ describe("Store", () => {
 		expect(() => store.addComponent(id, Pos, { x: 0, y: 0, z: 0 })).toThrow();
 	});
 
-	it("throws on remove_component from dead entity", () => {
+	it("throws on removeComponent from dead entity", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const id = store.createEntity();
@@ -540,7 +540,7 @@ describe("Store", () => {
 	// addComponents bulk
 	//=========================================================
 
-	it("add_components adds multiple components in single transition", () => {
+	it("addComponents adds multiple components in single transition", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Vel = store.registerComponent(Velocity);
@@ -565,12 +565,12 @@ describe("Store", () => {
 	//=========================================================
 
 	// Contract (mirrors the template zero-fill in `createTemplate`): a field
-	// absent from the supplied `values` is written as 0. A Float32/64Array stores
+	// absent from the supplied `values` is written as 0. A float column stores
 	// `undefined` as NaN, so before the `?? 0` fix the omitted float field came
 	// back NaN. The expected value below is derived from the contract (omitted ⇒
 	// 0), not loosened to match output.
 
-	it("add_component with a partial values object zero-fills the omitted float field (write_fields)", () => {
+	it("addComponent with a partial values object zero-fills the omitted float field (writeFields)", () => {
 		const store = new Store();
 		const Float = store.registerComponent(Float2);
 		const id = store.createEntity();
@@ -586,7 +586,7 @@ describe("Store", () => {
 		expect(fy).toBe(0);
 	});
 
-	it("add_component with an empty values object zero-fills both float fields (write_fields)", () => {
+	it("addComponent with an empty values object zero-fills both float fields (writeFields)", () => {
 		const store = new Store();
 		const Float = store.registerComponent(Float2);
 		const id = store.createEntity();
@@ -599,7 +599,7 @@ describe("Store", () => {
 		expect(arch.readField(row, Float.id, "fy")).toBe(0);
 	});
 
-	it("batch_add_component with a partial values object zero-fills the omitted float field (bulk_write_fields)", () => {
+	it("batchAddComponent with a partial values object zero-fills the omitted float field (bulkWriteFields)", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const Float = store.registerComponent(Float2);
@@ -631,7 +631,7 @@ describe("Store", () => {
 	// the intended `count <= 0 → []` guard was dead for negatives. The guard now
 	// runs first: any non-positive count yields an empty array without throwing.
 
-	it("spawn_many with a negative count returns [] and does not throw RangeError", () => {
+	it("spawnMany with a negative count returns [] and does not throw RangeError", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
@@ -644,7 +644,7 @@ describe("Store", () => {
 		expect(store.entityCount).toBe(0); // nothing spawned
 	});
 
-	it("spawn_many with count 0 returns [] and spawns nothing", () => {
+	it("spawnMany with count 0 returns [] and spawns nothing", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
@@ -653,7 +653,7 @@ describe("Store", () => {
 		expect(store.entityCount).toBe(0);
 	});
 
-	it("spawn_many with a positive count still spawns that many entities", () => {
+	it("spawnMany with a positive count still spawns that many entities", () => {
 		const store = new Store();
 		const Pos = store.registerComponent(Position);
 		const p = store.createTemplate([{ def: Pos, values: { x: 1, y: 2, z: 3 } }]);
@@ -696,13 +696,13 @@ describe("Store", () => {
 	// Event channel dirty-list invariant
 	//=========================================================
 
-	// Regression: `emitEvent` and `emitSignal` mark a channel dirty
-	// (push its id to `dirtyEventChannels`) only after a successful emit.
+	// Regression: `EventRegistry.emit` and `emitSignal` mark a channel dirty
+	// (push its id to `_dirtyChannels`) only after a successful emit.
 	// The old order sampled `reader.length === 0` and pushed the id before
 	// `channel.emit(...)`. If that emit threw the `__DEV__` missing-field check,
 	// `reader.length` stayed 0, so the next (valid) emit saw an empty channel
 	// and pushed the id a second time, duplicating it in the dirty list. The
-	// duplicate inflates `devBufferedEventCount` and makes `clearEvents`
+	// duplicate inflates `devBufferedCount` and makes `clear`
 	// walk the channel twice, breaking the at-most-once-per-tick invariant.
 
 	it("a thrown emit does not double-register the channel in the dirty list", () => {
@@ -733,7 +733,7 @@ describe("Store", () => {
 		store.events.emit(Pair, { a: 2, b: 3 });
 		expect(store.events.devBufferedCount()).toBe(1);
 
-		// `clearEvents` clears the channel. A duplicate id is harmless to the
+		// `clear` empties the channel. A duplicate id is harmless to the
 		// channel (clear is idempotent) but the count must drop to 0 in one pass.
 		store.events.clear();
 		expect(store.events.devBufferedCount()).toBe(0);

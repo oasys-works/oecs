@@ -1,7 +1,7 @@
 # Development guards and production builds
 
 oecs puts its run-time safety checks behind one compile-time flag, `__DEV__`, which `src/dev_flag.ts`
-exposes as `DEV`. There are about 328 checks:
+exposes as `DEV`. The flag covers:
 
 - the bounds and liveness checks
 - the system access checker, which holds you to `reads` and `writes`

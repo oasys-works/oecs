@@ -127,8 +127,8 @@ export { accessCheck } from "./access_check";
 // Component observers, onAdd and onRemove fire at the
 // structural-flush boundary in canonical order. OnSet is change detection
 // surfaced as a callback (archetype-granular = free change tick, per-entity =
-// opt-in dirty list). Registered via `ECS.observe`. The `ObserverRegistry`
-// substrate stays internal.
+// opt-in dirty list). Registered via `ecs.observe`, the member the observers
+// plugin adds. The `ObserverRegistry` substrate stays internal.
 export type {
 	ObserverConfig,
 	ObserverHandle,
@@ -201,21 +201,21 @@ export type {
 } from "./frame_trace";
 
 // Host-side frame driver, optional convenience over the authoritative
-// `ECS.update(dt)` primitive: play and pause on rAF (di-able for tests and
+// `ECS.update(dt)` primitive: play and pause on rAF (injectable for tests and
 // non-browser hosts), explicit `step()` and `stepFrames()` for debuggers, editors,
 // and rollback playback, and a `maxDt` clamp so a resumed background tab
 // doesn't feed the whole suspension into the accumulator as one delta.
 export { FrameStepper } from "./frame_stepper";
 export type { FrameStepperOptions } from "./frame_stepper";
 
-// World resume, `ECSRestoreError` is thrown by `ECS.restore` when a
+// World resume, `ECSRestoreError` is thrown by `ecs.snapshots.restore` when a
 // snapshot's shape, field-identity and index-bounds checks fail closed before overwriting the
 // live backing. `ECS_SNAPSHOT_VERSION` tags the combined snapshot framing.
 export { ECSRestoreError } from "./utils/error";
 export { ECS_SNAPSHOT_VERSION } from "./snapshot";
 
 // Ref.
-// NOTE: the `Readonly*` types exported from this barrel (ReadonlyComponentRef,
+// The `Readonly*` types exported from this barrel (ReadonlyComponentRef,
 // ReadonlyColumn, ReadonlyUint32Array, and the EventReader columns) are
 // *advisory* compile-time barriers, not runtime safety boundaries, each wraps
 // the live mutable backing store, so a deliberate cast can still write
@@ -304,8 +304,8 @@ export type { Bundle, BundleOrDef, StrictBundle, StrictBundles, DefsOf } from ".
 
 // Sparse storage class, out-of-identity components. The
 // handle type is public. The `SparseComponentStore` substrate stays internal.
-// `SparseRestoreError` is thrown by `ECS.restoreSparse` on a shape, field-
-// identity, index-bounds, or trailing-bytes mismatch, so it's part
+// `SparseRestoreError` is thrown by `ecs.snapshots.restoreSparse` on a shape,
+// field-identity, index-bounds, or trailing-bytes mismatch, so it's part
 // of the public determinism surface.
 export type { SparseComponentDef, SparseComponentID, SparseSchemaOf } from "./sparse_store";
 export { SparseRestoreError } from "./sparse_store";

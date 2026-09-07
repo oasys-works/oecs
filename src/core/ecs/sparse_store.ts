@@ -203,11 +203,11 @@ export class SparseComponentStore {
 	}
 
 	/** Live entity indices in **canonical** (ascending) order, the determinism
-	 * ordering for `stateHash` + snapshot/restore. The native
+	 * ordering for `stateHash`, snapshot and restore. The native
 	 * `indices` order is insertion and swap order and would make two worlds with
 	 * identical contents reached by different add and remove histories diverge, so
-	 * the cold determinism paths sort here. Allocates a sorted copy each call
-	 * never call it on the hot query path. Indices are 20-bit entity indices,
+	 * the cold determinism paths sort here. Allocates a sorted copy each call,
+	 * so never call it on the hot query path. Indices are 20-bit entity indices,
 	 * so the subtraction comparator can't overflow. */
 	public canonicalIndices(): number[] {
 		const out = new Array<number>(this._size);
@@ -217,7 +217,7 @@ export class SparseComponentStore {
 
 	/** The field-value row for `index` (length = field count, `[]` for a tag),
 	 * or `undefined` if `index` isn't a member. A copy, read out of the columns
-	 * for the determinism paths (`stateHash`, snapshot); mutate via `setField`. */
+	 * for the determinism paths (`stateHash`, snapshot). Mutate via `setField`. */
 	public getRow(index: number): readonly number[] | undefined {
 		if (!(this._pos[index] >= 0)) return undefined;
 		const n = this._cols.length;
@@ -234,9 +234,9 @@ export class SparseComponentStore {
 		this._size = 0;
 	}
 
-	/** Insert the positional field-value `row` for `index`. Restore path only
-	 * bypasses the name→index mapping `setRow` does, because snapshot bytes are
-	 * already positional. Each value converts to its field's type. */
+	/** Insert the positional field-value `row` for `index`. Restore path only.
+	 * It bypasses the name→index mapping `setRow` does, because snapshot bytes
+	 * are already positional. Each value converts to its field's type. */
 	public setRawRow(index: number, row: readonly number[]): void {
 		this._join(index);
 		const cols = this._cols;
@@ -375,8 +375,8 @@ function schemaFingerprint(
 	fieldTypes: readonly TypedArrayTag[]
 ): number {
 	// Folds bytes (each `charCodeAt & 0xff`, handled by `fnv1aStep`) through the
-	// shared FNV-1a byte step, same constants and round as `fnv1a32` and
-	// the server determinism folds, so there is one definition, not four copies.
+	// shared FNV-1a byte step, same constants and round as `fnv1a32` and the
+	// other determinism folds, so there is one definition, not a copy each.
 	let h = FNV1A_OFFSET_BASIS;
 	const fold = (s: string): void => {
 		for (let i = 0; i < s.length; i++) h = fnv1aStep(h, s.charCodeAt(i));
@@ -510,7 +510,7 @@ export function restoreSparseStores(
 		const expectedHash = schemaFingerprint(store.fieldNames, store.fieldTypes);
 		if (schemaHash !== expectedHash) {
 			throw new SparseRestoreError(
-				`sparse store ${s} schema identity mismatch: snapshot hash=${schemaHash}, registered=${expectedHash} (same field count, different field names/types, likely a registration-order divergence between the snapshot and restore worlds)`
+				`sparse store ${s} schema identity mismatch: snapshot hash=${schemaHash}, registered=${expectedHash} (same field count, different field names or types, likely a registration-order divergence between the snapshot and restore worlds)`
 			);
 		}
 		store.clear();
@@ -586,7 +586,7 @@ export function assertSparseStores(
 		const expectedHash = schemaFingerprint(store.fieldNames, store.fieldTypes);
 		if (schemaHash !== expectedHash) {
 			throw new SparseRestoreError(
-				`sparse store ${s} schema identity mismatch: snapshot hash=${schemaHash}, registered=${expectedHash} (same field count, different field names/types, likely a registration-order divergence between the snapshot and restore worlds)`
+				`sparse store ${s} schema identity mismatch: snapshot hash=${schemaHash}, registered=${expectedHash} (same field count, different field names or types, likely a registration-order divergence between the snapshot and restore worlds)`
 			);
 		}
 		for (let m = 0; m < memberCount; m++) {

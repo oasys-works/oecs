@@ -163,10 +163,10 @@ describe("Event system", () => {
 		expect(readCount).toBe(2);
 	});
 
-	// Regression: startup() had no clearEvents() (only update() did),
-	// so events emitted in a startup phase leaked into the first update(), a
+	// Regression: startup() never called `events.clear()`, and only update()
+	// did, so events emitted in a startup phase leaked into the first update(), a
 	// first-frame `PRE_UPDATE` and `UPDATE` reader saw them as if emitted this frame. They
-	// must be drained at the end of startup, since events live one *update* tick
+	// must be drained at the end of startup, since events live one update tick
 	// and startup is not an update tick.
 	it("startup-emitted events do not leak into the first update", () => {
 		const world = ECS.create({ plugins: [events()] });
@@ -257,7 +257,7 @@ describe("Event system", () => {
 		expect(count).toBe(3);
 	});
 
-	it("events emitted in pre_update are readable in update and post_update", () => {
+	it("events emitted in PRE_UPDATE are readable in UPDATE and POST_UPDATE", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Input = eventKey<{ key: number }>("Input");
 		world.events.register(Input, ["key"] as const);
@@ -318,7 +318,7 @@ describe("Event system", () => {
 		expect(asEventId(7)).toBe(7);
 	});
 
-	it("duplicate register_event throws EVENT_ALREADY_REGISTERED", () => {
+	it("a duplicate events.register throws EVENT_ALREADY_REGISTERED", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Ev = eventKey<{ x: number }>("Ev");
 		world.events.register(Ev, ["x"] as const);
@@ -400,7 +400,7 @@ describe("Event system", () => {
 
 	// ==== ECS.read and ECS.emit (facade-level) ====
 
-	it("ECS.read works for reading events outside systems", () => {
+	it("world.events.read works outside a system", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Score = eventKey<{ points: number }>("Score");
 		world.events.register(Score, ["points"] as const);
@@ -411,7 +411,7 @@ describe("Event system", () => {
 		expect(reader.points[0]).toBe(42);
 	});
 
-	it("ECS.emit signal works at facade level", () => {
+	it("world.events.emit sends a signal at the facade", () => {
 		const world = ECS.create({ plugins: [events()] });
 		const Ping = signalKey("Ping");
 		world.events.registerSignal(Ping);
@@ -423,10 +423,10 @@ describe("Event system", () => {
 	// ==== Reader type-soundness ====
 	//
 	// EventReader columns were declared Float64Array but backed by growable
-	// number[]: a system trusting the declared type and calling .subarray/.set/
-	// .byteLength got undefined and threw, and the reader aliased the live channel
-	// so it could mutate it. The columns are now read-only numeric arrays whose
-	// declared type matches the runtime backing.
+	// number[]. A system that trusted the declared type read `undefined` from
+	// `.subarray`, `.set` or `.byteLength` and threw, and the reader aliased the
+	// live channel, so it could mutate it. The columns are now read-only numeric
+	// arrays whose declared type matches the runtime backing.
 
 	it("reader columns are growable numeric arrays, not typed arrays", () => {
 		const world = ECS.create({ plugins: [events()] });

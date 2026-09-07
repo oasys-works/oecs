@@ -25,8 +25,8 @@ export function bucketPush<T>(map: Map<number, T[]>, key: number, value: T): voi
 /**
  * O(K) LSD radix sort of entity ids by their 20-bit dense index (two 10-bit
  * passes), in place. This is the canonical within-observer order, *never* a
- * comparator `Array.sort`, which the bench measured as much slower than the
- * entire flush. Distinct live entities have distinct indices,
+ * comparator `Array.sort`, which is far slower than the entire flush.
+ * Distinct live entities have distinct indices,
  * so index order is a total canonical order. `out` is typed scratch, and the
  * return value is the scratch to keep: the same buffer, or a larger one when
  * `K` outgrew it. `c0` and `c1` are 1024-entry histograms, and both are reused.

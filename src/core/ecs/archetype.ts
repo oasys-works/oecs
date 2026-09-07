@@ -175,7 +175,7 @@ export class Archetype implements ArchetypeView {
 	 * (`disableRow` and `enableRow`). An append places an enabled row in front of
 	 * the disabled tail (`_placeTail`). `entityCount` (the query and iteration bound)
 	 * returns this. `length` and `totalCount` span disabled rows too. Folded into
-	 * `stateHash` and published to the SAB descriptor so the WASM sim and
+	 * `stateHash` and published to the SAB descriptor so a compute backend and
 	 * snapshot and restore honour it.
 	 */
 	public enabledCount: number = 0;
@@ -1611,7 +1611,7 @@ export class Archetype implements ArchetypeView {
 		// `src.removeRow`) would leave the entity present in both archetypes.
 		if (DEV && src.iterDepth > 0) throw structuralMidWalkError("moveEntityFrom");
 		// Preserve the entity's enabled and disabled state across the move:
-		// read it from `src` Before removing the row. A disabled entity that gains
+		// read it from `src` before removing the row. A disabled entity that gains
 		// or loses an *unrelated* component stays disabled in the destination.
 		const wasDisabled = srcRow >= src.enabledCount;
 		// Destination is the empty archetype (a remove that drops the entity's
@@ -1843,7 +1843,8 @@ export class Archetype implements ArchetypeView {
 	}
 }
 
-/** Reusable result buffer for move_entity_from/move_entity_from_tag. [dstRow, swapped_index] */
+/** Reusable result buffer for `moveEntityFrom` and `moveEntityFromTag`.
+ * `[dstRow, swappedIndex]`. */
 export const _moveResult: [number, number] = [0, NO_SWAP];
 
 /**
@@ -1869,7 +1870,7 @@ export function _setIterAllRows(value: boolean): boolean {
 function emptyArchetypeRowError(): ECSError {
 	return new ECSError(
 		ECS_ERROR.EMPTY_ARCHETYPE_MATERIALIZE,
-		"the empty archetype must not materialise rows: a component-less entity is unplaced (entity_row === UNASSIGNED). A Store mutation path is missing its rowless-destination branch."
+		"the empty archetype must not materialise rows: a component-less entity is unplaced (entityRows[index] === UNASSIGNED). A Store mutation path is missing its rowless-destination branch."
 	);
 }
 
@@ -1888,14 +1889,14 @@ function emptyArchetypeRowError(): ECSError {
 function structuralMidWalkError(op: string): ECSError {
 	return new ECSError(
 		ECS_ERROR.STRUCTURAL_DURING_ITERATION,
-		`${op} hit an archetype a live query iteration is visiting, immediate structural mutation mid-walk relocates rows under the iterator (entities get skipped or visited twice). Collect ids during the walk and mutate after it; inside a system use the deferred ctx.commands.`
+		`${op} hit an archetype a live query iteration is visiting. An immediate structural mutation mid-walk relocates rows under the iterator, so entities get skipped or visited twice. Collect ids during the walk and mutate after it. Inside a system, use the deferred ctx.commands`
 	);
 }
 
 function partitionNoEntityRowError(): ECSError {
 	return new ECSError(
 		ECS_ERROR.PARTITION_APPEND_NEEDS_ENTITY_ROW,
-		"appending into a disabled-bearing archetype requires the entity_row map (to repoint the displaced disabled row). A Store append path is missing its entity_row argument."
+		"appending into a disabled-bearing archetype requires the entityRows map (to repoint the displaced disabled row). A Store append path is missing its entityRows argument."
 	);
 }
 

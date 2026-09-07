@@ -8,8 +8,9 @@
  * checking each archetype's `row_count` matches `Archetype.length`.
  *
  * The publish path is gated by an internal `_rowCountsDirty`
- * flag set by every mutation site (`_mark_queries_dirty` + immediate
- * `Store.destroyEntity`) and cleared by publish. Read-only tick phases
+ * flag that every mutation site sets through `_onArchShrink`, `_onArchGrow`,
+ * `_onArchEnabledChange` or `_settleFlushDirty`, and that publish clears.
+ * Read-only tick phases
  * call `ctx.flush()` which drains empty buffers and then invokes
  * publish. The descriptor walk must skip the work entirely when nothing
  * has changed. Verified by overwriting a descriptor's `row_count` with a
@@ -37,7 +38,7 @@ function rowCountByArchId(store: Store): Map<number, number> {
 	return out;
 }
 
-describe("Store.publish_row_counts_to_descriptor", () => {
+describe("Store.publishRowCounts", () => {
 	it("stamps live archetype length into every SAB descriptor's row_count", () => {
 		const store = new Store(8);
 		const Pos = store.registerComponent(Position);
@@ -137,7 +138,7 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 		).toBe(3);
 	});
 
-	it("re-marks dirty after immediate destroy_entity, re-stamps on next publish", () => {
+	it("re-marks dirty after immediate destroyEntity, re-stamps on next publish", () => {
 		const store = new Store(8);
 		const Pos = store.registerComponent(Position);
 		const entities = [];
@@ -150,10 +151,10 @@ describe("Store.publish_row_counts_to_descriptor", () => {
 		const archId = store.getEntityArchetype(entities[0]).id as number;
 		expect(rowCountByArchId(store).get(archId)).toBe(4);
 
-		// Immediate-mode destroy bypasses _mark_queries_dirty (known bug
-		// path) but must still flag row_counts dirty, otherwise the SAB
-		// descriptor would silently keep the pre-destroy count and any
-		// WASM tick reading it would loop over a freed slot.
+		// Immediate-mode destroy takes its own path to `_onArchShrink`, and it
+		// must still flag row counts dirty. Otherwise the SAB descriptor keeps
+		// the pre-destroy count, and a WASM tick reading it loops over a freed
+		// slot.
 		store.destroyEntity(entities[0]);
 		store.publishRowCounts();
 		expect(rowCountByArchId(store).get(archId)).toBe(3);

@@ -45,7 +45,7 @@ describe("Schedule (integration)", () => {
 	// Execution order
 	//=========================================================
 
-	it("run_startup executes pre_startup, then startup, then post_startup", () => {
+	it("runStartup executes PRE_STARTUP, then STARTUP, then POST_STARTUP", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -63,7 +63,7 @@ describe("Schedule (integration)", () => {
 		expect(order).toEqual(["pre", "main", "post"]);
 	});
 
-	it("run_update executes pre_update, then update, then post_update", () => {
+	it("runUpdate executes PRE_UPDATE, then UPDATE, then POST_UPDATE", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];
@@ -81,7 +81,7 @@ describe("Schedule (integration)", () => {
 		expect(order).toEqual(["pre", "main", "post"]);
 	});
 
-	it("run_update passes delta_time to system fn", () => {
+	it("runUpdate passes deltaTime to system fn", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 
@@ -417,7 +417,7 @@ describe("Schedule (integration)", () => {
 	// Fixed update
 	//=========================================================
 
-	it("run_fixed_update executes FIXED_UPDATE systems with fixed_dt", () => {
+	it("runFixedUpdate executes FIXED_UPDATE systems with fixedDt", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 
@@ -434,7 +434,7 @@ describe("Schedule (integration)", () => {
 		expect(receivedDt).toBeCloseTo(1 / 50);
 	});
 
-	it("run_fixed_update respects ordering constraints", () => {
+	it("runFixedUpdate respects ordering constraints", () => {
 		const schedule = new Schedule();
 		const ctx = makeCtx();
 		const order: string[] = [];

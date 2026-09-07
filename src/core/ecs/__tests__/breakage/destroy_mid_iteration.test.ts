@@ -93,7 +93,7 @@ describe("Destruction during system execution", () => {
 		expect(world.entityCount).toBe(0);
 	});
 
-	it("interleaved create + destroy in single system, entity_count correct after flush", () => {
+	it("interleaved create + destroy in single system, entityCount correct after flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 

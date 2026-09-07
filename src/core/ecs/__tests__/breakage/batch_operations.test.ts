@@ -3,7 +3,7 @@ import { ECS } from "../../ecs";
 import type { EntityID } from "../../entity";
 
 describe("Batch operation edge cases", () => {
-	it("batch_add to empty archetype, no crash", () => {
+	it("batchAdd to empty archetype, no crash", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -23,7 +23,7 @@ describe("Batch operation edge cases", () => {
 
 		expect(arch.entityCount).toBe(0);
 
-		// batch_add on empty archetype should not crash (no-op)
+		// batchAdd on empty archetype should not crash (no-op)
 		expect(() => {
 			world.batchAddComponent(arch.id, Vel, { vx: 1, vy: 2 });
 		}).not.toThrow();
@@ -32,7 +32,7 @@ describe("Batch operation edge cases", () => {
 		expect(arch.entityCount).toBe(0);
 	});
 
-	it("batch_add when component already present, a no-op with correct behavior", () => {
+	it("batchAdd when component already present, a no-op with correct behavior", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -44,7 +44,7 @@ describe("Batch operation edge cases", () => {
 		const q = world.query(Pos);
 		const arch = q.archetypes[0];
 
-		// batch_add Pos when entities already have Pos, should be a no-op
+		// batchAdd Pos when entities already have Pos, should be a no-op
 		expect(() => {
 			world.batchAddComponent(arch.id, Pos, { x: 99, y: 99 });
 		}).not.toThrow();
@@ -56,7 +56,7 @@ describe("Batch operation edge cases", () => {
 		expect(world.getField(e2, Pos, "y")).toBe(40);
 	});
 
-	it("batch_add then query, target archetype appears in query", () => {
+	it("batchAdd then query, target archetype appears in query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -72,7 +72,7 @@ describe("Batch operation edge cases", () => {
 		const posVelQuery = world.query(Pos, Vel);
 		expect(posVelQuery.entityCount).toBe(0);
 
-		// batch_add Vel to all entities in the Pos archetype
+		// batchAdd Vel to all entities in the Pos archetype
 		const posQuery = world.query(Pos);
 		const srcArch = posQuery.archetypes[0];
 		world.batchAddComponent(srcArch.id, Vel, { vx: 100, vy: 200 });
@@ -96,7 +96,7 @@ describe("Batch operation edge cases", () => {
 		}
 	});
 
-	it("batch_remove from archetype with 1 entity, entity moves correctly", () => {
+	it("batchRemove from archetype with 1 entity, entity moves correctly", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -108,7 +108,7 @@ describe("Batch operation edge cases", () => {
 		const posVelQuery = world.query(Pos, Vel);
 		expect(posVelQuery.entityCount).toBe(1);
 
-		// Get the source archetype and batch_remove Vel
+		// Get the source archetype and batchRemove Vel
 		const srcArch = posVelQuery.archetypes[0];
 		world.batchRemoveComponent(srcArch.id, Vel);
 
@@ -125,7 +125,7 @@ describe("Batch operation edge cases", () => {
 		expect(world.getField(e, Pos, "y")).toBe(10);
 	});
 
-	it("batch_add then destroy one entity from target, remaining data correct (swap-and-pop)", () => {
+	it("batchAdd then destroy one entity from target, remaining data correct (swap-and-pop)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Tag = world.registerTag();
@@ -138,7 +138,7 @@ describe("Batch operation edge cases", () => {
 			entities.push(e);
 		}
 
-		// batch_add Tag to all
+		// batchAdd Tag to all
 		const srcArch = world.query(Pos).archetypes[0];
 		world.batchAddComponent(srcArch.id, Tag);
 
@@ -167,7 +167,7 @@ describe("Batch operation edge cases", () => {
 		}
 	});
 
-	it("interleave batch_add and individual add_component, final state correct", () => {
+	it("interleave batchAdd and individual addComponent, final state correct", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -184,7 +184,7 @@ describe("Batch operation edge cases", () => {
 		// Individually add Vel to e1
 		world.addComponent(e1, Vel, { vx: 10, vy: 20 });
 
-		// Now batch_add Hp to all entities that are still in the Pos-only archetype (e2, e3)
+		// Now batchAdd Hp to all entities that are still in the Pos-only archetype (e2, e3)
 		// We need the archetype that has only Pos (not Pos+Vel)
 		const posOnlyQuery = world.query(Pos).not(Vel);
 		if (posOnlyQuery.archetypeCount > 0) {

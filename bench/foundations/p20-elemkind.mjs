@@ -104,10 +104,10 @@ const which = variantArg();
 if (which) {
 	emit(await run(which));
 } else {
-	console.log(`P20, element-kind polymorphism in the row plane (exp 20 / rule 16)`);
+	console.log(`P20, element-kind polymorphism in the row plane (exp 20)`);
 	console.log(`      ${N.toLocaleString()} entities, 8 component fields either way`);
-	console.log(`      mono = all f64 (1 element kind); mixed = f64, f32, i32 and u8 (4 kinds)`);
-	console.log(`      mixed moves FEWER bytes, so any slowdown is a lower bound\n`);
+	console.log(`      mono = all f64, 1 element kind. mixed = f64, f32, i32 and u8, 4 kinds`);
+	console.log(`      mixed moves fewer bytes, so any slowdown is a lower bound\n`);
 
 	console.log(`  ${"op".padEnd(7)} ${"runtime".padEnd(8)} ${"mono".padEnd(12)} ${"mixed".padEnd(12)} ${"mixed and mono".padEnd(11)} spreads overlap?`);
 	console.log(`  ${"-".repeat(7)} ${"-".repeat(8)} ${"-".repeat(12)} ${"-".repeat(12)} ${"-".repeat(11)} ----------------`);

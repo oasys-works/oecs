@@ -112,4 +112,4 @@ interface DispatchTraceSnapshot {
 
 - [determinism](./determinism.md), how to use `phaseBoundary` with `stateHash` to find a
   divergence
-- [systems](./systems.md), [observers](./observers.md), the objects that a frame trace reports on
+- [systems](./systems.md), [observers](./observers.md), what a frame trace reports on

@@ -22,25 +22,25 @@
  *   [ slot 1:       16 B ]  ...
  *
  * SPSC contract:
- *   - Producer: main thread, from `GameNetworkClient.send_action`. Pushes
- *     one entry per user action. `Atomics.store`s `write_head` after each.
- *   - Consumer: sim worker, drained on each `apply_diff` and `apply_snapshot`
- *     boundary. `Atomics.store`s `read_head` after each pop.
- *   - Today's consumer is a no-op observer (logs or counts in DEV), the
- *     wire path still goes main → WebSocket → server. A later change moves
- *     the `PredictionReconciler` into the worker so the action ring becomes
- *     load-bearing for client-side prediction.
+ *   - Producer: the main thread, from the host's action-send call. It pushes
+ *     one entry per user action, and `Atomics.store`s `write_head` after each.
+ *   - Consumer: the worker, drained on each apply boundary. It `Atomics.store`s
+ *     `read_head` after each pop.
+ *   - Today's consumer only observes (it logs or counts in DEV), because the
+ *     host's own send path still carries the action. A later change moves
+ *     reconciliation into the worker, and the ring becomes load-bearing for
+ *     client-side prediction.
  *
  * Overflow:
- *   - If main writes a slot when `(write_head - read_head) === capacity`,
- *     it sets `overflow = 1` and the push returns `false`. The server
- *     send path is independent (`_transport.send(...)` ran first), so an
- *     overflow doesn't drop the action. It only drops worker
+ *   - If the main thread writes a slot when
+ *     `(write_head - read_head) === capacity`, it sets `overflow = 1` and the
+ *     push returns `false`. The host's own send path is independent and ran
+ *     first, so an overflow does not drop the action. It only drops worker
  *     observability for that one entry.
  *
  * Atomics: the head fields `write_head` and `read_head` are the
  * cross-thread synchronization edge, the producer runs on the main
- * thread, the consumer in the sim worker, and both alias the same
+ * thread, the consumer in the worker, and both alias the same
  * `SharedArrayBuffer`. The producer writes the slot bytes, then
  * `Atomics.store`s `write_head`. The consumer `Atomics.load`s
  * `write_head` before touching the slot, reads it, then `Atomics.store`s
@@ -51,9 +51,9 @@
  * torn or stale slot, and the producer could read a stale `read_head`
  * (false overflow, or overwrite a slot mid-read). Slot payload bytes
  * stay on plain `DataView` and `Uint8Array` ops, the head Atomics fence
- * them, so no per-byte atomic is needed. A future PR may still add an
- * `Atomics.wait/notify` pair so the worker can block between actions
- * instead of polling, additive change, no layout shift.
+ * them, so no per-byte atomic is needed. A later change may still add an
+ * `Atomics.wait` and `Atomics.notify` pair so the worker can block between
+ * actions instead of polling. That is additive, with no layout shift.
  */
 
 /** Total bytes for the ring header. Identical to `command_ring`. */
@@ -221,7 +221,7 @@ export function pushAction(view: DataView, ringOff: number, payload: Uint8Array)
  * least `ACTION_RING_MAX_PAYLOAD_BYTES`. Only the first `length` bytes
  * are meaningful after a non-zero return.
  *
- * NOTE: a `0` return is ambiguous. It means "ring empty" or "a 0-byte
+ * A `0` return is ambiguous. It means "ring empty" or "a 0-byte
  * slot" (the latter only reachable via ABI-skew, since `pushAction`
  * rejects empty payloads). Callers that loop must decide emptiness from
  * the heads, either `pendingActionCount` or `write_head === read_head`, and

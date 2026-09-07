@@ -17,8 +17,8 @@ import { relations } from "../../relations";
 
 const idx = (es: EntityID[]): number[] => es.map(getEntityIndex).sort((a, b) => a - b);
 
-describe("register_is_a", () => {
-	it("instance-of query: sources_of lists all instances of an exemplar", () => {
+describe("registerIsA", () => {
+	it("instance-of query: sourcesOf lists all instances of an exemplar", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const IsA = registerIsA(world);
 		const exemplar = world.spawn();
@@ -111,7 +111,7 @@ describe("register_is_a", () => {
 	});
 });
 
-describe("register_child_of", () => {
+describe("registerChildOf", () => {
 	it("parent → children query and up-chain traversal", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const ChildOf = registerChildOf(world);

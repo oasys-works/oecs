@@ -205,7 +205,7 @@ describe("SAB ArchetypeDescriptor, 40-byte header + N × 16", () => {
 		expect(view.getUint32(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)).toBe(0);
 	});
 
-	it("archetype_descriptor_bytes(N) = 40 + N × 16", () => {
+	it("archetypeDescriptorBytes(N) = 40 + N × 16", () => {
 		expect(archetypeDescriptorBytes(0)).toBe(40);
 		expect(archetypeDescriptorBytes(1)).toBe(56);
 		expect(archetypeDescriptorBytes(5)).toBe(40 + 5 * 16);
@@ -245,7 +245,7 @@ describe("SAB ArchetypeDescriptor, 40-byte header + N × 16", () => {
 });
 
 describe("SAB layout descriptor region, sequential variable-length walk", () => {
-	it("layout_descriptor_region_bytes sums each archetype's footprint", () => {
+	it("layoutDescriptorRegionBytes sums each archetype's footprint", () => {
 		// 1-column archetype = 56, 1-column archetype = 56, total = 112.
 		expect(layoutDescriptorRegionBytes(REGION_FIXTURE)).toBe(112);
 
@@ -257,7 +257,7 @@ describe("SAB layout descriptor region, sequential variable-length walk", () => 
 		expect(layoutDescriptorRegionBytes(wider)).toBe(144);
 	});
 
-	it("write_layout_descriptor_region returns the end offset", () => {
+	it("writeLayoutDescriptorRegion returns the end offset", () => {
 		const regionOff = 64;
 		const buf = new ArrayBuffer(regionOff + layoutDescriptorRegionBytes(REGION_FIXTURE));
 		const view = new DataView(buf);
@@ -266,8 +266,8 @@ describe("SAB layout descriptor region, sequential variable-length walk", () => 
 	});
 
 	it("region round-trips through write → read at non-zero offset", () => {
-		// Real SAB usage: region lives after the 32-byte header, so the
-		// region offset is non-zero. Pin that here.
+		// In a real store the region sits after the header, so its offset is
+		// never zero. This pins the offset arithmetic at a non-zero base.
 		const regionOff = 32;
 		const buf = new ArrayBuffer(regionOff + layoutDescriptorRegionBytes(REGION_FIXTURE));
 		const view = new DataView(buf);
@@ -277,8 +277,8 @@ describe("SAB layout descriptor region, sequential variable-length walk", () => 
 		expect(roundTrip).toEqual(REGION_FIXTURE);
 	});
 
-	it("region walk does not read past the supplied archetype_count", () => {
-		// `readLayoutDescriptorRegion` stops at `archetype_count`. Anything
+	it("region walk does not read past the supplied archetypeCount", () => {
+		// `readLayoutDescriptorRegion` stops at `archetypeCount`. Anything
 		// later in the buffer must not bleed into the result.
 		const regionOff = 0;
 		const buf = new ArrayBuffer(layoutDescriptorRegionBytes(REGION_FIXTURE) + 64);

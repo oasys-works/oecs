@@ -37,7 +37,7 @@ const OBSERVER_MAX_ROUNDS = 1 << 16;
  * calls are flush-granularity, never per-entity. */
 export interface DeferredCommandHost {
 	/** Drain + apply the pending component additions. Each applier fully
-	 * drains its buffer(s) and owns its dirty/0-crossing bookkeeping. */
+	 * drains its buffer(s) and owns its dirty and 0-crossing bookkeeping. */
 	readonly applyAdds: () => void;
 	readonly applyRemoves: () => void;
 	readonly applyDestroys: () => void;
@@ -64,7 +64,7 @@ export class DeferredCommandBuffer {
 	public readonly addValues: Record<string, number>[] = [];
 	public readonly removeIds: EntityID[] = [];
 	public readonly removeDefs: ComponentDef[] = [];
-	// Deferred entity enable/disable. `true` = disable, `false` =
+	// Deferred entity enable and disable. `true` = disable, `false` =
 	// enable. Entries apply in operation order at flush (idempotent if
 	// redundant), so last write per entity wins.
 	public readonly toggleIds: EntityID[] = [];

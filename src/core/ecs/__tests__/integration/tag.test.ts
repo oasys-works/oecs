@@ -11,7 +11,7 @@ describe("Tag components", () => {
 	// registerTag
 	//=========================================================
 
-	it("register_tag returns a valid ComponentDef", () => {
+	it("registerTag returns a valid ComponentDef", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
@@ -19,7 +19,7 @@ describe("Tag components", () => {
 		expect(typeof Tag.id).toBe("number");
 	});
 
-	it("multiple register_tag calls return distinct IDs", () => {
+	it("multiple registerTag calls return distinct IDs", () => {
 		const world = new ECS();
 		const TagA = world.registerTag();
 		const TagB = world.registerTag();
@@ -31,7 +31,7 @@ describe("Tag components", () => {
 	// addComponent with tag (no values arg)
 	//=========================================================
 
-	it("add_component with tag requires no values argument", () => {
+	it("addComponent with tag requires no values argument", () => {
 		const world = new ECS();
 		const IsEnemy = world.registerTag();
 
@@ -42,7 +42,7 @@ describe("Tag components", () => {
 		expect(world.hasComponent(e, IsEnemy)).toBe(true);
 	});
 
-	it("add_component with tag creates correct archetype transition", () => {
+	it("addComponent with tag creates correct archetype transition", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const IsEnemy = world.registerTag();
@@ -59,7 +59,7 @@ describe("Tag components", () => {
 	// hasComponent and removeComponent with tags
 	//=========================================================
 
-	it("has_component returns false before tag is added", () => {
+	it("hasComponent returns false before tag is added", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
@@ -67,7 +67,7 @@ describe("Tag components", () => {
 		expect(world.hasComponent(e, Tag)).toBe(false);
 	});
 
-	it("remove_component works for tags", () => {
+	it("removeComponent works for tags", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
@@ -79,7 +79,7 @@ describe("Tag components", () => {
 		expect(world.hasComponent(e, Tag)).toBe(false);
 	});
 
-	it("remove_component on tag preserves other component data", () => {
+	it("removeComponent on tag preserves other component data", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Tag = world.registerTag();
@@ -173,7 +173,7 @@ describe("Tag components", () => {
 	// Deferred addComponent with tag via system
 	//=========================================================
 
-	it("deferred add_component with tag works via system", () => {
+	it("deferred addComponent with tag works via system", () => {
 		const world = new ECS();
 		const Tag = world.registerTag();
 
@@ -285,7 +285,7 @@ describe("Tag components", () => {
 	// forEach skips empty archetypes
 	//=========================================================
 
-	it("for_each skips empty archetypes", () => {
+	it("forEach skips empty archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
@@ -305,7 +305,7 @@ describe("Tag components", () => {
 		expect(iteratedCount).toBe(0);
 	});
 
-	it("for_each yields only non-empty archetypes", () => {
+	it("forEach yields only non-empty archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);

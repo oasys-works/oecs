@@ -255,8 +255,8 @@ export type DefsOf<Items extends readonly BundleOrDef[]> = {
 			: never;
 };
 
-/** Pair a component def with field values to attach. Omitted fields zero-fill
- * a tag def takes no values (see `ValuesArg`). */
+/** Pair a component def with field values to attach. Omitted fields zero-fill.
+ * A tag def takes no values (see `ValuesArg`). */
 export function bundle<S extends ComponentSchema>(
 	def: ComponentDef<S>,
 	...values: ValuesArg<S>
@@ -264,7 +264,8 @@ export function bundle<S extends ComponentSchema>(
 	return { def, values: (values as [Partial<FieldValues<S>>?])[0] ?? NO_VALUES };
 }
 
-/** Extract the def from a `BundleOrDef`. A bare def is the callable. A bundle a plain object. */
+/** Extract the def from a `BundleOrDef`. A bare def is the callable. A bundle
+ * is a plain object. */
 export function bundleDef(item: BundleOrDef): ComponentDef {
 	return typeof item === "function" ? item : item.def;
 }

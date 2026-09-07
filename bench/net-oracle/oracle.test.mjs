@@ -62,7 +62,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 				seed: 1,
 				label: spec.name,
 				maxBatch: 16,
-				// Per-tick verification is O(live agents); at depth 11 that is 4098 of
+				// Per-tick verification is O(live agents). At depth 11 that is 4098 of
 				// them, so the big case verifies less often to stay CI-sized. `--soak`
 				// is where duration lives, not here.
 				verifyEvery: depth <= 8 ? 1 : 8,

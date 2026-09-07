@@ -52,7 +52,7 @@ export enum ECS_ERROR {
 	ARCHETYPE_ROW_INVARIANT = "ARCHETYPE_ROW_INVARIANT",
 	OPTIONAL_TERM_NOT_DECLARED = "OPTIONAL_TERM_NOT_DECLARED",
 	QUERY_ACCESS_UNDECLARED = "QUERY_ACCESS_UNDECLARED",
-	/** A system touched a component, sparse, relation and resource it didn't declare
+	/** A system touched a component, sparse, relation or resource it didn't declare
 	 * in its access surface, distinct from *_NOT_REGISTERED (which means the
 	 * thing was never registered with the world at all). */
 	ACCESS_UNDECLARED = "ACCESS_UNDECLARED",

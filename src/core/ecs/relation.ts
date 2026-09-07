@@ -78,7 +78,7 @@ export const ANY_RELATION: RelationDef = unsafeCast<RelationDef>(0x7fff_ffff);
  *   - **`clear`**, remove the relation from every source. The sources survive.
  *   - **`orphan`**, leave the link intact but dangling. Reads stay safe (the
  *     reverse index is `EntityID`-keyed, so the dead handle never aliases a
- *     recycled slot); `targetOf` returns a dead handle until the source
+ *     recycled slot). `targetOf` returns a dead handle until the source
  *     re-targets or is removed. This is the original behaviour and the default.
  */
 export type OnDeleteTarget = "delete" | "clear" | "orphan";
@@ -87,8 +87,8 @@ export type OnDeleteTarget = "delete" | "clear" | "orphan";
  * behaviour, zero change for callers that don't opt in). */
 export const DEFAULT_ON_DELETE_TARGET: OnDeleteTarget = "orphan";
 
-/** Registration options. `exclusive` (one target per source) is the default
- * pass `{ multi: true }` for a multi-target relation. The two are mutually
+/** Registration options. `exclusive` (one target per source) is the default.
+ * Pass `{ multi: true }` for a multi-target relation. The two are mutually
  * exclusive, the union makes `{ exclusive: true, multi: true }` a compile
  * error (it also throws at runtime, for JS callers). `onDeleteTarget` selects
  * the cleanup policy applied to sources when a target is destroyed (default

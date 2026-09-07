@@ -84,9 +84,9 @@ describe("generic consumer region table", () => {
 			regions: [fabricatedRegion(FABRICATED_ID, 64, 0)]
 		});
 		const off0 = findRegionOffset(store.view, FABRICATED_ID);
-		// Write live bytes after init, these are the consumer's runtime state
-		// that must survive a realloc (the class of data once lost for the
-		// mechanism regions. Here we prove it for a consumer region).
+		// Write live bytes after init. These are the consumer's runtime state,
+		// and a realloc must carry them. The mechanism regions once lost this
+		// class of data, and a consumer region must not.
 		store.view.setUint32(off0 + 8, 0xdead_beef, true);
 		store.view.setUint32(off0 + 60, 0x0bad_cafe, true); // last u32 in the 64-byte region
 
@@ -178,7 +178,7 @@ describe("consumer regions survive every grow and extend path", () => {
 		expect(result.store.view.getUint32(off1 + 8, true)).toBe(0xfeed_face); // live byte
 	});
 
-	it("snapshots and restores a consumer region across a grow_column_store realloc", () => {
+	it("snapshots and restores a consumer region across a growColumnStore realloc", () => {
 		const store = createColumnStore([ARCH], undefined, {
 			regions: [fabricatedRegion(FABRICATED_ID, 64, 0)]
 		});
@@ -244,17 +244,17 @@ describe("header region-table readers reject an overrunning count", () => {
 		return view;
 	}
 
-	it("read_header_region_table throws RegionRegistryError, not a raw RangeError", () => {
+	it("readHeaderRegionTable throws RegionRegistryError, not a raw RangeError", () => {
 		const view = corruptCountView();
 		expect(() => readHeaderRegionTable(view)).toThrow(RegionRegistryError);
 	});
 
-	it("find_region_offset throws RegionRegistryError on an overrunning count", () => {
+	it("findRegionOffset throws RegionRegistryError on an overrunning count", () => {
 		const view = corruptCountView();
 		expect(() => findRegionOffset(view, FABRICATED_ID)).toThrow(RegionRegistryError);
 	});
 
-	it("find_region_entry throws RegionRegistryError on an overrunning count", () => {
+	it("findRegionEntry throws RegionRegistryError on an overrunning count", () => {
 		const view = corruptCountView();
 		expect(() => findRegionEntry(view, FABRICATED_ID)).toThrow(RegionRegistryError);
 	});

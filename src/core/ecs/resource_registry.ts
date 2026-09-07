@@ -3,7 +3,7 @@
  *
  * Extracted from `Store`, which keeps one-line delegations. Fully
  * self-contained (no Store reach-back). Resources stay out of `stateHash` and
- * out of snapshot/resume. This is host-side state, not simulation state.
+ * out of snapshot and resume. This is host-side state, not simulation state.
  ***/
 
 import { ECS_ERROR, ECSError } from "./utils/error";

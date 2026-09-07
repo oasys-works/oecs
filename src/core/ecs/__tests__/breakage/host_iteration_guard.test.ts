@@ -1,10 +1,9 @@
-// STRUCTURAL_DURING_ITERATION (dev guard): host-side structural mutations are
-// immediate (0.5.0), so despawning, transitioning and toggling an entity of an
-// archetype that a live host query walk is visiting would swap-remove rows
-// under the iterator, entities get silently skipped or visited twice. The
-// audit repro: 3 entities, despawn-in-forEach, only 2 died and 1 was never
-// visited. The guard turns that into a loud dev error. Mutations touching
-// archetypes not being walked stay legal.
+// STRUCTURAL_DURING_ITERATION, a dev guard. A host-side structural mutation
+// applies at once. So despawning, transitioning or toggling an entity of an
+// archetype that a live host query walk is visiting swap-removes rows under
+// the iterator, and the walk then skips an entity or visits one twice. The
+// guard turns that into a loud dev error. A mutation that touches no archetype
+// under the walk stays legal.
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../phase";

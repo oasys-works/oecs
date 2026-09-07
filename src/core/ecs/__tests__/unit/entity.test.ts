@@ -12,7 +12,7 @@ import {
 const [x, y] = [31, 7];
 
 // Adversarial round-trip table, replaces a former unseeded
-// `Math.random()` 10k-iteration loop (a failure was non-reproducible).
+// `Math.random()` loop whose failures did not reproduce.
 // Every value is chosen for its bit pattern, so the cartesian product
 // below exercises the 20-bit index | 11-bit generation boundary far more
 // pointedly than random draws did: min or max, one-bit-off-power-of-two, the

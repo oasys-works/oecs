@@ -13,11 +13,6 @@
 
 declare const brand: unique symbol;
 
-/**
- * Nominal typing helper, intersects T with a phantom readonly symbol
- * so structurally identical types become compile-time incompatible.
- *
- */
 export type Brand<T, BrandName extends string> = T & {
 	readonly [brand]: BrandName;
 };

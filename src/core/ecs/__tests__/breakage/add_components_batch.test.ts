@@ -29,8 +29,8 @@ function viewStamp(world: ECS): number {
 	return world.columnStore.view.getUint32(STORE_HEADER_OFFSETS.view_stamp, true);
 }
 
-describe("add_components batching", () => {
-	it("a single add_components with 4 new components bumps view_stamp exactly once", () => {
+describe("addComponents batching", () => {
+	it("a single addComponents with 4 new components bumps view_stamp exactly once", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
@@ -56,7 +56,8 @@ describe("add_components batching", () => {
 		const e = world.spawn();
 		world.addComponents(e, A({ v: 1 }), B({ v: 2 }), C({ v: 3 }));
 
-		// Pre-PR: empty + [A] + [A,B] + [A,B,C] = 4. Now: empty + [A,B,C] = 2.
+		// The per-step graph walk planted empty + [A] + [A,B] + [A,B,C]. The
+		// final-mask resolve plants empty + [A,B,C] and nothing between.
 		expect(world.archetypeCount).toBe(2);
 	});
 
@@ -120,8 +121,8 @@ describe("add_components batching", () => {
 	});
 });
 
-describe("remove_components batching", () => {
-	it("a single remove_components dropping 3 components bumps view_stamp at most once", () => {
+describe("removeComponents batching", () => {
+	it("a single removeComponents dropping 3 components bumps view_stamp at most once", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
@@ -194,7 +195,7 @@ describe("remove_components batching", () => {
  * first (cold) call's final-mask resolve. These pin that the cache is a pure
  * accelerator: identical observable state, no extra archetypes planted.
  */
-describe("add_components composite-add edge cache", () => {
+describe("addComponents composite-add edge cache", () => {
 	it("repeated plural adds from the empty archetype are byte-identical to the cold call", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
@@ -224,7 +225,7 @@ describe("add_components composite-add edge cache", () => {
 		const C = world.registerComponent(["v"] as const);
 
 		// Two live entities sitting in [A] (a real row, not the rowless empty
-		// archetype). This is the issue's target case: plural add on an entity
+		// archetype). This is the case the cache exists for: a plural add on an entity
 		// that already exists. e1's add resolves cold. E2's hits the cache and
 		// must travel the cached src→target transition map via moveEntityFrom.
 		const e1 = world.spawn();

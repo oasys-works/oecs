@@ -213,7 +213,8 @@ export type {
 // Queries
 export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED, and, or, not } from "./core/ecs";
 export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm } from "./core/ecs";
-// forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
+// The forEachChunk cursor (`cols.mut` and `cols.read`) and the `ctx.commands`
+// deferred facade.
 export { ChunkColumns, Commands } from "./core/ecs";
 
 // Archetype, only the read-only view + opaque id are public.

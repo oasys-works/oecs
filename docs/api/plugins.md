@@ -1,7 +1,8 @@
 # Writing a plugin
 
 Write a plugin when a subsystem must cost nothing on a world that does not use it. Relations,
-events, snapshots, observers and workers are plugins, and a plugin of your own uses the same seams.
+events, snapshots, observers, workers and solid are plugins, and a plugin of your own uses the same
+seams.
 Import `Plugin`, `PluginHost`, `PluginsOf` and `ChangeFeed` from `@oasys/oecs`.
 
 ## What a plugin is
@@ -190,10 +191,12 @@ a word, and the world loses a method it needs. A development build checks each k
 `relations`, `events`, `observe`, `snapshots` and `workers`, are the exception, because a plugin is
 meant to fill them.
 
-A bare world declares those five slots. A JavaScript caller who reaches for one gets a fault that
-names the import. A bare world declares no slot for a plugin of your own. So TypeScript is the
-only guard there, and a JavaScript caller reads `undefined` instead of a fault. Document the import,
-and expect the type to carry the rule.
+A bare world fills four of them, `relations`, `events`, `observe` and `workers`, with a reader that
+throws. A JavaScript caller who reaches for one gets a fault that names the import. `snapshots`
+differs. A bare world carries the real member, which holds `stateHash` and `deterministic`, and the
+snapshot plugin widens it. A bare world declares no slot for a plugin of your own. So
+TypeScript is the only guard there, and a JavaScript caller reads `undefined` instead of a fault.
+Document the import, and expect the type to carry the rule.
 
 See [errors](./errors.md) for the three codes.
 

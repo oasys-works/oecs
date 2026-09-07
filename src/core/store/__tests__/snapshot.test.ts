@@ -38,7 +38,7 @@ function spec(
 	};
 }
 
-describe("snapshot_column_store", () => {
+describe("columnStoreBytesView", () => {
 	it("returns a Uint8Array spanning the full SAB", () => {
 		const store = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
@@ -69,7 +69,7 @@ describe("snapshot_column_store", () => {
 	});
 });
 
-describe("restore_column_store round-trip", () => {
+describe("restoreColumnStore round-trip", () => {
 	it("byte-for-byte preserves the SAB contents", () => {
 		const store = createColumnStore([
 			spec(0, 4, [
@@ -211,7 +211,7 @@ describe("restore_column_store round-trip", () => {
 	});
 });
 
-describe("restore_column_store rejection", () => {
+describe("restoreColumnStore rejection", () => {
 	it("rejects bytes shorter than the header", () => {
 		const tiny = new Uint8Array(STORE_HEADER_BYTES - 1);
 		// Even with the right magic, missing the rest of the header is fatal.

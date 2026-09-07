@@ -7,7 +7,7 @@
  * used to rise with the worker count and now does not.
  *
  * The count is only observable when the host actually parks, so the kernel here
- * spreads the reports over milliseconds. Worker zero reports at once and the
+ * spreads the reports far apart. Worker zero reports at once and the
  * last worker reports well after it. A kernel every worker finished together
  * would leave the host free to find a complete count on its first read, and the
  * test would pass against any join at all.
@@ -35,8 +35,9 @@ afterEach(async () => {
 });
 
 /** A world whose only parallel system copies `vx` into `x`, one worker range at
- * a time, after a spin proportional to the range's first row. `fn` writes a
- * value the kernel never writes, so a sequential frame is visible in the data. */
+ * a time, after a spin proportional to the range's first row. `fn` writes one
+ * constant and the kernel copies `vx`, so a sequential frame shows up as a
+ * mismatch. */
 function staggeredWorld() {
 	const world = buildWorld({ entities: ENTITIES, backing: "shared" });
 	const { ecs, Pos, Vel, Frozen } = world;

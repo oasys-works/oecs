@@ -7,7 +7,8 @@
  * count). `.includeDisabled()` opts a query back in. Covers:
  *  - default query exclusion (forEach and count) + `includeDisabled` opt-in
  *  - round-trip preservation of components, sparse data, relations, EntityID
- *  - the partition invariant under disable/enable/destroy/spawn/add_component
+ *  - the partition invariant under disable, enable, destroy, spawn and
+ *    addComponent
  *  - `stateHash` reflecting the disabled set + snapshot round-trip
  *  - deferred (system-side) toggling being safe mid-`forEach`.
  */
@@ -59,7 +60,7 @@ describe("entity enable and disable", () => {
 		expect(q.entityCount).toBe(4);
 	});
 
-	it("include_disabled() sees disabled entities (count + for_each span)", () => {
+	it("includeDisabled() sees disabled entities (count + forEach span)", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
@@ -260,7 +261,7 @@ describe("entity enable and disable", () => {
 		expect(q.includeDisabled().entityCount).toBe(5);
 	});
 
-	it("state_hash reflects the disabled set", () => {
+	it("stateHash reflects the disabled set", () => {
 		const make = () => {
 			const w = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 			const Pd = w.registerComponent(Pos);
@@ -286,7 +287,7 @@ describe("entity enable and disable", () => {
 		expect(a.w.snapshots.stateHash()).toBe(b.w.snapshots.stateHash());
 	});
 
-	it("system-side disable is deferred and safe mid-for_each", () => {
+	it("system-side disable is deferred and safe mid-forEach", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);

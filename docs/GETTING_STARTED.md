@@ -31,7 +31,7 @@ const ecs = ECS.create({
 
 Each option is optional. `new ECS()` uses good default values, and it installs no plugin.
 `ECS.create` adds the plugins the world uses. This guide uses events, so it installs
-`events()`. Relations, snapshots, observers and workers each have their own plugin.
+`events()`. Relations, snapshots, observers, workers and solid each have their own plugin.
 
 ## 3. Define the components
 
@@ -53,9 +53,10 @@ const IsEnemy = ecs.registerTag();
 const Dead = ecs.registerTag();
 ```
 
-The available tags are `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`, `"u16"`, and `"u32"`.
-`as const` on the array shorthand is optional for a literal that you write in place, because the
-overload uses a `const` type parameter and so keeps the type of each field in both conditions. It
+The available field types are `"f32"`, `"f64"`, `"i8"`, `"i16"`, `"i32"`, `"u8"`, `"u16"`, and
+`"u32"`.
+`as const` on the array shorthand is optional for a literal that you write in place. The overload
+uses a `const` type parameter, so it keeps the type of each field in both conditions. It
 is necessary only when you build the field list in a separate variable, which TypeScript otherwise
 makes as general as `string[]`.
 
@@ -250,8 +251,8 @@ const spawner = ecs.registerSystem({
 
 ## 8. Put the systems in the schedule
 
-Give each system to a phase. The phases run in a fixed order. Inside a phase, you can declare
-constraints on the order.
+Give each system to a phase. The seven built-in phases run in a fixed order. Inside a phase, you
+can declare constraints on the order.
 
 ```ts
 ecs.addSystems(SCHEDULE.STARTUP, spawner);

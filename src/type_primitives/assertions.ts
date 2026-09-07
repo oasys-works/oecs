@@ -1,10 +1,10 @@
 /***
  * Assertions. Dev-only runtime validation and branded casting.
  *
- * All checks are guarded by DEV and tree-shaken in production builds.
- * validateAndCast is the primary tool for creating branded IDs:
- * it validates the input in dev and returns the value as the branded type.
- * unsafeCast bypasses all checks (used when the caller guarantees validity).
+ * Every check but `assertNever` is guarded by DEV and tree-shaken in a
+ * production build. `validateAndCast` is the primary tool for creating branded
+ * ids: it validates the input in dev and returns the value as the branded type.
+ * `unsafeCast` bypasses every check, for a caller that guarantees validity.
  *
  ***/
 
@@ -15,19 +15,13 @@ export const isNonNegativeInteger = (v: number): boolean => Number.isInteger(v) 
 
 export const isNotNull = (v: unknown): boolean => v !== null;
 
-/**
- * Dev-only assertion that value is not null/undefined.
- *
- */
 export function assertNonNull<T>(value: T): asserts value is NonNullable<T> {
-	//
-	// Checks if value is not null or undefined
-	// value == null is true for both value == null and value == undefined
-	//
+	// Loose `==` on purpose. It is true for null and for undefined, and one
+	// comparison covers both.
 	if (DEV && value == null)
 		throw new AssertionError(
 			TYPE_ERROR.ASSERTION_FAIL_NON_NULLABLE,
-			"Expected type to be not NULL or UNDEFINED"
+			"value must not be null or undefined"
 		);
 }
 

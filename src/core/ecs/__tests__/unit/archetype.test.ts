@@ -78,7 +78,7 @@ describe("Archetype", () => {
 	// Membership
 	//=========================================================
 
-	it("add_entity increases entity_count", () => {
+	it("addEntity increases entityCount", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		expect(a.entityCount).toBe(0);
 
@@ -89,14 +89,14 @@ describe("Archetype", () => {
 		expect(a.entityCount).toBe(2);
 	});
 
-	it("add_entity returns sequential rows", () => {
+	it("addEntity returns sequential rows", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		expect(a.addEntity(entity(0))).toBe(0);
 		expect(a.addEntity(entity(1))).toBe(1);
 		expect(a.addEntity(entity(2))).toBe(2);
 	});
 
-	it("entity_list returns added entities", () => {
+	it("rowEntityIds returns added entities", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		const e0 = entity(0);
 		const e1 = entity(1);
@@ -109,7 +109,7 @@ describe("Archetype", () => {
 		expect(a.rowEntityIds.length).toBe(2);
 	});
 
-	it("entity_list reflects presence of entities", () => {
+	it("rowEntityIds reflects presence of entities", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(5));
 		expect(a.rowEntityIds.includes(entity(5))).toBe(true);
@@ -120,7 +120,7 @@ describe("Archetype", () => {
 	// Removal (swap-and-pop)
 	//=========================================================
 
-	it("remove_entity decreases count", () => {
+	it("swapRemoveRow decreases count", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
 		a.addEntity(entity(1));
@@ -128,7 +128,7 @@ describe("Archetype", () => {
 		expect(a.entityCount).toBe(1);
 	});
 
-	it("remove_entity returns swapped entity_index", () => {
+	it("swapRemoveRow returns the swapped entity index", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(10)); // row 0
 		a.addEntity(entity(20)); // row 1
@@ -143,7 +143,7 @@ describe("Archetype", () => {
 		expect(a.rowEntityIds.includes(entity(30))).toBe(true);
 	});
 
-	it("remove_entity returns -1 when removing last element", () => {
+	it("swapRemoveRow returns -1 when removing the only row", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
 
@@ -152,7 +152,7 @@ describe("Archetype", () => {
 		expect(a.entityCount).toBe(0);
 	});
 
-	it("remove_entity returns -1 when removing the tail element", () => {
+	it("swapRemoveRow returns -1 when removing the tail row", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0)); // row 0
 		a.addEntity(entity(1)); // row 1
@@ -179,7 +179,7 @@ describe("Archetype", () => {
 	// Bulk add (addEntities and addEntitiesTag)
 	//=========================================================
 
-	it("add_entities_tag bulk-adds entities and returns starting row", () => {
+	it("addEntitiesTag bulk-adds entities and returns starting row", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		const eids = new Uint32Array([entity(10), entity(20), entity(30)]);
 
@@ -192,7 +192,7 @@ describe("Archetype", () => {
 		expect(a.rowEntityIds.includes(entity(30))).toBe(true);
 	});
 
-	it("add_entities_tag appends after existing entities", () => {
+	it("addEntitiesTag appends after existing entities", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(1));
 
@@ -203,7 +203,7 @@ describe("Archetype", () => {
 		expect(a.entityCount).toBe(3);
 	});
 
-	it("add_entities_tag handles count=0 without changing state", () => {
+	it("addEntitiesTag handles count=0 without changing state", () => {
 		const a = new Archetype(archId(0), makeMask(1));
 		a.addEntity(entity(0));
 
@@ -212,7 +212,7 @@ describe("Archetype", () => {
 		expect(a.entityCount).toBe(1);
 	});
 
-	it("add_entities zero-initialises every column for every new row", () => {
+	it("addEntities zero-initialises every column for every new row", () => {
 		const layoutA = makeLayout(1, ["x", "y"]);
 		const layoutB = makeLayout(2, ["v"]);
 		const a = new Archetype(
@@ -244,7 +244,7 @@ describe("Archetype", () => {
 		expect(a.readField(seedRow, compId(1), "x")).toBe(42);
 	});
 
-	it("add_entities honours the optional count parameter", () => {
+	it("addEntities honours the optional count parameter", () => {
 		const layout = makeLayout(1, ["x"]);
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory());
 
@@ -260,7 +260,7 @@ describe("Archetype", () => {
 		expect(a.rowEntityIds.includes(entity(1))).toBe(true);
 	});
 
-	it("add_entities triggers grow_handler when batch exceeds capacity", () => {
+	it("addEntities triggers growHandler when batch exceeds capacity", () => {
 		const layout = makeLayout(1, ["x"]);
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory(16));
 
@@ -277,7 +277,7 @@ describe("Archetype", () => {
 		expect(a.readField(49, compId(1), "x")).toBe(0);
 	});
 
-	it("add_entities handles count=0 without changing state", () => {
+	it("addEntities handles count=0 without changing state", () => {
 		const layout = makeLayout(1, ["x"]);
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory());
 		a.addEntity(entity(0));
@@ -291,21 +291,21 @@ describe("Archetype", () => {
 	// hasComponent
 	//=========================================================
 
-	it("has_component returns true for components in mask", () => {
+	it("hasComponent returns true for components in mask", () => {
 		const a = new Archetype(archId(0), makeMask(2, 5, 8));
 		expect(a.hasComponent(compId(2))).toBe(true);
 		expect(a.hasComponent(compId(5))).toBe(true);
 		expect(a.hasComponent(compId(8))).toBe(true);
 	});
 
-	it("has_component returns false for absent components", () => {
+	it("hasComponent returns false for absent components", () => {
 		const a = new Archetype(archId(0), makeMask(2, 5));
 		expect(a.hasComponent(compId(0))).toBe(false);
 		expect(a.hasComponent(compId(3))).toBe(false);
 		expect(a.hasComponent(compId(99))).toBe(false);
 	});
 
-	it("has_component returns false on empty mask", () => {
+	it("hasComponent returns false on empty mask", () => {
 		const a = new Archetype(archId(0), makeMask());
 		expect(a.hasComponent(compId(0))).toBe(false);
 	});
@@ -344,12 +344,12 @@ describe("Archetype", () => {
 	// Graph edges
 	//=========================================================
 
-	it("get_edge returns undefined for uncached component", () => {
+	it("getEdge returns undefined for uncached component", () => {
 		const a = new Archetype(archId(0), makeMask());
 		expect(a.getEdge(compId(1))).toBeUndefined();
 	});
 
-	it("set_edge / get_edge round-trips", () => {
+	it("setEdge and getEdge round-trip", () => {
 		const a = new Archetype(archId(0), makeMask());
 		const edge: ArchetypeEdge = { add: archId(1), remove: null, addMap: null, removeMap: null };
 		a.setEdge(compId(5), edge);
@@ -364,7 +364,7 @@ describe("Archetype", () => {
 	// Column data
 	//=========================================================
 
-	it("write_fields and read_field round-trip", () => {
+	it("writeFields and readField round-trip", () => {
 		const layout = makeLayout(1, ["x", "y"]);
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory());
 
@@ -375,7 +375,7 @@ describe("Archetype", () => {
 		expect(a.readField(row, compId(1), "y")).toBe(20);
 	});
 
-	it("get_column_read returns dense array for iteration", () => {
+	it("getColumnRead returns dense array for iteration", () => {
 		const layout = makeLayout(1, ["x"]);
 		const a = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory());
 
@@ -447,7 +447,7 @@ describe("Archetype", () => {
 		expect(a.readField(0, compId(2), "b")).toBe(-2);
 	});
 
-	it("copy_shared_from copies matching component data", () => {
+	it("copySharedFrom copies matching component data", () => {
 		const layout = makeLayout(1, ["x"]);
 		const src = new Archetype(archId(0), makeMask(1), [layout], 16, makeHeapFactory());
 		const dst = new Archetype(archId(1), makeMask(1), [layout], 16, makeHeapFactory());

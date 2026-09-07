@@ -14,10 +14,10 @@
  * causal sequence of one frame, not a population of dispatch counts. The two
  * answer different questions.
  *
- * Cost model: every call site is `if (DEV) store._trace?.…`, so a production
+ * Cost model: every call site is `if (DEV) store.trace?.…`, so a production
  * build dead-code-eliminates the whole branch, byte-identical to the existing
  * `if (DEV) accessCheck.enter(desc)` wrap it sits beside. The only un-gated
- * residue is the one nullable `Store._trace` field (a pointer, like
+ * residue is the one nullable `Store.trace` field (a pointer, like
  * `Store._relations`). The seam only *reads*. It never perturbs
  * `stateHash`, ordering, or any observable behaviour.
  *
@@ -29,7 +29,7 @@ import type { EntityID } from "./entity";
 import type { SystemDescriptor } from "./system";
 import type { PhaseName } from "./phase";
 
-/** A deferred structural command issued through `ctx.commands.*` (`query.ts`).
+/** A deferred structural command issued through `ctx.commands.*` (`system_context.ts`).
  * `spawn`, `despawn`, `enable` and `disable` carry a `null` component. `add` and `remove`
  * carry the affected component's id. */
 export type StructuralOp = "spawn" | "despawn" | "add" | "remove" | "enable" | "disable";
@@ -47,7 +47,7 @@ export type ObserverOp = "add" | "remove" | "set" | "enable" | "disable";
 export interface FrameTraceSink {
 	/** Opens a frame. Fired first in `ecs.update`, before any phase runs. */
 	tickBegin(tick: number, dt: number): void;
-	/** Closes the frame opened by `tickBegin` (after onSet + `clearEvents`). */
+	/** Closes the frame opened by `tickBegin` (after the onSet dispatch and the event clear). */
 	tickEnd(tick: number): void;
 	/** A scheduled system is about to run, in the given phase. */
 	systemBegin(system: SystemDescriptor, phase: PhaseName): void;
@@ -75,7 +75,7 @@ export interface FrameTraceSink {
 	 * ECS: reading `stateHash()` here cannot perturb the per-tick hash or ordering.
 	 *
 	 * Caveat: the POST_UPDATE boundary fires before the tick-tail onSet-observer
-	 * dispatch + `clearEvents`, so for a world with onSet observers the final
+	 * dispatch and the event clear, so for a world with onSet observers the final
 	 * per-tick `stateHash` (after `update()` returns) may differ from the
 	 * POST_UPDATE phase hash. A world with no onSet observers reconciles exactly.
 	 */

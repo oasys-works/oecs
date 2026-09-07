@@ -6,7 +6,7 @@
  *  - `andRelation(R)` and `notRelation(R)`, `(R, *)`: match sources that
  *    hold (or don't hold) any target under `R`. Membership semantics (each source
  *    once), iterated via `forEachEntity`, reusing the sparse-match path
- *    (insertion order, canonical sorting reserved for `stateHash`/snapshot).
+ *    (insertion order, canonical sorting reserved for `stateHash` and snapshot).
  *  - `forEachRelatedTo(T)`, `(*, T)`: every source related to `T` under any
  *    relation, dedup'd, ascending-EntityID order, composing with the receiver's
  *    dense, sparse and `(R, *)` predicate.
@@ -38,7 +38,7 @@ function collect(q: { forEachEntity(cb: (e: EntityID) => void): void }): number[
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
 // ─────────────────────────── (R, *) andRelation ───────────────────────
-describe("(R, *) require_relation, membership", () => {
+describe("(R, *) andRelation, membership", () => {
 	it("matches every source holding a target (exclusive), spanning archetypes", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
@@ -92,7 +92,7 @@ describe("(R, *) require_relation, membership", () => {
 		expect(collect(world.query().andRelation(Targets))).toEqual(sorted([b]));
 	});
 
-	it("equals the distinct sources of pairs_of(R)", () => {
+	it("equals the distinct sources of pairsOf(R)", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const ents = Array.from({ length: 6 }, () => world.spawn());
@@ -106,7 +106,7 @@ describe("(R, *) require_relation, membership", () => {
 		expect(collect(world.query().andRelation(Likes))).toEqual(distinct);
 	});
 
-	it("still matches an orphan-dangling source (membership row persists, like pairs_of)", () => {
+	it("still matches an orphan-dangling source (membership row persists, like pairsOf)", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register(); // default orphan
 		const a = world.spawn();
@@ -121,7 +121,7 @@ describe("(R, *) require_relation, membership", () => {
 });
 
 // ─────────────────────────── (R, *) composition ────────────────────────────
-describe("(R, *) require_relation / exclude_relation, composition", () => {
+describe("(R, *) andRelation and notRelation, composition", () => {
 	it("intersects with a dense require term", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
@@ -151,7 +151,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		expect(collect(world.query(Pos).not(Vel).andRelation(Targets))).toEqual(sorted([a]));
 	});
 
-	it("exclude_relation drops sources that hold the relation", () => {
+	it("notRelation drops sources that hold the relation", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
@@ -164,7 +164,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		expect(collect(world.query(Pos).notRelation(Targets))).toEqual(sorted([free]));
 	});
 
-	it("composes (R, *) with require_sparse (both must hold)", () => {
+	it("composes (R, *) with andSparse (both must hold)", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Marked = world.registerSparseTag();
 		const Targets = world.relations.register();
@@ -179,7 +179,7 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 		);
 	});
 
-	it("excludes disabled sources by default, includes them with include_disabled()", () => {
+	it("excludes disabled sources by default, includes them with includeDisabled()", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Pos = world.registerComponent(Position);
 		const Targets = world.relations.register();
@@ -200,15 +200,15 @@ describe("(R, *) require_relation / exclude_relation, composition", () => {
 });
 
 // ─────────────────────────── (R, *) cache stability ────────────────────────
-describe("(R, *) require_relation, cached, stable instances", () => {
-	it("repeated require_relation from the same parent returns the identical Query", () => {
+describe("(R, *) andRelation, cached, stable instances", () => {
+	it("repeated andRelation from the same parent returns the identical Query", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const base = world.query();
 		expect(base.andRelation(R)).toBe(base.andRelation(R));
 	});
 
-	it("multi-arg require_relation equals the chained form", () => {
+	it("multi-arg andRelation equals the chained form", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const A = world.relations.register();
 		const B = world.relations.register();
@@ -242,7 +242,7 @@ function collectRelated(
 	return out;
 }
 
-describe("(*, T) for_each_related_to, any relation, fixed target", () => {
+describe("(*, T) forEachRelatedTo, any relation, fixed target", () => {
 	it("collects every source related to T across relation kinds, dedup'd", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register();
@@ -298,7 +298,7 @@ describe("(*, T) for_each_related_to, any relation, fixed target", () => {
 		expect(collectRelated(world.query().andRelation(Likes), T)).toEqual(sorted([a]));
 	});
 
-	it("is consistent with sources_of on an orphan-dangling dead target", () => {
+	it("is consistent with sourcesOf on an orphan-dangling dead target", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Targets = world.relations.register(); // orphan
 		const T = world.spawn();
@@ -334,7 +334,7 @@ describe("(R, *) determinism, identical histories yield identical order", () => 
 
 // ─────────────────────────── dense-path guard ──────────────────────────────
 describe("(R, *), dense-path methods refuse the wildcard query", () => {
-	it("count() / for_each() throw, steering to for_each_entity", () => {
+	it("count() and forEach() throw, steering to forEachEntity", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const q = world.query().andRelation(R);
@@ -365,8 +365,8 @@ function runOnce(world: ECS, cfg: SystemConfig): () => void {
 	return () => world.update(0);
 }
 
-describe("(R, *) / (*, T) access validation", () => {
-	it("throws when a system iterates require_relation without declaring relation_reads", () => {
+describe("(R, *) and (*, T) access validation", () => {
+	it("throws when a system iterates andRelation without declaring relationReads", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();
@@ -386,7 +386,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		expect(tick).toThrow(/system 'wildcard_reader'.*relation.*didn't declare/);
 	});
 
-	it("permits require_relation iteration when relation_reads is declared", () => {
+	it("permits andRelation iteration when relationReads is declared", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();
@@ -410,7 +410,7 @@ describe("(R, *) / (*, T) access validation", () => {
 		expect(n).toBe(1);
 	});
 
-	it("for_each_related_to throws without ANY_RELATION, passes with it", () => {
+	it("forEachRelatedTo throws without ANY_RELATION, passes with it", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const a = world.spawn();

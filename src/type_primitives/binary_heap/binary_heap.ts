@@ -14,10 +14,6 @@
 
 export type CompareFn<T> = (a: T, b: T) => number;
 
-/**
- * Generic array-backed binary heap with configurable comparator.
- *
- */
 export class BinaryHeap<T> {
 	private readonly _compare: CompareFn<T>;
 	private readonly _data: T[] = [];

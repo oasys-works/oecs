@@ -30,6 +30,7 @@ interface ECSMemoryOptions {
   readonly columnCapacity?: number;  // the initial rows in each archetype column
   // what holds the bytes
   readonly backing?: MemoryBacking;  // default "heap"
+  readonly storeBase?: number;       // the byte offset of the store header inside the backing
 }
 
 type MemoryBacking =
@@ -48,8 +49,8 @@ type MemoryBacking =
 
 > [!TIP]
 > **Give `entities` if you know it.** It derives a good column capacity, a good reservation of the
-> entity index, and a good byte limit. It also gives an error about a limit in your terms ("3× the
-> declared budget, runaway entity creation upstream?"). A value more than 2^20 (about 1 million)
+> entity index, and a good byte limit. It also states a limit error as a multiple of the declared
+> budget, and not as raw bytes. A value more than 2^20 (about 1 million)
 > throws `INVALID_MEMORY_OPTIONS`. It works with every backing.
 
 > [!TIP]
@@ -80,22 +81,15 @@ new ECS({
 
 ### What this saves
 
-The measurement uses 1,000,000 entities. Each entity has 7 `f32` fields. The computed layout is
-32 bytes for each entity. The numbers below are resident memory, on one machine.
+A pinned `columnCapacity` lowers resident memory. No column doubles, so no abandoned block stays
+resident. Giving `entities` alone lowers it less. The derived capacity assumes an even spread over
+`archetypes`, so an uneven spread still doubles. The speed does not change either way. `bench/`
+holds the measurement.
 
-| Sizing | Resident | Bytes for each entity |
-| --- | --- | --- |
-| default | 82.5 MiB | 86.5 |
-| `{ entities: 1_000_000 }` | 78.9 MiB | 82.8 |
-| the same count, and a pinned `columnCapacity` | **54.4 MiB** | **57.1** |
-
-A pinned `columnCapacity` saves about one third of the resident memory. The speed does not change.
-The physics step measured the same in all three rows.
-
-The remainder above 32 bytes has two parts. The first part is the entity index. The second part is
-the spare rows in each column. The entity index reserves the full 2^20 slots of the id space. That
-cost is fixed. So it is small for each entity in a large world. It is large for each entity in a
-small world.
+Resident memory sits above the row stride for two reasons. The first is the entity index. The
+second is the spare rows in each column. The entity index reserves the full 2^20 slots of the id
+space. That cost is fixed. So it is small for each entity in a large world. It is large for each
+entity in a small world.
 
 > [!TIP]
 > Two costs pull in opposite directions. A large `columnCapacity` reserves rows that you may never
@@ -131,10 +125,10 @@ There are three kinds of storage above one core. The archetypes are the same, an
 > [!WARNING]
 > **JavaScriptCore pays for the growth of a shared buffer.** JavaScriptCore has no fast store path
 > for a TypedArray view over a *growable* `SharedArrayBuffer`. A column read costs what the heap
-> profile costs, but every column write costs several times more, so a system that writes a column
-> in a loop is much slower there. The cost is for each access and not for each byte, so a small
-> world pays the same multiple as a large one. V8 shows no such difference. Safari and Bun are
-> JavaScriptCore.
+> profile costs. Every column write is far slower, so a system that writes a column in a loop takes
+> a slow path there. The cost is for each access and not for each byte, so a small
+> world pays the same cost for each access as a large one. V8 shows no such difference. Safari and
+> Bun are JavaScriptCore.
 >
 > Two profiles keep the fast store path on JavaScriptCore. `fixedSabAllocator` reserves the limit
 > at construction and gives up growth. The WASM profile grows, and it pays no write cost either,
@@ -165,7 +159,7 @@ import { ECS, storeBaseAbove } from "@oasys/oecs";
 
 const ecs = new ECS({
   memory: {
-    backing: { wasm: { memory } },
+    backing: { wasm: { memory: myWasmMemory } },
     storeBase: storeBaseAbove(instance.exports, 4 * 1024 * 1024),
   },
 });
@@ -215,14 +209,17 @@ It is useful when an error about a limit surprises you.
 ## The limit is absolute
 
 The byte limit is an **absolute limit, and there is no alternative that grows past it**. If you
-exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `entities` count or `intentLabel`, and not
-in raw bytes.
+exceed it, it throws `STORE_CAP_EXCEEDED`, in the words of your `entities` count or of the intent
+label the engine resolved, and not in raw bytes.
 
 > [!WARNING]
 > **A limit that is too small fails at construction, and not later.** The engine reserves the
 > region of the entity index immediately when it builds the store, which is about 12 MiB at
 > the default limit. So a `maxBytes`, `heap.maxBytes`, or `wasm.maximumPages` value that is too
-> small throws `STORE_CAP_EXCEEDED` *before the `ECS` exists*. Set the limit to your actual peak.\n>\n> Give `entities` to avoid this. The engine then sizes the entity index from the count instead of\n> from the limit, and a small world reserves a small index.
+> small throws `STORE_CAP_EXCEEDED` *before the `ECS` exists*. Set the limit to your actual peak.
+>
+> Give `entities` to avoid this. The engine then sizes the entity index from the count instead of
+> from the limit, and a small world reserves a small index.
 
 ## Protection during migration
 

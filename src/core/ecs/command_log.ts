@@ -26,8 +26,8 @@
  * still reproduces state (same commands, same dt, same deferred flush), but
  * `stateHash` is unavailable so the check is structural, not hash-based.
  *
- * **The log is plain, serializable data.** `HostCommand` is mostly plain data
- * the non-serializable members are a `spawn`'s `onSpawned` callback (which the
+ * **The log is plain, serializable data.** `HostCommand` is mostly plain data.
+ * The non-serializable members are a `spawn`'s `onSpawned` callback (which the
  * recorder strips, a replayed spawn reproduces the same id deterministically, so
  * downstream commands that reference it still resolve) and each `ComponentDef`
  * (a callable handle). {@link serializeCommandLog} and {@link deserializeCommandLog}
@@ -170,8 +170,8 @@ const DEF_TAG = "__component_def";
  * Throws {@link ECS_ERROR.COMMAND_LOG_TAG_COLLISION} if any non-def object in the
  * log (i.e. a command's `values` map) owns a field named {@link DEF_TAG}: the
  * reviver tags defs in-band, so such a value would be silently revived as a def,
- * dropping the real field data. Field names are arbitrary, so this is reachable
- * failing here keeps the round-trip lossless instead of corrupting on parse. */
+ * dropping the real field data. Field names are arbitrary, so this is reachable.
+ * Failing here keeps the round-trip lossless instead of corrupting on parse. */
 export function serializeCommandLog(log: CommandLog): string {
 	return JSON.stringify(log, (_key, value) => {
 		if (typeof value === "function" && "id" in value) {
@@ -186,7 +186,7 @@ export function serializeCommandLog(log: CommandLog): string {
 		if (value !== null && typeof value === "object" && DEF_TAG in value) {
 			throw new ECSError(
 				ECS_ERROR.COMMAND_LOG_TAG_COLLISION,
-				`Cannot serialize the command log: a value object owns a field named ` +
+				`cannot serialize the command log, a value object owns a field named ` +
 					`"${DEF_TAG}", the reserved tag the serializer uses for component defs. ` +
 					`Rename that component field so the log can round-trip losslessly.`
 			);

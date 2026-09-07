@@ -61,8 +61,8 @@ The equivalent function to remove it:
 uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boolean;
 ```
 
-It removes the apply systems of the seam from the schedule, and it calls `clear` on each command
-that is still in the buffer. The queue continues to operate as a buffer, but nothing drains it
+It removes the apply systems of the seam from the schedule, and it clears every command still in
+the buffer. The queue continues to operate as a buffer, but nothing drains it
 until you install a new seam. It gives `false`, and does nothing, when
 `installHostCommandSeam` on this world did not produce `queue`.
 
@@ -117,7 +117,7 @@ interface SpawnEntry { readonly def: ComponentDef; readonly values: FieldValues<
 #### Why `spawnEntry`, and not a bundle?
 
 In other places, "a definition and its values" is a
-[bundle](./components.md#the-handle-is-callable--bundles), such as `Pos({ x: 1 })`. A bundle takes
+[bundle](./components.md#the-handle-is-callable-thus-it-makes-bundles), such as `Pos({ x: 1 })`. A bundle takes
 **a subset of the values**, and the engine writes `0` in each absent field at the attach. The host
 write path does not accept a bundle, by design. A `HostCommand` is plain data that you can
 serialize. It can cross a thread or a wire, you can log it for replay, or you can put it on a stack

@@ -3,7 +3,7 @@
  *
  * Keys are non-negative integers. A dense number[] holds members packed
  * at 0..size-1 for linear iteration. A sparse number[] maps
- * key → dense index for O(1) has/add/delete.
+ * key → dense index, so has, add and delete are each O(1).
  *
  * Membership is verified by cross-referencing dense[sparse[key]] === key,
  * so stale sparse entries are harmless (no clearing needed on delete).
@@ -11,10 +11,6 @@
  *
  ***/
 
-/**
- * O(1) integer-key set with cache-friendly dense iteration.
- *
- */
 export class SparseSet {
 	private _dense: number[] = [];
 	private _sparse: number[] = [];

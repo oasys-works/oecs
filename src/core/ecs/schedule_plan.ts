@@ -254,6 +254,6 @@ function warnDroppedEdge(
 	onWarn(
 		`Schedule[${phase}]: \`${name(source)}\` declares \`${relation}\` ordering against ` +
 			`\`${name(target)}\`, which is not registered in any phase, the constraint is ignored. ` +
-			`Check for a typo or a missing add_systems() call.`
+			`Check for a typo or a missing addSystems() call.`
 	);
 }

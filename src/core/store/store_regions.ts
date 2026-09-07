@@ -3,8 +3,8 @@
  * genuinely-generic mechanism regions that sit between the SAB header and the
  * region-table directory: the SPSC command, event and action rings and the
  * entity-index. These are the regions the engine ships for every consumer. A
- * game's own regions (terrain, spatial grid, … ) are not here. They are
- * consumer-declared `StoreRegionSpec`s laid out into the generic region table
+ * consumer's own regions (a terrain grid, a spatial index, … ) are not here.
+ * They are consumer-declared `StoreRegionSpec`s laid out into the generic region table
  * (`region_table.ts`), keyed by an opaque `region_id` the engine never
  * interprets. This de-games the SAB substrate.
  *
@@ -64,7 +64,7 @@ export type MutableColumnStoreOptions = {
 /** One engine mechanism region. The four closures are the per-region half of
  * each generic pass. See the module doc for which consumer drives which.
  *
- * (Consumer and game regions use the separate self-contained `StoreRegionSpec` in
+ * (A consumer's own regions use the separate self-contained `StoreRegionSpec` in
  * `region_table.ts`. They carry a precomputed `bytes` + `init` and are
  * addressed by an opaque `region_id`, not a named header field.) */
 export interface MechanismRegionSpec {

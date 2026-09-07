@@ -86,7 +86,7 @@ describe("event_ring, init", () => {
 });
 
 describe("event_ring. SPSC happy path", () => {
-	it("push then pop round-trips op_code and payload", () => {
+	it("push then pop round-trips opCode and payload", () => {
 		const { view, ringOff } = freshRing(8);
 		const payload = fill(new Uint8Array(15), 42);
 		expect(pushEvent(view, ringOff, 1, payload)).toBe(true);
@@ -99,7 +99,7 @@ describe("event_ring. SPSC happy path", () => {
 		expect(pendingEventCount(view, ringOff)).toBe(0);
 	});
 
-	it("pop on empty ring returns EVENT_OP_EMPTY and does not touch out_payload", () => {
+	it("pop on empty ring returns EVENT_OP_EMPTY and does not touch outPayload", () => {
 		const { view, ringOff } = freshRing(8);
 		const out = fill(new Uint8Array(15), 0xab);
 		const before = new Uint8Array(out);
@@ -108,7 +108,7 @@ describe("event_ring. SPSC happy path", () => {
 		expect(out).toEqual(before);
 	});
 
-	it("FIFO order across N pushes / N pops", () => {
+	it("FIFO order across N pushes and N pops", () => {
 		const { view, ringOff } = freshRing(8);
 		const N = 5;
 		for (let i = 0; i < N; i++) {
@@ -143,7 +143,7 @@ describe("event_ring. SPSC happy path", () => {
 		expect(popEvent(view, ringOff, out)).toBe(EVENT_OP_EMPTY);
 	});
 
-	it("different op_codes survive a multi-event drain", () => {
+	it("different opCodes survive a multi-event drain", () => {
 		const { view, ringOff } = freshRing(4);
 		// Three event-def IDs, distinct payloads.
 		expect(pushEvent(view, ringOff, 7, fill(new Uint8Array(15), 1))).toBe(true);
@@ -181,7 +181,7 @@ describe("event_ring, overflow", () => {
 });
 
 describe("event_ring, wrap-around", () => {
-	it("FIFO order survives write_head/read_head wrap across many cycles", () => {
+	it("FIFO order survives write_head and read_head wrap across many cycles", () => {
 		const { view, ringOff } = freshRing(4);
 		const out = new Uint8Array(15);
 		let pushed = 0;
@@ -203,7 +203,7 @@ describe("event_ring, wrap-around", () => {
 		expect(pendingEventCount(view, ringOff)).toBe(0);
 	});
 
-	it("u32 write_head/read_head wrap at 2^32 keeps FIFO order + pending count exact", () => {
+	it("u32 write_head and read_head wrap at 2^32 keeps FIFO order + pending count exact", () => {
 		// The `(write_head - read_head) >>> 0` slot and count math and the slot
 		// index `head & (capacity - 1)` are only correct across the 2^32
 		// counter boundary because of the `>>> 0`, a regression dropping it
@@ -288,12 +288,12 @@ describe("event_ring, drain", () => {
 });
 
 describe("event_ring, validation", () => {
-	it("push rejects op_code === 0 (reserved as empty-slot marker)", () => {
+	it("push rejects opCode === 0 (reserved as empty-slot marker)", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => pushEvent(view, ringOff, 0, new Uint8Array(15))).toThrow(EventRingError);
 	});
 
-	it("push rejects op_code > 255 (must fit in u8)", () => {
+	it("push rejects opCode > 255 (must fit in u8)", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => pushEvent(view, ringOff, 256, new Uint8Array(15))).toThrow(EventRingError);
 		expect(() => pushEvent(view, ringOff, -1, new Uint8Array(15))).toThrow(EventRingError);
@@ -306,7 +306,7 @@ describe("event_ring, validation", () => {
 		expect(() => pushEvent(view, ringOff, 1, new Uint8Array(16))).toThrow(EventRingError);
 	});
 
-	it("pop rejects wrong-sized out_payload", () => {
+	it("pop rejects wrong-sized outPayload", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => popEvent(view, ringOff, new Uint8Array(14))).toThrow(EventRingError);
 		expect(() => popEvent(view, ringOff, new Uint8Array(16))).toThrow(EventRingError);

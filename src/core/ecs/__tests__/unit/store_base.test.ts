@@ -124,7 +124,7 @@ describe("memory.storeBase, the world", () => {
 		expect(store.columnStore.storeBase).toBe(storeBase);
 	});
 
-	// The collision the probes measured, driven through the world rather than
+	// The collision this file exists for, driven through the world rather than
 	// the store primitive: spawns force a column grow, despawns move rows, and
 	// each new component set forces an extend.
 	it("a grow, a despawn and an extend leave every byte below the base untouched", () => {

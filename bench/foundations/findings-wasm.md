@@ -501,7 +501,7 @@ a second worker exists, and the split then multiplies that lead. On the cheap
 body the module lane is worth about half again over the `js` kernel, at every
 worker count. The whole pool is a loss at ten thousand rows.
 
-**Question.** `p24-par-engine` measured the `js` kernel on `ecs.attachWorkers`.
+**Question.** `p24-par-engine` measured the `js` kernel on `ecs.workers.attach`.
 The `wasm` kernel form has tests and no measurement. Does it leave the same
 state, and what does it buy against the `js` kernel and against the sequential
 body?
@@ -653,7 +653,7 @@ deno difference as well.
 - One column count and one archetype shape. Four columns, four archetypes, one
   excluded.
 - No SIMD in either module, and no threads inside a module.
-- Cold start. The module compiles before the timing, and `attachWorkers` runs
+- Cold start. The module compiles before the timing, and `workers.attach` runs
   before it. Neither the compile nor the attach is measured.
 - One `minRows`, pinned at one, so every pooled lane dispatches. The probe
   never measures where the engine's own threshold should sit.
@@ -755,7 +755,7 @@ Three lanes. The **shared** lane starts workers that leave `__stack_pointer`
 where the link put it. The **private** lane gives each worker the top of its own
 slice of `[__heap_base, storeBase)`. Both drive `node:worker_threads` directly
 over four flat columns, so neither lane holds any engine code. The **engine**
-lane registers the same module and the same export on `ecs.attachWorkers` and
+lane registers the same module and the same export on `ecs.workers.attach` and
 compares `snapshots.stateHash()` against the sequential `fn` of the same world.
 
 The reference is the JavaScript twin of the body, run on one thread.

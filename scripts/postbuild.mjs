@@ -1,10 +1,10 @@
 /**
- * Post-build declaration fixups (POLISH_AUDIT M19).
+ * Post-build declaration fixups.
  *
  * 1. Rewrite relative import and export specifiers in every emitted `.d.ts` to
- *    explicit `./x.js` / `./x/index.js` form, node16/nodenext ESM resolution
- *    requires extensions, and vite-plugin-dts emits extensionless specifiers
- *    (attw InternalResolutionError otherwise).
+ *    the explicit `./x.js` or `./x/index.js` form. node16 and nodenext ESM
+ *    resolution requires an extension, and vite-plugin-dts emits extensionless
+ *    specifiers (attw InternalResolutionError otherwise).
  * 2. Duplicate each fixed `.d.ts` as a `.d.cts` sibling (specifiers rewritten
  *    to `.cjs`) so the `require` condition's `types` no longer points CJS TS
  *    consumers at ESM-flavored declarations, the attw "masquerading" failure.

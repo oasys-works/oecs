@@ -71,25 +71,28 @@ ecs.getField(e, Pos, "x"); // about 1.667
 oecs has several import paths. The core is `@oasys/oecs`. Each other path is optional, and it costs
 nothing until you import it.
 
-Five subsystems are **plugins**: relations, events, snapshots, observers and workers. A world
+Six subsystems are **plugins**: relations, events, snapshots, observers, workers and solid. A world
 installs the ones it uses, and carries no code for the rest.
 
 ```ts
 import { ECS, eventKey } from "@oasys/oecs";
 import { relations } from "@oasys/oecs/relations";
+import { events } from "@oasys/oecs/events";
 import { observers } from "@oasys/oecs/observers";
 
 const Damaged = eventKey<{ amount: number }>("Damaged");
 
-const world = ECS.create({ plugins: [relations(), observers()] });
-world.relations.register(); // ok
-world.events.emit(Damaged, { amount: 1 }); // compile error, events is not installed
+const world = ECS.create({ plugins: [relations(), events(), observers()] });
+world.relations.register();
+world.events.register(Damaged, ["amount"]);
+world.events.emit(Damaged, { amount: 1 });
 ```
 
-`ECS.create` returns the world intersected with the facades its plugins contribute. `new ECS()`
-still builds a world, and that world holds none of the five. A JavaScript caller that reaches for a
-plugin the world did not install gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs
-one plugin two times gets `PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
+`ECS.create` returns the world intersected with the facades its plugins contribute. Drop `events()`
+from the list and the last two lines are a compile error. `new ECS()` still builds a world, and that
+world holds none of the six. A JavaScript caller that reaches for a plugin the world did not install
+gets `PLUGIN_NOT_INSTALLED`. A plugin list that installs one plugin two times gets
+`PLUGIN_ALREADY_INSTALLED`. See [errors](./errors.md).
 
 To write a plugin of your own, read [plugins](./plugins.md). It documents `Plugin`, `PluginHost`
 and `PluginsOf`, the nine host members, the route seam, the rules `ECS.create` checks, and the
@@ -278,5 +281,5 @@ before the first import to turn the guards on. The
 > **development aid, and not a production guarantee**. In a production build the guards are absent,
 > and the same mistake *fails without a signal*. You then get an incorrect value, a `NaN`, or
 > quiet corruption, and not an exception. Correct each violation while you develop. Do not depend
-> on a production build to catch it. Cycle detection in the scheduler is the one check that is
-> always active.
+> on a production build to catch it. A few checks stay active in each build, and the scheduler's
+> cycle detection is one. [errors](./errors.md) names each of them.

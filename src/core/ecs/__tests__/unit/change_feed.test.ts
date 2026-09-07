@@ -209,7 +209,7 @@ describe("ECS.create checks the plugin list", () => {
 		expect(err.category).toBe(ECS_ERROR.PLUGIN_SURFACE_COLLISION);
 		expect(err.message).toContain("gamma");
 		expect(err.message).toContain("update");
-		// The four reserved slots exist to be filled, so filling one is allowed.
+		// A reserved slot exists to be filled, so filling one is allowed.
 		expect(() =>
 			ECS.create({
 				plugins: [{ name: "delta", install: () => ({ observe: (): void => {} }) } as Plugin<object>]

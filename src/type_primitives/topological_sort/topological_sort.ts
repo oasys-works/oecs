@@ -24,10 +24,6 @@ import { BinaryHeap } from "../binary_heap/binary_heap";
  * @returns Sorted array in topological order.
  * @throws {TypeError} If a cycle is detected among the nodes.
  */
-/**
- * Topologically sorts `nodes` respecting dependency edges, breaking ties with the comparator.
- *
- */
 export function topologicalSort<T>(
 	nodes: readonly T[],
 	edges: Map<T, T[]>,

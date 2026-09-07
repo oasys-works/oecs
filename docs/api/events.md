@@ -14,7 +14,7 @@
 > **0.5.0, a grouped surface.** On the host, the registration, emission, and reading of an event
 > are on the **`ecs.events`** facade: `ecs.events.register(Damage, ["amount"])`,
 > `ecs.events.registerSignal(Ping)`, `ecs.events.emit(Damage, {...})`, and
-> `ecs.events.read(Damage)`. In a system, `ctx.emit` and `ctx.read` have not changed. Version 0.5.0
+> `ecs.events.read(Damage)`. In a system, `ctx.emit` and `ctx.readEvents` have not changed. Version 0.5.0
 > **removed** the flat `ecs.*` forms of 0.4 and earlier.
 
 An **event** is a send-and-forget message with a typed payload. One system emits it with `emit`,

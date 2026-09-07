@@ -7,7 +7,8 @@
 oecs does **not** supply a compiled WASM simulation. It supplies the engine connections that a WASM
 simulation needs:
 
-- `memory.wasm`, make the backing buffer of the ECS a shared `WebAssembly.Memory`.
+- `memory.backing`, set to `{ wasm }`, make the backing buffer of the ECS a shared
+  `WebAssembly.Memory`.
 - `memory.storeBase` with `storeBaseAbove(exports, extraBytes)`, place the store above everything
   the module owns.
 - `ecs.wasmMemory`, give that memory to your module.
@@ -32,7 +33,7 @@ const ecs = new ECS({
   memory: { backing: { wasm: { maximumPages: 4096 } } }, // 4096 * 64 KiB = 256 MiB limit
 });
 
-const memory = ecs.wasmMemory!; // a WebAssembly.Memory when you use memory.wasm
+const memory = ecs.wasmMemory!; // a WebAssembly.Memory on the wasm backing
 ```
 
 You can also supply your own shared memory:
@@ -48,7 +49,7 @@ const ecs = new ECS({ memory: { backing: { wasm: { memory } } } });
 ```
 
 > [!WARNING]
-> You must construct `memory.wasm.memory` with `shared: true`. The engine rejects a memory that is
+> You must construct `memory.backing.wasm.memory` with `shared: true`. The engine rejects a memory that is
 > not shared, at construction, because the WASM path depends on a `SharedArrayBuffer` backing.
 
 If your backend does not need the storage to be a `WebAssembly.Memory`, but does need bytes that a
@@ -342,8 +343,8 @@ The ring codecs use fixed slots. They are good for small commands such as `set_f
 
 ## Checklist
 
-1. Construct the world with `memory.wasm` for WASM with no copy, or with `memory.shared` for shared
-   columns that a worker can see.
+1. Construct the world with `memory.backing` set to `{ wasm }` for WASM with no copy, or to
+   `"shared"` for shared columns that a worker can see.
 2. Serve browser builds with COOP and COEP, so that `SharedArrayBuffer` exists.
 3. Register the components in the order that the backend expects.
 4. Give `ecs.wasmMemory!`, the component ids, and the results of `fieldId(...)` to the module.

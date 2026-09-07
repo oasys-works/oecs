@@ -1,11 +1,11 @@
 /**
  * Relations, traversal over an exclusive relation's tree.
  *
- * Covers the issue's acceptance criteria:
+ * What this file covers:
  *  - `ancestorsOf` and `rootOf`: walk an exclusive relation from a source up to
- *    its chain root (a multi-level parent chain);
+ *    its chain root, over a multi-level parent chain
  *  - `cascadeOf`: breadth-first subtree walk that visits parents before
- *    children, deterministically (children ascending by id);
+ *    children, deterministically, with children ascending by id
  *  - the cycle guard: a cycle in a traversable relation throws `RELATION_CYCLE`
  *    in `__DEV__` rather than hanging
  *  - traversal is exclusive-only: a multi relation throws `RELATION_MODE_MISMATCH`.

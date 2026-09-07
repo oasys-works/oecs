@@ -3,7 +3,7 @@
  *
  * The second query-match path: a query can `andSparse` or `notSparse`
  * a sparse component and iterate the matching entities via `forEachEntity`,
- * across every archetype. Covers the issue's acceptance criteria:
+ * across every archetype. What this file locks:
  *  - require a sparse component (members only, regardless of archetype)
  *  - exclude a sparse component
  *  - mixed dense-bitmask + sparse-membership terms → correct intersection
@@ -35,7 +35,7 @@ describe("ECS sparse query integration", () => {
 	// andSparse, members only, across all archetypes
 	//=========================================================
 
-	it("require_sparse yields exactly the members, spanning archetypes", () => {
+	it("andSparse yields exactly the members, spanning archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -65,7 +65,7 @@ describe("ECS sparse query integration", () => {
 		expect(collect(q)).toEqual(sorted([a, b, c]));
 	});
 
-	it("require_sparse reflects live add and remove of membership", () => {
+	it("andSparse reflects live add and remove of membership", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
 		const a = world.spawn();
@@ -88,7 +88,7 @@ describe("ECS sparse query integration", () => {
 	// notSparse
 	//=========================================================
 
-	it("exclude_sparse drops members, keeps the rest of the dense match", () => {
+	it("notSparse drops members, keeps the rest of the dense match", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Stunned = world.registerSparseTag();
@@ -262,14 +262,14 @@ describe("ECS sparse query integration", () => {
 	// andSparse and notSparse are cached & stable
 	//=========================================================
 
-	it("require_sparse returns a stable cached query for the same term", () => {
+	it("andSparse returns a stable cached query for the same term", () => {
 		const world = new ECS();
 		const Marked = world.registerSparseTag();
 		const base = world.query();
 		expect(base.andSparse(Marked)).toBe(base.andSparse(Marked));
 	});
 
-	it("multi-arg require_sparse returns a stable cached query", () => {
+	it("multi-arg andSparse returns a stable cached query", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -280,7 +280,7 @@ describe("ECS sparse query integration", () => {
 		expect(base.andSparse(A, B)).toBe(base.andSparse(A, B));
 	});
 
-	it("multi-arg exclude_sparse returns a stable cached query", () => {
+	it("multi-arg notSparse returns a stable cached query", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -288,7 +288,7 @@ describe("ECS sparse query integration", () => {
 		expect(base.notSparse(A, B)).toBe(base.notSparse(A, B));
 	});
 
-	it("multi-arg require_sparse(A, B) is the same instance as the chained form", () => {
+	it("multi-arg andSparse(A, B) is the same instance as the chained form", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -299,7 +299,7 @@ describe("ECS sparse query integration", () => {
 		expect(base.notSparse(A, B)).toBe(base.notSparse(A).notSparse(B));
 	});
 
-	it("multi-arg require_sparse still yields the correct intersection", () => {
+	it("multi-arg andSparse still yields the correct intersection", () => {
 		const world = new ECS();
 		const A = world.registerSparseTag();
 		const B = world.registerSparseTag();
@@ -318,7 +318,7 @@ describe("ECS sparse query integration", () => {
 	// Dense-only path unaffected: forEach still yields archetype views
 	//=========================================================
 
-	it("dense-only for_each is untouched by the sparse path", () => {
+	it("dense-only forEach is untouched by the sparse path", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -338,7 +338,7 @@ describe("ECS sparse query integration", () => {
 	// forEachEntity on a dense-only query (no sparse terms) walks entities
 	//=========================================================
 
-	it("for_each_entity on a dense-only query yields all dense matches", () => {
+	it("forEachEntity on a dense-only query yields all dense matches", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const a = world.spawn();
@@ -372,13 +372,13 @@ describe("ECS sparse query integration", () => {
 	// Dense-path methods guard against sparse terms
 	//=========================================================
 	//
-	// count(), forEach() and archetype_count walk only the dense archetype list
-	// and never consult the sparse stores. On a sparse-derived query they would
-	// fail open (return the unfiltered dense result), so they throw in __DEV__
-	// steering the caller to forEachEntity. Tests run under vitest, where
-	// __DEV__ is true, so the guard is live.
+	// entityCount, forEach() and archetypeCount walk only the dense archetype
+	// list and never consult the sparse stores. On a sparse-derived query they
+	// would fail open and return the unfiltered dense result, so they throw in
+	// __DEV__ and name forEachEntity. Tests run under vitest, where __DEV__ is
+	// true, so the guard is live.
 
-	it("count() throws on a query carrying a require_sparse term", () => {
+	it("entityCount throws on a query carrying an andSparse term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -390,7 +390,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
-	it("count() throws on a query carrying an exclude_sparse term", () => {
+	it("entityCount throws on a query carrying a notSparse term", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Stunned = world.registerSparseTag();
@@ -401,7 +401,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
-	it("for_each() throws on a sparse-derived query", () => {
+	it("forEach() throws on a sparse-derived query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -413,7 +413,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
 	});
 
-	it("archetype_count throws on a sparse-derived query", () => {
+	it("archetypeCount throws on a sparse-derived query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -425,7 +425,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.archetypeCount).toThrow(/forEachEntity/);
 	});
 
-	it("dense-only queries keep count() / for_each() / archetype_count working", () => {
+	it("dense-only queries keep entityCount, forEach() and archetypeCount working", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const a = world.spawn();

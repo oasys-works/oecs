@@ -39,7 +39,7 @@ function viewStamp(world: ECS): number {
 }
 
 describe("archetype pre-warming", () => {
-	it("a single declared spawn becomes a live archetype before any on_added runs", () => {
+	it("a single declared spawn becomes a live archetype before any onAdded runs", () => {
 		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -103,7 +103,7 @@ describe("archetype pre-warming", () => {
 		expect(world.archetypeCount).toBe(3);
 	});
 
-	it("the entire closure goes through one extend_column_store (view_stamp bumps once)", () => {
+	it("the entire closure goes through one extendColumnStore (view_stamp bumps once)", () => {
 		const world = ECS.create({ plugins: [observers()] });
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
@@ -174,7 +174,7 @@ describe("archetype pre-warming", () => {
 		expect(world.archetypeCount).toBe(2);
 	});
 
-	it("after startup, ctx.add_component for a prewarmed mask makes no further extends", () => {
+	it("after startup, ctx.addComponent for a prewarmed mask makes no further extends", () => {
 		const world = ECS.create({ plugins: [observers()] });
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -299,7 +299,7 @@ describe("archetype pre-warming", () => {
 	});
 });
 
-describe("compute_archetype_closure (Phase C internals)", () => {
+describe("computeArchetypeClosure, the closure walk on its own", () => {
 	const { computeArchetypeClosure } = _ecsInternals;
 
 	function mkDef(id: number): ComponentDef {

@@ -180,8 +180,8 @@ ecs.getField(e, Pos, "x"); // about 1.667
   transition, and they use no identity bit.
 - **Sparse storage**. Use `registerSparseComponent` and `registerSparseTag`, then `addSparse` and
   `removeSparse`. A sparse component keeps its data in columns indexed by entity, so a read by id
-  is one load, and `sparseCursor(def)` with `sparseCursorRead(def)` is the fastest read by id that
-  the engine has. Sparse storage is correct for data that a system reads by id, that changes
+  is one load. `sparseCursor(def)` with `sparseCursorRead(def)` is the fastest read by id that the
+  engine has. Sparse storage is correct for data that a system reads by id, that changes
   frequently, or that is rare, because it causes no archetype transition.
 - **Resources**. A resource is a typed global value, keyed with `resourceKey<T>`. It needs no
   plugin. **Events** (the `events()` plugin) are send-and-forget channels in
@@ -225,9 +225,10 @@ ecs.getField(e, Pos, "x"); // about 1.667
 - **Parallel systems** (the `workers()` plugin). `world.workers.attach({ count })` starts a pool of
   workers on the package's own entry, `@oasys/oecs/worker`. A bundled app passes `workerUrl` instead, because a bundler
   leaves that entry out of its graph. A system that carries a `parallel` config names a kernel a worker
-  can load, either a compiled `WebAssembly.Module` export or an export of a JavaScript module URL,
-  and the columns the kernel receives in order. The schedule hands the pass to the pool, parks the
-  host, and joins before the phase flush, so no structural change can overlap the workers. Every
+  can load. The kernel is a compiled `WebAssembly.Module` export, or an export of a JavaScript
+  module URL. The config also names the columns the kernel receives, in order. The schedule hands
+  the pass to the pool, parks the host, and joins before the phase flush, so no structural change
+  can overlap the workers. Every
   worker computes its own row range, so the result is deterministic. Below `parallel.minRows`, and
   with no pool, the system runs its own `fn`. In a browser the world lives inside a worker, because
   a main thread cannot park, and Blink, Gecko and WebKit all run the pool from there. A `wasm` kernel
@@ -253,7 +254,7 @@ ecs.getField(e, Pos, "x"); // about 1.667
 The core is `@oasys/oecs`. Each other entry point is optional, and it costs nothing until you
 import it.
 
-Five subsystems are **plugins**: relations, events, snapshots, observers and workers. A world
+Six subsystems are **plugins**: relations, events, snapshots, observers, workers and solid. A world
 installs the ones it uses, and carries no code for the rest.
 
 ```ts
@@ -266,9 +267,9 @@ world.relations.register(); // ok
 world.events.emit(Damaged, { amount: 1 }); // compile error, events is not installed
 ```
 
-`ECS.create` returns the world intersected with the facades its plugins contribute, so reaching for
-a plugin you did not install is a compile error rather than a fault at run time. `new ECS()`
-still builds a world, and that world holds none of the five. A class method cannot be removed by a
+`ECS.create` returns the world intersected with the facades its plugins contribute. Thus reaching
+for a plugin you did not install is a compile error, and not a fault at run time. `new ECS()`
+still builds a world, and that world holds none of them. A class method cannot be removed by a
 bundler, which is why these live behind an import you make rather than a member you always carry.
 
 To write a plugin of your own, import the types `Plugin`, `PluginHost` and `PluginsOf`
@@ -294,7 +295,7 @@ and the migration guide point at it.
 | Import | What it is |
 | --- | --- |
 | `@oasys/oecs` | the ECS, the pure-TS heap profile by default (a production build, with the development guards removed) |
-| `@oasys/oecs/dev` | the same ECS with the development guards on. Import this to get the guards directly. See [Development and production](#dev-vs-prod) |
+| `@oasys/oecs/dev` | the same ECS with the development guards on, on npm alone. Import this to get the guards directly. See [Development and production](#dev-vs-prod) |
 | `@oasys/oecs/shared` | the optional `SharedArrayBuffer` allocators, `growableSabAllocator`, `fixedSabAllocator` and `wasmMemoryAllocator`, for worker offload or a WASM backend (this needs COOP and COEP) |
 | `@oasys/oecs/relations` | the relations plugin, `(relation, target)` pairs, wildcards and hierarchy traversal |
 | `@oasys/oecs/events` | the events plugin, host-side channels and signals, and `ctx.emit` |
@@ -303,7 +304,7 @@ and the migration guide point at it.
 | `@oasys/oecs/workers` | the workers plugin, `ecs.workers`, one pool of workers for the `parallel` systems |
 | `@oasys/oecs/editor` | undo, redo, and field handles above the host write path |
 | `@oasys/oecs/solid` | the solid plugin, `solid()`, ECS state into Solid signals off the change feed (`solid-js` is an **optional** peer dependency) |
-| `@oasys/oecs/worker` | the engine's worker entry, which `world.workers.attach` starts. A bundled app imports it for its URL alone, and passes that as `workerUrl`. `@oasys/oecs/worker/dev` is the guarded build |
+| `@oasys/oecs/worker` | the engine's worker entry, which `world.workers.attach` starts. A bundled app imports it for its URL alone, and passes that as `workerUrl`. `@oasys/oecs/worker/dev` is the guarded build on npm |
 | `@oasys/oecs/primitives` | the data structures that oecs is built from, which also operate alone |
 | `@oasys/oecs/internal` | unstable internal parts (codecs, ABI constants, the access checker). There are no semver guarantees |
 
@@ -323,8 +324,8 @@ timestep, the memory options, and the cardinality of a relation).
 `@oasys/oecs` is the production build, with the guards removed. A bundler in development mode
 (`vite dev` or `webpack --mode development`) selects the build with the guards automatically,
 through the `development` export condition. As an alternative, import `@oasys/oecs/dev` directly.
-Each plugin has the same subpath: `@oasys/oecs/relations/dev`, `@oasys/oecs/events/dev`,
-`@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev`, `@oasys/oecs/workers/dev`,
+Each optional entry point has the same subpath: `@oasys/oecs/relations/dev`,
+`@oasys/oecs/events/dev`, `@oasys/oecs/snapshots/dev`, `@oasys/oecs/observers/dev`, `@oasys/oecs/workers/dev`,
 `@oasys/oecs/editor/dev` and `@oasys/oecs/solid/dev`. Take the
 plugin from the same channel as the world, because a plugin binds to the core build it was made
 against.

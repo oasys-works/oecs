@@ -31,10 +31,10 @@ it is in the list.
 | `p01-layout.mjs` | exp 01 H1 to H4 | Is the premise still true, and is the layout the number you computed? |
 | `p17-composite.mjs` | exp 17 K1 | On a branch-heavy kernel, is the library faster or slower than plain objects? |
 | `p21-gc.mjs` | exp 21 R1 to R5 | Does the arena remove the pauses a person feels? |
-| `p09-byid.mjs` | exp 09 L3 to L5 (rule 8), exp 17/19 (rule 13) | What does access by id cost, and where does the SoA layout stop paying? |
-| `p20-elemkind.mjs` | exp 20 (rule 16) | Does a world that mixes column types fall off the polymorphism cliff? |
+| `p09-byid.mjs` | exp 09 L3 to L5, exp 17 and exp 19 | What does access by id cost, and where does the SoA layout stop paying? |
+| `p20-elemkind.mjs` | exp 20 | Does a world that mixes column types fall off the polymorphism cliff? |
 | `p05-growth.mjs` | exp 05 G2 to G3, round 5 S3 | Does a buffer that can grow in place cost the reader, and does the shared profile pay it? |
-| `p05-kernels.mjs` | exp 05, rule 13 (one point is not a curve) | Does the backing finding hold on the paths one kernel never touched? |
+| `p05-kernels.mjs` | exp 05, one point is not a curve | Does the backing finding hold on the paths one kernel never touched? |
 | `p10-accessors.mjs` | exp 10 (accessor shape), P09's diagnosis | Where does a read of one field by id spend, and would a generated accessor help? |
 | `p11-memory-grid.mjs` | `ECSMemoryOptions` flattening proposal | Is sizing really independent of backing, and does every cell of the grid work? |
 | `p22-change.mjs` | the study's "tick+list" verdict for the entity grain | What does the entity grain cost on the write path and at the drain, which write paths does it see, and how many ticks is one write reported on? |
@@ -46,13 +46,16 @@ it is in the list.
 | `p24-par-conflict.mjs` | the negative control for `p24-par-split` | Does the byte compare detect a real conflict, or does it detect nothing? |
 | `p24-par-structural.mjs` | no experiment, the parallel study | What does a worker see when a grow or a swap-remove runs beside its pass? |
 | `p24-par-engine.mjs` | no experiment, the shipped pool | Does `ecs.workers.attach` with a `parallel` system leave the same bytes and the same `stateHash` as the system's own `fn`, and where does it pay? |
+| `p24-par-join.mjs` | takes apart what `p24-par-crossing` measured whole | What does the last part of the barrier cost, and does another way for K workers to report a finished pass scale better? |
+| `p24-par-minrows.mjs` | the evidence behind `DEFAULT_PARALLEL_MIN_ROWS` | Where does the pool start to pay, and what does it cost below that? |
 | `p25-wasm-engine.mjs` | no experiment, the `wasm` kernel form | Does a `wasm` kernel on the shipped pool leave the same `stateHash` as the system's own `fn`, and what does it buy against the `js` kernel? |
 | `p25-wasm-stack.mjs` | no experiment, the `wasm` kernel form | Several workers instantiate one module over one memory. What happens to the shadow stack they all address, and what does a region for each instance cost? |
 
-The six `p24-par-*` probes report into `findings-parallel.md` beside this
+The eight `p24-par-*` probes report into `findings-parallel.md` beside this
 file, not into the Results section below. They study running one system on
-several workers, which is a question the substrate study never asked. Five of
-them measure hand-rolled code. `p24-par-engine.mjs` measures the shipped pool.
+several workers, which is a question the substrate study never asked. Six of
+them measure hand-rolled code. `p24-par-engine.mjs` and `p24-par-minrows.mjs`
+measure the shipped pool.
 
 `p25-wasm-engine.mjs` and `p25-wasm-stack.mjs` report into `findings-wasm.md`
 beside the other `p25` probes. Both need a `wasm`-backed world, because a worker
@@ -148,8 +151,8 @@ on every engine tested, by 1.35x to 1.57x.
 The reason is a design choice the study prescribed and the library implements
 structurally rather than as a flag. Experiment 17's L3 layer put a
 generation-checked handle deref *inside the iteration loop*, and that check cost
-28 to 31% on V8, more than the entire buffer advantage on that workload. Rule 13
-asked for the check to be elidable. `oecs` does better: dense iteration walks
+28 to 31% on V8, more than the entire buffer advantage on that workload. The
+study asked for the check to be elidable. `oecs` does better: dense iteration walks
 rows and never checks at all, and the check lives only on the by-id path, which
 P09 shows is the case where experiment 19 measured it as free. The cost was not
 made optional. It was moved to where it does not apply.
@@ -201,7 +204,7 @@ Two honest limits on this result:
 > comma matches nothing. Experiment 21 lost a measurement to a wrong grep
 > pattern in the same way. The parser now anchors on `(average mu`.
 
-### P09, access by id (rule 8, rule 13), the sharpest result in the file
+### P09, access by id, the sharpest result in the file
 
 `small` = 10,000 (fits cache), `large` = 1,000,000 (does not). `shuffled` =
 Fisher-Yates over xorshift32, not a modulo stride.
@@ -224,7 +227,7 @@ Three findings, and the third corrects a claim made from reading the code alone.
    shuffled pass over 1M entities costs **68 ms through the cursor**, four
    frames for one read of one field. Against a sequential walk of the same data
    (0.94 ms) that is **72x**, squarely inside experiment 19's measured 45 to 66x
-   range for pointer chasing. Rule 15 says prefer array-of-index over linked
+   range for pointer chasing. The study says prefer array-of-index over linked
    structures. The entity → row → archetype → column indirection *is* the linked
    structure, inside the library.
 2. **The library's own `vs/` comparison understates this.** That comparison runs
@@ -244,10 +247,10 @@ Three findings, and the third corrects a claim made from reading the code alone.
 recorded in `bench/vs/README.md`: the field-name lookup, not the layout, is the
 larger part of that path's cost.
 
-### P20, element-kind polymorphism (rule 16), hypothesis mis-scoped
+### P20, element-kind polymorphism, hypothesis mis-scoped
 
-200,000 entities, 8 component fields either way. `mono` = all `f64` (one element
-kind in the row plane); `mixed` = f64, f32, i32 and u8 (four kinds). `mixed` moves
+200,000 entities, 8 component fields either way. `mono` = all `f64`, one element
+kind in the row plane. `mixed` = f64, f32, i32 and u8, four kinds. `mixed` moves
 fewer bytes, so any slowdown is a lower bound.
 
 | op | runtime | mono | mixed | mixed and mono | spreads |
@@ -396,7 +399,7 @@ shaped by whatever that workload stressed, so the same three backings were run
 across the paths it did not touch. Ratios against the heap backing, first full
 matrix:
 
-| kernel | n | node (V8) shared / fixed | deno (V8) shared / fixed | bun (jsc) shared / fixed |
+| kernel | n | node (V8) shared then fixed | deno (V8) shared then fixed | bun (jsc) shared then fixed |
 | --- | --- | --- | --- | --- |
 | physics-small (cache-resident) | 10,000 | 1.00x / 1.00x | 1.00x / 1.01x | **3.97x** / 0.99x |
 | churn (archetype transitions) | 200,000 | 1.00x / 0.96x | 1.03x / 1.07x | 1.10x / 0.99x |
@@ -491,19 +494,22 @@ indirection it still has to perform.
 
 Recorded rather than declared closed.
 
-- **SpiderMonkey / Firefox.** Not installed on this machine. Firefox 128+ is a
+- **SpiderMonkey and Firefox.** Not installed on this machine. Firefox 128+ is a
   supported target in the README and nothing here touches it. Round 3's whole
   lesson is that the third engine is where the surprise lives.
-- **x86-64.** This is Apple silicon. The SoA/AoS crossover is cache-dependent and
-  cache geometry differs.
+- **x86-64.** This is Apple silicon. The crossover between SoA and AoS is
+  cache-dependent, and cache geometry differs.
 - **Major collections.** Neither P21 workload provoked one, so the study's
   strongest pause claim is untested against the library.
-- **The WASM bridge (rule 4).** `ComputeBackend` is an interface and no backend
-  ships. Experiment 03 verified "one layout, two backends" with a hand-encoded
-  178-byte module and a checksum agreeing to 6.08e-8. Nothing equivalent exists
-  here, so rule 4 is an architectural intention, not a measured property.
-- **Parallelism (rule 19).** There is no worker pool, no barrier and no parallel
-  scheduler, so experiment 04's 6.20x has nothing to measure against.
+- **The `ComputeBackend` seam.** The interface ships and no backend does.
+  Experiment 03 verified "one layout, two backends" with a hand-encoded 178-byte
+  module and a checksum agreeing to 6.08e-8. Nothing equivalent exists here for
+  that seam, so it is an architectural intention and not a measured property. The
+  workers plugin runs a WASM kernel over the columns on its own route. That is a
+  different seam, and `findings-wasm.md` measures it.
+- **Parallelism.** The probes here are single threaded, so experiment 04's 6.20x
+  has nothing to measure against in this file. The workers plugin ships a pool and
+  a barrier, and `findings-parallel.md` measures them.
 - **Why deno's by-id cursor read is bimodal.** P05-kernels and P10 both found a
   cursor walk over 200,000 entities landing at either of two speeds on deno,
   chosen per process and stable within it, with no equivalent split on node or
@@ -514,8 +520,7 @@ Recorded rather than declared closed.
   `SharedArrayBuffer` costs 4.16x on a column write there. A shared
   `WebAssembly.Memory` can only expose a growable buffer, so the wasm profile
   should pay the same and has no remedy of the same shape. Untested.
-- **Strings (rule 7).** There are no string columns, so experiment 08 has no
-  counterpart.
+- **Strings.** There are no string columns, so experiment 08 has no counterpart.
 
 ## The probes had drifted, and five of them threw
 
@@ -539,6 +544,9 @@ these rot, because `run.mjs` is not in a gate.
 ## Two defects found while writing these probes
 
 Neither is a performance result. Both cost time and both are one-line fixes.
+**Both are fixed.** The JSDoc no longer shows the array form, and `spawn` now
+rejects a component definition in a dev build with `ECS_ERROR.INVALID_TEMPLATE`.
+What follows is the record of the tree the probes ran against.
 
 1. **`src/core/ecs/ecs.ts:586` documents an API that throws.** The JSDoc on
    `spawn` shows `ecs.template([{ def: Pos, values: { x: 0, y: 0 } }])`. The real
@@ -574,7 +582,10 @@ backing does not change the world. Sizing and backing really are orthogonal, so
 the flattening is sound.
 
 **Defect 1, the `{ allocator }` arm ignores its cap and reserves the whole
-entity index.** `resolveECSMemory`'s allocator arm sets
+entity index. Fixed in 0.6.0.** With no entity count the arm now derives the
+index from its declared cap, and `src/core/ecs/ecs_memory.ts` names this defect
+as the reason. What follows is the record of the tree the probe ran against.
+`resolveECSMemory`'s allocator arm set
 `entityIndexCapacity: ENTITY_INDEX_DEFAULT_CAPACITY` unconditionally, which is
 1,048,576 slots = 12,582,912 B. Every other arm derives the index from the cap
 (`floor_pow2(cap/4 ÷ 12 B)`) and scales down. So the escape hatch is unusable
@@ -632,7 +643,7 @@ instead of being hand-carried:
 
 Eighteen cells of eighteen construct and run on all three runtimes. `capBytes`,
 `columnCapacity` and `entityIndexCapacity` agree across all three backings in
-every row, and `stateHash` / sum and live count agree in every row. There are no
+every row, and `stateHash`, the query sum and the live count agree in every row. There are no
 lost rows left: the entity count reaches the index on every backing.
 
 The `both` row is the one to read. It went from 1,048,576 index slots to

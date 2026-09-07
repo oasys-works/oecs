@@ -54,7 +54,7 @@ export function kernelB(views, begin, end, dt) {
 		let ay;
 		let az;
 		// The branch is the point. A row far from its target pulls along the
-		// unit vector; a row already close falls back to a linear pull, which
+		// unit vector. A row already close falls back to a linear pull, which
 		// avoids the reciprocal square root at the origin.
 		if (d2 > 1e-6) {
 			const inv = 1.0 / Math.sqrt(d2);

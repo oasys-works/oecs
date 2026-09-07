@@ -108,7 +108,7 @@ ecs.query(Pos).not(Frozen);           // remove the frozen entities
 
 ```ts
 interface ComponentDef<S> {
-  (values?: Partial<FieldValues<S>>): Bundle<S>;  // call it to pair values with the def (tag defs take no argument)
+  (...values: ValuesArg<S>): Bundle<S>;   // call it to pair values with the def (a tag def takes no argument)
   readonly id: ComponentID;                        // the raw numeric id
 }
 ```

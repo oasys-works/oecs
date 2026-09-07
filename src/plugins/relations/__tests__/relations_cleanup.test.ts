@@ -1,16 +1,16 @@
 /**
  * Relations, `OnDeleteTarget` cleanup policies.
  *
- * When a relation **target** is destroyed, the per-relation cleanup policy
+ * When a relation target is destroyed, the per-relation cleanup policy
  * chosen at registration runs at destroy-flush (and the immediate-destroy
  * path), driven off the reverse index:
  *
  *   - `delete`, cascade-destroy every source (iteratively for chains and trees)
- *   - `clear` , drop the relation from every source. Sources survive
+ *   - `clear`, drop the relation from every source. Sources survive
  *   - `orphan`, leave it dangling (the default, reads stay safe).
  *
- * Covers the issue's acceptance criteria across both cardinalities, both
- * destroy paths (immediate + deferred flush), a multi-level `delete` cascade,
+ * Covered across both cardinalities, both
+ * destroy paths (immediate and deferred flush), a multi-level `delete` cascade,
  * cycle termination, recycled-slot cleanliness, and the deep-chain stack-safety
  * guarantee both paths now share (the immediate path drains a work-list
  * instead of recursing, so a pathologically deep chain cannot overflow the stack).
@@ -349,7 +349,7 @@ describe("OnDeleteTarget. ECS surface", () => {
 	});
 });
 
-describe("compact_relations, reverse-index reclaim under orphan churn", () => {
+describe("compactRelations, reverse-index reclaim under orphan churn", () => {
 	it("drops an exclusive orphan relation's dead-target reverse entry", () => {
 		const store = capStore();
 		const Targets = store.relations.registerRelation(); // default: orphan

@@ -137,8 +137,8 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	 *  component attaches are deferred to the phase flush, so until that flush the
 	 *  entity exists in its empty and partial archetype and a query running later in
 	 *  the same phase can observe it half-built. (Same semantics as
-	 *  `ctx.commands.spawn()` + `ctx.addComponent`. Fully-deferred id-reservation
-	 *  spawn, à la Bevy, is a separate follow-up.) */
+	 *  `ctx.commands.spawn()` followed by `ctx.commands.add`. A fully deferred
+	 *  id-reservation spawn, à la Bevy, is a separate follow-up.) */
 	public spawn(...items: DeclaredBundleOrDef<A["add"]>[]): EntityID {
 		const e = this._store.createEntity();
 		if (DEV) this._store.trace?.commandQueued("spawn", e, null);
@@ -313,8 +313,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		return arch.readField(row, def.id, field);
 	}
 
-	/** Total sibling of {@link getField}, mirroring `ecs.tryGetField`
-	 *: `undefined` when the entity is dead or doesn't hold
+	/** Total sibling of {@link getField}, mirroring `ecs.tryGetField`. It reads
+	 * `undefined` when the entity is dead or doesn't hold
 	 * the component, instead of a dev throw or a prod garbage read. The safe way
 	 * to probe-and-read in one call: `ctx.tryGetField(e, Health, "current") ?? 0`. */
 	public tryGetField<D extends ComponentDef<any>>(
@@ -415,7 +415,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 			);
 		arch.changedTick[def.id] = this._store.changeTick;
 		if (this._store.anyDirtyTracked) this._store.noteSet(def.id as number, arch, row, entityId);
-		// ! safe in prod (dev guard above): _accCols is populated for all components with fields in this archetype
+		// ! safe in prod (dev guard above): accessorColumns is populated for every component with fields in this archetype
 		return createRef<SchemaOf<D>>(arch.accessorColumns[def.id]!, row);
 	}
 
@@ -443,7 +443,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 				`ctx.refRead: ${componentLabel(def)} has no columns in this archetype, the entity doesn't hold it, or it is a tag (no fields to ref)`,
 				{ component: def.id, entity: entityId }
 			);
-		// ! safe in prod (dev guard above): _accCols is populated for all components with fields in this archetype
+		// ! safe in prod (dev guard above): accessorColumns is populated for every component with fields in this archetype
 		return createRef<SchemaOf<D>>(arch.accessorColumns[def.id]!, row);
 	}
 
@@ -511,8 +511,9 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// Buffer such edits and apply after.
 	//
 	// Access-checked under `DEV` against the system's `sparseReads` and
-	// `sparseWrites` declarations: add, remove and set_field require a write
-	// term, getField a read term (a write implies a read). `hasSparse` is
+	// `sparseWrites` declarations: `addSparse`, `removeSparse` and
+	// `setSparseField` require a write term, and `getSparseField` a read term (a
+	// write implies a read). `hasSparse` is
 	// unchecked, mirroring `hasComponent`. Sparse ids live in their own id
 	// space, so the check keys the dedicated sparse sets, never the dense ones.
 
@@ -604,12 +605,13 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 
 	// --- Relations (sparse (relation, target) pairs) ---
 	// Immediate like the sparse ops, no archetype transition, safe mid-system.
-	// Registration is host-side (`ECS.registerRelation`), so it is not mirrored
+	// Registration is host-side (`ecs.relations.register`), so it is not mirrored
 	// here. Systems add, remove and query pairs.
 	//
 	// Access-checked under `DEV` against `relationReads` and `relationWrites`:
-	// add and remove require a write term, target_of, targets_of and sources_of a
-	// read term (write implies read). `hasRelation` is unchecked, mirroring
+	// `addRelation` and `removeRelation` require a write term, and `targetOf`,
+	// `targetsOf` and `sourcesOf` a read term (a write implies a read).
+	// `hasRelation` is unchecked, mirroring
 	// `hasComponent`. Relation ids are their own id space, the check keys the
 	// dedicated relation sets.
 
@@ -660,11 +662,10 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	 *  sees fresh `row_count` fields. This is one of two publish sites,
 	 *  `ECS.update()` also republishes once at tick start, which covers
 	 *  host-side mutations between updates. The publish walks
-	 *  descriptors only. It doesn't touch column data, and benches at
-	 *  sub-microsecond per archetype, so paying it once per phase boundary
-	 *  is materially cheaper than the earlier pattern of paying it per
-	 *  WASM-using system per tick. The descriptor walk is now gated
-	 *  on a dirty flag, so read-only phases skip the walk entirely. */
+	 *  descriptors only. It doesn't touch column data, so paying it once per
+	 *  phase boundary is cheaper than the earlier pattern of paying it for each
+	 *  WASM-using system in each tick. The descriptor walk is gated
+	 *  on a dirty flag, so a read-only phase skips the walk entirely. */
 	public flush(): void {
 		this._store.flushStructural();
 		this._store.flushDestroys();

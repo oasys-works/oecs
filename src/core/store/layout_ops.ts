@@ -45,9 +45,9 @@ export interface ArchetypeGrowSpec {
 	readonly rowCount: number;
 }
 
-/** One archetype's column-layout request for `layoutColumnsAtTail`. `stride`
- * is resolved by the caller, grow reuses the old column's stride verbatim
- * extend derives it from `TYPE_TAG_STRIDE[typeTag]` for brand-new columns. */
+/** One archetype's column-layout request for `layoutColumnsAtTail`. The caller
+ * resolves `stride`. Grow reuses the old column's stride verbatim. Extend
+ * derives it from `TYPE_TAG_STRIDE[typeTag]` for a brand-new column. */
 export interface TailArchetypeLayout {
 	readonly archetypeId: number;
 	readonly componentMask: ArchetypeDescriptor["componentMask"];
@@ -208,10 +208,10 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 	// Sim-bindings region: self-describing from the old header, the
 	// region is the gap between `bindings_off` and the descriptor region, so its
 	// size is re-derived rather than carried as a JS-side policy. `bindings_off`
-	// = 0 means the consumer never opted into a bindings region (pure-TS game),
-	// so the new SAB reserves none either. The region's live bytes are not
-	// snapshotted, the host re-writes them via `write_sim_bindings` on the
-	// `setLayout` that fires after every realloc (loader.ts), same as before.
+	// = 0 means the consumer never opted into a bindings region (a pure-TS
+	// world), so the new SAB reserves none either. The region's live bytes are
+	// not snapshotted. The host re-writes them on the layout notification that
+	// fires after every realloc.
 	const bindingsOff = old.view.getUint32(STORE_HEADER_OFFSETS.bindings_off, true);
 	if (bindingsOff !== 0) {
 		const descriptorOff = old.view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
@@ -300,7 +300,7 @@ export function restoreRegions(newStore: ColumnStore, snap: PrefixRegionSnapshot
 }
 
 /**
- * Snapshot per-archetype live column bytes from `old` Before any
+ * Snapshot per-archetype live column bytes from `old`, before any
  * subsequent allocator call may detach the underlying typed-array views.
  * Returned shape: `{ archetype_id → Uint8Array[] }`, one entry per
  * column in `columnsInOrder`. Each `Uint8Array` is a fresh copy
@@ -345,7 +345,7 @@ export function restoreLiveColumns(
 		const newArch = newStore.archetypes.get(archetypeId);
 		if (newArch === undefined) {
 			throw new Error(
-				`restore_column_snapshots: new store missing archetype ${archetypeId} (internal)`
+				`restoreLiveColumns: the new store is missing archetype ${archetypeId}. Build the spec list so it carries every archetype the snapshot holds.`
 			);
 		}
 		const newCols = newArch.columnsInOrder;
@@ -366,9 +366,9 @@ export function restoreLiveColumns(
  *      (command ring, entity-index) before the allocator call, the
  *      wasmMemoryAllocator may detach `old`'s views on grow, so everything
  *      needed is captured first. The prefix-region preservation is the
- *      contract `Store` relies on to keep its entity table across resizes
- * `optionsFromOld` re-reserves regions and descriptor headroom
- * so the republished store keeps its layout and fast paths.
+ *      contract `Store` relies on to keep its entity table across resizes.
+ *      `optionsFromOld` re-reserves the regions and the descriptor headroom,
+ *      so the republished store keeps its layout and its fast paths.
  *   2. `createColumnStore` with the derived options (fresh buffer, the same
  *      growable allocator carries forward so the new buffer also grows in
  *      place).
@@ -376,8 +376,8 @@ export function restoreLiveColumns(
  *      contributed no snapshot and stay zero-initialised. Prefix regions
  *      overwrite the empty state `createColumnStore` initialised.
  *   4. Bump `view_stamp` from the pre-capture value and patch the returned
- *      header so its cached `viewStamp` matches the buffer bytes only
- *      written, `createColumnStore` stamped it 0. `capacity` and
+ *      header so its cached `viewStamp` matches the bytes written above.
+ *      `createColumnStore` stamped it 0. `capacity` and
  *      `archetype_count` are already correct (createColumnStore sized them),
  *      so the spread carries them, and the internal `_allocator` and
  *      `_regionBytes` fields, through unchanged.

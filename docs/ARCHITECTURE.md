@@ -72,19 +72,19 @@ ECS  (core/ecs/ecs.ts)              the public facade, and it implements QueryRe
  │     ├── DeferredCommandBuffer (core/ecs/deferred_commands.ts)  the queues of pending add, remove, destroy and toggle
  │     ├── SnapshotService (plugins/snapshots/snapshot_service.ts)  deterministic snapshot and resume
  │     ├── RelationService (plugins/relations/relation_service.ts)  relation registry, traversal, hierarchy matching
- │     ├── EventRegistry and ResourceRegistry  events and resources, behind Store delegations
+ │     ├── EventRegistry and ResourceRegistry  events and resources, at store.events and store.resources
  │     ├── component metadata (the field layout and observer flags of each ComponentID)
  │     ├── entity → (ArchetypeID, row) mapping (SAB-backed Int32Array pair)
  │     ├── sparse component stores
  │     └── registered live Query result arrays
  ├── Schedule  (core/ecs/schedule.ts)  an open phase set, a topological sort in each phase
- ├── SystemContext  (core/ecs/query.ts)  the restricted ctx handed to systems
+ ├── SystemContext  (core/ecs/system_context.ts)  the restricted ctx handed to systems
  └── ObserverRegistry  (plugins/observers/observer_registry.ts)  onAdd, onRemove, onSet, onEnable, onDisable
 ```
 
 `ECS` is the only entry point that external code speaks to (`core/ecs/ecs.ts`). A system receives a
-`SystemContext`, and not the `ECS` (`core/ecs/query.ts`). That context sends each structural change
-through a deferred buffer, so that live iteration stays correct.
+`SystemContext`, and not the `ECS` (`core/ecs/system_context.ts`). That context sends each
+structural change through a deferred buffer, so that live iteration stays correct.
 
 - **An entity** is a packed 31-bit integer: a 20-bit slot index and an 11-bit generation
   (`core/ecs/entity.ts`).
@@ -117,7 +117,7 @@ until you import it (`index.ts`, `primitives.ts`, `shared.ts`, `plugins/*`).
 | `@oasys/oecs/snapshots` | `plugins/snapshots` | the snapshots plugin, `capture` and `restore` |
 | `@oasys/oecs/observers` | `plugins/observers` | the observers plugin, `ecs.observe` |
 | `@oasys/oecs/workers` | `plugins/workers` | the workers plugin, `ecs.workers`, one pool for the `parallel` systems |
-| `@oasys/oecs/worker` | `worker.ts` | the worker entry the pool starts, which you never import |
+| `@oasys/oecs/worker` | `worker.ts` | the worker entry the pool starts. Under a bundler you import its URL and pass it as `workerUrl` |
 | `@oasys/oecs/editor` | `plugins/editor` | undo, redo, and field handles |
 | `@oasys/oecs/solid` | `plugins/solid` | the solid plugin, ECS state into Solid signals (`solid-js` is an optional peer dependency) |
 | `@oasys/oecs/internal` | `internal.ts` | the unstable internal parts (codecs, ABI constants, the access checker) |
@@ -227,8 +227,9 @@ Two operations change the shape of the buffer. Both reallocate and publish again
   (`core/ecs/store.ts`). When the allocator operates in place and did not change, it takes a fast
   path. That path moves the columns of the archetypes that grow to the end of the buffer, and it
   builds only their views again (`core/store/grow.ts`). It abandons the old column region as a hole
-  that it does not reclaim, and geometric doubling bounds that waste at about 1×. In each other
-  condition, it captures the live columns, reallocates, and writes them back.
+  that it does not reclaim. Geometric doubling bounds the wasted bytes by the final live size of
+  the archetype. In each other condition, it captures the live columns, reallocates, and writes
+  them back.
 - **Extend** adds *new* archetypes at the end of the buffer. This is the primitive that the live
   ECS uses when a new combination of components appears for the first time
   (`core/store/extend.ts`). Its fast path in place appends the new column offsets and descriptors
@@ -336,10 +337,10 @@ concrete typed-array class. So a column accessor gives the correct type at compi
 
 `ComponentDef<S>` is a **callable** branded handle (`core/ecs/component.ts`):
 
-```ts
-interface ComponentDef<S> {
-  (...values: ValuesArg<S>): Bundle<S>;   // call it → a (def, values) bundle
-  readonly id: ComponentID;               // the raw numeric id
+```
+interface ComponentDef<S extends ComponentSchema = ComponentSchema> {
+  (...values: ValuesArg<S>): Bundle<S>;   // a call gives a (def, values) bundle
+  readonly id: ComponentID;               // the raw numeric id, internal to core/ecs/component.ts
   readonly [__schema]?: [S];              // phantom, never exists at runtime
 }
 ```
@@ -462,9 +463,10 @@ end:
   "enabled or last". It remains for direct callers and for the tests.)
 - `addEntityTag` and `swapRemoveRowTag` skip each column operation, for an archetype that has tags
   alone.
-- `addEntityWithValues` and `addEntitiesWithValues` write the values of a template directly into
+- `addEntityWithBits` and `addEntitiesWithValues` write the values of a template directly into
   the columns in one pass. So they do not write zeros and then write over them. They also set the
-  tick of each component.
+  tick of each component. `widthBits` resolves the defaults of a template into the stored bit
+  pattern one time, and `addEntityWithBits` copies those bits.
 
 ### Transitions between archetypes
 
@@ -507,8 +509,10 @@ engine never makes one invalid.
 ## 6. The store
 
 Source: `src/core/ecs/store.ts`, plus the collaborators that the code extracted from it:
-`entity_allocator.ts`, `archetype_graph.ts`, `deferred_commands.ts`, `relation_service.ts`,
-`event_registry.ts`, `resource_registry.ts`, and `snapshot_service.ts`.
+`core/ecs/entity_allocator.ts`, `core/ecs/archetype_graph.ts`, `core/ecs/deferred_commands.ts`,
+`core/ecs/query_registry.ts`, `core/ecs/resource_registry.ts`,
+`plugins/relations/relation_service.ts`, `plugins/events/event_registry.ts`, and
+`plugins/snapshots/snapshot_service.ts`.
 
 `Store` arranges the mutable data of the ECS. It still exposes the typed API that `ECS` and
 `SystemContext` use. But several subsystems that were once inside it are now behind narrow services
@@ -516,10 +520,15 @@ that a closure supplies:
 
 - the allocation of an entity slot, in `EntityAllocator`
 - the archetype topology, in `ArchetypeGraph`
+- the registered queries and the mask resolver, in `QueryRegistry`
 - the policy for the drain of deferred structural changes, in `DeferredCommandBuffer`
 - the relations, in `RelationService`
 - the events and the resources, in their registries
 - the snapshot and resume operations, in `SnapshotService`.
+
+A plugin service reaches the store under its own name. `store.relations`, `store.events` and
+`store.snapshots` throw `PLUGIN_NOT_INSTALLED` on a world that installed no such plugin. `Store`
+forwards to none of them.
 
 The engine never gives `Store` to external code.
 
@@ -610,9 +619,11 @@ of the operations at the flush, where they become one net observed transition fo
 
 ### The registration of a query, and the dirty epoch
 
-`registerQuery` fills a result array through `getMatchingArchetypes`, and it records
+`QueryRegistry.register` (`core/ecs/query_registry.ts`), which `Store.registerQuery` reaches, fills
+a result array through `QueryRegistry.matching`, and it records
 `{ includeMask, excludeMask, anyOfMask, result, query }`. The array that it gives back is the live
-array that `_fanIntoQueries` pushes each new match into. `getMatchingArchetypes` does the first
+array that `QueryRegistry.fanIn` pushes each new match into, through the `fanIntoQueries` seam that
+the archetype graph calls. `matching`, which `Store.getMatchingArchetypes` reaches, does the first
 intersection. With an empty required mask it scans each archetype. If not, it finds the **smallest
 bucket in `componentIndex`** among the required bits, and it filters that bucket.
 
@@ -636,8 +647,10 @@ each entity. They reject an archetype that has disabled rows (`PARTITION_BULK_IN
 ## 7. Queries
 
 Source: `src/core/ecs/query.ts`, with the term vocabulary in `src/core/ecs/query_terms.ts`, the
-cache in `QueryCache` (`src/core/ecs/query_cache.ts`), the live registration in
-`src/core/ecs/store.ts`, and the connection to the resolver in `src/core/ecs/ecs.ts`.
+`changed()` variant in `src/core/ecs/changed_query.ts`, the chunk cursor in
+`src/core/ecs/chunk_columns.ts`, the cache in `QueryCache` (`src/core/ecs/query_cache.ts`), the live
+registration in `src/core/ecs/query_registry.ts`, and the connection to the resolver in
+`src/core/ecs/ecs.ts`.
 
 A `Query<Defs>` owns the following (`core/ecs/query.ts`):
 
@@ -645,10 +658,13 @@ A `Query<Defs>` owns the following (`core/ecs/query.ts`):
 - the `include`, `_exclude`, and `_anyOf` BitSet masks
 - a `_nonEmptyArchetypes` cache, with the epoch flag `_lastSeenEpoch`
 - a stable `id`
-- small lists of terms for the members that are not dense (`sparseIncludes`, `optionalTerms`,
-  `relationIncludes`, `hierarchyTerm`, and `includesDisabled`).
+- `terms`, one frozen `QueryTerms` record of the members that are not dense
+  (`sparseIncludes`, `sparseExcludes`, `optionalTerms`, `relationIncludes`, `relationExcludes`,
+  `hierarchyTerm`, `archetypeTerms`, and `includesDisabled`, `core/ecs/query_terms.ts`)
+- `includesDisabled`, copied out of `terms` because the iteration bound reads it on each call.
 
-Those lists are frozen empty objects by default, so a dense query allocates none of them.
+A query that declares no such term holds the shared `NO_TERMS` record, so a dense query allocates
+none of them. `_carryNondense` compares that one reference.
 
 ### Resolution and caching
 
@@ -666,14 +682,21 @@ store to the query. It then adds an entry to the cache. `ECS.query(...defs)` use
 
 ### Composition
 
-Each verb that makes a query more exact (`and`, `not`, `or`, `optional`, `changed`,
+Each verb that makes a query more exact (`and`, `not`, `or`, `optional`, `changed`, `where`,
 `includeDisabled`, and the sparse, relation, and hierarchy terms) derives a new cached query. The
 engine remembers each one in **shared caches for one term, keyed by
 `(parentQueryId << 16) | componentId`**, or by the equivalent sparse or relation id, inside
 `QueryCache`. There is one map for each verb, so the memory is O(verbs), and not O(queries × verbs)
-(`core/ecs/query.ts`). `_carryNondense` (`core/ecs/query.ts`) makes composition independent of
-order: a dense verb resolves on the mask alone, and it carries each term that is not dense to the
-new query. So `q.optional(V).and(H)` and `q.and(H).optional(V)` are the same query.
+(`core/ecs/query.ts`). `where` keys its cache on the term object and then on the parent query id,
+because a term is not a dense id (`core/ecs/query.ts`). `_carryNondense` (`core/ecs/query.ts`) makes
+composition independent of order: a dense verb resolves on the mask alone, and it carries each term
+that is not dense to the new query. So `q.optional(V).and(H)` and `q.and(H).optional(V)` are the
+same query.
+
+`where(term)` takes an `ArchetypeTerm` (`core/ecs/query_terms.ts`). The free `and`, `or` and `not`
+build a nested expression from component definitions and from each other, and a plugin supplies a
+term of its own on the same footing. The term narrows the matched set at the rebuild, and not on the
+dense mask, so a derived query keeps the parent's live archetype array.
 
 ### The subset of non-empty archetypes
 
@@ -704,10 +727,14 @@ field never touches the epoch. So repeated iteration inside a frame uses the cac
 - `entityCount`, `archetypeCount`, and `archetypes` (`core/ecs/query.ts`) are getters for
   introspection.
 
-The dense terminal functions are `forEach`, `forEachChunk`, `entityCount`, and `archetypeCount`. They
-reject a query with a sparse, relation, or hierarchy term, through `_assertDenseOnly` and
-`SPARSE_QUERY_DENSE_PATH` (`core/ecs/query.ts`). A dense walk would miss the members that are not
-dense, with no signal.
+The dense terminal functions are `forEach`, `forEachChunk`, `some`, `entityCount`, and
+`archetypeCount`. They reject a query with a sparse, relation, or hierarchy term, through
+`_assertDenseOnly` and `SPARSE_QUERY_DENSE_PATH` (`core/ecs/query.ts`). A dense walk would miss the
+members that are not dense, with no signal.
+
+`archetypeCount`, `archetypes`, and `excludeWords` answer from the unfiltered dense list. So in
+development they reject a query that carries an `archetypeTerms` entry, through
+`QUERY_TERM_DENSE_PATH` (`core/ecs/query.ts`), rather than answer too wide.
 
 ---
 
@@ -721,8 +748,8 @@ archetypes by a comparison against the change tick of the last run of each syste
 
 Two counters exist. `ECS._tick` (`core/ecs/ecs.ts`) is the frame tick. It starts at 0, and it
 increases at the end of each `update()` call. `Store.tick` (`core/ecs/store.ts`) gets its value at
-the start of `update()`, and `ctx.ecsTick` reads it (`core/ecs/query.ts`). Startup and the first
-`update()` call both run with frame tick 0.
+the start of `update()`, and `ctx.ecsTick` reads it (`core/ecs/system_context.ts`). Startup and
+the first `update()` call both run with frame tick 0.
 
 `Store.changeTick` (`core/ecs/store.ts`) is the change tick. It starts at 1, above the initial
 stamp of a new archetype, and `advanceChangeTick` increases it before each system run and before
@@ -739,8 +766,8 @@ baseline, so the next frame reports it at both grains.
 
 The mutable column paths on the archetype set `changedTick[cid]`. They are `getColumnMut`,
 `columnGroupMut` (which is `cols.mut`), `writeFields` and `writeFieldsPositional`,
-`copySharedFrom`, `addEntityWithValues`, and the three move paths, of which each one sets the value
-for *every* component on the destination. At the level of the facade and the context, `setField`
+`copySharedFrom`, `addEntityWithBits`, `addEntitiesWithValues`, and the three move paths, of which
+each one sets the value for *every* component on the destination. At the level of the facade and the context, `setField`
 and `updateField` write the column and set the value, and `ctx.ref` sets it immediately when you
 create the ref. The read paths do not set it: `getColumnRead`, `columnGroupRead` (which is
 `cols.read`), `readField`, `getField`, and `ctx.refRead`.
@@ -831,8 +858,8 @@ virtual:
 A reverse lookup (`sourcesOf`) sorts in ascending order on the low-frequency path
 (`plugins/relations/relation_store.ts`). The public reads, the wildcards (`pairsOf` for `(R, *)`, and
 `sourcesOfAny` for `(*, T)`), the traversal helpers, the arrangement of the cleanup, and the cycle
-detection are on `RelationService` (`plugins/relations/relation_service.ts`). `Store` keeps one-line calls
-into that service, for the public facade (`core/ecs/store.ts`).
+detection are on `RelationService` (`plugins/relations/relation_service.ts`). `Store` exposes that
+service as `store.relations`, and forwards to none of its methods (`core/ecs/store.ts`).
 
 ### Wildcards and query terms
 
@@ -883,7 +910,7 @@ access checker validates its callbacks exactly as it validates a system.
 ### The registry is one consumer of the change feed
 
 The store owns the record of what changed, and the registry reads it like any other plugin. That
-seam is `ChangeFeed` (`core/ecs/plugin.ts`), which `Store` implements and `PluginHost.changes`
+seam is `ChangeFeed` (`core/ecs/change_feed.ts`), which `Store` implements and `PluginHost.changes`
 hands out. The registry asks for the flags its live observers need, under the consumer name
 `observers` (`store.configureObservation`, `store.configureSparseObservation`). The store merges
 every consumer's ask by OR. So one consumer dropping a flag never takes that flag from another. The
@@ -985,12 +1012,13 @@ calls in `src/core/ecs/store.ts`.
 A resource is one value with the scope of the world, and a `ResourceKey<T>` keys it. That key is a
 symbol that carries its value type as a phantom (`core/ecs/resource.ts`), and `resourceKey` makes
 it one time at module scope (`core/ecs/resource.ts`). The storage is a plain `Map<symbol, unknown>`
-inside `ResourceRegistry` (`core/ecs/resource_registry.ts`), with one-line calls from `Store`
-(`core/ecs/store.ts`). `registerResource` inserts one time, and a second registration throws
-`RESOURCE_ALREADY_REGISTERED`. `getResource` and `setResource` throw `RESOURCE_NOT_REGISTERED` for
-a key that is absent. `removeResource` fails safely, and it releases the key for a new
-registration. `hasResource` is the one lookup that never throws. There is no change tracking, there
-is no column for each field, and there is no link to an archetype. The value can be any JS value.
+inside `ResourceRegistry` (`core/ecs/resource_registry.ts`), which `Store` exposes as
+`store.resources` (`core/ecs/store.ts`) and the `ecs.resources` facade wraps
+(`core/ecs/facades.ts`). `ecs.resources.register` inserts one time, and a second registration throws
+`RESOURCE_ALREADY_REGISTERED`. `getResource` and `setResource` on the context throw
+`RESOURCE_NOT_REGISTERED` for a key that is absent. `removeResource` fails safely, and it releases
+the key for a new registration. `hasResource` is the one lookup that never throws. There is no
+change tracking, there is no column for each field, and there is no link to an archetype. The value can be any JS value.
 `stateHash`, the snapshots, and the restore functions **do not include resources**. So a resource
 never disturbs determinism.
 
@@ -1051,8 +1079,8 @@ the tiebreaker, and it raises a cycle as `CIRCULAR_PHASE_DEPENDENCY`. It runs on
 
 Each system that
 you schedule becomes a `SystemNode` with an `insertionOrder` value that only increases, and with
-`before` and `after` edge sets. Inside a phase, `_sortSystems` builds a map of adjacency from the
-`before` and `after` constraints of each node and of each set, and it removes the edges to a
+`before` and `after` edge sets. Inside a phase, `sortSystems` (`core/ecs/schedule_plan.ts`) builds
+a map of adjacency from the `before` and `after` constraints of each node and of each set, and it removes the edges to a
 different phase. It then calls the shared `topologicalSort`, which is Kahn's algorithm with a
 `BinaryHeap` queue of ready nodes and with `insertionOrder` as the deterministic value that breaks
 a tie. The engine caches the result for each phase as a **phase plan**, and it clears that cache on
@@ -1085,10 +1113,12 @@ through an index, and it makes no lookup by object identity.
 
 `_runPhase` is the high-frequency loop. For each sorted system, it tests the gate, sets
 `ctx.lastRunTick` to the change tick of the *previous* run of that system, advances the change
-tick, and runs `fn` inside an access span. It runs `backend.run(handle, dt, tick)` instead, when a
-compute backend is attached and the system carries a `backendHandle`. It publishes the descriptor
-row counts before that call, so a module reads the live count of every archetype. It then records the change tick of
-this run as the last run of that system. After the phase, it advances the change tick again, so
+tick, and runs `fn` inside an access span. Two paths take the body instead. An installed route,
+which `installRoute` gives a plugin, takes the system that carries a `routePlan`, and `route.run`
+answers `false` to hand the body back. A compute backend takes the system that carries a
+`backendHandle`, through `backend.run(handle, dt, tick)`. The loop publishes the descriptor row
+counts before the backend call, so a module reads the live count of every archetype. It then
+records the change tick of this run as the last run of that system. After the phase, it advances the change tick again, so
 that the flush stamps above every run of the phase, and it calls `ctx.flush()`. In development, it
 then calls the `phaseBoundary` trace hook. A
 system that a `false` condition skips leaves its last-run tick unchanged, and it puts nothing in a
@@ -1118,26 +1148,29 @@ Source: `src/core/ecs/ecs.ts`.
    descriptors, before the first phase.
 4. **The catch-up for the fixed update** runs only when fixed systems exist. It does
    `accumulator += dt`. It then limits `accumulator` to `maxFixedSteps * fixedTimestep`, which is
-   the protection against the spiral of death. It then runs `FIXED_UPDATE` one time for each full
-   `fixedTimestep` in the accumulator, and each run has the delta `fixedTimestep`.
-5. `schedule.runUpdate(ctx, dt, _tick)` runs `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`, and it
-   flushes `ctx` between the phases and after the last one.
+   the protection against the spiral of death. It then runs each phase of the fixed loop one time
+   for each full `fixedTimestep` in the accumulator, and each run has the delta `fixedTimestep`.
+   `FIXED_UPDATE` is the built-in phase of that loop.
+5. `schedule.runUpdate(ctx, dt)` runs each phase of the update loop, which is `PRE_UPDATE`,
+   `UPDATE`, `POST_UPDATE`, and any phase that `addPhase` put in that loop. It flushes `ctx`
+   between the phases and after the last one.
 6. **The dispatch of `onSet`** runs while `store.tick` is still equal to this tick. So an `onSet`
    observer, at either level of detail, sees exactly the writes of this tick. In development, an
    `onSet` observer that emitted an event throws `OBSERVER_ONSET_EMIT`, because the next step would
    remove the emission, and it would break the determinism of a snapshot.
-7. `store.clearEvents()` is the last mutation of the tick. An event exists for exactly one update.
+7. `store.events.clear()` runs before the tick increases. An event exists for exactly one update.
 8. `_tick++`.
 
 Each fixed step in one frame shares one tick value. The engine does not clear an event that a fixed
 step emitted until the end of `update()`. `fixedAlpha` exposes `accumulator / fixedTimestep`, for
 interpolation of the display. `startup()` does four steps:
 
-1. It prepares the closure of archetypes over each system and observer (`_prewarmArchetypes`,
-   `core/ecs/ecs.ts`). The walk itself is `computeArchetypeClosure`
-   (`core/ecs/archetype_closure.ts`).
+1. It prepares the closure of archetypes over each system, plus the access shapes each plugin
+   contributes through `host.onPrewarm` (`_prewarmArchetypes`, `core/ecs/ecs.ts`). The walk itself
+   is `computeArchetypeClosure` (`core/ecs/archetype_closure.ts`).
 2. It runs the `onAdded` hook of each system, inside an access span.
-3. It runs the three startup phases, with a delta of 0.
+3. It runs each phase of the startup loop, with a delta of `STARTUP_DELTA_TIME`. The three built-in
+   startup phases are those phases unless `addPhase` put another one in that loop.
 4. It clears the startup events.
 
 `_tick` is 0 through startup and through the systems of the first `update()` call. It becomes 1
@@ -1282,7 +1315,8 @@ a person can read. `ecs.memoryPlan` exposes it.
 
 - the column capacity
 - a reservation of the entity index, with 2× of extra space
-- a byte limit of 3× the live memory, with a floor of 4 MiB (unless `maxBytes` gives one)
+- a byte limit of that reservation plus 3× the live column bytes
+  (`BUDGET_GROWTH_HEADROOM`), with a floor of 4 MiB, unless `maxBytes` gives one
 - the words of a limit error, in the terms of the caller.
 
 One derivation serves every backing. The reservation of the entity index comes from `entities`
@@ -1467,10 +1501,10 @@ This is a short list of the invariants across the system that are useful to know
    system.** Inside `forEach` or `forEachChunk`, the `(archetype, row)` of an entity is stable,
    because each structural operation through a `SystemContext` is deferred. An immediate operation
    on the `ECS` bypasses this, and you must not call one from inside a system.
-2. **`_archetypes` only grows, and the engine never changes its order.** The store pushes each new
-   matching archetype into the array of each registered query, through `_fanIntoQueries`
-   (`core/ecs/store.ts`), but it removes none. An empty archetype stays, and `nonEmptyArchs()` filters
-   it out.
+2. **`_archetypes` only grows, and the engine never changes its order.** The registry pushes each
+   new matching archetype into the array of each registered query, through `QueryRegistry.fanIn`
+   (`core/ecs/query_registry.ts`), but it removes none. An empty archetype stays, and
+   `nonEmptyArchs()` filters it out.
 3. **The map from an entity to its `(archetype, row)` pair is always consistent.** Each swap-remove
    updates `_entityRows` before it gives control back. The `removeRow` function that knows about the
    division of the rows updates the map internally as it swaps. `swapRemoveRow` and
@@ -1479,9 +1513,9 @@ This is a short list of the invariants across the system that are useful to know
 4. **A handle to a destroyed slot fails `isAlive` after the flush.** A slot that uses all of its
    generation counter is *retired*, and not recycled, which closes the ABA problem
    (`core/ecs/store.ts`).
-5. **A registered query never becomes out of date.** `ArchetypeGraph.install` calls the fan-in hook
-   of the store at creation, and `_fanIntoQueries` tests each registered query again before it
-   gives control back. No background scan is necessary.
+5. **A registered query never becomes out of date.** `ArchetypeGraph.install` calls the
+   `fanIntoQueries` hook at creation, and `QueryRegistry.fanIn` tests each registered query again
+   before it gives control back. No background scan is necessary.
 6. **A write to a field does not make the cache of non-empty archetypes invalid.** Only a change of
    membership increases `queryDirtyEpoch`. So repeated iteration inside a frame uses the cache.
 7. **The level of detail of change detection is one `(archetype, component)` pair.** A write to one
@@ -1497,8 +1531,8 @@ This is a short list of the invariants across the system that are useful to know
     `moveEntityFrom` and `bulkMoveAllFrom` set `changedTick` for *each* component on the
     destination. So an add or a remove of any component starts change detection for each component
     that the entity then has.
-11. **An event exists for one `update()` call, and no longer.** `clearEvents` runs one time in each
-    `update()` call, before the tick increases, and one time at the end of `startup()`. No other
+11. **An event exists for one `update()` call, and no longer.** `store.events.clear()` runs one
+    time in each `update()` call, before the tick increases, and one time at the end of `startup()`. No other
     path clears the events. `onSet` runs inside that window, and it must not emit.
 12. **`stateHash` and the snapshots do not include the resources, the events, or the observer and
     change-detection state.** Those are artifacts of one frame, or of the schedule, and not of the

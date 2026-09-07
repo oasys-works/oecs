@@ -65,10 +65,10 @@ describe("Tag-only archetype growth", () => {
 		}).not.toThrow();
 	});
 
-	it("pathological fragmentation: mirrors proxy-ts_bench scenario", () => {
-		// 10k iterations × 8 entities, 3-of-16 picks from {8 components + 8
-		// tags}. Some masks collide many times (one mask accumulates >64
-		// rows), and pure-tag masks bypass the bound check entirely.
+	it("pathological fragmentation keeps every row live and readable", () => {
+		// Each iteration picks three of sixteen components and tags. Some masks
+		// collide many times, so one archetype outgrows its initial capacity, and
+		// a pure-tag mask bypasses the bound check entirely.
 		const world = new ECS({ memory: { columnCapacity: 64 } });
 		const components: ReturnType<typeof world.registerComponent>[] = [];
 		for (let i = 0; i < 8; i++) {
@@ -133,7 +133,7 @@ describe("Tag-only archetype growth", () => {
 		expect(world.archetypeCount - baselineArchetypes).toBe(distinctMasks.size);
 
 		// Spot-check: each sampled entity's data fields still read the `a` they
-		// were spawned with, despite ~80k transitions churning the columns.
+		// were spawned with, despite the churn across the columns.
 		expect(samples.length).toBeGreaterThan(0);
 		for (const { id, a, dataDefs } of samples) {
 			expect(world.isAlive(id)).toBe(true);

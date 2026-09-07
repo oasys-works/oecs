@@ -2,8 +2,9 @@
  * Store.stateHash, live-row FNV-1a state digest.
  *
  * `Store.stateHash()` folds (archetype_id, live row count, live column
- * bytes) for every archetype in id order. It's the canonical "live ECS
- * state digest" used by `compute_state_hash` for cross-replay determinism:
+ * bytes) for every archetype in id order. It is the canonical "live ECS
+ * state digest" that `ecs.snapshots.stateHash()` returns, and that a replay
+ * compares tick by tick:
  * strictly broader than the earlier per-networked-component fold (every
  * column contributes), strictly tighter than `columnStoreStateHash` (skips
  * trailing unused SAB capacity).
@@ -22,7 +23,7 @@ const Velocity = { vx: "i32", vy: "i32" } as const;
 const ByteFlags = { flag: "u8" } as const;
 const HalfWord = { v: "u16" } as const;
 
-describe("Store.state_hash, live-row FNV-1a", () => {
+describe("Store.stateHash, live-row FNV-1a", () => {
 	it("two identically-built stores produce identical hashes", () => {
 		const a = new Store({ deterministic: true });
 		const b = new Store({ deterministic: true });
@@ -93,7 +94,7 @@ describe("Store.state_hash, live-row FNV-1a", () => {
 		expect(s.stateHash()).toBe(before);
 	});
 
-	it("creating a new archetype via add_component shifts the hash", () => {
+	it("creating a new archetype via addComponent shifts the hash", () => {
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
 		const Vel = s.registerComponent(Velocity);
@@ -143,11 +144,10 @@ describe("Store.state_hash, live-row FNV-1a", () => {
 		expect(s.stateHash()).not.toBe(before);
 	});
 
-	it("scales with live entity count, fast even when SAB is large", () => {
-		// 10k entities on a single archetype. The live-row hash walks ~80KB
-		// of data. `columnStoreStateHash` would walk the full SAB capacity (much
-		// larger). This test asserts correctness on a non-trivial size
-		// perf is validated by replay.test.ts and determinism.test.ts.
+	it("repeats the same digest on a large single archetype", () => {
+		// The live-row fold walks the rows that hold entities.
+		// `columnStoreStateHash` walks the whole SAB capacity instead, so the two
+		// read different spans and only this one is stable while capacity grows.
 		const s = new Store({ deterministic: true });
 		const Pos = s.registerComponent(Position);
 		for (let i = 0; i < 10_000; i++) {
@@ -199,7 +199,7 @@ describe("determinism surface is opt-in", () => {
 		expect(new Store({ deterministic: true }).deterministic).toBe(true);
 	});
 
-	it("state_hash throws DETERMINISM_DISABLED when determinism is off", () => {
+	it("stateHash throws DETERMINISM_DISABLED when determinism is off", () => {
 		const s = new Store();
 		seed(s);
 		expect(() => s.stateHash()).toThrow(
@@ -207,7 +207,7 @@ describe("determinism surface is opt-in", () => {
 		);
 	});
 
-	it("snapshot_sparse / restore_sparse throw DETERMINISM_DISABLED when off", () => {
+	it("snapshotSparse and restoreSparse throw DETERMINISM_DISABLED when off", () => {
 		const s = new Store();
 		s.registerSparseComponent(Position);
 		expect(() => s.snapshotSparse()).toThrow(

@@ -4,7 +4,7 @@
  * The engine has historically allocated its SAB as a fresh
  * `new SharedArrayBuffer(totalBytes)` inside `createColumnStore`.
  * A WASM backend needs the SAB to optionally be backed by a
- * `WebAssembly.Memory.buffer` instead, so the sim can read and write the live
+ * `WebAssembly.Memory.buffer` instead, so a compute backend can read and write the live
  * ECS columns through its own memory handle. This module abstracts the
  * "where does the buffer come from" decision behind a single function
  * type.
@@ -27,7 +27,7 @@
  * `wasmMemoryAllocator(memory)` returns an allocator that grows the
  * given `WebAssembly.Memory` (in 64 KiB page increments) as needed and
  * returns its current buffer. Used by a host so the
- * engine's SAB is the sim's memory.
+ * engine's SAB is the module's own memory.
  */
 
 /**
@@ -49,8 +49,8 @@
  * place). `wasmMemoryAllocator` on shared `WebAssembly.Memory`
  * returns a *new* SAB ref after `memory.grow()`, but old views built
  * over the previous ref keep working. V8 keeps the underlying linear
- * memory mapped at the same address. Verified empirically (this branch,
- * Bun + V8): writes via an old `Int32Array(old_ref, off, len)` after
+ * memory mapped at the same address. Verified empirically on Bun and V8:
+ * writes via an old `Int32Array(old_ref, off, len)` after
  * `memory.grow()` are visible through a fresh view over the new ref,
  * and vice versa. Default allocator omits the marker
  * `growableSabAllocator` and `wasmMemoryAllocator` set it.
@@ -104,8 +104,8 @@ export type InPlaceBufferAllocator = BufferAllocator & { readonly isInPlace: tru
 
 /**
  * Thrown when an allocator cannot satisfy a request because its by-design
- * byte ceiling is reached (the cap is a runaway-growth signal, not a
- * limit to paper over. There is deliberately no grow-beyond-cap fallback).
+ * byte ceiling is reached. The cap is a runaway-growth signal, not a limit to
+ * paper over, so there is deliberately no grow-beyond-cap fallback.
  * Typed so `Store`'s grow handler can recognise the cap case and re-throw
  * with the caller's declared sizing intent attached without ever
  * catching-to-recover.
@@ -195,19 +195,18 @@ function createSingleBufferAllocator(
 	const alloc = (bytes: number): ArrayBufferLike => {
 		if (bytes > maxBytes) {
 			// By design: the cap is a hard ceiling, not a soft target. We do
-			// not fall back to a fresh allocator or compact here, see
-			// the footprint analysis on `growableSabAllocator`. A real workload
-			// uses ~16 MiB of the 256 MiB cap and columns never grow, so
-			// reaching this throw means something upstream is creating entities
-			// without bound (or `maxBytes` was set too low for an intentionally
-			// huge world). Treat it as a fatal to diagnose, not a limit to
-			// route around.
+			// not fall back to a fresh allocator or compact here. A real
+			// workload sits far below the default cap, and its columns stop
+			// growing, so reaching this throw means something upstream creates
+			// entities without bound, or `maxBytes` was set too low for an
+			// intentionally huge world. Treat it as a fatal to diagnose, not a
+			// limit to route around.
 			throw new StoreCapExceededError(
 				`${label}: requested ${bytes} bytes exceeds the by-design ` +
 					`maxBytes cap of ${maxBytes}. This is a hard ceiling with no ` +
-					`grow-beyond-cap fallback; a real workload stays ~16 MiB. ` +
-					`Reaching it signals runaway entity/column growth upstream, ` +
-					`diagnose that rather than raising the cap blindly.`,
+					`grow-beyond-cap fallback. Reaching it signals runaway entity ` +
+					`or column growth upstream, so diagnose that rather than ` +
+					`raising the cap blindly.`,
 				bytes,
 				maxBytes
 			);
@@ -232,17 +231,16 @@ function createSingleBufferAllocator(
 
 /**
  * Allocator that backs the SAB by a single growable `SharedArrayBuffer`
- * (created with `{ maxByteLength: maxBytes }`). First call allocates
- * subsequent calls `.grow(bytes)` the existing buffer and return it.
+ * (created with `{ maxByteLength: maxBytes }`). The first call allocates. A
+ * later call grows the existing buffer and returns it.
  *
- * Javascriptcore pays for the growth. JavaScriptCore has no fast
- * store path for a TypedArray view over a growable `SharedArrayBuffer`. A
- * column read costs what a fixed buffer costs, but every column write costs
- * several times more. A system that writes a column in a loop is thus much
- * slower here than the same system on the heap profile. The cost is per access
- * and not per byte, so a small world pays the same multiple as a large one. V8
- * shows no such difference at the time of measurement. Safari and Bun are
- * JavaScriptCore.
+ * JavaScriptCore pays for the growth. It has no fast store path for a
+ * TypedArray view over a growable `SharedArrayBuffer`. A column read costs what
+ * a fixed buffer costs, but every column write costs far more. A system that
+ * writes a column in a loop is thus much slower here than the same system on
+ * the heap profile. The cost is per access and not per byte, so a small world
+ * pays the same penalty as a large one. V8 shows no such difference at the time
+ * of measurement. Safari and Bun are JavaScriptCore.
  *
  * Use `fixedSabAllocator` if you need a shared buffer and your code runs on
  * JavaScriptCore. It reserves the cap at construction and keeps the fast store
@@ -257,39 +255,29 @@ function createSingleBufferAllocator(
  * Sizing: `maxBytes` is committed *virtual* memory, not resident ram,
  * physical pages fault in lazily as the SAB actually grows. A larger cap costs
  * more time per allocation than a smaller one, because V8 does per-byte
- * bookkeeping when it constructs the buffer. The cost increases with the cap, so
- * a 1 GiB cap is the slowest of the sizes we measured and a 1 MiB cap the
- * quickest. A caller with a bigger world can pass a larger cap. A caller that
- * stays under the 256 MiB default keeps the quicker Store construction.
+ * bookkeeping when it constructs the buffer. A caller with a bigger world can
+ * pass a larger cap. A caller that stays under the 256 MiB default keeps the
+ * quicker Store construction.
  *
  * The 256 MiB default is a hard design ceiling, not a soft target, and
  * exceeding it is intended to be fatal. There is deliberately no
  * grow-beyond-cap fallback or compaction pass (see the loud
  * note at the `bytes > maxBytes` throw below). If you are here because
  * a workload died at the cap and you are tempted to add a fresh-allocator
- * realloc fallback: don't, unless the numbers below have changed. They
- * say the cap is structurally unreachable for a real workload.
+ * realloc fallback: don't. The cap is structurally out of reach for a real
+ * workload.
  *
- * Measured footprint of a real 2-party workload (instrumented, 2026-05
- * do not trust the old "~500 archetypes × 64-capacity ≈ 2 MiB" figure
- * that used to live here. It was wrong on every term):
- *   - Total SAB capacity ≈ 16.2 MiB, ~6% of the cap.
- *   - ~12 MiB of that is the entity-index region's *virtual* reservation
- *     (`ENTITY_INDEX_DEFAULT_CAPACITY = 1<<20` slots × 12 B); only ~12 KiB
- *     of it is physically resident for a 1000-entity workload.
- *   - Only ~5 archetypes are prewarmed (no lazy archetypes), each at
- *     `DEFAULT_COLUMN_CAPACITY = 1024` rows. Not 64. Live column data is
- *     ~0.1 MiB. A fully-populated entity row is ~49 B.
- *   - Columns never trigger a grow: 1024 initial capacity already covers the
- *     ~1000-row budget, so the doubling + in-place hole tax never fires on
- *     the hot path.
- * The entity-ID space itself caps total live entities at `1<<20` ≈ 1M
- * (20-bit index in `EntityID`). Even at that absolute ceiling, ~1M rows
- * × 49 B × ~3 (post-double capacity + abandoned holes) ≈ ~150 MiB columns
- * + 12 MiB index, the workload still lands under 256 MiB. You cannot reach
- * the cap without first exhausting the entity-ID space. Hitting it
- * therefore signals a real defect upstream (runaway entity creation), not
- * a sizing shortfall to paper over.
+ * Why it is out of reach. The entity-index region dominates the footprint, and
+ * it is a virtual reservation of `ENTITY_INDEX_DEFAULT_CAPACITY` (1<<20) slots
+ * of `ENTITY_INDEX_BYTES_PER_SLOT` each, of which only the touched pages are
+ * resident. Live column data is a small part beside it, because an archetype
+ * is prewarmed at `DEFAULT_COLUMN_CAPACITY` rows and a real world stays inside
+ * that, so a column grow never fires on the hot path. The entity-id space caps
+ * live entities at `1<<20` (the 20-bit index in `EntityID`). Even at that
+ * ceiling, the columns plus the index still land under the default cap. You
+ * cannot reach the cap without first exhausting the entity-id space. Hitting
+ * it therefore signals a real defect upstream (runaway entity creation), not a
+ * sizing shortfall to paper over.
  *
  * Cited verification: a Bun runtime check
  * confirms `new Int32Array(buffer, off, len)` retains identical byteOffset,
@@ -360,8 +348,8 @@ export function growableSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPl
  *
  *   - Memory cost is unchanged: a fixed `ArrayBuffer(maxBytes)` faults pages in
  *     lazily (untouched pages cost no RSS), exactly like the resizable buffer's
- *     `maxByteLength` reservation, a 256 MiB reservation on a 1000-entity world
- *     stays a few MiB resident, the same as the old resizable buffer.
+ *     `maxByteLength` reservation. A large reservation on a small world stays
+ *     small in resident memory, the same as the old resizable buffer.
  *   - same 256 MiB default cap with hard-ceiling semantics: a request
  *     past `maxBytes` throws `StoreCapExceededError`, runaway growth signal,
  *     not a limit to route around.
@@ -388,8 +376,8 @@ export function heapArrayBufferAllocator(
 			// logic ever changes.
 			growTo: () => {
 				throw new Error(
-					"heap_arraybuffer_allocator: the heap buffer is fixed at maxBytes and must " +
-						"never grow, growth relocates columns within the buffer, not the buffer itself"
+					"heapArrayBufferAllocator: the heap buffer is fixed at maxBytes and must " +
+						"never grow. Relocate columns within the buffer instead of resizing it."
 				);
 			}
 		},
@@ -406,7 +394,7 @@ export function heapArrayBufferAllocator(
  *
  * Why fixed, not growable: JavaScriptCore has no fast store path for a
  * TypedArray view over a **growable** `SharedArrayBuffer`. A column read there
- * costs what a fixed buffer costs, but every column write costs several times
+ * costs what a fixed buffer costs, but every column write costs far
  * more, so an iteration-bound system that updates a column is far slower on
  * JavaScriptCore than the same system on the heap profile. Safari and Bun are
  * JavaScriptCore. V8 shows no such difference at the time of measurement, so
@@ -440,8 +428,8 @@ export function fixedSabAllocator(
 			// is created at the cap, and a request past the cap throws first.
 			growTo: () => {
 				throw new Error(
-					"fixed_sab_allocator: the buffer is fixed at maxBytes and must never grow, " +
-						"growth relocates columns within the buffer, not the buffer itself"
+					"fixedSabAllocator: the buffer is fixed at maxBytes and must never grow. " +
+						"Relocate columns within the buffer instead of resizing it."
 				);
 			}
 		},
@@ -465,9 +453,9 @@ export function fixedSabAllocator(
  *
  * This is the **opt-in storage backing for the WASM path**. A consumer
  * that attaches a WASM `ComputeBackend` passes
- * `bufferAllocator: wasmMemoryAllocator(memory)` so the Zig systems read and write
- * the same bytes the host's columns live in, zero-copy across the FFI boundary.
- * It is not a match-context assumption. A pure-TS game omits `bufferAllocator`
+ * `bufferAllocator: wasmMemoryAllocator(memory)` so the module's systems read
+ * and write the same bytes the host's columns live in, zero-copy across the FFI
+ * boundary. A pure-TS world omits `bufferAllocator`
  * and gets the default, `DEFAULT_SAB_ALLOCATOR`, a fresh `SharedArrayBuffer`
  * per alloc. Or it opts into `growableSabAllocator` for the in-place fast path,
  * with no WASM module at all. "The SAB is the WebAssembly.Memory" is thus a
@@ -522,7 +510,7 @@ export function wasmMemoryAllocator(memory: WebAssembly.Memory): InPlaceBufferAl
 			// reported as unknowable (`null`), the caller declared it at
 			// `new WebAssembly.Memory({ maximum })` time.
 			new StoreCapExceededError(
-				`wasm_memory_allocator: memory.grow(${additionalPages}) failed ` +
+				`wasmMemoryAllocator: memory.grow(${additionalPages}) failed ` +
 					`(current=${current} bytes, requested=${bytes} bytes, maximum may be reached)`,
 				bytes,
 				null,

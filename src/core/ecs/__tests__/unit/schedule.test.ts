@@ -40,7 +40,7 @@ describe("Schedule", () => {
 	// Basic add, has and remove
 	//=========================================================
 
-	it("add_systems and has_system", () => {
+	it("addSystems and hasSystem", () => {
 		const schedule = new Schedule();
 		const sys = makeSystem();
 
@@ -50,7 +50,7 @@ describe("Schedule", () => {
 		expect(schedule.hasSystem(sys)).toBe(true);
 	});
 
-	it("remove_system removes from schedule", () => {
+	it("removeSystem removes from schedule", () => {
 		const schedule = new Schedule();
 		const sys = makeSystem();
 
@@ -60,14 +60,14 @@ describe("Schedule", () => {
 		expect(schedule.hasSystem(sys)).toBe(false);
 	});
 
-	it("remove_system is a no-op for unscheduled system", () => {
+	it("removeSystem is a no-op for unscheduled system", () => {
 		const schedule = new Schedule();
 		const sys = makeSystem();
 
 		expect(() => schedule.removeSystem(sys)).not.toThrow();
 	});
 
-	it("get_all_systems returns all scheduled systems", () => {
+	it("getAllSystems returns all scheduled systems", () => {
 		const schedule = new Schedule();
 		const a = makeSystem();
 		const b = makeSystem();
@@ -112,19 +112,19 @@ describe("Schedule", () => {
 	// hasFixedSystems
 	//=========================================================
 
-	it("has_fixed_systems returns false when no systems registered", () => {
+	it("hasFixedSystems returns false when no systems registered", () => {
 		const schedule = new Schedule();
 		expect(schedule.hasFixedSystems()).toBe(false);
 	});
 
-	it("has_fixed_systems returns true after adding a system", () => {
+	it("hasFixedSystems returns true after adding a system", () => {
 		const schedule = new Schedule();
 		const sys = makeSystem();
 		schedule.addSystems(SCHEDULE.FIXED_UPDATE, sys);
 		expect(schedule.hasFixedSystems()).toBe(true);
 	});
 
-	it("has_fixed_systems returns false after removing the only system", () => {
+	it("hasFixedSystems returns false after removing the only system", () => {
 		const schedule = new Schedule();
 		const sys = makeSystem();
 		schedule.addSystems(SCHEDULE.FIXED_UPDATE, sys);
@@ -230,7 +230,7 @@ describe("Schedule, system sets", () => {
 	// Set ordering expands to per-member edges
 	//=========================================================
 
-	it("configure_set before: every member of A runs before every member of B", () => {
+	it("configureSet before: every member of A runs before every member of B", () => {
 		const schedule = new Schedule();
 		const order: string[] = [];
 		const A = systemSet("A");
@@ -258,7 +258,7 @@ describe("Schedule, system sets", () => {
 		expect(Math.max(idx("a1"), idx("a2"))).toBeLessThan(Math.min(idx("b1"), idx("b2")));
 	});
 
-	it("configure_set after: B-after-A is equivalent to A-before-B", () => {
+	it("configureSet after: B-after-A is equivalent to A-before-B", () => {
 		const schedule = new Schedule();
 		const order: string[] = [];
 		const A = systemSet("A");
@@ -313,7 +313,7 @@ describe("Schedule, system sets", () => {
 		expect(order).toEqual(["solo"]);
 	});
 
-	it("configure_set after add_systems invalidates the sort cache", () => {
+	it("configureSet after addSystems invalidates the sort cache", () => {
 		const schedule = new Schedule();
 		const A = systemSet("A");
 		const B = systemSet("B");

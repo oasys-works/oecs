@@ -89,7 +89,7 @@ export interface QueryCacheEntry {
 }
 
 /** One owner for every query-resolution cache. Previously the dedup
- * bucket map lived on `ECS` while `Query` populated eleven composition maps
+ * bucket map lived on `ECS` while `Query` populated the composition maps
  * declared on the resolver interface, ownership split across two modules.
  * All entries are structural (a query is minted once per unique term set and
  * lives for the world's lifetime. Components and queries are never
@@ -142,8 +142,8 @@ export class QueryCache {
 	// here: a term the plugin drops takes its queries with it.
 	public readonly whereSingle: WeakMap<ArchetypeTerm, Map<number, Query<any>>> = new WeakMap();
 
-	/** Dedup lookup: bucket scan with full mask equality (buckets are
-	 * typically 1 or 2 entries). */
+	/** Dedup lookup: bucket scan with full mask equality. A bucket holds few
+	 * entries, so the scan is cheap. */
 	public findDedup(
 		key: number,
 		include: BitSet,

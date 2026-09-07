@@ -1,5 +1,5 @@
 /**
- * Batch-4 API additions (combinators + dispose):
+ * Total probes, query singletons, run-condition combinators and dispose:
  *  - total `has*` probes + `tryGetField` (dead or missing → undefined, no throw)
  *  - `Query.firstEntity` and `Query.singleEntity`
  *  - host-side `ecs.refRead` parity with `ctx.refRead`

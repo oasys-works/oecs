@@ -38,7 +38,7 @@ function getStore(world: ECS): Store {
 	return (world as unknown as { _store: Store })._store;
 }
 
-describe("Query.for_each re-entrancy", () => {
+describe("Query.forEach re-entrancy", () => {
 	it("nested count() after a 1→0 crossing does not skip a still-non-empty archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -90,7 +90,7 @@ describe("Query.for_each re-entrancy", () => {
 		for (const a of startNonEmpty) expect(visited.has(a)).toBe(true);
 	});
 
-	it("nested for_each after a 0→non-zero crossing does not spuriously visit a freshly-filled archetype", () => {
+	it("nested forEach after a 0→non-zero crossing does not spuriously visit a freshly-filled archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const A = world.registerComponent(Tag);

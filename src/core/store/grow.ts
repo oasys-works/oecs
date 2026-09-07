@@ -99,7 +99,7 @@ interface GrowTarget {
  * Why this is needed: the realloc path (below) snapshots every archetype's
  * live columns, allocates a fresh whole-store SAB, and copies it all back.
  * O(total-live-data) per grow, even though only one archetype overflowed.
- * That relayout of the whole store is what made `frame_loop` much slower. A hot
+ * That relayout of the whole store is what made a frame much slower. A hot
  * archetype that becomes larger in steps fires one grow at each step, and each
  * grow copies every other archetype again.
  *
@@ -115,7 +115,7 @@ interface GrowTarget {
  * Tradeoff: the grown archetype's previous column region is abandoned (a
  * hole). Geometric doubling bounds the wasted bytes by the archetype's
  * final live size. The growable SAB only ever grows, so holes are not
- * reclaimed within an allocator's lifetime. That suits a match-scoped
+ * reclaimed within an allocator's lifetime. That suits a bounded-lifetime
  * world, where an archetype reaches a steady capacity and stops growing.
  * A compaction pass could reclaim them later.
  */
@@ -330,7 +330,7 @@ export function growColumnStore(
 	// When the allocator keeps views valid across grow (`isInPlace`) and is
 	// the same one this store was built with, relocate only the growing
 	// archetypes to the SAB tail instead of reallocating + snapshotting the
-	// whole store. This is the fix for the frame-loop regression, see
+	// whole store. This is the fix for the per-frame regression, see
 	// `growColumnStoreInPlace`.
 	if (
 		allocator?.isInPlace === true &&

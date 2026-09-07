@@ -13,13 +13,13 @@ import { ECS_ERROR, isEcsError } from "../../utils/error";
 
 const BAD = [0, -1, -1 / 60, NaN, Infinity, -Infinity];
 
-describe("ECS, fixed_timestep validation", () => {
+describe("ECS, fixedTimestep validation", () => {
 	for (const bad of BAD) {
-		it(`constructor rejects fixed_timestep = ${bad}`, () => {
+		it(`constructor rejects fixedTimestep = ${bad}`, () => {
 			expect(() => new ECS({ fixedTimestep: bad })).toThrow(/fixedTimestep must be/);
 		});
 
-		it(`setter rejects fixed_timestep = ${bad}`, () => {
+		it(`setter rejects fixedTimestep = ${bad}`, () => {
 			const w = new ECS();
 			const before = w.fixedTimestep;
 			expect(() => {
@@ -62,9 +62,9 @@ describe("ECS, fixed_timestep validation", () => {
 // fixedTimestep set. `0`, `-1`, `NaN`, `-Infinity` are shared.
 const BAD_MAX_STEPS = [0, -1, 1.5, NaN, Infinity, -Infinity];
 
-describe("ECS, max_fixed_steps validation", () => {
+describe("ECS, maxFixedSteps validation", () => {
 	for (const bad of BAD_MAX_STEPS) {
-		it(`constructor rejects max_fixed_steps = ${bad}`, () => {
+		it(`constructor rejects maxFixedSteps = ${bad}`, () => {
 			expect(() => new ECS({ maxFixedSteps: bad })).toThrow(/maxFixedSteps must be/);
 		});
 	}

@@ -84,8 +84,8 @@ has(src, def): boolean;
 targetOf(src, def): EntityID | undefined;   // one target (an exclusive relation)
 targetsOf(src, def): EntityID[];            // each target, ascending by id
 sourcesOf(tgt, def): EntityID[];            // the reverse index: the sources that point at tgt, ascending
-pairsOf(def): [EntityID, EntityID][];       // each (source, target) pair, the (R, *) wildcard, low frequency
-sourcesOfAny(tgt): [RelationDef, EntityID][];  // each (relation, source) at tgt, the (*, T) wildcard, low frequency
+pairsOf(def): readonly (readonly [EntityID, EntityID])[];    // each (source, target) pair, the (R, *) wildcard, low frequency
+sourcesOfAny(tgt): readonly (readonly [RelationDef, EntityID])[];  // each (relation, source) at tgt, the (*, T) wildcard, low frequency
 ```
 
 - `targetOf` is for an exclusive relation, and the compiler holds you to that.

@@ -85,7 +85,7 @@ function specFromLayouts(
 	};
 }
 
-describe("Archetype.from_column_store", () => {
+describe("Archetype.fromColumnStore", () => {
 	it("builds an Archetype whose columns are SAB views", () => {
 		const layouts = [makeLayout(1, ["x", "y"], "f64")];
 		const columnStore = createColumnStore([specFromLayouts(0, 16, layouts)]);
@@ -136,7 +136,7 @@ describe("Archetype.from_column_store", () => {
 	});
 });
 
-describe("Archetype.from_column_store parity with heap-backed Archetype", () => {
+describe("Archetype.fromColumnStore parity with heap-backed Archetype", () => {
 	const heapFactory: ColumnFactory = (_cid, _fidx, tag) => new TypedArrayFor[tag](64);
 
 	function buildPair(rowCapacity: number): { heap: Archetype; buffer: Archetype } {
@@ -176,7 +176,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		a.swapRemoveRow(1);
 	}
 
-	it("entity_count and column state match after add, write and remove sequence", () => {
+	it("entityCount and column state match after add, write and remove sequence", () => {
 		const { heap, buffer } = buildPair(8);
 		applyOps(heap);
 		applyOps(buffer);
@@ -186,7 +186,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(Array.from(buffer.rowEntityIds)).toEqual(Array.from(heap.rowEntityIds));
 	});
 
-	it("read_field round-trips through SAB columns", () => {
+	it("readField round-trips through SAB columns", () => {
 		const layouts = [makeLayout(1, ["x", "y"], "f64")];
 		const columnStore = createColumnStore([specFromLayouts(0, 4, layouts)]);
 		const a = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0);
@@ -198,7 +198,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(a.readField(0, compId(1), "y")).toBeCloseTo(-7.5);
 	});
 
-	it("get_column (mutable) returns the SAB view (writes visible in the SAB)", () => {
+	it("getColumn (mutable) returns the SAB view (writes visible in the SAB)", () => {
 		const layouts = [makeLayout(1, ["x"], "f32")];
 		const columnStore = createColumnStore([specFromLayouts(0, 4, layouts)]);
 		const a = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0);
@@ -217,7 +217,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(fresh[1]).toBe(22);
 	});
 
-	it("add_entities bulk-zero-fills SAB-backed columns", () => {
+	it("addEntities bulk-zero-fills SAB-backed columns", () => {
 		const layouts = [makeLayout(1, ["x", "y"], "i32")];
 		const columnStore = createColumnStore([specFromLayouts(0, 8, layouts)]);
 		const a = Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0);
@@ -236,7 +236,7 @@ describe("Archetype.from_column_store parity with heap-backed Archetype", () => 
 		expect(Array.from(a.flatColumns[1].buf.subarray(0, 4))).toEqual([43, 0, 0, 0]);
 	});
 
-	it("bulk_move_all_from copies between two SAB-backed archetypes", () => {
+	it("bulkMoveAllFrom copies between two SAB-backed archetypes", () => {
 		const layoutsSrc = [makeLayout(1, ["x"], "i32")];
 		const layoutsDst = [makeLayout(1, ["x"], "i32")];
 

@@ -58,7 +58,7 @@ Each directory has a `README.md` file with more data about the tool.
 | file | function |
 | --- | --- |
 | `dist.mjs` | Makes the artifacts of the package, and copies them for one tool. `ab/` and `vs/` use it. |
-| `build.mjs` | Makes one ESM bundle of `src/index.ts` with esbuild. The correctness tools use it. |
+| `build.mjs` | Makes one ESM bundle with esbuild. The entry is a generated shim. It re-exports `src/index.ts` and the snapshots, events, relations and observers plugin factories, so a tool can install any subsystem. The correctness tools use it. |
 | `suite.mjs` | Holds the benchmark cases. `run.mjs` and `ab/` use the same cases. |
 | `harness.mjs` | Does the warmup and the timed samples for `run.mjs`. |
 | `run.mjs` | Measures one build. It can also keep a baseline, and compare with a baseline. |
@@ -82,7 +82,7 @@ node bench/ab/ref.mjs --null                  # calibrate the comparison equipme
 node bench/ab/ref.mjs                         # compare the working tree with HEAD
 node bench/fuzz.mjs 1 4000                    # 4000 random operations, from seed 1
 node bench/fuzz.mjs --prod 1 4000             # the same seeds, against the shipped build
-node bench/vs/vs.mjs --rounds 9               # compare oecs with the other libraries
+node bench/vs/vs.mjs --rounds 10              # compare oecs with the other libraries
 node bench/net-oracle/run.mjs                 # find errors with the reference model
 node bench/net-oracle/run.mjs --prod          # the same, against the shipped build
 node bench/net-oracle/run.mjs --stress        # large nets, the fingerprint of every agent at each tick
@@ -94,8 +94,8 @@ pnpm exec vitest run --config bench/net-oracle/vitest.config.ts
 ```
 
 Use the same filter for a calibration and for the comparison that follows it. Use a
-number of rounds that divides by the number of libraries for `vs/`, and an even
-number of rounds for `ab/`. Both tools give a warning if you do not.
+number of rounds that is a multiple of the number of entries in `vs/`, which is ten,
+and an even number of rounds for `ab/`. Both tools give a warning if you do not.
 
 Add `--dev` to `node bench/run.mjs` to give the guards permission to run. Do not
 compare a run that has `--dev` with a run that does not. The guards do work, and

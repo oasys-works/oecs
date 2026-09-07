@@ -1,10 +1,10 @@
 /**
  * Shared test helpers for the ECS tests in this directory.
  *
- * `SystemAccessDeclaration` is mandatory on every
- * `registerSystem` config and validates it at runtime in __DEV__. Tests
- * generally don't care about precise access tracking. They only want a
- * system that's allowed to read and write whatever components are in scope.
+ * Every `registerSystem` config carries a `SystemAccessDeclaration`, and the
+ * world checks it at runtime under __DEV__. Most tests here care about
+ * something else. They want a system that may read and write whatever
+ * components are in scope.
  *
  * `openAccess(...defs)` builds a permissive declaration for the supplied
  * component handles: every component is in `reads + writes` (so reads,

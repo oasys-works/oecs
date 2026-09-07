@@ -28,7 +28,7 @@
 
 // Byte-layout constants re-exported from `./vendored_abi/abi`, which owns them
 // and maintains them by hand. No generator produces them. Re-exported here so
-// `./descriptor` importers and the `core/buffer` barrel keep the same surface.
+// `./descriptor` importers and the `core/store` barrel keep the same surface.
 // Golden bytes in `__tests__/descriptor.test.ts` pin the values.
 //
 //   - COLUMN_DESCRIPTOR_BYTES and _OFFSETS            16-byte per-column record
@@ -100,11 +100,12 @@ export const TYPED_ARRAY_TAG_TO_TYPE_TAG = {
 
 // ───────────────────────── ColumnDescriptor ─────────────────────────────
 //
-// 16 bytes total, matches the Zig `extern struct` in `abi.zig`. Padding is
-// explicit there (`_pad` and `_pad2`), alignment-friendly layout means a Zig
-// `*ColumnDescriptor` and the TS `DataView` see the same byte sequence on every
-// host. `COLUMN_DESCRIPTOR_BYTES` and `COLUMN_DESCRIPTOR_OFFSETS` are generated
-// (see the import block above). The offset table skips the pad bytes.
+// 16 bytes total, matching the extern struct a module-side twin declares.
+// Padding is explicit there, and the alignment-friendly layout means a module's
+// pointer and the TS `DataView` see the same byte sequence on every host.
+// `COLUMN_DESCRIPTOR_BYTES` and `COLUMN_DESCRIPTOR_OFFSETS` come from the
+// import block above, which maintains them by hand. The offset table skips the
+// pad bytes.
 
 export interface ColumnDescriptor {
 	readonly componentId: number;
@@ -123,7 +124,7 @@ export function writeColumnDescriptor(view: DataView, off: number, c: ColumnDesc
 	view.setUint8(off + COLUMN_DESCRIPTOR_OFFSETS.type_tag, c.typeTag);
 	// Pad bytes [off+5..off+8) are not touched. Buffers must be zeroed at
 	// allocation (SAB and ArrayBuffer both zero-initialise), so the pad
-	// region stays at 0x00, matching the fixture and the Zig _pad fields.
+	// region stays at 0x00, matching the fixture and the twin's pad fields.
 	view.setUint32(off + COLUMN_DESCRIPTOR_OFFSETS.byte_off, c.byteOff, true);
 	view.setUint16(off + COLUMN_DESCRIPTOR_OFFSETS.stride, c.stride, true);
 }
@@ -156,7 +157,7 @@ export function readColumnDescriptor(view: DataView, off: number): ColumnDescrip
 
 /** Number of distinct components the cross-language ECS supports:
  * `COMPONENT_MASK_WORDS × 32` bits in the SAB archetype descriptor mask. The
- * Zig side matches archetypes purely on this mask, so a component whose ID is
+ * module side matches archetypes purely on this mask, so a component whose id is
  * ≥ this limit would be invisible there while the heap-side `BitSet` stayed
  * correct, silently conflating archetypes that differ only in such a
  * component. `Store.registerComponent` enforces this as a hard registration
@@ -172,8 +173,8 @@ export interface ArchetypeDescriptor {
 	readonly componentMask: readonly number[];
 	readonly rowCount: number;
 	readonly rowCapacity: number;
-	/** Enabled-row count `≤ row_count`. Per-row entity-scan loops in
-	 * the WASM sim bound on this so disabled entities (swapped to the tail
+	/** Enabled-row count `≤ row_count`. A compute backend's per-row entity-scan
+	 * loops bound on this so disabled entities (swapped to the tail
 	 * `[enabled_count, row_count)`) are not simulated. Row-indexed cross-entity
 	 * reads still use `row_count`. */
 	readonly enabledCount: number;
@@ -263,8 +264,8 @@ export function readArchetypeDescriptor(
 // Component-mask matching (build a mask from component IDs, superset test)
 // is `BitSet`'s job (`../../type_primitives`), the same structure the
 // heap-side archetype signature uses. The descriptor's `component_mask` is the
-// raw wire form (a `COMPONENT_MASK_WORDS`-word array mirroring the SAB bytes);
-// consumers that need to match wrap it in a `BitSet` and call `.contains(...)`.
+// raw wire form, a `COMPONENT_MASK_WORDS`-word array mirroring the SAB bytes.
+// A consumer that needs to match wraps it in a `BitSet` and calls `.contains`.
 
 // ───────────────────────── Layout descriptor region ─────────────────────────
 //

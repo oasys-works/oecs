@@ -1,10 +1,10 @@
 /**
  * Sparse storage class, determinism surface.
  *
- * Brings the sparse store into `stateHash` + snapshot/restore. The load-
+ * Brings the sparse store into `stateHash`, snapshot and restore. The load-
  * bearing property is **canonical ordering**: the sparse store iterates in
  * SparseMap insertion and swap order, so the determinism paths sort by source
- * entity index before hashing/serializing. These tests pin the
+ * entity index before they hash or serialize. These tests pin the
  * acceptance criteria:
  *
  *  - snapshot → restore round-trips membership + data with full equality.
@@ -40,7 +40,7 @@ const Hp = { hp: "i32" } as const;
 // Mixed field widths so the hash fold covers more than one field per row.
 const Cooldown = { ready_at: "i16", charges: "i32" } as const;
 
-describe("sparse state_hash, canonical ordering", () => {
+describe("sparse stateHash, canonical ordering", () => {
 	it("is independent of sparse insertion order", () => {
 		const a = capStore({ deterministic: true });
 		const b = capStore({ deterministic: true });

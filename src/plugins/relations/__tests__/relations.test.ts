@@ -1,13 +1,13 @@
 /**
  * Relations, (relation, target) pairs on the sparse storage class.
  *
- * Covers the issue's acceptance criteria:
- *  - register exclusive + multi-target relations. Add and remove pairs. Query
- *    forward (`targetOf` and `targetsOf`) and reverse (`sourcesOf`),
+ * What this file covers:
+ *  - register exclusive and multi-target relations. Add and remove pairs. Query
+ *    forward (`targetOf` and `targetsOf`) and reverse (`sourcesOf`)
  *  - exclusive: adding a second target replaces the first (one per source)
  *  - the reverse index stays consistent through add, remove, and re-target
- *  - add or remove of a pair causes no archetype transition (`archetype_count`
- *    and the source's `archetype_id` stay put);
+ *  - add or remove of a pair causes no archetype transition, so `archetype_count`
+ *    and the source's `archetype_id` stay put
  *  - consistency after churn (random add, remove and re-target), incl. destroy purge.
  */
 
@@ -111,7 +111,7 @@ describe("ECS relations, exclusive", () => {
 	// Dev-build contract: a dead src/tgt is caller error and throws here. The
 	// production no-op + no-leak branch is covered separately, against a
 	// `__DEV__: false` bundle, in relations_prod_guard.test.ts. Uses the
-	// Store directly for an *immediate* destroy (ECS.destroyEntity is deferred,
+	// Store directly for an immediate destroy (ECS.destroyEntity is deferred,
 	// so the handle would still be alive until flush).
 	it("throws on a dead source or target, leaving the reverse index clean", () => {
 		const store = capStore({ deterministic: true });
@@ -205,7 +205,7 @@ describe("relations registration + validation", () => {
 		).toThrow();
 	});
 
-	it("target_of throws on a multi-target relation (use targets_of)", () => {
+	it("targetOf throws on a multi-target relation (use targetsOf)", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
@@ -302,11 +302,11 @@ describe("relations stay consistent through churn + destroy", () => {
 		}
 	});
 
-	it("exclusive relations fold into state_hash + snapshot for free (inherited)", () => {
+	it("exclusive relations fold into stateHash + snapshot for free (inherited)", () => {
 		// Exclusive targets live in the sparse field, so they ride the sparse
 		// determinism surface with no extra wiring, two worlds with identical
 		// pairs reached by different add and re-target histories hash equal, and the
-		// pairs round-trip through snapshot/restore.
+		// pairs round-trip through snapshot and restore.
 		const make = () => {
 			const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 			const R = world.relations.register(); // exclusive
@@ -326,7 +326,7 @@ describe("relations stay consistent through churn + destroy", () => {
 
 		expect(w2.world.snapshots.stateHash()).toBe(w1.world.snapshots.stateHash());
 
-		// Snapshot and restore round-trips the exclusive target *and* rebuilds the
+		// Snapshot and restore round-trips the exclusive target and rebuilds the
 		// derived reverse index (which is never serialized).
 		const bytes = w1.world.snapshots.captureSparse();
 		const w3 = make();
@@ -337,7 +337,7 @@ describe("relations stay consistent through churn + destroy", () => {
 		expect(w3.world.snapshots.stateHash()).toBe(w1.world.snapshots.stateHash());
 	});
 
-	it("survives mixed add/remove/re-target churn with a consistent reverse index", () => {
+	it("survives mixed add, remove and re-target churn with a consistent reverse index", () => {
 		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 		const Likes = world.relations.register({ multi: true });
 		const srcs = Array.from({ length: 6 }, () => world.spawn());
@@ -384,14 +384,14 @@ describe("relations stay consistent through churn + destroy", () => {
 });
 
 describe("ECS relations, snapshot and restore rebuilds the derived indices", () => {
-	// The reverse index and the multi forward target sets are *not* in the
+	// The reverse index and the multi forward target sets are not in the
 	// sparse store, so `restoreSparse` must rebuild them: exclusive reverse
 	// from the restored sparse target field, multi forward sets + reverse from
 	// the relation section of the snapshot. Before the rebuild landed, a
 	// restored world hashed equal to the original but `sourcesOf` and multi
 	// `targetsOf` returned empty, silent determinism divergence.
 
-	it("multi: forward sets, reverse index, and state_hash all round-trip", () => {
+	it("multi: forward sets, reverse index, and stateHash all round-trip", () => {
 		const make = () => {
 			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 			const Likes = w.relations.register({ multi: true });
@@ -422,7 +422,7 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 		expect(dst.w.snapshots.stateHash()).toBe(src.w.snapshots.stateHash());
 	});
 
-	it("state_hash distinguishes different multi target sets (folded, not ignored)", () => {
+	it("stateHash distinguishes different multi target sets (folded, not ignored)", () => {
 		const make = () => {
 			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
 			const R = w.relations.register({ multi: true });

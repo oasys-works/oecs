@@ -74,7 +74,7 @@ export class ECSResources {
 		this._store.resources.set(key, value);
 	}
 
-	/** Drop a resource from the world. Access-checked as a *write*
+	/** Drop a resource from the world. Access-checked as a *write*, and it
 	 * fails closed on a missing key. Afterwards the key is free to `register`
 	 * again, the present → absent → present lifecycle. */
 	public remove<T>(key: ResourceKey<T>): void {

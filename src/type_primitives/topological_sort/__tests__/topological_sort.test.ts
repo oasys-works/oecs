@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { topologicalSort } from "../topological_sort";
 
-describe("topological_sort", () => {
+describe("topologicalSort", () => {
   it("returns empty array for empty input", () => {
     const result = topologicalSort([], new Map(), (a, b) => a - b);
     expect(result).toEqual([]);
@@ -88,7 +88,7 @@ describe("topological_sort", () => {
     expect(() => topologicalSort(["A", "B"], edges, () => 0)).toThrow();
   });
 
-  it("cycle error includes node names via node_name param", () => {
+  it("cycle error includes node names via the nodeName argument", () => {
     const edges = new Map<string, string[]>();
     edges.set("A", ["B"]);
     edges.set("B", ["A"]);

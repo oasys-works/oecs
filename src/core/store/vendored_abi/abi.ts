@@ -83,7 +83,7 @@ export const COLUMN_DESCRIPTOR_OFFSETS = {
 // measured from the store base, like every other offset of this version. The
 // table holds one u32 entity id per row, indexed by row, so row `r` names
 // entity `entity_ids[r]`. A module that walks the descriptors can then name
-// the entity it found, which is what a Tier B walker lacks today. Zero means
+// the entity it found, which such a walker cannot do today. Zero means
 // the archetype carries no such table, because zero is never a valid store
 // offset. The header sits at the base, so a real table always starts past it.
 //

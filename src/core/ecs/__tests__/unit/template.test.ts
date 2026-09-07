@@ -87,7 +87,7 @@ describe("template and direct spawn", () => {
 		expect(() => ecs.spawn(p, overrides)).toThrow(/no field/);
 	});
 
-	it("spawn_many bulk-spawns identical entities with correct rows + defaults", () => {
+	it("spawnMany bulk-spawns identical entities with correct rows + defaults", () => {
 		const { ecs, Position, Health } = setup();
 		const p = ecs.template(Position({ x: 1, y: 2 }), Health({ current: 50, max: 50 }));
 		const ids = ecs.spawnMany(p, 500);
@@ -102,7 +102,7 @@ describe("template and direct spawn", () => {
 		}
 	});
 
-	it("spawn_many applies one shared overrides object to every spawned row", () => {
+	it("spawnMany applies one shared overrides object to every spawned row", () => {
 		const { ecs, Position, Health } = setup();
 		const p = ecs.template(Position({ x: 1, y: 2 }), Health({ current: 50, max: 50 }));
 		const ids = ecs.spawnMany(p, 100, { x: 9, current: 25 });
@@ -114,7 +114,7 @@ describe("template and direct spawn", () => {
 		}
 	});
 
-	it("spawn_many overrides take the per-row path when the target holds disabled rows", () => {
+	it("spawnMany overrides take the per-row path when the target holds disabled rows", () => {
 		const { ecs, Position } = setup();
 		const p = ecs.template(Position({ x: 1, y: 2 }));
 		// Force a disabled row in the target archetype so the bulk append can't
@@ -128,7 +128,7 @@ describe("template and direct spawn", () => {
 		}
 	});
 
-	it("spawn_many throws (dev) on ambiguous or unknown override field names", () => {
+	it("spawnMany throws (dev) on ambiguous or unknown override field names", () => {
 		const { ecs, Position, AttackRange, EngageRange } = setup();
 		const dup = ecs.template(AttackRange({ range: 5 }), EngageRange({ range: 7 }));
 		expect(() => ecs.spawnMany(dup, 3, { range: 9 })).toThrow(/ambiguous/);
@@ -137,7 +137,7 @@ describe("template and direct spawn", () => {
 		expect(() => ecs.spawnMany(single, 3, overrides)).toThrow(/no field/);
 	});
 
-	it("spawn_many of 0 returns an empty array and spawns nothing", () => {
+	it("spawnMany of 0 returns an empty array and spawns nothing", () => {
 		const { ecs, Position } = setup();
 		const p = ecs.template(Position);
 		expect(ecs.spawnMany(p, 0)).toEqual([]);
@@ -152,7 +152,7 @@ describe("template and direct spawn", () => {
 		expect(ecs.hasComponent(e, Tag)).toBe(true);
 	});
 
-	it("performs zero archetype transitions (no move_entity_from)", () => {
+	it("performs zero archetype transitions (no moveEntityFrom)", () => {
 		const { ecs, Position, Velocity, Health } = setup();
 		const p = ecs.template(Position, Velocity, Health);
 

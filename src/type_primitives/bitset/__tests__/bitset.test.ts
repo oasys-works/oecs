@@ -180,7 +180,7 @@ describe("BitSet", () => {
     b.set(200); // forces grow
     b.clear(200);
 
-    // Same logical bits despite different _words lengths
+    // Same logical bits despite different `words` lengths
     expect(a.equals(b)).toBe(true);
   });
 
@@ -201,7 +201,7 @@ describe("BitSet", () => {
     expect(a.has(10)).toBe(false);
   });
 
-  it("copy_with_set returns a new bitset with the bit added", () => {
+  it("copyWithSet returns a new bitset with the bit added", () => {
     const a = new BitSet();
     a.set(1);
 
@@ -211,7 +211,7 @@ describe("BitSet", () => {
     expect(a.has(5)).toBe(false);
   });
 
-  it("copy_with_set auto-grows the copy if needed", () => {
+  it("copyWithSet auto-grows the copy if needed", () => {
     const a = new BitSet();
     a.set(0);
 
@@ -220,7 +220,7 @@ describe("BitSet", () => {
     expect(b.has(200)).toBe(true);
   });
 
-  it("copy_with_clear returns a new bitset with the bit removed", () => {
+  it("copyWithClear returns a new bitset with the bit removed", () => {
     const a = new BitSet();
     a.set(1);
     a.set(5);
@@ -273,14 +273,14 @@ describe("BitSet", () => {
   // forEach
   //=========================================================
 
-  it("for_each iterates no bits on empty bitset", () => {
+  it("forEach iterates no bits on empty bitset", () => {
     const bs = new BitSet();
     const bits: number[] = [];
     bs.forEach((b) => bits.push(b));
     expect(bits).toEqual([]);
   });
 
-  it("for_each iterates all set bits in order", () => {
+  it("forEach iterates all set bits in order", () => {
     const bs = new BitSet();
     bs.set(0);
     bs.set(3);
@@ -293,7 +293,7 @@ describe("BitSet", () => {
     expect(bits).toEqual([0, 3, 31, 32, 64]);
   });
 
-  it("for_each handles bits across multiple words", () => {
+  it("forEach handles bits across multiple words", () => {
     const bs = new BitSet();
     bs.set(1);
     bs.set(33);

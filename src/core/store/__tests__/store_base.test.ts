@@ -186,9 +186,9 @@ describe("store base, layout", () => {
 });
 
 describe("store base, the bytes below it", () => {
-	// The collision the probes measured: a module's data segment, shadow stack
-	// and heap base sit at low addresses of the same memory. The store must
-	// never write there, through create, through grow, or through extend.
+	// A module's data segment, its shadow stack and its heap base sit at the low
+	// addresses of the same memory. The store must never write there, through
+	// create, through grow, or through extend.
 	it("a create, a grow and an extend leave every byte below the base untouched", () => {
 		const storeBase = 65536;
 		const allocator = heapArrayBufferAllocator(4 * 1024 * 1024);

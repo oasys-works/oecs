@@ -118,7 +118,7 @@ const thawed = ecs.query(Health).not(Frozen);
 
 A `ComponentDef` is **callable**. `Pos({ x: 10, y: 20 })` gives a bundle, and the spawn and add
 functions that take a variable number of arguments accept a bundle. This is the direct way to write
-an entity with several components, and it is the *typed* attach path for a subset of the values,
+an entity with several components. It is also the *typed* attach path for a subset of the values,
 because the engine writes `0` in each absent field.
 
 ```ts
@@ -338,7 +338,7 @@ read. This avoids an incorrect change detection, *and* it shows your intention.
 
 Each accessor above is also on the host facade, with the same name: `ecs.cursor`, `ecs.refRead`,
 `ecs.getField`. Use the `ctx` form in a system, because it makes the check against the declared
-access (see [§4](#4-declare-the-system-access)).
+access (see [Declare the system access](#4-declare-the-system-access)).
 
 ### `forEachChunk` for the high-frequency loop that writes
 
@@ -373,9 +373,9 @@ posMut.x += vel.vx * dt;
 
 > [!WARNING]
 > **A ref does not survive an archetype transition.** It is safe to hold across the immediate reads
-> and writes inside a system, because structural changes are deferred and the entity cannot move
-> until the flush at the end of the phase. But when the entity gains or loses a component, its row
-> moves. Create the ref again. A ref *is* safe across a growth of the column, because it reads the
+> and writes inside a system. A structural change is deferred, so the entity cannot move until the
+> flush at the end of the phase. But when the entity gains or loses a component, its row moves.
+> Create the ref again. A ref *is* safe across a growth of the column, because it reads the
 > live column backing, which refreshes in place.
 
 ### `ctx.cursor` and `ctx.cursorRead` for many entities by id
@@ -707,9 +707,8 @@ Select the level of detail deliberately:
 > to clear the events, and it throws `OBSERVER_ONSET_EMIT` in development. To make a detected
 > change into an event for the next tick, emit it from a usual system that reads the dirty list.
 
-If you write a component through the **raw** mutable column, and not through `setField` or `ref`,
-an `onSet` observer with entity granularity does not see it, unless you call
-`ctx.markChanged(entity, def)` in the loop.
+An `onSet` observer with entity granularity does not see a write through the **raw** mutable
+column. Call `ctx.markChanged(entity, def)` in the loop, or write through `setField` or `ref`.
 
 ---
 
@@ -744,9 +743,9 @@ because iteration never gives a dead row.
 change its id. The entity stays in the disabled part at the end of its archetype, which is one row
 swap and no transition. Query iteration and `entityCount` of the archetype do not count it.
 `ecs.entityCount` at the level of the world counts each entity that is alive, so it does
-include a disabled entity. Use `disable` instead of a destroy and a new create, for an entity that
-goes in and out of play, such as a bullet from a pool or a unit that you paused. To include such
-entities again, use `.includeDisabled()`. A disabled entity must hold one component or more. An
+include a disabled entity. Use `disable` for an entity that goes in and out of play, instead of a
+destroy and a new create. A bullet from a pool and a unit that you paused are examples. To include
+such entities again, use `.includeDisabled()`. A disabled entity must hold one component or more. An
 *immediate* `ecs.disable` or `ecs.enable` call runs no observer. Only the deferred
 `ctx.commands.disable` and `ctx.commands.enable` do.
 
@@ -842,7 +841,7 @@ if (ctx.readEvents(OnPause).length > 0) { /* the game is paused */ }
 A number field with a brand, such as `EntityID`, comes back from the reader with its brand, and you
 need no cast. An event exists for exactly one frame. For persistent state, use a resource or a
 component, and not an event that you emit again. Do not emit from an `onSet` observer (see
-[§10](#10-observers)).
+[Observers](#10-observers)).
 
 ---
 
@@ -908,9 +907,9 @@ If you need determinism:
   compare it against a literal that you wrote by hand.
 - **Give both instances the same size** before `ecs.snapshots.restore`, and register the same
   components and templates in the same order. The restore validates completely and fails safely
-  before it touches the live state, but only when the set of archetypes and the capacity of the
-  entity index of the target agree. Set the resources again after a restore, because the snapshot
-  does not capture them.
+  before it touches the live state. That holds only when the set of archetypes and the capacity of
+  the entity index of the target agree. Set the resources again after a restore, because the
+  snapshot does not capture them.
 
 Each mutation from a host or a UI crosses one control point. So `replayCommandLog(..., { hash: true })` gives the sequence of `stateHash` values for each tick. A
 replay of the same log must reproduce that sequence, and that equality *is* the test of fidelity.
@@ -990,9 +989,8 @@ new ECS({
 });
 ```
 
-The measurement uses 1,000,000 entities of 7 `f32` fields. Without the pin it is 86.5 bytes for
-each entity. With the pin it is 57.1 bytes. That is a saving of about one third. The speed did not
-change. Refer to [memory](./api/memory.md#set-the-initial-size-of-each-column) for the full table.
+A pin lowers the resident bytes for each entity in a large world. The speed does not change. Refer
+to [memory](./api/memory.md#set-the-initial-size-of-each-column) for the full table.
 
 The byte limit is an **absolute limit**. If you exceed it, it throws `STORE_CAP_EXCEEDED`, and
 there is no alternative that grows past it. Also, the engine reserves the region of the entity index
@@ -1116,13 +1114,13 @@ phase. Carry the value in the `add` or in the `spawnEntry`, or set the field in 
 is the archetype and the row, and it reads the columns live. The next `addComponent` or `despawn`
 call can move the entity away from that cached position. Build each ref again in each frame,
 because the cost is almost zero. A cursor has no such risk, because `at()` finds the position again
-at each call, but a cursor between frames is still a risk, because the component can go away from
+at each call. But a cursor between frames is still a risk, because the component can go away from
 the entity.
 
 **Do not use `getField` in a loop over many entities.** It finds the archetype, the row and the
 name of the field at each call. A cursor that you make outside the loop does that one time for each
 entity. Thus the cursor is much faster at one field, and its advantage becomes larger with each
-added field. Refer to [§6](#6-read-columns-and-write-columns).
+added field. Refer to [Read columns and write columns](#6-read-columns-and-write-columns).
 
 **Do not make a cursor inside the loop that uses it.** `ecs.cursor(def)` allocates. A cursor that
 you make for each entity has the same cost as a ref, and it gives you no advantage. Make the cursor

@@ -52,8 +52,8 @@ export function iqr(xs) {
 
 /**
  * Warm up, then take `samples` timed runs of `fn`. Returns the median and the
- * spread. `fn` must return a value; we consume it so the optimiser cannot
- * delete the work, the study lost one measurement to exactly that (a large
+ * spread. `fn` must return a value, and we consume it so the optimiser cannot
+ * delete the work. The study lost one measurement to exactly that (a large
  * apparent speedup that was V8 removing the slow variant before it ran).
  */
 export function time(fn, { warmup = 5, samples = 15 } = {}) {

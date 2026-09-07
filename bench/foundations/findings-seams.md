@@ -2,6 +2,20 @@
 
 Nothing here was measured. Each statement is marked **tested** (a named test pins it), **read** (read in the source), or **reasoning** (nothing in the tree confirms it). Paths are relative to the repository root. Line numbers describe the tree copied on 2026-09-05.
 
+## Status, what the tree has since overtaken
+
+Read the rest of this file as the state on 2026-09-05. Seven claims below are no longer true of the working tree. Nothing else here was re-checked, so treat every unlisted line number and every unlisted claim as dated.
+
+- **The `storeBase` option landed.** "No prototype exists" and "No test covers a store at a nonzero base, because the option does not exist" are both false. `src/core/store/__tests__/store_base.test.ts` and `src/core/ecs/__tests__/unit/store_base.test.ts` cover it.
+- **The absolute-or-relative decision went to relative.** Every `*_off` in the header and every `byte_off` in a column descriptor is measured from the store base. `capacity` is the store span from that base. `src/core/store/header.ts` states the rule. The open decision below is closed.
+- **`SIM_ABI_VERSION` is 1, not the inert sentinel 0.** Version 1 is the relative-offset schema, and restore and resume reject a version they do not know.
+- **`header.ts` no longer claims Zig-generated constants.** It and `src/core/store/vendored_abi/abi.ts` both say the constants are maintained by hand. The contradiction listed below is gone.
+- **`grow.ts` no longer says no live code writes `row_count`.** Its comment names `Store.publishRowCounts` and the two points where it runs.
+- **A real module now drives the layout.** `src/core/ecs/__tests__/integration/wasm_store_reader.test.ts` runs a checked-in module against a live store. So "every layout test is TypeScript against TypeScript" is false.
+- **`docs/api/parallel.md` no longer says a heap world cannot use a WASM compute backend.** That contradiction is gone too.
+
+A pool of workers ships as well, in `src/plugins/workers/`. It runs one system across workers, so the claim that no test covers two systems running at once still holds.
+
 ## Part A. What lives in the bytes, and what lives in JS
 
 **Conclusion.** The buffer carries the layout and the raw data. Every index that turns a query into a set of rows lives in JS on the main thread. A worker or a module can read columns, the entity index and the archetype masks from the bytes alone. It cannot learn which entity occupies a row, which archetypes a query matches, what changed, or what the frame time step is.

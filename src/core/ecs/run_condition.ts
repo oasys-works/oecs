@@ -5,8 +5,8 @@
  * system (or every member of a SystemSet) runs in its phase. A `false` verdict
  * skips the system body **and** its deferred-op flush contribution that tick,
  * nothing is enqueued, and the schedule does not advance the system's last-run
- * tick, so a skipped tick is indistinguishable from the system being absent
- * that tick (acceptance: `stateHash` identical to manually removing it).
+ * tick. A skipped tick is therefore indistinguishable from the system being
+ * absent that tick, and `stateHash` matches a world the system was removed from.
  *
  * Two hard rules make conditions safe under deterministic lockstep:
  *
@@ -18,10 +18,10 @@
  *
  *  2. **Read-only.** The predicate receives a `ConditionContext`, the read-only
  *     subset of `SystemContext` (`ecsTick` + resource reads), never the
- *     mutation surface. Component reads are expressed by capturing a `Query` in
- *     the closure (e.g. `runIfAnyMatch`); the query's component defs are
- *     declared on `reads` so `accessCheck` and a future parallel scheduler see
- *     them as read edges. The only access a condition can perform *through* the
+ *     mutation surface. A condition expresses a component read by capturing a
+ *     `Query` in the closure (e.g. `runIfAnyMatch`). The query's component defs
+ *     are declared on `reads`, so `accessCheck` and a future parallel scheduler
+ *     see them as read edges. The only access a condition can perform *through* the
  *     context is a resource read, which `accessCheck.enterCondition` validates
  *     against the declared `resourceReads` in `DEV`.
  *
@@ -84,7 +84,7 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
 		// the resource to this exact object, the gate never fires. Usually the
 		// intent was a primitive (enum string or number), warn, don't throw.
 		console.warn(
-			`runIfResourceEq('${(key as unknown as symbol).description ?? "?"}'): 'expected' is an object, comparison is by reference identity (===), so the gate only fires when the resource is set to this exact instance. Prefer a primitive phase value.`
+			`runIfResourceEq('${(key as unknown as symbol).description ?? "?"}'): 'expected' is an object, and the comparison is reference identity. The gate fires only while the resource holds this exact instance. Prefer a primitive phase value.`
 		);
 	}
 	return {
@@ -105,7 +105,7 @@ export function runIfResourceEq<T>(key: ResourceKey<T>, expected: T): RunConditi
  * The normalization isn't cosmetic: `(ecsTick - offset) % n` with a raw
  * `offset ≥ n` (or negative) leans on JS's signed `%` yielding `-0` for a
  * negative multiple (and `-0 === 0`) to stay congruent, correct, but load-
- * bearing on a quirk. Folding `offset` into `[0, n)` up front makes the phase
+ * bearing on a quirk. Folding `offset` into `[0, n)` up front makes the folded offset
  * explicit: the per-tick dividend `ecsTick - phase` may still be negative
  * (when `ecsTick < phase`), but with `phase ∈ [0, n)` it is never a *negative
  * multiple* of `n`. It lands in `[-(n-1), -1]`, which holds no multiple of `n`,
@@ -124,7 +124,7 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
 			`runEveryNTicks: offset must be an integer, got ${offset}`
 		);
 	}
-	// Fold the phase into [0, n) once at construction (handles offset ≥ n and
+	// Fold the offset into [0, n) once at construction (handles offset ≥ n and
 	// negative offset). The per-tick check then never relies on signed-zero.
 	const phase = ((offset % n) + n) % n;
 	return {
@@ -135,9 +135,9 @@ export function runEveryNTicks(n: number, offset = 0): RunCondition {
 
 /**
  * Run the gated system(s) only when a query matches at least one (enabled)
- * entity, flecs `runIf` over a query. The query is captured at config time
- * its component defs are declared as `reads`. `count()` is a membership sum over
- * matching archetypes (no column reads), so it trips no `accessCheck` read.
+ * entity, flecs `runIf` over a query. The query is captured at config time, and
+ * its component defs are declared as `reads`. `entityCount` is a membership sum
+ * over matching archetypes and reads no column, so it trips no `accessCheck` read.
  *
  * The query must be **dense-only**: `entityCount` asserts this in `DEV`
  * (`_assertDenseOnly`), so pass a plain `ecs.query(...)`, a query carrying

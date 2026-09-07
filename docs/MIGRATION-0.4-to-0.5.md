@@ -8,27 +8,27 @@ mechanical rules:
 
 1. **The lifecycle verbs**, `createEntity` becomes `spawn`, `createEntities` becomes `spawnMany`,
    and `destroyEntity` becomes `despawn`. Also, `despawn` on the host is now **immediate**, and not
-   deferred (§1).
+   deferred ([the entity lifecycle](#1-the-lifecycle-of-an-entity-spawn-and-despawn-and-despawn-on-the-host-is-now-immediate)).
 2. **Inside a system**. Each bare deferred function is removed: `ctx.createEntity`,
    `ctx.destroyEntity`, `ctx.addComponent`, `ctx.removeComponent`, `ctx.disable`, and `ctx.enable`.
-   In a system body, a deferred structural operation is on `ctx.commands` alone (§2).
+   In a system body, a deferred structural operation is on `ctx.commands` alone ([`ctx.commands`](#2-inside-a-system-ctxcommands-is-the-only-deferred-surface)).
 3. **Grouped facades**, 29 flat methods move onto `ecs.relations`, `ecs.events`, `ecs.resources`,
    and `ecs.snapshots`. A small number change their name in the move: `snapshot` becomes `capture`,
-   `restoreInto` becomes `restore`, `resource` becomes `get`, and others (§3).
+   `restoreInto` becomes `restore`, `resource` becomes `get`, and others ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 4. **The argument order of `sourcesOf` changed** to `(entity, def)`. At a call site with no types
-   this is a quiet change of behavior. The compiler finds a call site that has types (§4).
+   this is a quiet change of behavior. The compiler finds a call site that has types ([the argument order of `sourcesOf`](#4-the-argument-order-of-sourcesof-from-def-tgt-to-tgt-def)).
 5. **Small renames, and the division of the internal parts**, `query.count()` becomes the
    `query.entityCount` getter. `WorldRestoreError` becomes `ECSRestoreError`.
    `WORLD_SNAPSHOT_VERSION` becomes `ECS_SNAPSHOT_VERSION`. The `export *` at the root became a
    selected list, and the internal parts (`HostCommandDispatcher`, the ring codecs,
-   `resolveECSMemory`, and others) moved to `@oasys/oecs/internal` (§5).
+   `resolveECSMemory`, and others) moved to `@oasys/oecs/internal` ([the small renames](#5-small-renames)).
 
 Everything else did not change. That includes:
 
 - the component operations on the host (`addComponent`, `getField`, `hasComponent`, and others)
 - the queries, and the iteration (`forEach` and `eachChunk`)
 - the sparse operations
-- the observers. Their API did not change, but see §1: an immediate `despawn` on the host no longer
+- the observers. Their API did not change, but see [the entity lifecycle](#1-the-lifecycle-of-an-entity-spawn-and-despawn-and-despawn-on-the-host-is-now-immediate): an immediate `despawn` on the host no longer
   runs `onRemove`
 - the schedule
 - the data, event, and resource surface on the system side (`ctx.emit`, `ctx.read`, `ctx.resource`,
@@ -73,7 +73,7 @@ ecs.isAlive(e);   // false, immediately
 If your 0.4 code depended on the deferred period, and destroyed an entity and then continued to
 read it until the flush, that code now reads a dead entity and throws `ENTITY_NOT_ALIVE` in
 development. Move the reads before the `despawn` call, or use `ctx.commands.despawn` from inside a
-system, which is explicitly deferred (§2).
+system, which is explicitly deferred ([`ctx.commands`](#2-inside-a-system-ctxcommands-is-the-only-deferred-surface)).
 
 An immediate destroy during iteration can make the rows that a running query walks invalid. So **a call to `ecs.despawn` from inside a system body throws in development**, and it names
 `ctx.commands.despawn`. The same development guard covers each immediate structural mutator on the
@@ -160,7 +160,7 @@ flat by design. The **names on the system side, on `ctx.*`, did not change** (`c
 | `ecs.hasRelation(src, def)` | `ecs.relations.has(src, def)` |
 | `ecs.targetOf(src, def)` | `ecs.relations.targetOf(src, def)` |
 | `ecs.targetsOf(src, def)` | `ecs.relations.targetsOf(src, def)` |
-| `ecs.sourcesOf(def, tgt)` | `ecs.relations.sourcesOf(tgt, def)`, **the arguments changed places**. See §4 |
+| `ecs.sourcesOf(def, tgt)` | `ecs.relations.sourcesOf(tgt, def)`, **the arguments changed places**. See [the argument order of `sourcesOf`](#4-the-argument-order-of-sourcesof-from-def-tgt-to-tgt-def) |
 | `ecs.pairsOf(def)` | `ecs.relations.pairsOf(def)` |
 | `ecs.sourcesOfAny(tgt)` | `ecs.relations.sourcesOfAny(tgt)` |
 | `ecs.ancestorsOf(src, def)` | `ecs.relations.ancestorsOf(src, def)` |
@@ -228,7 +228,7 @@ The facades are the exact mirror image of the compile-time surface. `relations.r
 cardinality into the type, and `targetOf`, `ancestorsOf`, `rootOf`, and `cascadeOf` accept an
 exclusive relation alone. The facade classes are exported as **types alone** (`ECSRelations`,
 `ECSEvents`, `ECSResources`, and `ECSSnapshots`), and the facades add no run-time export. But the
-list of run-time exports at the root did change in 0.5.0. See §5.
+list of run-time exports at the root did change in 0.5.0. See [the small renames](#5-small-renames).
 
 ---
 
@@ -274,7 +274,7 @@ const inCtx    = ctx.sourcesOf(parent, ChildOf);
 - **`WorldRestoreError` becomes `ECSRestoreError`**, and **`WORLD_SNAPSHOT_VERSION` becomes
   `ECS_SNAPSHOT_VERSION`**. The last exports with the `World` prefix join the `ECS` vocabulary
   (`ECSOptions`, `ECSError`, and others). The `ecs.snapshots` surface throws the error, and the
-  constant tags its format (§3).
+  constant tags its format ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 - **The root exports are now a selected list, and the internal parts moved to
   `@oasys/oecs/internal`.** The `export *` of 0.4 became an explicit list. The internal parts that
   it made public now import from `@oasys/oecs/internal`, which is unstable and has no semver
@@ -320,7 +320,7 @@ workarounds. Use them as they help you:
   instead of at run time in development.
 - **The lifecycle of the write path**. `uninstallHostCommandSeam(world, queue)`,
   `HostCommandQueue.clear()`, `HostCommandDispatcher.off(opCode)` (the dispatcher class now imports
-  from `@oasys/oecs/internal`, §5), and `HostCommandRecorder.snapshotLog()`.
+  from `@oasys/oecs/internal`, [the small renames](#5-small-renames)), and `HostCommandRecorder.snapshotLog()`.
 - **A `VERSION` export**, and a `"./package.json"` export.
 
 ---
@@ -329,31 +329,31 @@ workarounds. Use them as they help you:
 
 You can find each 0.4 name below with a text search. None of them has an alias in 0.5.
 
-- [ ] `createEntity` → `spawn`. `createEntities` → `spawnMany` (§1).
+- [ ] `createEntity` → `spawn`. `createEntities` → `spawnMany` ([the entity lifecycle](#1-the-lifecycle-of-an-entity-spawn-and-despawn-and-despawn-on-the-host-is-now-immediate)).
 - [ ] `destroyEntity` → `despawn`. Then examine each call site on the host, because `despawn` is now
       **immediate**: nothing may read the entity between the `despawn` call and the old flush point
-      (§1).
+      ([the entity lifecycle](#1-the-lifecycle-of-an-entity-spawn-and-despawn-and-despawn-on-the-host-is-now-immediate)).
 - [ ] `ctx.createEntity()` → `ctx.commands.spawn()`. `ctx.destroyEntity(e)` →
-      `ctx.commands.despawn(e)` (§2).
+      `ctx.commands.despawn(e)` ([`ctx.commands`](#2-inside-a-system-ctxcommands-is-the-only-deferred-surface)).
 - [ ] `registerRelation`, `addRelation`, `removeRelation`, `hasRelation`, `targetOf`, `targetsOf`,
       `pairsOf`, `sourcesOfAny`, `ancestorsOf`, `rootOf`, and `cascadeOf` → `ecs.relations.*` (the
       same name at the end, without the `Relation` part in the first four). `relationCount` →
-      `relations.count`. `compactRelations()` → `relations.compact()` (§3).
+      `relations.count`. `compactRelations()` → `relations.compact()` ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 - [ ] `registerEvent` → `events.register`. `registerSignal` → `events.registerSignal`. `emit` and
-      `read` on the host → `events.emit` and `events.read` (§3).
+      `read` on the host → `events.emit` and `events.read` ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 - [ ] `registerResource` → `resources.register`. `resource` → `resources.get`. `setResource` →
-      `resources.set`. `removeResource` → `resources.remove`. `hasResource` → `resources.has` (§3).
+      `resources.set`. `removeResource` → `resources.remove`. `hasResource` → `resources.has` ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 - [ ] `snapshot()` → `snapshots.capture()`. `restoreInto` → `snapshots.restore`. `snapshotSparse` →
       `snapshots.captureSparse`. `restoreSparse` → `snapshots.restoreSparse`. `stateHash` →
-      `snapshots.stateHash`. `deterministic` → `snapshots.deterministic` (§3).
+      `snapshots.stateHash`. `deterministic` → `snapshots.deterministic` ([the grouped facades](#3-grouped-facades-ecsrelations-ecsevents-ecsresources-and-ecssnapshots)).
 - [ ] `sourcesOf(def, tgt)` → `sourcesOf(tgt, def)`. **Change the places of the arguments** at each
       call site, on the host and on `ctx`. Do not trust a text search alone, because the old order
-      fails with no signal in code that has no types (§4).
-- [ ] `query.count()` → `query.entityCount` (a getter, remove the parentheses) (§5).
+      fails with no signal in code that has no types ([the argument order of `sourcesOf`](#4-the-argument-order-of-sourcesof-from-def-tgt-to-tgt-def)).
+- [ ] `query.count()` → `query.entityCount` (a getter, remove the parentheses) ([the small renames](#5-small-renames)).
 - [ ] `WorldRestoreError` → `ECSRestoreError`. `WORLD_SNAPSHOT_VERSION` → `ECS_SNAPSHOT_VERSION`
-      (§5).
+      ([the small renames](#5-small-renames)).
 - [ ] Each import from the root of `HostCommandDispatcher`, a ring codec, `resolveECSMemory`, the
       codec for a packed `EntityID`, `accessCheck`, or `dispatchTrace` → `@oasys/oecs/internal`
-      (§5).
+      ([the small renames](#5-small-renames)).
 - [ ] Examine each `onRemove` observer for an entity that the host destroyed. An immediate
-      `despawn` no longer runs `onRemove` (§1).
+      `despawn` no longer runs `onRemove` ([the entity lifecycle](#1-the-lifecycle-of-an-entity-spawn-and-despawn-and-despawn-on-the-host-is-now-immediate)).

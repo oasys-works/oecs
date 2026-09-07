@@ -1,11 +1,11 @@
 /**
- * Relations, `addRelation` endpoint-liveness guard in a *production* build.
+ * Relations, `addRelation` endpoint-liveness guard in a production build.
  *
  * `RelationService.addRelation` rejects a dead `src` or `tgt` by throwing in `__DEV__` and
  * no-opping in production (symmetric). The dev throw is the only behaviour the
  * normal suite can observe: vitest hard-codes `define: { __DEV__: true }`
  * (vitest.config.ts), so `if (__DEV__)` is substituted to `if (true)` at
- * transform time and the production no-op branch is *unreachable* from an
+ * transform time and the production no-op branch is unreachable from an
  * ordinary test, `vi.stubGlobal("__DEV__", …)` cannot reach a statically
  * substituted identifier.
  *
@@ -20,7 +20,7 @@
  *
  * esbuild is the bundler vite already runs for every module transform, so it is
  * always present (and lockfile-pinned). Under pnpm's strict node_modules it is
- * a *non-hoisted* transitive dependency, so a bare `import "esbuild"` fails to
+ * a non-hoisted transitive dependency, so a bare `import "esbuild"` fails to
  * resolve from this package. We instead resolve it through vite (a direct
  * dev-dependency whose hard dependency on esbuild is guaranteed). No new
  * dependency is introduced.

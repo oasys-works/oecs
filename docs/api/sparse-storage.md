@@ -175,8 +175,9 @@ ecs.query(Unit).andSparse(Cooldown).forEachEntity((e) => {
 ```
 
 > [!WARNING]
-> A sparse query **must** use `forEachEntity`. `forEach`, `forEachChunk`, and `count` reject it, and
-> they throw `SPARSE_QUERY_DENSE_PATH` in development, because there is no column span. Also,
+> A sparse query **must** use `forEachEntity`. `forEach`, `forEachChunk`, `some`, `entityCount` and
+> `archetypeCount` reject it, and they throw `SPARSE_QUERY_DENSE_PATH` in development, because there
+> is no column span. Also,
 > sparse operations apply **immediately**. So, if you mutate the membership of the sparse
 > component that drives a `forEachEntity` walk, the live key array moves below you. Hold such
 > changes in a buffer and apply them after the loop.

@@ -7,10 +7,10 @@
  *
  * The shape, de-risked by a prototype (since removed, superseded by the shipped
  * seam + editor layer):
- *   - A host enqueues typed `HostCommand`s off-SCHEDULE. `enqueue` is pure. It
+ *   - A host enqueues typed `HostCommand`s off-schedule. `enqueue` is pure. It
  *     only buffers. It can never touch the world from an arbitrary callback.
  *   - A blessed, `exclusive` command-apply system drains the queue at the
- *     schedule HEAD (PRE_STARTUP for seed-time, PRE_UPDATE every frame) through
+ *     schedule head (PRE_STARTUP for seed-time, PRE_UPDATE every frame) through
  *     one dispatch (`applyHostCommand`), issuing `SystemContext` deferred ops
  *     so every change lands at the existing phase-tail flush.
  *   - Observers then fire and the Solid plugin publishes at the settle point,
@@ -128,10 +128,10 @@ export type HostCommand =
 /**
  * The one apply dispatch. Maps a `HostCommand` onto `SystemContext` ops. Only
  * ever called from inside the blessed apply system, which holds the `ctx` and is
- * `exclusive` (full access). Structural changes (`spawn` and `despawn`/component
- * add-remove) are deferred to the phase flush, exactly like a normal system's
- * `setField` is immediate and bumps the change-tick. Returns the new entity for
- * `spawn`, otherwise `undefined`.
+ * `exclusive` (full access). A structural change (`spawn`, `despawn`, and a
+ * component add or remove) is deferred to the phase flush, exactly like a normal
+ * system's. `setField` is immediate and stamps the change tick. Returns the new
+ * entity for `spawn`, otherwise `undefined`.
  *
  * That immediate and deferred split is a sharp edge: a `setField` targeting a
  * component the entity does not yet have, because an `add` or `spawn`
@@ -170,8 +170,8 @@ export function applyHostCommand(ctx: SystemContext, cmd: HostCommand): EntityID
 					ECS_ERROR.COMPONENT_NOT_REGISTERED,
 					`host set_field on entity ${cmd.eid} targets a component it does not have. ` +
 						`If you added that component via a host command this same frame, the add is ` +
-						`deferred to the phase flush while set_field is immediate, carry the value in ` +
-						`add_component/spawnEntry instead of a separate set_field, or set it next frame. ` +
+						`deferred to the phase flush while set_field is immediate. Carry the value in ` +
+						`add_component or in spawnEntry instead of a separate set_field, or set it next frame. ` +
 						`(host write seam)`
 				);
 			}
@@ -332,9 +332,9 @@ export class HostCommandQueue {
  * leading byte is the opCode. `COMMAND_RING_SLOT_BYTES` (16) is the whole slot. */
 export const HOST_COMMAND_PAYLOAD_BYTES = COMMAND_RING_SLOT_BYTES - 1;
 
-/** Validate a ring opCode the way the SAB layer does everywhere, `0` is the
- * reserved empty-slot marker (`COMMAND_OP_EMPTY`) and can never carry a command
- * codes are `u8`s in `[1, 255]`. */
+/** Validate a ring opCode the way the SAB layer does everywhere. `0` is the
+ * reserved empty-slot marker (`COMMAND_OP_EMPTY`) and can never carry a command,
+ * so a code is a `u8` in `[1, 255]`. */
 function assertRingOpCode(opCode: number): void {
 	if (opCode === COMMAND_OP_EMPTY) {
 		throw new CommandRingError(
@@ -538,8 +538,8 @@ export class HostCommandDispatcher {
 	/** Drain every pending slot, dispatching each to its bound applier. Unbound
 	 * opcodes are skipped (the read head still advances, matching
 	 * `drainCommandRing` and `CommandDispatcher`). Returns slots drained. `tap`,
-	 * when present, is forwarded to each applier as the record and replay hook
-	 * only `onCommand`-bound (generic `HostCommand`) opcodes surface to it. */
+	 * when present, is forwarded to each applier as the record and replay hook.
+	 * Only an `onCommand`-bound (generic `HostCommand`) opcode surfaces to it. */
 	drain(
 		ctx: SystemContext,
 		view: DataView,
@@ -593,29 +593,14 @@ export interface HostCommandSeamOptions {
 	 * `ring_*_codec` factories, or `dispatcher.on` for a consumer's own ops. */
 	readonly ring?: HostCommandDispatcher;
 	/** When provided, every command the apply system drains, from both transports
-	 * (typed queue + `onCommand`-bound ring ops), is logged into this sink,
-	 * tagged with the tick + `dt`, for record/replay. Off by default: an
+	 * (typed queue and `onCommand`-bound ring ops), is logged into this sink,
+	 * tagged with the tick and the `dt`, for record and replay. Off by default: an
 	 * un-recorded seam keeps the original tap-free drain and pays nothing.
 	 * {@link HostCommandRecorder} is the in-tree sink. Replay it with
 	 * `replayCommandLog`. */
 	readonly recorder?: HostCommandSink;
 }
 
-/**
- * Install the write seam on `world`: registers the blessed `exclusive`
- * command-apply system at the head of the given schedules and returns the
- * {@link HostCommandQueue} to enqueue into. Opt-in and explicit, symmetric to
- * the read bridge's `syncComponentToMap`.
- *
- * Call this before adding your own systems and before `ecs.startup()`: the
- * apply system must be registered first so insertion order runs it at the head
- * of its phase (the schedule has no dedicated "first" slot), and the PRE_STARTUP
- * drain only fires if it exists before startup.
- *
- * Lives in the world core, and not in a plugin: unlike the read side there is
- * no framework dependency to quarantine. This is pure ECS plumbing over the
- * deferred buffers and `SystemContext` the core already owns.
- */
 // queue → the apply-system descriptors its seam registered, for uninstall.
 const seamSystems = new WeakMap<HostCommandQueue, SystemDescriptor[]>();
 
@@ -635,6 +620,21 @@ export function uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boo
 	return true;
 }
 
+/**
+ * Install the write seam on `world`: registers the blessed `exclusive`
+ * command-apply system at the head of the given schedules and returns the
+ * {@link HostCommandQueue} to enqueue into. Opt-in and explicit, the write
+ * counterpart to the Solid plugin's `solid()` read view.
+ *
+ * Call this before adding your own systems and before `ecs.startup()`: the
+ * apply system must be registered first so insertion order runs it at the head
+ * of its phase (a phase has no dedicated "first" slot), and the PRE_STARTUP
+ * drain only fires if it exists before startup.
+ *
+ * Lives in the world core, and not in a plugin: unlike the read side there is
+ * no framework dependency to quarantine. This is pure ECS plumbing over the
+ * deferred buffers and `SystemContext` the core already owns.
+ */
 export function installHostCommandSeam(
 	ecs: ECS,
 	opts?: HostCommandSeamOptions

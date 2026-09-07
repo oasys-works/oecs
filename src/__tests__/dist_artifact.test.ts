@@ -92,7 +92,8 @@ const { createRequire } = await import("node:module");
 const require = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 const cjs = require(${JSON.stringify(join(DIST, "index.cjs"))});
 const keys = (m) => Object.keys(m).sort();
-// Every plugin ships three files under one name, and the lock holds all three.
+// Every plugin ships four bundles under one name. The lock reads three of
+// them: the production module, the development module, and the CJS file.
 const plugins = {};
 for (const name of ${JSON.stringify(Object.keys(PLUGIN_EXPORTS))}) {
 	const file = (suffix) => ${JSON.stringify(PLUGINS + "/")} + name + suffix;
@@ -114,8 +115,9 @@ console.log(JSON.stringify({
 }));
 `;
 
-/** Every dev guard the report names, once per build variant. `label` says which
- * category an ECSError carried, or the plain value production produced. */
+/** The dev guards the two build variants answer differently, once per variant.
+ * `t` returns the category an ECSError carried, or the plain value production
+ * produced. */
 const guards = (entry: string) => `
 const { ECS } = await import(${JSON.stringify(entry)});
 const t = (fn) => {

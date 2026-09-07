@@ -8,14 +8,14 @@ describe("Change Detection", () => {
 	// Tick basics
 	//=========================================================
 
-	it("get_column (mutable) sets _changed_tick on archetype", () => {
+	it("getColumnMut (mutable) sets _changedTick on archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 
 		const q = world.query(Pos);
-		// White-box: touches `_changedTick`/the mutable `getColumnMut`, so iterate
+		// White-box: touches `_changedTick` and the mutable `getColumnMut`, so iterate
 		// the `@internal` concrete archetype list rather than the public view.
 		for (const arch of q.nonEmptyArchs()) {
 			// The host addComponent above stamped the insert, so read the value
@@ -26,7 +26,7 @@ describe("Change Detection", () => {
 		}
 	});
 
-	it("get_column_read does not set _changed_tick", () => {
+	it("getColumnRead does not set _changedTick", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const e = world.spawn();
@@ -255,7 +255,7 @@ describe("Change Detection", () => {
 	// addEntity does not tick
 	//=========================================================
 
-	it("add_entity zero-fill does not independently tick", () => {
+	it("addEntity zero-fill does not independently tick", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 

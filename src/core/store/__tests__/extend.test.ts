@@ -33,7 +33,7 @@ function spec(
 	};
 }
 
-describe("extend_column_store, happy path", () => {
+describe("extendColumnStore, happy path", () => {
 	it("appends a new archetype while keeping the existing one", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
@@ -132,7 +132,7 @@ describe("extend_column_store, happy path", () => {
 		expect(Array.from(f64)).toEqual([0, 0, 0, 0]);
 	});
 
-	it("preserves rows in existing archetypes when an `existing` row_count is supplied", () => {
+	it("preserves rows in existing archetypes when an `existing` rowCount is supplied", () => {
 		const old = createColumnStore([
 			spec(0, 4, [
 				{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 },
@@ -235,7 +235,7 @@ describe("extend_column_store, happy path", () => {
 		}
 	});
 
-	it("leaves existing archetypes empty when no row_count is supplied", () => {
+	it("leaves existing archetypes empty when no rowCount is supplied", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -249,7 +249,7 @@ describe("extend_column_store, happy path", () => {
 		expect(ri32[0]).toBe(0);
 	});
 
-	it("preserves existing archetype row_capacity (extend never resizes rows)", () => {
+	it("preserves existing archetype rowCapacity (extend never resizes rows)", () => {
 		const old = createColumnStore([
 			spec(0, 16, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -275,7 +275,7 @@ describe("extend_column_store, happy path", () => {
 	});
 });
 
-describe("extend_column_store, growable in-place fast path", () => {
+describe("extendColumnStore, growable in-place fast path", () => {
 	it("reuses the same SAB across extends when allocator is growable + headroom present", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
@@ -334,10 +334,10 @@ describe("extend_column_store, growable in-place fast path", () => {
 
 	it("keeps column view lengths fixed when the buffer below them grows", () => {
 		// The other half of the rule the `createView` doc states. The test above
-		// proves the view instance and its data survive an in-place extend, but a
-		// The length-tracking view survives both of those too, and then silently spans
+		// proves the view instance and its data survive an in-place extend. A
+		// length-tracking view survives both of those too, and then silently spans
 		// the grown buffer. Only the length tells the two shapes apart, and the
-		// tracking one is the slowest access shape measured on every engine.
+		// tracking one is the slowest access shape on every engine tested.
 		const alloc = growableSabAllocator(1024 * 1024);
 		const old = createColumnStore(
 			[spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])],
@@ -436,7 +436,7 @@ describe("extend_column_store, growable in-place fast path", () => {
 	});
 });
 
-describe("extend_column_store, descriptor headroom survives realloc", () => {
+describe("extendColumnStore, descriptor headroom survives realloc", () => {
 	// One single-column archetype's descriptor footprint.
 	const ONE_COL = archetypeDescriptorBytes(1);
 
@@ -517,8 +517,8 @@ describe("extend_column_store, descriptor headroom survives realloc", () => {
 	});
 });
 
-describe("extend_column_store, wasm-memory in-place fast path", () => {
-	it("takes the in-place branch under wasm_memory_allocator (views_preserved=true)", () => {
+describe("extendColumnStore, wasm-memory in-place fast path", () => {
+	it("takes the in-place branch under wasmMemoryAllocator (viewsPreserved=true)", () => {
 		const memory = new WebAssembly.Memory({ initial: 1, maximum: 64, shared: true });
 		const alloc = wasmMemoryAllocator(memory);
 		const old = createColumnStore(
@@ -630,7 +630,7 @@ describe("extend_column_store, wasm-memory in-place fast path", () => {
 	});
 });
 
-describe("extend_column_store, rejections", () => {
+describe("extendColumnStore, rejections", () => {
 	it("rejects an empty plan", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
@@ -638,7 +638,7 @@ describe("extend_column_store, rejections", () => {
 		expect(() => extendColumnStore(old, { newArchetypes: [] })).toThrow(StoreExtendError);
 	});
 
-	it("rejects a duplicate archetype_id within the plan", () => {
+	it("rejects a duplicate archetypeId within the plan", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -652,7 +652,7 @@ describe("extend_column_store, rejections", () => {
 		).toThrow(/duplicate archetype_id 1/);
 	});
 
-	it("rejects a collision with an existing archetype_id", () => {
+	it("rejects a collision with an existing archetypeId", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -663,7 +663,7 @@ describe("extend_column_store, rejections", () => {
 		).toThrow(/already exists/);
 	});
 
-	it("rejects an `existing` row_count for an unknown archetype_id", () => {
+	it("rejects an `existing` rowCount for an unknown archetypeId", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -675,7 +675,7 @@ describe("extend_column_store, rejections", () => {
 		).toThrow(/unknown archetype_id 999/);
 	});
 
-	it("rejects a negative row_count", () => {
+	it("rejects a negative rowCount", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -687,7 +687,7 @@ describe("extend_column_store, rejections", () => {
 		).toThrow(/non-negative/);
 	});
 
-	it("rejects row_count > existing row_capacity", () => {
+	it("rejects rowCount > existing rowCapacity", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);

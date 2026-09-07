@@ -97,7 +97,7 @@ function globalNumber(exported: unknown): number | null {
  *   - Given: the region is exactly that, the regions sit at the top of the
  *     span, and everything below the lowest one stays the module's heap.
  *   - Zero: the pool divides the whole span, so the module has no heap. That is
- *     the default, and the docs say so.
+ *     the default.
  *
  * Downward from the top either way, so one rule covers both and a caller who
  * names `stackBytes` knows where the heap ends without knowing the count.

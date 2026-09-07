@@ -2,11 +2,11 @@
  * Dev-mode dispatch tracer.
  *
  * Singleton buffer that captures `(callsite, channel, op, key)` for each ECS
- * dispatch and each action dispatch when `VISUAL_INTEL_TRACE=1` is set in the environment.
- * Compile-time gated by `DEV`, so production builds dead-code-eliminate
- * every record() call. Output is a deterministic JSON snapshot the
- * `visual-intel` service can ingest as a third channel of evidence
- * alongside the existing static + symbol-propagation scans.
+ * dispatch and each action dispatch, while the environment sets
+ * `VISUAL_INTEL_TRACE` to `1` or to `true`. Compile-time gated by `DEV`, so a
+ * production build dead-code-eliminates every `record()` call. The output is a
+ * deterministic JSON snapshot. An analysis tool outside this repository ingests
+ * it as a runtime channel of evidence, beside a static scan of the same code.
  *
  * Identity model. The engine has no access to source-level binding names
  * (`ContactEvent`, `ConfigRes`) at runtime, `eventKey("Contact")` returns
@@ -16,23 +16,24 @@
  *   - ECS events and resources → the Symbol description (`label`).
  *   - Actions → the numeric `def.id`.
  *
- * Resolution back to bindings happens in `visual-intel`, which already
- * extracts `{ binding, label }` declarations for events and resources and
+ * Resolution back to bindings happens in that outside tool, which already
+ * extracts `{ binding, label }` declarations for events and resources, and
  * `{ binding, id_expr }` for actions. The matching there is unambiguous.
  *
  * Callsite resolution. `new Error().stack` inside `record()`, walk the
- * frames, drop every frame inside the engine itself (this
- * file + the dispatcher seam), return the first repo-relative path. Stack-
+ * frames, drop every frame inside the engine itself (any path that matches
+ * `ENGINE_FRAME_MARKERS`), return the first repo-relative path. Stack-
  * line strings are cached so repeat dispatches from the same site are
  * O(1) after the first hit. The walk itself lives in the pure
  * `resolveCallsiteFromStack()` helper so it can be driven by a synthetic
  * stack in tests.
  *
- * Activation. `record()` is *unconditional*. It records on every call. The
- * `isActive()` env-var gate is applied by the callers (`ecs.ts` and
- * `query.ts`, all `if (DEV && dispatchTrace.isActive())`), not inside
- * `record()`. This keeps the gate in one place, the dispatch hot path,
- * where `DEV === false` dead-code-eliminates the whole branch in prod.
+ * Activation. `record()` is *unconditional*. It records on every call. Each
+ * caller applies the `isActive()` env-var gate itself (`system_context.ts`,
+ * `facades.ts` and the events plugin facade, all
+ * `if (DEV && dispatchTrace.isActive())`), and `record()` does not. This keeps
+ * the gate in one place, the dispatch hot path, where `DEV === false`
+ * dead-code-eliminates the whole branch in prod.
  */
 
 // This module holds only the in-memory tracer, no filesystem access. It is

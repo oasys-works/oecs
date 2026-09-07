@@ -1,17 +1,17 @@
 /**
  * World snapshot and resume, mount a captured world onto a live, ticking ECS and
- * keep ticking identically. Where `sparse_determinism.test.ts`
- * pins the *fidelity* round-trip (snapshot → restore reproduces the same bytes),
- * these pin the *resume* plugin the engine previously lacked:
+ * keep ticking identically. `sparse_determinism.test.ts` pins the fidelity
+ * round-trip, where snapshot and restore reproduce the same bytes. These pin
+ * the resume path instead:
  *
- *   - **mount + tick**, restore a snapshot onto a live world. It queries + ticks.
+ *   - mount and tick, restore a snapshot onto a live world. It queries and ticks.
  *   - host-state reconstruction, `Archetype.length` and `enabledCount`, the
  *     per-row `_entityIds` back-reference, and the entity recycle free-list (in
  *     LIFO order, the load-bearing bit) are rebuilt correctly.
- *   - **resume == control**, a world snapshotted at tick N, restored, and
+ *   - resume equals control, a world snapshotted at tick N, restored, and
  *     advanced K ticks yields the same per-tick `stateHash` vector as the
  *     original advanced from N. On both heap and SAB.
- *   - **fail closed**, a malformed frame or a registration mismatch throws
+ *   - fail closed, a malformed frame or a registration mismatch throws
  *     `ECSRestoreError` before mutating live state.
  */
 
@@ -111,9 +111,9 @@ function step(w: World, i: number): void {
 	world.flush();
 
 	// Spawn two entities, deterministically keyed by the step index. Every spawn
-	// takes a sparse Mark (so its entity index enters the canonical sparse fold.
-	// This is what makes free-list reuse order observable in stateHash), and
-	// every third is disabled (so enabledCount partitions non-trivially).
+	// takes a sparse Mark, so its entity index enters the canonical sparse fold,
+	// which is what makes free-list reuse order observable in `stateHash`. Every
+	// third spawn is disabled, so `enabledCount` partitions non-trivially.
 	for (let k = 0; k < 2; k++) {
 		const id = i * 2 + k;
 		const e = world.spawn();

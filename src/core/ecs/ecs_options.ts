@@ -65,7 +65,7 @@ export interface ECSOptions {
 	 * (`terrain_map_radius`, `spatial_grid_*`, `army_*`, `flow_field_*`,
 	 * `actionRingCapacitySlots`) the ECS used to carry. */
 	regions?: readonly StoreRegionSpec[];
-	/** Byte size of the opt-in sim-bindings region, forwarded to `Store`.
+	/** Byte size of the opt-in bindings region, forwarded to `Store`.
 	 * A consumer that attaches a WASM `ComputeBackend` passes its own size,
 	 * computed from its own binding manifest, so the host can publish the
 	 * `(component_id, field_id)` ids the accelerated systems read. Omitted or
@@ -77,9 +77,10 @@ export interface ECSOptions {
 	 * `Store`. Default `false`. When `false`, the canonical-ordering methods
 	 * (`stateHash`, `snapshotSparse`, `restoreSparse`) throw
 	 * `DETERMINISM_DISABLED`. When `true`, today's replay and hash behavior is
-	 * reproduced bit-for-bit. Determinism is the implementer's choice, our
-	 * server match opts in (replay verification), the client stays off (it rolls
-	 * back via diffs, not re-sim). The flag gates only that surface: memory-safety
+	 * reproduced bit-for-bit. Determinism is the implementer's choice. A host
+	 * that verifies a replay opts in. A host that rolls back with diffs, and
+	 * never re-runs the frame, leaves it off. The flag gates only that
+	 * surface: memory-safety
 	 * invariants (the in-place SAB allocator) and the `enabled_count`
 	 * partition are always-on regardless. */
 	deterministic?: boolean;

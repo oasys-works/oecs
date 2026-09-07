@@ -12,10 +12,10 @@
  *     generation) or bump-allocates a fresh index at INITIAL_GENERATION,
  *     mirroring the new high-water into the SAB region's `length` header so
  *     an external (WASM) reader knows the in-use range.
- *   - `release(index, generation)` bumps the generation so stale handles die
- *     once the counter would reach the RETIRED_GENERATION tombstone the slot
- *     is retired instead of recycled, the tombstone is never issued
- *     to a live handle, closing the ABA stale-handle window.
+ *   - `release(index, generation)` bumps the generation so stale handles die.
+ *     Once the counter would reach the RETIRED_GENERATION tombstone the slot
+ *     is retired instead of recycled. The tombstone is never issued
+ *     to a live handle, so it closes the ABA stale-handle window.
  *
  * SAB replant contract: `generations` and the length view are TypedArray
  * views into the column store's entity-index region, which is reallocated on
@@ -95,14 +95,14 @@ export class EntityAllocator {
 			if (this._highWater >= this._capacity) {
 				throw new ECSError(
 					ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
-					`entityIndexCapacity (${this._capacity}) exhausted; raise it in ECSOptions.memory or destroy unused entities`
+					`entityIndexCapacity (${this._capacity}) is exhausted. Raise it in ECSOptions.memory, or destroy unused entities`
 				);
 			}
 			index = this._highWater++;
 			this._generations[index] = INITIAL_GENERATION;
 			generation = INITIAL_GENERATION;
 			// Mirror the high-water index into the SAB region's `length`
-			// field so the Zig reader knows the in-use range.
+			// field so an external reader knows the in-use range.
 			this._lengthView[0] = this._highWater;
 		}
 		this._aliveCount++;
@@ -121,8 +121,8 @@ export class EntityAllocator {
 			throw new ECSError(
 				ECS_ERROR.EID_MAX_INDEX_OVERFLOW,
 				`entityIndexCapacity (${this._capacity}) cannot fit ${count} new entities ` +
-					`(${this._freeIndices.length} free, high-water ${this._highWater}); ` +
-					`raise it in ECSOptions.memory or destroy unused entities`
+					`(${this._freeIndices.length} free, high-water ${this._highWater}). ` +
+					`Raise it in ECSOptions.memory, or destroy unused entities`
 			);
 		}
 	}

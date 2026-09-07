@@ -55,7 +55,7 @@
  *
  * Usage:
  *   node bench/vs/vs.mjs                 # all libraries, all cases
- *   node bench/vs/vs.mjs --rounds 9      # a multiple of the number of libraries
+ *   node bench/vs/vs.mjs --rounds 10     # a multiple of the number of entries
  *   node bench/vs/vs.mjs --case iter2
  *   node bench/vs/vs.mjs --null          # calibration: oecs in every position
  */

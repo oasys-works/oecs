@@ -27,32 +27,33 @@ export interface SnapshotsPlugin {
 
 /** `ECSSnapshots` plus the capture and restore surface. */
 export class ECSSnapshotsFull extends ECSSnapshots {
-	/** Capture the full live world (dense + sparse and relations + host-side
-	 * bookkeeping) to one self-contained byte buffer that `restore` can mount
-	 * back onto a live, ticking world. v1 does not capture resources,
-	 * events, or change-detection baselines. */
+	/** Capture the full live world (the dense bytes, the sparse stores and
+	 * relations, and the host-side bookkeeping) to one self-contained byte
+	 * buffer that `restore` can mount back onto a live, ticking world. Version 1
+	 * captures no resource, no event and no change-detection baseline. */
 	public capture(): Uint8Array {
 		return this._store.snapshot();
 	}
 
 	/** Mount a `capture()` buffer onto this live world and keep ticking.
 	 * Fails closed on a malformed frame or registration mismatch before
-	 * mutating any live state. Requires a matching archetype set + column
+	 * mutating any live state. Requires a matching archetype set and column
 	 * layout (prewarm so the set is stable). */
 	public restore(bytes: Uint8Array): void {
 		this._store.restore(bytes);
 	}
 
-	/** Serialize the sparse stores + relations to a self-contained buffer,
+	/** Serialize the sparse stores and the relations to a self-contained buffer,
 	 * the sparse half of a world snapshot, canonical entity-index order.
 	 * Pairs with `restoreSparse`. */
 	public captureSparse(): Uint8Array {
 		return this._store.snapshotSparse();
 	}
 
-	/** Repopulate the sparse stores + relation indices from `captureSparse`
-	 * bytes. Sparse components must already be registered in the same order
-	 * throws `SparseRestoreError` on a shape or identity mismatch. */
+	/** Repopulate the sparse stores and the relation indices from
+	 * `captureSparse` bytes. Sparse components must already be registered in the
+	 * same order. Throws `SparseRestoreError` on a shape or identity
+	 * mismatch. */
 	public restoreSparse(bytes: Uint8Array): void {
 		this._store.restoreSparse(bytes);
 	}

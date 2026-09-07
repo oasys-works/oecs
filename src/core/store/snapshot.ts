@@ -59,9 +59,10 @@ export interface RestoreColumnStoreOptions {
 /** Zero-copy `Uint8Array` view over the SAB's used byte range. Length is
  * `header.capacity`, the canonical size, not `buffer.byteLength`. The two
  * coincide for `DEFAULT_SAB_ALLOCATOR` (it allocates exactly `totalBytes`),
- * but `wasmMemoryAllocator` and `growableSabAllocator` round the buffer up
- * to 64 KiB page boundaries, so `buffer.byteLength` can exceed `capacity` by up
- * to a page of trailing slack (see the allocator contract in `allocator.ts`).
+ * but `wasmMemoryAllocator` rounds the buffer up to 64 KiB page boundaries,
+ * and `heapArrayBufferAllocator` and `fixedSabAllocator` reserve the whole cap,
+ * so `buffer.byteLength` can exceed `capacity` (see the allocator contract in
+ * `allocator.ts`).
  * Hashing or round-tripping that slack would make two logically-identical
  * stores with different grow trajectories (or different allocators) diverge,
  * so we size to `capacity` here.

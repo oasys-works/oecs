@@ -2,8 +2,8 @@
  * The engine puts teeth on the determinism opt-in's float ban.
  *
  * A `{ deterministic: true }` world exists to keep per-tick `stateHash` in
- * agreement across hosts. `f32` or `f64` columns break that. IEEE-754
- * rounds differently across V8, Bun and Zig at the 1-ULP level, so registering
+ * agreement across hosts. `f32` or `f64` columns break that. Hosts round a
+ * float operation to different last bits, so registering
  * one on a deterministic world now throws `NON_DETERMINISTIC_COLUMN_TYPE` at
  * registration time, rather than surfacing as a silent cross-host divergence.
  * Non-deterministic worlds are unaffected (floats stay allowed).

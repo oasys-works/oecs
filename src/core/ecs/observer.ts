@@ -45,8 +45,8 @@ export interface ObserverHooks {
 /** Per-entity observer callback (onAdd, onRemove, onDisable and onEnable, and
  * per-entity onSet). */
 export type ObserverFn = (entityId: EntityID, ctx: SystemContext) => void;
-/** Archetype-granular onSet callback, fires once per changed archetype-column
- * the consumer iterates `arch.entityCount` rows itself. */
+/** Archetype-granular onSet callback, fires once per changed archetype-column.
+ * The consumer iterates `arch.entityCount` rows itself. */
 export type ArchetypeObserverFn = (arch: ArchetypeView, ctx: SystemContext) => void;
 
 /** Fields common to every observer registration. `access` drives both the
@@ -66,9 +66,10 @@ interface ObserverConfigBase {
 	/** Access surface the callbacks touch (reads, writes, spawns and the rest). Partial:
 	 * merged over `_INTERNAL_EMPTY_ACCESS`. Undeclared access throws in `DEV`. */
 	access?: Partial<SystemAccessDeclaration>;
-	/** flecs-style replay of current matches on registration (onAdd only, seeds the
-	 * *enabled* members. A disabled entity is absent, which matches the default-query
-	 * semantics), for order-independence of register-vs-spawn. */
+	/** flecs-style replay of current matches on registration, so the order of
+	 * register and spawn does not matter. `onAdd` only, and it seeds the
+	 * *enabled* members. A disabled entity is absent, which matches the
+	 * default-query semantics. */
 	yieldExisting?: boolean;
 	/** Diagnostic label for this observer, surfaced by the frame-trace seam
 	 * as the `observer_fired.observer` field, the same role a system's

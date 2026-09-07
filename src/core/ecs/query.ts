@@ -116,9 +116,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	public readonly terms: QueryTerms;
 	// `terms.includesDisabled`, copied out at construction. The iteration bound
 	// is chosen from it on every `entityCount`, `firstEntity` and `forEach`
-	// call, and reading it through `terms` there costs a second load on a path
-	// measured in single-digit nanoseconds. The constructor is the only writer
-	// and `terms` is frozen, so the copy cannot drift.
+	// call, and reading it through `terms` there costs a second load on a very
+	// short path. The constructor is the only writer and `terms` is frozen, so
+	// the copy cannot drift.
 	public readonly includesDisabled: boolean;
 
 	constructor(
@@ -142,8 +142,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		this.includesDisabled = terms.includesDisabled;
 	}
 
-	/** Guard the dense-only methods `count`, `forEach` and `archetype_count`
-	 * against a query carrying sparse terms. These walk the dense archetype
+	/** Guard the dense-only methods `entityCount`, `archetypeCount`, `forEach`,
+	 * `forEachChunk` and `some` against a query carrying sparse terms. These
+	 * walk the dense archetype
 	 * list and never consult `sparseIncludes` or `sparseExcludes`, so on a
 	 * sparse-derived query they would fail open, returning the unfiltered dense
 	 * result instead of the sparse-filtered one. Throw in `DEV` (compiled
@@ -223,7 +224,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			if (n !== 1) {
 				throw new ECSError(
 					ECS_ERROR.QUERY_NOT_SINGLETON,
-					`Query.singleEntity: expected exactly 1 matching entity, found ${n}`,
+					`Query.singleEntity requires exactly 1 matching entity, found ${n}`,
 					{ count: n }
 				);
 			}
@@ -506,8 +507,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * R's backing sparse store (exclusive `{target}` row and multi tag), so this is a
 	 * relation-typed front door over `andSparse`. It pushes R's backing sparse
 	 * id onto `sparseIncludes` and reuses the `forEachEntity` sparse-match path
-	 * (insertion order, canonical sorting is reserved for `stateHash`/snapshot, and
-	 * costs much more here for no determinism benefit).
+	 * (insertion order, canonical sorting is reserved for `stateHash` and the
+	 * snapshot, and costs much more here for no determinism benefit).
 	 * Membership semantics: each source once. Fetch its targets with
 	 * `ctx.targetsOf(e, R)`. Requires `relationReads: [R]` (checked at iteration).
 	 * Cached per `(parent_id, relation_id)` like the sparse terms. */
@@ -598,7 +599,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * peers), produced by an O(K) radix on the entity index, never a comparator sort.
 	 *
 	 * Iterate with `forEachEntity`: members scatter across archetypes, so there is
-	 * no SoA column span, and `forEach` and `count` reject a hierarchy query (like
+	 * no SoA column span, and `forEach` and `entityCount` reject a hierarchy query (like
 	 * a sparse term). Exclusive relations only, which matches the traversal
 	 * constraint. A multi relation throws `RELATION_MODE_MISMATCH` at iteration, and a
 	 * cycle is a loud `RELATION_CYCLE` in `DEV` (a safe break in production).
@@ -619,9 +620,9 @@ export class Query<Defs extends readonly ComponentDef[]> {
 				);
 			}
 			// `maxDepth` is a depth (root = 0), so it must be `HIERARCHY_UNBOUNDED` or
-			// a non-negative integer. Catch a caller typo (`-1` silently yields nothing
-			// a fractional limit floors oddly in the `d > maxDepth` band test) loudly
-			// here rather than as mystifying empty or odd output. Prod is a no-op.
+			// a non-negative integer. Catch a caller typo loudly here, rather than as
+			// empty or odd output. `-1` silently yields nothing, and a fractional
+			// limit floors oddly in the `d > maxDepth` band test. Prod is a no-op.
 			if (maxDepth !== HIERARCHY_UNBOUNDED && (!Number.isInteger(maxDepth) || maxDepth < 0)) {
 				throw new ECSError(
 					ECS_ERROR.HIERARCHY_INVALID_MAX_DEPTH,
@@ -726,7 +727,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** One-id `optional` composition, cached on `(parent_id << 16) | cid` in the
-	 * resolver's shared single-term map (dense cid <= 128, same packing as the
+	 * resolver's shared single-term map (dense cid < 128, same packing as the
 	 * `and`, `not` and `or` caches). */
 	private _optionalOne(cid: number): Query<Defs> {
 		const key = ((this.id << 16) | cid) >>> 0;
@@ -758,7 +759,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * excludes disabled entities (the iteration bound `arch.entityCount` is the
 	 * enabled-row count). The returned (cached) query spans disabled rows too:
 	 * `forEach` publishes the all-rows flag so the SoA loop's `arch.entityCount`
-	 * reports `length`, and `count` and `forEachEntity` widen accordingly. Does not
+	 * reports `length`, and `entityCount` and `forEachEntity` widen accordingly. Does not
 	 * touch the dense mask, so it reuses this query's live archetype list and is
 	 * carried through `and`, `not` or `or` like the sparse or optional terms. */
 	public includeDisabled(): Query<Defs> {
@@ -879,8 +880,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** @internal, shared body for `forEachChunk`'s default and `includeDisabled`
-	 * paths. The `ChunkColumns` cursor is allocated per call (a 2-field object whose
-	 * cost doesn't scale with the per-row work) rather than cached on the query, so
+	 * paths. The `ChunkColumns` cursor is allocated per call (a small object whose
+	 * cost does not scale with the per-row work) rather than cached on the query, so
 	 * a nested `forEachChunk` on the same query gets its own cursor instead of
 	 * re-pointing the outer pass's `arch` and `tick`. The per-(archetype, component)
 	 * column-group caches that actually matter for allocation live on the
@@ -1056,12 +1057,12 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * Store has bumped its dirty epoch since our last rebuild, return cached result.
 	 *
 	 * Rebuild allocates a *fresh* array and swaps it in rather than truncating
-	 * the cached one in place. `forEach`, `count` and `ChangedQuery.forEach`
+	 * the cached one in place. `forEach`, `entityCount` and `ChangedQuery.forEach`
 	 * bind the returned array once and walk it. An in-place `dst.length = 0` +
 	 * re-push would corrupt that walk if the query is re-entrantly iterated,
 	 * i.e. the callback runs an immediate-mode mutation that crosses a
 	 * 0↔non-zero entity boundary on the *same* Query (bumping the epoch) and
-	 * then re-enters here via a nested `forEach` and `count`. Building fresh hands
+	 * then re-enters here via a nested `forEach` or `entityCount`. Building fresh hands
 	 * the inner call its own array and leaves the outer iterator's snapshot
 	 * intact, so each archetype is visited exactly once. Cost is one array
 	 * allocation per epoch advance, and only on a boundary crossing. The
@@ -1159,12 +1160,12 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Create a ChangedQuery that filters archetypes by change tick.
 	 *
-	 *  Granularity is **archetype**, not row: the `changedTick[cid]` is
-	 *  stamped per archetype on any write into that component's column
-	 *  (`Archetype.changedTick` in archetype.ts). A 1-row write in a
-	 *  1000-row archetype trips `forEach` on the whole archetype next tick.
-	 *  Use cases that need row-level granularity should compare per-row
-	 *  state explicitly inside the callback.
+	 *  `forEach` works at archetype grain, not row grain: the store stamps
+	 *  `changedTick[cid]` per archetype on any write into that component's
+	 *  column (`Archetype.changedTick` in archetype.ts). One changed row trips
+	 *  `forEach` on the whole archetype next tick. For row grain, iterate with
+	 *  `forEachChunk` and read `cols.ticksRead(def)`, which needs
+	 *  `ecs.trackRows(def)`.
 	 *
 	 *  A stamp is reported once. The change tick advances before every
 	 *  system run, so a stamp made by an earlier system this frame is above

@@ -91,7 +91,7 @@ const MASK = [0, 0, 0, 0];
 function spec(archetypeId: number, rowCapacity: number, columnCount: number): ArchetypeSpec {
 	const columns = [];
 	for (let i = 0; i < columnCount; i++) {
-		// Alternate f32 (tag 0-ish) and f64 strides via typeTag values the
+		// Alternate f32 and f64 strides via typeTag values the
 		// descriptor layer understands: 6 = f32, 7 = f64 in TYPE_TAG order,
 		// resolved through TYPE_TAG_STRIDE at layout time, so mixing tags
 		// exercises alignUp with heterogeneous strides.

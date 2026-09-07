@@ -294,12 +294,12 @@ ctx.commands.enable(entityId): this;
 isAlive(id): boolean;            hasComponent(id, def): boolean;   isDisabled(id): boolean;
 
 // Sparse and relation operations are immediate (see sparse-storage.md and relations.md)
-addSparse / removeSparse / hasSparse / getSparseField / setSparseField
-addRelation / removeRelation / targetOf / targetsOf / sourcesOf / hasRelation
+addSparse, removeSparse, hasSparse, getSparseField, setSparseField
+addRelation, removeRelation, targetOf, targetsOf, sourcesOf, hasRelation
 
-// Events and resources (see events.md / resources.md)
-emit(key, values?): void;   read(key): EventReader;
-resource(key): T;   setResource(key, value): void;   removeResource(key): void;   hasResource(key): boolean;
+// Events and resources (see events.md and resources.md)
+emit(key, values?): void;   readEvents(key): EventReader;
+getResource(key): T;   setResource(key, value): void;   removeResource(key): void;   hasResource(key): boolean;
 
 get ecsTick(): number;   // the frame tick, the count of updates so far
 flush(): void;           // apply the buffered structural operations now

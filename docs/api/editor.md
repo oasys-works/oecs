@@ -40,7 +40,7 @@ class Editor {
 
   undo(): boolean;    // false when the undo stack is empty
   redo(): boolean;    // false when the redo stack is empty
-  get canUndo(): boolean;   get canRedo(): boolean;   // "would undo()/redo() do something", with no allocation
+  get canUndo(): boolean;   get canRedo(): boolean;   // "would undo() or redo() do something", with no allocation
   clear(): void;      // remove both stacks (this does not touch the ECS)
   depths(): { undo: number; redo: number };
   onChange(cb: () => void): () => void;                // runs after each commit, undo, redo, and clear. Gives an unsubscribe function
@@ -96,7 +96,7 @@ fieldHandle<S>(editor: Editor, entityId: EntityID, def: ComponentDef<S>, field: 
 interface FieldHandle {
   readonly value: number | undefined;    // a read of the channel (tracked in a tracking scope)
   set(value: number): void;               // adds a setField that you can undo. Applies in the next tick
-  readonly pending: number | undefined;   // an UNTRACKED optimistic copy of the shadow value of the editor
+  readonly pending: number | undefined;   // an untracked optimistic copy of the shadow value of the editor
 }
 ```
 

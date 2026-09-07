@@ -26,10 +26,6 @@ export const FNV1A_PRIME = 0x01000193;
 
 const INITIAL_WORD_COUNT = 4; // 128 component IDs before first grow
 
-/**
- * number[]-backed bit set with auto-grow. Used as the archetype component signature.
- *
- */
 export class BitSet {
 	public words: number[];
 

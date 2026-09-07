@@ -5,7 +5,7 @@
  * entities that lack it: the matched set stays at the required terms, spanning
  * archetypes with and without `T`. Per archetype span the column is resolved via
  * `arch.getOptionalColumnRead(T, field)`, the column when present,
- * `undefined` when absent. These tests cover the issue's acceptance criteria:
+ * `undefined` when absent. What this file locks:
  *  - iterate entities with and without the optional component (both branches)
  *  - the present or absent accessor returns a column vs `undefined`
  *  - read-only ⇒ a `stateHash` no-op
@@ -151,7 +151,7 @@ describe("ECS optional query terms", () => {
 	// Determinism: read-only ⇒ stateHash no-op
 	//=========================================================
 
-	it("optional iteration is a state_hash no-op (read-only)", () => {
+	it("optional iteration is a stateHash no-op (read-only)", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -371,7 +371,7 @@ describe("ECS optional query terms", () => {
 		expect(withVel).toEqual([e1]);
 	});
 
-	it("optional survives compose through not() and any_of() too", () => {
+	it("optional survives compose through not() and or() too", () => {
 		const world = new ECS({ deterministic: true });
 		const Pos = world.registerComponent(Position, "i32");
 		const Vel = world.registerComponent(Velocity, "i32");
@@ -495,7 +495,7 @@ describe("ECS optional query terms", () => {
 		expect(multi).toBe(root.and(Hp).and(Mana));
 		expect(root.and(Hp, Mana)).toBe(multi); // second call: same instance
 
-		// not and any_of multi-arg fold likewise.
+		// The not and or multi-arg folds behave the same way.
 		expect(root.not(Hp, Mana)).toBe(root.not(Hp).not(Mana));
 		expect(root.or(Hp, Mana)).toBe(root.or(Hp).or(Mana));
 

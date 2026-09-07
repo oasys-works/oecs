@@ -1,5 +1,5 @@
 /**
- * World snapshot and resume framing + host-state (de)serialization.
+ * World snapshot and resume framing, and host-state serialization.
  *
  * `Store.snapshot()` and `Store.restore()` mount a captured world back onto a
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
@@ -17,7 +17,7 @@
  *      byte source for it, and its order is load-bearing for byte-identical
  *      resume, see below), the alive count, and per-archetype `length` and
  *      `enabledCount` (the SAB descriptor omits these for tag-only archetypes,
- *      so we capture them for every archetype uniformly).
+ *      so the capture takes them for every archetype uniformly).
  *
  * **Why serialize the free-list rather than rescan it.** A scan of the restored
  * entity-index region recovers the *set* of recycled slots but not the *order*
@@ -25,14 +25,15 @@
  * source. The order is load-bearing: a post-resume `spawn` reuses the stack top,
  * and the index it draws feeds the canonical-ordered sparse `stateHash` fold (and
  * the whole-SAB `columnStoreStateHash` via the entity-index region). A different
- * reuse order ⇒ a diverged hash on the first post-resume spawn that touches a
- * sparse store or relation. Serializing the list costs a small block off the
+ * reuse order means a diverged hash on the first post-resume spawn that touches
+ * a sparse store or relation. Serializing the list costs a small block off the
  * tick path, and it keeps the runtime LIFO allocator untouched while making
  * resume exact.
  *
- * This module holds only the *pure* framing and serialization + the registration
- * guard. The mount itself (swap the SAB, republish views, reconstruct host state)
- * lives on `Store` where the live state is.
+ * This module holds only the *pure* framing and serialization, and the
+ * registration guard. The mount itself (swap the SAB, republish views,
+ * reconstruct host state) runs through the Store-owned closures on
+ * `SnapshotHost`, where the live state is.
  */
 
 import {
@@ -232,8 +233,9 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
  * check could run). Parsing the descriptors off the raw `dense` `Uint8Array`
  * keeps the check non-mutating, so a mismatch leaves the live world untouched.
  *
- * Asserts: the dense section's SAB magic + ABI, that its archetype set +
- * per-archetype `componentMask` + per-column `(componentId, fieldId, typeTag)`
+ * Asserts: the dense section's SAB magic and ABI, and that its archetype set,
+ * its per-archetype `componentMask` and its per-column
+ * `(componentId, fieldId, typeTag)`
  * match the live store's exactly (so every live `Archetype.refreshViews` finds
  * its region and no snapshot archetype is orphaned), and that the entity-index
  * capacity matches (the region is sized once at construction). The archetype
@@ -314,8 +316,8 @@ export function assertDenseMatchesLive(
 	if (live.size !== descriptors.length) {
 		throw new ECSRestoreError(
 			`archetype-set mismatch: the live world has ${live.size} SAB archetypes, the ` +
-				`snapshot has ${descriptors.length}. restore requires an identical archetype set ` +
-				`(prewarm the world so its archetype set is stable, per ADR on no-lazy archetypes).`
+				`snapshot has ${descriptors.length}. restore requires an identical archetype set. ` +
+				`Prewarm the world so its archetype set is stable.`
 		);
 	}
 	for (let d = 0; d < descriptors.length; d++) {

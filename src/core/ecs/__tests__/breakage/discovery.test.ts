@@ -5,22 +5,22 @@ import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";
 
 /**
- * Discovery tests: designed to probe architectural weak points.
- * Each test targets a specific internal mechanism that could fail silently.
+ * These tests probe architectural weak points. Each one targets one internal
+ * mechanism that can fail without saying so.
  */
 
 // ============================================================
 // 1. Column reference stability across growth
 // ============================================================
 describe("Column buffer invalidation", () => {
-	// Columns are TypedArrays over a single SAB. A grow
-	// allocs a fresh SAB, copies live rows forward, and `refreshViews`
-	// repoints every `BufferBackedColumn._buf` at the new SAB. The contract
-	// below (a reference taken before the grow retains pre-grow values
-	// writes through it don't affect live data) is preserved, the stale
-	// reference is only a view over the now-unreferenced old SAB instead
-	// of a stand-alone heap buffer.
-	it("get_column returns stale TypedArray after archetype grows past capacity", () => {
+	// Columns are typed arrays over one buffer. The default heap allocator
+	// reserves that buffer at the cap, so a grow relocates the growing
+	// archetype's columns to the tail and `refreshViews` repoints every
+	// column at the new region. The buffer itself never changes identity.
+	// A reference taken before the grow keeps the pre-grow values, and a
+	// write through it lands in the abandoned region, so live data is
+	// unaffected.
+	it("getColumnMut returns stale TypedArray after archetype grows past capacity", () => {
 		// Use small initial capacity to force reallocation quickly
 		const world = new ECS({ memory: { columnCapacity: 4 } });
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -79,8 +79,8 @@ describe("Column buffer invalidation", () => {
 		const e1 = world.spawn();
 		world.addComponent(e1, Pos, { x: 42, y: 84 });
 
-		// Create a ref for e1 in the [Pos]-only archetype
-		// the ref snapshots .buf pointers at creation time
+		// The ref resolves the archetype and the row one time, at creation, so
+		// it reads e1's row of the [Pos]-only archetype until e1 moves.
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
@@ -224,7 +224,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 // 3. Entity recycling and stale ID protection
 // ============================================================
 describe("Entity ID recycling, stale reference safety", () => {
-	it("stale ID after single recycle: is_alive returns false, has_component throws in dev", () => {
+	it("stale ID after single recycle: isAlive returns false, hasComponent throws in dev", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -568,7 +568,7 @@ describe("Query iteration edge cases", () => {
 		expect(world.getField(e, Pos, "y")).toBe(2);
 	});
 
-	it("entity_list from archetype reflects accurate entity IDs after swap-and-pop", () => {
+	it("entityIds from archetype reflects accurate entity IDs after swap-and-pop", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -605,7 +605,7 @@ describe("Query iteration edge cases", () => {
 // 7. Batch operations edge cases
 // ============================================================
 describe("Batch operations, data integrity", () => {
-	it("batch_add preserves per-entity source data for shared columns", () => {
+	it("batchAdd preserves per-entity source data for shared columns", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -631,7 +631,7 @@ describe("Batch operations, data integrity", () => {
 		}
 	});
 
-	it("batch_remove preserves remaining component data", () => {
+	it("batchRemove preserves remaining component data", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -656,7 +656,7 @@ describe("Batch operations, data integrity", () => {
 		}
 	});
 
-	it("batch_add to archetype that already has entities in target: data appended correctly", () => {
+	it("batchAdd to archetype that already has entities in target: data appended correctly", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const Vel = world.registerComponent(["vx", "vy"] as const);
@@ -703,9 +703,9 @@ describe("Batch operations, data integrity", () => {
 });
 
 // ============================================================
-// 8. System context: createEntity is immediate, addComponent deferred
+// 8. System context: the id is immediate, the components are deferred
 // ============================================================
-describe("create_entity/add_component asymmetry in systems", () => {
+describe("ctx.commands.spawn is immediate and ctx.commands.add is deferred", () => {
 	it("entity created in system exists immediately but has no components until flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
@@ -775,7 +775,7 @@ describe("create_entity/add_component asymmetry in systems", () => {
 // 9. Transition + swap-and-pop interaction with other entities
 // ============================================================
 describe("Archetype transition affects co-resident entities", () => {
-	it("add_component to e0 causes swap-and-pop in source archetype: co-resident e1 data intact", () => {
+	it("addComponent to e0 causes swap-and-pop in source archetype: co-resident e1 data intact", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
@@ -808,7 +808,7 @@ describe("Archetype transition affects co-resident entities", () => {
 		expect(world.getField(e2, A, "v")).toBe(300); // still correct after 2nd swap
 	});
 
-	it("remove_component causes swap-and-pop in source: verify co-residents", () => {
+	it("removeComponent causes swap-and-pop in source: verify co-residents", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["v"] as const);
 		const B = world.registerComponent(["v"] as const);
@@ -860,7 +860,7 @@ describe("Component value edge cases", () => {
 		expect(world.getField(e2, Pos, "y")).toBe(4);
 	});
 
-	it("set_field writes to correct entity even after swap-and-pop rearranges rows", () => {
+	it("setField writes to correct entity even after swap-and-pop rearranges rows", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 
@@ -978,7 +978,7 @@ describe("Deferred destroy + structural interaction", () => {
 // 12. Edge: entity with no components
 // ============================================================
 describe("Entity with no components", () => {
-	it("entity with no components is alive, has_component returns false, not in any query", () => {
+	it("entity with no components is alive, hasComponent returns false, not in any query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 

@@ -83,10 +83,10 @@ export function assertDeterministicFieldTypes(
 				ECS_ERROR.NON_DETERMINISTIC_COLUMN_TYPE,
 				`Cannot register ${kind} field "${fieldNames[i]}" as "${t}" on a ` +
 					`{ deterministic: true } world: floating-point columns round differently ` +
-					`across V8 / Bun / Zig (1-ULP IEEE-754), breaking cross-host stateHash ` +
-					`agreement. Use an integer type (e.g. "i32"), represent ` +
-					`fractional quantities as fixed-point (Q16.16). Note the array shorthand ` +
-					`defaults to "f64", so pass an explicit integer type there.`,
+					`across hosts, breaking cross-host stateHash agreement. Use an integer ` +
+					`type (e.g. "i32"), or represent fractional quantities as fixed-point ` +
+					`(Q16.16). The array shorthand defaults to "f64", so pass an explicit ` +
+					`integer type there.`,
 				{ field: fieldNames[i], type: t, kind }
 			);
 		}
@@ -101,7 +101,7 @@ export function assertDeterministicFieldTypes(
  * before the append.
  *
  * The archetype descriptor in the backing carries a fixed-width component
- * mask, and the Zig side matches archetypes on that mask alone. A component id
+ * mask, and the module matches archetypes on that mask alone. A component id
  * past the mask's width would be invisible there, so two archetypes that
  * differ only in such a component would conflate. This fails instead, and the
  * fault names `registerSparseComponent` as the remedy, because a sparse
@@ -181,14 +181,14 @@ export function fieldIdOfMeta(
 	if (meta === undefined) {
 		throw new ECSError(
 			ECS_ERROR.COMPONENT_NOT_REGISTERED,
-			`field_id_of: component ${cid} is not registered`
+			`fieldId: component ${cid} is not registered`
 		);
 	}
 	const idx = meta.fieldIndex[fieldName];
 	if (idx === undefined) {
 		throw new ECSError(
 			ECS_ERROR.FIELD_NOT_REGISTERED,
-			`field_id_of: component ${cid} has no field "${fieldName}"`
+			`fieldId: component ${cid} has no field "${fieldName}"`
 		);
 	}
 	return idx;

@@ -41,7 +41,7 @@ function expectInvalid(fn: () => unknown, fragment: string): void {
 	expect((thrown as ECSError).message).toContain(fragment);
 }
 
-describe("resolve_ecs_memory, axis A: how big", () => {
+describe("resolveECSMemory, axis A: how big", () => {
 	it("defaults: 256 MiB cap, 1024 columns, full entity-index reservation", () => {
 		const plan = resolveECSMemory();
 		expect(plan.source).toBe("heap");
@@ -132,7 +132,7 @@ describe("resolve_ecs_memory, axis A: how big", () => {
 	});
 });
 
-describe("resolve_ecs_memory, axis B: what backs it", () => {
+describe("resolveECSMemory, axis B: what backs it", () => {
 	it("heap (the default): a plain ArrayBuffer, never a SharedArrayBuffer", () => {
 		const plan = resolveECSMemory({ backing: "heap" });
 		expect(plan.source).toBe("heap");
@@ -216,7 +216,7 @@ describe("resolve_ecs_memory, axis B: what backs it", () => {
 		);
 	});
 
-	// Regression, found by the P11 grid probe. Before 0.6 this branch hardcoded
+	// Regression. Before 0.6 this branch hardcoded
 	// the full EntityID reservation and ignored the declared cap, so the index
 	// alone (about 12.6 MiB) did not fit and the world could not be built at all.
 	// Every other backing already derived the index from the cap.
@@ -245,9 +245,9 @@ describe("resolve_ecs_memory, axis B: what backs it", () => {
 	});
 });
 
-describe("resolve_ecs_memory, the axes are independent", () => {
-	// The claim the flattening rests on, and the reason the P11 probe ran first:
-	// one sizing intent must give one set of numbers on every backing.
+describe("resolveECSMemory, the axes are independent", () => {
+	// The claim the flattening rests on: one sizing intent must give one set of
+	// numbers on every backing.
 	it("one entity count gives the same sizing on every backing", () => {
 		const entities = 50_000;
 		const plans = [
@@ -388,7 +388,7 @@ describe("Store in-place backstop + intent-aware cap fatal", () => {
 		for (const id of ids) expect(store.isAlive(id)).toBe(true);
 	});
 
-	it("spawn_many cap hit is atomic, no partial or phantom batch", () => {
+	it("spawnMany cap hit is atomic, no partial or phantom batch", () => {
 		const cap = 1 * MiB;
 		// Same index sizing as the clean-path test: 1<<16 slots reserve ~0.75 MiB,
 		// which fits under the 1 MiB cap at construction and leaves the SAB *column*

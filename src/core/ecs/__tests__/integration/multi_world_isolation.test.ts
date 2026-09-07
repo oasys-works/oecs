@@ -13,11 +13,10 @@
  * *second* world inside its own open access span), the guard `ECS.update()`
  * restores at the tick boundary.
  *
- * NOTE, the two upstream cases that pinned the parallel-kernel `REGISTRY`
- * cross-world collision contract (a process-global `Map<string, fn>`
- * registered via `register_parallel_kernel`) are N/A here: oecs has no
- * `parallel/` module, the parallel kernel registry was replaced by the
- * `ComputeBackend` seam, so there is no shared kernel registry to isolate.
+ * One process-global is absent, so nothing here covers it. There is no shared
+ * kernel registry. A compute backend is installed on one world, through the
+ * `ComputeBackend` seam, and never through a name table the whole process
+ * shares.
  */
 
 import { describe, expect, it } from "vitest";
@@ -59,7 +58,7 @@ function buildWorld(seed: number): { world: ECS; tick: () => void } {
 
 describe("multi-world isolation", () => {
 	// ────────────────────────────────────────────────────────────────────────
-	// AC1: N interleaved worlds, zero state bleed via shared globals.
+	// N interleaved worlds, zero state bleed through a shared global.
 	// ────────────────────────────────────────────────────────────────────────
 	describe("stateHash isolation across interleaved worlds", () => {
 		const N = 4;
@@ -115,7 +114,7 @@ describe("multi-world isolation", () => {
 	});
 
 	// ────────────────────────────────────────────────────────────────────────
-	// AC3: accessCheck span survives a cross-world re-entrant tick.
+	// The accessCheck span survives a cross-world re-entrant tick.
 	//
 	// `accessCheck` keeps a single process-global span (the running system's
 	// descriptor + its allowed-id sets). When world A's system, mid-span,
@@ -158,12 +157,12 @@ describe("multi-world isolation", () => {
 			worldA.addSystems(
 				SCHEDULE.UPDATE,
 				worldA.registerSystem({
-					...openAccess([Allowed]), // Forbidden intentionally NOT declared
+					...openAccess([Allowed]), // Forbidden is deliberately not declared
 					name: "world_a_reader",
 					fn(ctx) {
 						ctx.getField(eA, Allowed, "v"); // declared, ok
-						worldB.update(1 / 60); // tick a SECOND world inside the span
-						ctx.getField(eA, Forbidden, "w"); // UNDECLARED, must throw
+						worldB.update(1 / 60); // tick a second world inside the span
+						ctx.getField(eA, Forbidden, "w"); // undeclared, must throw
 					}
 				})
 			);

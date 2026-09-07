@@ -3,8 +3,8 @@
  *
  * `ecs.ts` ends with a marker-delimited "store pass-through band": the
  * contiguous section holding every ECS method that is a *pure mechanical
- * delegation* to a collaborator, one of `this._store`, `this._schedule`,
- * `this._ctx` and `this._observers`. The band's invariant is that logic can never silently
+ * delegation* to a collaborator, one of `this._store`, `this._schedule` and
+ * `this._ctx`. The band's invariant is that logic can never silently
  * accrete there, a method that grows a dev check, an argument adaptation, or
  * a second call has outgrown the band and must move above it, next to the
  * other real logic.
@@ -150,7 +150,7 @@ function checkBody(name: string, body: ts.Block, violations: Violation[]): void 
 					node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
 					node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken))
 		) {
-			fail(`contains control flow / nested function (${ts.SyntaxKind[node.kind]})`);
+			fail(`contains control flow or a nested function (${ts.SyntaxKind[node.kind]})`);
 		}
 		node.forEachChild(walk);
 	};
@@ -188,10 +188,10 @@ describe("ECS pass-through band", () => {
 
 	it("the band is populated (the markers actually delimit the delegations)", () => {
 		expect(ecsClass).toBeDefined();
-		// 38 delegating members after the 0.5.0 flat-form removal (the
-		// relations, events, resources and snapshots delegations moved to the
-		// facades). Shrinking is fine, methods can move out later, but an
-		// empty band means the markers drifted.
+		// The band holds what the flat-form removal left behind. The relations,
+		// events, resources and snapshots delegations moved to the facades.
+		// Shrinking is fine, methods can move out later, but an empty band means
+		// the markers drifted.
 		expect(bandMembers.length).toBeGreaterThan(30);
 		const names = new Set(
 			bandMembers.map((m) => (m.name && ts.isIdentifier(m.name) ? m.name.text : "?"))

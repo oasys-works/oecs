@@ -32,8 +32,8 @@ export declare function throwing(): void;
 export declare function spinning(): void;
 export declare const SLOTS: number;
 export declare const TABLE: Int32Array;
-/** The twin of one module body. Every step is an i32 operation, so the two
- * lanes agree bit for bit. */
+/** The signature every JavaScript twin of a compiled module body carries.
+ * Every step is an i32 operation, so the two lanes agree bit for bit. */
 export type KernelBody = (
 	px: Int32Array,
 	py: Int32Array,

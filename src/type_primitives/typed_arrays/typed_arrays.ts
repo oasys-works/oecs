@@ -29,7 +29,7 @@ export type AnyTypedArray =
 /**
  * Common surface of a row-addressable column buffer. `GrowableTypedArray<T>`
  * implements it over a heap-allocated TypedArray. SAB-backed columns (see
- * `/oecs/shared`) implement it over a
+ * `@oasys/oecs/shared`) implement it over a
  * `SharedArrayBuffer` view at a known offset. Archetype column storage
  * targets this interface so a single code path serves both backings.
  */
@@ -57,10 +57,6 @@ export interface ColumnBacking<T extends AnyTypedArray> {
 	setLength(len: number): void;
 }
 
-/**
- * TypedArray wrapper with amortised O(1) append. Doubles the backing buffer on overflow.
- *
- */
 export class GrowableTypedArray<T extends AnyTypedArray> implements ColumnBacking<T> {
 	private _buf: T;
 	private _len = 0;

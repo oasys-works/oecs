@@ -279,8 +279,8 @@ fields of an entity that you receive, use `ctx.getField` (dense) or `ctx.getSpar
 
 ## The limit to dense queries
 
-`forEach`, `forEachChunk`, `entityCount`, and `archetypeCount` operate on the column layout of the
-archetype. So they **reject** a query that carries a sparse, relation, or hierarchy term, and
+`forEach`, `forEachChunk`, `some`, `entityCount`, and `archetypeCount` operate on the column layout
+of the archetype. So they **reject** a query that carries a sparse, relation, or hierarchy term, and
 they throw `SPARSE_QUERY_DENSE_PATH` in development. For those queries, use `forEachEntity` or
 [`forEachRelatedTo`](./relations.md).
 

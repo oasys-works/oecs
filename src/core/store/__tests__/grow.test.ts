@@ -32,7 +32,7 @@ function spec(
 	};
 }
 
-describe("grow_column_store", () => {
+describe("growColumnStore", () => {
 	it("bumps view_stamp by 1 in the new SAB header", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
@@ -86,7 +86,7 @@ describe("grow_column_store", () => {
 		expect(readStoreHeader(next.view).viewStamp).toBe(0);
 	});
 
-	it("grows row_capacity in the new store's archetype views", () => {
+	it("grows rowCapacity in the new store's archetype views", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.f32 }])
 		]);
@@ -145,7 +145,7 @@ describe("grow_column_store", () => {
 		expect(next.archetypes.get(1)!.rowCapacity).toBe(8);
 	});
 
-	it("preserves component_mask bits across grow", () => {
+	it("preserves componentMask bits across grow", () => {
 		const old = createColumnStore([
 			spec(
 				0,
@@ -208,7 +208,7 @@ describe("grow_column_store", () => {
 		).toThrow(StoreGrowError);
 	});
 
-	it("rejects new_row_capacity smaller than row_count", () => {
+	it("rejects newRowCapacity smaller than rowCount", () => {
 		const old = createColumnStore([
 			spec(0, 8, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -219,7 +219,7 @@ describe("grow_column_store", () => {
 		).toThrow(StoreGrowError);
 	});
 
-	it("rejects row_count greater than old row_capacity", () => {
+	it("rejects rowCount greater than old rowCapacity", () => {
 		const old = createColumnStore([
 			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])
 		]);
@@ -231,10 +231,10 @@ describe("grow_column_store", () => {
 	});
 });
 
-describe("grow_column_store in-place fast path (growable allocator)", () => {
+describe("growColumnStore in-place fast path (growable allocator)", () => {
 	// Two-archetype world built on a growable (isInPlace) allocator. Growing
-	// archetype 0 must not relayout archetype 1, that whole-store relayout is
-	// exactly the O(all-archetypes) cost that tanked frame_loop.
+	// archetype 0 must not relayout archetype 1. A whole-store relayout costs
+	// one pass over every archetype, and that is what slowed the frame loop.
 	function twoArchWorld(alloc: ReturnType<typeof growableSabAllocator>) {
 		return createColumnStore(
 			[
@@ -245,7 +245,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 		);
 	}
 
-	it("signals views_preserved and names only the grown archetype", () => {
+	it("signals viewsPreserved and names only the grown archetype", () => {
 		const alloc = growableSabAllocator();
 		const old = twoArchWorld(alloc);
 		const res = growColumnStore(
@@ -343,7 +343,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 		expect(readStoreHeader(next.view).viewStamp).toBe(1);
 	});
 
-	it("takes the in-place branch under wasm_memory_allocator and preserves data across the new SAB ref", () => {
+	it("takes the in-place branch under wasmMemoryAllocator and preserves data across the new SAB ref", () => {
 		// wasmMemoryAllocator returns a new SAB ref after memory.grow(), the
 		// only path that exercises the `bufferRefChanged` branch (growable
 		// returns the same ref). Verify live data survives across the ref swap.
@@ -409,7 +409,7 @@ describe("grow_column_store in-place fast path (growable allocator)", () => {
 	});
 });
 
-describe("grow_column_store, descriptor headroom policy survives", () => {
+describe("growColumnStore, descriptor headroom policy survives", () => {
 	it("an in-place grow carries the reserved-descriptor-bytes policy forward", () => {
 		const alloc = growableSabAllocator(1024 * 1024);
 		const reserved = archetypeDescriptorBytes(1) * 2;

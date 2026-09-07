@@ -42,7 +42,8 @@ export type ArchetypeID = Brand<number, "archetype_id">;
 export interface ArchetypeView<
 	out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]
 > {
-	/** Opaque archetype identity. Pass to `ECS.batch_*_component`. */
+	/** Opaque archetype identity. Pass to `ECS.batchAddComponent` and
+	 * `ECS.batchRemoveComponent`. */
 	readonly id: ArchetypeID;
 	/** Number of **enabled** entities, the default-iteration bound. Rows
 	 * `0..entityCount-1` are enabled. Disabled rows (if any) sit contiguously at
@@ -61,8 +62,8 @@ export interface ArchetypeView<
 	/** True if this archetype's mask includes the given component. */
 	hasComponent(id: ComponentID): boolean;
 	/** Get a single field's column (read-only). Valid data: indices
-	 * 0..entityCount-1. `def` must be a term of the iterating query
-	 *. The bare-`ArchetypeView` default stays permissive. */
+	 * 0..entityCount-1. `def` must be a term of the iterating query. The
+	 * bare-`ArchetypeView` default stays permissive. */
 	getColumnRead<D extends ComponentDef<any>, K extends string & keyof SchemaOf<D>>(
 		def: D & DeclaredQueryTerm<Defs, D>,
 		field: K

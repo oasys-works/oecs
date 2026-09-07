@@ -57,10 +57,9 @@ describe("command_ring, constants and sizing", () => {
 		expect(commandRingBytes(COMMAND_RING_DEFAULT_CAPACITY_SLOTS)).toBe(16 + 256 * 16);
 	});
 
-	it("reserves op_code 0 as the empty-slot marker (no game opcode enum)", () => {
-		// The engine ships only `COMMAND_OP_EMPTY`, the game opcode enum
-		// (`OP_A`, …) moved to `@internal/sim`. Every
-		// non-zero u8 is an opaque, consumer-defined code.
+	it("reserves opCode 0 as the empty-slot marker (no game opcode enum)", () => {
+		// The engine ships only `COMMAND_OP_EMPTY`, and no opcode enum of its
+		// own. Every non-zero u8 is an opaque, consumer-defined code.
 		expect(COMMAND_OP_EMPTY).toBe(0);
 	});
 
@@ -100,7 +99,7 @@ describe("command_ring, init", () => {
 });
 
 describe("command_ring. SPSC happy path", () => {
-	it("push then pop round-trips op_code and payload", () => {
+	it("push then pop round-trips opCode and payload", () => {
 		const { view, ringOff } = freshRing(8);
 		const payload = fill(new Uint8Array(15), 42);
 		expect(pushCommand(view, ringOff, OP_A, payload)).toBe(true);
@@ -113,7 +112,7 @@ describe("command_ring. SPSC happy path", () => {
 		expect(pendingCommandCount(view, ringOff)).toBe(0);
 	});
 
-	it("pop on empty ring returns the empty-slot marker (0) and does not touch out_payload", () => {
+	it("pop on empty ring returns the empty-slot marker (0) and does not touch outPayload", () => {
 		const { view, ringOff } = freshRing(8);
 		const out = fill(new Uint8Array(15), 0xab);
 		const before = new Uint8Array(out); // snapshot
@@ -122,7 +121,7 @@ describe("command_ring. SPSC happy path", () => {
 		expect(out).toEqual(before);
 	});
 
-	it("FIFO order across N pushes / N pops", () => {
+	it("FIFO order across N pushes and N pops", () => {
 		const { view, ringOff } = freshRing(8);
 		const N = 5;
 		for (let i = 0; i < N; i++) {
@@ -187,7 +186,7 @@ describe("command_ring, overflow", () => {
 });
 
 describe("command_ring, wrap-around", () => {
-	it("FIFO order survives write_head/read_head wrap across many ticks", () => {
+	it("FIFO order survives write_head and read_head wrap across many ticks", () => {
 		const { view, ringOff } = freshRing(4);
 		// 32 pushes interleaved with pops. Head indices wrap modulo
 		// capacity (4). The head counters themselves wrap modulo 2^32,
@@ -214,7 +213,7 @@ describe("command_ring, wrap-around", () => {
 		expect(pendingCommandCount(view, ringOff)).toBe(0);
 	});
 
-	it("u32 write_head/read_head wrap at 2^32 keeps FIFO order + pending count exact", () => {
+	it("u32 write_head and read_head wrap at 2^32 keeps FIFO order + pending count exact", () => {
 		// The `(write_head - read_head) >>> 0` slot and count math and the slot
 		// index `head & (capacity - 1)` are only correct across the 2^32
 		// counter boundary because of the `>>> 0`, a regression dropping it
@@ -311,21 +310,21 @@ describe("command_ring, validation", () => {
 	// host producer must reject 0, out-of-u8-range, and non-integer codes, a
 	// corrupt op byte would otherwise be indistinguishable from an empty slot or
 	// would silently truncate via `setUint8`.
-	it("push rejects op_code === 0 (reserved as empty-slot marker)", () => {
+	it("push rejects opCode === 0 (reserved as empty-slot marker)", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => pushCommand(view, ringOff, COMMAND_OP_EMPTY, new Uint8Array(15))).toThrow(
 			CommandRingError
 		);
 	});
 
-	it("push rejects op_code outside the u8 range [1, 255]", () => {
+	it("push rejects opCode outside the u8 range [1, 255]", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => pushCommand(view, ringOff, 256, new Uint8Array(15))).toThrow(CommandRingError);
 		expect(() => pushCommand(view, ringOff, -1, new Uint8Array(15))).toThrow(CommandRingError);
 		expect(() => pushCommand(view, ringOff, 1.5, new Uint8Array(15))).toThrow(CommandRingError);
 	});
 
-	it("push accepts a valid op_code (1) and pushes the slot", () => {
+	it("push accepts a valid opCode (1) and pushes the slot", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(pushCommand(view, ringOff, OP_A, new Uint8Array(15))).toBe(true);
 		expect(pendingCommandCount(view, ringOff)).toBe(1);
@@ -337,7 +336,7 @@ describe("command_ring, validation", () => {
 		expect(() => pushCommand(view, ringOff, OP_A, new Uint8Array(16))).toThrow(CommandRingError);
 	});
 
-	it("pop rejects wrong-sized out_payload", () => {
+	it("pop rejects wrong-sized outPayload", () => {
 		const { view, ringOff } = freshRing(4);
 		expect(() => popCommand(view, ringOff, new Uint8Array(14))).toThrow(CommandRingError);
 		expect(() => popCommand(view, ringOff, new Uint8Array(16))).toThrow(CommandRingError);

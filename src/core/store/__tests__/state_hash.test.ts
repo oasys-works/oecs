@@ -31,7 +31,7 @@ function spec(
 	};
 }
 
-describe("fnv1a_32, known vectors", () => {
+describe("fnv1a32, known vectors", () => {
 	// Reference values from the FNV-1a (32-bit) test suite:
 	//   http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-test-vectors
 	// (also reproduced in ietf draft-eastlake-fnv).
@@ -90,7 +90,7 @@ describe("fnv1a_32, known vectors", () => {
 	});
 });
 
-describe("column_store_state_hash, determinism", () => {
+describe("columnStoreStateHash, determinism", () => {
 	it("identical stores hash identically", () => {
 		const make = () => {
 			const s = createColumnStore([
@@ -105,7 +105,7 @@ describe("column_store_state_hash, determinism", () => {
 		expect(columnStoreStateHash(make())).toBe(columnStoreStateHash(make()));
 	});
 
-	it("agrees with fnv1a_32 over the snapshot", () => {
+	it("agrees with fnv1a32 over the snapshot", () => {
 		const store = createColumnStore([
 			spec(0, 4, [
 				{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 },
@@ -119,7 +119,7 @@ describe("column_store_state_hash, determinism", () => {
 	});
 });
 
-describe("column_store_state_hash, byte sensitivity", () => {
+describe("columnStoreStateHash, byte sensitivity", () => {
 	it("changes when a column byte changes", () => {
 		const make = () =>
 			createColumnStore([spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }])]);
@@ -163,7 +163,7 @@ describe("column_store_state_hash, byte sensitivity", () => {
 	});
 });
 
-describe("column_store_state_hash, round-trip", () => {
+describe("columnStoreStateHash, round-trip", () => {
 	it("snapshot → restore preserves the hash", () => {
 		const store = createColumnStore([
 			spec(0, 4, [
@@ -196,7 +196,7 @@ describe("column_store_state_hash, round-trip", () => {
 	});
 });
 
-describe("column_store_state_hash, page-rounding allocators", () => {
+describe("columnStoreStateHash, page-rounding allocators", () => {
 	const PAGE = 64 * 1024;
 
 	/** Mimics `wasmMemoryAllocator` and `growableSabAllocator`. Rounds the

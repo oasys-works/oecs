@@ -2,18 +2,14 @@
  * SparseMap. O(1) integer-keyed map with cache-friendly dense iteration.
  *
  * Keys are non-negative integers. Two parallel dense arrays (keys + values)
- * enable linear iteration. A sparse number[] maps key → dense index for
- * O(1) get/set/delete.
+ * enable linear iteration. A sparse number[] maps key → dense index, so get,
+ * set and delete are each O(1).
  *
  * Membership is verified by cross-referencing dense_keys[sparse[key]] === key,
  * so stale sparse entries are harmless. Deletion uses swap-and-pop.
  *
  ***/
 
-/**
- * O(1) integer-keyed map with cache-friendly dense iteration.
- *
- */
 export class SparseMap<V> {
 	private _denseKeys: number[] = [];
 	private _denseVals: V[] = [];

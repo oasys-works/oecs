@@ -525,7 +525,7 @@ its own bind. Does the engine's own pool leave the same state, and where does it
 engine's own sequential body?
 
 **Method.** One process for each size. The world comes from `dist/`, and everything between the
-frame and the rows is engine code: `ecs.attachWorkers`, a system with a `parallel` config, the
+frame and the rows is engine code: `ecs.workers.attach`, a system with a `parallel` config, the
 control buffer, the shipped worker entry, the descriptor walk and the join stamp. The probe calls
 `ecs.update()` and nothing else.
 
@@ -1054,9 +1054,9 @@ browser branch run at all, and does the main thread refuse to host?
 **Method.** Headless Chrome 153 driven over the DevTools protocol, a static server
 that sets `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`, and the built `dist/` served as is
-with no bundler. The page's main thread calls `attachWorkers` and expects a
+with no bundler. The page's main thread calls `workers.attach` and expects a
 refusal. A module worker hosts a deterministic `shared` world of 60,000 entities
-over three archetypes, one excluded by a `without` tag, runs twelve frames of an
+over three archetypes, one excluded by a `not` tag, runs twelve frames of an
 integer `pos += vel * dt` system sequentially, then builds an identical world,
 attaches three pool workers with a `js` kernel by URL, runs the same frames, and
 compares `snapshots.stateHash()`. The harness lives outside the repository.
@@ -1064,7 +1064,7 @@ compares `snapshots.stateHash()`. The harness lives outside the repository.
 | step | result |
 | --- | --- |
 | page `crossOriginIsolated`, `SharedArrayBuffer` present | true, true |
-| main thread `attachWorkers` | refused, the message names `Atomics.wait` and the remedy |
+| main thread `workers.attach` | refused, the message names `Atomics.wait` and the remedy |
 | worker host, sequential `stateHash` | 2850976559 |
 | worker host, three pool workers attached | ready after about 8 ms |
 | worker host, parallel `stateHash` after twelve frames | 2850976559 |
@@ -1095,7 +1095,7 @@ outside the repository holds `index.html`, `main.js`, `host.js` and `kernel.js`.
 It resolves `@oasys/oecs` through `node_modules/@oasys/oecs`, a link to the
 repository, so the package exports map picks the file for each subpath. The
 config sets `root`, `worker: { format: "es" }`, `build.target: "es2022"` and
-`build.assetsInlineLimit: 0`. `main.js` calls `attachWorkers` on the main thread
+`build.assetsInlineLimit: 0`. `main.js` calls `workers.attach` on the main thread
 and expects the refusal, then starts `host.js` as a module worker. `host.js`
 builds the same deterministic 60,000-entity world the unbundled run used, runs
 twelve sequential frames, builds a second world, attaches three pool workers and
@@ -1111,7 +1111,7 @@ repository.
 | what the warning ships | a `__vite-browser-external` chunk, in place of the specifier |
 | `dist/worker.js` in the app output | absent, because no static import names it |
 | the default worker URL at run time | `/assets/worker.js`, which the server answers with 404 |
-| what the app saw | `attachWorkers` resolved, `pool.count` reported three, and the first frame then hung until the join timeout |
+| what the app saw | `workers.attach` resolved, `pool.count` reported three, and the first frame then hung until the join timeout |
 
 The hang is the part worth naming. Chrome raises a plain `Event` and not an
 `ErrorEvent` when a module worker's script fails to fetch, so `event.message` is
@@ -1131,7 +1131,7 @@ into `WORKERS_ENTRY_UNREACHABLE`. The app passes `workerUrl` from
 | `__vite-browser-external` chunk | gone |
 | worker entry in the app output | `assets/worker-<hash>.js`, emitted by `?worker&url` |
 | page `crossOriginIsolated`, `SharedArrayBuffer` | true, true |
-| main thread `attachWorkers` | refused, the message names `Atomics.wait` |
+| main thread `workers.attach` | refused, the message names `Atomics.wait` |
 | worker host, sequential `stateHash` | 2850976559 |
 | worker host, three pool workers attached | resolves |
 | worker host, parallel `stateHash` after twelve frames | 2850976559 |
@@ -1184,7 +1184,7 @@ a run that never grew fails as well.
 
 | case | chromium 153.0.8010.12 | firefox 155.0 | webkit 26.6 | Safari 18.5 |
 | --- | --- | --- | --- | --- |
-| main thread `attachWorkers` refuses with `WORKERS_HOST_CANNOT_PARK` | pass | pass | pass | not run |
+| main thread `workers.attach` refuses with `WORKERS_HOST_CANNOT_PARK` | pass | pass | pass | not run |
 | worker host, shared backing, three workers, `js` kernel | pass | pass | pass | not run |
 | worker host, wasm backing, three workers, `wasm` kernel from the emitter | pass | pass | pass | not run |
 | a wrong `workerUrl` gives `WORKERS_ENTRY_UNREACHABLE` and does not hang | pass | pass | pass | not run |
@@ -1215,20 +1215,22 @@ What the passing lanes carried:
   in `startBrowserWorkers` covers Gecko and WebKit and not only Blink, and the
   message names the URL in each.
 
-**Two defects the matrix found and did not fix.** Both live in
-`src/utils/error.ts`, which this study did not change.
+**Two defects the matrix found and did not fix. A later commit fixed both, so
+what follows describes the tree this study ran against, not the tree today.**
+Both lived in `src/utils/error.ts`, which this study did not change.
 
-- **`AppError` calls `Error.captureStackTrace` with no guard.** That function is
+- **`AppError` called `Error.captureStackTrace` with no guard.** That function is
   a V8 extension. Every engine in this matrix has it, so no case failed. An
   engine without it turns every named fault into
   `TypeError: Error.captureStackTrace is not a function`, and the category the
-  caller needs is lost. Delete the function in node and call `attachWorkers` on a
+  caller needs is lost. Delete the function in node and call `workers.attach` on a
   heap world to watch it happen. The README names a Safari floor below the
-  release that adopted the function, so the risk sits inside the supported
-  window.
-- **`AppError` sets `name` from `this.constructor.name`.** A production build
+  release that adopted the function, so the risk sat inside the supported
+  window. `src/utils/error.ts` now calls the function only when it is one.
+- **`AppError` set `name` from `this.constructor.name`.** A production build
   renames the class, so `error.name` reads as one minified letter in every result
-  above. `error.category` carries the code and is unaffected.
+  above. `error.category` carries the code and is unaffected. `ECSError` and
+  `ECSRestoreError` now assign `name` as a literal.
 
 **Safari proper.** Not run. `safaridriver` answers a session request with
 `Could not create a session: You must enable 'Allow remote automation' in the

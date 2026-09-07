@@ -1,8 +1,8 @@
 /**
- * `Store._queryDirtyEpoch` only bumps on 0-crossings.
+ * `Store.queryDirtyEpoch` only bumps on 0-crossings.
  *
  * The epoch makes the mark O(1), and narrows _what_ counts as a
- * mark: only an archetype crossing the 0/non-zero boundary changes
+ * mark: only an archetype crossing the boundary between 0 and non-zero changes
  * `Query._nonEmptyArchetypes`. A mutation that takes an arch from 5 → 6
  * (or 6 → 5) leaves the non-empty set unchanged and must not invalidate
  * cached query results.
@@ -224,7 +224,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(total).toBe(3);
 	});
 
-	it("batch_add_component bumps once per 0-crossing (src always, tgt iff it was empty)", () => {
+	it("batchAddComponent bumps once per 0-crossing (src always, tgt iff it was empty)", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -300,7 +300,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
  * `length`. The old length-only `_onArchShrink` bump missed it, so a cached
  * default query kept its stale `nonEmptyArchs` list and the new entity was invisible.
  */
-describe("enabled_count 0-crossings on row add", () => {
+describe("enabledCount 0-crossings on row add", () => {
 	const Tag = ["v"] as const;
 
 	it("cached query sees an enabled row added to an all-disabled archetype (the issue repro)", () => {
@@ -336,7 +336,7 @@ describe("enabled_count 0-crossings on row add", () => {
 		expect(seen).toEqual([Number(b)]);
 	});
 
-	it("bumps the dirty epoch on the enabled_count 0→1 crossing (white-box)", () => {
+	it("bumps the dirty epoch on the enabledCount 0→1 crossing (white-box)", () => {
 		const world = new ECS();
 		const T = world.registerComponent(Tag);
 		const store = getStore(world);
@@ -389,7 +389,7 @@ describe("enabled_count 0-crossings on row add", () => {
 		expect(seen).toEqual([Number(y)]);
 	});
 
-	it("deferred add + flush_structural sees an enabled row into an all-disabled archetype", () => {
+	it("deferred add + flushStructural sees an enabled row into an all-disabled archetype", () => {
 		const world = new ECS();
 		const T = world.registerComponent(Tag);
 		const store = getStore(world);

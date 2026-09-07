@@ -6,7 +6,8 @@
  * components it never declared, which a normal system cannot (the negative
  * control proves it). Asserts the properties de-risked in the write-seam prototype:
  *   - enqueue defers, nothing changes until the schedule head drains
- *   - the full vocabulary applies (spawn, despawn, add, remove, set, disable and enable
+ *   - the full vocabulary applies (spawn, despawn, add, remove, set, disable
+ *     and enable)
  *   - `onSpawned` reports the deferred id
  *   - the PRE_STARTUP drain applies seed-time edits at `startup()`.
  * Coalescing a tick into one commit is the read side's property, which
@@ -98,7 +99,7 @@ describe("host command seam, the vocabulary applies", () => {
 		expect(world.query(Cell).entityCount).toBe(0);
 	});
 
-	it("add_component / remove_component on an existing entity", () => {
+	it("add_component and remove_component on an existing entity", () => {
 		const Tag = world.registerComponent({ v: "i32" }) as ComponentDef<{ v: "i32" }>;
 		let e: EntityID | undefined;
 		commands.spawn([spawnEntry(Cell, { x: 0, heat: 0 })], (id) => (e = id));
@@ -217,7 +218,7 @@ function pushRing(world: ECS, op: number, payload: Uint8Array): void {
 }
 
 describe("host command ring codec, golden bytes", () => {
-	it("ring_set_field packs id as u32 + value as f64 within the 15-byte payload", () => {
+	it("ringSetField packs id as u32 + value as f64 within the 15-byte payload", () => {
 		const world = new ECS({ deterministic: true });
 		const Cell = world.registerComponent({ x: "i32", heat: "i32" }) as CellDef;
 		const codec = ringSetFieldCodec(Cell, "x");
@@ -343,7 +344,7 @@ describe("host command seam, two transports, one apply dispatch", () => {
 });
 
 describe("host command dispatcher, opcode validation", () => {
-	it("rejects op_code 0 (reserved empty-slot marker) and out-of-u8 codes", () => {
+	it("rejects opCode 0 (reserved empty-slot marker) and out-of-u8 codes", () => {
 		const d = new HostCommandDispatcher();
 		expect(() => d.on(0, () => {})).toThrow();
 		expect(() => d.on(256, () => {})).toThrow();

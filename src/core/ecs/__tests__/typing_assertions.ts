@@ -218,7 +218,7 @@ function typestateEnforcementAssertions(): void {
 			// appears in the spawn template (the [__schema] slot, component.ts)
 			ctx.getField(e, Frozen, "x");
 
-			// @ts-expect-error, removeComponent needs despawns/transitions.remove
+			// @ts-expect-error, removeComponent needs despawns or transitions.remove
 			ctx.commands.remove(e, Vel);
 
 			// @ts-expect-error, no despawns declared: destroyEntity is blocked
@@ -260,7 +260,7 @@ function typestateEnforcementAssertions(): void {
 		}
 	});
 
-	// Despawns grant destroy + remove. Transitions feed add/remove.
+	// Despawns grant destroy and remove. Transitions feed add and remove.
 	world.registerSystem({
 		reads: [],
 		writes: [],

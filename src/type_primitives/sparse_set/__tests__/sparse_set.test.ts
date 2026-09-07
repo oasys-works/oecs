@@ -94,11 +94,8 @@ describe("SparseSet", () => {
 
   it("internal sparse map stays consistent after deletion", () => {
     const s = new SparseSet();
-    // Add keys 0..4
     for (let i = 0; i < 5; i++) s.add(i);
-    // Delete middle element
     s.delete(2);
-    // All remaining keys should be reachable
     expect(s.has(0)).toBe(true);
     expect(s.has(1)).toBe(true);
     expect(s.has(2)).toBe(false);

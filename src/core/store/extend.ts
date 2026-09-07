@@ -1,5 +1,5 @@
 /**
- * Host-side SAB extend, plant a new archetype region at the SAB tail
+ * Host-side SAB extend, which plants a new archetype region at the SAB tail.
  * Where `growColumnStore` resizes existing
  * archetype rows, `extendColumnStore` adds an archetype the SAB has never
  * carried before.
@@ -103,7 +103,9 @@ export function extendColumnStore(
 	allocator?: BufferAllocator
 ): ExtendResult {
 	if (plan.newArchetypes.length === 0) {
-		throw new StoreExtendError("extend plan has no new archetypes; use growColumnStore for resizes");
+		throw new StoreExtendError(
+			"extend plan has no new archetypes. Use growColumnStore to resize an existing one."
+		);
 	}
 
 	// 1. Validate new archetype IDs: no duplicates within the plan, no
@@ -116,7 +118,7 @@ export function extendColumnStore(
 		}
 		if (old.archetypes.has(id)) {
 			throw new StoreExtendError(
-				`archetype_id ${id} already exists in the SAB; use growColumnStore to resize it`
+				`archetype_id ${id} already exists in the store. Use growColumnStore to resize it.`
 			);
 		}
 		newIds.add(id);
@@ -199,9 +201,9 @@ export function extendColumnStore(
 	// three required readonly fields `component_id`, `field_id`, `type_tag`
 	// match. Extra fields like `byte_off`, `stride`, `view` are harmless).
 	// Previously we mapped to a fresh `{ component_id, field_id, type_tag }`
-	// object per column on every extend, that's an O(total columns)
-	// allocation each call, dominant during the lazy-registration ramp-up
-	// where 500 archetypes × ~3 columns × 500 extends = 750k allocations.
+	// object per column on every extend. That is an O(total columns) allocation
+	// each call, and it dominated the lazy-registration ramp-up, where the count
+	// grows with archetypes times columns times extends.
 	const mergedSpecs: ArchetypeSpec[] = [];
 	for (const [archetypeId, oldArch] of old.archetypes) {
 		mergedSpecs.push({

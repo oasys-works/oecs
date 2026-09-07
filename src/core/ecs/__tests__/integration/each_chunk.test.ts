@@ -61,8 +61,8 @@ describe("Query.forEachChunk", () => {
 
 	it("cols.mut stamps the change tick, cols.read does not", () => {
 		const { world, Pos, Vel, q } = moveWorld(4);
-		// store._tick re-syncs at update() start, so two ticks push the visible
-		// current tick to 1, distinguishable from the setup stamp (0).
+		// The change tick advances on every run, so two updates carry it past the
+		// tick the host setup above stamped. The two stamps are then distinct.
 		world.update(0);
 		world.update(0);
 		const cur = world.getChangeTick();

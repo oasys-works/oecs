@@ -1,12 +1,12 @@
 /**
  * SAB header, the first 52 bytes of the simulation SharedArrayBuffer.
  *
- * This file locks the binary layout the WASM sim and the TS host both read
+ * This file locks the binary layout a WASM module and the TS host both read
  * from. Any change to field order, width, or count is a `SIM_ABI_VERSION`
  * bump and is incompatible with prior `.wasm` builds.
  *
- * Field order is identical to the Zig `extern struct` so a Zig
- * `*StoreHeader` and a JS `DataView` see the same bytes.
+ * Field order is identical to the extern struct a module declares, so the
+ * module's header pointer and a JS `DataView` see the same bytes.
  *
  * Endianness: little-endian. WASM is little-endian. Bun and every browser
  * we target run on little-endian hosts (x86_64 and arm64). All DataView reads
@@ -23,7 +23,7 @@
  *     future fields to avoid another version bump.
  *   - v2: adds `event_ring_off` at byte 36 by
  *     promoting the first of v2's three reserved u32s. No version bump,
- *    earlier readers saw the byte range as zero (`_reserved0`), so
+ *     earlier readers saw the byte range as zero (`_reserved0`), so
  *     the change is backward-compatible.
  *   - v2: adds `terrain_off` at byte 40 by
  *     promoting the next reserved u32. Same backward-compat story as
@@ -31,48 +31,40 @@
  *     the offset of the terrain region or 0 when absent. No version bump.
  *   - v2: adds `spatial_grid_off` at byte 44
  *     by promoting the final reserved u32. Header is now fully packed
- *     (zero reserved bytes); the next schema change widens
+ *     (zero reserved bytes). The next schema change widens
  *     `STORE_HEADER_BYTES` or bumps `SIM_ABI_VERSION`.
- *   - v3: widens to 56 bytes and adds
- *     `army_compositions_off` (byte 48) + `spawn_anchors_off` (byte 52).
- *     Both point at SAB-resident regions the Zig `wave_spawn` system
- *     reads: army_compositions holds `NUM_PLAYERS × ARMY_SIZE` u8 slot
- *     bytes (TS writes, Zig reads); spawn_anchors holds `NUM_PLAYERS`
- *     `(i16 q, i16 r)` pairs (TS writes once at match init, Zig reads).
- *     ABI bump because the header widened past its previous packed size
- *     earlier wasm builds can't be mixed with a v3 SAB.
- *   - v4: widens to 60 bytes and adds
- *     `flow_field_off` (byte 56). Points at the SAB-resident flow-field
- *     `next_step` region, per-base-owner blocks of `(from_hex_id,
- *     to_hex_id)` u32 pairs that the eventual Zig port of `movement.ts`
- *     reads via linear scan. TS owns writes (`build_flow_field` rebuilds
- *     per-match on a wave spawn or a building change). Zig is read-only.
+ *   - v3: widens to 56 bytes and adds two consumer-named offsets, an army
+ *     composition table (byte 48) and a spawn anchor list (byte 52). Both
+ *     point at SAB-resident regions a consumer's WASM systems read, and the
+ *     host writes. ABI bump because the header widened past its previous
+ *     packed size. Earlier wasm builds cannot be mixed with a v3 SAB.
+ *   - v4: widens to 60 bytes and adds a third consumer-named offset (byte
+ *     56), a flow-field region the host writes and a WASM system reads.
  *     ABI bump because the header widened by 4 bytes past v3's packed
- *     size. Pre-v4 wasm builds can't be mixed with v4 SABs.
+ *     size. Pre-v4 wasm builds cannot be mixed with v4 SABs.
  *   - v5 ("SAB-is-the-interface"): widens to 64 bytes and adds
  *     `bindings_off` (byte 60). Points at the SAB-resident sim-bindings
- *     region, a fixed `SIM_BINDINGS_BYTES` block of `u16` component and field
- *     IDs the host writes once (per layout). The Zig per-system exports
- *     (`tick_cooldown_ready`, `tick_movement_tick`, `tick_faith_production`,
- *     and the batched `tick_all`) read their `(component_id, field_id)`
- *     pairs from this block instead of taking them as positional call
- *     args, so a frame can run several systems in one JS→WASM crossing.
- *     The region is always present (fixed size, no option knob); TS owns
- *     writes via `write_sim_bindings`, Zig is read-only. ABI bump because
- *     the header widened by 4 bytes past v4's packed size. Pre-v5 wasm
- *     builds can't be mixed with v5 SABs.
+ *     region, a fixed block of `u16` component and field ids the host writes
+ *     once per layout. A WASM per-system export reads its
+ *     `(component_id, field_id)` pairs from this block instead of taking
+ *     them as positional call args, so a frame can run several systems in
+ *     one JS to WASM crossing. The region was always present at this
+ *     version, with a fixed size and no option knob. The host owned the
+ *     writes, and the module was read-only. ABI bump because the header
+ *     widened by 4 bytes past v4's packed size. Pre-v5 wasm builds cannot
+ *     be mixed with v5 SABs.
  *   - v6: widens the per-archetype `ArchetypeDescriptorHeader`
  *     component mask from 2 → `COMPONENT_MASK_WORDS` (4) u32 words
  *     (component limit 64 → 128). Touches the descriptor header (24 → 32
  *     bytes), not this `StoreHeader`, recorded here only to keep the version
- *     log in step with the `abi.zig` twin. Pre-v6 wasm can't read v6 SABs
+ *     log in step with the module-side twin. Pre-v6 wasm cannot read v6 SABs
  *     (descriptor stride differs).
- *   - v7: de-games the SAB substrate. Drops the five game-named
- *     offset fields (`terrain_off`, `spatial_grid_off` and `army_compositions_off`/
- *     `spawn_anchors_off` and `flow_field_off`) and replaces them with the
+ *   - v7: de-games the SAB substrate. Drops the five consumer-named
+ *     offset fields (terrain, spatial grid, army composition, spawn anchor
+ *     and flow field) and replaces them with the
  *     generic `region_table_off` + `region_table_count` pair pointing at a
  *     `RegionTableEntry[]` directory. A consumer resolves its region via
- *     `findRegionOffset` (TS) and `abi.find_region` (Zig). Header shrinks
+ *     `findRegionOffset` in TS and its module-side twin. Header shrinks
  *     64 → 52 bytes, the first schema change that narrowed it. The SAB
  *     stays the always-on substrate. Only the game-named shape moves out.
  *
@@ -89,13 +81,13 @@
 // The byte-layout constants below are maintained by hand in this repository.
 // No generator produces them and no upstream source defines them. The golden
 // tests pin them. We re-export them here so existing `./header` importers and
-// the `core/buffer` barrel keep the same surface. The rich semantics for each
+// the `core/store` barrel keep the same surface. The rich semantics for each
 // field live on the `StoreHeader` interface and the golden bytes in
 // `__tests__/header.test.ts`.
 //
 //   - STORE_MAGIC          ASCII 'SIM1' as little-endian u32
-//   - SIM_ABI_VERSION    bumped on any header and descriptor schema change
-//                         independent from `PROTOCOL_VERSION`
+//   - SIM_ABI_VERSION      bumped on any header, descriptor or region-table
+//                          schema change
 //   - STORE_HEADER_BYTES   total header size (13 u32 fields)
 //
 // The sim-bindings region's byte size is no longer an engine ABI constant.
@@ -151,27 +143,26 @@ export interface StoreHeader {
 	 * `Store` always allocates one). */
 	readonly entityIndexOff: number;
 	/** Byte offset of the event ring region (ECS signal payloads shared
-	 * with the Zig sim). 0 means absent. */
+	 * with a compute backend). 0 means absent. */
 	readonly eventRingOff: number;
 	/** Byte offset of the region-table directory, a `RegionTableEntry[]`
 	 * (`(region_id, byte_offset, byte_length)` triples) holding one entry
 	 * per consumer-declared region. 0 means no consumer regions were
 	 * declared. The engine treats `region_id` as opaque. A consumer resolves
-	 * its region with `findRegionOffset(view, header, id)` (TS) or
-	 * `abi.find_region(header_addr, id)` (Zig). Replaces the five game-named
-	 * offset fields (`terrain_off` and `spatial_grid_off`/… ) the SAB header
-	 * used to hard-code. This de-games the SAB substrate. */
+	 * its region with `findRegionOffset(view, id)` in TS, or with the
+	 * matching module-side lookup. Replaces the five consumer-named
+	 * offset fields the SAB header used to hard-code. This de-games the SAB
+	 * substrate. */
 	readonly regionTableOff: number;
 	/** Number of `RegionTableEntry` records at `region_table_off`. */
 	readonly regionTableCount: number;
 	/** Byte offset of the sim-bindings region, an opaque block of `u16`
-	 * `(component_id, field_id)` ids. The consumer owns the layout. The host
-	 * writes it once per layout through `write_sim_bindings`. A WASM per-system
-	 * export reads its ids from here instead of taking
-	 * them as call args. Present only when the consumer opts into a WASM backend
-	 * by passing `bindingsRegionBytes` to `createColumnStore`. 0 = absent (a
-	 * pure-TS game pays nothing for this region). The size is a runtime input,
-	 * not an engine ABI constant. It arrived with the "SAB is the interface" arm. */
+	 * `(component_id, field_id)` ids. The consumer owns the layout, and the host
+	 * writes the block once per layout. A WASM per-system export reads its ids
+	 * from here instead of taking them as call args. Present only when the
+	 * consumer opts into a WASM backend by passing `bindingsRegionBytes` to
+	 * `createColumnStore`. 0 = absent, so a pure-TS world pays nothing for this
+	 * region. The size is a runtime input, not an engine ABI constant. */
 	readonly bindingsOff: number;
 }
 

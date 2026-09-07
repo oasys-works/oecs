@@ -21,7 +21,7 @@ function makeConfig(overrides?: Partial<SystemConfig>): SystemConfig {
 	};
 }
 
-// The schedule and the observers plugin both mint system ids from a counter, so
+// The world and the observers plugin both mint system ids from a counter, so
 // only a forged id reaches this. The fault is an `ECSError` and not an
 // assertion, which keeps the assertion class out of the observers bundle.
 describe("asSystemId", () => {
@@ -51,7 +51,7 @@ describe("ECS system registration", () => {
 	// Registration
 	//=========================================================
 
-	it("register_system assigns unique SystemIDs", () => {
+	it("registerSystem assigns unique SystemIDs", () => {
 		const world = new ECS();
 		const a = world.registerSystem(makeConfig());
 		const b = world.registerSystem(makeConfig());
@@ -61,14 +61,14 @@ describe("ECS system registration", () => {
 		expect(b.id as number).toBe(1);
 	});
 
-	it("register_system returns a frozen descriptor", () => {
+	it("registerSystem returns a frozen descriptor", () => {
 		const world = new ECS();
 		const descriptor = world.registerSystem(makeConfig());
 
 		expect(Object.isFrozen(descriptor)).toBe(true);
 	});
 
-	it("system_count tracks registrations", () => {
+	it("systemCount tracks registrations", () => {
 		const world = new ECS();
 		expect(world.systemCount).toBe(0);
 
@@ -83,7 +83,7 @@ describe("ECS system registration", () => {
 	// Removal
 	//=========================================================
 
-	it("remove_system calls on_removed and removes from registry", () => {
+	it("removeSystem calls onRemoved and removes from registry", () => {
 		const onRemoved = vi.fn();
 		const world = new ECS();
 		const descriptor = world.registerSystem(makeConfig({ onRemoved }));
@@ -98,7 +98,7 @@ describe("ECS system registration", () => {
 	// Lifecycle: startup calls onAdded
 	//=========================================================
 
-	it("startup calls on_added on all systems", () => {
+	it("startup calls onAdded on all systems", () => {
 		const onAddedA = vi.fn();
 		const onAddedB = vi.fn();
 
@@ -112,7 +112,7 @@ describe("ECS system registration", () => {
 		expect(onAddedB).toHaveBeenCalledOnce();
 	});
 
-	it("startup skips systems without on_added", () => {
+	it("startup skips systems without onAdded", () => {
 		const world = new ECS();
 		world.registerSystem(makeConfig()); // no onAdded
 
@@ -123,7 +123,7 @@ describe("ECS system registration", () => {
 	// Lifecycle: dispose
 	//=========================================================
 
-	it("dispose calls dispose then on_removed, then clears", () => {
+	it("dispose calls dispose then onRemoved, then clears", () => {
 		const callOrder: string[] = [];
 		const world = new ECS();
 
@@ -160,7 +160,7 @@ describe("ECS system registration", () => {
 		expect(descriptor.fn).toBe(fn);
 	});
 
-	it("ctx exposes is_alive and has_component as shims for Store", () => {
+	it("ctx exposes isAlive and hasComponent as shims for Store", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const AliveTag = world.registerTag();
@@ -277,7 +277,7 @@ describe("ECS fixed timestep", () => {
 		expect(tickCount).toBe(1);
 	});
 
-	it("passes fixed_timestep as dt to FIXED_UPDATE systems", () => {
+	it("passes fixedTimestep as dt to FIXED_UPDATE systems", () => {
 		const fixedDt = 1 / 50;
 		const world = new ECS({ fixedTimestep: fixedDt });
 		let receivedDt = 0;
@@ -331,7 +331,7 @@ describe("ECS fixed timestep", () => {
 		expect(order).toEqual(["update"]);
 	});
 
-	it("fixed_update runs before the variable update phases", () => {
+	it("FIXED_UPDATE runs before the variable update phases", () => {
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		const order: string[] = [];
 
@@ -357,7 +357,7 @@ describe("ECS fixed timestep", () => {
 		expect(order).toEqual(["fixed", "update"]);
 	});
 
-	it("fixed_alpha exposes interpolation factor", () => {
+	it("fixedAlpha exposes interpolation factor", () => {
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		const sys = world.registerSystem(makeConfig());
 		world.addSystems(SCHEDULE.FIXED_UPDATE, sys);
@@ -368,7 +368,7 @@ describe("ECS fixed timestep", () => {
 		expect(world.fixedAlpha).toBeCloseTo(0.5);
 	});
 
-	it("fixed_timestep getter and setter works", () => {
+	it("fixedTimestep getter and setter works", () => {
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		expect(world.fixedTimestep).toBeCloseTo(1 / 60);
 
@@ -650,7 +650,7 @@ describe("Runtime access validation", () => {
 
 		const e = world.spawn();
 		expect(() => {
-			// All of these run with no active system → access_check is a no-op.
+			// All of these run with no active system → accessCheck is a no-op.
 			world.addComponent(e, Pos, { x: 1, y: 2 });
 			world.setField(e, Pos, "x", 99);
 			expect(world.getField(e, Pos, "x")).toBe(99);
@@ -692,7 +692,7 @@ describe("Runtime access validation", () => {
 		expect(world.getField(e, Pos, "x")).toBe(6);
 	});
 
-	it("declared spawns let the system add_component for the spawned-archetype members", () => {
+	it("declared spawns let the system addComponent for the spawned-archetype members", () => {
 		const world = new ECS();
 		const A = world.registerComponent(["x"] as const);
 		const B = world.registerComponent(["y"] as const);
@@ -743,7 +743,7 @@ describe("Runtime access validation", () => {
 		expect(() => world.update(0)).not.toThrow();
 	});
 
-	it("on_added callbacks are also wrapped in access_check", () => {
+	it("onAdded callbacks are also wrapped in accessCheck", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(["x", "y"] as const);
 		const e = world.spawn();

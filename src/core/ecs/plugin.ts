@@ -1,9 +1,10 @@
 /***
  * Plugin. An optional subsystem a world installs at construction.
  *
- * Relations, events, snapshots and observers are not part of every world. Each
- * one is a plugin: a module that builds its own service, wires it into the
- * store through a narrow seam, and hands back the facade it adds to the world.
+ * Relations, events, snapshots, observers, workers and solid are not part of
+ * every world. Each one is a plugin: a module that builds its own service,
+ * wires it into the store through a narrow seam, and hands back the facade it
+ * adds to the world.
  *
  * The world core never imports a plugin module. That is the whole point. A
  * class method cannot be removed by a bundler, so while `ECS` declared
@@ -43,9 +44,9 @@
  * One thing stays a single typed slot rather than a keyed registry: the system
  * dispatch route. The schedule hoists it per phase and reads one opaque plan
  * per dispatch, and a keyed read on that path is far slower on a schedule of
- * short bodies. `bench/` holds the comparison. The registration is keyed and
- * cold, and the world caches what it resolved into the field the dispatch
- * already read, so the hot path is unchanged by construction.
+ * short bodies. The registration is keyed and cold, and the world caches what
+ * it resolved into the field the dispatch already read, so the hot path is
+ * unchanged by construction.
  *
  * Cold path throughout. A plugin is installed once, at construction.
  ***/
@@ -185,14 +186,6 @@ type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) exten
 export type PluginsOf<P extends readonly unknown[]> = UnionToIntersection<SurfaceOf<P[number]>> &
 	object;
 
-/** A host for a bare `Store`, with no world around it.
- *
- * Every plugin that only needs store seams installs through this, which is
- * what a test driving a raw store uses. `store` and `changes` are both the
- * store, so the change feed works here. Every world-level member throws: a
- * bare store has no world, no system context, no schedule tail and nowhere to
- * keep an observer registry, so reaching for one is a mistake worth naming
- * rather than a case to silently support. */
 /** The one refusal every world-level hook point shares. Names what the caller
  * reached for, and the call that gives it a world. */
 function worldOnly(what: string): ECSError {
@@ -203,6 +196,14 @@ function worldOnly(what: string): ECSError {
 	);
 }
 
+/** A host for a bare `Store`, with no world around it.
+ *
+ * Every plugin that only needs store seams installs through this, which is
+ * what a test driving a raw store uses. `store` and `changes` are both the
+ * store, so the change feed works here. Every world-level member throws: a
+ * bare store has no world, no system context, no schedule tail and nowhere to
+ * keep an observer registry, so reaching for one is a mistake worth naming
+ * rather than a case to silently support. */
 export function storeOnlyHost(store: Store): PluginHost {
 	return {
 		store,

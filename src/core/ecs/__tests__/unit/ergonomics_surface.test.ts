@@ -6,7 +6,7 @@
  * override skip. The typed event schema is covered by
  * `integration/event.test.ts`. The compile-time halves (branded event
  * fields, schema-typed template values and overrides) are exercised implicitly
- * by every typed call in this file and across the game package.
+ * by every typed call in this file.
  */
 
 import { describe, expect, it } from "vitest";
@@ -89,7 +89,7 @@ describe("Template in spawns and despawns declarations", () => {
 		expect(sys.despawns).toEqual([Hp, Pos, Vel]);
 	});
 
-	it("a Template despawns declaration authorises destroy_entity at flush", () => {
+	it("a Template despawns declaration authorises destroyEntity at flush", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const t = world.template(Pos({ x: 5 }));
@@ -110,7 +110,7 @@ describe("Template in spawns and despawns declarations", () => {
 	});
 });
 
-describe("Query.for_each_until", () => {
+describe("Query.some", () => {
 	it("stops at the first archetype whose callback returns true", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
@@ -149,7 +149,7 @@ describe("Query.for_each_until", () => {
 		expect(visited).toBe(1);
 	});
 
-	it("include_disabled() spans the disabled tail", () => {
+	it("includeDisabled() spans the disabled tail", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" } as const);
 		const e = world.spawn();
@@ -175,8 +175,8 @@ describe("Query.for_each_until", () => {
 	});
 });
 
-describe("Archetype.get_columns_read", () => {
-	it("returns the same column views as per-field get_column_read", () => {
+describe("Archetype.getColumnsRead", () => {
+	it("returns the same column views as per-field getColumnRead", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);
 		const e = world.spawn();
@@ -194,7 +194,7 @@ describe("Archetype.get_columns_read", () => {
 	});
 });
 
-describe("ECS.region_handles", () => {
+describe("ECS.regionHandles", () => {
 	it("throws once, naming every missing region id", () => {
 		const world = new ECS();
 		expect(() => world.regionHandles(7, 9)).toThrowError(/\[7, 9\]/);
@@ -220,8 +220,8 @@ describe("ECS.region_handles", () => {
 	});
 });
 
-describe("update_field", () => {
-	it("host-side: composes get_field → set_field and returns the written value", () => {
+describe("updateField", () => {
+	it("host-side: composes getField → setField and returns the written value", () => {
 		const world = new ECS();
 		const Gold = world.registerComponent({ value: "i32" } as const);
 		const e = world.spawn();
@@ -262,7 +262,7 @@ describe("spawn override explicit-undefined skip", () => {
 	});
 });
 
-describe("add_component bundle overload", () => {
+describe("addComponent bundle overload", () => {
 	it("accepts a callable-def bundle and zero-fills omitted fields", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64", y: "f64" } as const);

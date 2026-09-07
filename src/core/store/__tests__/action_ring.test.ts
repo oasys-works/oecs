@@ -42,12 +42,12 @@ describe("action_ring header", () => {
 		expect(() => initActionRing(view, RING_OFF, 0)).toThrow(ActionRingError);
 	});
 
-	it("action_ring_bytes accounts for header + slots", () => {
+	it("actionRingBytes accounts for header + slots", () => {
 		expect(actionRingBytes(8)).toBe(ACTION_RING_HEADER_BYTES + 8 * ACTION_RING_SLOT_BYTES);
 	});
 });
 
-describe("push_action / pop_action round-trip", () => {
+describe("pushAction and popAction round-trip", () => {
 	it("pops in FIFO order with correct length and bytes", () => {
 		const { view, off } = makeRing(4);
 		const a = new Uint8Array([1, 2, 3]);
@@ -97,7 +97,7 @@ describe("overflow", () => {
 		expect(actionRingOverflow(view, off)).toBe(true);
 	});
 
-	it("clear_action_ring_overflow resets the flag without touching heads", () => {
+	it("clearActionRingOverflow resets the flag without touching heads", () => {
 		const { view, off } = makeRing(2);
 		pushAction(view, off, new Uint8Array([1]));
 		pushAction(view, off, new Uint8Array([2]));
@@ -121,7 +121,7 @@ describe("overflow", () => {
 	});
 });
 
-describe("drain_action_ring", () => {
+describe("drainActionRing", () => {
 	it("invokes handler per entry in FIFO order", () => {
 		const { view, off } = makeRing();
 		pushAction(view, off, new Uint8Array([1, 2]));
@@ -140,8 +140,8 @@ describe("drain_action_ring", () => {
 		pushAction(view, off, new Uint8Array([10, 20]));
 		const held: Uint8Array[] = [];
 		drainActionRing(view, off, (p) => held.push(p));
-		// Drain a second time after held captured references. Held should
-		// not have been overwritten.
+		// One reused scratch buffer would leave both held references pointing at
+		// the last payload.
 		expect(Array.from(held[0])).toEqual([1, 2, 3]);
 		expect(Array.from(held[1])).toEqual([10, 20]);
 	});
@@ -157,9 +157,9 @@ describe("drain_action_ring", () => {
 
 describe("zero-length entry", () => {
 	// Manually enqueue a slot whose length prefix is 0, bypassing
-	// `pushAction` (which now rejects empty payloads). This simulates the
-	// ABI-skew case the issue guards against: a slot present in the ring whose
-	// length collides with `popAction`'s empty-ring sentinel.
+	// `pushAction`, which rejects an empty payload. This builds the ABI-skew
+	// case: a slot present in the ring whose length collides with `popAction`'s
+	// empty-ring sentinel.
 	function enqueueRawSlot(view: DataView, off: number, len: number, bytes: number[]): void {
 		const capacity = actionRingCapacitySlots(view, off);
 		const heads = new Int32Array(view.buffer, view.byteOffset + off, 4);
@@ -171,7 +171,7 @@ describe("zero-length entry", () => {
 		Atomics.store(heads, ACTION_RING_HEADER_OFFSETS.write_head / 4, (writeHead + 1) >>> 0);
 	}
 
-	it("push_action rejects an empty payload", () => {
+	it("pushAction rejects an empty payload", () => {
 		const { view, off } = makeRing();
 		expect(() => pushAction(view, off, new Uint8Array(0))).toThrow(ActionRingError);
 		expect(pendingActionCount(view, off)).toBe(0);

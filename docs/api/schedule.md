@@ -161,8 +161,9 @@ prepares the archetypes, runs the `onAdded` hook of each system, runs the three 
 clears each event that they emitted. So frame 1 does not see an old startup event.
 
 **`ecs.update(dt)`**. This is one frame. It runs the fixed-update catch-up loop, then
-`PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Then it dispatches the `onSet` observers, clears the
-events, and increases the tick.
+`PRE_UPDATE`, `UPDATE`, and `POST_UPDATE`. Then it settles. The settle advances the change tick,
+runs each plugin's settle hook, clears the events, and increases the frame tick. The observers
+plugin dispatches its `onSet` callbacks in that hook.
 
 **`ecs.flush()`**. This applies the buffered deferred structural operations now. You rarely need
 it, because the phase boundaries and `update()` already flush.
@@ -274,9 +275,9 @@ interface RunCondition {
   readonly name: string;
   readonly evaluate: (ctx: ConditionContext) => boolean;
   readonly reads?: readonly ComponentDef[];
-  readonly resourceReads?: readonly ResourceKey<unknown>[];
+  readonly resourceReads?: readonly ResourceKey<any>[];
 }
-// ConditionContext exposes only { ecsTick, resource(key), hasResource(key) }, read-only.
+// ConditionContext exposes only { ecsTick, getResource(key), hasResource(key) }, read-only.
 ```
 
 The supplied conditions are:

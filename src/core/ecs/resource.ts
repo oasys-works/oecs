@@ -9,9 +9,9 @@
  * phantom type parameter, so reads are type-safe at compile time.
  *
  * Lifecycle. A resource is register-once *until removed*: a second
- * `registerResource` for a live key throws RESOURCE_ALREADY_REGISTERED, but
- * `removeResource(key)` drops it (failing closed on a missing key) and frees the
- * key to be registered again, the present → absent → present axis. Removal is
+ * `ecs.resources.register` for a live key throws RESOURCE_ALREADY_REGISTERED,
+ * but `ecs.resources.remove(key)` drops it (failing closed on a missing key)
+ * and frees the key to be registered again, the present → absent → present axis. Removal is
  * access-checked as a *write* (a system must declare the key in `resourceWrites`),
  * and resources stay out of `stateHash` and snapshot and resume regardless, so a
  * lifecycle change never perturbs the determinism hash.

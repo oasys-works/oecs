@@ -3,16 +3,16 @@
  *
  * Two foundational rules meet in this probe, and the library's own `vs/`
  * comparison already reports that `read_by_id` is the one row where `oecs`
- * places last of eight.
+ * places last.
  *
- * **Rule 8**, `layout(soa)` is a programmer declaration, not a compiler choice.
+ * **`layout(soa)` is a programmer declaration, not a compiler choice.**
  * Experiment 09 measured SoA winning multi-field sequential walks by 1.30 to 1.34x,
  * and **AoS winning random access by 1.45x once the working set exceeds cache**
  * (L4 and L5). The winner flips with both access pattern and working-set size.
  * `oecs` is SoA-only, so if the crossover is real the library has no answer for
  * the far side of it.
  *
- * **Rule 13**, generation checks must be elidable. Experiment 17 measured them
+ * **Generation checks must be elidable.** Experiment 17 measured them
  * at 28 to 31% on a dense array walk, but experiment 19's N2 found them lost in the
  * noise on pointer-chasing. `oecs` places the check on by-id access only, which
  * is the second case. This probe tests whether that placement holds up.
@@ -158,7 +158,7 @@ const which = variantArg();
 if (which) {
 	emit(await run(which));
 } else {
-	console.log(`P09, access by id (exp 09 L3-L5 / rule 8, exp 17+19 / rule 13)`);
+	console.log(`P09, access by id (exp 09 L3 to L5, exp 17 and exp 19)`);
 	console.log(`      small = ${SMALL.toLocaleString()} (fits cache), large = ${LARGE.toLocaleString()} (does not)`);
 	console.log(`      shuffled = Fisher-Yates over xorshift32, not a modulo stride\n`);
 

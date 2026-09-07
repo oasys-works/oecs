@@ -66,7 +66,7 @@ describe("ECS query", () => {
 		const first = world.query(Pos);
 		const second = world.query(Pos);
 
-		// Same reference - live Query
+		// Same reference, a live Query
 		expect(first).toBe(second);
 	});
 
@@ -233,7 +233,7 @@ describe("ECS query", () => {
 	// Query.or(), any-of filtering
 	//=========================================================
 
-	it("any_of() passes archetypes with at least one of the any_of-components", () => {
+	it("or() passes archetypes with at least one of the named components", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -264,7 +264,7 @@ describe("ECS query", () => {
 		expect(entityIds).not.toContain(e3);
 	});
 
-	it("any_of() cache hit, same Query reference on repeated calls", () => {
+	it("or() cache hit, same Query reference on repeated calls", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
