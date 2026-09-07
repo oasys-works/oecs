@@ -44,6 +44,11 @@
  *
  *   node bench/net-oracle/mutants.mjs           # development build (more guards)
  *   node bench/net-oracle/mutants.mjs --prod    # the build that the package ships
+ *   node bench/net-oracle/mutants.mjs --only=split-end-short-by-one
+ *
+ * `--only=id[,id]` runs the named mutants and no others. Use it while you write
+ * one. A gate runs the whole list, because a run that names a subset says nothing
+ * about the rest.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -57,6 +62,11 @@ const outDir = path.join(here, "../.out/mutants");
 fs.mkdirSync(outDir, { recursive: true });
 
 const PROD = process.argv.includes("--prod");
+// `--only=id[,id]` runs the named mutants and no others. It is for the loop a
+// person runs while writing one. It is not for a gate, because a run that names a
+// subset proves nothing about the rest.
+const onlyArg = process.argv.find((a) => a.startsWith("--only="));
+const ONLY = onlyArg === undefined ? null : new Set(onlyArg.slice("--only=".length).split(","));
 const base = path.join(outDir, PROD ? "base.prod.mjs" : "base.mjs");
 await buildLib(base, { dev: !PROD, from: root });
 const baseSrc = fs.readFileSync(base, "utf8");
@@ -955,6 +965,38 @@ const MUTANTS = [
         const ticks = archetype.rowTicks[def.id];`,
 		to: `        const ticks = archetype.rowTicks[def.id];`,
 	},
+	{
+		// The split of the rows lives inside the worker. Each worker takes the half
+		// open range that its index and the worker count give. The ranges of the
+		// workers then cover the enabled rows one time. This mutant makes each range
+		// end one row early, so the row at each boundary is done by no worker.
+		//
+		// `worker-entry.mjs` is what makes this reachable. It starts the loop from
+		// the bundle the host loaded, where `src/worker.ts` starts it from the
+		// sources of the tree.
+		id: "split-end-short-by-one",
+		what: "each worker's row range ends one row early, so a row at each boundary is skipped",
+		find: `      const end = Math.floor(rows * (index + 1) / count);`,
+		to: `      const end = Math.floor(rows * (index + 1) / count) - 1;`,
+	},
+	{
+		// The other direction. Every worker after the first begins one row below its
+		// own range. The row at each boundary is then done two times. The age of that
+		// agent runs ahead of the model, where the mutant above leaves it behind.
+		id: "split-begin-overlaps",
+		what: "each worker after the first begins one row early, so a row is done two times",
+		find: `      const begin = Math.floor(rows * index / count);`,
+		to: `      const begin = Math.floor(rows * index / count) - (index > 0 ? 1 : 0);`,
+	},
+	{
+		// The tail alone. Each range but the last is correct, and the last worker
+		// stops one row short of the enabled count. A split that a test drove with
+		// one worker would still be correct, and the arm runs two.
+		id: "split-last-worker-stops-short",
+		what: "the last worker stops one row short of the tail",
+		find: `      const end = Math.floor(rows * (index + 1) / count);`,
+		to: `      const end = index === count - 1 ? Math.max(0, rows - 1) : Math.floor(rows * (index + 1) / count);`,
+	},
 ];
 
 // ── the battery each mutant is run against ──────────────────────────────────
@@ -1044,11 +1086,15 @@ for (const c of BATTERY) {
 }
 
 // ── run every mutant ────────────────────────────────────────────────────────
-console.log(`\n${MUTANTS.length} mutants x ${BATTERY.length} cases\n`);
+console.log(
+	`\n${ONLY === null ? MUTANTS.length : ONLY.size} mutants x ${BATTERY.length} cases` +
+		`${ONLY === null ? "" : "  (--only)"}\n`
+);
 const escaped = [];
 const skipped = [];
 const byMechanism = { oracle: [], engine: [] };
 for (const m of MUTANTS) {
+	if (ONLY !== null && !ONLY.has(m.id)) continue;
 	// A mutant that names a guard of a development build cannot fire in a
 	// production build. The flag is false there, so the branch and the mutation are
 	// both inert. A skip is the honest result, and an escape is not.
@@ -1090,7 +1136,15 @@ console.log("");
 // Both counts, always. "14 of 14 caught" is true and it is not the whole answer:
 // the mutants that only the engine found say nothing about the layers of the
 // oracle, and one of them needs a guard that the released package removes.
-const ran = MUTANTS.length - skipped.length;
+const selected = ONLY === null ? MUTANTS : MUTANTS.filter((m) => ONLY.has(m.id));
+if (ONLY !== null) {
+	const unknown = [...ONLY].filter((id) => !MUTANTS.some((m) => m.id === id));
+	if (unknown.length > 0) {
+		console.error(`\n--only names no such mutant: ${unknown.join(", ")}`);
+		process.exit(1);
+	}
+}
+const ran = selected.length - skipped.length;
 console.log(
 	`${byMechanism.oracle.length}/${ran} caught by an ORACLE layer, ` +
 		`${byMechanism.engine.length}/${ran} caught by an ENGINE error, ` +

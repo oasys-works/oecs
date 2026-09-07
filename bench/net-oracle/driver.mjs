@@ -1891,8 +1891,13 @@ export function memoryArms(lib, { spec, capSpec, cap, tooSmall, ...opts }) {
  *
  * The harness detaches the pool before it returns. A live worker holds the store
  * bytes and keeps the process alive.
+ *
+ * `workerUrl` decides which build the worker runs. `run.mjs` names
+ * `worker-entry.mjs`, which imports the bundle the host loaded. A mutant in the
+ * bundle then reaches the split as well. The vitest path names `src/worker.ts`,
+ * which is what the sources give a caller.
  */
-export async function workersArm(lib, spec, { count, ...opts }) {
+export async function workersArm(lib, spec, { count, workerUrl = WORKER_URL, ...opts }) {
 	// The caller builds the pooled world here, so this function has to resolve the
 	// provenance layer the way `lockstep` does. An unresolved `undefined` would give
 	// the world no layer and the driver its default. The epoch roll would then have
@@ -1911,7 +1916,7 @@ export async function workersArm(lib, spec, { count, ...opts }) {
 			`follow the ticks, or a zero in the pooled world says nothing`);
 	}
 	const pooledWorld = new EcsNet(lib, { strict: true, prov, sab: true, parallel: true });
-	const pool = await pooledWorld.ecs.workers.attach({ count, workerUrl: WORKER_URL });
+	const pool = await pooledWorld.ecs.workers.attach({ count, workerUrl });
 	let pooled;
 	try {
 		if (pool.count !== count) {

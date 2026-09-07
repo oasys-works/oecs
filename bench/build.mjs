@@ -60,7 +60,12 @@ const esbuild = (() => {
  * here can build a world with any subsystem installed. The published package
  * keeps them on separate subpaths, which is what lets a consumer drop the ones
  * it never names. A tool measuring or checking the whole engine wants all of
- * them, so it takes this shim instead. */
+ * them, so it takes this shim instead.
+ *
+ * `createWorkerRuntime` is here for one reason. `src/worker.ts` is the entry a
+ * worker thread starts, and it reads the sources of the tree. A tool that puts a
+ * fault into this bundle needs the worker to run the same bundle, so
+ * `bench/net-oracle/worker-entry.mjs` starts the loop from this export instead. */
 const ENTRY_SHIM = `export * from "./src/index.ts";
 export { snapshots } from "./src/plugins/snapshots/index.ts";
 export { events } from "./src/plugins/events/index.ts";
@@ -68,6 +73,7 @@ export { relations, registerIsA, registerChildOf } from "./src/plugins/relations
 export { observers } from "./src/plugins/observers/index.ts";
 export { workers } from "./src/plugins/workers/index.ts";
 export { fixedSabAllocator, growableSabAllocator, wasmMemoryAllocator } from "./src/shared.ts";
+export { createWorkerRuntime } from "./src/plugins/workers/worker_loop.ts";
 `;
 
 export async function buildLib(outfile, { dev = false, from = root } = {}) {

@@ -57,6 +57,7 @@ node bench/net-oracle/run.mjs --surface  # the probes for the API surface, and n
 node bench/net-oracle/run.mjs --memory   # the store base, the cap and the fixed buffer, and no suite
 node bench/net-oracle/run.mjs --workers  # one system of the net across a pool, and no suite
 node bench/net-oracle/mutants.mjs        # show that the oracle finds a bug
+node bench/net-oracle/mutants.mjs --only=split-end-short-by-one   # one mutant, while you write it
 
 # the same layers against the live TypeScript sources, through vitest
 pnpm exec vitest run --config bench/net-oracle/vitest.config.ts
@@ -508,9 +509,17 @@ suite. `mutants.mjs` names that arm. Each other case of its battery runs at a ba
 the default ceiling. A fault in either one is inert there.
 
 `node bench/net-oracle/run.mjs --workers` runs the pair for the pool alone. `mutants.mjs` names it
-for the same reason. One point about a mutant here. The worker thread loads `src/worker.ts`, the
-source of the tree. A mutant lives in the bundle that the host loads. So a mutant reaches the host
-half of the pool. It does not reach the split, which each worker computes for itself.
+for the same reason.
+
+The worker thread runs the bundle, and not the sources. `src/worker.ts` is the entry the package
+ships, and it imports the sources of the tree. A worker started from it runs the sources, whatever
+the host loaded. A mutant lives in the bundle alone, so the split of the rows was out of its reach.
+`worker-entry.mjs` closes that. It imports the bundle the host named and calls `createWorkerRuntime`
+from it, exactly as `src/worker.ts` calls the one it imported. `bench/build.mjs` exports that
+function for this reason. `run.mjs` names the entry, and it puts the path of the bundle in
+`OECS_NET_ORACLE_LIB`. A worker inherits the environment of the process that started it. A query
+string on the worker URL does not survive. Node resolves the specifier to a path, and it drops the
+search. `oracle.test.mjs` reads the sources through vitest, so it keeps `src/worker.ts`.
 
 ## The probes for the API surface
 
@@ -636,6 +645,9 @@ nonzero exit as a catch by the oracle.
 | the byte ceiling is applied at twice the declared value | the refusal at a ceiling the net outgrows, which then carries no code | oracle |
 | the published enabled row count is one short, so no worker owns the last row | `Age.ticks` of the pooled world against the reference | oracle |
 | the join of the pool leaves the archetype change tick alone | `changed(Age)` of the pooled world against the archetypes that the query gives | oracle |
+| each worker's row range ends one row early | `Age.ticks` of the pooled world against the reference | oracle |
+| each worker after the first begins one row early, so a row is done two times | the same | oracle |
+| the last worker stops one row short of the tail | the same | oracle |
 | `assertTemplate` accepts every value | the probe for the refusal of a value that is not a template | oracle |
 | the pre-0.5 array shape reaches the store | the same probe | oracle |
 | `ECSRestoreError` carries another category | the probe for the restore of the whole world | oracle |
@@ -661,8 +673,11 @@ builds were measured, and this is the result:
 
 | build | mutants run | caught by an oracle layer | caught by an engine error | escaped | skipped |
 | --- | --- | --- | --- | --- | --- |
-| development | 79 | 71 | 8 | 0 | 0 |
-| production | 74 | 66 | 8 | 0 | 5 |
+| development | 82 | 74 | 8 | 0 | 0 |
+| production | 77 | 69 | 8 | 0 | 5 |
+
+`--only=id[,id]` runs the named mutants and no others. Use it while you write one. A gate runs the
+whole list, because a run that names a subset says nothing about the rest.
 
 The two builds agree on the mechanism for each mutant that both run. So the choice of the default
 costs no coverage. An engine error finds eight of them, and they come from four places:
@@ -760,13 +775,8 @@ more meaning to a successful run than it has:
   are the consumer's to provide. Therefore this harness has nothing to attach. The arm for the
   `SharedArrayBuffer` covers the backing that such a backend needs. The arm at a store base covers
   the layout that a WASM module needs. Neither one covers the dispatch to it.
-- **The split of a pool, and a wasm kernel.** The workers arm runs a `js` kernel across two
-  workers. Each worker computes its own row range inside the worker thread, from `src/worker.ts`,
-  which is the source of the tree. A mutant lives in the bundle that the host loads. Therefore no
-  mutant here reaches the split itself. The arm reads the host half of the pool instead. That half
-  holds three things. They are the counts it publishes, the stamp it makes at the join, and the
-  route that replaces the body. A compiled kernel, the shadow stack and `stackBytes` are outside
-  this tool as well.
+- **A compiled kernel.** The workers arm runs a `js` kernel. A `wasm` kernel, the shadow stack and
+  `stackBytes` are outside this tool. `parallel_wasm.test.ts` and the browser matrix hold them.
 - **`wasmMemoryAllocator`.** The memory arms use the growable shared allocator and the fixed one.
   A `WebAssembly.Memory` backing has no cover here.
 - **`memory.storeBase` on the wasm backing, and `storeBaseAbove`.** The arm at a store base runs
@@ -909,6 +919,7 @@ this harness covers:
 | `nets.mjs` | the generators, and validation of a `NetSpec` |
 | `driver.mjs` | the oracles: lockstep, comparison, the change detection, the marks, the quarantine, the events, the sparse set, the verbs of a query, confluence, the snapshot, compact, the idle tail, and the floors for pressure |
 | `kernels.mjs` | the kernel bodies of the workers arm. A worker loads it by URL, and the system body imports it, so one source serves both paths |
+| `worker-entry.mjs` | the worker entry of the oracle. It starts the loop from the bundle the host loaded, so a mutant reaches the worker half of the pool |
 | `surface.mjs` | the probes for the parts of the API that the simulation cannot reach, with a floor on the count of the assertions of each one |
 | `run.mjs` | the CLI: the selected suite, `--soak`, and one case |
 | `mutants.mjs` | injection of a bug, it proves that the oracle fails when it must. Its battery holds one case for the probes of the API surface, and that case is last. |

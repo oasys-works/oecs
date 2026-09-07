@@ -246,7 +246,13 @@ if (preBuilt !== null) {
 	outfile = path.join(here, "../.out/oecs.net-oracle.mjs");
 	await buildLib(outfile, { dev: !OPT.prod, from: path.join(here, "../..") });
 }
-const lib = await import(url.pathToFileURL(outfile).href);
+const libUrl = url.pathToFileURL(outfile).href;
+const lib = await import(libUrl);
+// The worker entry of the oracle reads this. It imports the same build that this
+// process loaded. A fault in the bundle then reaches the worker half of the pool
+// as well. A worker inherits the environment of the process that started it.
+process.env.OECS_NET_ORACLE_LIB = libUrl;
+const WORKER_ENTRY = new URL("./worker-entry.mjs", import.meta.url);
 
 
 /** The arms for the layout of the memory: the store base, and the two halves of
@@ -303,6 +309,7 @@ async function runWorkersArm(lib, pressure) {
 	const spec = assertNetSpecValid(dupTree(6));
 	const r = await workersArm(lib, spec, {
 		count: 2,
+		workerUrl: WORKER_ENTRY,
 		seed: OPT.seed,
 		maxBatch: OPT.batch,
 		verifyEvery: 2,
