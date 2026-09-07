@@ -18,7 +18,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { FrameStepper } from "../../frame_stepper";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 

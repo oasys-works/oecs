@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { SystemContext } from "../../system_context";
 import type { SystemConfig } from "../../system";
 import { relations } from "../../../../plugins/relations";

@@ -11,7 +11,8 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE, systemSet } from "../../schedule";
+import { systemSet } from "../../system_set";
+import { SCHEDULE } from "../../phase";
 import {
 	runIfResourceEq,
 	runEveryNTicks,

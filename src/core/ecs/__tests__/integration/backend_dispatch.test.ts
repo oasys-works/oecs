@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { BackendSystemHandle, ComputeBackend } from "../../compute_backend";
 import type { SystemConfig } from "../../system";
 import { unsafeCast } from "../../../../type_primitives";

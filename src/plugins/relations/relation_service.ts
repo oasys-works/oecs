@@ -16,7 +16,7 @@
 import type { BitSet } from "../../type_primitives";
 import { unsafeCast } from "../../type_primitives";
 import type { Archetype } from "../../core/ecs/archetype";
-import type { QueryTerms } from "../../core/ecs/query";
+import type { QueryTerms } from "../../core/ecs/query_terms";
 import {
 	type EntityID,
 	createEntityId,

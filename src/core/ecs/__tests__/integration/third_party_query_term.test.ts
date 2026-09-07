@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { ECS_ERROR, ECSError } from "../../utils/error";
-import type { ArchetypeTerm } from "../../query";
+import type { ArchetypeTerm } from "../../query_terms";
 import type { BitSet } from "../../../../type_primitives";
 
 /** `or(and(a, b), c)` over an archetype's component mask, hand-built. */

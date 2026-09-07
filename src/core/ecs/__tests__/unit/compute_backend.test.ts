@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { ComputeBackend, BackendSystemHandle } from "../../compute_backend";
 import type { SystemConfig, SystemFn } from "../../system";
 import { unsafeCast } from "../../../../type_primitives";

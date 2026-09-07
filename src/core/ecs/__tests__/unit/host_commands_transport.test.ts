@@ -26,7 +26,7 @@ import {
 	ringRemoveComponentCodec,
 	uninstallHostCommandSeam
 } from "../../host_commands";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { pushCommand } from "../../../store";
 
 type CellDef = ComponentDef<{ x: "i32" }>;

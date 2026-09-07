@@ -577,12 +577,17 @@ const req = createRequire(${JSON.stringify(join(ROOT, "package.json"))});
 	});
 
 	it("leaves the core chunk graph at the three chunks it ships", () => {
+		// The count is the contract. Each name is rollup's own, taken from one
+		// module the chunk holds, so a source move that changes which module
+		// rollup picks renames a chunk without changing what ships. The
+		// primitives chunk answered to `typed_arrays` until `phase.ts` split off
+		// `schedule.ts` and moved the topological sort into the same group.
 		for (const entry of [PROD, DEV_BUILD]) {
 			const chunks = staticImports(entry).filter((spec) => spec.startsWith("."));
 			expect(chunks.map((spec) => spec.replace(/-[\w-]{8}\.js$/, ".js")).sort()).toEqual([
 				"./host_commands.js",
 				"./shared.js",
-				"./typed_arrays.js"
+				"./topological_sort.js"
 			]);
 		}
 	});

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { snapshots } from "../../../../plugins/snapshots";
 import { Store } from "../../store";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { getEntityIndex, type EntityID } from "../../entity";
 import { ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";

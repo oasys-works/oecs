@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { ECSError, ECS_ERROR } from "../../utils/error";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 
 describe("optional access-declaration fields", () => {
 	it("absent optional fields normalize to frozen empties on the descriptor", () => {

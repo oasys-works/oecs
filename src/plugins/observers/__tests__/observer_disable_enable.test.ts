@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import { getEntityIndex, type EntityID } from "../../../core/ecs/entity";
 import { openAccess } from "../../../core/ecs/__tests__/test_helpers";
 import { observers } from "../../observers";

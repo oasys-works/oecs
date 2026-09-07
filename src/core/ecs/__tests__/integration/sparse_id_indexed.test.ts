@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { snapshots } from "../../../../plugins/snapshots";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import type { SystemContext } from "../../system_context";
 

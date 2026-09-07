@@ -593,3 +593,56 @@ export const _INTERNAL_EMPTY_ACCESS: SystemAccessDeclaration = Object.freeze({
 	relationReads: Object.freeze<RelationDef[]>([]),
 	relationWrites: Object.freeze<RelationDef[]>([])
 });
+
+/** @internal The config a bare-function registration produces. The access
+ * surface is unannotated, so a component touch fails the runtime check. The
+ * config form is how a system declares its per-system access.
+ *
+ * Footgun guard: a bare `SystemFn` is `(ctx, dt)`, arity
+ * ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
+ * query form with its `queryFn` second arg forgotten, which would
+ * otherwise silently bind `q := SystemContext`, `ctx := dt`, and
+ * `dt := undefined` (a NaN trap on the first arithmetic). Fail fast
+ * in `DEV` instead. Compiled out of production builds. */
+export function _createBareSystemConfig(fn: SystemFn): SystemConfig {
+	if (DEV && fn.length >= 3) {
+		throw new ECSError(
+			ECS_ERROR.SYSTEM_FN_ARITY,
+			`registerSystem was passed a ${fn.length}-parameter function with no ` +
+				`query builder. A bare system function is (ctx, dt); a query system is ` +
+				`(q, ctx, dt) and needs the query builder as the second argument: ` +
+				`registerSystem((q, ctx, dt) => …, (qb) => qb.and(…)). ` +
+				`Without it, q would receive the SystemContext and dt would be undefined.`
+		);
+	}
+	return { ..._INTERNAL_EMPTY_ACCESS, fn };
+}
+
+/** @internal DEV-only: refuse a config that can never run anything. `fn` is
+ * optional only for a backend-executed system, so a config with neither `fn`
+ * nor `backendHandle` is a registration the schedule can do nothing with. */
+export function _assertSystemRunnable(config: SystemConfig): void {
+	if (config.fn === undefined && config.backendHandle === undefined) {
+		throw new ECSError(
+			ECS_ERROR.SYSTEM_FN_ARITY,
+			`registerSystem: config${config.name ? ` '${config.name}'` : ""} has neither 'fn' nor 'backendHandle', provide a system body, or a backend handle for backend execution`
+		);
+	}
+}
+
+/** @internal Freeze one registration into the handle the schedule orders by.
+ * The world owns the id counter and hands the next value in, so the descriptor
+ * carries the same brand every other system id does. Cold path, one call per
+ * registration. */
+export function _createSystemDescriptor(
+	config: SystemConfig,
+	routePlan: object | undefined,
+	nextId: number
+): SystemDescriptor {
+	return Object.freeze({
+		...config,
+		..._normalizeAccess(config),
+		routePlan,
+		id: asSystemId(nextId)
+	});
+}

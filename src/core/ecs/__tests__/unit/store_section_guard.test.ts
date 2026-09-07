@@ -27,6 +27,14 @@
  * and an `ALLOWED` entry no longer in the file fails too, so an extraction
  * that removes coupling has to delete its entry.
  *
+ * **A sub-banner divides its own section and nothing past it.** A `// ====`
+ * banner ends a sub-banner's scope, so a new banner cannot silently re-own the
+ * fields that follow it.
+ *
+ * **A property whose initialiser holds a function counts as a member too.**
+ * Four fields carry a function body, and their reaches would otherwise miss
+ * the walk entirely.
+ *
  * Cold path. It parses one file at import.
  */
 
@@ -43,6 +51,10 @@ const sourceFile = ts.createSourceFile(storePath, source, ts.ScriptTarget.ESNext
 // --- Section and owner names, spelled once ------------------------------
 
 const PRELUDE = "(prelude)";
+const S_SEAMS = "Plugin install seams and the accessors a caller reaches by name";
+const S_SCHED_STATE = "Scheduling state: the world ticks, the observers, the row grain";
+const S_CONSTRUCTION = "Construction, the SAB backing and the memory plan";
+const S_STATE_HASH = "The world state hash";
 const S_ARCH_GRAPH = "Archetype graph";
 const S_LIFECYCLE = "Entity lifecycle";
 const S_SPAWN = "Template and direct spawn";
@@ -66,6 +78,10 @@ const S_RESOURCES =
  * order: the section list is the claim, the edge list is the detail. */
 const EXPECTED_SECTIONS = [
 	PRELUDE,
+	S_SEAMS,
+	S_SCHED_STATE,
+	S_CONSTRUCTION,
+	S_STATE_HASH,
 	S_ARCH_GRAPH,
 	S_LIFECYCLE,
 	S_SPAWN,
@@ -101,6 +117,7 @@ const O_EVENTS = "Event channels";
 const O_DEFERRED = "Deferred operation buffers";
 const O_SNAPSHOT_SVC = "Snapshot and resume service";
 const O_OBSERVERS = "Component observers";
+const O_QUERY_REGISTRY = "Query registry";
 const O_ROW_GRAIN = "The row grain: the row tick plane and the dirty list";
 const O_SAB = "SAB-backed ECS columns";
 
@@ -149,26 +166,48 @@ function sectionAt(line: number): string {
 	return current;
 }
 
+/** The `// --- X ---` sub-banner in force at `line`, or `null`.
+ *
+ * A sub-banner divides its own section and nothing beyond it, so a `// ====`
+ * banner ends its scope. Without that reset, adding a banner would silently
+ * re-own every field after it to the last sub-banner of the section before. */
 function subBannerAt(line: number): string | null {
 	let current: string | null = null;
-	for (const s of subBanners) if (s.line <= line) current = s.name;
+	let sectionLine = 0;
+	for (const s of sections) if (s.line <= line && s.line > sectionLine) sectionLine = s.line;
+	for (const s of subBanners) if (s.line <= line && s.line >= sectionLine) current = s.name;
 	return current;
 }
 
-/** Field name to owner. A field declared inside a section belongs to it. A
- * field in the declaration block belongs to its sub-banner, or to `CORE`. */
+/** Field name to owner. A field under a sub-banner belongs to that sub-banner,
+ * or to `CORE` when the sub-banner names shared core state. A field with no
+ * sub-banner in force belongs to its section. */
 const fieldOwner = new Map<string, string>();
 type Member = { name: string; section: string; node: ts.Node };
 const members: Member[] = [];
+
+function ownerOf(section: string, sub: string | null): string {
+	if (sub === null) return section;
+	return CORE_SUBS.has(sub) ? CORE : sub;
+}
+
+/** True when a property's initialiser holds a function body. Such a property
+ * declares a field and carries code, so it counts as both. Four of them exist:
+ * `_growHandler` and the three observer collectors. Without this the guard
+ * reads none of their field reaches. */
+function hasFunctionBody(node: ts.PropertyDeclaration): boolean {
+	const init = node.initializer;
+	if (init === undefined) return false;
+	return ts.isArrowFunction(init) || ts.isFunctionExpression(init);
+}
 
 for (const m of storeClass.members) {
 	const line = lineOf(m);
 	const section = sectionAt(line);
 	if (ts.isPropertyDeclaration(m)) {
-		const sub = subBannerAt(line);
-		const owner =
-			section !== PRELUDE ? section : sub !== null && CORE_SUBS.has(sub) ? CORE : (sub ?? "");
-		fieldOwner.set(m.name.getText(sourceFile), owner);
+		const name = m.name.getText(sourceFile);
+		fieldOwner.set(name, ownerOf(section, subBannerAt(line)));
+		if (hasFunctionBody(m)) members.push({ name, section, node: m });
 		continue;
 	}
 	if (
@@ -183,11 +222,7 @@ for (const m of storeClass.members) {
 		if (ts.isConstructorDeclaration(m)) {
 			for (const p of m.parameters) {
 				if ((p.modifiers ?? []).length > 0) {
-					const sub = subBannerAt(line);
-					fieldOwner.set(
-						p.name.getText(sourceFile),
-						sub !== null && CORE_SUBS.has(sub) ? CORE : (sub ?? "")
-					);
+					fieldOwner.set(p.name.getText(sourceFile), ownerOf(section, subBannerAt(line)));
 				}
 			}
 		}
@@ -264,9 +299,85 @@ type Allowed = {
 };
 
 const ALLOWED: Allowed[] = [
-	// ---- The prelude. It declares every field, so it reaches everything.
+	// ---- Plugin install seams. Every entry here is a plugin handing the
+	// store's own state to a service that lives outside this file.
 	{
-		from: PRELUDE,
+		from: S_SEAMS,
+		to: O_RELATIONS,
+		fields: ["_relations"],
+		reason:
+			"relationHost, installRelations, requireRelations and the relations accessor are the relation plugin's install seam. A split moves them with the seam."
+	},
+	{
+		from: S_SEAMS,
+		to: O_EVENTS,
+		fields: ["_events"],
+		reason: "The event plugin's install seam, same shape as the relation one."
+	},
+	{
+		from: S_SEAMS,
+		to: O_SNAPSHOT_SVC,
+		fields: ["_snapshots"],
+		reason: "The snapshot plugin's install seam, same shape as the relation one."
+	},
+	{
+		from: S_SEAMS,
+		to: S_RESOURCES,
+		fields: ["_resources"],
+		reason: "The resources accessor, one line over the extracted ResourceRegistry."
+	},
+	{
+		from: S_SEAMS,
+		to: CORE,
+		fields: ["_archGraph", "_entityAllocator", "_entityArchetypes", "_entityRows", "tick"],
+		reason:
+			"relationHost and snapshotHost close over the core state their services read, and the snapshot host's restore seam writes the frame tick. A write, so not exempt."
+	},
+	{
+		from: S_SEAMS,
+		to: O_SAB,
+		fields: ["_bufferAllocator", "_columnStore", "_entityIndexCapacity"],
+		reason:
+			"snapshotHost hands the live backing and the entity-index capacity to the snapshot service, which reads bytes the store owns. The widest thing a plugin seam gives away."
+	},
+	{
+		from: S_SEAMS,
+		to: O_SPARSE,
+		fields: ["_sparseStores"],
+		reason:
+			"relationHost resolves a relation to the sparse store that backs it, and snapshotHost hands the stores to the snapshot service."
+	},
+	{
+		from: S_SEAMS,
+		to: O_ROW_GRAIN,
+		fields: ["_rowCountsDirty", "queryDirtyEpoch"],
+		reason:
+			"A restore replaces rows, so the snapshot host's mount seam invalidates the cached row counts and bumps the query epoch. The same invalidation seam every structural section uses."
+	},
+
+	// ---- Scheduling state. Three owners under one banner, because none of
+	// the three folds into the state hash or survives a snapshot.
+	{
+		from: S_SCHED_STATE,
+		to: CORE,
+		fields: ["_componentMetas", "changeTick"],
+		reason:
+			"advanceChangeTick is the sole writer of the change tick, and an observer collector reads the component metadata to name what changed. The change tick is declared in this section and folds into CORE because every section stamps it, so its one writer shows up as an edge."
+	},
+	{
+		from: S_SCHED_STATE,
+		to: O_OBSERVERS,
+		fields: ["_collectDestroyEid", "_collectToggleEid", "_obsEvents", "_structuralHooks"],
+		reason:
+			"The three collector closures and addStructuralHook are observer code sitting beside the observer declarations. Same section, different sub-banner, so the guard reports it. A split moves the closures with the observer state."
+	},
+
+	// ---- Construction, the SAB backing and the memory plan. The constructor
+	// assigns nearly every field in the file, so this section reaches almost
+	// every owner. That is what a constructor is, and it is why the edges here
+	// are the ones a split cannot remove.
+	{
+		from: S_CONSTRUCTION,
 		to: O_SAB,
 		fields: [
 			"_bindingsRegionBytes",
@@ -275,15 +386,16 @@ const ALLOWED: Allowed[] = [
 			"_columnStore",
 			"_deterministic",
 			"_entityIndexCapacity",
+			"_initialCapacity",
 			"_onBufferResized",
 			"_regions",
 			"_storeBase"
 		],
 		reason:
-			"The constructor builds the backing, and stateHash and publishRowCounts read it. The backing is built before any section exists, so this edge cannot move."
+			"The section's own state, declared under its one sub-banner. The constructor builds the backing, _growHandler reallocs it, publishRowCounts stamps the descriptors and regionHandle reads the region table."
 	},
 	{
-		from: PRELUDE,
+		from: S_CONSTRUCTION,
 		to: CORE,
 		fields: [
 			"_archGraph",
@@ -291,40 +403,19 @@ const ALLOWED: Allowed[] = [
 			"_emptyArchetypeId",
 			"_entityAllocator",
 			"_entityArchetypes",
-			"_entityRows",
-			"changeTick",
-			"tick"
+			"_entityRows"
 		],
 		reason:
 			"Construction assigns the core state, and _refreshEntityIndexViews replants the entity index views after a backing resize. Writes, so not exempt."
 	},
 	{
-		from: PRELUDE,
-		to: O_RELATIONS,
-		fields: ["_relations"],
-		reason:
-			"relationHost, installRelations and the relations accessor are the relation plugin's install seam. A split moves them with the seam."
-	},
-	{
-		from: PRELUDE,
-		to: O_EVENTS,
-		fields: ["_events"],
-		reason: "The event plugin's install seam, same shape as the relation one."
-	},
-	{
-		from: PRELUDE,
-		to: O_SNAPSHOT_SVC,
-		fields: ["_snapshots"],
-		reason: "The snapshot plugin's install seam, same shape as the relation one."
-	},
-	{
-		from: PRELUDE,
+		from: S_CONSTRUCTION,
 		to: O_DEFERRED,
 		fields: ["_deferred"],
 		reason: "The constructor builds the deferred buffer with its closure host."
 	},
 	{
-		from: PRELUDE,
+		from: S_CONSTRUCTION,
 		to: O_OBSERVERS,
 		fields: [
 			"_obsEvents",
@@ -333,26 +424,64 @@ const ALLOWED: Allowed[] = [
 			"_toggleObserverCount"
 		],
 		reason:
-			"addStructuralHook takes a hook, and stateHash skips the observer state. A split gives the observer section an install method and keeps the counters behind it."
+			"The deferred buffer's host closures, built in the constructor, read the observer counters to decide whether a flush collects events. A split gives the observer section an install method and keeps the counters behind it."
 	},
 	{
-		from: PRELUDE,
+		from: S_CONSTRUCTION,
 		to: O_ROW_GRAIN,
-		fields: ["_initialCapacity", "_rowCountsDirty", "queryDirtyEpoch"],
-		reason:
-			"publishRowCounts clears the row-count dirty flag, and the constructor seeds the capacity. _initialCapacity sits under the row-grain banner and belongs to the archetype layout, which the banner does not say."
+		fields: ["_rowCountsDirty"],
+		reason: "publishRowCounts clears the row-count dirty flag after it stamps the descriptors."
 	},
 	{
-		from: PRELUDE,
+		from: S_CONSTRUCTION,
+		to: O_RELATIONS,
+		fields: ["_relations"],
+		reason:
+			"The constructor sets the relation service to null. A plugin installs the real one through the seam section above."
+	},
+	{
+		from: S_CONSTRUCTION,
+		to: O_EVENTS,
+		fields: ["_events"],
+		reason: "The constructor sets the event registry to null, same shape as the relation one."
+	},
+	{
+		from: S_CONSTRUCTION,
+		to: O_SNAPSHOT_SVC,
+		fields: ["_snapshots"],
+		reason: "The constructor sets the snapshot service to null, same shape as the relation one."
+	},
+	{
+		from: S_CONSTRUCTION,
+		to: O_QUERY_REGISTRY,
+		fields: ["_queries"],
+		reason:
+			"The constructor builds the registry, and the archetype graph's fanIntoQueries host seam calls it. The registry has to exist before the graph, because the graph names it."
+	},
+
+	// ---- The world state hash.
+	{
+		from: S_STATE_HASH,
+		to: O_RELATIONS,
+		fields: ["_relations"],
+		reason:
+			"The digest folds the relation targets in canonical order, so it reads the service through the private field rather than the accessor."
+	},
+	{
+		from: S_STATE_HASH,
 		to: O_SPARSE,
 		fields: ["_sparseStores"],
-		reason: "snapshotHost hands the sparse stores to the snapshot plugin, and stateHash folds them in."
+		reason:
+			"Sparse data lives outside the archetype graph, so the digest folds each store separately after the archetype loop."
 	},
+
+	// ---- Query support, one line each over the extracted registry.
 	{
-		from: PRELUDE,
-		to: S_RESOURCES,
-		fields: ["_resources"],
-		reason: "The resources accessor, one line over the extracted ResourceRegistry."
+		from: S_QUERY,
+		to: O_QUERY_REGISTRY,
+		fields: ["_queries"],
+		reason:
+			"getMatchingArchetypes, registerQuery and updateQueryRef are one-line delegations over QueryRegistry."
 	},
 
 	// ---- Archetype graph.
@@ -480,16 +609,25 @@ const ALLOWED: Allowed[] = [
 			"The sparse entity grain: drainSparseSet and noteSetEntity read the sparse stores the change they report belongs to."
 	},
 
-	// ---- Component registration.
+	// ---- Component registration. The section writes no field. It reads the
+	// metadata array and the determinism flag, and hands both to the free
+	// functions in component_registry.ts.
 	{
 		from: S_REGISTRATION,
-		to: CORE,
-		fields: ["_componentCount", "_componentMetas"],
+		to: O_SAB,
+		fields: ["_deterministic"],
 		reason:
-			"registerComponent appends the component metadata every other section reads. Writes, so not exempt. A split makes this section the sole writer and the rest readers."
+			"A registration refuses a float column on a deterministic world. The check moved to a free function that takes the flag, so the reach the old private method hid is visible here."
 	},
 
 	// ---- Sparse storage, snapshot, relations, immediate ops, direct access.
+	{
+		from: S_SPARSE,
+		to: O_SAB,
+		fields: ["_deterministic"],
+		reason:
+			"registerSparseComponent runs the same two field checks a dense registration runs, and it passes the same flag. The sparse id space is separate, the refusal is not."
+	},
 	{
 		from: S_SNAPSHOT,
 		to: O_SAB,
@@ -502,13 +640,6 @@ const ALLOWED: Allowed[] = [
 		to: O_SPARSE,
 		fields: ["_sparseStores"],
 		reason: "A relation is a sparse (relation, target) pair, so the traversals read the sparse store that backs it."
-	},
-	{
-		from: S_IMMEDIATE,
-		to: O_ROW_GRAIN,
-		fields: ["_scratchTargetMask"],
-		reason:
-			"A reused mask for the add and remove transition, declared under the row-grain banner but not row-grain state. Move the declaration before a split, not after."
 	},
 	{
 		from: S_DIRECT,
@@ -532,8 +663,13 @@ describe("store.ts section boundaries", () => {
 		expect(sections.map((s) => s.name)).toEqual(EXPECTED_SECTIONS);
 	});
 
-	it("gives every declared field an owner", () => {
-		const orphans = [...fieldOwner.entries()].filter(([, owner]) => owner === "");
+	it("gives every declared field a named owner", () => {
+		// `(prelude)` is the synthetic span before the first banner. A field
+		// owned by it sits under no banner and under no sub-banner, which is
+		// the state this guard exists to forbid.
+		const orphans = [...fieldOwner.entries()].filter(
+			([, owner]) => owner === "" || owner === PRELUDE
+		);
 		expect(orphans.map(([name]) => name)).toEqual([]);
 		expect(fieldOwner.size).toBeGreaterThan(0);
 	});

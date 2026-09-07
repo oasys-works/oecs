@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import { ECS_ERROR, type ECSError } from "../../../core/ecs/utils/error";
 import type { WorkerPool } from "../../workers/pool";

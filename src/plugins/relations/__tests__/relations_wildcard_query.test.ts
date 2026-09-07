@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
 import { ANY_RELATION } from "../../../core/ecs/relation";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { EntityID } from "../../../core/ecs/entity";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import type { SystemConfig } from "../../../core/ecs/system";

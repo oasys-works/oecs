@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 import { eventKey } from "../../event";
 import { relations } from "../../../../plugins/relations";

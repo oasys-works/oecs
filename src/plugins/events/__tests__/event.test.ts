@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import { asEventId, eventKey, signalKey, type EventReader } from "../../../core/ecs/event";
 import { ECS_ERROR, ECSError } from "../../../core/ecs/utils/error";

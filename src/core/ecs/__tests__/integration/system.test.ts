@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECS_ERROR, ECSError } from "../../utils/error";
 import type { Query } from "../../query";
 import type { SystemContext } from "../../system_context";

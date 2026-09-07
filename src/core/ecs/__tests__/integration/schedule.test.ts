@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Schedule, SCHEDULE } from "../../schedule";
+import { Schedule } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { SystemContext } from "../../system_context";
 import { Store } from "../../store";
 import {

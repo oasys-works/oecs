@@ -48,17 +48,19 @@ import {
 	entityNotAliveError
 } from "./entity";
 import {
-	fieldGids,
-	RESERVED_FIELD_NAMES,
 	type AccessorColumns,
 	type CursorBinder,
 	type SparseCursorCheck
 } from "./ref";
 import type { FrameTraceSink } from "./frame_trace";
-import { setComponentDebugName } from "./debug_names";
 import {
-	asComponentId,
-	createComponentDef,
+	appendComponentMeta,
+	assertDeterministicFieldTypes,
+	assertFieldNamesFree,
+	componentMetaLabel,
+	fieldIdOfMeta
+} from "./component_registry";
+import {
 	type ComponentDef,
 	type ComponentHandle,
 	type ComponentID,
@@ -75,11 +77,10 @@ import {
 import type { RelationDef, RelationHooks, RelationServiceHost } from "./relation";
 import type { EventHooks } from "./event";
 import { ResourceRegistry } from "./resource_registry";
+import { QueryRegistry } from "./query_registry";
 import {
 	unsafeCast,
 	BitSet,
-	BITS_PER_WORD_SHIFT,
-	BITS_PER_WORD_MASK,
 	type TypedArrayTag
 } from "../../type_primitives";
 import {
@@ -88,7 +89,9 @@ import {
 	type ArchetypeColumnLayout,
 	type ArchetypeID
 } from "./archetype";
-import type { Query, QueryHost, QueryTerms } from "./query";
+import type { Query } from "./query";
+import type { QueryHost } from "./query_cache";
+import type { QueryTerms } from "./query_terms";
 // The store shapes a consumer names without holding a `Store`. They live in a
 // leaf so a module that only needs one does not import this file.
 import type {
@@ -110,12 +113,13 @@ export type {
 // reaches the bundle. `src/__tests__/import_graph.test.ts` holds that.
 import type { ObserverHost } from "./observer";
 import type { ChangeFeed } from "./change_feed";
-import { ECS_ERROR, ECSError, ECSRestoreError } from "./utils/error";
+import { ECS_ERROR, ECSError } from "./utils/error";
 import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
 import type { HostState, SnapshotHooks, SnapshotHost } from "./snapshot";
 import { ArchetypeGraph } from "./archetype_graph";
+import { adoptRestoredBacking, reconstructHostRows } from "./snapshot_mount";
 import { accessCheck } from "./access_check";
 import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
 import {
@@ -137,7 +141,6 @@ import {
 	ARCHETYPE_DESCRIPTOR_HEADER_BYTES,
 	ARCHETYPE_DESCRIPTOR_OFFSETS,
 	COLUMN_DESCRIPTOR_BYTES,
-	STORE_DESCRIPTOR_COMPONENT_LIMIT,
 	STORE_HEADER_OFFSETS,
 	StoreCapExceededError,
 	type ArchetypeGrowSpec,
@@ -290,16 +293,20 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 
 	// --- Component metadata ---
 	// Parallel array indexed by ComponentID: fieldNames, fieldIndex, and fieldTypes
-	// for building archetype column layouts.
+	// for building archetype column layouts. The array's length is the next
+	// component id, so no separate counter exists to fall out of step with it.
+	// A flush loop, a spawn and the observer dispatch each hoist this array to
+	// a local, which is why it stays a Store field while the code that fills it
+	// lives in `component_registry.ts`.
 	private readonly _componentMetas: ComponentMeta[] = [];
-	private _componentCount = 0;
 
 	// --- Sparse storage class (out-of-identity components) ---
 	// Parallel array indexed by SparseComponentID. Each store holds a sparse
 	// component's membership + data keyed by entity index, outside the archetype
 	// mask, add and remove cause no archetype transition and consume no identity
-	// bit. A separate id space from `_componentCount`, which is the mechanism by
-	// which sparse components escape the STORE_DESCRIPTOR_COMPONENT_LIMIT cap.
+	// bit. A separate id space from the dense component ids, which is the
+	// mechanism by which sparse components escape the
+	// STORE_DESCRIPTOR_COMPONENT_LIMIT cap.
 	private readonly _sparseStores: SparseComponentStore[] = [];
 	/** Debug names parallel to `_sparseStores`, diagnostics only. */
 	private readonly _sparseNames: (string | undefined)[] = [];
@@ -329,20 +336,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// index, edge resolution and creation) lives in `ArchetypeGraph`.
 	// Storage lifecycle stays here: `_extendStore` (SAB
 	// extend + view refresh), `_materializeArchetype` (column-store binding
-	// + grow handler), `_fanIntoQueries` (query-registry fan-in) are the
-	// graph's host seams. Flush loops hoist `_archGraph.archetypes` and
+	// + grow handler) are the graph's storage host seams, and its
+	// `fanIntoQueries` seam calls `QueryRegistry` below. Flush loops hoist
+	// `_archGraph.archetypes` and
 	// `.componentIndex` to locals, the graph is their sole writer and
 	// archetypes are never removed, so hoisted references stay valid.
 	private readonly _archGraph: ArchetypeGraph;
-	// Registered queries: the Store pushes newly-created archetypes into matching
-	// query result arrays, so queries are always up-to-date.
-	private readonly _registeredQueries: {
-		includeMask: BitSet;
-		excludeMask: BitSet | null;
-		anyOfMask: BitSet | null;
-		result: Archetype[];
-		query: Query<any> | null;
-	}[] = [];
 	private _emptyArchetypeId: ArchetypeID;
 
 	// entityIndex → ArchetypeID (`UNASSIGNED` = not in any archetype).
@@ -351,6 +350,14 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// entityIndex → row within its archetype (`UNASSIGNED` = no row).
 	// SAB-backed.
 	private _entityRows: Int32Array;
+
+	// --- Query registry ---
+	// The registered-query records, the mask resolver that fills them, and the
+	// fan-in of a new archetype live in `QueryRegistry`. The Store's query
+	// methods below are one-line delegations, and the graph's
+	// `fanIntoQueries` host seam calls the registry directly. It reads the
+	// graph through its own closure host and writes nothing the Store owns.
+	private readonly _queries: QueryRegistry;
 
 	// --- Deferred operation buffers ---
 	// the pending buffers and the phase-flush drain policy (fast path,
@@ -368,6 +375,10 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// Installed by the snapshot plugin, `null` until then. Cold path: every
 	// read goes through the `snapshots` accessor, which is never in a loop.
 	private _snapshots: SnapshotHooks | null;
+
+	// =======================================================
+	// Plugin install seams and the accessors a caller reaches by name
+	// =======================================================
 
 	// The collaborators a caller reaches by name.
 	//
@@ -494,6 +505,17 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	public get resources(): ResourceRegistry {
 		return this._resources;
 	}
+
+	// =======================================================
+	// Scheduling state: the world ticks, the observers, the row grain
+	// =======================================================
+	// Three sub-banners, one property. None of this state folds into
+	// `stateHash` and none of it survives a snapshot. A world that replays the
+	// same operations from the same bytes reaches the same digest whatever the
+	// schedule did to the ticks, the observer counters or the dirty lists. The
+	// three field comments below each say so on their own. The banner says it
+	// once for all three, so a reader knows why they sit together and a split
+	// knows they move together.
 
 	// --- World tick, change tick and trace ---
 	// Shared core state. Every section stamps or reads the change tick, so it
@@ -665,19 +687,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * user-facing API. */
 	public queryDirtyEpoch: number = 0;
 
-	private readonly _initialCapacity: number;
-
-	// Scratch BitSet for the `addComponents` and `removeComponents` target-mask
-	// computation. The earlier `currentArch.mask.copy()` allocated a fresh
-	// BitSet and a `_words.slice()` for each call, so every spawn that
-	// introduces a new bit paid that cost. The scratch is safe because the only
-	// caller that holds the mask long-term is `ArchetypeGraph.install`, which
-	// clones before it stores into the archetype map. `_archGetOrCreateFromMask`
-	// clones when it hands off to that `install`. Neither `addComponents` nor
-	// `removeComponents` recurses, and their callees (`ArchetypeGraph.install`,
-	// `moveEntityFrom`, `writeFields`, `_onArchShrink`) never call back into
-	// them.
-	private readonly _scratchTargetMask: BitSet = new BitSet();
+	// =======================================================
+	// Construction, the SAB backing and the memory plan
+	// =======================================================
 
 	// --- SAB-backed ECS columns ---
 	// every Archetype's column views are TypedArrays over this SAB. When a
@@ -690,6 +702,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// later change removes it.
 	private _columnStore: ColumnStore;
 
+	/** Row capacity every new archetype's columns start with. Taken from
+	 * `StoreOptions.initialCapacity` at construction, read again by the
+	 * archetype graph's `initialCapacity` host closure whenever it plants a
+	 * new archetype. It sat under the row-grain banner, which owns the change
+	 * detection state, and it sizes the backing instead. */
+	private readonly _initialCapacity: number;
 
 	/** Installed on every SAB-backed Archetype so the Archetype can
 	 * request a SAB grow when an insertion would exceed its column
@@ -939,6 +957,15 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// re-read live fields per call, because restore replaces the column
 		// store and the entity-index views. The allocator rides in whole and
 		// carries its own snapshot seam. All cold-path.
+		// The query registry reads the graph, and the graph fans a new
+		// archetype into the registry, so one of the two has to resolve the
+		// other late. The registry's closures do, which keeps the graph's
+		// `fanIntoQueries` a direct call on the creation path.
+		this._queries = new QueryRegistry({
+			archetypes: () => this._archGraph.archetypes,
+			componentIndex: () => this._archGraph.componentIndex,
+			archetypeAt: (id) => this._archGraph.get(id)
+		});
 		// Archetype topology. Creation-path-only closures, an
 		// edge-cache hit never calls the host.
 		this._archGraph = new ArchetypeGraph({
@@ -946,7 +973,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			initialCapacity: () => this._initialCapacity,
 			extendStore: (specs) => this._extendStore(specs),
 			materialize: (id, ownedMask, layouts) => this._materializeArchetype(id, ownedMask, layouts),
-			fanIntoQueries: (archetype) => this._fanIntoQueries(archetype)
+			fanIntoQueries: (archetype) => this._queries.fanIn(archetype)
 		});
 		this._emptyArchetypeId = this._archGetOrCreateFromMask(new BitSet());
 	}
@@ -996,54 +1023,6 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 					`{ deterministic: true }. The canonical-ordering determinism surface ` +
 					`(stateHash / snapshotSparse / restoreSparse) is opt-in.`
 			);
-		}
-	}
-
-	/** Reject a field named like an accessor's own state (`__cols`, `__row`):
-	 * a ref or cursor over the component would shadow its own state with the
-	 * field, or the field with its state. Always on. Registration is cold. */
-	private _rejectReservedFieldNames(fieldNames: readonly string[], kind: string): void {
-		for (let i = 0; i < fieldNames.length; i++) {
-			if (RESERVED_FIELD_NAMES.includes(fieldNames[i])) {
-				throw new ECSError(
-					ECS_ERROR.FIELD_NOT_REGISTERED,
-					`Cannot register ${kind} field "${fieldNames[i]}": the name is reserved for the ` +
-						`state of a ref or cursor. Rename the field.`,
-					{ field: fieldNames[i], kind }
-				);
-			}
-		}
-	}
-
-	/** Reject an `f32` or an `f64` field on a `deterministic: true` world, at
-	 * registration. IEEE-754 rounds differently across hosts in the last place.
-	 * A float column in a fixed-update path is then a silent per-tick
-	 * `stateHash` divergence between client and server, the one thing the
-	 * determinism opt-in exists to prevent. A non-deterministic world skips the
-	 * walk and keeps floats, so the default path pays nothing. `kind` names the
-	 * storage class in the error, either "component" or "sparse component". The
-	 * array shorthand defaults to `f64` and lands here too, so a deterministic
-	 * world must pass an explicit integer type. */
-	private _rejectNonDeterministicFields(
-		fieldNames: readonly string[],
-		fieldTypes: readonly TypedArrayTag[],
-		kind: string
-	): void {
-		if (!this._deterministic) return;
-		for (let i = 0; i < fieldTypes.length; i++) {
-			const t = fieldTypes[i];
-			if (t === "f32" || t === "f64") {
-				throw new ECSError(
-					ECS_ERROR.NON_DETERMINISTIC_COLUMN_TYPE,
-					`Cannot register ${kind} field "${fieldNames[i]}" as "${t}" on a ` +
-						`{ deterministic: true } world: floating-point columns round differently ` +
-						`across V8 / Bun / Zig (1-ULP IEEE-754), breaking cross-host stateHash ` +
-						`agreement. Use an integer type (e.g. "i32"), represent ` +
-						`fractional quantities as fixed-point (Q16.16). Note the array shorthand ` +
-						`defaults to "f64", so pass an explicit integer type there.`,
-					{ field: fieldNames[i], type: t, kind }
-				);
-			}
 		}
 	}
 
@@ -1193,6 +1172,10 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		}
 		this._rowCountsDirty = false;
 	}
+
+	// =======================================================
+	// The world state hash
+	// =======================================================
 
 	/** FNV-1a-style 32-bit digest over (archetype_id, live_row_count, live
 	 * column bytes) for each archetype in id order, followed by the sparse
@@ -1494,23 +1477,6 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			for (let i = 0; i < cids.length; i++) archetype.installTicks(cids[i]);
 		}
 		return archetype;
-	}
-
-	/** Push a newly-installed archetype into every registered query whose masks
-	 * it satisfies (`ArchetypeGraphHost.fanIntoQueries`, the query registry
-	 * stays on Store). No epoch bump, see the note in `ArchetypeGraph.install`. */
-	private _fanIntoQueries(archetype: Archetype): void {
-		const rqs = this._registeredQueries;
-		for (let i = 0; i < rqs.length; i++) {
-			const rq = rqs[i];
-			if (
-				archetype.matches(rq.includeMask) &&
-				(!rq.excludeMask || !archetype.mask.overlaps(rq.excludeMask)) &&
-				(!rq.anyOfMask || archetype.mask.overlaps(rq.anyOfMask))
-			) {
-				rq.result.push(archetype);
-			}
-		}
 	}
 
 	/** Resolve "add component_id to archetype_id" → target ArchetypeID (edge-cached). */
@@ -2931,84 +2897,20 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		schema: S,
 		name?: string
 	): ComponentDef<S> {
-		// The SAB archetype descriptor carries a fixed COMPONENT_MASK_WORDS-word
-		// component mask. Any component past STORE_DESCRIPTOR_COMPONENT_LIMIT is
-		// invisible to the Zig side, which matches archetypes on that mask alone.
-		// The heap-side BitSet can grow past it, so an overflow would silently
-		// conflate archetypes differing only in such a component. Fail loudly
-		// here.
-		if (this._componentCount >= STORE_DESCRIPTOR_COMPONENT_LIMIT) {
-			throw new ECSError(
-				ECS_ERROR.COMPONENT_LIMIT_EXCEEDED,
-				`registerComponent exceeds the dense component limit of ` +
-					`${STORE_DESCRIPTOR_COMPONENT_LIMIT}, because the archetype descriptor mask is ` +
-					`that many bits wide. Register this component with registerSparseComponent, ` +
-					`which keeps its own id space and costs no mask bit.`,
-				{ componentCount: this._componentCount, limit: STORE_DESCRIPTOR_COMPONENT_LIMIT }
-			);
-		}
-		const fieldNames = Object.keys(schema);
-		const fieldTypes: TypedArrayTag[] = new Array(fieldNames.length);
-		const fieldIndex: Record<string, number> = Object.create(null);
-		for (let i = 0; i < fieldNames.length; i++) {
-			fieldIndex[fieldNames[i]] = i;
-			fieldTypes[i] = schema[fieldNames[i]];
-		}
-		this._rejectReservedFieldNames(fieldNames, "component");
-		// Reject float columns on a deterministic world before it consumes an id or
-		// pushes metas, so a rejected registration leaves no partial state.
-		this._rejectNonDeterministicFields(fieldNames, fieldTypes, "component");
-		const id = asComponentId(this._componentCount++);
-		this._componentMetas.push({
-			name,
-			fieldNames,
-			fieldIndex,
-			fieldTypes,
-			fieldGid: fieldGids(fieldNames, fieldTypes),
-			obsAdd: false,
-			obsRem: false,
-			obsDisable: false,
-			obsEnable: false,
-			rowTicks: false,
-			trackDirty: false,
-			drainTick: 0,
-			scanTick: 0,
-			listCap: 0,
-			lastDrainRun: 0
-		});
-		const def = createComponentDef<S>(id);
-		if (name !== undefined) setComponentDebugName(def, name);
-		return def;
+		return appendComponentMeta(this._componentMetas, this._deterministic, schema, name);
 	}
 
 	/** `'Pos' (component 5)` when the component was registered with a debug
 	 * name, else `component 5`, the label diagnostics interpolate. */
 	public componentLabel(cid: number): string {
-		const name = this._componentMetas[cid]?.name;
-		return name !== undefined ? `'${name}' (component ${cid})` : `component ${cid}`;
+		return componentMetaLabel(this._componentMetas, cid);
 	}
 
-	/** Return the field index assigned to `(def, fieldName)` at component
-	 * registration. Indexes are insertion-order, zero-based, and stable for
-	 * the lifetime of the ECS. Used by systems that pass `(component_id,
-	 * field_id)` pairs across the WASM FFI. */
+	/** The field index assigned to `(def, fieldName)` at registration. A system
+	 * that passes `(component_id, field_id)` pairs across the WASM FFI resolves
+	 * them once, at setup. */
 	public fieldIdOf(def: ComponentHandle, fieldName: string): number {
-		const cid = def.id;
-		const meta = this._componentMetas[cid];
-		if (meta === undefined) {
-			throw new ECSError(
-				ECS_ERROR.COMPONENT_NOT_REGISTERED,
-				`field_id_of: component ${cid} is not registered`
-			);
-		}
-		const idx = meta.fieldIndex[fieldName];
-		if (idx === undefined) {
-			throw new ECSError(
-				ECS_ERROR.FIELD_NOT_REGISTERED,
-				`field_id_of: component ${cid} has no field "${fieldName}"`
-			);
-		}
-		return idx;
+		return fieldIdOfMeta(this._componentMetas, def, fieldName);
 	}
 
 	// =======================================================
@@ -3028,8 +2930,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		for (let i = 0; i < fieldNames.length; i++) fieldTypes[i] = schema[fieldNames[i]];
 		// Same float ban as dense registration, a sparse column feeds stateHash
 		// too. Check before allocating the store id, no partial state.
-		this._rejectReservedFieldNames(fieldNames, "sparse component");
-		this._rejectNonDeterministicFields(fieldNames, fieldTypes, "sparse component");
+		assertFieldNamesFree(fieldNames, "sparse component");
+		assertDeterministicFieldTypes(this._deterministic, fieldNames, fieldTypes, "sparse component");
 		return this._pushSparseStore<S>(fieldNames, fieldTypes, name);
 	}
 
@@ -3300,22 +3202,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * `_columnStore`, the service never writes Store fields. */
 	private _mountRestoredDense(restored: ColumnStore): void {
 		this._columnStore = restored;
-		const archs = this._archGraph.archetypes;
-		for (let i = 0; i < archs.length; i++) {
-			if (archs[i].isBufferBacked) archs[i].refreshViews(this._columnStore);
-			// The rows under the tick plane are the snapshot's now, so no record
-			// made before the restore names a write of theirs.
-			archs[i].resetTicks();
-		}
-		// entityHighWater is host state. Set it from the restored region's length
-		// header before _handleBufferResized (which mirrors highWater back into the
-		// header, the stale host value would clobber the restored one).
-		this._entityAllocator.setHighWater(
-			restored.view.getUint32(
-				restored.header.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
-				true
-			)
-		);
+		adoptRestoredBacking(restored, this._archGraph.archetypes, this._entityAllocator);
 		this._handleBufferResized();
 	}
 
@@ -3326,46 +3213,13 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * `enabledCount` comes from the captured host state, because the partition
 	 * boundary is positional and has no per-entity byte source. */
 	private _reconstructHostRows(host: HostState): void {
-		const highWater = this._entityAllocator.highWater;
-		const archIndex = this._entityArchetypes;
-		const rowIndex = this._entityRows;
-		const gens = this._entityAllocator.generations;
-		// Per-archetype row → packed EntityID, dense over [0, length).
-		const rowsByArch = new Map<number, number[]>();
-		for (let i = 0; i < highWater; i++) {
-			const aid = archIndex[i];
-			if (aid === UNASSIGNED) continue; // free or retired slot
-			const row = rowIndex[i];
-			if (row === UNASSIGNED) continue; // component-less alive entity (no row)
-			let rows = rowsByArch.get(aid);
-			if (rows === undefined) {
-				rows = [];
-				rowsByArch.set(aid, rows);
-			}
-			rows[row] = createEntityId(i, gens[i]) as number;
-		}
-		for (let r = 0; r < host.archetypeRows.length; r++) {
-			const meta = host.archetypeRows[r];
-			const a = this._archGet(meta.archetypeId as ArchetypeID);
-			const rows = rowsByArch.get(meta.archetypeId) ?? [];
-			if (DEV) {
-				if (rows.length !== meta.length) {
-					throw new ECSRestoreError(
-						`archetype ${meta.archetypeId} row-count mismatch on restore: scan found ` +
-							`${rows.length} rows, host-state recorded ${meta.length}`
-					);
-				}
-				for (let k = 0; k < rows.length; k++) {
-					if (rows[k] === undefined) {
-						throw new ECSRestoreError(
-							`archetype ${meta.archetypeId} has a hole at row ${k} after restore ` +
-								`(entity-index region inconsistent)`
-						);
-					}
-				}
-			}
-			a.restoreHostRows(rows, meta.enabledCount);
-		}
+		reconstructHostRows(
+			host,
+			(id) => this._archGet(id),
+			this._entityArchetypes,
+			this._entityRows,
+			this._entityAllocator
+		);
 	}
 
 	// =======================================================
@@ -3593,6 +3447,22 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// =======================================================
 	// Immediate component operations (for setup and spawning)
 	// =======================================================
+
+	// Scratch BitSet for the `addComponents` and `removeComponents` target-mask
+	// computation. The earlier `currentArch.mask.copy()` allocated a fresh
+	// BitSet and a `_words.slice()` for each call, so every spawn that
+	// introduces a new bit paid that cost. The scratch is safe because the only
+	// caller that holds the mask long-term is `ArchetypeGraph.install`, which
+	// clones before it stores into the archetype map. `_archGetOrCreateFromMask`
+	// clones when it hands off to that `install`. Neither `addComponents` nor
+	// `removeComponents` recurses, and their callees (`ArchetypeGraph.install`,
+	// `moveEntityFrom`, `writeFields`, `_onArchShrink`) never call back into
+	// them.
+	//
+	// Declared here, in the only section that names it. It sat under the
+	// row-grain banner and the guard read it as change detection state, which
+	// it is not.
+	private readonly _scratchTargetMask: BitSet = new BitSet();
 
 	public addComponent(entityId: EntityID, def: ComponentDef<Record<string, never>>): void;
 	public addComponent<S extends ComponentSchema>(
@@ -4244,102 +4114,29 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// =======================================================
 
 	/**
-	 * Find all archetypes matching the given masks.
-	 * Uses the inverted componentIndex to start from the component with the
-	 * fewest archetypes, minimizing the number of superset checks.
+	 * Find all archetypes matching the given masks. Delegates to
+	 * `QueryRegistry`, which starts the superset scan from the smallest
+	 * component bucket. Query mint path only.
 	 */
 	public getMatchingArchetypes(
 		required: BitSet,
 		excluded?: BitSet,
 		anyOf?: BitSet
 	): readonly Archetype[] {
-		const words = required.words;
-		let hasAnyBit = false;
-		for (let i = 0; i < words.length; i++) {
-			if (words[i] !== 0) {
-				hasAnyBit = true;
-				break;
-			}
-		}
-		// Empty required mask → match all archetypes (only filter by exclude and any_of)
-		if (!hasAnyBit) {
-			const archs = this._archGraph.archetypes;
-			const result: Archetype[] = [];
-			for (let i = 0; i < archs.length; i++) {
-				const arch = archs[i];
-				if (
-					(!excluded || !arch.mask.overlaps(excluded)) &&
-					(!anyOf || arch.mask.overlaps(anyOf))
-				) {
-					result.push(arch);
-				}
-			}
-			return result;
-		}
-
-		// Find the smallest componentIndex bucket among all required components.
-		// This is the tightest starting point for the superset intersection.
-		let smallestSet: ArchetypeID[] | undefined;
-		let hasEmpty = false;
-		for (let wi = 0; wi < words.length; wi++) {
-			let word = words[wi];
-			if (word === 0) continue;
-			const base = wi << BITS_PER_WORD_SHIFT;
-			while (word !== 0) {
-				// Extract lowest set bit
-				const t = word & (-word >>> 0);
-				const bit = base + (BITS_PER_WORD_MASK - Math.clz32(t));
-				word ^= t;
-				const bucket = this._archGraph.componentIndex[bit];
-				if (bucket === undefined || bucket.length === 0) {
-					hasEmpty = true;
-					break;
-				}
-				if (!smallestSet || bucket.length < smallestSet.length) smallestSet = bucket;
-			}
-			if (hasEmpty) break;
-		}
-		// If any required component has zero archetypes, no match is possible
-		if (hasEmpty || !smallestSet) return [];
-
-		const result: Archetype[] = [];
-		for (let i = 0; i < smallestSet.length; i++) {
-			const arch = this._archGet(smallestSet[i]);
-			if (
-				arch.matches(required) &&
-				(!excluded || !arch.mask.overlaps(excluded)) &&
-				(!anyOf || arch.mask.overlaps(anyOf))
-			) {
-				result.push(arch);
-			}
-		}
-		return result;
+		return this._queries.matching(required, excluded, anyOf);
 	}
 
 	/**
-	 * Register a live query. Returns a mutable Archetype[] that this Store will
-	 * push newly-created matching archetypes into, keeping the query always up-to-date.
+	 * Register a live query. Returns a mutable Archetype[] that the registry
+	 * pushes newly-created matching archetypes into, keeping the query always
+	 * up-to-date.
 	 */
 	public registerQuery(include: BitSet, exclude?: BitSet, anyOf?: BitSet): Archetype[] {
-		const result = this.getMatchingArchetypes(include, exclude, anyOf) as Archetype[];
-		this._registeredQueries.push({
-			includeMask: include.copy(),
-			excludeMask: exclude ? exclude.copy() : null,
-			anyOfMask: anyOf ? anyOf.copy() : null,
-			result,
-			query: null
-		});
-		return result;
+		return this._queries.register(include, exclude, anyOf);
 	}
 
 	public updateQueryRef(result: Archetype[], query: Query<any>): void {
-		const rqs = this._registeredQueries;
-		for (let i = 0; i < rqs.length; i++) {
-			if (rqs[i].result === result) {
-				rqs[i].query = query;
-				return;
-			}
-		}
+		this._queries.updateRef(result, query);
 	}
 
 	public get archetypeCount(): number {

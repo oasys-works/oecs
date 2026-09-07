@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import type { ComponentDef } from "../../component";
 import { ECS } from "../../ecs";
 import type { Query } from "../../query";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { SystemDescriptor } from "../../system";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { openAccess } from "../test_helpers";

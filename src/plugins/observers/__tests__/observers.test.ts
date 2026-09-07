@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import { getEntityGeneration, getEntityIndex, type EntityID } from "../../../core/ecs/entity";
 import { eventKey } from "../../../core/ecs/event";
 import { ECS_ERROR } from "../../../core/ecs/utils/error";

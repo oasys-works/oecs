@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
 import { resourceKey } from "../../../core/ecs/resource";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import { ECS_ERROR, ECSError } from "../../../core/ecs/utils/error";
 import { DEFAULT_PARALLEL_MIN_ROWS, type ParallelPlan } from "../../workers/plan";
 import type { WorkerPool } from "../../workers/pool";

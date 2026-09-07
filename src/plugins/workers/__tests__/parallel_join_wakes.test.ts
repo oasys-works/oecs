@@ -17,7 +17,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import { CTL_DONE } from "../../workers/protocol";
 import type { WorkerPool } from "../../workers/pool";
 import { WORKER_URL, buildWorld } from "./parallel_fixture";

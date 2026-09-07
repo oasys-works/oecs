@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { ECS_ERROR, isEcsError } from "../../utils/error";
 import { runIfNot, runIfAll, runIfAny, runEveryNTicks, type ConditionContext } from "../../run_condition";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { openAccess } from "../test_helpers";
 import { relations } from "../../../../plugins/relations";
 import { observers } from "../../../../plugins/observers";

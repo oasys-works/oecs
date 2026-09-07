@@ -76,9 +76,12 @@ import type {
 	PluginsOf,
 	SystemRoutePlanner
 } from "./plugin";
-import { Schedule, type Phase, type PhaseConfig, type SchedulePhase } from "./schedule";
+import { Schedule } from "./schedule";
+import type { Phase, PhaseConfig, SchedulePhase } from "./phase";
 import type { Archetype, ArchetypeID } from "./archetype";
-import { Query, QueryBuilder, QueryCache, type QueryResolver, type QueryTerms } from "./query";
+import { Query, QueryBuilder } from "./query";
+import { QueryCache, type QueryResolver } from "./query_cache";
+import type { QueryTerms } from "./query_terms";
 import { SystemContext } from "./system_context";
 import type { EntityID } from "./entity";
 import { entityNotAliveError } from "./entity";
@@ -106,10 +109,11 @@ import { bundleDef, bundleValues } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
 import type { RelationDef } from "./relation";
 import {
-	asSystemId,
 	_INTERNAL_EMPTY_ACCESS,
-	_normalizeAccess,
 	_assertQueriesDeclared,
+	_assertSystemRunnable,
+	_createBareSystemConfig,
+	_createSystemDescriptor,
 	type SystemFn,
 	type SystemConfig,
 	type SystemDescriptor,
@@ -123,7 +127,7 @@ import {
 	type ResourcesAccessDecl
 } from "./system";
 import { accessCheck } from "./access_check";
-import type { SystemEntry, SystemSet, SystemSetConfig } from "./schedule";
+import type { SystemEntry, SystemSet, SystemSetConfig } from "./system_set";
 import { BitSet, type TypedArrayTag } from "../../type_primitives";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_error";
@@ -135,205 +139,28 @@ import {
 } from "./utils/constants";
 import type { StoreLayoutListener } from "./store_layout_listener";
 import type { ComputeBackend } from "./compute_backend";
-import type { ColumnStoreRegionHandle, StoreRegionSpec } from "../store";
+import type { ColumnStoreRegionHandle } from "../store";
+import { resolveECSMemory, type ResolvedECSMemory } from "./ecs_memory";
 import {
-	resolveECSMemory,
-	type ResolvedECSMemory,
-	type ECSMemoryOptions
-} from "./ecs_memory";
+	ECS_OPTION_KEYS,
+	assertTemplate,
+	validateFixedTimestep,
+	validateMaxFixedSteps,
+	type ECSOptions
+} from "./ecs_options";
+import { computeArchetypeClosure } from "./archetype_closure";
+import {
+	MISSING_EVENTS,
+	MISSING_RELATIONS,
+	MISSING_WORKERS,
+	assertPluginSurface,
+	missingObserve
+} from "./plugin_slots";
 import { DEV } from "../../dev_flag";
 
-/** Every key `ECSOptions` accepts, the constructor's dev-mode typo tripwire
- * checks unknown keys against this (kept adjacent so additions stay in sync). */
-const ECS_OPTION_KEYS: ReadonlySet<string> = new Set([
-	"fixedTimestep",
-	"maxFixedSteps",
-	"onWarn",
-	"memory",
-	"regions",
-	"bindingsRegionBytes",
-	"deterministic",
-	// `ECS.create` forwards its whole options record to the constructor, and
-	// the plugin list rides in it.
-	"plugins"
-]);
-
-export interface ECSOptions {
-	fixedTimestep?: number;
-	maxFixedSteps?: number;
-	/** Sink for dev-mode engine diagnostics (currently the schedule's
-	 * dropped-ordering-edge warning). Defaults to `console.warn`. Mirrors the
-	 * `FrameTraceSink` seam's injectable style, no global logger. */
-	onWarn?: (message: string) => void;
-	/** How the world's memory is sized and backed. Two independent axes, two
-	 * independent fields, every combination of them is legal.
-	 *
-	 * How big: `entities` (with optional `archetypes` and `bytesPerEntity` to
-	 * shape the derivation) or `maxBytes`, or both. Give both when you know
-	 * both: the count sizes the columns and the entity index, the cap is yours.
-	 *
-	 * What backs it: `backing`, `"heap"` (default, a plain fixed ArrayBuffer),
-	 * `"shared"` (a SharedArrayBuffer, for worker offload or a WASM backend),
-	 * `{ wasm }` (the buffer is a WebAssembly.Memory) or `{ allocator }` (the
-	 * expert escape hatch, in-place-typed).
-	 *
-	 * `columnCapacity` pins the rows per archetype column on any combination.
-	 * Omitted ⇒ heap backing, a fixed 256 MiB reservation and 1024-row columns.
-	 * The resolved plan is exposed as `ECS.memoryPlan`. */
-	memory?: ECSMemoryOptions;
-	/** Consumer-declared SAB regions, forwarded to `Store`. Each
-	 * `StoreRegionSpec` carries an opaque `region_id`, a precomputed byte size,
-	 * and an `init` closure. The engine lays them out generically and exposes
-	 * them through `regionHandle(id)` and `regionOffset(id)`. A consumer
-	 * supplies the specs. The engine ships no region of its own. Replaces the
-	 * eight game-named region options
-	 * (`terrain_map_radius`, `spatial_grid_*`, `army_*`, `flow_field_*`,
-	 * `actionRingCapacitySlots`) the ECS used to carry. */
-	regions?: readonly StoreRegionSpec[];
-	/** Byte size of the opt-in sim-bindings region, forwarded to `Store`.
-	 * A consumer that attaches a WASM `ComputeBackend` passes its own size,
-	 * computed from its own binding manifest, so the host can publish the
-	 * `(component_id, field_id)` ids the accelerated systems read. Omitted or
-	 * 0 ⇒ no region, and a pure-TS world pays
-	 * nothing for the WASM seam. The size is a runtime input, not an engine ABI
-	 * constant. It is de-welded from the generated ABI. */
-	bindingsRegionBytes?: number;
-	/** Opt into the **determinism surface**, forwarded to
-	 * `Store`. Default `false`. When `false`, the canonical-ordering methods
-	 * (`stateHash`, `snapshotSparse`, `restoreSparse`) throw
-	 * `DETERMINISM_DISABLED`. When `true`, today's replay and hash behavior is
-	 * reproduced bit-for-bit. Determinism is the implementer's choice, our
-	 * server match opts in (replay verification), the client stays off (it rolls
-	 * back via diffs, not re-sim). The flag gates only that surface: memory-safety
-	 * invariants (the in-place SAB allocator) and the `enabled_count`
-	 * partition are always-on regardless. */
-	deterministic?: boolean;
-}
-
-/** What a world puts in the reserved slot of a plugin it never installed.
- *
- * The slot has to hold something. Left `undefined`, a JavaScript caller reading
- * `ecs.relations.add` meets a `TypeError` about a property of undefined. That
- * fault names neither the plugin nor the import that supplies it. The proxy
- * turns every named read into the fault the world defines.
- *
- * A symbol read and a key that `Object.prototype` answers behave as a plain
- * object does. The `toJSON` and `then` protocol keys do the same. So
- * `console.log`, `JSON.stringify`, a string coercion and an `await` inspect the
- * slot without a fault. Only a member read reaches the throw. Frozen and built
- * once per plugin, because a world holds the shared instance. */
-function reservePluginSlot(plugin: string): object {
-	return Object.freeze(
-		new Proxy(Object.freeze({}), {
-			get(_target: object, key: string | symbol): unknown {
-				if (
-					typeof key === "symbol" ||
-					key in Object.prototype ||
-					key === "toJSON" ||
-					key === "then"
-				) {
-					return Reflect.get(Object.prototype, key);
-				}
-				throw pluginMissingError(plugin, `ecs.${plugin}.${key}`);
-			}
-		})
-	);
-}
-
-const MISSING_RELATIONS: object = reservePluginSlot("relations");
-const MISSING_EVENTS: object = reservePluginSlot("events");
-const MISSING_WORKERS: object = reservePluginSlot("workers");
-
-/** The world members a plugin is meant to replace. Each one exists on a
- * bare world only to name the plugin that fills it, so a facade landing on
- * one is the design and not a collision. */
-const PLUGIN_RESERVED_SLOTS: readonly string[] = [
-	"relations",
-	"events",
-	"observe",
-	"snapshots",
-	"workers"
-];
-
-/** The reserved `observe` slot. A function, because a caller calls it. */
-function missingObserve(): never {
-	throw pluginMissingError("observers", "ecs.observe");
-}
-
-/** The fixed-timestep drives the `while (accumulator >= dt)` catch-up loop in
- * `update()`. A non-positive `dt` makes that loop non-terminating (the
- * accumulator never decreases), and a non-finite `dt` poisons `fixedAlpha`,
- * so reject both at the configuration boundary rather than hanging mid-tick. */
-function validateFixedTimestep(value: number): number {
-	if (!(value > 0) || !Number.isFinite(value)) {
-		throw new ECSError(
-			ECS_ERROR.INVALID_FIXED_TIMESTEP,
-			`fixedTimestep must be a finite number > 0, got ${value}`
-		);
-	}
-	return value;
-}
-
-/** The spiral-of-death clamp in `update()` is `maxAcc = maxFixedSteps *
- * fixedTimestep; if (accumulator > maxAcc) accumulator = maxAcc`. A non-finite
- * `maxFixedSteps` makes `maxAcc` non-finite so the clamp never fires and a large
- * `dt` runs `while (accumulator >= fixedTimestep)` unboundedly, the exact hang
- * the clamp exists to prevent. A `0` clamps the accumulator to 0, so no fixed
- * system runs. Validate it as a finite integer ≥ 1, the way `fixedTimestep` is. */
-function validateMaxFixedSteps(value: number): number {
-	if (!Number.isInteger(value) || value < 1) {
-		throw new ECSError(
-			ECS_ERROR.INVALID_MAX_FIXED_STEPS,
-			`maxFixedSteps must be an integer >= 1, got ${value}`
-		);
-	}
-	return value;
-}
-
-/**
- * DEV-only: reject a value that is not a template.
- *
- * `spawn` and `spawnMany` take a template from `ECS.template(...)`. Two
- * mistakes are usual. The caller gives a component definition (`ecs.spawn(Pos)`).
- * Or the caller gives a bundle (`ecs.spawn(Pos({ x: 0 }))`). The types reject
- * both. An untyped call site does not.
- *
- * Without this check the value goes to the store. The store then reads
- * `template.archetypeId`, which is `undefined`. The failure is a `TypeError`
- * about `materializesRows`, from a frame deep in the store. That error names
- * the wrong place, and it does not tell the caller what to do.
- *
- * A template is a plain object with a numeric `archetypeId`. A component
- * definition is a function. A bundle is an object with `values` and no
- * `archetypeId`. The test below separates all three, and it names the
- * alternative for each one.
- */
-function assertTemplate(value: unknown, op: string): void {
-	if (typeof value === "object" && value !== null && typeof (value as Template).archetypeId === "number") {
-		return;
-	}
-	const isDef = typeof value === "function";
-	const isBundle =
-		typeof value === "object" && value !== null && "values" in (value as Record<string, unknown>);
-	const got = isDef
-		? "a component definition"
-		: isBundle
-			? "a bundle"
-			: Array.isArray(value)
-				? "an array"
-				: `a ${typeof value}`;
-	const fix =
-		isDef || isBundle
-			? `Use \`ecs.spawnBundle(...)\` for components with no template, or build a template first with \`ecs.template(Pos({ x: 0 }), Vel)\`.`
-			: Array.isArray(value)
-				? `\`ecs.template\` takes callable bundles, not an array of entries. Write \`ecs.template(Pos({ x: 0 }), Vel)\`.`
-				: `Build the template with \`ecs.template(...)\` first.`;
-	throw new ECSError(
-		ECS_ERROR.INVALID_TEMPLATE,
-		`${op}: expected a template from ecs.template(...), but got ${got}. ${fix}`,
-		{ op, got }
-	);
-}
+/** `ECSOptions` moved to `ecs_options.ts` with the guards that read it. The
+ * re-export holds the name a caller already imports from this module. */
+export type { ECSOptions };
 
 /** The plugins installed on a world. Each optional subsystem contributes
  * its facade property here, so a world that never installed one cannot name it.
@@ -382,31 +209,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				if (installed.has(plugin.name)) throw pluginInstalledTwiceError(plugin.name);
 				installed.add(plugin.name);
 				const surface = plugin.install(world._pluginHost());
-				if (DEV) world._checkSurface(plugin.name, surface);
+				if (DEV) assertPluginSurface(world, plugin.name, surface);
 				Object.assign(world, surface);
 			}
 		}
 		return world as ECS<PluginsOf<P>> & PluginsOf<P>;
-	}
-
-	/** Refuse a facade member that would overwrite something the world already
-	 * carries. `Object.assign` is silent about it, and the loss is a method the
-	 * world needs. The reserved slots are the exception: a bare world
-	 * declares each one so it can name the missing plugin, and the
-	 * plugin that fills the slot is meant to replace it. Dev-only. */
-	private _checkSurface(plugin: string, surface: object): void {
-		const keys = Object.keys(surface);
-		for (let k = 0; k < keys.length; k++) {
-			const key = keys[k];
-			if (PLUGIN_RESERVED_SLOTS.indexOf(key) >= 0) continue;
-			if (key in this) {
-				throw new ECSError(
-					ECS_ERROR.PLUGIN_SURFACE_COLLISION,
-					`the ${plugin} plugin contributes ${key}, and the world already carries that member. Rename the member the plugin adds`,
-					{ plugin, key }
-				);
-			}
-		}
 	}
 
 	/** The host a plugin installs through. Built per world, once per
@@ -511,7 +318,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	private _nextQueryIdCounter: number = 0;
 	// All query-resolution caches, dedup + the shared composition maps, in
-	// one owner. See `QueryCache` in query.ts for keying and id-space notes.
+	// one owner. See `QueryCache` in query_cache.ts for keying and id-space notes.
 	/** @internal Query-composition caches (QueryResolver seam), not public API. */
 	public readonly caches: QueryCache = new QueryCache();
 
@@ -1501,26 +1308,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				const fn = fnOrConfig as (q: Query<any>, ctx: SystemContext, dt: number) => void;
 				config = { ..._INTERNAL_EMPTY_ACCESS, fn: (_ctx, dt) => fn(q, ctx, dt) };
 			} else {
-				// Bare function overload, with the access surface unannotated. The
-				// config form is how a system declares its per-system access.
-				//
-				// Footgun guard: a bare `SystemFn` is `(ctx, dt)`, arity
-				// ≤ 2. A 3-param function here is almost certainly the `(q, ctx, dt)`
-				// query form with its `queryFn` second arg forgotten, which would
-				// otherwise silently bind `q := SystemContext`, `ctx := dt`, and
-				// `dt := undefined` (a NaN trap on the first arithmetic). Fail fast
-				// in `DEV` instead. Compiled out of production builds.
-				if (DEV && fnOrConfig.length >= 3) {
-					throw new ECSError(
-						ECS_ERROR.SYSTEM_FN_ARITY,
-						`registerSystem was passed a ${fnOrConfig.length}-parameter function with no ` +
-							`query builder. A bare system function is (ctx, dt); a query system is ` +
-							`(q, ctx, dt) and needs the query builder as the second argument: ` +
-							`registerSystem((q, ctx, dt) => …, (qb) => qb.and(…)). ` +
-							`Without it, q would receive the SystemContext and dt would be undefined.`
-					);
-				}
-				config = { ..._INTERNAL_EMPTY_ACCESS, fn: fnOrConfig as SystemFn };
+				config = _createBareSystemConfig(fnOrConfig as SystemFn);
 			}
 		} else {
 			config = fnOrConfig as SystemConfig;
@@ -1529,15 +1317,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// Declared-access lint: catch a `queries` declaration that outruns
 		// `reads ∪ writes` at registration, before the system's first iteration.
 		if (DEV) _assertQueriesDeclared(config);
-
-		// `fn` is optional only for backend-executed systems, a config
-		// with neither is a system that can never run anything.
-		if (DEV && config.fn === undefined && config.backendHandle === undefined) {
-			throw new ECSError(
-				ECS_ERROR.SYSTEM_FN_ARITY,
-				`registerSystem: config${config.name ? ` '${config.name}'` : ""} has neither 'fn' nor 'backendHandle', provide a system body, or a backend handle for backend execution`
-			);
-		}
+		if (DEV) _assertSystemRunnable(config);
 
 		// The installed route resolves its plan here, once. The plugin owns the
 		// plan and its validation, so a world with no route leaves `routePlan`
@@ -1547,13 +1327,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		const planner = this._routePlanner;
 		const routePlan: object | undefined = planner === null ? undefined : planner.plan(config);
 
-		const id = asSystemId(this._nextSystemId++);
-		const descriptor: SystemDescriptor = Object.freeze({
-			...config,
-			..._normalizeAccess(config),
+		const descriptor: SystemDescriptor = _createSystemDescriptor(
+			config,
 			routePlan,
-			id
-		});
+			this._nextSystemId++
+		);
 		this._systems.add(descriptor);
 		return descriptor;
 	}
@@ -2124,110 +1902,9 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// === END STORE PASS-THROUGH BAND ===
 }
 
-/** Archetype closure from a descriptor set.
- *
- * Each descriptor is a system or an observer's synthesized `SystemDescriptor`.
- * Both carry `spawns` + `transitions`. Seeds the worklist with every
- * descriptor's `spawns`. Iteratively applies every descriptor's `transitions`
- * to every discovered mask whose components cover the transition's `whenHas`.
- * Returns the union of seeds + reachable targets, deduplicated by hash-bucketed
- * mask equality.
- *
- * Termination: every transition either monotonically grows the mask (add
- * outpacing remove), monotonically shrinks it, or returns a mask the
- * `seen` map already holds. Because the universe of masks is bounded by
- * `2^|components|` (and in practice the in-tree spawn and transition set is
- * tiny, ~20 masks at most), the worklist is finite and we exit when it
- * empties.
- *
- * Liberal `whenHas`, over-approximation is fine. An
- * unreachable transition target costs one descriptor row at the SAB tail,
- * not column bytes. Empty `spawns` + `transitions` short-circuit to zero.
- */
-function computeArchetypeClosure(descriptors: Iterable<SystemDescriptor>): BitSet[] {
-	const seen = new Map<number, BitSet[]>();
-	const work: BitSet[] = [];
-
-	const tryPush = (mask: BitSet): void => {
-		const h = mask.hash();
-		const bucket = seen.get(h);
-		if (bucket !== undefined) {
-			for (let i = 0; i < bucket.length; i++) if (bucket[i].equals(mask)) return;
-			bucket.push(mask);
-		} else {
-			seen.set(h, [mask]);
-		}
-		work.push(mask);
-	};
-
-	const maskFromDefs = (defs: readonly ComponentDef[]): BitSet => {
-		const m = new BitSet();
-		for (let i = 0; i < defs.length; i++) m.set(defs[i].id);
-		return m;
-	};
-
-	// Pre-compute every transition's `whenHas` BitSet once. The
-	// worklist below tests `mask.contains(whenHas)` per (popped mask ×
-	// system × transition), so building the BitSet inside that loop
-	// allocated O(W × S × T) throwaway sets per `startup()`. `whenHas`
-	// depends only on the (system, transition) pair, hoisting it makes
-	// allocation O(sum of transition counts). Sharing the cached BitSet
-	// across iterations is safe because `mask.contains(when)` only reads
-	// `when`.
-	const cachedTransitions: {
-		readonly whenHas: BitSet;
-		readonly add?: readonly ComponentDef[];
-		readonly remove?: readonly ComponentDef[];
-	}[] = [];
-	for (const desc of descriptors) {
-		const transitions = desc.transitions;
-		for (let i = 0; i < transitions.length; i++) {
-			const t = transitions[i];
-			cachedTransitions.push({
-				whenHas: maskFromDefs(t.whenHas),
-				add: t.add,
-				remove: t.remove
-			});
-		}
-	}
-
-	// Seed from spawns. Each spawn entry is the full component set a
-	// spawned entity carries at flush time.
-	for (const desc of descriptors) {
-		const spawns = desc.spawns;
-		for (let i = 0; i < spawns.length; i++) tryPush(maskFromDefs(spawns[i]));
-	}
-
-	// Walk transitions until quiescent. A worklist iteration per discovered
-	// mask × declared transition. Cheap because both factors are small in
-	// the in-tree system set.
-	while (work.length > 0) {
-		const mask = work.pop()!;
-		for (let i = 0; i < cachedTransitions.length; i++) {
-			const t = cachedTransitions[i];
-			if (!mask.contains(t.whenHas)) continue;
-			const next = mask.copy();
-			if (t.add !== undefined) {
-				for (let j = 0; j < t.add.length; j++) {
-					next.set(t.add[j].id);
-				}
-			}
-			if (t.remove !== undefined) {
-				for (let j = 0; j < t.remove.length; j++) {
-					next.clear(t.remove[j].id);
-				}
-			}
-			tryPush(next);
-		}
-	}
-
-	const out: BitSet[] = [];
-	for (const bucket of seen.values()) for (let i = 0; i < bucket.length; i++) out.push(bucket[i]);
-	return out;
-}
-
-/** @internal, test seam for the closure walk. Exposed so the prewarm
- * tests can exercise the BFS without standing up a full Store. */
+/** @internal, test seam for the closure walk that `archetype_closure.ts`
+ * holds. Exposed so the prewarm tests can exercise the walk without standing
+ * up a full Store. */
 export const _ecsInternals = {
 	computeArchetypeClosure
 };

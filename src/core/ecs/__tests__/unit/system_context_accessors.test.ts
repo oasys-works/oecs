@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import type { SystemContext } from "../../system_context";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECSError } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 import { relations } from "../../../../plugins/relations";

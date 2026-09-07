@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { eventKey } from "../../event";
 import { FrameTraceRecorder, type FrameTraceEvent } from "../../frame_trace";
 import { openAccess } from "../test_helpers";

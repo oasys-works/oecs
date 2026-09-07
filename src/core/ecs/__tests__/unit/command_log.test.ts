@@ -15,7 +15,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import {
 	installHostCommandSeam,
 	spawnEntry,

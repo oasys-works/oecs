@@ -33,8 +33,8 @@ import type { ECS } from "./ecs";
 import type { EntityID } from "./entity";
 import type { SystemContext } from "./system_context";
 import type { SystemDescriptor } from "./system";
-import { SCHEDULE, phaseLoopOf, phaseNameOf } from "./schedule";
-import type { SchedulePhase } from "./schedule";
+import { SCHEDULE, phaseLoopOf, phaseNameOf } from "./phase";
+import type { SchedulePhase } from "./phase";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { assertNever } from "../../type_primitives";
 import {

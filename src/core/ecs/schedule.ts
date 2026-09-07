@@ -14,6 +14,11 @@
  * tiebreaker, and the order is resolved once per `addPhase` rather than once
  * per frame.
  *
+ * The phase vocabulary lives in `phase.ts`: the `SCHEDULE` members, the `Phase`
+ * handle, the loop a phase belongs to, and the two pure classifiers. That file
+ * imports nothing, so a trace consumer or a host seam reads a phase name
+ * without pulling the schedule behind it.
+ *
  * Within each phase, systems are topologically sorted using Kahn's
  * algorithm, respecting before and after ordering constraints. Insertion
  * order is used as a stable tiebreaker for deterministic execution.
@@ -22,7 +27,8 @@
  * automatically, applying deferred structural changes before the next phase.
  *
  * The sort result is cached per phase and invalidated when systems are
- * added or removed.
+ * added or removed. `schedule_plan.ts` runs the sort and owns the plan shape.
+ * This file owns when the plan is thrown away and when it is rebuilt.
  *
  * Run conditions and system sets. A system (via `SystemEntry.runIf`) or a
  * whole `SystemSet` (via `configureSet`) can carry a `RunCondition` evaluated
@@ -31,7 +37,9 @@
  * from the system being absent that tick. A `SystemSet` also carries shared
  * `before` and `after` ordering its members inherit (expanded to per-member edges at
  * sort time). A member's effective gate is the and of its own conditions and
- * every set it belongs to. See `run_condition.ts`.
+ * every set it belongs to. See `run_condition.ts`. The set handle, the entry
+ * record and the ordering record live in `system_set.ts`. This file owns the
+ * tables that read them.
  *
  * Usage:
  *
@@ -44,6 +52,11 @@
  ***/
 
 import { topologicalSort } from "../../type_primitives";
+import { SCHEDULE } from "./phase";
+import { sortSystems } from "./schedule_plan";
+import type { PhasePlan, SetOrdering, SystemNode } from "./schedule_plan";
+import type { SystemEntry, SystemSet, SystemSetConfig } from "./system_set";
+import type { Phase, PhaseConfig, PhaseLoop, SchedulePhase } from "./phase";
 import type { SystemContext } from "./system_context";
 import type {
 	SystemFn, SystemDescriptor } from "./system";
@@ -68,91 +81,6 @@ export interface RouteDispatch {
 	run(plan: object, ctx: SystemContext, deltaTime: number, runTick: number): boolean;
 }
 
-export enum SCHEDULE {
-	PRE_STARTUP = "PRE_STARTUP",
-	STARTUP = "STARTUP",
-	POST_STARTUP = "POST_STARTUP",
-	FIXED_UPDATE = "FIXED_UPDATE",
-	PRE_UPDATE = "PRE_UPDATE",
-	UPDATE = "UPDATE",
-	POST_UPDATE = "POST_UPDATE"
-}
-
-/** Which drive runs a phase.
- *
- * `startup` runs once, from `ecs.startup()`. `fixed` runs once per fixed step,
- * inside the accumulator loop. `update` runs once per `ecs.update(dt)`. A
- * phase belongs to one loop for its life, because the loop decides the delta
- * time it receives and how often it runs. */
-export type PhaseLoop = "startup" | "fixed" | "update";
-
-/**
- * An opaque handle for one slot in the schedule, returned by `ecs.addPhase`.
- *
- * A phase is identified by **object identity**, not by name, exactly like a
- * `SystemSet`. Two `addPhase` calls with the same name are two phases. The
- * handle belongs to the world that made it, so passing one to another world's
- * `addSystems` is a fault and not silent cross-world scheduling.
- *
- * The seven built-ins have no handle. `SCHEDULE.UPDATE` names one directly,
- * and every place that takes a `SchedulePhase` takes either spelling. A string
- * enum member is already a string, so the built-in needs no wrapper object,
- * and a plugin author reads `after: [SCHEDULE.PRE_UPDATE]` without an import
- * of a handle table.
- */
-export interface Phase {
-	readonly name: string;
-	readonly loop: PhaseLoop;
-}
-
-/** Where a new phase sits. `before` and `after` order it against other phases
- * of the same loop, and a target in another loop is dropped. A phase with
- * neither runs after every phase declared before it, so an unordered plugin
- * phase lands at the tail of its loop. */
-export interface PhaseConfig {
-	readonly loop: PhaseLoop;
-	readonly before?: readonly SchedulePhase[];
-	readonly after?: readonly SchedulePhase[];
-}
-
-/** Either spelling of a phase: a built-in `SCHEDULE` member, or the handle
- * `addPhase` returned. */
-export type SchedulePhase = SCHEDULE | Phase;
-
-/** The name a trace event carries for a phase. A built-in spells its `SCHEDULE`
- * member. A phase from `addPhase` spells the name it was given, so the set of
- * values is open and a consumer switching on it needs a default arm. */
-export type PhaseName = SCHEDULE | (string & {});
-
-/** The loop that drives either spelling of a phase.
- *
- * A handle from `addPhase` carries its loop. A built-in is one of seven, and
- * its loop is fixed at construction. Pure and cold, so a caller outside the
- * schedule classifies a phase without holding the world. `installHostCommandSeam`
- * is that caller. It refuses a recorder on a fixed-loop phase, and `addPhase`
- * can put a phase of any name in that loop. */
-export function phaseLoopOf(phase: SchedulePhase): PhaseLoop {
-	if (typeof phase !== "string") return phase.loop;
-	switch (phase) {
-		case SCHEDULE.PRE_STARTUP:
-		case SCHEDULE.STARTUP:
-		case SCHEDULE.POST_STARTUP:
-			return "startup";
-		case SCHEDULE.FIXED_UPDATE:
-			return "fixed";
-		case SCHEDULE.PRE_UPDATE:
-		case SCHEDULE.UPDATE:
-		case SCHEDULE.POST_UPDATE:
-			return "update";
-	}
-}
-
-/** The name either spelling of a phase carries, for a diagnostic and for a
- * system name. Pure and cold. */
-export function phaseNameOf(phase: SchedulePhase): PhaseName {
-	return typeof phase === "string" ? phase : phase.name;
-}
-
 /** One phase's whole state: its systems, its cached plan and its ordering.
  *
  * The handle a caller holds **is** this object, so `addSystems` reaches the
@@ -175,80 +103,6 @@ class PhaseNode implements Phase {
 		/** Declaration order, the tiebreaker when two phases are both ready. */
 		public readonly insertionOrder: number
 	) {}
-}
-
-/**
- * An opaque handle for a named group of systems. A set carries a shared
- * run condition and shared ordering that every member inherits. Sets are
- * identified by **object identity**, not by name, create one with
- * `systemSet(name)`, hold the handle, and reuse it across `addSystems`
- * (`SystemEntry.set`) and `Schedule.configureSet`. The `name` is for
- * diagnostics only.
- */
-export interface SystemSet {
-	readonly name: string;
-}
-
-/** Create a `SystemSet` handle. Two calls with the same name are two
- * distinct sets, keep the returned handle and pass it around. */
-export function systemSet(name: string): SystemSet {
-	return Object.freeze({ name });
-}
-
-/** A `before` and `after` ordering target: either a concrete system or a whole set
- * (expanded to its members within the same phase at sort time). */
-export type SystemOrderingTarget = SystemDescriptor | SystemSet;
-
-/** Shared configuration applied to a `SystemSet` via `configureSet`.
- * Accumulates across calls, conditions and together, ordering targets union. */
-export interface SystemSetConfig {
-	/** Condition(s) every member is gated by (ANDed with each member's own). */
-	runIf?: RunCondition | readonly RunCondition[];
-	/** Every member runs before each of these targets. */
-	before?: readonly SystemOrderingTarget[];
-	/** Every member runs after each of these targets. */
-	after?: readonly SystemOrderingTarget[];
-}
-
-export interface SystemOrdering {
-	before?: readonly SystemOrderingTarget[];
-	after?: readonly SystemOrderingTarget[];
-}
-
-export interface SystemEntry {
-	system: SystemDescriptor;
-	ordering?: SystemOrdering;
-	/** Run condition(s) gating only this system. ANDed with any set conditions
-	 * it inherits. A `false` verdict skips the body that tick. */
-	runIf?: RunCondition | readonly RunCondition[];
-	/** Set membership, the system inherits each set's shared condition and
-	 * ordering. */
-	set?: SystemSet | readonly SystemSet[];
-}
-
-/** A phase's execution plan: its topologically sorted systems and, index-aligned,
- * each one's `_lastRunTicks` slot. Cached as a unit and invalidated together. */
-interface PhasePlan {
-	readonly sorted: SystemDescriptor[];
-	readonly slots: Int32Array;
-}
-
-interface SystemNode {
-	descriptor: SystemDescriptor;
-	insertionOrder: number;
-	before: Set<SystemOrderingTarget>;
-	after: Set<SystemOrderingTarget>;
-	/** This system's own run conditions (set conditions are resolved live from
-	 * `_conditionsBySet` at run time so a later `configureSet` is honored). */
-	conditions: readonly RunCondition[];
-	/** Sets this system belongs to. */
-	sets: readonly SystemSet[];
-}
-
-/** A `SystemOrderingTarget` is a set iff it is not a system descriptor. A
- * descriptor always carries `fn` (its update function), a set never does. */
-function isSystemSet(target: SystemOrderingTarget): target is SystemSet {
-	return !("fn" in target);
 }
 
 const EMPTY_ARRAY: readonly never[] = Object.freeze([]);
@@ -375,10 +229,7 @@ export class Schedule {
 	// Live set configuration, read at sort time (ordering) and run time
 	// (conditions) so `configureSet` is order-independent w.r.t. `addSystems`.
 	private readonly _conditionsBySet: Map<SystemSet, RunCondition[]> = new Map();
-	private readonly _orderingBySet: Map<
-		SystemSet,
-		{ before: Set<SystemOrderingTarget>; after: Set<SystemOrderingTarget> }
-	> = new Map();
+	private readonly _orderingBySet: Map<SystemSet, SetOrdering> = new Map();
 	private _nextInsertionOrder = 0;
 	// The opt-in compute backend, or null (the default, pure-TS). When
 	// set, a scheduled system carrying a `backendHandle` runs `backend.run(...)`
@@ -394,7 +245,8 @@ export class Schedule {
 	private _route: RouteDispatch | null = null;
 
 	/** Dev-diagnostic sink (`ECSOptions.onWarn`). Defaults to `console.warn`.
-	 * The only schedule diagnostic today is `_warnDroppedEdge`. */
+	 * The only schedule diagnostic today is the dropped ordering edge
+	 * `schedule_plan.ts` reports. */
 	private readonly _onWarn: (message: string) => void;
 
 	// How many systems sit in a `fixed`-loop phase, for `hasFixedSystems`.
@@ -642,7 +494,7 @@ export class Schedule {
 		}
 		this._gatedSystems.delete(system);
 		// A dangling descriptor target left inside a `_orderingBySet` entry is
-		// harmless, `_sortSystems` drops any ordering target not present in the
+		// harmless, `sortSystems` drops any ordering target not present in the
 		// phase, so it needs no per-remove sweep across every set.
 		//
 		// Clear every phase plan, not only this phase's: the slot only recycled is
@@ -1010,191 +862,17 @@ export class Schedule {
 	/** Sort one phase and cache its plan on the phase. Cold: the drive reads
 	 * `phase.plan` and only lands here when an add or a remove nulled it. */
 	private _buildPlan(phase: PhaseNode): PhasePlan {
-		const sorted = this._sortSystems(phase.nodes, phase.name);
+		const sorted = sortSystems(
+			phase.nodes,
+			phase.name,
+			this._orderingBySet,
+			this._phaseBySystem,
+			this._onWarn
+		);
 		const slots = new Int32Array(sorted.length);
 		for (let i = 0; i < sorted.length; i++) slots[i] = this._assignLastRunSlot(sorted[i]);
 		const plan: PhasePlan = { sorted, slots };
 		phase.plan = plan;
 		return plan;
-	}
-
-	/**
-	 * Delegates to the shared topologicalSort utility.
-	 * Builds the dependency edge map from before and after constraints, then
-	 * catches any cycle TypeError and re-throws as ECSError.
-	 */
-	private _sortSystems(nodes: SystemNode[], phase: string): SystemDescriptor[] {
-		if (nodes.length === 0) return [];
-
-		const descriptors: SystemDescriptor[] = [];
-		const insertionOrder = new Map<SystemDescriptor, number>();
-		const nodeSet = new Set<SystemDescriptor>();
-		// set → its member descriptors *within this phase*. Cross-phase
-		// members are absent, so set ordering stays phase-local like system
-		// ordering, a set referenced from another phase expands to nothing here.
-		const setMembers = new Map<SystemSet, SystemDescriptor[]>();
-
-		for (const node of nodes) {
-			descriptors.push(node.descriptor);
-			insertionOrder.set(node.descriptor, node.insertionOrder);
-			nodeSet.add(node.descriptor);
-			for (let s = 0; s < node.sets.length; s++) {
-				const set = node.sets[s];
-				let members = setMembers.get(set);
-				if (members === undefined) {
-					members = [];
-					setMembers.set(set, members);
-				}
-				members.push(node.descriptor);
-			}
-		}
-
-		// Build adjacency list: edges.get(a) = list of nodes that must come after a
-		const edges = new Map<SystemDescriptor, SystemDescriptor[]>();
-		for (const node of nodes) {
-			edges.set(node.descriptor, []);
-		}
-
-		// ! safe: all descriptors were inserted into edges above
-		// nodeSet guards skip descriptors from other phases
-		for (const node of nodes) {
-			// Effective ordering = the system's own before and after plus the
-			// before and after of every set it belongs to. Set conditions gate
-			// at run time. Set *ordering* expands here into per-member edges.
-			this._resolveEdges(
-				node.descriptor,
-				node.before,
-				"before",
-				nodeSet,
-				setMembers,
-				edges,
-				phase
-			);
-			this._resolveEdges(node.descriptor, node.after, "after", nodeSet, setMembers, edges, phase);
-			for (let s = 0; s < node.sets.length; s++) {
-				const ord = this._orderingBySet.get(node.sets[s]);
-				if (ord === undefined) continue;
-				this._resolveEdges(
-					node.descriptor,
-					ord.before,
-					"before",
-					nodeSet,
-					setMembers,
-					edges,
-					phase
-				);
-				this._resolveEdges(
-					node.descriptor,
-					ord.after,
-					"after",
-					nodeSet,
-					setMembers,
-					edges,
-					phase
-				);
-			}
-		}
-
-		// ! safe: all descriptors were seeded into insertionOrder map above
-		const tiebreaker = (a: SystemDescriptor, b: SystemDescriptor) =>
-			insertionOrder.get(a)! - insertionOrder.get(b)!;
-
-		const nodeName = (d: SystemDescriptor) => d.name ?? `system_${d.id}`;
-
-		try {
-			return topologicalSort(descriptors, edges, tiebreaker, nodeName);
-		} catch (err) {
-			if (err instanceof TypeError) {
-				throw new ECSError(
-					ECS_ERROR.CIRCULAR_SYSTEM_DEPENDENCY,
-					`Circular system dependency detected in ${phase}: ${err.message}`
-				);
-			}
-			throw err;
-		}
-	}
-
-	/**
-	 * Add the topo edges for one ordering list. For `"before"` the source
-	 * runs before each target (edge source→target). For `"after"` it runs after
-	 * each target (edge target→source).
-	 *
-	 * A `SystemSet` target expands to every member within this phase. Self-edges
-	 * are skipped, so a member ordered against its own set is a no-op. A
-	 * descriptor target absent from this phase is dropped. Only a concrete
-	 * system gets a dev warning for that, because a set legitimately expands to
-	 * nothing when its members live in another phase.
-	 */
-	private _resolveEdges(
-		source: SystemDescriptor,
-		targets: Iterable<SystemOrderingTarget>,
-		direction: "before" | "after",
-		nodeSet: Set<SystemDescriptor>,
-		setMembers: Map<SystemSet, SystemDescriptor[]>,
-		edges: Map<SystemDescriptor, SystemDescriptor[]>,
-		phase: string
-	): void {
-		for (const target of targets) {
-			if (isSystemSet(target)) {
-				const members = setMembers.get(target);
-				if (members === undefined) continue; // no members in this phase
-				for (let i = 0; i < members.length; i++) {
-					const member = members[i];
-					if (member === source) continue; // skip self
-					this._addDirectedEdge(source, member, direction, edges);
-				}
-				continue;
-			}
-			if (!nodeSet.has(target)) {
-				if (DEV) this._warnDroppedEdge(source, target, direction, phase);
-				continue;
-			}
-			this._addDirectedEdge(source, target, direction, edges);
-		}
-	}
-
-	/** Push one directed edge into the adjacency map. Both endpoints are known to
-	 * be in this phase (callers guard), so `edges.get(...)` is non-null. */
-	private _addDirectedEdge(
-		source: SystemDescriptor,
-		target: SystemDescriptor,
-		direction: "before" | "after",
-		edges: Map<SystemDescriptor, SystemDescriptor[]>
-	): void {
-		if (direction === "before") {
-			// source runs before target → target depends on source.
-			edges.get(source)!.push(target);
-		} else {
-			// source runs after target → source depends on target.
-			edges.get(target)!.push(source);
-		}
-	}
-
-	/**
-	 * Dev-only diagnostic for an ordering edge that was dropped during sort.
-	 *
-	 * Cross-phase ordering is impossible by design (`nodeSet` is per-phase), so
-	 * a target registered in *another* phase is skipped silently, that's the
-	 * intended isolation. But a target unknown to *every* phase is almost
-	 * certainly a typo or a system that was never scheduled. Without this warning
-	 * the constraint vanishes and the system runs in insertion-order tiebreak as
-	 * if unconstrained, with nothing to distinguish mistake from intent. Compiled
-	 * out of production builds by the `DEV` guards at the call sites.
-	 */
-	private _warnDroppedEdge(
-		source: SystemDescriptor,
-		target: SystemDescriptor,
-		relation: "before" | "after",
-		phase: string
-	): void {
-		// Registered in some other phase → deliberate cross-phase skip, stay quiet.
-		if (this._phaseBySystem.has(target)) return;
-
-		const name = (d: SystemDescriptor) => d.name ?? `system_${d.id}`;
-		this._onWarn(
-			`Schedule[${phase}]: \`${name(source)}\` declares \`${relation}\` ordering against ` +
-				`\`${name(target)}\`, which is not registered in any phase, the constraint is ignored. ` +
-				`Check for a typo or a missing add_systems() call.`
-		);
 	}
 }

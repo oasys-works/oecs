@@ -27,7 +27,7 @@
  */
 import type { EntityID } from "./entity";
 import type { SystemDescriptor } from "./system";
-import type { PhaseName } from "./schedule";
+import type { PhaseName } from "./phase";
 
 /** A deferred structural command issued through `ctx.commands.*` (`query.ts`).
  * `spawn`, `despawn`, `enable` and `disable` carry a `null` component. `add` and `remove`

@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { _INTERNAL_EMPTY_ACCESS } from "../../system";
 import { relations } from "../../../../plugins/relations";
 

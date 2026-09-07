@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE, type Phase } from "../../schedule";
+import { SCHEDULE, type Phase } from "../../phase";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 import type { Plugin, PluginHost } from "../../plugin";
 import { FrameTraceRecorder } from "../../frame_trace";

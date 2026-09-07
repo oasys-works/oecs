@@ -18,7 +18,7 @@
 import { batch, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import { observers } from "../../../plugins/observers";
 import { openAccess } from "../../../core/ecs/__tests__/test_helpers";
 import { solid } from "../index";

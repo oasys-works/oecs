@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import type { WorkerPool } from "../../workers/pool";
 import { integrateF32, integrateI32 } from "./parallel_kernels.mjs";

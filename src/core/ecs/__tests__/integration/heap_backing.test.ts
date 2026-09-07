@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { ComponentDef } from "../../component";
 import type { EntityID } from "../../entity";
 import {

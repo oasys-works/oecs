@@ -16,7 +16,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Store } from "../../store";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 import type { Plugin, PluginHost } from "../../plugin";

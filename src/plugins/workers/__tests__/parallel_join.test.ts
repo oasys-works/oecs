@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import { getEntityIndex } from "../../../core/ecs/entity";
 import type { WorkerPool } from "../../workers/pool";

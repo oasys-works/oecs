@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS, type ECSOptions } from "../../../core/ecs/ecs";
-import { SCHEDULE } from "../../../core/ecs/schedule";
+import { SCHEDULE } from "../../../core/ecs/phase";
 import type { ComponentDef } from "../../../core/ecs/component";
 import type { SparseComponentDef } from "../../../core/ecs/sparse_store";
 import type { EntityID } from "../../../core/ecs/entity";

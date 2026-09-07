@@ -635,7 +635,8 @@ each entity. They reject an archetype that has disabled rows (`PARTITION_BULK_IN
 
 ## 7. Queries
 
-Source: `src/core/ecs/query.ts`, with the cache in `QueryCache`, the live registration in
+Source: `src/core/ecs/query.ts`, with the term vocabulary in `src/core/ecs/query_terms.ts`, the
+cache in `QueryCache` (`src/core/ecs/query_cache.ts`), the live registration in
 `src/core/ecs/store.ts`, and the connection to the resolver in `src/core/ecs/ecs.ts`.
 
 A `Query<Defs>` owns the following (`core/ecs/query.ts`):
@@ -651,12 +652,12 @@ Those lists are frozen empty objects by default, so a dense query allocates none
 
 ### Resolution and caching
 
-Each cache for query resolution is in one `QueryCache` object (`core/ecs/query.ts`), which the
+Each cache for query resolution is in one `QueryCache` object (`core/ecs/query_cache.ts`), which the
 resolver sees as `ECS.caches` (`core/ecs/ecs.ts`). `resolveQuery` (`core/ecs/ecs.ts`) calculates
 the key from the three mask hashes:
 `incHash ^ imul(excHash, HASH_GOLDEN_RATIO) ^ imul(anyHash, HASH_SECONDARY_PRIME)`. It then asks
 `QueryCache.findDedup` to scan the collision bucket linearly, with `BitSet.equals`
-(`core/ecs/query.ts`). When it finds no match, it does four steps. It registers a live array with
+(`core/ecs/query_cache.ts`). When it finds no match, it does four steps. It registers a live array with
 the store. It puts that array in a `Query` with a new id. It updates the back-reference of the
 store to the query. It then adds an entry to the cache. `ECS.query(...defs)` uses one scratch
 `BitSet` again, so that a call allocates nothing (`core/ecs/ecs.ts`). `QueryBuilder.and(...)`
@@ -693,7 +694,7 @@ field never touches the epoch. So repeated iteration inside a frame uses the cac
 - `forEachChunk(cb)` (`core/ecs/query.ts`) is the high-frequency path that writes. It allocates one
   `ChunkColumns` cursor, reads the current tick **one time**, and, for each archetype, points the
   cursor at that archetype and gives `arch.entityCount` as the `count`. `ChunkColumns`
-  (`core/ecs/query.ts`) resolves `mut(def)` to `columnGroupMut`, which sets the tick, and
+  (`core/ecs/chunk_columns.ts`) resolves `mut(def)` to `columnGroupMut`, which sets the tick, and
   `read(def)` to `columnGroupRead`. The cursor belongs to one call, so nested `forEachChunk` passes
   are safe.
 - `forEachEntity(cb)` (`core/ecs/query.ts`) gives the matching entities one id at a time. It is
@@ -748,12 +749,12 @@ create the ref. The read paths do not set it: `getColumnRead`, `columnGroupRead`
 
 `Query.changed(...defs)` (`core/ecs/query.ts`) gives a `ChangedQuery` that contains the base query
 and the ids of the components to watch. The constructor asserts that each id is in the include mask
-(`core/ecs/query.ts`). Its `forEach` (`core/ecs/query.ts`) reads the threshold *again at each
+(`core/ecs/changed_query.ts`). Its `forEach` (`core/ecs/changed_query.ts`) reads the threshold *again at each
 call*, through `_query.lastRunTick()`. It walks the non-empty archetypes of the base query, and
 it gives each archetype where `arch.changedTick[id] > lastTick` for one or more of the ids that
 it watches. At the first run of a system, `lastRunTick` is 0, so it visits each non-empty matching
 archetype. The `ChangedQuery` itself composes: `and`, `not`, `or` and `optional` derive the
-base query again and put the result in a new `ChangedQuery` (`core/ecs/query.ts`). So
+base query again and put the result in a new `ChangedQuery` (`core/ecs/changed_query.ts`). So
 `q.changed(P).not(D)` is equal to `q.not(D).changed(P)`.
 
 **The level of detail is one `(archetype, component)` pair.** A write to one row sets the value for
@@ -997,7 +998,8 @@ never disturbs determinism.
 
 ## 14. Systems and the scheduler
 
-Source: `src/core/ecs/system.ts`, `src/core/ecs/schedule.ts`, `src/core/ecs/run_condition.ts`, and
+Source: `src/core/ecs/system.ts`, `src/core/ecs/schedule.ts`, `src/core/ecs/schedule_plan.ts`,
+`src/core/ecs/phase.ts`, `src/core/ecs/system_set.ts`, `src/core/ecs/run_condition.ts`, and
 `src/core/ecs/access_check.ts`.
 
 ### The configuration of a system
@@ -1014,10 +1016,11 @@ A `SystemConfig` (`core/ecs/system.ts`) carries:
 
 `registerSystem` (`core/ecs/ecs.ts`) makes the three forms uniform (config, function alone, and
 function with a query builder). It runs a development guard on the number of parameters, which
-gives `SYSTEM_FN_ARITY` for a function alone with three parameters that has no query builder. It
-runs the `_assertQueriesDeclared` check (`queries ⊆ reads ∪ writes`, which gives
-`QUERY_ACCESS_UNDECLARED`, `core/ecs/system.ts`). It then freezes a `SystemDescriptor`, which is
-the identity handle that you use to schedule the system, to set its order, and to remove it.
+gives `SYSTEM_FN_ARITY` for a function alone with three parameters that has no query builder
+(`_createBareSystemConfig`, `core/ecs/system.ts`). It runs the `_assertQueriesDeclared` check
+(`queries ⊆ reads ∪ writes`, which gives `QUERY_ACCESS_UNDECLARED`, `core/ecs/system.ts`). It then
+freezes a `SystemDescriptor` (`_createSystemDescriptor`, `core/ecs/system.ts`), which is the
+identity handle that you use to schedule the system, to set its order, and to remove it.
 
 ### The access checker
 
@@ -1034,7 +1037,7 @@ condition gets a variant that permits reads only. So each write that a predicate
 
 ### The phases and the order
 
-`SCHEDULE` is an enum of 7 values (`core/ecs/schedule.ts`): `PRE_STARTUP`, `STARTUP`, and
+`SCHEDULE` is an enum of 7 values (`core/ecs/phase.ts`): `PRE_STARTUP`, `STARTUP`, and
 `POST_STARTUP` run one time, through `startup()`. `FIXED_UPDATE` runs at a fixed timestep, inside
 `update()`. `PRE_UPDATE`, `UPDATE`, and `POST_UPDATE` run one time in each frame.
 
@@ -1131,7 +1134,8 @@ step emitted until the end of `update()`. `fixedAlpha` exposes `accumulator / fi
 interpolation of the display. `startup()` does four steps:
 
 1. It prepares the closure of archetypes over each system and observer (`_prewarmArchetypes`,
-   `core/ecs/ecs.ts`).
+   `core/ecs/ecs.ts`). The walk itself is `computeArchetypeClosure`
+   (`core/ecs/archetype_closure.ts`).
 2. It runs the `onAdded` hook of each system, inside an access span.
 3. It runs the three startup phases, with a delta of 0.
 4. It clears the startup events.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { ComponentDef } from "../../component";
 import type { EntityID } from "../../entity";
 import { openAccess } from "../test_helpers";

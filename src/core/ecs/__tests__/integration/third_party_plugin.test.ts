@@ -28,7 +28,7 @@ import type { ComponentDef } from "../../component";
 import type { EntityID } from "../../entity";
 import type { ChangeFeed, Plugin, PluginHost, RouteControl } from "../../plugin";
 import type { SystemConfig } from "../../system";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import { relations } from "../../../../plugins/relations";
 import { observers } from "../../../../plugins/observers";
 

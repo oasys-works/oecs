@@ -7,7 +7,7 @@
 // archetypes not being walked stay legal.
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { SCHEDULE } from "../../schedule";
+import { SCHEDULE } from "../../phase";
 import type { EntityID } from "../../entity";
 import { ECSError, ECS_ERROR } from "../../utils/error";
 

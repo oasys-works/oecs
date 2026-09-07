@@ -41,24 +41,27 @@ export type { StoreLayoutListener } from "./store_layout_listener";
 // is the opaque, backend-minted token carried on `SystemConfig.backendHandle`.
 export type { ComputeBackend, BackendSystemHandle } from "./compute_backend";
 
-// Schedule
+// Phases. The seven built-ins spell a `SCHEDULE` member. `ecs.addPhase`
+// adds one more slot to a loop and hands back a `Phase` handle.
 export {
 	SCHEDULE,
-	// Phases. The seven built-ins spell a `SCHEDULE` member. `ecs.addPhase`
-	// adds one more slot to a loop and hands back a `Phase` handle.
 	type Phase,
 	type PhaseConfig,
 	type PhaseLoop,
 	type PhaseName,
-	type SchedulePhase,
+	type SchedulePhase
+} from "./phase";
+
+// What a caller writes into `addSystems` and `configureSet`, plus the system
+// set, a named group sharing a run condition and ordering.
+export {
 	type SystemEntry,
 	type SystemOrdering,
 	type SystemOrderingTarget,
-	// System sets, a named group sharing a run condition + ordering.
 	systemSet,
 	type SystemSet,
 	type SystemSetConfig
-} from "./schedule";
+} from "./system_set";
 
 // Run conditions, per-tick gates for a scheduled system or system set. The
 // predicate type + ConditionContext, plus the shipped built-ins.
@@ -239,10 +242,12 @@ export type {
 } from "./ref";
 
 // Queries
-export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED, and, or, not } from "./query";
-export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm, QueryTerms } from "./query";
+export { Query, QueryBuilder } from "./query";
+export { ChangedQuery } from "./changed_query";
+export { HIERARCHY_UNBOUNDED, and, or, not } from "./query_terms";
+export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm, QueryTerms } from "./query_terms";
 // forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
-export { ChunkColumns } from "./query";
+export { ChunkColumns } from "./chunk_columns";
 export { Commands } from "./system_context";
 
 // Archetype, only the read-only view + opaque id are public. The concrete

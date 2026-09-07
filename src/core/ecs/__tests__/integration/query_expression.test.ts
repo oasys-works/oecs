@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
-import { and, or, not } from "../../query";
+import { and, or, not } from "../../query_terms";
 
 function world(): ReturnType<typeof ECS.create> {
 	return ECS.create();
