@@ -388,7 +388,12 @@ pnpm test              # vitest
 pnpm bench             # vitest bench
 pnpm build             # vite library build (multi-entry → dist/)
 pnpm exec tsc --noEmit # type check
+pnpm fmt               # oxfmt, write
+pnpm lint              # oxlint
+pnpm verify            # format, lint, types, tests, build
 ```
+
+`pnpm verify` is the gate the publish workflow runs. Run it before a tag.
 
 ## Acknowledgements
 

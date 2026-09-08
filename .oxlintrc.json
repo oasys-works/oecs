@@ -1,0 +1,41 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	// Correctness only. The wider categories fight conventions this repo holds
+	// on purpose: a leading `_` marks a private member, and a probe keeps a
+	// value it never reads.
+	"categories": {
+		"correctness": "error"
+	},
+	"rules": {
+		// A preallocated array is the point. `new Array(n)` gives the engine the
+		// length up front, and the store fills every slot before a read.
+		"unicorn/no-new-array": "off",
+		// A hot loop hoists `this` into a local, so the closure it builds reads a
+		// captured variable instead of a property of a megamorphic receiver.
+		"typescript/no-this-alias": "off"
+	},
+	"ignorePatterns": ["dist", "node_modules", "bench/foundations/wasm/kernel_as.ts"],
+	"overrides": [
+		{
+			// `bench/` is a probe tree, not shipped code. A sink holds a value the
+			// benchmark never reads, which is what stops the engine from deleting
+			// the work under measurement. A `0 * rows * 4` offset keeps every
+			// column of a hand-laid buffer in one shape.
+			"files": ["bench/**"],
+			"rules": {
+				"eslint/no-unused-vars": "off",
+				"oxc/erasing-op": "off"
+			}
+		},
+		{
+			// A test states its input, and some inputs are illegal on purpose. A
+			// bare property read exercises a getter for its side effect. A literal
+			// past the double range is the value under test.
+			"files": ["**/__tests__/**"],
+			"rules": {
+				"eslint/no-unused-expressions": "off",
+				"eslint/no-loss-of-precision": "off"
+			}
+		}
+	]
+}

@@ -31,6 +31,8 @@
 			"tsconfig.node.json",
 			"tsconfig.build.json",
 			"pnpm-lock.yaml",
+			".oxfmtrc.json",
+			".oxlintrc.json",
 			"src/vite-env.d.ts",
 			".github",
 			"docs",

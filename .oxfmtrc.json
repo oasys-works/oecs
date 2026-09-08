@@ -1,0 +1,22 @@
+{
+	"useTabs": true,
+	"tabWidth": 2,
+	"printWidth": 100,
+	"trailingComma": "none",
+	"semi": true,
+	"singleQuote": false,
+	"arrowParens": "always",
+	"bracketSpacing": true,
+	"endOfLine": "lf",
+	"insertFinalNewline": true,
+	"objectWrap": "preserve",
+	"ignorePatterns": [
+		"**/*.md",
+		"**/*.json",
+		"**/*.jsonc",
+		"**/*.yml",
+		"**/*.yaml",
+		"**/*.html",
+		"bench/foundations/wasm/kernel_as.ts"
+	]
+}

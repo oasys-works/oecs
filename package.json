@@ -253,8 +253,11 @@
 		"build": "node scripts/build.mjs && node scripts/postbuild.mjs",
 		"test": "vitest",
 		"typecheck": "tsc --noEmit",
+		"fmt": "oxfmt --write",
+		"fmt:check": "oxfmt --check",
+		"lint": "oxlint",
 		"test:oracle": "vitest run --config bench/net-oracle/vitest.config.ts",
-		"verify": "pnpm typecheck && vitest run && pnpm build",
+		"verify": "pnpm fmt:check && pnpm lint && pnpm typecheck && vitest run && pnpm build",
 		"bench": "vitest bench",
 		"prepublishOnly": "pnpm verify"
 	},
@@ -284,6 +287,8 @@
 	"devDependencies": {
 		"@types/node": "^25.0.3",
 		"@vitest/coverage-v8": "^4.0.18",
+		"oxfmt": "^0.66.0",
+		"oxlint": "^1.81.0",
 		"solid-js": "^1.9.3",
 		"typescript": "~5.6.2",
 		"vite": "^6.0.3",
