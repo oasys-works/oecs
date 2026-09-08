@@ -67,11 +67,7 @@ export class QueryRegistry {
 	 * Starts from the component with the fewest archetypes, which is the
 	 * tightest starting point for the superset intersection.
 	 */
-	public matching(
-		required: BitSet,
-		excluded?: BitSet,
-		anyOf?: BitSet
-	): readonly Archetype[] {
+	public matching(required: BitSet, excluded?: BitSet, anyOf?: BitSet): readonly Archetype[] {
 		const words = required.words;
 		let hasAnyBit = false;
 		for (let i = 0; i < words.length; i++) {
@@ -86,10 +82,7 @@ export class QueryRegistry {
 			const result: Archetype[] = [];
 			for (let i = 0; i < archs.length; i++) {
 				const arch = archs[i];
-				if (
-					(!excluded || !arch.mask.overlaps(excluded)) &&
-					(!anyOf || arch.mask.overlaps(anyOf))
-				) {
+				if ((!excluded || !arch.mask.overlaps(excluded)) && (!anyOf || arch.mask.overlaps(anyOf))) {
 					result.push(arch);
 				}
 			}

@@ -93,7 +93,10 @@ async function crossingRows() {
 				inbox = resolve;
 				w.postMessage(1);
 			});
-		rows.push({ path: "postMessage round trip (number)", ...(await timeAsync(round, { inner: 50 })) });
+		rows.push({
+			path: "postMessage round trip (number)",
+			...(await timeAsync(round, { inner: 50 }))
+		});
 
 		const payload = new Float64Array(64);
 		const roundBig = () =>
@@ -149,48 +152,71 @@ function atomicRows() {
 	const rows = [];
 	rows.push({
 		op: "plain field ++ (object)",
-		...time(() => {
-			for (let i = 0; i < N; i++) plain.tick++;
-			return plain.tick;
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) plain.tick++;
+				return plain.tick;
+			},
+			{ samples: 25 }
+		)
 	});
 	rows.push({
 		op: "plain store, heap Int32Array",
-		...time(() => {
-			for (let i = 0; i < N; i++) heap[0]++;
-			return heap[0];
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) heap[0]++;
+				return heap[0];
+			},
+			{ samples: 25 }
+		)
 	});
 	rows.push({
 		op: "plain store, shared Int32Array",
-		...time(() => {
-			for (let i = 0; i < N; i++) shared[0]++;
-			return shared[0];
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) shared[0]++;
+				return shared[0];
+			},
+			{ samples: 25 }
+		)
 	});
 	rows.push({
 		op: "Atomics.add, shared Int32Array",
-		...time(() => {
-			for (let i = 0; i < N; i++) Atomics.add(shared, 1, 1);
-			return Atomics.load(shared, 1);
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) Atomics.add(shared, 1, 1);
+				return Atomics.load(shared, 1);
+			},
+			{ samples: 25 }
+		)
 	});
 	let sink = 0;
 	rows.push({
 		op: "plain read, shared Int32Array",
-		...time(() => {
-			for (let i = 0; i < N; i++) sink += shared[2];
-			return sink;
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) sink += shared[2];
+				return sink;
+			},
+			{ samples: 25 }
+		)
 	});
 	rows.push({
 		op: "Atomics.load, shared Int32Array",
-		...time(() => {
-			for (let i = 0; i < N; i++) sink += Atomics.load(shared, 2);
-			return sink;
-		}, { samples: 25 })
+		...time(
+			() => {
+				for (let i = 0; i < N; i++) sink += Atomics.load(shared, 2);
+				return sink;
+			},
+			{ samples: 25 }
+		)
 	});
-	return rows.map((r) => ({ op: r.op, ns: ((r.median * 1e6) / N).toFixed(2), p25: ((r.p25 * 1e6) / N).toFixed(2), p75: ((r.p75 * 1e6) / N).toFixed(2) }));
+	return rows.map((r) => ({
+		op: r.op,
+		ns: ((r.median * 1e6) / N).toFixed(2),
+		p25: ((r.p25 * 1e6) / N).toFixed(2),
+		p75: ((r.p75 * 1e6) / N).toFixed(2)
+	}));
 }
 
 const ns = (x) => x.toFixed(0);

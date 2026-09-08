@@ -246,7 +246,9 @@ if (which) {
 	};
 	const head = `  ${"variant".padEnd(14)} ${"ms/tick".padEnd(10)} ${"ns/dirty row".padEnd(14)} ${"p25-p75".padEnd(18)} effects woken`;
 
-	console.log(`  d: K of ${N.toLocaleString()} rows written by id, N effects subscribed. The whole tick call.`);
+	console.log(
+		`  d: K of ${N.toLocaleString()} rows written by id, N effects subscribed. The whole tick call.`
+	);
 	console.log(
 		`  warm-up: ${WARM_VISITS.toLocaleString()} row visits before the samples, capped at ${WARMUP_CAP} ticks.`
 	);
@@ -257,9 +259,13 @@ if (which) {
 	console.log(head);
 	console.log(row(take("plugin:idle")));
 
-	console.log(`\n  nosub: K = ${NOSUB_K.toLocaleString()}, no effect subscribed. The publish without a reader.`);
+	console.log(
+		`\n  nosub: K = ${NOSUB_K.toLocaleString()}, no effect subscribed. The publish without a reader.`
+	);
 	console.log(head);
 	console.log(row(take("plugin:nosub")));
 
-	console.log(`\n  Numbers are for this machine and this build. Read the ratios and the positions.`);
+	console.log(
+		`\n  Numbers are for this machine and this build. Read the ratios and the positions.`
+	);
 }

@@ -37,7 +37,12 @@ function physics(order: string[]): Plugin<PhysicsPlugin> {
 			});
 			host.world.addSystems(
 				phase,
-				host.world.registerSystem({ name: "integrate", reads: [], writes: [], fn: () => order.push("integrate") })
+				host.world.registerSystem({
+					name: "integrate",
+					reads: [],
+					writes: [],
+					fn: () => order.push("integrate")
+				})
 			);
 			return { physics: { phase } };
 		}
@@ -86,7 +91,12 @@ describe("a phase a plugin adds", () => {
 		expect(second).not.toBe(world.physics.phase);
 		world.addSystems(
 			second,
-			world.registerSystem({ name: "second", reads: [], writes: [], fn: () => order.push("second") })
+			world.registerSystem({
+				name: "second",
+				reads: [],
+				writes: [],
+				fn: () => order.push("second")
+			})
 		);
 		world.startup();
 		order.length = 0;
@@ -98,7 +108,10 @@ describe("a phase a plugin adds", () => {
 		const order: string[] = [];
 		const world = new ECS();
 		const tail = world.addPhase("tail", { loop: "update" });
-		world.addSystems(tail, world.registerSystem({ reads: [], writes: [], fn: () => order.push("tail") }));
+		world.addSystems(
+			tail,
+			world.registerSystem({ reads: [], writes: [], fn: () => order.push("tail") })
+		);
 		world.addSystems(
 			SCHEDULE.POST_UPDATE,
 			world.registerSystem({ reads: [], writes: [], fn: () => order.push("post") })
@@ -113,8 +126,14 @@ describe("a phase a plugin adds", () => {
 		const order: string[] = [];
 		const world = new ECS();
 		const seed = world.addPhase("seed", { loop: "startup", before: [SCHEDULE.STARTUP] });
-		world.addSystems(seed, world.registerSystem({ reads: [], writes: [], fn: () => order.push("seed") }));
-		world.addSystems(SCHEDULE.PRE_STARTUP, world.registerSystem({ reads: [], writes: [], fn: () => order.push("pre") }));
+		world.addSystems(
+			seed,
+			world.registerSystem({ reads: [], writes: [], fn: () => order.push("seed") })
+		);
+		world.addSystems(
+			SCHEDULE.PRE_STARTUP,
+			world.registerSystem({ reads: [], writes: [], fn: () => order.push("pre") })
+		);
 		world.startup();
 		expect(order).toEqual(["pre", "seed"]);
 		world.update(1 / 60);
@@ -125,7 +144,10 @@ describe("a phase a plugin adds", () => {
 		const order: string[] = [];
 		const world = new ECS({ fixedTimestep: 1 / 60 });
 		const step = world.addPhase("step", { loop: "fixed" });
-		world.addSystems(step, world.registerSystem({ reads: [], writes: [], fn: () => order.push("step") }));
+		world.addSystems(
+			step,
+			world.registerSystem({ reads: [], writes: [], fn: () => order.push("step") })
+		);
 		world.startup();
 		order.length = 0;
 		// Two whole fixed steps of delta, so the accumulator runs the phase twice.
@@ -144,9 +166,9 @@ describe("a phase a plugin adds", () => {
 		world.startup();
 		world.update(2 / 60);
 		const frames = trace.frames();
-		const flushed = frames[frames.length - 1]!.events
-			.filter((e) => e.kind === "flush_begin")
-			.map((e) => (e as { phase: string }).phase);
+		const flushed = frames[frames.length - 1]!.events.filter((e) => e.kind === "flush_begin").map(
+			(e) => (e as { phase: string }).phase
+		);
 		expect(flushed).not.toContain("step");
 		expect(flushed).not.toContain(SCHEDULE.FIXED_UPDATE);
 	});
@@ -154,7 +176,10 @@ describe("a phase a plugin adds", () => {
 	it("names itself in the frame trace", () => {
 		const world = new ECS();
 		const phase = world.addPhase("physics", { loop: "update", before: [SCHEDULE.UPDATE] });
-		world.addSystems(phase, world.registerSystem({ name: "integrate", reads: [], writes: [], fn: () => {} }));
+		world.addSystems(
+			phase,
+			world.registerSystem({ name: "integrate", reads: [], writes: [], fn: () => {} })
+		);
 		const trace = new FrameTraceRecorder();
 		world.setTrace(trace);
 		world.startup();
@@ -171,7 +196,9 @@ describe("a phase the world does not own", () => {
 		const a = new ECS();
 		const b = new ECS();
 		const phase = a.addPhase("physics", { loop: "update" });
-		const err = thrown(() => b.addSystems(phase, b.registerSystem({ reads: [], writes: [], fn: () => {} })));
+		const err = thrown(() =>
+			b.addSystems(phase, b.registerSystem({ reads: [], writes: [], fn: () => {} }))
+		);
 		expect(err.category).toBe(ECS_ERROR.UNKNOWN_PHASE);
 		expect(err.message).toContain("physics");
 	});
@@ -179,7 +206,10 @@ describe("a phase the world does not own", () => {
 	it("refuses a name no built-in spells", () => {
 		const world = new ECS();
 		const err = thrown(() =>
-			world.addSystems("PHYSICS" as SCHEDULE, world.registerSystem({ reads: [], writes: [], fn: () => {} }))
+			world.addSystems(
+				"PHYSICS" as SCHEDULE,
+				world.registerSystem({ reads: [], writes: [], fn: () => {} })
+			)
 		);
 		expect(err.category).toBe(ECS_ERROR.UNKNOWN_PHASE);
 	});

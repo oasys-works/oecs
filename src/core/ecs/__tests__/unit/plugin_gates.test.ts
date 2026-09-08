@@ -58,9 +58,21 @@ describe("a bare world names the missing plugin", () => {
 			observe: () => void;
 		};
 
-		expectMissing(thrown(() => slots.relations.add), "ecs.relations.add", "relations");
-		expectMissing(thrown(() => slots.events.register), "ecs.events.register", "events");
-		expectMissing(thrown(() => slots.observe()), "ecs.observe", "observers");
+		expectMissing(
+			thrown(() => slots.relations.add),
+			"ecs.relations.add",
+			"relations"
+		);
+		expectMissing(
+			thrown(() => slots.events.register),
+			"ecs.events.register",
+			"events"
+		);
+		expectMissing(
+			thrown(() => slots.observe()),
+			"ecs.observe",
+			"observers"
+		);
 		expectMissing(
 			thrown(() => (world.snapshots as unknown as { capture(): void }).capture()),
 			"ecs.snapshots.capture",
@@ -74,7 +86,11 @@ describe("a bare world names the missing plugin", () => {
 		// property of undefined. The slot names the plugin and the import instead.
 		const world = new ECS();
 		const slot = world as unknown as { workers: { attach(): void } };
-		expectMissing(thrown(() => slot.workers.attach), "ecs.workers.attach", "workers");
+		expectMissing(
+			thrown(() => slot.workers.attach),
+			"ecs.workers.attach",
+			"workers"
+		);
 	});
 
 	it("registers a parallel system and runs its fn", () => {

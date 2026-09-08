@@ -168,8 +168,12 @@ if (which) {
 	}
 } else {
 	console.log(`P11, the sizing x backing grid: are the two axes independent?`);
-	console.log(`      Every cell runs the same spawn, churn and despawn workload (${WORKLOAD_N} entities).`);
-	console.log(`      Sizing travels with the backing since 0.6, so a cell is one options object.\n`);
+	console.log(
+		`      Every cell runs the same spawn, churn and despawn workload (${WORKLOAD_N} entities).`
+	);
+	console.log(
+		`      Sizing travels with the backing since 0.6, so a cell is one options object.\n`
+	);
 
 	const rows = [];
 	for (const sizingKey of Object.keys(SIZINGS)) {
@@ -181,14 +185,20 @@ if (which) {
 	}
 
 	console.log(`  A. does the cell construct and run?\n`);
-	console.log(`  ${"sizing".padEnd(9)} ${"runtime".padEnd(12)} ${BACKINGS.map((b) => b.padEnd(10)).join(" ")}`);
-	console.log(`  ${"-".repeat(9)} ${"-".repeat(12)} ${BACKINGS.map(() => "-".repeat(10)).join(" ")}`);
+	console.log(
+		`  ${"sizing".padEnd(9)} ${"runtime".padEnd(12)} ${BACKINGS.map((b) => b.padEnd(10)).join(" ")}`
+	);
+	console.log(
+		`  ${"-".repeat(9)} ${"-".repeat(12)} ${BACKINGS.map(() => "-".repeat(10)).join(" ")}`
+	);
 	for (const { sizingKey, rt, got } of rows) {
 		const cells = BACKINGS.map((b) => (got[b]?.ok ? "ok" : "FAIL").padEnd(10)).join(" ");
 		console.log(`  ${sizingKey.padEnd(9)} ${`${rt.cmd} (${rt.engine})`.padEnd(12)} ${cells}`);
 	}
 	const failures = rows.flatMap(({ sizingKey, rt, got }) =>
-		BACKINGS.filter((b) => !got[b]?.ok).map((b) => `${sizingKey}+${b} on ${rt.cmd}: ${got[b]?.blocked ?? "no result"}`)
+		BACKINGS.filter((b) => !got[b]?.ok).map(
+			(b) => `${sizingKey}+${b} on ${rt.cmd}: ${got[b]?.blocked ?? "no result"}`
+		)
 	);
 	if (failures.length) {
 		console.log(`\n  failures:`);
@@ -222,7 +232,9 @@ if (which) {
 	}
 
 	console.log(`\n  C. does the same workload give the same world on every backing?\n`);
-	console.log(`  ${"sizing".padEnd(9)} ${"runtime".padEnd(12)} ${"stateHash".padEnd(10)} ${"sum".padEnd(10)} live`);
+	console.log(
+		`  ${"sizing".padEnd(9)} ${"runtime".padEnd(12)} ${"stateHash".padEnd(10)} ${"sum".padEnd(10)} live`
+	);
 	console.log(`  ${"-".repeat(9)} ${"-".repeat(12)} ${"-".repeat(10)} ${"-".repeat(10)} ----`);
 	for (const { sizingKey, rt, got } of rows) {
 		if (!BACKINGS.every((b) => got[b]?.ok)) continue;

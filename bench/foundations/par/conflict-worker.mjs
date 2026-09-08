@@ -38,7 +38,8 @@ function refresh() {
 		bound = bindColumnsLean(buffer, specs);
 		rowCounts = new Array(bound.length);
 	}
-	for (let i = 0; i < bound.length; i++) rowCounts[i] = liveRowCount(buffer, bound[i].descriptorOff);
+	for (let i = 0; i < bound.length; i++)
+		rowCounts[i] = liveRowCount(buffer, bound[i].descriptorOff);
 }
 
 parentPort.postMessage({ ready: index });

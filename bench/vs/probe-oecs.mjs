@@ -104,21 +104,29 @@ function time(label, iters, fn) {
 	console.log("\nforEachChunk dispatch, empty body (pure per-chunk overhead)");
 	for (const n of [1, 8, 64]) {
 		const { q, rows } = mk(n);
-		time(`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`, 300 * rows, () => {
-			for (let r = 0; r < 300; r++) q.forEachChunk((_c, count) => (sink = count));
-		});
+		time(
+			`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`,
+			300 * rows,
+			() => {
+				for (let r = 0; r < 300; r++) q.forEachChunk((_c, count) => (sink = count));
+			}
+		);
 	}
 
 	console.log("\nforEachChunk with x[i] += 2 body");
 	for (const n of [1, 8, 64]) {
 		const { q, Pos, rows } = mk(n);
-		time(`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`, 300 * rows, () => {
-			for (let r = 0; r < 300; r++) {
-				q.forEachChunk((cols, count) => {
-					const { x } = cols.mut(Pos);
-					for (let i = 0; i < count; i++) x[i] += 2;
-				});
+		time(
+			`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`,
+			300 * rows,
+			() => {
+				for (let r = 0; r < 300; r++) {
+					q.forEachChunk((cols, count) => {
+						const { x } = cols.mut(Pos);
+						for (let i = 0; i < count; i++) x[i] += 2;
+					});
+				}
 			}
-		});
+		);
 	}
 }

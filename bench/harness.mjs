@@ -26,7 +26,7 @@ export function bench(name, fn, { iters = 1, warmup = 3, samples = 9, setup } = 
 		bestMs: best,
 		medianMs: median,
 		opsPerSec: iters / (best / 1000),
-		nsPerOp: (best * 1e6) / iters,
+		nsPerOp: (best * 1e6) / iters
 	};
 }
 

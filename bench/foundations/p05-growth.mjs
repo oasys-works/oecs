@@ -42,7 +42,16 @@
  *
  * Part C runs on node alone, because it needs `--expose-gc` for a stable RSS.
  */
-import { emit, iqr, median, mib, RUNTIMES, runVariant, runVariantOn, variantArg } from "./harness.mjs";
+import {
+	emit,
+	iqr,
+	median,
+	mib,
+	RUNTIMES,
+	runVariant,
+	runVariantOn,
+	variantArg
+} from "./harness.mjs";
 
 /** The library's own default ceiling. The reservation question is about this
  * number, so the probe uses it and does not pick a smaller one. */
@@ -105,7 +114,10 @@ const BACKINGS = {
 	fixedSAB: { make: (bytes) => new SharedArrayBuffer(bytes), track: false },
 	fixedSABatCap: { make: () => new SharedArrayBuffer(CAP), track: false },
 	growSAB: { make: (bytes) => new SharedArrayBuffer(bytes, { maxByteLength: CAP }), track: false },
-	growSABtrack: { make: (bytes) => new SharedArrayBuffer(bytes, { maxByteLength: CAP }), track: true },
+	growSABtrack: {
+		make: (bytes) => new SharedArrayBuffer(bytes, { maxByteLength: CAP }),
+		track: true
+	},
 	resizeAB: { make: (bytes) => new ArrayBuffer(bytes, { maxByteLength: CAP }), track: false },
 	resizeABtrack: { make: (bytes) => new ArrayBuffer(bytes, { maxByteLength: CAP }), track: true }
 };
@@ -350,12 +362,16 @@ if (which) {
 	} else throw new Error(`unknown variant ${which}`);
 } else {
 	console.log(`P05, a buffer that can grow in place costs its reader (exp 05 / S3)`);
-	console.log(`      A: ${RAW_N.toLocaleString()} elements, eight backings, two kernels, no library`);
+	console.log(
+		`      A: ${RAW_N.toLocaleString()} elements, eight backings, two kernels, no library`
+	);
 	console.log(`      B: ${LIB_N.toLocaleString()} entities, one physics step, three backings`);
 	console.log(`      C: what the reservation costs in resident memory (node only)\n`);
 
 	// `--only=a` / `--only=b` keeps one part while the probe is being written.
-	const only = (process.argv.find((x) => x.startsWith("--only=")) ?? "--only=abcde").slice("--only=".length);
+	const only = (process.argv.find((x) => x.startsWith("--only=")) ?? "--only=abcde").slice(
+		"--only=".length
+	);
 
 	// --- A -----------------------------------------------------------------
 	const rawNames = Object.keys(BACKINGS);
@@ -389,7 +405,9 @@ if (which) {
 			console.log(
 				`  ${"runtime".padEnd(12)} ${"backing".padEnd(15)} ${"median".padEnd(9)} ${"vs fixedAB".padEnd(11)} p25 to p75`
 			);
-			console.log(`  ${"-".repeat(12)} ${"-".repeat(15)} ${"-".repeat(9)} ${"-".repeat(11)} ${"-".repeat(14)}`);
+			console.log(
+				`  ${"-".repeat(12)} ${"-".repeat(15)} ${"-".repeat(9)} ${"-".repeat(11)} ${"-".repeat(14)}`
+			);
 			for (const r of rawRows) {
 				console.log(
 					`  ${r.runtime.padEnd(12)} ${r.backing.padEnd(15)} ${r.ms.padEnd(9)} ${r.vsFixed.padEnd(11)} ${r.spread}`
@@ -429,7 +447,8 @@ if (which) {
 		console.log(`  ${"-".repeat(12)} ${"-".repeat(15)} ${"-".repeat(9)} ${"-".repeat(8)}`);
 		for (const rt of RUNTIMES) {
 			const got = {};
-			for (const p of ["heap", "shared", "fixedsab"]) got[p] = runVariantOn(rt, import.meta.url, `start-${p}`);
+			for (const p of ["heap", "shared", "fixedsab"])
+				got[p] = runVariantOn(rt, import.meta.url, `start-${p}`);
 			if (!got.heap) continue;
 			for (const p of ["heap", "shared", "fixedsab"]) {
 				const r = got[p];
@@ -449,7 +468,8 @@ if (which) {
 	const plans = [];
 	for (const rt of RUNTIMES) {
 		const got = {};
-		for (const p of ["heap", "shared", "fixedsab"]) got[p] = runVariantOn(rt, import.meta.url, `lib-${p}`);
+		for (const p of ["heap", "shared", "fixedsab"])
+			got[p] = runVariantOn(rt, import.meta.url, `lib-${p}`);
 		if (!got.heap) {
 			console.log(`  ! ${rt.cmd} produced no heap baseline, skipped`);
 			continue;
@@ -462,7 +482,9 @@ if (which) {
 				continue;
 			}
 			checksums.add(r.checksum);
-			plans.push(`${rt.cmd}/${p}: ${r.source}, columns ${r.columnCapacity}, index ${r.entityIndex}`);
+			plans.push(
+				`${rt.cmd}/${p}: ${r.source}, columns ${r.columnCapacity}, index ${r.entityIndex}`
+			);
 			libRows.push({
 				runtime: `${rt.cmd} (${rt.engine})`,
 				backing: p,
@@ -477,7 +499,9 @@ if (which) {
 		console.log(
 			`  ${"runtime".padEnd(12)} ${"backing".padEnd(15)} ${"median".padEnd(9)} ${"vs heap".padEnd(11)} p25 to p75`
 		);
-		console.log(`  ${"-".repeat(12)} ${"-".repeat(15)} ${"-".repeat(9)} ${"-".repeat(11)} ${"-".repeat(14)}`);
+		console.log(
+			`  ${"-".repeat(12)} ${"-".repeat(15)} ${"-".repeat(9)} ${"-".repeat(11)} ${"-".repeat(14)}`
+		);
 		for (const r of libRows) {
 			console.log(
 				`  ${r.runtime.padEnd(12)} ${r.backing.padEnd(15)} ${r.ms.padEnd(9)} ${r.vsHeap.padEnd(11)} ${r.spread}`
@@ -510,7 +534,9 @@ if (which) {
 	console.log(`  ${"backing".padEnd(15)} ${"reserved".padEnd(12)} ${"resident".padEnd(12)} B/item`);
 	console.log(`  ${"-".repeat(15)} ${"-".repeat(12)} ${"-".repeat(12)} ${"-".repeat(8)}`);
 	for (const r of memRows) {
-		console.log(`  ${r.backing.padEnd(15)} ${r.reserved.padEnd(12)} ${r.resident.padEnd(12)} ${r.perItem}`);
+		console.log(
+			`  ${r.backing.padEnd(15)} ${r.reserved.padEnd(12)} ${r.resident.padEnd(12)} ${r.perItem}`
+		);
 	}
 	console.log(`\n  reserved is address space and not memory in use. resident is RSS.`);
 	console.log(`  A fixed backing is born at the cap, so its reserved number says nothing`);

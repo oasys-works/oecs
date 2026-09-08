@@ -12,7 +12,10 @@ import { openAccess } from "../test_helpers";
 import { observers } from "../../../../plugins/observers";
 
 function world() {
-	const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+	const ecs = ECS.create({
+		deterministic: true,
+		plugins: [snapshots(), observers()]
+	});
 	const Pos = ecs.registerComponent(["x"] as const, "i32");
 	const Cool = ecs.registerSparseComponent({ v: "i32" }, { name: "Cool" });
 	const fired: number[] = [];
@@ -31,7 +34,8 @@ function world() {
 	return { ecs, Pos, Cool, ids, fired };
 }
 
-const idx = (ids: EntityID[], ...at: number[]) => at.map((i) => getEntityIndex(ids[i])).sort((a, b) => a - b);
+const idx = (ids: EntityID[], ...at: number[]) =>
+	at.map((i) => getEntityIndex(ids[i])).sort((a, b) => a - b);
 
 describe("a sparse component with an entity-level onSet", () => {
 	it("fires once for each entity a setSparseField wrote, in entity order, and not for an add", () => {
@@ -117,7 +121,10 @@ describe("a sparse component with an entity-level onSet", () => {
 	});
 
 	it("drops the pending records when the last observer is disposed", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Cool = ecs.registerSparseComponent({ v: "i32" });
 		const first: number[] = [];
 		const h = ecs.observe(Cool, {
@@ -144,7 +151,10 @@ describe("a sparse component with an entity-level onSet", () => {
 	});
 
 	it("rejects every other callback shape on a sparse component", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Cool = ecs.registerSparseComponent({ v: "i32" });
 		const bad = () =>
 			ecs.observe(Cool as never, {
@@ -164,7 +174,10 @@ describe("a sparse component with an entity-level onSet", () => {
 
 describe("sparseChanged, the row grain of a sparse component as a pull", () => {
 	it("is true for the run after a write, and false after that", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Cool = ecs.registerSparseComponent({ v: "i32" });
 		ecs.trackRows(Cool);
 		ecs.trackRows(Cool);
@@ -197,7 +210,10 @@ describe("sparseChanged, the row grain of a sparse component as a pull", () => {
 	});
 
 	it("throws without row ticks, and reads false for a non-member", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Cool = ecs.registerSparseComponent({ v: "i32" });
 		const e = ecs.spawn();
 		const outside = ecs.spawn();

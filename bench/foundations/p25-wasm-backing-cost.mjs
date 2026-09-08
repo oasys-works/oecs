@@ -110,8 +110,14 @@ for (const rt of RUNTIMES) {
 	}
 	const base = rows.find((x) => x.backing === "heap");
 	console.log(`\n### ${rt.cmd}, ${rt.engine}, median ms, p25 to p75 in brackets`);
-	const cell = (row, kind) => (row.r === null ? "skip" : `${row.r[kind].median.toFixed(3)} [${row.r[kind].p25.toFixed(3)}, ${row.r[kind].p75.toFixed(3)}]`);
-	const ratio = (row, kind) => (row.r === null || base.r === null ? "skip" : `${(row.r[kind].median / base.r[kind].median).toFixed(2)}x`);
+	const cell = (row, kind) =>
+		row.r === null
+			? "skip"
+			: `${row.r[kind].median.toFixed(3)} [${row.r[kind].p25.toFixed(3)}, ${row.r[kind].p75.toFixed(3)}]`;
+	const ratio = (row, kind) =>
+		row.r === null || base.r === null
+			? "skip"
+			: `${(row.r[kind].median / base.r[kind].median).toFixed(2)}x`;
 	table(rows, [
 		{ label: "backing", get: (r) => r.backing },
 		{ label: "read only", get: (r) => cell(r, "read") },

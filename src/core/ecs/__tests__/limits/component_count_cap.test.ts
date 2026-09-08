@@ -45,9 +45,7 @@ describe("Component-count cap (SAB descriptor mask width)", () => {
 		for (let i = 0; i < STORE_DESCRIPTOR_COMPONENT_LIMIT; i++) {
 			world.registerComponent([`f${i}`] as const);
 		}
-		expect(() => world.registerComponent(["overflow"] as const)).toThrow(
-			/registerSparseComponent/
-		);
+		expect(() => world.registerComponent(["overflow"] as const)).toThrow(/registerSparseComponent/);
 	});
 
 	it("registers a sparse component past a full dense mask", () => {

@@ -8,11 +8,7 @@ import {
 } from "../../archetype";
 import { asComponentId, createComponentDef } from "../../component";
 import { createEntityId } from "../../entity";
-import {
-	BitSet,
-	TypedArrayFor,
-	type TypedArrayTag
-} from "../../../../type_primitives";
+import { BitSet, TypedArrayFor, type TypedArrayTag } from "../../../../type_primitives";
 
 // Heap factory for the heap-against-SAB comparison cases below. The store
 // builds every archetype through `Archetype.fromColumnStore`, so this factory

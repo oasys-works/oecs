@@ -399,9 +399,7 @@ export class RefNet {
 			.sort();
 		const got = this._rxA.map((a, i) => `${a},${this._rxB[i]}`).sort();
 		if (want.length !== got.length || want.some((v, i) => v !== got[i])) {
-			throw new Error(
-				`${where}: ref redex index [${got}] disagrees with full scan [${want}]`
-			);
+			throw new Error(`${where}: ref redex index [${got}] disagrees with full scan [${want}]`);
 		}
 	}
 
@@ -451,7 +449,9 @@ export class RefNet {
 				const q = this._slot[i];
 				if (p >= PORTS[ta]) {
 					if (b !== DEAD || q !== NO_SLOT) {
-						throw new Error(`${where}: ref agent ${a} (${TYPE_NAME[ta]}) port ${p} should not exist`);
+						throw new Error(
+							`${where}: ref agent ${a} (${TYPE_NAME[ta]}) port ${p} should not exist`
+						);
 					}
 					continue;
 				}
@@ -460,7 +460,9 @@ export class RefNet {
 					throw new Error(`${where}: ref agent ${a} port ${p} -> dead agent ${b}`);
 				}
 				if (q >= PORTS[this._type[b]]) {
-					throw new Error(`${where}: ref agent ${a} port ${p} -> ${b} port ${q}, which does not exist`);
+					throw new Error(
+						`${where}: ref agent ${a} port ${p} -> ${b} port ${q}, which does not exist`
+					);
 				}
 				const j = b * MAX_PORTS + q;
 				if (this._tgt[j] !== a || this._slot[j] !== p) {
@@ -518,7 +520,7 @@ export class RefNet {
 		return {
 			form: parts.join(" "),
 			reachable: order.length,
-			unreachable: this.live - order.length,
+			unreachable: this.live - order.length
 		};
 	}
 }

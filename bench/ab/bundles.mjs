@@ -120,7 +120,9 @@ console.log(
 	`\n${isNull ? "NULL calibration (same bundle both sides, every row should read ~0%)" : "A/B"}` +
 		`  ${rounds} rounds, paired, alternating order`
 );
-console.log(`\n${"case".padEnd(w)}  ${"base".padStart(10)}  ${"work".padStart(10)}   median Δ    spread`);
+console.log(
+	`\n${"case".padEnd(w)}  ${"base".padStart(10)}  ${"work".padStart(10)}   median Δ    spread`
+);
 console.log("─".repeat(w + 50));
 
 let regressed = 0;

@@ -16,7 +16,15 @@
 
 import { loadOecs, table } from "./harness.mjs";
 import { buildZig, zigAvailable } from "./wasm/build_zig.mjs";
-import { MAX_PAGES, MAX_BYTES, buildWorld, readHeader, readDescriptors, describeAddress, changedRanges } from "./wasm/world.mjs";
+import {
+	MAX_PAGES,
+	MAX_BYTES,
+	buildWorld,
+	readHeader,
+	readDescriptors,
+	describeAddress,
+	changedRanges
+} from "./wasm/world.mjs";
 
 const { ECS } = await loadOecs();
 const PAGE = 65536;
@@ -39,7 +47,9 @@ function moduleMemoryLimits(bytes) {
 	// because the host has to satisfy them before any of this works.
 	let p = 8;
 	const uleb = () => {
-		let r = 0, s = 0, b;
+		let r = 0,
+			s = 0,
+			b;
 		do {
 			b = bytes[p++];
 			r |= (b & 0x7f) << s;
@@ -127,7 +137,10 @@ table(built, [
 	{ label: "one stack local", get: (r) => r.stackAddr },
 	{ label: "__data_end", get: (r) => r.dataEnd },
 	{ label: "__heap_base", get: (r) => r.heapBase },
-	{ label: "declared memory min pages", get: (r) => (r.limits.imported ? r.limits.imported.min : "-") }
+	{
+		label: "declared memory min pages",
+		get: (r) => (r.limits.imported ? r.limits.imported.min : "-")
+	}
 ]);
 
 // ── 2. what the module writes into a live store ──────────────────────────────
@@ -142,10 +155,16 @@ const baseCases = [
 ];
 for (const baseCase of baseCases) {
 	for (const population of [4096, 200000]) {
-		console.log(`\n  ${baseCase.label}, world of about ${population * 7 / 4} entities`);
+		console.log(`\n  ${baseCase.label}, world of about ${(population * 7) / 4} entities`);
 		const rows = [];
 		const def = defBuild;
-		const w = buildWorld(ECS, { kind: "i32", n: population, deterministic: true, seed: population < 100000, storeBase: baseCase.storeBase });
+		const w = buildWorld(ECS, {
+			kind: "i32",
+			n: population,
+			deterministic: true,
+			seed: population < 100000,
+			storeBase: baseCase.storeBase
+		});
 		const buf = w.ecs.wasmMemory.buffer;
 		const base = w.headerOff;
 		const cap = readHeader(buf, base).capacity;
@@ -168,8 +187,14 @@ for (const baseCase of baseCases) {
 		table(rows, [
 			{ label: "module action", get: (r) => r.act },
 			{ label: "store byte runs changed", get: (r) => r.diff.count },
-			{ label: "span", get: (r) => (r.diff.span ? `${base + r.diff.span[0]} .. ${base + r.diff.span[1]}` : "none") },
-			{ label: "region", get: (r) => (r.diff.span ? describeAddress(buf, base + r.diff.span[0], base) : "-") }
+			{
+				label: "span",
+				get: (r) => (r.diff.span ? `${base + r.diff.span[0]} .. ${base + r.diff.span[1]}` : "none")
+			},
+			{
+				label: "region",
+				get: (r) => (r.diff.span ? describeAddress(buf, base + r.diff.span[0], base) : "-")
+			}
 		]);
 
 		const header = readHeader(buf, base);
@@ -194,8 +219,14 @@ for (const baseCase of baseCases) {
 		}
 		table(
 			[
-				{ what: "magic still correct", value: header.magic === 827148627 ? "yes" : `NO, ${header.magic}` },
-				{ what: "capacity still correct", value: header.capacity === cap ? "yes" : `NO, ${header.capacity}` },
+				{
+					what: "magic still correct",
+					value: header.magic === 827148627 ? "yes" : `NO, ${header.magic}`
+				},
+				{
+					what: "capacity still correct",
+					value: header.capacity === cap ? "yes" : `NO, ${header.capacity}`
+				},
 				{ what: "stateHash before the module ran", value: hashBefore },
 				{ what: "stateHash after the module ran", value: hashAfter },
 				{ what: "entities still alive", value: `${alive} of ${w.ids.length}` },
@@ -274,10 +305,16 @@ console.log("\n## the module moves its base above the store");
 	try {
 		const ecs = ECS.create({ memory: { backing: { wasm: { maximumPages: MAX_PAGES } } } });
 		instantiate(gb32.bytes, ecs.wasmMemory);
-		rows.push({ case: `engine memory, max ${MAX_PAGES} pages, module base 32 MiB`, result: "instantiated" });
+		rows.push({
+			case: `engine memory, max ${MAX_PAGES} pages, module base 32 MiB`,
+			result: "instantiated"
+		});
 		ecs.dispose?.();
 	} catch (e) {
-		rows.push({ case: `engine memory, max ${MAX_PAGES} pages, module base 32 MiB`, result: `${e.name}: ${e.message}`.slice(0, 96) });
+		rows.push({
+			case: `engine memory, max ${MAX_PAGES} pages, module base 32 MiB`,
+			result: `${e.name}: ${e.message}`.slice(0, 96)
+		});
 	}
 
 	// A caller-supplied memory can be born large enough to hold both, but the
@@ -343,7 +380,12 @@ console.log("\n## the module owns the memory and the engine mounts on it");
 		const marker = 0xdeadbeef;
 		dv.setUint32(ex.data_addr(), marker, true);
 		const stackTop = ex.stack_addr();
-		const rows = [{ what: "module memory, defined pages", value: `min ${limits.defined.min}, max ${limits.defined.max}, flags ${limits.defined.flags}` }];
+		const rows = [
+			{
+				what: "module memory, defined pages",
+				value: `min ${limits.defined.min}, max ${limits.defined.max}, flags ${limits.defined.flags}`
+			}
+		];
 		let ecs = null;
 		try {
 			ecs = ECS.create({ memory: { backing: { wasm: { memory } } } });
@@ -356,14 +398,30 @@ console.log("\n## the module owns the memory and the engine mounts on it");
 			const after = new DataView(memory.buffer);
 			const inStore = (addr) => addr >= storeBase && addr < storeBase + h.capacity;
 			rows.push({ what: "the engine mounted on the module memory", value: "yes" });
-			rows.push({ what: "store header at the base", value: `base ${storeBase}, magic ${h.magic}, capacity ${h.capacity}` });
-			rows.push({ what: "module data segment intact", value: after.getUint32(ex.data_addr(), true) === marker ? "yes" : "NO, the store overwrote it" });
-			rows.push({ what: "module data address against the store span", value: `${ex.data_addr()}, inside the store ${inStore(ex.data_addr())}` });
-			rows.push({ what: "a stack local of the module", value: `${stackTop}, inside the store ${inStore(stackTop)}` });
+			rows.push({
+				what: "store header at the base",
+				value: `base ${storeBase}, magic ${h.magic}, capacity ${h.capacity}`
+			});
+			rows.push({
+				what: "module data segment intact",
+				value:
+					after.getUint32(ex.data_addr(), true) === marker ? "yes" : "NO, the store overwrote it"
+			});
+			rows.push({
+				what: "module data address against the store span",
+				value: `${ex.data_addr()}, inside the store ${inStore(ex.data_addr())}`
+			});
+			rows.push({
+				what: "a stack local of the module",
+				value: `${stackTop}, inside the store ${inStore(stackTop)}`
+			});
 			const descs = readDescriptors(memory.buffer, storeBase);
 			rows.push({ what: "archetypes a module can walk", value: descs.length });
 		} catch (e) {
-			rows.push({ what: "the engine mounted on the module memory", value: `${e.name}: ${e.message}`.slice(0, 96) });
+			rows.push({
+				what: "the engine mounted on the module memory",
+				value: `${e.name}: ${e.message}`.slice(0, 96)
+			});
 		}
 		table(rows, [
 			{ label: "check", get: (r) => r.what },

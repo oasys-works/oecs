@@ -27,7 +27,7 @@ export default defineConfig({
 	// internal assertion give more mechanisms a chance to find a fault. `run.mjs`
 	// builds a bundle and takes `--prod` for the other arm.
 	define: {
-		__DEV__: true,
+		__DEV__: true
 	},
 	test: {
 		environment: "node",
@@ -42,6 +42,6 @@ export default defineConfig({
 				.readdirSync(path.join(root, "src"), { withFileTypes: true })
 				.filter((dirent) => dirent.isDirectory())
 				.map((dirent) => [dirent.name, path.join(root, "src", dirent.name)])
-		),
-	},
+		)
+	}
 });

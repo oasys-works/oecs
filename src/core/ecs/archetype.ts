@@ -47,7 +47,11 @@ import type {
 } from "./component";
 import { getEntityIndex, type EntityID, type ReadonlyEntityIDArray } from "./entity";
 import { ECS_ERROR, ECSError } from "./utils/error";
-import { NO_SWAP as NO_SWAP_IMPORT, UNASSIGNED as UNASSIGNED_IMPORT, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
+import {
+	NO_SWAP as NO_SWAP_IMPORT,
+	UNASSIGNED as UNASSIGNED_IMPORT,
+	DEFAULT_COLUMN_CAPACITY
+} from "./utils/constants";
 
 // Local copies of the constants the row operations compare against. An
 // imported binding is not a constant to the optimizer, see `ref.ts`. A local
@@ -641,8 +645,7 @@ export class Archetype implements ArchetypeView {
 	private _assertRowPlaneFresh(where: string): void {
 		const cols = this.flatColumns;
 		const split =
-			this._eids !== this._entityIds.buf ||
-			(cols.length > 0 && this.bufs[0] !== cols[0].buf);
+			this._eids !== this._entityIds.buf || (cols.length > 0 && this.bufs[0] !== cols[0].buf);
 		if (split) {
 			throw new ECSError(
 				ECS_ERROR.ARCHETYPE_ROW_INVARIANT,

@@ -44,7 +44,8 @@ const tAlive = time("ecs.isAlive(id)", 20 * N, () => {
 });
 const tHas = time("ecs.hasComponent(id, P3)  [+ arch resolve + mask]", 20 * N, () => {
 	let s = 0;
-	for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += ecs.hasComponent(ids[i], P3) ? 1 : 0;
+	for (let r = 0; r < 20; r++)
+		for (let i = 0; i < N; i++) s += ecs.hasComponent(ids[i], P3) ? 1 : 0;
 	sink = s;
 });
 const tGet = time("ecs.getField(id, P3, 'x')  [+ field resolve + read]", 20 * N, () => {
@@ -119,8 +120,7 @@ console.log("\nsuspect 1, string-keyed field index vs numeric index (synthetic)"
 	});
 	time("numeric key: fieldIndex[cid][0]", 20 * N, () => {
 		let s = 0;
-		for (let r = 0; r < 20; r++)
-			for (let i = 0; i < N; i++) s += byIdx[cids[i]][0];
+		for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += byIdx[cids[i]][0];
 		sink = s;
 	});
 	// The monomorphic case, for reference: one shape only, so the inline cache hits.
@@ -160,7 +160,7 @@ console.log("\nsuspect 2, bitECS's has() shape vs oecs's (synthetic)");
 			for (let i = 0; i < N; i++) {
 				const id = ids[i];
 				const idx = id & 0xfffff;
-				s += idx < N && gens[idx] === (id >>> 20) ? 1 : 0;
+				s += idx < N && gens[idx] === id >>> 20 ? 1 : 0;
 			}
 		sink = s;
 	});

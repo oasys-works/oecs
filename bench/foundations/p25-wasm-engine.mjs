@@ -43,7 +43,16 @@
  * without a run permission.
  */
 import { availableParallelism } from "node:os";
-import { median, iqr, table, emit, variantArg, runVariant, runVariantOn, RUNTIMES } from "./harness.mjs";
+import {
+	median,
+	iqr,
+	table,
+	emit,
+	variantArg,
+	runVariant,
+	runVariantOn,
+	RUNTIMES
+} from "./harness.mjs";
 import { emitKernelModule } from "./wasm/kernel_module.mjs";
 import { buildZig } from "./wasm/build_zig.mjs";
 import { integrateI32, mixI32 } from "./wasm/engine-kernels.mjs";
@@ -77,7 +86,13 @@ const INITIAL_PAGES = 64;
 const STORE_BASE = 2 * 1024 * 1024;
 
 const BODIES = [
-	{ id: "light", label: "pos += vel * dt", js: "integrateI32", wasm: "integrate_i32", fn: integrateI32 },
+	{
+		id: "light",
+		label: "pos += vel * dt",
+		js: "integrateI32",
+		wasm: "integrate_i32",
+		fn: integrateI32
+	},
 	{ id: "heavy", label: "hash mix, branch per row", js: "mixI32", wasm: "mix_i32", fn: mixI32 }
 ];
 
@@ -102,20 +117,31 @@ function kernelModules() {
 		flags: ["--export=__heap_base"],
 		reuse: true
 	});
-	if (built === null) return { emitted, zig: null, zigNote: "zig is not installed, the Zig lane is skipped" };
+	if (built === null)
+		return { emitted, zig: null, zigNote: "zig is not installed, the Zig lane is skipped" };
 	if (built.error !== undefined) {
-		return { emitted, zig: null, zigNote: `zig failed to build kernel.zig: ${built.error.split("\n")[0]}` };
+		return {
+			emitted,
+			zig: null,
+			zigNote: `zig failed to build kernel.zig: ${built.error.split("\n")[0]}`
+		};
 	}
 	const zig = new WebAssembly.Module(built);
 	// The module's own bytes must end below the store. A probe that assumed this
 	// would let the module's stack overwrite the header, and the output would
 	// blame the kernel.
 	const probe = new WebAssembly.Instance(zig, {
-		env: { memory: new WebAssembly.Memory({ initial: INITIAL_PAGES, maximum: MAX_PAGES, shared: true }) }
+		env: {
+			memory: new WebAssembly.Memory({ initial: INITIAL_PAGES, maximum: MAX_PAGES, shared: true })
+		}
 	});
 	const heapBase = Number(probe.exports.__heap_base?.value ?? probe.exports.__heap_base);
 	if (!Number.isFinite(heapBase) || heapBase > STORE_BASE) {
-		return { emitted, zig: null, zigNote: `the Zig module owns memory up to ${heapBase}, which the store base ${STORE_BASE} does not clear` };
+		return {
+			emitted,
+			zig: null,
+			zigNote: `the Zig module owns memory up to ${heapBase}, which the store base ${STORE_BASE} does not clear`
+		};
 	}
 	return { emitted, zig, zigNote: `built, __heap_base = ${heapBase}, store base = ${STORE_BASE}` };
 }
@@ -139,7 +165,9 @@ function kernelsAlone(entities, emitted, zig) {
 	const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
 	const instances = {
 		"wasm kernel (emitted)": new WebAssembly.Instance(emitted, { env: { memory } }),
-		...(zig === null ? {} : { "wasm kernel (zig)": new WebAssembly.Instance(zig, { env: { memory } }) })
+		...(zig === null
+			? {}
+			: { "wasm kernel (zig)": new WebAssembly.Instance(zig, { env: { memory } }) })
 	};
 	const address = [0, 1, 2, 3].map((c) => base + c * entities * 4);
 	const views = address.map((a) => new Int32Array(memory.buffer, a, entities));
@@ -176,9 +204,7 @@ function kernelsAlone(entities, emitted, zig) {
  */
 async function buildWorld(entities) {
 	const { ECS } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { workers } = await import(
-		new URL("../../dist/plugins/workers.js", import.meta.url).href
-	);
+	const { workers } = await import(new URL("../../dist/plugins/workers.js", import.meta.url).href);
 	const ecs = ECS.create({
 		deterministic: true,
 		memory: {
@@ -230,10 +256,18 @@ async function runOne(entities) {
 
 	const lanes = [
 		{ id: "js", label: "js kernel", kernel: (body) => ({ js: KERNELS_URL, export: body.js }) },
-		{ id: "wasm", label: "wasm kernel (emitted)", kernel: (body) => ({ wasm: emitted, export: body.wasm }) }
+		{
+			id: "wasm",
+			label: "wasm kernel (emitted)",
+			kernel: (body) => ({ wasm: emitted, export: body.wasm })
+		}
 	];
 	if (zig !== null) {
-		lanes.push({ id: "zig", label: "wasm kernel (zig)", kernel: (body) => ({ wasm: zig, export: body.wasm }) });
+		lanes.push({
+			id: "zig",
+			label: "wasm kernel (zig)",
+			kernel: (body) => ({ wasm: zig, export: body.wasm })
+		});
 	}
 
 	// One system for each body and lane, all registered, one enabled at a time.
@@ -318,7 +352,13 @@ async function runOne(entities) {
 	// `fn`, and the `fn` imports the same module the `js` kernel does.
 	for (const body of BODIES) {
 		const { hash, untouched, t } = measure(body, "js");
-		correctness.push({ body: body.label, lane: "sequential fn (no pool)", k: "-", hash, untouched });
+		correctness.push({
+			body: body.label,
+			lane: "sequential fn (no pool)",
+			k: "-",
+			hash,
+			untouched
+		});
 		timings.push({ body: body.label, lane: "sequential fn (no pool)", k: "-", ...t });
 	}
 
@@ -363,9 +403,7 @@ function report(r) {
 	console.log(`    zig: ${r.zigNote}`);
 	console.log(`    pool: ${r.poolNote}\n`);
 
-	const baseline = new Map(
-		r.correctness.filter((x) => x.k === "-").map((x) => [x.body, x.hash])
-	);
+	const baseline = new Map(r.correctness.filter((x) => x.k === "-").map((x) => [x.body, x.hash]));
 	table(
 		r.correctness.map((x) => ({ ...x, agrees: x.hash === baseline.get(x.body) ? "yes" : "NO" })),
 		[
@@ -398,8 +436,12 @@ function report(r) {
 		console.log("");
 	}
 
-	console.log(`  the kernels alone, one pass over ${r.entities.toLocaleString()} rows, no engine and no pool`);
-	const jsAlone = new Map(r.alone.filter((x) => x.lane === "js kernel").map((x) => [x.body, x.median]));
+	console.log(
+		`  the kernels alone, one pass over ${r.entities.toLocaleString()} rows, no engine and no pool`
+	);
+	const jsAlone = new Map(
+		r.alone.filter((x) => x.lane === "js kernel").map((x) => [x.body, x.median])
+	);
 	table(r.alone, [
 		{ label: "body", get: (x) => x.body },
 		{ label: "lane", get: (x) => x.lane },
@@ -418,7 +460,9 @@ async function main() {
 		return;
 	}
 
-	console.log(`\nP25 engine, a wasm kernel on the shipped pool. availableParallelism() = ${CORES}, K capped at ${Math.max(...KS)}`);
+	console.log(
+		`\nP25 engine, a wasm kernel on the shipped pool. availableParallelism() = ${CORES}, K capped at ${Math.max(...KS)}`
+	);
 	// Build the Zig module once here. Each child reuses the binary, so a slow
 	// compile does not land inside three processes.
 	console.log(`  ${kernelModules().zigNote}`);
@@ -432,7 +476,9 @@ async function main() {
 			console.log(`  ${runtime.cmd}: no result, see the error above`);
 			continue;
 		}
-		console.log(`  ${runtime.cmd} (${runtime.engine}): pool ${result.poolNote}, lanes ${result.lanes.join(", ")}`);
+		console.log(
+			`  ${runtime.cmd} (${runtime.engine}): pool ${result.poolNote}, lanes ${result.lanes.join(", ")}`
+		);
 		report(result);
 	}
 	console.log("");

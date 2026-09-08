@@ -147,8 +147,7 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	}
 	const relationR = desc.relationReads;
 	if (relationR !== undefined) {
-		for (let i = 0; i < relationR.length; i++)
-			relationReads.add(relationR[i] as unknown as number);
+		for (let i = 0; i < relationR.length; i++) relationReads.add(relationR[i] as unknown as number);
 	}
 
 	return {

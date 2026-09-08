@@ -48,7 +48,8 @@ await buildLib(full, { dev: false, from: FROM });
 const src = fs.readFileSync(full, "utf8");
 const LOOKUP = /const fi = this\._fieldIndex\[cid\]\[field\];/g;
 const hits = src.match(LOOKUP);
-if (!hits) throw new Error("could not find the compiled _fieldIndex lookups, did the source change shape?");
+if (!hits)
+	throw new Error("could not find the compiled _fieldIndex lookups, did the source change shape?");
 const patched = src.replace(LOOKUP, "const fi = 0;");
 const nolookup = path.join(outDir, "lookup.none.mjs");
 fs.writeFileSync(nolookup, patched);
@@ -86,12 +87,20 @@ const runs = { full: [], none: [] };
 let refChecksum = null;
 for (let r = 0; r < 5; r++) {
 	for (const [name, bundle] of r % 2 === 0
-		? [["full", full], ["none", nolookup]]
-		: [["none", nolookup], ["full", full]]) {
+		? [
+				["full", full],
+				["none", nolookup]
+			]
+		: [
+				["none", nolookup],
+				["full", full]
+			]) {
 		const { ns, checksum } = measure(bundle);
 		if (refChecksum === null) refChecksum = checksum;
 		else if (checksum !== refChecksum)
-			throw new Error(`checksum split: ${name} read different data (${checksum} vs ${refChecksum})`);
+			throw new Error(
+				`checksum split: ${name} read different data (${checksum} vs ${refChecksum})`
+			);
 		runs[name].push(ns);
 	}
 }

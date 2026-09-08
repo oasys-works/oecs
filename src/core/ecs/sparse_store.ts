@@ -76,9 +76,8 @@ export type SparseComponentDef<S extends ComponentSchema = ComponentSchema> = Sp
 
 /** Recover a sparse def's schema type, the sparse sibling of `SchemaOf`
  * (component.ts), used by the typed `SystemContext` sparse surface. */
-export type SparseSchemaOf<D> = D extends SparseComponentDef<infer S extends ComponentSchema>
-	? S
-	: never;
+export type SparseSchemaOf<D> =
+	D extends SparseComponentDef<infer S extends ComponentSchema> ? S : never;
 
 /** The typed-array class of each column type. */
 const COLUMN_CLASS: Record<TypedArrayTag, new (n: number) => AnyTypedArray> = {
@@ -263,7 +262,8 @@ export class SparseComponentStore {
 			return;
 		}
 		const kinds = this._kinds;
-		for (let f = 0; f < names.length; f++) writeElem(kinds[f], cols[f], index, values[names[f]] ?? 0);
+		for (let f = 0; f < names.length; f++)
+			writeElem(kinds[f], cols[f], index, values[names[f]] ?? 0);
 	}
 
 	/** Drop `index`'s membership. Returns whether it was present. The data at
@@ -420,8 +420,7 @@ export function snapshotSparseStores(stores: readonly SparseComponentStore[]): U
 		const store = stores[s];
 		const fieldCount = store.fieldNames.length;
 		total +=
-			SPARSE_STORE_HEADER_BYTES +
-			store.size * (SPARSE_MEMBER_INDEX_BYTES + fieldCount * F64_BYTES);
+			SPARSE_STORE_HEADER_BYTES + store.size * (SPARSE_MEMBER_INDEX_BYTES + fieldCount * F64_BYTES);
 	}
 
 	const bytes = new Uint8Array(total);

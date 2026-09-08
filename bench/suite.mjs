@@ -163,9 +163,13 @@ export function makeSuite(lib, filter = "") {
 			},
 			{ iters: 20 * N }
 		);
-		add("query/count", () => {
-			for (let r = 0; r < 100_000; r++) sink = q.entityCount;
-		}, { iters: 100_000 });
+		add(
+			"query/count",
+			() => {
+				for (let r = 0; r < 100_000; r++) sink = q.entityCount;
+			},
+			{ iters: 100_000 }
+		);
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
@@ -179,7 +183,8 @@ export function makeSuite(lib, filter = "") {
 			"access/getField",
 			() => {
 				let s = 0;
-				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += ecs.getField(ids[i], Pos, "x");
+				for (let r = 0; r < 20; r++)
+					for (let i = 0; i < N; i++) s += ecs.getField(ids[i], Pos, "x");
 				sink = s;
 			},
 			{ iters: 20 * N }
@@ -313,7 +318,7 @@ export function makeSuite(lib, filter = "") {
 		},
 		{
 			iters: N,
-			setup: () => ({ ecs: new ECS() }),
+			setup: () => ({ ecs: new ECS() })
 		}
 	);
 
@@ -329,7 +334,7 @@ export function makeSuite(lib, filter = "") {
 				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 				const Vel = ecs.registerComponent({ vx: "f64", vy: "f64" });
 				return { ecs, t: ecs.template(Pos({ x: 1, y: 2 }), Vel({ vx: 0, vy: 0 })) };
-			},
+			}
 		}
 	);
 
@@ -345,7 +350,7 @@ export function makeSuite(lib, filter = "") {
 				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 				const Vel = ecs.registerComponent({ vx: "f64", vy: "f64" });
 				return { ecs, t: ecs.template(Pos({ x: 1, y: 2 }), Vel({ vx: 0, vy: 0 })) };
-			},
+			}
 		}
 	);
 
@@ -361,7 +366,7 @@ export function makeSuite(lib, filter = "") {
 				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
 				const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), N);
 				return { ecs, ids };
-			},
+			}
 		}
 	);
 
@@ -393,7 +398,7 @@ export function makeSuite(lib, filter = "") {
 				ecs.addComponent(ids[0], Tag);
 				ecs.removeComponent(ids[0], Tag);
 				return { ecs, ids, Tag };
-			},
+			}
 		}
 	);
 
@@ -420,7 +425,7 @@ export function makeSuite(lib, filter = "") {
 				for (let i = 0; i < ids.length; i++) ecs.addComponent(ids[i], Vel, { vx: 1, vy: 2 });
 				for (let i = 0; i < ids.length; i++) ecs.removeComponent(ids[i], Vel);
 				return { ecs, ids, Vel };
-			},
+			}
 		}
 	);
 
@@ -441,7 +446,7 @@ export function makeSuite(lib, filter = "") {
 				ecs.addComponent(ids[0], Vel, { vx: 1, vy: 2 });
 				ecs.removeComponent(ids[0], Vel);
 				return { ecs, ids, Vel };
-			},
+			}
 		}
 	);
 
@@ -468,7 +473,7 @@ export function makeSuite(lib, filter = "") {
 				const tags = [];
 				for (let i = 0; i < 8; i++) tags.push(ecs.registerComponent({ v: "f64" }));
 				return { ecs, Pos, tags };
-			},
+			}
 		}
 	);
 
@@ -490,7 +495,7 @@ export function makeSuite(lib, filter = "") {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});
-					},
+					}
 				})
 			);
 		}
@@ -507,8 +512,7 @@ export function makeSuite(lib, filter = "") {
 	{
 		const ecs = new ECS();
 		const noop = () => {};
-		for (let i = 0; i < 20; i++)
-			ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({ fn: noop }));
+		for (let i = 0; i < 20; i++) ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({ fn: noop }));
 		ecs.startup();
 		add(
 			"sched/update_20noop",
@@ -533,13 +537,12 @@ export function makeSuite(lib, filter = "") {
 				writes: [Pos],
 				fn: (ctx) => {
 					if (mode === 0) {
-						for (let i = 0; i < 1000; i++)
-							spawned.push(ctx.commands.spawn(Pos({ x: 1, y: 1 })));
+						for (let i = 0; i < 1000; i++) spawned.push(ctx.commands.spawn(Pos({ x: 1, y: 1 })));
 					} else {
 						for (let i = 0; i < spawned.length; i++) ctx.commands.despawn(spawned[i]);
 						spawned.length = 0;
 					}
-				},
+				}
 			})
 		);
 		ecs.startup();

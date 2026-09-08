@@ -4,12 +4,7 @@ import { systemSet } from "../../system_set";
 import { SCHEDULE } from "../../phase";
 import { SystemContext } from "../../system_context";
 import { Store } from "../../store";
-import {
-	asSystemId,
-	type SystemConfig,
-	type SystemDescriptor,
-	type SystemFn
-} from "../../system";
+import { asSystemId, type SystemConfig, type SystemDescriptor, type SystemFn } from "../../system";
 
 const noop: SystemFn = () => {};
 

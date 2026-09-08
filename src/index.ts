@@ -27,12 +27,7 @@ export type { ECSResources, ECSSnapshots } from "./core/ecs";
 // subpath, and a plugin outside this package implements these types.
 // `PluginsOf` computes the world type a plugin list builds.
 export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./core/ecs";
-export type {
-	SystemRoutePlanner,
-	RouteControl,
-	RouteDispatch,
-	PluginMemory
-} from "./core/ecs";
+export type { SystemRoutePlanner, RouteControl, RouteDispatch, PluginMemory } from "./core/ecs";
 
 // The change feed a plugin drains. `ChangeFeed` above names the seam.
 // These are the records that cross it.
@@ -261,7 +256,13 @@ export { SparseRestoreError } from "./core/ecs";
 
 // Relations, (relation, target) pairs on the sparse storage class.
 // `ANY_RELATION` is the `(*, T)` wildcard access sentinel.
-export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./core/ecs";
+export type {
+	RelationDef,
+	RelationID,
+	RelationCardinality,
+	RelationOptions,
+	OnDeleteTarget
+} from "./core/ecs";
 export { ANY_RELATION } from "./core/ecs";
 
 // The built-in relations, `registerIsA` and `registerChildOf`, ship on

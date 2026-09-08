@@ -35,7 +35,10 @@ function spawnPos(world: ECS, PosDef: ReturnType<ECS["registerComponent"]>, n: n
 
 describe("entity enable and disable", () => {
 	it("disable excludes from default queries, enable restores", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
 		const q = world.query(P);
@@ -61,7 +64,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("includeDisabled() sees disabled entities (count + forEach span)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
 		const q = world.query(P);
@@ -86,7 +92,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("preserves component field values across disable→enable", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const e = world.spawn();
 		world.addComponent(e, P, { x: 7, y: 70 });
@@ -102,7 +111,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("preserves sparse data and relations across disable→enable, EntityID stable", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const Cooldown = world.registerSparseComponent({ ready_at: "i32" } as const);
 		const ChildOf = world.relations.register({ exclusive: true });
@@ -130,7 +142,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("keeps the partition correct: disabling a middle entity leaves others intact", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 5); // x = 0..4
 		const q = world.query(P);
@@ -161,7 +176,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("is idempotent, a re-disable or a re-enable is a no-op", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 3);
 		const q = world.query(P);
@@ -177,7 +195,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("destroying an enabled entity while disabled rows exist keeps the partition", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 5); // x = 0..4
 		const q = world.query(P);
@@ -211,7 +232,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("destroying a disabled entity leaves the enabled set intact", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
 		const q = world.query(P);
@@ -225,7 +249,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("adding a component to a disabled entity keeps it disabled", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const V = world.registerComponent(Vel);
 		const e = world.spawn();
@@ -243,7 +270,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("spawning into an archetype that holds disabled rows keeps the partition", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const tmpl = world.template(P({ x: 0, y: 0 }));
 		const first = world.spawnMany(tmpl, 3);
@@ -263,7 +293,10 @@ describe("entity enable and disable", () => {
 
 	it("stateHash reflects the disabled set", () => {
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [relations()]
+			});
 			const Pd = w.registerComponent(Pos);
 			const ids = spawnPos(w, Pd, 3);
 			return { w, ids };
@@ -288,7 +321,10 @@ describe("entity enable and disable", () => {
 	});
 
 	it("system-side disable is deferred and safe mid-forEach", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		const P = world.registerComponent(Pos);
 		const ids = spawnPos(world, P, 4);
 		const q = world.query(P);

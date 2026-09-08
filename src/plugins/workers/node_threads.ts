@@ -29,7 +29,8 @@ interface BuiltinHost {
 export async function loadNodeThreads(): Promise<NodeThreads> {
 	const proc = (globalThis as { process?: BuiltinHost }).process;
 	const builtin = proc?.getBuiltinModule;
-	if (typeof builtin === "function") return builtin.call(proc, "node:worker_threads") as NodeThreads;
+	if (typeof builtin === "function")
+		return builtin.call(proc, "node:worker_threads") as NodeThreads;
 	// Joined, and not written out, so no bundler and no minifier can fold the
 	// argument back into a literal it would then resolve.
 	const specifier = ["node", "worker_threads"].join(":");

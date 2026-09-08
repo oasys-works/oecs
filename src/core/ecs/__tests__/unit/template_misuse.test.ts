@@ -30,7 +30,9 @@ describe("template misuse gives a message that names the fix", () => {
 
 	it("spawn rejects a bundle", () => {
 		const { ecs, Pos } = setup();
-		expect(() => ecs.spawn(Pos({ x: 1, y: 2 }) as never)).toThrowError(/spawn: expected a template/);
+		expect(() => ecs.spawn(Pos({ x: 1, y: 2 }) as never)).toThrowError(
+			/spawn: expected a template/
+		);
 		expect(() => ecs.spawn(Pos({ x: 1, y: 2 }) as never)).toThrowError(/bundle/);
 	});
 

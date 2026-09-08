@@ -34,8 +34,6 @@ function capStore(...args: ConstructorParameters<typeof Store>): Store {
 	return store;
 }
 
-
-
 const Hp = { hp: "i32" } as const;
 // Mixed field widths so the hash fold covers more than one field per row.
 const Cooldown = { ready_at: "i16", charges: "i32" } as const;

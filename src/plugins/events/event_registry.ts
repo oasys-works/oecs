@@ -34,9 +34,7 @@ export class EventRegistry implements EventHooks {
 	// callers via EventKey<F>
 	private readonly _defsByKey: Map<symbol, EventDef<any>> = new Map();
 
-	public register<S extends EventShape<S>>(
-		fields: readonly (keyof S & string)[]
-	): EventDef<S> {
+	public register<S extends EventShape<S>>(fields: readonly (keyof S & string)[]): EventDef<S> {
 		const id = asEventId(this._nextEventId++);
 		const channel = new EventChannel(fields as readonly string[] as string[]);
 		this._channels.push(channel);

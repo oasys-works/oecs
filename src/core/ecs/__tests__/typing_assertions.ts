@@ -34,9 +34,7 @@ import { observers, type ObserversPlugin } from "../../../plugins/observers";
 // The ambient world carries every plugin these assertions reach for. The
 // gate itself is asserted in `pluginGateAssertions`, against worlds built
 // with and without one.
-declare const world: ECS<
-	EventsPlugin & SnapshotsPlugin & RelationsPlugin & ObserversPlugin
-> &
+declare const world: ECS<EventsPlugin & SnapshotsPlugin & RelationsPlugin & ObserversPlugin> &
 	EventsPlugin &
 	SnapshotsPlugin &
 	RelationsPlugin &
@@ -344,7 +342,9 @@ function queryTermAssertions(): void {
 	movers.forEachChunk((cols) => {
 		const { x, y } = cols.mut(Pos);
 		const { vx } = cols.read(Vel);
-		void x; void y; void vx;
+		void x;
+		void y;
+		void vx;
 		// @ts-expect-error, health is not a term of this query
 		void cols.read(Health);
 		// @ts-expect-error, mut on a non-term
@@ -383,7 +383,9 @@ function relationCardinalityAssertions(): void {
 	const _e1: RelationDef<"exclusive"> = excl;
 	const _e2: RelationDef<"exclusive"> = excl2;
 	const _m: RelationDef<"multi"> = multi;
-	void _e1; void _e2; void _m;
+	void _e1;
+	void _e2;
+	void _m;
 
 	// Exclusive-only surfaces accept only the exclusive brand.
 	void world.relations.targetOf(e, ExclusiveRel);
@@ -403,7 +405,8 @@ function relationCardinalityAssertions(): void {
 	void world.relations.targetsOf(e, MultiRel);
 	const erased: RelationDef = MultiRel;
 	const erased2: RelationDef<RelationCardinality> = ExclusiveRel;
-	void erased; void erased2;
+	void erased;
+	void erased2;
 }
 
 function eventReaderReadonlyAssertions(reader: EventReader<{ a: number }>): void {
@@ -423,7 +426,8 @@ function facadeCardinalityAssertions(): void {
 	const fmulti = world.relations.register({ multi: true });
 	const _fe: RelationDef<"exclusive"> = fexcl;
 	const _fm: RelationDef<"multi"> = fmulti;
-	void _fe; void _fm;
+	void _fe;
+	void _fm;
 
 	void world.relations.targetOf(e, ExclusiveRel);
 	void world.relations.cascadeOf(e, ExclusiveRel);

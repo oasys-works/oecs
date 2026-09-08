@@ -69,13 +69,7 @@ import { Store, type Template, type TemplateOverrides } from "./store";
 import type { FrameTraceSink } from "./frame_trace";
 import type { ColumnStore } from "../store";
 import { ECSResources, ECSSnapshots } from "./facades";
-import type {
-	Plugin,
-	PluginHost,
-	PluginMemory,
-	PluginsOf,
-	SystemRoutePlanner
-} from "./plugin";
+import type { Plugin, PluginHost, PluginMemory, PluginsOf, SystemRoutePlanner } from "./plugin";
 import { Schedule } from "./schedule";
 import type { Phase, PhaseConfig, SchedulePhase } from "./phase";
 import type { Archetype, ArchetypeID } from "./archetype";
@@ -443,12 +437,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		// store calls the structural hook between fixed-point flush rounds. OnSet
 		// is driven from `update()`'s tail (the post-update detection point).
 
-		this._fixedTimestep = validateFixedTimestep(
-			options?.fixedTimestep ?? DEFAULT_FIXED_TIMESTEP
-		);
-		this._maxFixedSteps = validateMaxFixedSteps(
-			options?.maxFixedSteps ?? DEFAULT_MAX_FIXED_STEPS
-		);
+		this._fixedTimestep = validateFixedTimestep(options?.fixedTimestep ?? DEFAULT_FIXED_TIMESTEP);
+		this._maxFixedSteps = validateMaxFixedSteps(options?.maxFixedSteps ?? DEFAULT_MAX_FIXED_STEPS);
 	}
 
 	/** Batch variant of `regionHandle` for hosts wiring several consumer
@@ -595,10 +585,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			return this._store.registerComponent(schema, opts?.name);
 		}
 		const o = typeof typeOrOpts === "object" ? typeOrOpts : opts;
-		return this._store.registerComponent(
-			schemaOrFields as Record<string, TypedArrayTag>,
-			o?.name
-		);
+		return this._store.registerComponent(schemaOrFields as Record<string, TypedArrayTag>, o?.name);
 	}
 
 	// Overload 1: record syntax (per-field types)
@@ -611,7 +598,11 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	public registerSparseComponent<
 		const F extends readonly string[],
 		T extends TypedArrayTag = "f64"
-	>(fields: F, type?: T, opts?: ComponentRegisterOptions): SparseComponentDef<{ readonly [K in F[number]]: T }>;
+	>(
+		fields: F,
+		type?: T,
+		opts?: ComponentRegisterOptions
+	): SparseComponentDef<{ readonly [K in F[number]]: T }>;
 	// Implementation
 	/** Register an out-of-identity sparse component. Mirrors
 	 * `registerComponent`, but the result lives in an engine-managed sparse set
@@ -668,10 +659,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		overrides?: TemplateOverrides<Defs>
 	): EntityID {
 		if (DEV) {
-			this._assertOutsideSystem(
-				"spawn",
-				"ctx.commands.spawn (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("spawn", "ctx.commands.spawn (deferred to the phase flush)");
 			if (template !== undefined) assertTemplate(template, "spawn");
 		}
 		if (template === undefined) return this._store.createEntity();
@@ -698,10 +686,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		...items: StrictBundles<Items>
 	): EntityID {
 		if (DEV)
-			this._assertOutsideSystem(
-				"spawnBundle",
-				"ctx.commands.spawn (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("spawnBundle", "ctx.commands.spawn (deferred to the phase flush)");
 		const e = this._store.createEntity();
 		for (let i = 0; i < items.length; i++) {
 			const item = items[i] as BundleOrDef;
@@ -724,10 +709,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		overrides?: TemplateOverrides<Defs>
 	): EntityID[] {
 		if (DEV) {
-			this._assertOutsideSystem(
-				"spawnMany",
-				"ctx.commands.spawn (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("spawnMany", "ctx.commands.spawn (deferred to the phase flush)");
 			assertTemplate(template, "spawnMany");
 		}
 		return this._store.spawnMany(template, count, overrides);
@@ -771,10 +753,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 *  invalidate rows the running query is walking. */
 	public despawn(entityId: EntityID): this {
 		if (DEV)
-			this._assertOutsideSystem(
-				"despawn",
-				"ctx.commands.despawn (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("despawn", "ctx.commands.despawn (deferred to the phase flush)");
 		this._store.destroyEntity(entityId);
 		return this;
 	}
@@ -793,10 +772,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** Disable `entityId` (idempotent). Excluded from default queries until re-enabled. */
 	public disable(entityId: EntityID): this {
 		if (DEV)
-			this._assertOutsideSystem(
-				"disable",
-				"ctx.commands.disable (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("disable", "ctx.commands.disable (deferred to the phase flush)");
 		this._store.disableEntity(entityId);
 		return this;
 	}
@@ -804,10 +780,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	/** Re-enable a disabled `entityId` (idempotent). */
 	public enable(entityId: EntityID): this {
 		if (DEV)
-			this._assertOutsideSystem(
-				"enable",
-				"ctx.commands.enable (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("enable", "ctx.commands.enable (deferred to the phase flush)");
 		this._store.enableEntity(entityId);
 		return this;
 	}
@@ -838,10 +811,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	): this {
 		const def = bundleDef(item);
 		if (DEV) {
-			this._assertOutsideSystem(
-				"addComponent",
-				"ctx.commands.add (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("addComponent", "ctx.commands.add (deferred to the phase flush)");
 			accessCheck.assertAdd(def);
 		}
 		this._store.addComponent(entityId, def, values ?? bundleValues(item));
@@ -863,10 +833,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 			entries.push({ def: bundleDef(item), values: bundleValues(item) });
 		}
 		if (DEV) {
-			this._assertOutsideSystem(
-				"addComponents",
-				"ctx.commands.add (deferred to the phase flush)"
-			);
+			this._assertOutsideSystem("addComponents", "ctx.commands.add (deferred to the phase flush)");
 			for (let i = 0; i < entries.length; i++) accessCheck.assertAdd(entries[i].def);
 		}
 		this._store.addComponents(entityId, entries);
@@ -953,7 +920,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	): number {
 		if (DEV) {
 			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("getField", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("getField", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		return arch.readField(this._store.resolvedRow, def.id, field);
@@ -1025,7 +993,10 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 */
 	public cursor<S extends ComponentSchema>(def: ComponentDef<S>): ComponentCursor<S> {
 		if (DEV) accessCheck.assertWrite(def);
-		return createCursor<S>(this._store.componentFieldNames(def), this._store.cursorBinder(def, true));
+		return createCursor<S>(
+			this._store.componentFieldNames(def),
+			this._store.cursorBinder(def, true)
+		);
 	}
 
 	/** Read-only {@link cursor}: no change-tick stamp on `at()`. Advisory only,
@@ -1109,7 +1080,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		value: number
 	): void {
 		if (DEV) {
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("setField", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("setField", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -1193,9 +1165,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		const excHash = exclude ? exclude.hash() : 0;
 		const anyHash = anyOf ? anyOf.hash() : 0;
 		const key =
-			(incHash ^
-				Math.imul(excHash, HASH_GOLDEN_RATIO) ^
-				Math.imul(anyHash, HASH_SECONDARY_PRIME)) |
+			(incHash ^ Math.imul(excHash, HASH_GOLDEN_RATIO) ^ Math.imul(anyHash, HASH_SECONDARY_PRIME)) |
 			0;
 
 		const cached = this.caches.findDedup(key, include, exclude, anyOf);
@@ -1587,7 +1557,6 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// the begin and end markers.
 	// ============================================================================
 
-
 	/** Resolve a consumer-declared SAB region's byte offset by `region_id`, or
 	 * 0 when absent. Generic, de-gamed replacement for the removed
 	 * game-named accessors. Pair with the consumer's own region module to
@@ -1715,7 +1684,6 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		this._store.setSparseField(entityId, def, field, value);
 	}
 
-
 	public getLastRunTick(): number {
 		return this._ctx.lastRunTick;
 	}
@@ -1787,10 +1755,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		);
 	}
 
-	public addSystems(
-		phase: SchedulePhase,
-		...entries: (SystemDescriptor | SystemEntry)[]
-	): this {
+	public addSystems(phase: SchedulePhase, ...entries: (SystemDescriptor | SystemEntry)[]): this {
 		this._schedule.addSystems(phase, ...entries);
 		return this;
 	}

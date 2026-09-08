@@ -102,9 +102,7 @@ describe("Tag-only archetype growth", () => {
 			const picks = new Set([idx0, idx1, idx2]);
 			if (picks.size < 2) picks.add((idx0 + 1) % 16);
 			const pickList = [...picks];
-			const defList = pickList.map((i) =>
-				i < 8 ? components[i]({ v: a }) : tags[i - 8]
-			);
+			const defList = pickList.map((i) => (i < 8 ? components[i]({ v: a }) : tags[i - 8]));
 			// addComponents is a single transition (empty → target), so each
 			// distinct mask is exactly one archetype, no intermediates.
 			distinctMasks.add(

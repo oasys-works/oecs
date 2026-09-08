@@ -109,8 +109,12 @@ if (which) {
 	console.log(`      mono = all f64, 1 element kind. mixed = f64, f32, i32 and u8, 4 kinds`);
 	console.log(`      mixed moves fewer bytes, so any slowdown is a lower bound\n`);
 
-	console.log(`  ${"op".padEnd(7)} ${"runtime".padEnd(8)} ${"mono".padEnd(12)} ${"mixed".padEnd(12)} ${"mixed and mono".padEnd(11)} spreads overlap?`);
-	console.log(`  ${"-".repeat(7)} ${"-".repeat(8)} ${"-".repeat(12)} ${"-".repeat(12)} ${"-".repeat(11)} ----------------`);
+	console.log(
+		`  ${"op".padEnd(7)} ${"runtime".padEnd(8)} ${"mono".padEnd(12)} ${"mixed".padEnd(12)} ${"mixed and mono".padEnd(11)} spreads overlap?`
+	);
+	console.log(
+		`  ${"-".repeat(7)} ${"-".repeat(8)} ${"-".repeat(12)} ${"-".repeat(12)} ${"-".repeat(11)} ----------------`
+	);
 	const ratios = [];
 	for (const op of ["churn", "byid"]) {
 		for (const rt of RUNTIMES) {
@@ -131,12 +135,12 @@ if (which) {
 	console.log("");
 	const solid = ratios.filter((r) => !r.overlap);
 	const worst = ratios.reduce((a, b) => (a.ratio > b.ratio ? a : b), { ratio: 0 });
-	console.log(`  Experiment 20's cliff is 3.8-5.6x. Worst ratio measured here: ${worst.ratio.toFixed(2)}x.`);
+	console.log(
+		`  Experiment 20's cliff is 3.8-5.6x. Worst ratio measured here: ${worst.ratio.toFixed(2)}x.`
+	);
 	console.log(
 		`  ${solid.length} of ${ratios.length} comparisons have disjoint middle halves; the rest are noise.`
 	);
-	console.log(
-		`  A ratio near 1.00x means keyed element-kind polymorphism does NOT behave`
-	);
+	console.log(`  A ratio near 1.00x means keyed element-kind polymorphism does NOT behave`);
 	console.log(`  like the callback-shape cliff, and the review hypothesis is refuted.`);
 }

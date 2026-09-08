@@ -219,9 +219,7 @@ async function engineLane(module, storeBase) {
 	const { snapshots } = await import(
 		new URL("../../dist/plugins/snapshots.js", import.meta.url).href
 	);
-	const { workers } = await import(
-		new URL("../../dist/plugins/workers.js", import.meta.url).href
-	);
+	const { workers } = await import(new URL("../../dist/plugins/workers.js", import.meta.url).href);
 	const deps = { ECS: oecs.ECS, SCHEDULE: oecs.SCHEDULE, snapshots, workers };
 	const rows = [];
 	for (const count of KS) {
@@ -239,7 +237,12 @@ async function engineLane(module, storeBase) {
 		} catch (error) {
 			got = `${error.category ?? "Error"}: ${error.message}`.slice(0, 100);
 		}
-		rows.push({ workers: count, sequential: String(expected), pooled: got, agrees: got === String(expected) ? "yes" : "NO" });
+		rows.push({
+			workers: count,
+			sequential: String(expected),
+			pooled: got,
+			agrees: got === String(expected) ? "yes" : "NO"
+		});
 	}
 	console.log("\n## The same module on the shipped pool, stack body\n");
 	table(rows, cols("workers", "sequential", "pooled", "agrees"));
@@ -259,7 +262,9 @@ async function main() {
 
 	console.log("# P25 stack, one shadow stack under several instances\n");
 	console.log(`rows ${ROWS}, runs for each lane ${RUNS}`);
-	console.log(`__heap_base ${heapBase}, __stack_pointer at link time ${probe.exports.__stack_pointer.value}`);
+	console.log(
+		`__heap_base ${heapBase}, __stack_pointer at link time ${probe.exports.__stack_pointer.value}`
+	);
 	console.log(`reserve ${RESERVE}, store base ${storeBase}, columns at ${COLUMN_BASE}\n`);
 
 	const i32 = new Int32Array(memory.buffer);
@@ -289,8 +294,18 @@ async function main() {
 					if (fnv(i32, base, ROWS * 4) !== expected) wrong++;
 				}
 				await lane.stop();
-				wrongRows.push({ body: label, workers: count, lane: laneName, wrong: `${wrong} of ${RUNS}` });
-				timings.push({ body: label, workers: count, lane: laneName, ms: median(samples).toFixed(4) });
+				wrongRows.push({
+					body: label,
+					workers: count,
+					lane: laneName,
+					wrong: `${wrong} of ${RUNS}`
+				});
+				timings.push({
+					body: label,
+					workers: count,
+					lane: laneName,
+					ms: median(samples).toFixed(4)
+				});
 			}
 		}
 	}

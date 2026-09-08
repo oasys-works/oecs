@@ -264,9 +264,17 @@ if (which) {
 	const dflt = rows.find((r) => r.name.includes("default"));
 	const raw = rows.find((r) => r.name === "rawSoA");
 	console.log("");
-	console.log(`  H1 premise   : oecs is ${(base.median / dflt.median).toFixed(2)}x flatObj (exp 01 measured 1.77x)`);
+	console.log(
+		`  H1 premise   : oecs is ${(base.median / dflt.median).toFixed(2)}x flatObj (exp 01 measured 1.77x)`
+	);
 	console.log(`  library cost : ${(dflt.median / raw.median).toFixed(2)}x raw typed arrays`);
-	console.log(`  H2 memory    : ${(base.bytesPerItem / pinned.bytesPerItem).toFixed(2)}x less resident than flatObj (exp 01 measured 4x)`);
-	console.log(`  H3 layout    : ${pinned.bytesPerItem.toFixed(1)} B/item resident vs 32 B computed = ${(pinned.bytesPerItem / 32).toFixed(2)}x`);
-	console.log(`  H4 off-heap  : reserved is an ArrayBuffer (external), faulted lazily; heapUsed stays flat`);
+	console.log(
+		`  H2 memory    : ${(base.bytesPerItem / pinned.bytesPerItem).toFixed(2)}x less resident than flatObj (exp 01 measured 4x)`
+	);
+	console.log(
+		`  H3 layout    : ${pinned.bytesPerItem.toFixed(1)} B/item resident vs 32 B computed = ${(pinned.bytesPerItem / 32).toFixed(2)}x`
+	);
+	console.log(
+		`  H4 off-heap  : reserved is an ArrayBuffer (external), faulted lazily; heapUsed stays flat`
+	);
 }

@@ -79,21 +79,30 @@ describe("id-indexed sparse store", () => {
 		// the live member list under it, as the docs warn.)
 		const seen: number[] = [];
 		const toRemove: number[] = [];
-		ecs.query(Pos).andSparse(S).forEachEntity((e) => {
-			seen.push(ecs.getSparseField(e, S, "v"));
-			toRemove.push(e);
-		});
+		ecs
+			.query(Pos)
+			.andSparse(S)
+			.forEachEntity((e) => {
+				seen.push(ecs.getSparseField(e, S, "v"));
+				toRemove.push(e);
+			});
 		for (const e of toRemove) ecs.removeSparse(e as never, S);
 		expect(seen.length).toBe(10);
 		expect(new Set(seen).size).toBe(10);
 		let left = 0;
-		ecs.query(Pos).andSparse(S).forEachEntity(() => left++);
+		ecs
+			.query(Pos)
+			.andSparse(S)
+			.forEachEntity(() => left++);
 		expect(left).toBe(0);
 	});
 
 	it("snapshot and restore carry typed values, and the hash ignores add order", () => {
 		const build = (order: number[]) => {
-			const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots()] });
+			const ecs = ECS.create({
+				deterministic: true,
+				plugins: [snapshots()]
+			});
 			const Pos = ecs.registerComponent({ x: "i32" });
 			const S = ecs.registerSparseComponent({ a: "u8", b: "i32" });
 			const ids = ecs.spawnMany(ecs.template(Pos({ x: 1 })), 100);

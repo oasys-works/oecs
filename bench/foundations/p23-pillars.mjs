@@ -99,7 +99,8 @@ const PILLARS = [
 	{
 		id: "kinds",
 		what: "one accessor literal for each element kind",
-		claim: "one accessor body for eight element kinds puts every accessor in the process past the cliff",
+		claim:
+			"one accessor body for eight element kinds puts every accessor in the process past the cliff",
 		// The eight entries become eight references to one literal. The bodies are
 		// already identical apart from an erased cast, so this is the refactor a
 		// tidy-up pass would make, and it changes no behaviour. The eight originals
@@ -400,7 +401,9 @@ if (which) {
 	const keep = process.argv.includes("--keep");
 	const wanted = PILLARS.filter((p) => args.length === 0 || args.includes(p.id));
 	if (wanted.length === 0) {
-		console.error(`no pillar matched ${args.join(" ")}, pick from: ${PILLARS.map((p) => p.id).join(" ")}`);
+		console.error(
+			`no pillar matched ${args.join(" ")}, pick from: ${PILLARS.map((p) => p.id).join(" ")}`
+		);
 		process.exit(1);
 	}
 
@@ -430,7 +433,14 @@ if (which) {
 				if (!base || !cut) continue;
 				const ratio = cut.median / base.median;
 				const overlap = base.spread.p75 >= cut.spread.p25 && cut.spread.p75 >= base.spread.p25;
-				rows.push({ pillar: p.id, case: c.id, rt: rt.cmd, ratio, overlap, control: c.control === true });
+				rows.push({
+					pillar: p.id,
+					case: c.id,
+					rt: rt.cmd,
+					ratio,
+					overlap,
+					control: c.control === true
+				});
 				console.log(
 					`  ${c.id.padEnd(18)} ${rt.cmd.padEnd(8)} ` +
 						`${(base.median.toFixed(3) + " ms").padEnd(12)} ${(cut.median.toFixed(3) + " ms").padEnd(12)} ` +
@@ -443,7 +453,8 @@ if (which) {
 
 	console.log(`  A pillar earns its comment when its own case is disjoint and above 1.00x,`);
 	console.log(`  and its control case is not. Read both.`);
-	const largest = (rs) => rs.reduce((a, b) => (a.ratio > b.ratio ? a : b), { ratio: 0, case: "none", rt: "" });
+	const largest = (rs) =>
+		rs.reduce((a, b) => (a.ratio > b.ratio ? a : b), { ratio: 0, case: "none", rt: "" });
 	for (const p of wanted) {
 		const all = rows.filter((r) => r.pillar === p.id);
 		const best = largest(all.filter((r) => !r.overlap && !r.control));

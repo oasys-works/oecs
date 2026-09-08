@@ -26,11 +26,7 @@ import type { BitSet, TypedArrayTag } from "../../type_primitives";
 import type { EntityID } from "./entity";
 import type { Archetype } from "./archetype";
 import type { QueryTerms } from "./query_terms";
-import type {
-	SparseComponentDef,
-	SparseComponentID,
-	SparseComponentStore
-} from "./sparse_store";
+import type { SparseComponentDef, SparseComponentID, SparseComponentStore } from "./sparse_store";
 
 export type RelationID = Brand<number, "relation_id">;
 

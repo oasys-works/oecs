@@ -27,7 +27,9 @@ function time(label, fn) {
 		const dt = Number(process.hrtime.bigint() - t0) / 1e6;
 		if (dt < best) best = dt;
 	}
-	console.log(`  ${label.padEnd(34)} ${best.toFixed(3).padStart(8)} ms   ${((best * 1e6) / (REPS * N)).toFixed(2).padStart(6)} ns/op`);
+	console.log(
+		`  ${label.padEnd(34)} ${best.toFixed(3).padStart(8)} ms   ${((best * 1e6) / (REPS * N)).toFixed(2).padStart(6)} ns/op`
+	);
 	return best;
 }
 
@@ -74,7 +76,11 @@ function time(label, fn) {
 	const Pos = Schema.makeBinary(world, V2);
 	const Vel = Schema.makeBinary(world, V2);
 	const Kinetic = [Pos, Vel];
-	for (let i = 0; i < N; i++) Entity.make(world, Kinetic, [{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+	for (let i = 0; i < N; i++)
+		Entity.make(world, Kinetic, [
+			{ x: 0, y: 0 },
+			{ x: 1, y: 1 }
+		]);
 	const q = Query.make(world, Kinetic);
 	console.log("harmony");
 	time("for..of query (documented form)", () => {

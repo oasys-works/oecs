@@ -124,9 +124,10 @@ function parseTraceGC(stderr) {
 		// pause pair, so a pattern anchored on the first comma silently matches
 		// nothing. Anchor on `(average mu`, which terminates the pause pair on
 		// every version, and take the pair immediately before it.
-		const m = /ms:\s+(Scavenge|Mark-Compact|Mark-sweep|Minor GC|Full GC|Sweep)\b.*?([\d.]+)\s*\/\s*[\d.]+\s*ms\s+\(average mu/.exec(
-			line
-		);
+		const m =
+			/ms:\s+(Scavenge|Mark-Compact|Mark-sweep|Minor GC|Full GC|Sweep)\b.*?([\d.]+)\s*\/\s*[\d.]+\s*ms\s+\(average mu/.exec(
+				line
+			);
 		if (!m) continue;
 		const kind = m[1];
 		const pause = Number(m[2]);
@@ -159,7 +160,9 @@ if (which) {
 	console.log(`done ${out}`);
 } else {
 	console.log(`P21. GC under churn (exp 21 R1-R5)`);
-	console.log(`      ${N.toLocaleString()} entities, ${TICKS} ticks, 10% change archetype per tick`);
+	console.log(
+		`      ${N.toLocaleString()} entities, ${TICKS} ticks, 10% change archetype per tick`
+	);
 	console.log(`      --trace-gc parsed from a subprocess (an in-process observer reports zero)\n`);
 
 	const rows = [];
@@ -179,16 +182,16 @@ if (which) {
 	}
 
 	const pad = (s, n) => String(s).padEnd(n);
-	console.log(
-		`  ${pad("metric", 22)} ${pad("all objects", 14)} ${pad("oecs", 14)} improvement`
-	);
+	console.log(`  ${pad("metric", 22)} ${pad("all objects", 14)} ${pad("oecs", 14)} improvement`);
 	console.log(`  ${"-".repeat(22)} ${"-".repeat(14)} ${"-".repeat(14)} -----------`);
 	const o = rows.find((r) => r.name === "objects");
 	const e = rows.find((r) => r.name === "oecs");
 	const ratio = (a, b) => (b === 0 ? (a === 0 ? "none" : "∞") : `${(a / b).toFixed(1)}x`);
 	console.log(`  ${pad("GC events (total)", 22)} ${pad(o.events, 14)} ${pad(e.events, 14)}`);
 	console.log(`  ${pad("minor", 22)} ${pad(o.minor, 14)} ${pad(e.minor, 14)}`);
-	console.log(`  ${pad("MAJOR", 22)} ${pad(o.major, 14)} ${pad(e.major, 14)} ${ratio(o.major, e.major)}`);
+	console.log(
+		`  ${pad("MAJOR", 22)} ${pad(o.major, 14)} ${pad(e.major, 14)} ${ratio(o.major, e.major)}`
+	);
 	console.log(
 		`  ${pad("total pause", 22)} ${pad(o.totalPause.toFixed(1) + " ms", 14)} ${pad(e.totalPause.toFixed(1) + " ms", 14)} ${ratio(o.totalPause, e.totalPause)}`
 	);
@@ -199,7 +202,9 @@ if (which) {
 		`  ${pad("mean pause", 22)} ${pad(o.meanPause.toFixed(3) + " ms", 14)} ${pad(e.meanPause.toFixed(3) + " ms", 14)}`
 	);
 	console.log("");
-	console.log(`  A frame is 16.7 ms. objects worst pause = ${((o.longestPause / 16.7) * 100).toFixed(0)}% of a frame;`);
+	console.log(
+		`  A frame is 16.7 ms. objects worst pause = ${((o.longestPause / 16.7) * 100).toFixed(0)}% of a frame;`
+	);
 	console.log(`  oecs worst pause = ${((e.longestPause / 16.7) * 100).toFixed(0)}% of a frame.`);
 	console.log(`  Event COUNT is the wrong metric, the design trades few expensive`);
 	console.log(`  collections for many trivial ones. Compare the pauses, not the counts.`);

@@ -119,7 +119,7 @@ export class EcsNet {
 			storeBase = 0,
 			maxBytes = 0,
 			allocator = null,
-			parallel = false,
+			parallel = false
 		} = {}
 	) {
 		const {
@@ -140,7 +140,7 @@ export class EcsNet {
 			events,
 			relations,
 			observers,
-			workers,
+			workers
 		} = lib;
 		// Kept for the names that only one check reads, such as `HIERARCHY_UNBOUNDED`.
 		this._lib = lib;
@@ -194,9 +194,7 @@ export class EcsNet {
 		this.recorder = record ? new HostCommandRecorder(1) : null;
 		this.queue = installHostCommandSeam(
 			ecs,
-			record
-				? { name: "net-host-apply", recorder: this.recorder }
-				: { name: "net-host-apply" }
+			record ? { name: "net-host-apply", recorder: this.recorder } : { name: "net-host-apply" }
 		);
 
 		// ── components ──────────────────────────────────────────────────────
@@ -396,7 +394,7 @@ export class EcsNet {
 		// which is the whole interface a plugin term has.
 		this.AgedTerm = {
 			name: "aged",
-			matches: (mask) => mask.has(this.Age.id) && !mask.has(this.Fresh.id),
+			matches: (mask) => mask.has(this.Age.id) && !mask.has(this.Fresh.id)
 		};
 		this.qAgedTerm = termBase.where(this.AgedTerm);
 		// The complement, over the same parent query. `where` caches on the identity
@@ -441,7 +439,7 @@ export class EcsNet {
 					throw new Error(`observer: onRemove for ${e}, which was not queued`);
 				}
 				this.observerRemoves++;
-			},
+			}
 		});
 
 		// ── the observer-maintained record set ──────────────────────────────
@@ -468,7 +466,7 @@ export class EcsNet {
 						throw new Error(`observer: record onRemove for ${e}, which was not logged`);
 					}
 					this.recordRemoves++;
-				},
+				}
 			});
 		}
 
@@ -486,7 +484,7 @@ export class EcsNet {
 			onSet: (e) => {
 				this.setEntities.add(e);
 				this.setEntityCalls++;
-			},
+			}
 		});
 		// The same observer on `Seen`. Its records come from `cols.ticks` in a chunk
 		// loop alone, so this set is the exact test of the scan of the tick plane.
@@ -497,7 +495,7 @@ export class EcsNet {
 			access: { reads: [], writes: [] },
 			onSet: (e) => {
 				this.seenEntities.add(e);
-			},
+			}
 		});
 		// The same observer on the sparse `Watch`. `redexMaintain` writes `hits`
 		// through the mutable sparse cursor for a member that stays, and records
@@ -515,7 +513,7 @@ export class EcsNet {
 			access: { reads: [], writes: [] },
 			onSet: (e) => {
 				this.watchSetEntities.add(e);
-			},
+			}
 		});
 		// An `onSet` observer with the granularity of an archetype fires one time for
 		// each archetype column that changed. It costs nothing, because it reads the
@@ -530,7 +528,7 @@ export class EcsNet {
 			onSet: (arch) => {
 				this.setArchSigs.add(this._archSignature(arch));
 				this.setArchCalls++;
-			},
+			}
 		});
 		// The same observer on `Age`. `ageTick` below asks for the mutable column of
 		// each archetype that it visits, and the documentation says that this sets the
@@ -544,7 +542,7 @@ export class EcsNet {
 			access: { reads: [], writes: [] },
 			onSet: (arch) => {
 				this.setAgeArchIds.add(arch.id);
-			},
+			}
 		});
 
 		// ── the observer-maintained set of the disabled entities ────────────
@@ -581,7 +579,7 @@ export class EcsNet {
 			},
 			onRemove: (e) => {
 				this.observedDisabled.delete(e);
-			},
+			}
 		});
 
 		// ── events and resources ────────────────────────────────────────────
@@ -686,7 +684,7 @@ export class EcsNet {
 			},
 			onLoop() {
 				self.loops++;
-			},
+			}
 		};
 
 		// ── systems ─────────────────────────────────────────────────────────
@@ -713,14 +711,23 @@ export class EcsNet {
 
 		const allTags = this.TAG;
 		const provComps = prov === null ? [] : [this.Record, this.Epoch];
-		const provRels = prov === null ? [] : [this.InEpoch, this.Produced, this.EpochAncestors, this.PrevRec];
+		const provRels =
+			prov === null ? [] : [this.InEpoch, this.Produced, this.EpochAncestors, this.PrevRec];
 		const rewrite = ecs.registerSystem({
 			name: "net-rewrite",
 			reads: [],
 			writes: [this.Slot, this.Touch, this.Mix, this.Fresh, ...allTags, ...provComps],
 			spawns: [
-				...allTags.map((t) => [t, this.Slot, this.Touch, this.Seen, this.Quar, this.Mix, this.Fresh]),
-				...provComps.map((c) => [c]),
+				...allTags.map((t) => [
+					t,
+					this.Slot,
+					this.Touch,
+					this.Seen,
+					this.Quar,
+					this.Mix,
+					this.Fresh
+				]),
+				...provComps.map((c) => [c])
 			],
 			// A despawn removes every component that the entity carries. Therefore this
 			// list must name each one, and that includes the components that the host
@@ -736,7 +743,7 @@ export class EcsNet {
 				this.Age,
 				this.Redex,
 				...allTags,
-				...provComps,
+				...provComps
 			],
 			relationReads: [...this.P, ...provRels],
 			relationWrites: [...this.P, ...provRels],
@@ -793,7 +800,7 @@ export class EcsNet {
 				this._plan = [];
 				this._ctx = null;
 				this._mixCursor = null;
-			},
+			}
 		});
 
 		// Re-derive `Redex` for every agent a rewrite disturbed. Runs after the
@@ -860,7 +867,7 @@ export class EcsNet {
 					}
 				}
 				this._touched.clear();
-			},
+			}
 		});
 
 		// The promotion of `Fresh` to `Age(0)`. It runs one tick after the ECS makes
@@ -885,7 +892,7 @@ export class EcsNet {
 					ctx.commands.remove(e, this.Fresh);
 					ctx.commands.add(e, this.Age, float ? { ticks: 0, fticks: 0 } : { ticks: 0 });
 				});
-			},
+			}
 		});
 
 		// Epoch roll + retention prune, in PRE_UPDATE so the current epoch exists
@@ -929,7 +936,7 @@ export class EcsNet {
 							}
 							// A signal is an event with no field. It counts the rolls.
 							ctx.emit(this.EpochSignal);
-						},
+						}
 					});
 
 		// The per-tick age bump, one hot `i32` column write per live aged agent,
@@ -955,8 +962,8 @@ export class EcsNet {
 						kernel: { js: KERNELS_URL, export: "ageStepI32" },
 						columns: [[this.Age, "ticks"]],
 						minRows: 1,
-						query: this.qAge,
-					},
+						query: this.qAge
+					}
 				}
 			: {};
 		const ageTick = ecs.registerSystem({
@@ -974,7 +981,7 @@ export class EcsNet {
 						for (let i = 0; i < count; i++) f[i] += dt;
 					}
 				});
-			},
+			}
 		});
 
 		// The reader for the change detection, in POST_UPDATE and last. It captures
@@ -1040,7 +1047,7 @@ export class EcsNet {
 				});
 				this.ageArchIdsAll.clear();
 				this.qAgeAll.forEach((arch) => this.ageArchIdsAll.add(arch.id));
-			},
+			}
 		});
 
 		// ── the reader for the row grain ────────────────────────────────────
@@ -1066,7 +1073,7 @@ export class EcsNet {
 				collectChangedRows(this.qMixAll, this.Mix, this.rowChangedAll);
 				collectChangedRows(this.qMixEnabled, this.Mix, this.rowChangedEnabled);
 				collectChangedRows(this.qMixChanged, this.Mix, this.rowChangedFiltered);
-			},
+			}
 		});
 
 		// ── the reader for the query verbs ──────────────────────────────────
@@ -1178,7 +1185,7 @@ export class EcsNet {
 				this.qAgentsAll.forEachEntity((e) => {
 					if (ctx.sparseChanged(this.Watch, e)) this.sparseChangedEnts.add(e);
 				});
-			},
+			}
 		});
 
 		// ── the marks for the change detection ──────────────────────────────
@@ -1216,7 +1223,7 @@ export class EcsNet {
 					ctx.markChanged(e, this.Touch);
 				}
 				this.markCalls += this._marks.length;
-			},
+			}
 		});
 
 		// ── the explicit unlink of a relation, from a system ────────────────
@@ -1259,12 +1266,13 @@ export class EcsNet {
 							// A gap in either map is a fault of the harness. A silent skip would make
 							// the model agree with it.
 							if (rec === undefined) throw new Error(`net-unlink: record ${serial} has no entity`);
-							if (tgt === undefined) throw new Error(`net-unlink: agent ${targetRef} has no entity`);
+							if (tgt === undefined)
+								throw new Error(`net-unlink: agent ${targetRef} has no entity`);
 							this.unlinkBefore = ctx.hasRelation(rec, this.Produced);
 							ctx.removeRelation(rec, this.Produced, tgt);
 							this.unlinkAfter = ctx.hasRelation(rec, this.Produced);
 							this.unlinkCalls++;
-						},
+						}
 					});
 
 		// The reader for the events, in POST_UPDATE. It drains both channels. An event
@@ -1281,7 +1289,7 @@ export class EcsNet {
 					this.drainedEvents.push([r.rule[i], r.a[i], r.b[i]]);
 				}
 				this.drainedSignals = ctx.readEvents(this.EpochSignal).length;
-			},
+			}
 		});
 
 		// The system that writes the resource, and the system that a run condition
@@ -1295,7 +1303,7 @@ export class EcsNet {
 			resourceWrites: [this.PhaseRes],
 			fn: (ctx) => {
 				ctx.setResource(this.PhaseRes, this._phase);
-			},
+			}
 		});
 		const phaseGated = ecs.registerSystem({
 			name: "net-phase-gated",
@@ -1303,7 +1311,7 @@ export class EcsNet {
 			writes: [],
 			fn: () => {
 				this.gatedRuns++;
-			},
+			}
 		});
 
 		// ── two phases of the harness, whose position is observable ─────────
@@ -1326,11 +1334,11 @@ export class EcsNet {
 		this.censusPostPhase = ecs.addPhase("net-census-post", {
 			loop: "update",
 			after: [SCHEDULE.UPDATE],
-			before: [SCHEDULE.POST_UPDATE],
+			before: [SCHEDULE.POST_UPDATE]
 		});
 		this.censusPrePhase = ecs.addPhase("net-census-pre", {
 			loop: "update",
-			before: [SCHEDULE.UPDATE],
+			before: [SCHEDULE.UPDATE]
 		});
 		this.censusPreLive = -1;
 		this.censusPreRootAge = -1;
@@ -1346,7 +1354,7 @@ export class EcsNet {
 			fn: (ctx) => {
 				this.censusPreLive = this._countAgents();
 				this.censusPreRootAge = ctx.getField(this.rootEntity, this.Age, "ticks");
-			},
+			}
 		});
 		const censusPost = ecs.registerSystem({
 			name: "net-census-post",
@@ -1355,7 +1363,7 @@ export class EcsNet {
 			fn: (ctx) => {
 				this.censusPostLive = this._countAgents();
 				this.censusPostRootAge = ctx.getField(this.rootEntity, this.Age, "ticks");
-			},
+			}
 		});
 
 		this._pendingRoll = null;
@@ -1448,12 +1456,16 @@ export class EcsNet {
 				// of every agent. The three built-in checkpoints already name the
 				// segment of the tick that a divergence belongs to. The census systems
 				// write nothing, so a checkpoint beside them would repeat one.
-				if (phase !== SCHEDULE.PRE_UPDATE && phase !== SCHEDULE.UPDATE && phase !== SCHEDULE.POST_UPDATE) {
+				if (
+					phase !== SCHEDULE.PRE_UPDATE &&
+					phase !== SCHEDULE.UPDATE &&
+					phase !== SCHEDULE.POST_UPDATE
+				) {
 					return;
 				}
 				this.phaseSinkCalls++;
 				this.phaseFp.set(phase, fingerprintEcs(this, { redex: phase !== SCHEDULE.PRE_UPDATE }));
-			},
+			}
 		});
 		ecs.startup();
 	}
@@ -1877,7 +1889,7 @@ export class EcsNet {
 		return {
 			form: parts.join(" "),
 			reachable: order.length,
-			unreachable: agents.length - order.length,
+			unreachable: agents.length - order.length
 		};
 	}
 
@@ -1910,7 +1922,10 @@ export class EcsNet {
 		for (const [idx, e] of this.epochByIndex) {
 			const alive = prov.epochs.get(idx)?.alive === true;
 			if (ecs.isAlive(e) !== alive) {
-				fail(where, `epoch ${idx} (entity ${e}): ECS alive=${ecs.isAlive(e)}, model alive=${alive}`);
+				fail(
+					where,
+					`epoch ${idx} (entity ${e}): ECS alive=${ecs.isAlive(e)}, model alive=${alive}`
+				);
 			}
 		}
 
@@ -1918,7 +1933,10 @@ export class EcsNet {
 		const wantRecs = prov.liveRecords();
 		const wantRecEnts = wantRecs.map((s) => this.recByRef.get(s)).sort((a, b) => a - b);
 		const gotRecEnts = this.liveRecordEntities();
-		if (gotRecEnts.length !== wantRecEnts.length || gotRecEnts.some((v, i) => v !== wantRecEnts[i])) {
+		if (
+			gotRecEnts.length !== wantRecEnts.length ||
+			gotRecEnts.some((v, i) => v !== wantRecEnts[i])
+		) {
 			fail(
 				where,
 				`live records: ECS has ${gotRecEnts.length}, model has ${wantRecEnts.length} ` +
@@ -1952,7 +1970,10 @@ export class EcsNet {
 			const parent = ecs.relations.targetOf(e, this.InEpoch);
 			const wantParent = this.epochByIndex.get(rec.epoch);
 			if (parent !== wantParent) {
-				fail(where, `record ${serial} InEpoch -> ${parent}, want ${wantParent} (epoch ${rec.epoch})`);
+				fail(
+					where,
+					`record ${serial} InEpoch -> ${parent}, want ${wantParent} (epoch ${rec.epoch})`
+				);
 			}
 
 			// The multi target set. It shrinks only because produced agents died, so a
@@ -2007,9 +2028,12 @@ export class EcsNet {
 						`want ${wantCascade.length} starting ${epochEnt}`
 				);
 			}
-			const cascadeRest = [...cascade.slice(1)].sort((a, b) => a - b);
+			const cascadeRest = cascade.slice(1).sort((a, b) => a - b);
 			if (cascadeRest.some((v, i) => v !== wantKids[i])) {
-				fail(where, `cascadeOf(epoch ${idx}) subtree [${cascadeRest}] != its records [${wantKids}]`);
+				fail(
+					where,
+					`cascadeOf(epoch ${idx}) subtree [${cascadeRest}] != its records [${wantKids}]`
+				);
 			}
 		}
 		if (wantRecs.length > 0) {
@@ -2030,7 +2054,10 @@ export class EcsNet {
 			// parent is in the result set. `PrevRec` below is the deep tree, and it does
 			// check the sequence.
 			const order = [];
-			ecs.query(this.Record).hierarchy(this.InEpoch).forEachEntity((x) => order.push(x));
+			ecs
+				.query(this.Record)
+				.hierarchy(this.InEpoch)
+				.forEachEntity((x) => order.push(x));
 			if (order.length !== wantRecs.length) {
 				fail(where, `hierarchy(Record, InEpoch) yielded ${order.length}, want ${wantRecs.length}`);
 			}
@@ -2122,7 +2149,10 @@ export class EcsNet {
 
 		// ── hierarchy with no limit: every record, parents first ────────────
 		const walk = [];
-		ecs.query(this.Record).hierarchy(this.PrevRec).forEachEntity((x) => walk.push(x));
+		ecs
+			.query(this.Record)
+			.hierarchy(this.PrevRec)
+			.forEachEntity((x) => walk.push(x));
 		if (walk.length !== depthOf.size) {
 			fail(
 				where,
@@ -2204,7 +2234,9 @@ export class EcsNet {
 				const [f, q] = this.linkOf(e, p);
 				if (p >= PORTS[t]) {
 					if (f !== -1 || q !== NO_SLOT) {
-						throw new Error(`${where}: ${e} (${TYPE_NAME[t]}) port ${p} should not exist, has ${f}:${q}`);
+						throw new Error(
+							`${where}: ${e} (${TYPE_NAME[t]}) port ${p} should not exist, has ${f}:${q}`
+						);
 					}
 					continue;
 				}
@@ -2212,7 +2244,9 @@ export class EcsNet {
 				if (!alive.has(f)) throw new Error(`${where}: ${e} port ${p} -> dead/non-agent ${f}`);
 				const tf = this._typeOf(f);
 				if (q >= PORTS[tf]) {
-					throw new Error(`${where}: ${e} port ${p} -> ${f} port ${q}, which ${TYPE_NAME[tf]} lacks`);
+					throw new Error(
+						`${where}: ${e} port ${p} -> ${f} port ${q}, which ${TYPE_NAME[tf]} lacks`
+					);
 				}
 				const [back, bq] = this.linkOf(f, q);
 				if (back !== e || bq !== p) {

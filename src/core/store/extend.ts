@@ -37,11 +37,7 @@ import {
 	usedDescriptorBytes
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
-import {
-	TYPE_TAG_STRIDE,
-	archetypeDescriptorBytes,
-	writeArchetypeDescriptor
-} from "./descriptor";
+import { TYPE_TAG_STRIDE, archetypeDescriptorBytes, writeArchetypeDescriptor } from "./descriptor";
 import {
 	growBufferInPlace,
 	layoutColumnsAtTail,

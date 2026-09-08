@@ -29,7 +29,14 @@ export function zigAvailable() {
 export function buildZig(
 	source,
 	out,
-	{ maxMemoryBytes, flags = [], sharedMemory = true, importMemory = true, optimize = "ReleaseSmall", reuse = false } = {}
+	{
+		maxMemoryBytes,
+		flags = [],
+		sharedMemory = true,
+		importMemory = true,
+		optimize = "ReleaseSmall",
+		reuse = false
+	} = {}
 ) {
 	const bin = `${OUT}${out}`;
 	// A runtime without write permission still needs the module. When the
@@ -62,7 +69,9 @@ export function buildZig(
 	];
 	const run = spawnSync(zig, args, { encoding: "utf8", cwd: OUT });
 	if (run.status !== 0) {
-		return { error: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(0, 12).join("\n") };
+		return {
+			error: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(0, 12).join("\n")
+		};
 	}
 	return readFileSync(bin);
 }

@@ -100,7 +100,7 @@ export function oecsCases(lib) {
 					for (let i = 0; i < count; i++) s += x[i];
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -140,7 +140,7 @@ export function oecsCases(lib) {
 					for (let i = 0; i < count; i++) s += x[i];
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -175,7 +175,7 @@ export function oecsCases(lib) {
 					}
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		cases.has = {
 			iters: 20 * N,
@@ -185,7 +185,7 @@ export function oecsCases(lib) {
 					for (let i = 0; i < N; i++) s += ecs.hasComponent(ids[i], Pos) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -199,7 +199,7 @@ export function oecsCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < 3 * N; i++) s.ecs.spawn(s.t);
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -212,7 +212,7 @@ export function oecsCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) s.ecs.despawn(s.ids[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -233,7 +233,7 @@ export function oecsCases(lib) {
 				for (let i = 0; i < ids.length; i++) ecs.addComponent(ids[i], Tag);
 				for (let i = 0; i < ids.length; i++) ecs.removeComponent(ids[i], Tag);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -285,7 +285,7 @@ export function oecsSparseCases(lib) {
 					s += p.x;
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -319,7 +319,7 @@ export function oecsSparseCases(lib) {
 					s += p.x;
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -343,7 +343,7 @@ export function oecsSparseCases(lib) {
 					}
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		cases.has = {
 			iters: 20 * N,
@@ -353,7 +353,7 @@ export function oecsSparseCases(lib) {
 					for (let i = 0; i < N; i++) s += ecs.hasSparse(ids[i], Pos) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -383,7 +383,7 @@ export function oecsSparseCases(lib) {
 				ecs.addSparse(e, Pos, pv);
 				ecs.addSparse(e, Vel, vv);
 			}
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -398,7 +398,7 @@ export function oecsSparseCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) s.ecs.despawn(s.ids[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -418,7 +418,7 @@ export function oecsSparseCases(lib) {
 				for (let i = 0; i < ids.length; i++) ecs.addSparse(ids[i], Tag);
 				for (let i = 0; i < ids.length; i++) ecs.removeSparse(ids[i], Tag);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -437,7 +437,7 @@ export function bitecsCases(lib) {
 		removeComponent,
 		removeEntity,
 		hasComponent,
-		query,
+		query
 	} = lib;
 	const cases = {};
 
@@ -480,7 +480,7 @@ export function bitecsCases(lib) {
 				const ents = query(world, [Pos, Vel]);
 				for (let i = 0; i < ents.length; i++) s += Pos.x[ents[i]];
 				return s;
-			},
+			}
 		};
 	}
 
@@ -514,7 +514,7 @@ export function bitecsCases(lib) {
 				const ents = query(world, [Pos]);
 				for (let i = 0; i < ents.length; i++) s += Pos.x[ents[i]];
 				return s;
-			},
+			}
 		};
 	}
 
@@ -537,7 +537,7 @@ export function bitecsCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += x[ids[i]];
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		cases.has = {
 			iters: 20 * N,
@@ -547,7 +547,7 @@ export function bitecsCases(lib) {
 					for (let i = 0; i < N; i++) s += hasComponent(world, ids[i], Pos) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -571,7 +571,7 @@ export function bitecsCases(lib) {
 				Pos.x[e] = 1;
 				Pos.y[e] = 2;
 			}
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -589,7 +589,7 @@ export function bitecsCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) removeEntity(s.world, s.ids[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -614,7 +614,7 @@ export function bitecsCases(lib) {
 				for (let i = 0; i < ids.length; i++) addComponent(world, ids[i], Tag);
 				for (let i = 0; i < ids.length; i++) removeComponent(world, ids[i], Tag);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -634,7 +634,11 @@ export function harmonyCases(lib) {
 		const Pos = Schema.makeBinary(world, V2);
 		const Vel = Schema.makeBinary(world, V2);
 		const Kinetic = [Pos, Vel];
-		for (let i = 0; i < N; i++) Entity.make(world, Kinetic, [{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+		for (let i = 0; i < N; i++)
+			Entity.make(world, Kinetic, [
+				{ x: 0, y: 0 },
+				{ x: 1, y: 1 }
+			]);
 		const q = Query.make(world, Kinetic);
 		// A harmony query is an array of `[entities, columns]` tuples, so both the
 		// README's `for..of` and a plain indexed walk are valid. The indexed form is
@@ -661,7 +665,7 @@ export function harmonyCases(lib) {
 					for (let i = 0; i < entities.length; i++) s += p.x[i];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -694,7 +698,7 @@ export function harmonyCases(lib) {
 					for (let i = 0; i < entities.length; i++) s += p.x[i];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -711,7 +715,7 @@ export function harmonyCases(lib) {
 					for (let i = 0; i < N; i++) s += Entity.get(world, ids[i], Pos).x;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		// `Entity.has` takes a type (an array of schemas), not a single schema, and
 		// re-normalises it on every call, an allocation and a sort per probe. That
@@ -728,7 +732,7 @@ export function harmonyCases(lib) {
 					for (let i = 0; i < N; i++) s += Entity.has(world, ids[i], posType) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -742,7 +746,7 @@ export function harmonyCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < 3 * N; i++) Entity.make(s.world, s.type);
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -756,7 +760,7 @@ export function harmonyCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) Entity.destroy(s.world, s.ids[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -778,7 +782,7 @@ export function harmonyCases(lib) {
 				for (let i = 0; i < ids.length; i++) Entity.set(world, ids[i], t);
 				for (let i = 0; i < ids.length; i++) Entity.unset(world, ids[i], t);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -828,7 +832,7 @@ export function wolfCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += Pos.x[ents[i]];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -841,7 +845,8 @@ export function wolfCases(lib) {
 			for (let k = 0; k < FRAG_PER; k++) {
 				const e = ecs.createEntity();
 				ecs.addComponent(e, Pos, false);
-				for (let b = 0; b < FRAG_BITS; b++) if (mask & (1 << b)) ecs.addComponent(e, tags[b], false);
+				for (let b = 0; b < FRAG_BITS; b++)
+					if (mask & (1 << b)) ecs.addComponent(e, tags[b], false);
 			}
 		}
 		const q = ecs.createQuery(all(Pos));
@@ -863,7 +868,7 @@ export function wolfCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += Pos.x[ents[i]];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -886,7 +891,7 @@ export function wolfCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += x[ids[i]];
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		// wolf-ecs exposes no public per-entity membership test. The archetype
 		// mask check its own query path uses is protected. Reported as absent
@@ -911,7 +916,7 @@ export function wolfCases(lib) {
 				Pos.x[e] = 1;
 				Pos.y[e] = 2;
 			}
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -929,7 +934,7 @@ export function wolfCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) s.ecs.destroyEntity(s.ids[i], false);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -954,7 +959,7 @@ export function wolfCases(lib) {
 				for (let i = 0; i < ids.length; i++) ecs.addComponent(ids[i], Tag, false);
 				for (let i = 0; i < ids.length; i++) ecs.removeComponent(ids[i], Tag, false);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -1016,7 +1021,7 @@ export function piecsCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += x[ents[i]];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1063,7 +1068,7 @@ export function piecsCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += x[ents[i]];
 				}
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1087,7 +1092,7 @@ export function piecsCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += x[ids[i]];
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		cases.has = {
 			iters: 20 * N,
@@ -1097,7 +1102,7 @@ export function piecsCases(lib) {
 					for (let i = 0; i < N; i++) s += world.hasComponent(ids[i], Pos) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -1118,7 +1123,7 @@ export function piecsCases(lib) {
 		fn: (s) => {
 			const { world, prefab } = s;
 			for (let i = 0; i < 3 * N; i++) world.createEntity(prefab);
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -1137,7 +1142,7 @@ export function piecsCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.ids.length; i++) s.world.deleteEntity(s.ids[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -1163,7 +1168,7 @@ export function piecsCases(lib) {
 				for (let i = 0; i < ids.length; i++) world.addComponent(ids[i], Tag);
 				for (let i = 0; i < ids.length; i++) world.removeComponent(ids[i], Tag);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -1209,7 +1214,7 @@ export function kootaCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += p.x[ents[i].id()];
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1238,7 +1243,7 @@ export function kootaCases(lib) {
 					for (let i = 0; i < ents.length; i++) s += p.x[ents[i].id()];
 				});
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1259,7 +1264,7 @@ export function kootaCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += px.x[idx[i]];
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		cases.has = {
 			iters: 20 * N,
@@ -1268,7 +1273,7 @@ export function kootaCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += es[i].has(Pos) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -1281,7 +1286,7 @@ export function kootaCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < 3 * N; i++) s.world.spawn(s.Pos, s.Vel);
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -1295,7 +1300,7 @@ export function kootaCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.es.length; i++) s.es[i].destroy();
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -1316,7 +1321,7 @@ export function kootaCases(lib) {
 				for (let i = 0; i < es.length; i++) es[i].add(Tag);
 				for (let i = 0; i < es.length; i++) es[i].remove(Tag);
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -1351,7 +1356,7 @@ export function miniplexCases(lib) {
 				let s = 0;
 				for (const e of q.entities) s += e.pos.x;
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1379,7 +1384,7 @@ export function miniplexCases(lib) {
 				let s = 0;
 				for (const e of q.entities) s += e.pos.x;
 				return s;
-			},
+			}
 		};
 	}
 
@@ -1405,7 +1410,7 @@ export function miniplexCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += es[i].pos.x;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 		// `Query.has(entity)` is miniplex's own membership call: `Query` extends
 		// `Bucket`, and `Bucket.has` is documented as "returns true if the bucket
@@ -1430,7 +1435,7 @@ export function miniplexCases(lib) {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += q.has(es[i]) ? 1 : 0;
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 
@@ -1439,7 +1444,7 @@ export function miniplexCases(lib) {
 		setup: () => ({ world: new World() }),
 		fn: (s) => {
 			for (let i = 0; i < 3 * N; i++) s.world.add({ pos: { x: 1, y: 2 }, vel: { vx: 0, vy: 0 } });
-		},
+		}
 	};
 
 	cases.despawn = {
@@ -1452,7 +1457,7 @@ export function miniplexCases(lib) {
 		},
 		fn: (s) => {
 			for (let i = 0; i < s.es.length; i++) s.world.remove(s.es[i]);
-		},
+		}
 	};
 
 	cases.add_remove = {
@@ -1475,7 +1480,7 @@ export function miniplexCases(lib) {
 				for (let i = 0; i < es.length; i++) world.addComponent(es[i], "tag", true);
 				for (let i = 0; i < es.length; i++) world.removeComponent(es[i], "tag");
 			}
-		},
+		}
 	};
 
 	return cases;
@@ -1567,7 +1572,7 @@ export async function becsyCases(lib) {
 				mv.reps = 0;
 				await world.execute();
 				return doneCheck;
-			},
+			}
 		};
 	}
 
@@ -1596,7 +1601,7 @@ export function rawCases() {
 				let s = 0;
 				for (let i = 0; i < N; i++) s += x[i];
 				return s;
-			},
+			}
 		};
 	}
 	{
@@ -1611,7 +1616,7 @@ export function rawCases() {
 				let s = 0;
 				for (let i = 0; i < COUNT; i++) s += x[i];
 				return s;
-			},
+			}
 		};
 	}
 	{
@@ -1624,7 +1629,7 @@ export function rawCases() {
 				for (let r = 0; r < 20; r++) for (let i = 0; i < N; i++) s += x[ids[i]];
 				sink = s;
 			},
-			check: () => sink,
+			check: () => sink
 		};
 	}
 	return cases;
@@ -1642,7 +1647,7 @@ export const IMPLS = {
 	harmony: { kind: "npm", pkg: "harmony-ecs", make: harmonyCases },
 	wolf: { kind: "npm", pkg: "wolf-ecs", make: wolfCases },
 	piecs: { kind: "npm", pkg: "piecs", make: piecsCases },
-	raw: { kind: "none", make: rawCases },
+	raw: { kind: "none", make: rawCases }
 };
 
 export const CASES = ["iter2", "iter_frag", "read_by_id", "has", "spawn", "despawn", "add_remove"];

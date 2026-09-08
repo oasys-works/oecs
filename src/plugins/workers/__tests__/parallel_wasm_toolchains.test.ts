@@ -50,7 +50,9 @@ const FRAMES = 3;
 
 const fixture = (name: string): WebAssembly.Module =>
 	new WebAssembly.Module(
-		readFileSync(fileURLToPath(new URL(`../../../core/ecs/__tests__/fixtures/${name}`, import.meta.url)))
+		readFileSync(
+			fileURLToPath(new URL(`../../../core/ecs/__tests__/fixtures/${name}`, import.meta.url))
+		)
 	);
 
 /** The four bodies, with the TypeScript twin each one must reproduce. */
@@ -143,24 +145,20 @@ function sequential(body: KernelBody) {
 describe("a wasm kernel from any toolchain", () => {
 	for (const [toolchain, file, bodies] of TOOLCHAINS) {
 		for (const [exportName, body] of bodies) {
-			it(
-				`leaves the sequential bytes: ${toolchain}, ${exportName}`,
-				async () => {
-					const expected = sequential(body);
-					const world = kernelWorld({ kernel: { wasm: fixture(file), export: exportName }, body });
-					await attach(world, WORKERS);
-					for (let frame = 0; frame < FRAMES; frame++) world.ecs.update(DT);
+			it(`leaves the sequential bytes: ${toolchain}, ${exportName}`, async () => {
+				const expected = sequential(body);
+				const world = kernelWorld({ kernel: { wasm: fixture(file), export: exportName }, body });
+				await attach(world, WORKERS);
+				for (let frame = 0; frame < FRAMES; frame++) world.ecs.update(DT);
 
-					expect(readColumns(world.ecs, world.Pos, world.Vel)).toEqual(expected.columns);
-					expect(world.ecs.snapshots.stateHash()).toBe(expected.hash);
-					// A world that ran nothing is not the answer.
-					const untouched = kernelWorld({ kernel: UNUSED_KERNEL, body });
-					expect(readColumns(untouched.ecs, untouched.Pos, untouched.Vel)).not.toEqual(
-						expected.columns
-					);
-				},
-				30_000
-			);
+				expect(readColumns(world.ecs, world.Pos, world.Vel)).toEqual(expected.columns);
+				expect(world.ecs.snapshots.stateHash()).toBe(expected.hash);
+				// A world that ran nothing is not the answer.
+				const untouched = kernelWorld({ kernel: UNUSED_KERNEL, body });
+				expect(readColumns(untouched.ecs, untouched.Pos, untouched.Vel)).not.toEqual(
+					expected.columns
+				);
+			}, 30_000);
 		}
 	}
 });
@@ -398,7 +396,7 @@ describe("the stack the caller sizes", () => {
 	function repainted(memory: WebAssembly.Memory, from: number, to: number): number {
 		const words = new Uint32Array(memory.buffer, from, (to - from) >> 2);
 		let wrong = 0;
-		for (let i = 0; i < words.length; i++) if (words[i] !== ((SENTINEL ^ i) >>> 0)) wrong++;
+		for (let i = 0; i < words.length; i++) if (words[i] !== (SENTINEL ^ i) >>> 0) wrong++;
 		return wrong;
 	}
 

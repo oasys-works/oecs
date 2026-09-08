@@ -143,7 +143,9 @@ export function pushCommand(
 	// production producer is WASM (op-codes ≥ 1), so this guards the TS test and host
 	// producer for parity.
 	if (opCode === COMMAND_OP_EMPTY) {
-		throw new CommandRingError(`command opCode must be > 0 (0 is reserved as the empty-slot marker)`);
+		throw new CommandRingError(
+			`command opCode must be > 0 (0 is reserved as the empty-slot marker)`
+		);
 	}
 	if (opCode < 0 || opCode > 0xff || !Number.isInteger(opCode)) {
 		throw new CommandRingError(`command opCode must be a u8 in [1, 255] (got ${opCode})`);

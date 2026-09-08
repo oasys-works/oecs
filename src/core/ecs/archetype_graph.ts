@@ -120,9 +120,7 @@ export class ArchetypeGraph {
 		// Extend the SAB to carry the new archetype's column region (Store-side
 		// seam: existing archetypes' rows are carried forward and their stale
 		// TypedArray views refreshed before any caller can touch them).
-		this._host.extendStore([
-			storeSpecFromLayouts(id, mask, layouts, this._host.initialCapacity())
-		]);
+		this._host.extendStore([storeSpecFromLayouts(id, mask, layouts, this._host.initialCapacity())]);
 		this._install(id, mask, layouts, hash);
 		return id;
 	}
@@ -308,9 +306,7 @@ export class ArchetypeGraph {
 		if (current.mask.has(componentId as number)) return archetypeId;
 		const edge = current.getEdge(componentId);
 		if (edge?.add != null) return edge.add;
-		const targetId = this.getOrCreateFromMask(
-			current.mask.copyWithSet(componentId as number)
-		);
+		const targetId = this.getOrCreateFromMask(current.mask.copyWithSet(componentId as number));
 		this._cacheEdge(current, this.get(targetId), componentId);
 		return targetId;
 	}
@@ -321,9 +317,7 @@ export class ArchetypeGraph {
 		if (!current.mask.has(componentId as number)) return archetypeId;
 		const edge = current.getEdge(componentId);
 		if (edge?.remove != null) return edge.remove;
-		const targetId = this.getOrCreateFromMask(
-			current.mask.copyWithClear(componentId as number)
-		);
+		const targetId = this.getOrCreateFromMask(current.mask.copyWithClear(componentId as number));
 		this._cacheEdge(this.get(targetId), current, componentId);
 		return targetId;
 	}

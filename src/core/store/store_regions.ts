@@ -91,9 +91,7 @@ export const STORE_PREFIX_REGIONS: readonly MechanismRegionSpec[] = [
 		name: "command_ring",
 		headerOff: "command_ring_off",
 		sizeFromOptions: (o) =>
-			o.commandRingCapacitySlots !== undefined
-				? commandRingBytes(o.commandRingCapacitySlots)
-				: 0,
+			o.commandRingCapacitySlots !== undefined ? commandRingBytes(o.commandRingCapacitySlots) : 0,
 		init: (view, off, o) => initCommandRing(view, off, o.commandRingCapacitySlots!),
 		regionBytes: (view, off) =>
 			commandRingBytes(view.getUint32(off + COMMAND_RING_HEADER_OFFSETS.capacity_slots, true)),
@@ -108,9 +106,7 @@ export const STORE_PREFIX_REGIONS: readonly MechanismRegionSpec[] = [
 		name: "entity_index",
 		headerOff: "entity_index_off",
 		sizeFromOptions: (o) =>
-			o.entityIndexCapacity !== undefined
-				? entityIndexRegionBytes(o.entityIndexCapacity)
-				: 0,
+			o.entityIndexCapacity !== undefined ? entityIndexRegionBytes(o.entityIndexCapacity) : 0,
 		init: (view, off, o) => initEntityIndexRegion(view, off, o.entityIndexCapacity!),
 		regionBytes: (view, off) =>
 			entityIndexRegionBytes(view.getUint32(off + ENTITY_INDEX_HEADER_OFFSETS.capacity, true)),
@@ -137,9 +133,7 @@ export const STORE_PREFIX_REGIONS: readonly MechanismRegionSpec[] = [
 		name: "action_ring",
 		headerOff: "action_ring_off",
 		sizeFromOptions: (o) =>
-			o.actionRingCapacitySlots !== undefined
-				? actionRingBytes(o.actionRingCapacitySlots)
-				: 0,
+			o.actionRingCapacitySlots !== undefined ? actionRingBytes(o.actionRingCapacitySlots) : 0,
 		init: (view, off, o) => initActionRing(view, off, o.actionRingCapacitySlots!),
 		regionBytes: (view, off) =>
 			actionRingBytes(view.getUint32(off + ACTION_RING_HEADER_OFFSETS.capacity_slots, true)),

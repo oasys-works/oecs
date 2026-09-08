@@ -204,7 +204,7 @@ const nsOf = (label, c) => {
 		min: Math.min(...xs),
 		max: Math.max(...xs),
 		med: median(xs),
-		rounds: xs.length,
+		rounds: xs.length
 	};
 };
 
@@ -252,7 +252,9 @@ for (const c of cases) {
 	let checked = 0;
 	const bad = [];
 	for (const c of cases) {
-		const vals = LABELS.map((l) => [l, checksums.get(key(l, c))]).filter(([, v]) => v !== undefined);
+		const vals = LABELS.map((l) => [l, checksums.get(key(l, c))]).filter(
+			([, v]) => v !== undefined
+		);
 		if (vals.length < 2) continue;
 		checked++;
 		const [, ref] = vals[0];

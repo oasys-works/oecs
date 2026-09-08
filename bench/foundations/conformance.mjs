@@ -1,9 +1,11 @@
-
 /** A world with the snapshot plugin installed. The tools here drive capture
  * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
-	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+	return lib.ECS.create({
+		...options,
+		plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()]
+	});
 }
 
 /**
@@ -43,7 +45,8 @@ const lib = {
 function engineName() {
 	if (typeof Deno !== "undefined") return `deno-${Deno.version.deno}`;
 	if (typeof Bun !== "undefined") return `bun-${Bun.version}`;
-	if (typeof process !== "undefined" && process.versions?.node) return `node-${process.versions.node}`;
+	if (typeof process !== "undefined" && process.versions?.node)
+		return `node-${process.versions.node}`;
 	return "unknown";
 }
 

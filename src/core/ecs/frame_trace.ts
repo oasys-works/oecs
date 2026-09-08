@@ -82,7 +82,12 @@ export interface FrameTraceSink {
 	phaseBoundary(phase: PhaseName): void;
 	/** An observer callback fired for one entity (`entity === -1` for an
 	 * archetype-granular onSet, which has no per-entity id). */
-	observerFired(op: ObserverOp, component: number, entity: number, observer: SystemDescriptor): void;
+	observerFired(
+		op: ObserverOp,
+		component: number,
+		entity: number,
+		observer: SystemDescriptor
+	): void;
 	/** A system emitted an event on `key` (the channel's symbol description). */
 	eventEmitted(key: string): void;
 	/** A system read an event channel. `count` is how many events it saw. */
@@ -178,7 +183,12 @@ export class FrameTraceRecorder implements FrameTraceSink {
 	 * events, not fingerprints. */
 	phaseBoundary(_phase: PhaseName): void {}
 
-	observerFired(op: ObserverOp, component: number, entity: number, observer: SystemDescriptor): void {
+	observerFired(
+		op: ObserverOp,
+		component: number,
+		entity: number,
+		observer: SystemDescriptor
+	): void {
 		this._current?.events.push({
 			kind: "observer_fired",
 			op,

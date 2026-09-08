@@ -33,7 +33,8 @@ const STEPS = 8;
 
 const handBytes = emitAbiModule({ minPages: 1, maxPages: MAX_PAGES });
 const zigBytes = buildZig("abi.zig", "abi.wasm", { maxMemoryBytes: MAX_BYTES });
-if (zigBytes === null) console.log("zig is absent, the compiled data point is a skip and not a pass");
+if (zigBytes === null)
+	console.log("zig is absent, the compiled data point is a skip and not a pass");
 else if (zigBytes.error) console.log(`zig build failed:\n${zigBytes.error}`);
 
 function instantiate(bytes, memory) {
@@ -44,7 +45,10 @@ function instantiate(bytes, memory) {
 const readers = [{ name: "hand-emitted", bytes: handBytes }];
 if (zigBytes && !zigBytes.error) readers.push({ name: "zig 0.16", bytes: zigBytes });
 
-console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length > 1 ? `, zig ${zigBytes.length} B` : ""));
+console.log(
+	`module sizes: hand-emitted ${handBytes.length} B` +
+		(readers.length > 1 ? `, zig ${zigBytes.length} B` : "")
+);
 
 // ── 1. the layout every reader sees ──────────────────────────────────────────
 {
@@ -75,14 +79,21 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 	const rows = [{ reader: "javascript", walk: jsWalk, fnv: jsFnv }];
 	for (const r of readers) {
 		const ex = instantiate(r.bytes, mem);
-		rows.push({ reader: r.name, walk: ex.walk(headerOff) >>> 0, fnv: ex.fnv1a(headerOff, header.capacity) >>> 0 });
+		rows.push({
+			reader: r.name,
+			walk: ex.walk(headerOff) >>> 0,
+			fnv: ex.fnv1a(headerOff, header.capacity) >>> 0
+		});
 	}
 	console.log(`\n## layout fold and byte digest, one world, three readers, header at ${headerOff}`);
 	table(rows, [
 		{ label: "reader", get: (r) => r.reader },
 		{ label: "walk fold", get: (r) => r.walk },
 		{ label: "fnv1a over the store span", get: (r) => r.fnv },
-		{ label: "agrees", get: (r) => (r.walk === rows[0].walk && r.fnv === rows[0].fnv ? "yes" : "NO") }
+		{
+			label: "agrees",
+			get: (r) => (r.walk === rows[0].walk && r.fnv === rows[0].fnv ? "yes" : "NO")
+		}
 	]);
 	ecs.dispose?.();
 	void Pos;
@@ -98,7 +109,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 			run: (w) => {
 				let rows = 0;
 				for (let s = 0; s < STEPS; s++)
-					rows = tsStepFromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, DT, { round: "fround", headerOff: w.headerOff });
+					rows = tsStepFromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, DT, {
+						round: "fround",
+						headerOff: w.headerOff
+					});
 				return rows;
 			}
 		},
@@ -107,7 +121,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 			run: (w) => {
 				let rows = 0;
 				for (let s = 0; s < STEPS; s++)
-					rows = tsStepFromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, DT, { round: "native", headerOff: w.headerOff });
+					rows = tsStepFromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, DT, {
+						round: "native",
+						headerOff: w.headerOff
+					});
 				return rows;
 			}
 		}
@@ -147,7 +164,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 		{ label: "body", get: (r) => r.body },
 		{ label: "rows touched", get: (r) => r.rows },
 		{ label: "fnv1a of the whole store", get: (r) => r.digest },
-		{ label: "pos values off the ts fround body", get: (r) => `${differing(r)} of ${r.values.length}` },
+		{
+			label: "pos values off the ts fround body",
+			get: (r) => `${differing(r)} of ${r.values.length}`
+		},
 		{ label: "pos.x[0..2]", get: (r) => r.sample }
 	]);
 }
@@ -156,12 +176,17 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 {
 	console.log("\n## one step of pos += vel * dt over i32 columns, deterministic world");
 	const variants = [
-		{ name: "ts", run: (w) => tsStepI32FromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, 3, w.headerOff) }
+		{
+			name: "ts",
+			run: (w) =>
+				tsStepI32FromDescriptors(w.ecs.wasmMemory.buffer, w.Pos.id, w.Vel.id, 3, w.headerOff)
+		}
 	];
 	for (const r of readers) {
 		variants.push({
 			name: r.name,
-			run: (w) => instantiate(r.bytes, w.ecs.wasmMemory).step_i32(w.headerOff, w.Pos.id, w.Vel.id, 3)
+			run: (w) =>
+				instantiate(r.bytes, w.ecs.wasmMemory).step_i32(w.headerOff, w.Pos.id, w.Vel.id, 3)
 		});
 	}
 	const rows = [];
@@ -182,7 +207,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 		{ label: "rows touched", get: (r) => r.rows },
 		{ label: "ecs.snapshots.stateHash()", get: (r) => r.stateHash },
 		{ label: "fnv1a of the whole store", get: (r) => r.digest },
-		{ label: "matches ts", get: (r) => (r.stateHash === rows[0].stateHash && r.digest === rows[0].digest ? "yes" : "NO") }
+		{
+			label: "matches ts",
+			get: (r) => (r.stateHash === rows[0].stateHash && r.digest === rows[0].digest ? "yes" : "NO")
+		}
 	]);
 }
 
@@ -196,7 +224,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 		[
 			{ what: "ecs.snapshots.stateHash()", value: w.ecs.snapshots.stateHash() >>> 0 },
 			{ what: "module fnv1a over the store span", value: ex.fnv1a(w.headerOff, cap) >>> 0 },
-			{ what: "javascript fnv1a over the store span", value: bufferFnv(w.ecs.wasmMemory.buffer, cap, w.headerOff) }
+			{
+				what: "javascript fnv1a over the store span",
+				value: bufferFnv(w.ecs.wasmMemory.buffer, cap, w.headerOff)
+			}
 		],
 		[
 			{ label: "digest", get: (r) => r.what },
@@ -249,7 +280,10 @@ console.log(`module sizes: hand-emitted ${handBytes.length} B` + (readers.length
 	console.log("\n## can each build mode of one compiler read the header at address 0?");
 	const rows = [];
 	for (const optimize of ["Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"]) {
-		const bytes = buildZig("abi.zig", `abi-${optimize}.wasm`, { maxMemoryBytes: MAX_BYTES, optimize });
+		const bytes = buildZig("abi.zig", `abi-${optimize}.wasm`, {
+			maxMemoryBytes: MAX_BYTES,
+			optimize
+		});
 		if (bytes === null || bytes.error) {
 			rows.push({ optimize, atZero: "skip", atHigh: "skip" });
 			continue;

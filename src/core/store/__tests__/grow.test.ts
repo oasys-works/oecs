@@ -147,13 +147,7 @@ describe("growColumnStore", () => {
 
 	it("preserves componentMask bits across grow", () => {
 		const old = createColumnStore([
-			spec(
-				0,
-				4,
-				[{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }],
-				0xdead_beef,
-				0xcafe_f00d
-			)
+			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }], 0xdead_beef, 0xcafe_f00d)
 		]);
 		const { store: next } = growColumnStore(old, {
 			archetypes: [{ archetypeId: 0, newRowCapacity: 8, rowCount: 0 }]

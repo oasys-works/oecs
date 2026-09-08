@@ -252,7 +252,13 @@ export class HostCommandQueue {
 		field: string & keyof S,
 		value: number
 	): this {
-		this._pending.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value });
+		this._pending.push({
+			kind: "set_field",
+			eid: entityId,
+			def: def as ComponentDef,
+			field,
+			value
+		});
 		return this;
 	}
 
@@ -635,10 +641,7 @@ export function uninstallHostCommandSeam(ecs: ECS, queue: HostCommandQueue): boo
  * no framework dependency to quarantine. This is pure ECS plumbing over the
  * deferred buffers and `SystemContext` the core already owns.
  */
-export function installHostCommandSeam(
-	ecs: ECS,
-	opts?: HostCommandSeamOptions
-): HostCommandQueue {
+export function installHostCommandSeam(ecs: ECS, opts?: HostCommandSeamOptions): HostCommandQueue {
 	const queue = new HostCommandQueue();
 	const installed: SystemDescriptor[] = [];
 	seamSystems.set(queue, installed);

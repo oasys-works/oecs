@@ -53,7 +53,7 @@ interface World {
  * scope. The archetype graph ({}, {Pos}, {Pos, Life}) is prewarmed so the set is
  * stable, which `restore` requires. */
 function build(memory: ECSOptions): World {
-	const world = ECS.create({ ...(memory), plugins: [snapshots()] });
+	const world = ECS.create({ ...memory, plugins: [snapshots()] });
 	const Pos = world.registerComponent({ x: "i32" });
 	const Life = world.registerComponent({ age: "i32", ttl: "i32" });
 	const Mark = world.registerSparseComponent({ tag: "i32" });
@@ -288,7 +288,7 @@ describe("restore, fails closed", () => {
 		// {Pos,Life} archetype's column layout differs from the snapshot's. The
 		// guard reads the snapshot's descriptors directly, so it throws before the
 		// dense backing is overwritten, the target survives.
-		const other = ECS.create({ ...(SAB), plugins: [snapshots()] });
+		const other = ECS.create({ ...SAB, plugins: [snapshots()] });
 		const Pos2 = other.registerComponent({ x: "i32", y: "i32" });
 		const Life2 = other.registerComponent({ age: "i32", ttl: "i32" });
 		other.registerSparseComponent({ tag: "i32" });
@@ -325,7 +325,7 @@ describe("restore, fails closed", () => {
 		// Same dense graph (so the dense guard passes), but an extra sparse store
 		// → the sparse-section shape check rejects the store-count mismatch before
 		// the dense mount commits (so the target's dense half isn't left clobbered).
-		const other = ECS.create({ ...(SAB), plugins: [snapshots()] });
+		const other = ECS.create({ ...SAB, plugins: [snapshots()] });
 		const Pos2 = other.registerComponent({ x: "i32" });
 		const Life2 = other.registerComponent({ age: "i32", ttl: "i32" });
 		other.registerSparseComponent({ tag: "i32" });

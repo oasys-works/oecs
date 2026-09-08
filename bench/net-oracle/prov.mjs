@@ -77,7 +77,7 @@ export class RefProv {
 			maxProducedSet: 0,
 			/** the deepest chain of records that a run made. A walk over one level
 			 * proves nothing about `maxDepth`, so the floor for non-vacuity reads this. */
-			maxChainDepth: 0,
+			maxChainDepth: 0
 		};
 	}
 
@@ -103,6 +103,9 @@ export class RefProv {
 			// The `"delete"` cascade: every record in that epoch goes with it.
 			const victims = this.recordsByEpoch.get(old);
 			if (victims !== undefined) {
+				// The copy is the loop's guard, not a spare array. `_dropRecord`
+				// deletes from this same set, thus a live iterator would skip a victim.
+				// oxlint-disable-next-line unicorn/no-useless-spread
 				for (const serial of [...victims]) this._dropRecord(serial);
 				this.recordsByEpoch.delete(old);
 			}

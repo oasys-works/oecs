@@ -88,7 +88,12 @@ function hostTruth(ecs, Pos) {
 			ids.push(p.z[i]);
 		}
 	});
-	return { rows, sumX, distinctIds: new Set(ids).size, maxId: ids.length ? Math.max(...ids) : null };
+	return {
+		rows,
+		sumX,
+		distinctIds: new Set(ids).size,
+		maxId: ids.length ? Math.max(...ids) : null
+	};
 }
 
 async function growStage(backingName, allocator) {
@@ -222,7 +227,12 @@ function quotients(px, pz, rows, passes) {
 			if (q === passes) full++;
 		}
 	}
-	return { full, minQ: minQ === Infinity ? null : minQ, maxQ: maxQ === -Infinity ? null : maxQ, ragged };
+	return {
+		full,
+		minQ: minQ === Infinity ? null : minQ,
+		maxQ: maxQ === -Infinity ? null : maxQ,
+		ragged
+	};
 }
 
 /** The worker adds its own identity to every cached row while the host
@@ -365,18 +375,21 @@ async function main() {
 	console.log(
 		"\nStage 2. The host despawns a block from the middle. Every despawn is a swap remove.\n"
 	);
-	table([swap], [
-		{ label: "rows at bind", get: (r) => r.cachedRows },
-		{ label: "despawned", get: (r) => r.despawned },
-		{ label: "live rows after", get: (r) => r.liveRows },
-		{ label: "host rows after", get: (r) => r.truthRows },
-		{ label: "column moved", get: (r) => (r.byteOffMoved ? "yes" : "no") },
-		{ label: "stale pass visits", get: (r) => r.staleVisits },
-		{ label: "visits past the live tail", get: (r) => r.staleReadsPastTail },
-		{ label: "identities read twice", get: (r) => r.staleDuplicateIds },
-		{ label: "identities no longer live", get: (r) => r.staleDeadIds },
-		{ label: "rows after a rebind", get: (r) => r.freshRows }
-	]);
+	table(
+		[swap],
+		[
+			{ label: "rows at bind", get: (r) => r.cachedRows },
+			{ label: "despawned", get: (r) => r.despawned },
+			{ label: "live rows after", get: (r) => r.liveRows },
+			{ label: "host rows after", get: (r) => r.truthRows },
+			{ label: "column moved", get: (r) => (r.byteOffMoved ? "yes" : "no") },
+			{ label: "stale pass visits", get: (r) => r.staleVisits },
+			{ label: "visits past the live tail", get: (r) => r.staleReadsPastTail },
+			{ label: "identities read twice", get: (r) => r.staleDuplicateIds },
+			{ label: "identities no longer live", get: (r) => r.staleDeadIds },
+			{ label: "rows after a rebind", get: (r) => r.freshRows }
+		]
+	);
 
 	const races = [];
 	for (let a = 0; a < 3; a++) races.push(await despawnRace(a));
@@ -404,18 +417,21 @@ async function main() {
 	console.log(
 		"\nStage 3b. The same pass, and the host grows instead of despawning. The grow relocates the archetype.\n"
 	);
-	table([gr], [
-		{ label: "rows at bind", get: (r) => r.startRows },
-		{ label: "spawned mid pass", get: (r) => r.spawnedDuring },
-		{ label: "live rows after", get: (r) => r.liveRows },
-		{ label: "passes", get: (r) => r.passes },
-		{ label: "host ran during passes", get: (r) => r.overlap },
-		{ label: "column moved", get: (r) => (r.columnMoved ? "yes" : "no") },
-		{ label: "rows with all passes", get: (r) => r.fullyApplied },
-		{ label: "min passes seen", get: (r) => r.minPasses },
-		{ label: "max passes seen", get: (r) => r.maxPasses },
-		{ label: "value off the lattice", get: (r) => r.notAWholeNumber }
-	]);
+	table(
+		[gr],
+		[
+			{ label: "rows at bind", get: (r) => r.startRows },
+			{ label: "spawned mid pass", get: (r) => r.spawnedDuring },
+			{ label: "live rows after", get: (r) => r.liveRows },
+			{ label: "passes", get: (r) => r.passes },
+			{ label: "host ran during passes", get: (r) => r.overlap },
+			{ label: "column moved", get: (r) => (r.columnMoved ? "yes" : "no") },
+			{ label: "rows with all passes", get: (r) => r.fullyApplied },
+			{ label: "min passes seen", get: (r) => r.minPasses },
+			{ label: "max passes seen", get: (r) => r.maxPasses },
+			{ label: "value off the lattice", get: (r) => r.notAWholeNumber }
+		]
+	);
 	console.log("");
 }
 

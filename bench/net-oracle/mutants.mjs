@@ -82,7 +82,7 @@ const MUTANTS = [
       this.enabledCount = last;`,
 		to: `      }
       this.length = last;
-      this.enabledCount = last;`,
+      this.enabledCount = last;`
 	},
 	{
 		// `_moveRow` is the one primitive behind each swap-remove fill. It walks the
@@ -95,7 +95,7 @@ const MUTANTS = [
     for (let i = 0; i < bufs.length; i++) bufs[i][to] = bufs[i][from];
   }`,
 		to: `  _moveRow(to, from) {
-  }`,
+  }`
 	},
 	{
 		// the same primitive, with a fault that a small archetype never shows: one bit
@@ -107,7 +107,7 @@ const MUTANTS = [
 		what: "the swap-remove fill flips one bit of the moved row in an archetype past a thousand rows",
 		find: `    for (let i = 0; i < bufs.length; i++) bufs[i][to] = bufs[i][from];`,
 		to: `    for (let i = 0; i < bufs.length; i++) bufs[i][to] = bufs[i][from];
-    if (from > 1000) bufs[0][to] ^= 1;`,
+    if (from > 1000) bufs[0][to] ^= 1;`
 	},
 	{
 		// the width-canonical view of an `i16` column. A view of the wrong width moves
@@ -118,7 +118,7 @@ const MUTANTS = [
 		find: `    case I16:
       return new Uint16Array(buf.buffer, buf.byteOffset, buf.length);`,
 		to: `    case I16:
-      return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);`,
+      return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);`
 	},
 	{
 		// the stored bits of an `f32` default. A template converts each default one
@@ -132,7 +132,7 @@ const MUTANTS = [
       F32_SCRATCH[0] = v;
       return F32_BITS[0];`,
 		to: `    case F32:
-      return v;`,
+      return v;`
 	},
 	// ── the id-indexed sparse store ────────────────────────────────────────
 	// `Watch` is the sparse component of the net. Its membership is the redex
@@ -148,7 +148,7 @@ const MUTANTS = [
 		find: `    this._pos[index] = this._size;
     this._dense[this._size++] = index;`,
 		to: `    this._pos[index] = this._size + 1;
-    this._dense[this._size++] = index;`,
+    this._dense[this._size++] = index;`
 	},
 	{
 		// the member that a swap-remove moves into the hole keeps its old
@@ -156,7 +156,7 @@ const MUTANTS = [
 		id: "sparse-remove-stale-position",
 		what: "a swap-remove leaves the moved member's position stale, so its own remove hits the wrong entry",
 		find: `    this._pos[moved] = p;`,
-		to: `    this._pos[moved] = last;`,
+		to: `    this._pos[moved] = last;`
 	},
 	{
 		// A grow keeps the columns and drops the positions, so every member of
@@ -164,21 +164,21 @@ const MUTANTS = [
 		id: "sparse-grow-drops-members",
 		what: "a grow of the sparse columns forgets every member's position",
 		find: `    pos.set(this._pos);`,
-		to: `    pos.set(this._pos.subarray(0, 1));`,
+		to: `    pos.set(this._pos.subarray(0, 1));`
 	},
 	{
 		// the member at position zero of the list reads absent.
 		id: "sparse-has-off-by-one",
 		what: "membership at position zero of the sparse member list reads absent",
 		find: `    return this._pos[index] >= 0;`,
-		to: `    return this._pos[index] > 0;`,
+		to: `    return this._pos[index] > 0;`
 	},
 	{
 		// A read of a sparse field takes the neighbour's slot.
 		id: "sparse-getfield-neighbour",
 		what: "a sparse field read takes the value at the next index",
 		find: `    return this._cols[fieldIdx][index];`,
-		to: `    return this._cols[fieldIdx][index + 1];`,
+		to: `    return this._cols[fieldIdx][index + 1];`
 	},
 	{
 		// the value path of a `u8` column keeps seven bits, so a mirror of `seq`
@@ -190,19 +190,19 @@ const MUTANTS = [
       return;`,
 		to: `    case U8:
       buf[row] = v & 0x7f;
-      return;`,
+      return;`
 	},
 	{
 		id: "rowplane-overreported-cap",
 		what: "the row plane's cached capacity is one row larger than reality",
 		find: `    this._rowCap = eidCap < colCap ? eidCap : colCap;`,
-		to: `    this._rowCap = (eidCap < colCap ? eidCap : colCap) + 1;`,
+		to: `    this._rowCap = (eidCap < colCap ? eidCap : colCap) + 1;`
 	},
 	{
 		id: "rowplane-stale-eids",
 		what: "the row plane keeps a stale entity-id view after a grow",
 		find: `    this._eids = this._entityIds.buf;`,
-		to: `    if (this._eids === void 0) this._eids = this._entityIds.buf;`,
+		to: `    if (this._eids === void 0) this._eids = this._entityIds.buf;`
 	},
 	{
 		// `_growRows` uses the column capacity term alone to decide if a column needs
@@ -220,7 +220,7 @@ const MUTANTS = [
 		id: "rowplane-grow-guard-wrong-term",
 		what: "the reserve tests the entity-id capacity, so a needed column grow never happens",
 		find: `    if (need <= this._colCap) {`,
-		to: `    if (need <= this._entityIds.buf.length) {`,
+		to: `    if (need <= this._entityIds.buf.length) {`
 	},
 	{
 		id: "relation-reverse-leak",
@@ -230,7 +230,7 @@ const MUTANTS = [
     if (set === void 0) return;`,
 		to: `  _unlinkReverse(tgt, src) {
     const set = this._reverse.get(tgt);
-    if (set !== void 0) return;`,
+    if (set !== void 0) return;`
 	},
 	{
 		id: "observer-drop-remove",
@@ -244,7 +244,7 @@ const MUTANTS = [
         const eids = this._remBuckets.get(obs.cid);
         if (eids !== void 0 && eids.length > 0)
           this._fireEach(obs, obs.onRemove, eids, "remove");
-      }`,
+      }`
 	},
 	{
 		id: "cascade-not-transitive",
@@ -255,13 +255,13 @@ const MUTANTS = [
       }`,
 		to: `      if (rs.onDeleteTarget === "delete") {
         continue;
-      }`,
+      }`
 	},
 	{
 		id: "clear-policy-noop",
 		what: 'the "clear" policy leaves the relation on every source when a target dies',
 		find: `      for (let i = 0; i < sources.length; i++) rs.unlink(sources[i], targetId);`,
-		to: `      if (sources.length < 0) rs.unlink(sources[0], targetId);`,
+		to: `      if (sources.length < 0) rs.unlink(sources[0], targetId);`
 	},
 	{
 		id: "multi-forward-set-keeps-dead",
@@ -270,7 +270,7 @@ const MUTANTS = [
     set.delete(tgt);
     this._unlinkReverse(tgt, src);`,
 		to: `    if (!set.has(tgt)) return;
-    this._unlinkReverse(tgt, src);`,
+    this._unlinkReverse(tgt, src);`
 	},
 	{
 		id: "multi-targetsof-unsorted",
@@ -281,14 +281,14 @@ const MUTANTS = [
   hasIndex(index) {`,
 		to: `    return out;
   }
-  hasIndex(index) {`,
+  hasIndex(index) {`
 	},
 	{
 		id: "compact-undercounts",
 		what: "compact() reclaims the dead keys but reports zero",
 		find: `        this._reverse.delete(tgt);
         dropped++;`,
-		to: `        this._reverse.delete(tgt);`,
+		to: `        this._reverse.delete(tgt);`
 	},
 	{
 		id: "compact-drops-live-keys",
@@ -300,7 +300,7 @@ const MUTANTS = [
 		to: `      {
         this._reverse.delete(tgt);
         dropped++;
-      }`,
+      }`
 	},
 	{
 		id: "observer-double-add",
@@ -313,7 +313,7 @@ const MUTANTS = [
         const eids = this._addBuckets.get(obs.cid);
         if (eids !== void 0 && eids.length > 0) this._fireEach(obs, obs.onAdd, eids, "add");
         if (eids !== void 0 && eids.length > 0) this._fireEach(obs, obs.onAdd, eids, "add");
-      }`,
+      }`
 	},
 
 	// ── the change detection ────────────────────────────────────────────────
@@ -325,7 +325,7 @@ const MUTANTS = [
     const fn = obs.onSetEntity;`,
 		to: `    if (n >= 0 && m >= 0) return;
     const def = obs.def;
-    const fn = obs.onSetEntity;`,
+    const fn = obs.onSetEntity;`
 	},
 	{
 		// The per-entity onSet must skip a disabled entity, so that it matches the
@@ -337,7 +337,7 @@ const MUTANTS = [
 		find: `          if (!this._store.isAlive(eid) || !this._store.hasComponent(eid, def) || this._store.isDisabled(eid))
             continue;`,
 		to: `          if (!this._store.isAlive(eid) || !this._store.hasComponent(eid, def))
-            continue;`,
+            continue;`
 	},
 	{
 		// `cols.mut(def)` must set the tick for the change at the moment of the call,
@@ -354,7 +354,7 @@ const MUTANTS = [
 		what: "the mutable column group does not set the change tick",
 		find: `    this.changedTick[cid] = tick;
     return this._mutGroupCache[cid];`,
-		to: `    return this._mutGroupCache[cid];`,
+		to: `    return this._mutGroupCache[cid];`
 	},
 	{
 		// The opposite fault: the layer reports every archetype at every tick. Each
@@ -364,7 +364,7 @@ const MUTANTS = [
 		id: "changed-arch-reports-everything",
 		what: "the archetype-granular onSet ignores its baseline and reports every archetype",
 		find: `      if (arch.length > 0 && arch.changedTick[cid] > baseline) cb(arch);`,
-		to: `      if (arch.length > 0) cb(arch);`,
+		to: `      if (arch.length > 0) cb(arch);`
 	},
 
 	// ── the row tick plane ──────────────────────────────────────────────────
@@ -381,7 +381,7 @@ const MUTANTS = [
     if (meta.rowTicks) meta.scanTick = this.changeTick;
   }`,
 		to: `  noteScan(cid) {
-  }`,
+  }`
 	},
 	{
 		// The scan must read the plane. One that reports every row of a stamped
@@ -389,7 +389,7 @@ const MUTANTS = [
 		id: "scan-ignores-the-row-tick",
 		what: "the scan reports every enabled row of a stamped archetype",
 		find: `          for (let r = 0; r < n; r++) if (t[r] > since) res.scanned.push(eids[r]);`,
-		to: `          for (let r = 0; r < n; r++) res.scanned.push(eids[r]);`,
+		to: `          for (let r = 0; r < n; r++) res.scanned.push(eids[r]);`
 	},
 	{
 		// `redexMaintain` stamps a row and then moves it, through the deferred add
@@ -397,7 +397,7 @@ const MUTANTS = [
 		id: "transition-drops-the-row-tick",
 		what: "a transition zeroes the row tick instead of carrying it",
 		find: `      bufs[i][to] = st !== void 0 ? st[from] : 0;`,
-		to: `      bufs[i][to] = 0;`,
+		to: `      bufs[i][to] = 0;`
 	},
 	// A fifth mutant, the template append that keeps a stale tick in a freed
 	// slot, escaped: every agent the net spawns is also touched in the same
@@ -418,13 +418,13 @@ const MUTANTS = [
       plane.changedTick = now;
     }
     return this;`,
-		to: `    return this;`,
+		to: `    return this;`
 	},
 	{
 		id: "sparse-drain-gate-never-opens",
 		what: "the sparse drain treats every component as idle",
 		find: `    if (st.changedTick <= since) return out;`,
-		to: `    return out;`,
+		to: `    return out;`
 	},
 
 	// ── the partition of the enabled and the disabled rows ──────────────────
@@ -437,13 +437,13 @@ const MUTANTS = [
   }`,
 		to: `      entityRows[getEntityIndex(eids[lastEnabled])] = lastEnabled;
     }
-  }`,
+  }`
 	},
 	{
 		id: "toggle-fans-the-wrong-way",
 		what: "a net toggle fans onEnable where it must fan onDisable, and the reverse",
 		find: `    arch.mask.forEach(nowDisabled ? this._collectDisableBit : this._collectEnableBit);`,
-		to: `    arch.mask.forEach(nowDisabled ? this._collectEnableBit : this._collectDisableBit);`,
+		to: `    arch.mask.forEach(nowDisabled ? this._collectEnableBit : this._collectDisableBit);`
 	},
 
 	// ── a dead key in the reverse index ─────────────────────────────────────
@@ -466,7 +466,7 @@ const MUTANTS = [
 		to: `      for (let i = 0; i < sources.length; i++) {
         if (rs._forward === void 0) rs._store.remove(getEntityIndex(sources[i]));
         else rs.unlink(sources[i], targetId);
-      }`,
+      }`
 	},
 
 	// ── the walk over a deep chain ──────────────────────────────────────────
@@ -477,7 +477,7 @@ const MUTANTS = [
 		id: "hierarchy-ignores-maxdepth",
 		what: "a hierarchy walk keeps the entities that are deeper than maxDepth",
 		find: `      if (d > maxDepth) continue;`,
-		to: `      if (d > maxDepth && false) continue;`,
+		to: `      if (d > maxDepth && false) continue;`
 	},
 
 	// ── the events, and the host write seam ─────────────────────────────────
@@ -486,7 +486,7 @@ const MUTANTS = [
 		what: "an event channel keeps its rows past the end of the update",
 		find: `      if (this._store.hasEvents) this._store.events.clear();
       if (DEV) this._store.trace?.tickEnd(this._tick);`,
-		to: `      if (DEV) this._store.trace?.tickEnd(this._tick);`,
+		to: `      if (DEV) this._store.trace?.tickEnd(this._tick);`
 	},
 	// ── the probes of the API surface ───────────────────────────────────────
 	{
@@ -502,7 +502,7 @@ const MUTANTS = [
     if (this._store.anyDirtyTracked) this._store.noteSet(def.id, arch, row, entityId);
     return createRef(arch.accessorColumns[def.id], row);`,
 		to: `    if (this._store.anyDirtyTracked) this._store.noteSet(def.id, arch, row, entityId);
-    return createRef(arch.accessorColumns[def.id], row);`,
+    return createRef(arch.accessorColumns[def.id], row);`
 	},
 	{
 		// `relations.remove(src, R)` with no target must remove each target of that
@@ -512,7 +512,7 @@ const MUTANTS = [
 		id: "relation-remove-ignores-the-all-form",
 		what: "relations.remove without a target argument removes nothing",
 		find: `    rs.unlink(src, tgt);`,
-		to: `    if (tgt !== void 0) rs.unlink(src, tgt);`,
+		to: `    if (tgt !== void 0) rs.unlink(src, tgt);`
 	},
 	{
 		id: "host-seam-drops-set-field",
@@ -521,7 +521,7 @@ const MUTANTS = [
       return void 0;
     case "disable":`,
 		to: `      return void 0;
-    case "disable":`,
+    case "disable":`
 	},
 	{
 		// Layer 8 does a round trip that must succeed, so the bytes that it gives to
@@ -533,7 +533,7 @@ const MUTANTS = [
 		find: `  const version = view.getUint32(4, true);
   if (version !== ECS_SNAPSHOT_VERSION) {`,
 		to: `  const version = view.getUint32(4, true);
-  if (false) {`,
+  if (false) {`
 	},
 	{
 		// The simulation removes one component at a time, through `ctx.commands` and
@@ -542,7 +542,7 @@ const MUTANTS = [
 		id: "remove-components-drops-all-but-the-first",
 		what: "the plural remove detaches the first component only",
 		find: `    this._store.removeComponents(entityId, defs);`,
-		to: `    this._store.removeComponents(entityId, defs.slice(0, 1));`,
+		to: `    this._store.removeComponents(entityId, defs.slice(0, 1));`
 	},
 	{
 		// `ctx.removeRelation` is the route of a system. `surface.mjs` covers the host
@@ -561,7 +561,7 @@ const MUTANTS = [
     if (DEV) accessCheck.assertRelationWrite(def);
     this._store.requireRelations("ctx.removeRelation").removeRelation(src, def);
     return this;
-  }`,
+  }`
 	},
 	{
 		// `ctx.hasRelation` asks whether the source holds any target. The driver reads it
@@ -575,7 +575,7 @@ const MUTANTS = [
   }`,
 		to: `  hasRelation(src, def) {
     return true;
-  }`,
+  }`
 	},
 	{
 		// `ctx.markChanged` puts a row into the list for the per-entity `onSet`
@@ -587,7 +587,7 @@ const MUTANTS = [
     if (this._store.anyDirtyTracked) this._store.noteSetEntity(def, entityId);
   }`,
 		to: `  markChanged(entityId, def) {
-  }`,
+  }`
 	},
 	{
 		// The other direction, and the sharper one. `markChanged` must not set the tick
@@ -603,7 +603,7 @@ const MUTANTS = [
     if (this._store.anyDirtyTracked) this._store.noteSetEntity(def, entityId);
     const arch = this._store.resolveEntity(entityId);
     arch.changedTick[def.id] = this._store.changeTick;
-  }`,
+  }`
 	},
 	{
 		// `andRelation` narrows the rows by the backing sparse id of the relation.
@@ -616,7 +616,7 @@ const MUTANTS = [
       appendSparse(this.terms.sparseIncludes, sid),`,
 		to: `    const sid = this._resolver.relationBackingSparseId(def, "query.andRelation");
     const result = this._deriveRelation(
-      this.terms.sparseIncludes,`,
+      this.terms.sparseIncludes,`
 	},
 	{
 		// The fetch of an optional column must give the column when the archetype holds
@@ -627,7 +627,7 @@ const MUTANTS = [
 		find: `    const offset = this.colOffset[cid];
     if (offset === void 0) return void 0;`,
 		to: `    const offset = this.colOffset[cid];
-    if (true) return void 0;`,
+    if (true) return void 0;`
 	},
 	{
 		// `some` must stop at the archetype that the predicate accepts. This
@@ -654,7 +654,7 @@ const MUTANTS = [
       if (cb(arch)) hit = true;
     });
     return hit;
-  }`,
+  }`
 	},
 	{
 		// `or` must accept an archetype that one operand accepts. This mutant makes it
@@ -688,7 +688,7 @@ const MUTANTS = [
       return true;
     }
   };
-}`,
+}`
 	},
 	{
 		// `where` caches on the identity of the term. This mutant keys the cache on
@@ -710,7 +710,7 @@ const MUTANTS = [
     if (byQuery === void 0) {
       byQuery = /* @__PURE__ */ new Map();
       cache.set(cache, byQuery);
-    }`,
+    }`
 	},
 	{
 		// The row grain reads one component's tick plane. This mutant gives the first
@@ -726,7 +726,7 @@ const MUTANTS = [
 		to: `  ticksRead(def) {
     const arch = this.arch;
     const cid = def.id;
-    const t = arch.rowTicks.find((p) => p !== void 0);`,
+    const t = arch.rowTicks.find((p) => p !== void 0);`
 	},
 	{
 		// `cols.since` is the change tick of the previous run of the system. This
@@ -735,7 +735,7 @@ const MUTANTS = [
 		id: "chunk-since-is-the-current-tick",
 		what: "forEachChunk sets cols.since to the tick of this pass, so no row reports",
 		find: `    view.since = this._resolver.getLastRunTick();`,
-		to: `    view.since = this._resolver.getChangeTick();`,
+		to: `    view.since = this._resolver.getChangeTick();`
 	},
 	{
 		// The same fault on the `changed()` path. It also silences the filter on the
@@ -743,7 +743,7 @@ const MUTANTS = [
 		id: "changed-chunk-since-is-the-current-tick",
 		what: "changed().forEachChunk sets cols.since to the tick of this pass",
 		find: `    view.since = q.lastRunTick();`,
-		to: `    view.since = q.changeTick();`,
+		to: `    view.since = q.changeTick();`
 	},
 	{
 		// `addPhase` must order the new phase against the phases it names. Declaration
@@ -757,7 +757,7 @@ const MUTANTS = [
     }`,
 		to: `    for (const target of []) {
       node.before.push(this._checkPhase(target));
-    }`,
+    }`
 	},
 	{
 		// The other half. The census after UPDATE is declared before the census
@@ -770,7 +770,7 @@ const MUTANTS = [
     }`,
 		to: `    for (const target of []) {
       node.after.push(this._checkPhase(target));
-    }`,
+    }`
 	},
 	{
 		// `ctx.sparseChanged` compares the sparse row tick with the previous run of
@@ -779,7 +779,7 @@ const MUTANTS = [
 		id: "sparse-changed-reads-the-wrong-tick",
 		what: "ctx.sparseChanged compares the sparse row tick with the wrong tick",
 		find: `    return this._store.sparseTickOf(def, entityId) > this.lastRunTick;`,
-		to: `    return this._store.sparseTickOf(def, entityId) > this._store.changeTick;`,
+		to: `    return this._store.sparseTickOf(def, entityId) > this._store.changeTick;`
 	},
 	// ── the mutants for the probes of the API surface ───────────────────────
 	// The battery reaches these through its last case. The report of the
@@ -791,33 +791,33 @@ const MUTANTS = [
 		what: "assertTemplate accepts every value, so a bundle reaches the store as a template",
 		devOnly: true,
 		find: `typeof value.archetypeId === "number"`,
-		to: `true`,
+		to: `true`
 	},
 	{
 		id: "template-array-guard-never-fires",
 		what: "the pre-0.5 array shape reaches the store instead of a named refusal",
 		devOnly: true,
 		find: `if (DEV && items.length === 1 && Array.isArray(items[0])) {`,
-		to: `if (false) {`,
+		to: `if (false) {`
 	},
 	{
 		id: "restore-error-carries-another-category",
 		what: "ECSRestoreError carries another category",
 		find: `super("SNAPSHOT_RESTORE_FAILED" /* SNAPSHOT_RESTORE_FAILED */, message);`,
-		to: `super("DETERMINISM_DISABLED" /* DETERMINISM_DISABLED */, message);`,
+		to: `super("DETERMINISM_DISABLED" /* DETERMINISM_DISABLED */, message);`
 	},
 	{
 		id: "restore-error-keeps-the-base-name",
 		what: "ECSRestoreError keeps the name of its base class",
 		find: `    this.name = "ECSRestoreError";`,
-		to: `    this.name = "ECSError";`,
+		to: `    this.name = "ECSError";`
 	},
 	{
 		id: "archetype-term-guard-never-fires",
 		what: "a reader of the dense list answers a query that carries an archetype term",
 		devOnly: true,
 		find: `    if (terms.length === 0) return;`,
-		to: `    if (terms.length >= 0) return;`,
+		to: `    if (terms.length >= 0) return;`
 	},
 	{
 		id: "dense-guard-ignores-a-sparse-term",
@@ -826,32 +826,32 @@ const MUTANTS = [
 		// The bundle folds the condition onto one line. So the pattern names the
 		// whole line, and not the first term of it.
 		find: `    if (this.terms.sparseIncludes.length > 0 || this.terms.sparseExcludes.length > 0 ||`,
-		to: `    if (this.terms.sparseIncludes.length > 99 || this.terms.sparseExcludes.length > 0 ||`,
+		to: `    if (this.terms.sparseIncludes.length > 99 || this.terms.sparseExcludes.length > 0 ||`
 	},
 	{
 		id: "missing-plugin-slot-answers-undefined",
 		what: "a slot for a plugin that is absent answers undefined",
-		find: `throw pluginMissingError(plugin, `+"`ecs.${plugin}.${key}`"+`);`,
-		to: `return undefined;`,
+		find: `throw pluginMissingError(plugin, ` + "`ecs.${plugin}.${key}`" + `);`,
+		to: `return undefined;`
 	},
 	{
 		id: "a-second-plugin-of-one-name-installs",
 		what: "a second plugin of one name installs",
 		find: `if (installed.has(plugin.name)) throw pluginInstalledTwiceError(plugin.name);`,
-		to: `if (false) throw pluginInstalledTwiceError(plugin.name);`,
+		to: `if (false) throw pluginInstalledTwiceError(plugin.name);`
 	},
 	{
 		id: "the-surface-guard-accepts-a-collision",
 		what: "the surface guard accepts a facade that overwrites a member of the world",
 		devOnly: true,
 		find: `    if (key in world) {`,
-		to: `    if (false) {`,
+		to: `    if (false) {`
 	},
 	{
 		id: "a-foreign-phase-handle-is-accepted",
 		what: "a phase handle from another world is accepted",
 		find: `    if (node.owner !== this) {`,
-		to: `    if (false) {`,
+		to: `    if (false) {`
 	},
 	{
 		// The bare `if (err instanceof TypeError) {` matches two times, because the
@@ -864,37 +864,37 @@ const MUTANTS = [
           "CIRCULAR_PHASE_DEPENDENCY"`,
 		to: `      if (false) {
         throw new ECSError(
-          "CIRCULAR_PHASE_DEPENDENCY"`,
+          "CIRCULAR_PHASE_DEPENDENCY"`
 	},
 	{
 		id: "a-before-edge-points-the-wrong-way",
 		what: "a before edge between two phases points the wrong way",
 		find: `        if (other !== node && inLoop.has(other)) edges.get(node).push(other);`,
-		to: `        if (other !== node && inLoop.has(other)) edges.get(other).push(node);`,
+		to: `        if (other !== node && inLoop.has(other)) edges.get(other).push(node);`
 	},
 	{
 		id: "the-seam-ignores-the-phase-the-caller-named",
 		what: "the host write seam drains at its default phases and not at the one the caller named",
 		find: `  const schedules = opts?.schedules ?? [`,
-		to: `  const schedules = [`,
+		to: `  const schedules = [`
 	},
 	{
 		id: "the-rebuild-ignores-every-archetype-term",
 		what: "the rebuild of a query keeps every archetype that the mask picked",
 		find: `if (!terms[t].matches(arch.mask)) continue outer;`,
-		to: `if (false) continue outer;`,
+		to: `if (false) continue outer;`
 	},
 	{
 		id: "not-matches-where-it-must-refuse",
 		what: "not accepts an archetype that one operand accepts",
 		find: `        if (parts[i](mask)) return false;`,
-		to: `        if (parts[i](mask)) return true;`,
+		to: `        if (parts[i](mask)) return true;`
 	},
 	{
 		id: "a-derive-drops-the-archetype-terms",
 		what: "a derive of a query drops the archetype terms",
 		find: `    archetypeTerms: patch.archetypeTerms ?? base.archetypeTerms`,
-		to: `    archetypeTerms: base.archetypeTerms`,
+		to: `    archetypeTerms: base.archetypeTerms`
 	},
 	// ── the layout of the memory ────────────────────────────────────────────
 	// The battery reaches these through its `memory` case. Each other case runs at
@@ -909,7 +909,7 @@ const MUTANTS = [
 		find: `function createView(buffer, storeBase, typeTag, relOff, rowCapacity) {
   const byteOff = storeBase + relOff;`,
 		to: `function createView(buffer, storeBase, typeTag, relOff, rowCapacity) {
-  const byteOff = relOff;`,
+  const byteOff = relOff;`
 	},
 	{
 		// The refusal at the cap must name the world that it refused. Without the
@@ -919,7 +919,7 @@ const MUTANTS = [
 		id: "the-cap-refusal-names-no-live-count",
 		what: "the refusal at the byte ceiling does not name the live entities of the world",
 		find: `      intent = \` Declared \${ctx.intentLabel}. The ECS holds \${live} live entities.\`;`,
-		to: `      intent = \` Declared \${ctx.intentLabel}.\`;`,
+		to: `      intent = \` Declared \${ctx.intentLabel}.\`;`
 	},
 	// ── the fixed buffer and the pool ───────────────────────────────────────
 	// The battery reaches the first two through its `memory` case, and the last
@@ -933,7 +933,7 @@ const MUTANTS = [
 		id: "the-fixed-allocator-grows",
 		what: "the fixed allocator grows its buffer instead of reserving the whole cap",
 		find: `      create: (_byteLength, maxByteLength) => new SharedArrayBuffer(maxByteLength),`,
-		to: `      create: (byteLength, maxByteLength) => new SharedArrayBuffer(byteLength, { maxByteLength }),`,
+		to: `      create: (byteLength, maxByteLength) => new SharedArrayBuffer(byteLength, { maxByteLength }),`
 	},
 	{
 		// The ceiling is a hard ceiling. This mutant applies it at twice the value
@@ -942,7 +942,7 @@ const MUTANTS = [
 		id: "the-cap-check-lets-a-grow-through",
 		what: "the byte ceiling is applied at twice the value the caller declared",
 		find: `    if (bytes > maxBytes) {`,
-		to: `    if (bytes > maxBytes * 2) {`,
+		to: `    if (bytes > maxBytes * 2) {`
 	},
 	{
 		// A worker reads the enabled row count of each archetype out of its
@@ -953,7 +953,7 @@ const MUTANTS = [
 		id: "the-pool-skips-the-last-row-of-a-partition",
 		what: "the published enabled row count is one short, so no worker owns the last row",
 		find: `        a.hasColumns ? a.enabledCount : 0,`,
-		to: `        a.hasColumns ? Math.max(0, a.enabledCount - 1) : 0,`,
+		to: `        a.hasColumns ? Math.max(0, a.enabledCount - 1) : 0,`
 	},
 	{
 		// The join stamps what the pass wrote, because a worker writes columns and
@@ -963,7 +963,7 @@ const MUTANTS = [
 		what: "the join of the pool leaves the archetype change tick of the written columns alone",
 		find: `        archetype.columnGroupMut(def, runTick);
         const ticks = archetype.rowTicks[def.id];`,
-		to: `        const ticks = archetype.rowTicks[def.id];`,
+		to: `        const ticks = archetype.rowTicks[def.id];`
 	},
 	{
 		// The split of the rows lives inside the worker. Each worker takes the half
@@ -977,7 +977,7 @@ const MUTANTS = [
 		id: "split-end-short-by-one",
 		what: "each worker's row range ends one row early, so a row at each boundary is skipped",
 		find: `      const end = Math.floor(rows * (index + 1) / count);`,
-		to: `      const end = Math.floor(rows * (index + 1) / count) - 1;`,
+		to: `      const end = Math.floor(rows * (index + 1) / count) - 1;`
 	},
 	{
 		// The other direction. Every worker after the first begins one row below its
@@ -986,7 +986,7 @@ const MUTANTS = [
 		id: "split-begin-overlaps",
 		what: "each worker after the first begins one row early, so a row is done two times",
 		find: `      const begin = Math.floor(rows * index / count);`,
-		to: `      const begin = Math.floor(rows * index / count) - (index > 0 ? 1 : 0);`,
+		to: `      const begin = Math.floor(rows * index / count) - (index > 0 ? 1 : 0);`
 	},
 	{
 		// The tail alone. Each range but the last is correct, and the last worker
@@ -995,8 +995,8 @@ const MUTANTS = [
 		id: "split-last-worker-stops-short",
 		what: "the last worker stops one row short of the tail",
 		find: `      const end = Math.floor(rows * (index + 1) / count);`,
-		to: `      const end = index === count - 1 ? Math.max(0, rows - 1) : Math.floor(rows * (index + 1) / count);`,
-	},
+		to: `      const end = index === count - 1 ? Math.max(0, rows - 1) : Math.floor(rows * (index + 1) / count);`
+	}
 ];
 
 // ── the battery each mutant is run against ──────────────────────────────────
@@ -1012,16 +1012,26 @@ const BATTERY = [
 	{ name: "dup:6", args: ["--net=dup:6", "--batch=4", "--verify=1", "--snap=8"] },
 	{
 		name: "random:3",
-		args: ["--net=random:3,30,18,20", "--steps=4000", "--batch=8", "--verify=2", "--snap=32"],
+		args: ["--net=random:3,30,18,20", "--steps=4000", "--batch=8", "--verify=2", "--snap=32"]
 	},
 	// the two large cases keep the fingerprint at each tick, which is what names the
 	// tick of a fault in a large archetype, and they give the checkpoints inside a
 	// tick a cadence: each checkpoint is one more scan of each agent, and the battery
 	// must stay fast.
-	{ name: "erase:14", args: ["--net=erase:14", "--batch=32", "--verify=8", "--snap=0", "--phase=8"] },
+	{
+		name: "erase:14",
+		args: ["--net=erase:14", "--batch=32", "--verify=8", "--snap=0", "--phase=8"]
+	},
 	{
 		name: "grow:2",
-		args: ["--net=random:2,24,24,12", "--steps=20000", "--batch=32", "--verify=16", "--snap=0", "--phase=8"],
+		args: [
+			"--net=random:2,24,24,12",
+			"--steps=20000",
+			"--batch=32",
+			"--verify=16",
+			"--snap=0",
+			"--phase=8"
+		]
 	},
 	// the float arm. `Mix.mf32` and `Mix.bf32` exist in this arm alone, so a fault in
 	// the `f32` path of the row plane has no other case that can show it.
@@ -1038,7 +1048,7 @@ const BATTERY = [
 	// simulation reaches. Before this case, each case named a `--net=`. Therefore
 	// `surface.mjs` never ran against a mutant, and no probe in it had evidence that
 	// it can fail.
-	{ name: "surface", args: ["--surface"] },
+	{ name: "surface", args: ["--surface"] }
 ];
 
 function runOracle(libPath, args) {
@@ -1061,13 +1071,18 @@ function runOracle(libPath, args) {
  * the engine, and an engine error is a detection but not evidence about the oracle.
  */
 function reason(out) {
-	const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+	const lines = out
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
 	const i = lines.findIndex((l) => l === "DIVERGENCE");
 	if (i >= 0 && lines[i + 1]) return { by: "oracle", why: lines[i + 1] };
 	// `fail()` throws a plain `Error` whose message names the case, the tick and the
 	// layer in brackets. The harness's own observer bookkeeping throws with an
 	// `observer:` prefix. Both are the oracle finding the fault.
-	const harness = lines.find((l) => /^Error: .*\[(ecs|ref|prov)[^\]]*\]:/.test(l) || /^Error: observer:/.test(l));
+	const harness = lines.find(
+		(l) => /^Error: .*\[(ecs|ref|prov)[^\]]*\]:/.test(l) || l.startsWith("Error: observer:")
+	);
 	if (harness !== undefined) return { by: "oracle", why: harness };
 	const err = lines.find((l) => /Error:|error:/.test(l));
 	return { by: "engine", why: err ?? lines[lines.length - 1] ?? "(no output)" };
@@ -1105,7 +1120,9 @@ for (const m of MUTANTS) {
 	}
 	const hits = baseSrc.split(m.find).length - 1;
 	if (hits !== 1) {
-		console.error(`  ${m.id}: pattern matched ${hits}x in the bundle (want exactly 1), mutant is stale`);
+		console.error(
+			`  ${m.id}: pattern matched ${hits}x in the bundle (want exactly 1), mutant is stale`
+		);
 		escaped.push({ ...m, why: `pattern matched ${hits}x` });
 		continue;
 	}

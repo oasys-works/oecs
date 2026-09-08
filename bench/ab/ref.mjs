@@ -74,7 +74,8 @@ const flag = (name, dflt) => {
 	return i >= 0 ? args[i + 1] : dflt;
 };
 const has = (name) => args.includes(`--${name}`);
-const isValueOf = (i) => i > 0 && VALUE_FLAGS.has(args[i - 1].replace(/^--/, "")) && args[i - 1].startsWith("--");
+const isValueOf = (i) =>
+	i > 0 && VALUE_FLAGS.has(args[i - 1].replace(/^--/, "")) && args[i - 1].startsWith("--");
 
 const ref = flag("ref", "HEAD");
 // Even by default. The delta below is a median in each order, and the two orders
@@ -206,7 +207,7 @@ function balance(ratios) {
 	const kOdd = centre / mOdd;
 	return {
 		centre,
-		balanced: ratios.map((r, i) => r * (i % 2 === 0 ? kEven : kOdd)),
+		balanced: ratios.map((r, i) => r * (i % 2 === 0 ? kEven : kOdd))
 	};
 }
 
@@ -253,13 +254,7 @@ for (const name of names) {
 	// middle half included zero.
 	const decisive = Math.abs(delta) > 3;
 	const noisy = decisive ? lo * hi <= 0 : hi - lo > 10;
-	const mark = noisy
-		? "noisy "
-		: delta < -3
-			? "faster"
-			: delta > 3
-				? "slower"
-				: "  ~   ";
+	const mark = noisy ? "noisy " : delta < -3 ? "faster" : delta > 3 ? "slower" : "  ~   ";
 	if (!noisy && delta < -3) improved++;
 	if (!noisy && delta > 3) regressed++;
 	// The floor takes every row, and it does not exclude the noisy rows. A noisy row

@@ -55,7 +55,7 @@ export function mixSchema(float) {
 		b8: "i8",
 		b16: "i16",
 		bu16: "u16",
-		bu32: "u32",
+		bu32: "u32"
 	};
 	if (float) {
 		s.mf32 = "f32";
@@ -70,7 +70,7 @@ export function mirrorOf(seq) {
 		m8: ((seq * 37 - 3) << 24) >> 24,
 		m16: ((seq * 7919 - 300) << 16) >> 16,
 		mu16: (seq * 40503 + 65535) & 0xffff,
-		mu32: (Math.imul(seq, 0x9e3779b1) ^ 0xffffffff) >>> 0,
+		mu32: (Math.imul(seq, 0x9e3779b1) ^ 0xffffffff) >>> 0
 	};
 }
 

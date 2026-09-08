@@ -290,7 +290,10 @@ export function appendOptional(terms: readonly ComponentID[], id: number): reado
 
 // Append a relation id to a `(R, *)` access-term list, de-duplicating.
 // Same shape as `appendSparse`. Tiny lists, free linear scan.
-export function appendRelation(terms: readonly RelationDef[], def: RelationDef): readonly RelationDef[] {
+export function appendRelation(
+	terms: readonly RelationDef[],
+	def: RelationDef
+): readonly RelationDef[] {
 	for (let i = 0; i < terms.length; i++) {
 		if ((terms[i] as number) === (def as number)) return terms;
 	}

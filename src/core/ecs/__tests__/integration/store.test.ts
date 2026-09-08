@@ -199,9 +199,7 @@ describe("Store (integration)", () => {
 		expect(allEntities).toContain(e2);
 
 		// Query for [Pos, Vel] - only e1's archetype matches
-		const posVelMatches = store.getMatchingArchetypes(
-			makeMask(Pos.id, Vel.id)
-		);
+		const posVelMatches = store.getMatchingArchetypes(makeMask(Pos.id, Vel.id));
 		expect(posVelMatches.length).toBe(1);
 		expect(posVelMatches[0].rowEntityIds).toContain(e1);
 

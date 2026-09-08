@@ -138,9 +138,9 @@ describe("store base, layout", () => {
 				32
 			);
 			generations[5] = 9;
-			expect(
-				atBase.getInt32(entityIndexGenerationsOff(header.entityIndexOff) + 5 * 4, true)
-			).toBe(9);
+			expect(atBase.getInt32(entityIndexGenerationsOff(header.entityIndexOff) + 5 * 4, true)).toBe(
+				9
+			);
 
 			// Rings: each present region reports a nonzero relative offset inside
 			// the span, and the region table resolves the consumer region there.
@@ -280,10 +280,7 @@ describe("store base, grow", () => {
 			},
 			allocator
 		).store;
-		capacity = new DataView(store.buffer, storeBase).getUint32(
-			STORE_HEADER_OFFSETS.capacity,
-			true
-		);
+		capacity = new DataView(store.buffer, storeBase).getUint32(STORE_HEADER_OFFSETS.capacity, true);
 		expect(store.buffer.byteLength).toBe(storeBase + capacity);
 	});
 
@@ -294,11 +291,7 @@ describe("store base, grow", () => {
 		const store = makeStore(storeBase);
 		const before = store.header;
 		// Stamp the entity index and the consumer region so the copy is visible.
-		store.view.setUint32(
-			before.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length,
-			42,
-			true
-		);
+		store.view.setUint32(before.entityIndexOff + ENTITY_INDEX_HEADER_OFFSETS.length, 42, true);
 		const regionOff = findRegionEntry(store.view, REGION_ID)!.byteOffset;
 		store.view.setUint32(regionOff + 4, 0x0badf00d, true);
 
@@ -365,9 +358,7 @@ describe("store base, snapshot and restore", () => {
 		for (const [id, arch] of a.archetypes) {
 			const other = b.archetypes.get(id)!;
 			for (let c = 0; c < arch.columnsInOrder.length; c++) {
-				expect(other.columnsInOrder[c].view.byteOffset).toBe(
-					48 + arch.columnsInOrder[c].byteOff
-				);
+				expect(other.columnsInOrder[c].view.byteOffset).toBe(48 + arch.columnsInOrder[c].byteOff);
 				expect([...other.columnsInOrder[c].view]).toEqual([...arch.columnsInOrder[c].view]);
 			}
 		}

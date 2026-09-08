@@ -65,7 +65,7 @@ const N = (i, p) => i * 8 + p;
  * `agentSlot` is 0 for the first redex agent, 1 for the second. */
 const EXT_CODE = [
 	[undefined, A1, A2], // first agent: ports 1, 2
-	[undefined, B1, B2], // second agent: ports 1, 2
+	[undefined, B1, B2] // second agent: ports 1, 2
 ];
 
 /**
@@ -82,8 +82,22 @@ export const RULES = [];
 
 // γ ⋈ γ, annihilation: the two agents vanish, their aux ports wire straight
 // through. Same for δ ⋈ δ.
-RULES[CON * 4 + CON] = { name: "CON~CON", news: [], wires: [[A1, B1], [A2, B2]] };
-RULES[DUP * 4 + DUP] = { name: "DUP~DUP", news: [], wires: [[A1, B1], [A2, B2]] };
+RULES[CON * 4 + CON] = {
+	name: "CON~CON",
+	news: [],
+	wires: [
+		[A1, B1],
+		[A2, B2]
+	]
+};
+RULES[DUP * 4 + DUP] = {
+	name: "DUP~DUP",
+	news: [],
+	wires: [
+		[A1, B1],
+		[A2, B2]
+	]
+};
 
 // ε ⋈ ε, annihilation with nothing left over.
 RULES[ERA * 4 + ERA] = { name: "ERA~ERA", news: [], wires: [] };
@@ -94,12 +108,18 @@ RULES[ERA * 4 + ERA] = { name: "ERA~ERA", news: [], wires: [] };
 RULES[CON * 4 + ERA] = {
 	name: "CON~ERA",
 	news: [ERA, ERA],
-	wires: [[N(0, 0), A1], [N(1, 0), A2]],
+	wires: [
+		[N(0, 0), A1],
+		[N(1, 0), A2]
+	]
 };
 RULES[DUP * 4 + ERA] = {
 	name: "DUP~ERA",
 	news: [ERA, ERA],
-	wires: [[N(0, 0), A1], [N(1, 0), A2]],
+	wires: [
+		[N(0, 0), A1],
+		[N(1, 0), A2]
+	]
 };
 
 // γ ⋈ δ, commutation: each agent is duplicated across the other, and the four
@@ -124,8 +144,8 @@ RULES[CON * 4 + DUP] = {
 		[N(0, 1), N(2, 1)],
 		[N(0, 2), N(3, 1)],
 		[N(1, 1), N(2, 2)],
-		[N(1, 2), N(3, 2)],
-	],
+		[N(1, 2), N(3, 2)]
+	]
 };
 
 /**

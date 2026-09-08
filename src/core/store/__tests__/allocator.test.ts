@@ -160,8 +160,16 @@ describe("wasmMemoryAllocator, in-place contract", () => {
 // both so any future divergence in cap arithmetic, in-place reporting, or
 // buffer-identity semantics fails loudly on the strategy that drifted.
 describe.each([
-	["growableSabAllocator", growableSabAllocator, SharedArrayBuffer as ArrayBufferLike["constructor"]],
-	["heapArrayBufferAllocator", heapArrayBufferAllocator, ArrayBuffer as ArrayBufferLike["constructor"]]
+	[
+		"growableSabAllocator",
+		growableSabAllocator,
+		SharedArrayBuffer as ArrayBufferLike["constructor"]
+	],
+	[
+		"heapArrayBufferAllocator",
+		heapArrayBufferAllocator,
+		ArrayBuffer as ArrayBufferLike["constructor"]
+	]
 ] as const)("%s, shared growable-allocator contract", (_label, factory, BufferCtor) => {
 	it("rejects invalid maxBytes", () => {
 		expect(() => factory(0)).toThrow(/positive integer/);

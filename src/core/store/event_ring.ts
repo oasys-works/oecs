@@ -178,11 +178,7 @@ export function popEvent(view: DataView, ringOff: number, outPayload: Uint8Array
 	const slotIdx = readHead & (capacity - 1);
 	const slotOff = ringOff + EVENT_RING_HEADER_BYTES + slotIdx * EVENT_RING_SLOT_BYTES;
 	const opCode = view.getUint8(slotOff);
-	const src = new Uint8Array(
-		view.buffer,
-		view.byteOffset + slotOff + 1,
-		EVENT_RING_SLOT_BYTES - 1
-	);
+	const src = new Uint8Array(view.buffer, view.byteOffset + slotOff + 1, EVENT_RING_SLOT_BYTES - 1);
 	outPayload.set(src);
 	view.setUint32(ringOff + EVENT_RING_HEADER_OFFSETS.read_head, (readHead + 1) >>> 0, true);
 	return opCode;

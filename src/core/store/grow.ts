@@ -206,9 +206,7 @@ function growColumnStoreInPlace(
 
 	// 6. Build views for the grown archetypes only. Carry the rest forward
 	//    verbatim (their views still read the same valid memory).
-	const grownViews = createArchetypeViews(grownBuffer, old.storeBase, [
-		...newDescriptors.values()
-	]);
+	const grownViews = createArchetypeViews(grownBuffer, old.storeBase, [...newDescriptors.values()]);
 	const merged = new Map<number, ArchetypeViews>();
 	for (const [archetypeId, arch] of old.archetypes) {
 		const rebuilt = grownViews.get(archetypeId);
@@ -231,8 +229,7 @@ function growColumnStoreInPlace(
 	};
 
 	const grownArchetypeIds: number[] = new Array(growTargets.length);
-	for (let t = 0; t < growTargets.length; t++)
-		grownArchetypeIds[t] = growTargets[t].archetypeId;
+	for (let t = 0; t < growTargets.length; t++) grownArchetypeIds[t] = growTargets[t].archetypeId;
 
 	return {
 		store: newStore,

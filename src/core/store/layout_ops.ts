@@ -121,8 +121,7 @@ export function growBufferInPlace(
 	// `newTotal` is the store span. The allocator sizes the whole backing, so
 	// the base rides along.
 	const grownBuffer = old._allocator(old.storeBase + newTotal);
-	const newView =
-		grownBuffer !== old.buffer ? new DataView(grownBuffer, old.storeBase) : old.view;
+	const newView = grownBuffer !== old.buffer ? new DataView(grownBuffer, old.storeBase) : old.view;
 	return { grownBuffer, newView };
 }
 
@@ -196,14 +195,12 @@ export function optionsFromOld(old: ColumnStore): CreateColumnStoreOptions {
 	// reserve the right span at the same offset.
 	const table = readHeaderRegionTable(old.view);
 	if (table.length > 0) {
-		options.regions = table.map(
-			(e): StoreRegionSpec => ({
-				id: e.regionId,
-				name: `region:${e.regionId}`,
-				bytes: e.byteLength,
-				init: () => {}
-			})
-		);
+		options.regions = table.map((e): StoreRegionSpec => ({
+			id: e.regionId,
+			name: `region:${e.regionId}`,
+			bytes: e.byteLength,
+			init: () => {}
+		}));
 	}
 	// Sim-bindings region: self-describing from the old header, the
 	// region is the gap between `bindings_off` and the descriptor region, so its
@@ -258,10 +255,7 @@ export function snapshotRegions(old: ColumnStore): PrefixRegionSnapshot {
 		// boundary: TypedArray interop. Materialise a Uint8Array view over the
 		// region's byte range, then copy via slice() so the heap copy survives
 		// an allocator-induced detach.
-		mechanism.set(
-			region.headerOff,
-			new Uint8Array(old.buffer, old.storeBase + off, bytes).slice()
-		);
+		mechanism.set(region.headerOff, new Uint8Array(old.buffer, old.storeBase + off, bytes).slice());
 	}
 	// Consumer regions: the directory carries each region's offset + byte length
 	// directly, so the snapshot needs no per-region helper (unlike mechanism

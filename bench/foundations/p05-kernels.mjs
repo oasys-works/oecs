@@ -255,7 +255,9 @@ if (which) {
 				got[p] = runVariantOn(rt, import.meta.url, `${p}+${kernel}`);
 			}
 			if (!got.heap || got.heap.blocked) {
-				console.log(`  ${kernel.padEnd(14)} ${String(SIZES[kernel]).padEnd(9)} ${rt.cmd.padEnd(12)} ! no heap baseline`);
+				console.log(
+					`  ${kernel.padEnd(14)} ${String(SIZES[kernel]).padEnd(9)} ${rt.cmd.padEnd(12)} ! no heap baseline`
+				);
 				continue;
 			}
 			const cell = (p) => {

@@ -63,7 +63,14 @@ describe("FrameStepper", () => {
 	it("validates dt and frame counts with INVALID_FRAME_STEP", () => {
 		const { ecs } = world();
 		const stepper = new FrameStepper(ecs);
-		for (const bad of [() => stepper.step(-1), () => stepper.step(NaN), () => stepper.stepFrames(1.5), () => stepper.stepFrames(-1), () => new FrameStepper(ecs, { fixedDt: Infinity }), () => (stepper.maxDt = -0.1)]) {
+		for (const bad of [
+			() => stepper.step(-1),
+			() => stepper.step(NaN),
+			() => stepper.stepFrames(1.5),
+			() => stepper.stepFrames(-1),
+			() => new FrameStepper(ecs, { fixedDt: Infinity }),
+			() => (stepper.maxDt = -0.1)
+		]) {
 			try {
 				bad();
 				expect.unreachable("expected INVALID_FRAME_STEP");

@@ -41,9 +41,7 @@ describe("dispatch_trace.resolveCallsiteFromStack", () => {
 		// Regression guard: if the engine frame skip is removed
 		// (or its marker string drifts), the first engine frame
 		// (dispatch_trace.ts) is attributed instead and this assertion fails.
-		expect(resolveCallsiteFromStack(stack, "/repo")).toBe(
-			"game/src/systems/combat/death.ts"
-		);
+		expect(resolveCallsiteFromStack(stack, "/repo")).toBe("game/src/systems/combat/death.ts");
 	});
 
 	it("skips the installed package under node_modules and attributes the first app frame", () => {
@@ -61,9 +59,7 @@ describe("dispatch_trace.resolveCallsiteFromStack", () => {
 			...engineFrames,
 			"    at deathSystem (file:///repo/game/src/systems/combat/death.ts:42:10)"
 		].join("\n");
-		expect(resolveCallsiteFromStack(stack, "/repo")).toBe(
-			"game/src/systems/combat/death.ts"
-		);
+		expect(resolveCallsiteFromStack(stack, "/repo")).toBe("game/src/systems/combat/death.ts");
 	});
 
 	it("returns null when every frame is inside the engine ECS package", () => {

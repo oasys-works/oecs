@@ -445,9 +445,7 @@ export const STORE_BASE_ALIGNMENT = 16;
  * `ECS_ERROR` code, so a world never reaches this. A direct store caller does. */
 export function assertStoreBase(storeBase: number): void {
 	if (!Number.isInteger(storeBase) || storeBase < 0) {
-		throw new RangeError(
-			`createColumnStore: storeBase must be an integer >= 0, got ${storeBase}`
-		);
+		throw new RangeError(`createColumnStore: storeBase must be an integer >= 0, got ${storeBase}`);
 	}
 	if (storeBase % STORE_BASE_ALIGNMENT !== 0) {
 		throw new RangeError(

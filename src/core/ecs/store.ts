@@ -43,15 +43,10 @@ import {
 	INDEX_MASK as INDEX_MASK_IMPORT,
 	MAX_ENTITY_ID as MAX_ENTITY_ID_IMPORT,
 	RETIRED_GENERATION as RETIRED_GENERATION_IMPORT,
-	type EntityID
-,
+	type EntityID,
 	entityNotAliveError
 } from "./entity";
-import {
-	type AccessorColumns,
-	type CursorBinder,
-	type SparseCursorCheck
-} from "./ref";
+import { type AccessorColumns, type CursorBinder, type SparseCursorCheck } from "./ref";
 import type { FrameTraceSink } from "./frame_trace";
 import {
 	appendComponentMeta,
@@ -78,17 +73,8 @@ import type { RelationDef, RelationHooks, RelationServiceHost } from "./relation
 import type { EventHooks } from "./event";
 import { ResourceRegistry } from "./resource_registry";
 import { QueryRegistry } from "./query_registry";
-import {
-	unsafeCast,
-	BitSet,
-	type TypedArrayTag
-} from "../../type_primitives";
-import {
-	Archetype,
-	_moveResult,
-	type ArchetypeColumnLayout,
-	type ArchetypeID
-} from "./archetype";
+import { unsafeCast, BitSet, type TypedArrayTag } from "../../type_primitives";
+import { Archetype, _moveResult, type ArchetypeColumnLayout, type ArchetypeID } from "./archetype";
 import type { Query } from "./query";
 import type { QueryHost } from "./query_cache";
 import type { QueryTerms } from "./query_terms";
@@ -214,7 +200,6 @@ type TemplateFieldNames<Defs extends readonly ComponentDef[]> =
 export type TemplateOverrides<Defs extends readonly ComponentDef[]> = {
 	readonly [K in TemplateFieldNames<Defs>]?: number;
 };
-
 
 export interface StoreOptions {
 	initialCapacity?: number;
@@ -1043,11 +1028,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		this._entityRows = views.rows;
 		this._entityAllocator.replantViews(
 			views.generations,
-			new Uint32Array(
-				this._columnStore.buffer,
-				base + off + ENTITY_INDEX_HEADER_OFFSETS.length,
-				1
-			)
+			new Uint32Array(this._columnStore.buffer, base + off + ENTITY_INDEX_HEADER_OFFSETS.length, 1)
 		);
 	}
 
@@ -2274,10 +2255,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// Deferred structural changes
 	// =======================================================
 
-	public addComponentDeferred(
-		entityId: EntityID,
-		def: ComponentDef<Record<string, never>>
-	): void;
+	public addComponentDeferred(entityId: EntityID, def: ComponentDef<Record<string, never>>): void;
 	public addComponentDeferred<S extends ComponentSchema>(
 		entityId: EntityID,
 		def: ComponentDef<S>,
@@ -2288,12 +2266,14 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		def: ComponentDef,
 		values?: Record<string, number>
 	): void {
-		if (DEV && !this.isAlive(entityId)) throw entityNotAliveError("addComponentDeferred", entityId, this.componentLabel(def.id));
+		if (DEV && !this.isAlive(entityId))
+			throw entityNotAliveError("addComponentDeferred", entityId, this.componentLabel(def.id));
 		this._deferred.queueAdd(entityId, def, values ?? EMPTY_VALUES);
 	}
 
 	public removeComponentDeferred(entityId: EntityID, def: ComponentDef): void {
-		if (DEV && !this.isAlive(entityId)) throw entityNotAliveError("removeComponentDeferred", entityId, this.componentLabel(def.id));
+		if (DEV && !this.isAlive(entityId))
+			throw entityNotAliveError("removeComponentDeferred", entityId, this.componentLabel(def.id));
 		this._deferred.queueRemove(entityId, def);
 	}
 
@@ -2935,9 +2915,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	/** Sparse sibling of `componentLabel`, sparse ids are a separate id space. */
 	public sparseLabel(sid: number): string {
 		const name = this._sparseNames[sid];
-		return name !== undefined
-			? `'${name}' (sparse component ${sid})`
-			: `sparse component ${sid}`;
+		return name !== undefined ? `'${name}' (sparse component ${sid})` : `sparse component ${sid}`;
 	}
 
 	/** Allocate the backing sparse store without the float guard, for
@@ -2977,7 +2955,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		values?: Record<string, number>
 	): void {
 		if (!this.isAlive(entityId)) {
-			if (DEV) throw entityNotAliveError("addSparse", entityId, this.sparseLabel(def as unknown as number));
+			if (DEV)
+				throw entityNotAliveError(
+					"addSparse",
+					entityId,
+					this.sparseLabel(def as unknown as number)
+				);
 			return;
 		}
 		this._sparseStoreOf(def).setRow(getEntityIndex(entityId), values ?? EMPTY_VALUES);
@@ -2986,7 +2969,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	/** Remove a sparse component from an entity. No-op if absent. */
 	public removeSparse(entityId: EntityID, def: SparseComponentDef): void {
 		if (!this.isAlive(entityId)) {
-			if (DEV) throw entityNotAliveError("removeSparse", entityId, this.sparseLabel(def as unknown as number));
+			if (DEV)
+				throw entityNotAliveError(
+					"removeSparse",
+					entityId,
+					this.sparseLabel(def as unknown as number)
+				);
 			return;
 		}
 		this._sparseStoreOf(def).remove(getEntityIndex(entityId));
@@ -3001,7 +2989,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	public getSparseField(entityId: EntityID, def: SparseComponentDef, field: string): number {
-		if (DEV && !this.isAlive(entityId)) throw entityNotAliveError("getSparseField", entityId, `${this.sparseLabel(def as unknown as number)}.${field}`);
+		if (DEV && !this.isAlive(entityId))
+			throw entityNotAliveError(
+				"getSparseField",
+				entityId,
+				`${this.sparseLabel(def as unknown as number)}.${field}`
+			);
 		const store = this._sparseStoreOf(def);
 		const fieldIdx = store.fieldIndex[field];
 		if (fieldIdx === undefined) {
@@ -3032,7 +3025,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		field: string,
 		value: number
 	): void {
-		if (DEV && !this.isAlive(entityId)) throw entityNotAliveError("setSparseField", entityId, `${this.sparseLabel(def as unknown as number)}.${field}`);
+		if (DEV && !this.isAlive(entityId))
+			throw entityNotAliveError(
+				"setSparseField",
+				entityId,
+				`${this.sparseLabel(def as unknown as number)}.${field}`
+			);
 		const store = this._sparseStoreOf(def);
 		const fieldIdx = store.fieldIndex[field];
 		if (fieldIdx === undefined) {
@@ -3227,22 +3225,6 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// (the relations plugin), semantics and rationale are documented there.
 	// These delegations keep the Store surface stable for ecs.ts and the query
 	// internals.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	/** Second query-match path: iterate entities matching a
 	 * dense mask **and** sparse-membership terms, invoking `cb` per entity.
@@ -3537,12 +3519,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			this._onArchGrow(targetArch, tgtPre, tgtPreE);
 		}
 
-		targetArch.writeFields(
-			dstRow,
-			def.id,
-			values as Record<string, number>,
-			this.changeTick
-		);
+		targetArch.writeFields(dstRow, def.id, values as Record<string, number>, this.changeTick);
 
 		this._entityArchetypes[entityIndex] = targetArchetypeId;
 		this._entityRows[entityIndex] = dstRow;
@@ -4145,25 +4122,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// Event channels, delegations to the event registry
 	// =======================================================
 
-
-
-
-
-
-
-
-
-
 	// =======================================================
 	// Resource storage, delegations to `ResourceRegistry` (resource_registry.ts)
 	// =======================================================
 
 	private readonly _resources = new ResourceRegistry();
-
-
-
-
-
 }
-
-

@@ -95,19 +95,32 @@ function rustModule() {
 		"rustc",
 		[
 			`${HERE}kernel.rs`,
-			"--target", "wasm32-unknown-unknown",
-			"--edition", "2021",
-			"--crate-type", "cdylib",
-			"-C", "opt-level=3",
-			"-C", "panic=abort",
-			"-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
-			"-C", "link-arg=--import-memory",
-			"-C", "link-arg=--shared-memory",
-			"-C", `link-arg=--max-memory=${MAX_BYTES}`,
-			"-C", "link-arg=--no-entry",
-			"-C", "link-arg=--export=__heap_base",
-			"-C", "link-arg=--export=__stack_pointer",
-			"-o", out
+			"--target",
+			"wasm32-unknown-unknown",
+			"--edition",
+			"2021",
+			"--crate-type",
+			"cdylib",
+			"-C",
+			"opt-level=3",
+			"-C",
+			"panic=abort",
+			"-C",
+			"target-feature=+atomics,+bulk-memory,+mutable-globals",
+			"-C",
+			"link-arg=--import-memory",
+			"-C",
+			"link-arg=--shared-memory",
+			"-C",
+			`link-arg=--max-memory=${MAX_BYTES}`,
+			"-C",
+			"link-arg=--no-entry",
+			"-C",
+			"link-arg=--export=__heap_base",
+			"-C",
+			"link-arg=--export=__stack_pointer",
+			"-o",
+			out
 		],
 		{ encoding: "utf8" }
 	);
@@ -118,13 +131,15 @@ function rustModule() {
 
 function cModule() {
 	const zig = zigAvailable();
-	if (zig === null) return { skip: "zig cc is not on this machine, and apple clang has no wasm32 target" };
+	if (zig === null)
+		return { skip: "zig cc is not on this machine, and apple clang has no wasm32 target" };
 	const out = `${BUILD}kernel_c.wasm`;
 	const run = spawnSync(
 		zig,
 		[
 			"cc",
-			"-target", "wasm32-freestanding",
+			"-target",
+			"wasm32-freestanding",
 			"-O3",
 			"-nostdlib",
 			"-matomics",
@@ -140,7 +155,8 @@ function cModule() {
 			"-Wl,--export=table_i32",
 			"-Wl,--export=__heap_base",
 			"-Wl,--export=__stack_pointer",
-			"-o", out,
+			"-o",
+			out,
 			`${HERE}kernel.c`
 		],
 		{ encoding: "utf8" }
@@ -155,21 +171,29 @@ function assemblyScriptModule() {
 	const run = spawnSync(
 		"npx",
 		[
-			"--yes", "--package=assemblyscript", "asc",
+			"--yes",
+			"--package=assemblyscript",
+			"asc",
 			`${HERE}kernel_as.ts`,
-			"--outFile", out,
+			"--outFile",
+			out,
 			"--optimize",
-			"--runtime", "stub",
+			"--runtime",
+			"stub",
 			"--importMemory",
 			"--sharedMemory",
-			"--initialMemory", "1",
-			"--maximumMemory", String(MAX_PAGES),
+			"--initialMemory",
+			"1",
+			"--maximumMemory",
+			String(MAX_PAGES),
 			"--noAssert",
-			"--enable", "threads,bulk-memory,mutable-globals"
+			"--enable",
+			"threads,bulk-memory,mutable-globals"
 		],
 		{ encoding: "utf8" }
 	);
-	if (run.error !== undefined) return { skip: "npx would not start, so AssemblyScript is unreachable" };
+	if (run.error !== undefined)
+		return { skip: "npx would not start, so AssemblyScript is unreachable" };
 	if (run.status !== 0) return { error: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim() };
 	return { bytes: readFileSync(out), bodies: ["integrate_i32", "mix_i32"] };
 }
@@ -225,7 +249,10 @@ mkdirSync(BUILD, { recursive: true });
 mkdirSync(OUT, { recursive: true });
 
 const jobs = [
-	["kernel_emitted.wasm", () => ({ bytes: emitKernelModule({ minPages: 1, maxPages: MAX_PAGES }) })],
+	[
+		"kernel_emitted.wasm",
+		() => ({ bytes: emitKernelModule({ minPages: 1, maxPages: MAX_PAGES }) })
+	],
 	["kernel_zig.wasm", zigModule],
 	["kernel_rust.wasm", rustModule],
 	["kernel_c.wasm", cModule],

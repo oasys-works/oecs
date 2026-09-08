@@ -27,7 +27,8 @@ export async function loadWorkers() {
 /** The buffer the columns live in, reached through the public region seam. */
 export function storeBuffer(ecs) {
 	const handle = ecs.regionHandle(PROBE_REGION);
-	if (handle === null) throw new Error("probe region missing, pass regionSpec() in ECSOptions.regions");
+	if (handle === null)
+		throw new Error("probe region missing, pass regionSpec() in ECSOptions.regions");
 	return handle.buffer;
 }
 

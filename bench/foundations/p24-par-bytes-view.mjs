@@ -229,7 +229,9 @@ async function main() {
 	console.log(
 		`  byte fold: host ${v.hostFold}, worker ${v.workerFold}, ${v.foldMatch ? "equal" : "DIFFERENT"}`
 	);
-	console.log(`  lean walk fold: ${v.leanFold}, ${v.leanFold === v.hostFold ? "equal to the object walk" : "DIFFERENT"}`);
+	console.log(
+		`  lean walk fold: ${v.leanFold}, ${v.leanFold === v.hostFold ? "equal to the object walk" : "DIFFERENT"}`
+	);
 	console.log(
 		`  header the worker read: view_stamp ${v.walk.header.viewStamp}, capacity ${v.walk.header.capacity}, archetype_count ${v.walk.header.archetypeCount}`
 	);

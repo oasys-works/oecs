@@ -97,8 +97,7 @@ const WIDEST_COLUMN_STRIDE = Math.max(...Object.values(TYPE_TAG_STRIDE));
  * between the region and the first column, which the store already tolerates
  * as descriptor headroom. */
 function legacyDescriptorShift(archetypeCount: number): number {
-	const perArchetype =
-		ARCHETYPE_DESCRIPTOR_HEADER_BYTES - LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES;
+	const perArchetype = ARCHETYPE_DESCRIPTOR_HEADER_BYTES - LEGACY_ARCHETYPE_DESCRIPTOR_HEADER_BYTES;
 	return alignUp(archetypeCount * perArchetype, WIDEST_COLUMN_STRIDE);
 }
 
@@ -212,10 +211,7 @@ export function restoreColumnStore(
 	// so a truncated section fails with the typed error rather than a raw
 	// `RangeError` out of the walk. The read below re-checks the same field on
 	// the copy, which is the only check a version 1 section needs.
-	const inputRegionOff = inputView.getUint32(
-		STORE_HEADER_OFFSETS.layout_descriptor_off,
-		true
-	);
+	const inputRegionOff = inputView.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 	if (inputRegionOff > bytes.byteLength) {
 		throw new StoreRestoreError(
 			`layout_descriptor_off ${inputRegionOff} is outside the snapshot (${bytes.byteLength} bytes)`

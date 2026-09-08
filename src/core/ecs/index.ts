@@ -313,7 +313,13 @@ export { SparseRestoreError } from "./sparse_store";
 // Relations, (relation, target) pairs on the sparse storage class.
 // The handle type + registration options are public. The
 // `RelationStore` substrate stays internal (mutate via `ECS.addRelation` etc.).
-export type { RelationDef, RelationID, RelationCardinality, RelationOptions, OnDeleteTarget } from "./relation";
+export type {
+	RelationDef,
+	RelationID,
+	RelationCardinality,
+	RelationOptions,
+	OnDeleteTarget
+} from "./relation";
 // `(*, T)` wildcard query access sentinel, list in `relationReads` to
 // authorise `Query.forEachRelatedTo`, which reads every relation's reverse index.
 export { ANY_RELATION } from "./relation";

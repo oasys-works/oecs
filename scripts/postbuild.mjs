@@ -29,7 +29,10 @@ for (const entry of fs.readdirSync(pluginsSrc, { withFileTypes: true })) {
 	if (!fs.existsSync(path.join(pluginsSrc, name, "index.ts"))) continue;
 	const emitted = path.join(dist, "plugins", name, "index.d.ts");
 	if (!fs.existsSync(emitted)) continue;
-	fs.writeFileSync(path.join(dist, "plugins", `${name}.d.ts`), `export * from "./${name}/index";\n`);
+	fs.writeFileSync(
+		path.join(dist, "plugins", `${name}.d.ts`),
+		`export * from "./${name}/index";\n`
+	);
 	flat++;
 }
 console.log(`postbuild: ${flat} flat plugin declarations written`);
@@ -64,8 +67,14 @@ let count = 0;
 for (const file of dtsFiles) {
 	const dir = path.dirname(file);
 	const src = fs.readFileSync(file, "utf8");
-	const esm = src.replace(SPEC_RE, (_, pre, spec, post) => pre + fixSpecifier(dir, spec, ".js") + post);
-	const cjs = src.replace(SPEC_RE, (_, pre, spec, post) => pre + fixSpecifier(dir, spec, ".cjs") + post);
+	const esm = src.replace(
+		SPEC_RE,
+		(_, pre, spec, post) => pre + fixSpecifier(dir, spec, ".js") + post
+	);
+	const cjs = src.replace(
+		SPEC_RE,
+		(_, pre, spec, post) => pre + fixSpecifier(dir, spec, ".cjs") + post
+	);
 	fs.writeFileSync(file, esm);
 	fs.writeFileSync(file.slice(0, -5) + ".d.cts", cjs);
 	count++;

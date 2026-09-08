@@ -23,7 +23,10 @@ function find(events: readonly FrameTraceEvent[], pred: (e: FrameTraceEvent) => 
 
 describe("frame-trace seam", () => {
 	it("captures one frame per update, bracketed by tickBegin and tickEnd", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const sys = world.registerSystem({
 			name: "spawner",
@@ -58,7 +61,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("nests a queued command inside the issuing system's span", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const sys = world.registerSystem({
 			name: "spawner",
@@ -86,7 +92,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("records every deferred op as command_queued, spawn's bundle attaches included", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const Vel = world.registerComponent({ vx: "i32" });
 		let victim = -1;
@@ -132,7 +141,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("fires observer events inside a flush, after the triggering system", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const added: number[] = [];
 		world.observe(Pos, { onAdd: (eid) => added.push(eid as number), access: openAccess([Pos]) });
@@ -166,7 +178,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("labels observer_fired with the observer's name, falling back to the component debug name", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" }, { name: "Pos" });
 		const Vel = world.registerComponent({ vx: "i32" }); // unnamed
 		world.observe(Pos, { name: "pos-watcher", onAdd: () => {}, access: openAccess([Pos]) });
@@ -198,7 +213,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("records event emit and read", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Ping = eventKey<{ n: number }>("Ping");
 		world.events.register(Ping, ["n"]);
 		const emitter = world.registerSystem({
@@ -232,7 +250,10 @@ describe("frame-trace seam", () => {
 	});
 
 	it("detaching the sink (null) stops capture without error", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const sys = world.registerSystem({
 			name: "spawner",
@@ -267,7 +288,10 @@ describe("frame-trace seam", () => {
 			}
 		}
 
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const sys = world.registerSystem({ name: "noop", reads: [], writes: [], fn: () => {} });
 		world.addSystems(SCHEDULE.UPDATE, sys);
 		world.startup();
@@ -301,7 +325,10 @@ describe("frame-trace seam", () => {
 			}
 		}
 
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 0 });
@@ -342,7 +369,10 @@ describe("frame-trace seam", () => {
 			}
 		}
 
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent({ x: "i32" });
 		const Mark = world.registerComponent({ m: "i32" }); // hash-relevant, NOT observed
 		const e = world.spawn();
@@ -377,7 +407,10 @@ describe("frame-trace seam", () => {
 
 	it("is inert: the per-tick stateHash matches a world with no trace", () => {
 		const build = (): ECS => {
-			const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+			const world = ECS.create({
+				deterministic: true,
+				plugins: [events(), observers()]
+			});
 			const Pos = world.registerComponent({ x: "i32" });
 			const e = world.spawn();
 			world.addComponent(e, Pos, { x: 0 });

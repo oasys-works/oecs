@@ -47,7 +47,7 @@ const esbuild = (() => {
 		for (let dir = root; ; dir = path.dirname(dir)) {
 			const store = path.join(dir, "node_modules/.pnpm");
 			if (fs.existsSync(store)) {
-				const hit = fs.readdirSync(store).find((d) => /^esbuild@/.test(d));
+				const hit = fs.readdirSync(store).find((d) => d.startsWith("esbuild@"));
 				if (hit) return require(path.join(store, hit, "node_modules/esbuild"));
 			}
 			if (dir === path.dirname(dir)) break;
@@ -100,7 +100,7 @@ async function buildFrom(entry, outfile, dev) {
 		define: { __DEV__: String(dev) },
 		legalComments: "none",
 		sourcemap: false,
-		minify: false,
+		minify: false
 	});
 	return outfile;
 }

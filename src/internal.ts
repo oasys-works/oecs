@@ -79,10 +79,7 @@ export { storeOnlyHost } from "./core/ecs";
 
 // The two plugin faults. The error classes a consumer catches are at the
 // package root, and these build one of them.
-export {
-	pluginMissingError,
-	pluginInstalledTwiceError
-} from "./core/ecs/utils/plugin_error";
+export { pluginMissingError, pluginInstalledTwiceError } from "./core/ecs/utils/plugin_error";
 
 // Component debug names, one registry per program. `registerComponent` writes
 // it and a dev-mode diagnostic reads it, so an observer message can name a

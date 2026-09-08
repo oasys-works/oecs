@@ -616,12 +616,7 @@ export class RelationService implements RelationHooks {
 		const buckets: number[][] = [];
 		for (let i = 0; i < matched.length; i++) {
 			const id = matched[i];
-			const d = this._hierarchyDepthOf(
-				getEntityIndex(id as EntityID),
-				store,
-				depthMemo,
-				visiting
-			);
+			const d = this._hierarchyDepthOf(getEntityIndex(id as EntityID), store, depthMemo, visiting);
 			if (d > maxDepth) continue;
 			let bucket = buckets[d];
 			if (bucket === undefined) {

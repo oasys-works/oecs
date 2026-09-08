@@ -58,7 +58,7 @@ const lib = {
 	registerChildOf,
 	fixedSabAllocator,
 	growableSabAllocator,
-	wasmMemoryAllocator,
+	wasmMemoryAllocator
 };
 
 describe("interaction-net oracle (deterministic simulation, lockstep vs reference)", () => {
@@ -82,7 +82,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 				// is where duration lives, not here.
 				verifyEvery: depth <= 8 ? 1 : 8,
 				snapEvery: 8,
-				steps: 100000,
+				steps: 100000
 			});
 			expect(stats.normalised).toBe(true);
 			expect(stats.rewrites).toBe(spec.expectRewrites);
@@ -106,7 +106,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 16,
 			verifyEvery: 1,
 			snapEvery: 8,
-			steps: 100000,
+			steps: 100000
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.peakAgents).toBeGreaterThan(spec.types.length);
@@ -122,7 +122,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 16,
 			verifyEvery: 4,
 			snapEvery: 64,
-			steps: 4000,
+			steps: 4000
 		});
 		expect(stats.rewrites).toBeGreaterThan(0);
 		expect(stats.observerAdds).toBeGreaterThan(0);
@@ -136,7 +136,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 		["erasureTree(6)", () => erasureTree(6)],
 		["dupTree(4)", () => dupTree(4)],
 		["dupTree(6)", () => dupTree(6)],
-		["randomNet(11,20,10,14)", () => randomNet(11, 20, 10, 14)],
+		["randomNet(11,20,10,14)", () => randomNet(11, 20, 10, 14)]
 	])("%s reaches the same normal form in the same rewrite count under 3 orders", (_n, make) => {
 		const spec = assertNetSpecValid(make());
 		const r = confluence(lib, spec, {
@@ -145,7 +145,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			steps: 100000,
 			verifyEvery: 8,
 			snapEvery: 0,
-			label: spec.name,
+			label: spec.name
 		});
 		expect(r.checked).toBe(true);
 		expect(r.orders).toBe(3);
@@ -164,7 +164,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			steps: 100000,
 			verifyEvery: 1,
 			snapEvery: 0,
-			label: spec.name,
+			label: spec.name
 		});
 		expect(stats.rewrites).toBe(pre.rewrites);
 		expect(stats.canonical.form).toBe(pre.canonical.form);
@@ -186,7 +186,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			snapEvery: 8,
 			steps: 100000,
 			prov: { epochEvery: 4, retain: 3 },
-			compactEvery: 8,
+			compactEvery: 8
 		});
 		const p = stats.provStats;
 		expect(p.recordsCreated).toBe(stats.rewrites);
@@ -215,7 +215,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			snapEvery: 8,
 			steps: 100000,
 			prov: { epochEvery: 4, retain: 3 },
-			compactEvery: 8,
+			compactEvery: 8
 		});
 		expect(stats.provStats.maxProducedSet).toBe(4);
 		expect(stats.provStats.recordsCascaded).toBeGreaterThan(0);
@@ -230,7 +230,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			verifyEvery: 1,
 			snapEvery: 8,
 			label: spec.name,
-			prov: null,
+			prov: null
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.provStats).toBeNull();
@@ -246,7 +246,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			steps: 100000,
 			verifyEvery: 1,
 			snapEvery: 16,
-			label: spec.name,
+			label: spec.name
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.ticks).toBe(stats.rewrites + stats.idleTicks);
@@ -266,7 +266,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 8,
 			verifyEvery: 1,
 			snapEvery: 0,
-			steps: 100000,
+			steps: 100000
 		});
 		// The exact per-tick set equality is inside `changeCheck`. This is the floor:
 		// the layer really did fire, many times, at both granularities.
@@ -286,7 +286,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 8,
 			verifyEvery: 1,
 			snapEvery: 0,
-			steps: 100000,
+			steps: 100000
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.idleTicks).toBeGreaterThanOrEqual(4);
@@ -301,7 +301,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 16,
 			verifyEvery: 2,
 			snapEvery: 32,
-			steps: 4000,
+			steps: 4000
 		});
 		// `quarantineCheck` holds the exact set equality, and `compare` holds the
 		// strongest assertion: a disabled row that `forEachChunk` still visits gives the
@@ -333,7 +333,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			verifyEvery: 2,
 			snapEvery: 8,
 			steps: 100000,
-			record: true,
+			record: true
 		});
 		expect(stats.normalised).toBe(true);
 	});
@@ -351,7 +351,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			verifyEvery: 1,
 			snapEvery: 0,
 			steps: 100000,
-			prov: { epochEvery: 8, retain: 4 },
+			prov: { epochEvery: 8, retain: 4 }
 		});
 		expect(stats.peakChainDepth).toBeGreaterThan(8);
 	});
@@ -369,7 +369,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			verifyEvery: 1,
 			snapEvery: 0,
 			steps: 100000,
-			float: true,
+			float: true
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.hashable).toBe(false);
@@ -391,7 +391,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 8,
 			verifyEvery: 4,
 			snapEvery: 8,
-			steps: 100000,
+			steps: 100000
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.fpChecks).toBe(stats.ticks);
@@ -408,7 +408,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			verifyEvery: 1,
 			snapEvery: 8,
 			steps: 100000,
-			sab: true,
+			sab: true
 		});
 		expect(stats.normalised).toBe(true);
 		expect(stats.sab).toBe(true);
@@ -427,7 +427,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			maxBatch: 8,
 			verifyEvery: 2,
 			snapEvery: 8,
-			steps: 100000,
+			steps: 100000
 		});
 		// `memoryArms` fails inside on any disagreement, so these read the facts it
 		// leaves. The base moves every offset the store writes, and the digest of
@@ -453,7 +453,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			snapEvery: 8,
 			steps: 100000,
 			prov: undefined,
-			compactEvery: 16,
+			compactEvery: 16
 		});
 		// The pooled world ran the complete oracle, so `Age.ticks` was compared
 		// against the reference at each verification tick. These read what is left.

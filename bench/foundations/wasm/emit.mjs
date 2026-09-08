@@ -165,7 +165,9 @@ export class ModuleBuilder {
 	/** Take the memory from the host. The store of oecs is the host memory. */
 	importMemory(module, name, { minPages, maxPages, shared = true }) {
 		// A shared memory must declare a maximum, so the limits flag is 0x03.
-		const limits = shared ? [0x03, ...uleb(minPages), ...uleb(maxPages)] : [0x01, ...uleb(minPages), ...uleb(maxPages)];
+		const limits = shared
+			? [0x03, ...uleb(minPages), ...uleb(maxPages)]
+			: [0x01, ...uleb(minPages), ...uleb(maxPages)];
 		this._imports.push([...str(module), ...str(name), 0x02, ...limits]);
 		return this;
 	}

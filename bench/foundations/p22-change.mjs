@@ -58,7 +58,9 @@ function shuffledOrder(n) {
  * spent, so a variant can split the write path from the tick tail. */
 async function build({ observer, body }) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
+	const { observers } = await import(
+		new URL("../../dist/plugins/observers.js", import.meta.url).href
+	);
 	// Every world here installs the observer plugin, even a variant that never
 	// observes. One construction path keeps the comparison on the bodies.
 	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
@@ -188,7 +190,8 @@ async function denseWrite(kind) {
 async function byIdWrite(kind) {
 	const order = shuffledOrder(N);
 	const idxstamp = new Uint32Array(1 << 20);
-	const observer = kind === "setfield-tracked" || kind === "cursor-mark" || kind === "cursor-tracked";
+	const observer =
+		kind === "setfield-tracked" || kind === "cursor-mark" || kind === "cursor-tracked";
 	let cur = null;
 	const w = await build({
 		observer,
@@ -344,7 +347,9 @@ async function drain(kind, K) {
  * tracks the component, and it must be one store more once something does. */
 async function sparseWrite(kind) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
+	const { observers } = await import(
+		new URL("../../dist/plugins/observers.js", import.meta.url).href
+	);
 	const ecs = ECS.create({ memory: { entities: N }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const Pos = ecs.registerComponent({ x: "f32" });
@@ -400,14 +405,20 @@ async function sparseWrite(kind) {
 
 async function idle(M) {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
+	const { observers } = await import(
+		new URL("../../dist/plugins/observers.js", import.meta.url).href
+	);
 	const ecs = ECS.create({ memory: { entities: 1024 }, plugins: [observers()] });
 	KEEP.push(ecs);
 	const defs = [];
 	for (let i = 0; i < 32; i++) defs.push(ecs.registerComponent({ v: "f32" }));
 	const before = process.memoryUsage().arrayBuffers;
 	for (let i = 0; i < M; i++) {
-		ecs.observe(defs[i], { granularity: "entity", access: { reads: [defs[i]], writes: [] }, onSet: () => {} });
+		ecs.observe(defs[i], {
+			granularity: "entity",
+			access: { reads: [defs[i]], writes: [] },
+			onSet: () => {}
+		});
 	}
 	const after = process.memoryUsage().arrayBuffers;
 	const sys = ecs.registerSystem({ reads: [], writes: [], fn: () => {} });
@@ -422,7 +433,6 @@ async function idle(M) {
 	return { name: `o:${M}`, M, total: stat(ts), bufferBytes: after - before };
 }
 
-
 // ── a: the facts, no timing ────────────────────────────────────────────────
 
 /** Which write paths reach an entity-grain onSet, what the archetype grain
@@ -431,7 +441,9 @@ async function idle(M) {
  * above with the semantics in hand. */
 async function facts() {
 	const { ECS, SCHEDULE } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { observers } = await import(new URL("../../dist/plugins/observers.js", import.meta.url).href);
+	const { observers } = await import(
+		new URL("../../dist/plugins/observers.js", import.meta.url).href
+	);
 	const lines = [];
 
 	// Which paths an entity-grain onSet sees.
@@ -439,7 +451,11 @@ async function facts() {
 		const ecs = ECS.create({ memory: { entities: 1000 }, plugins: [observers()] });
 		const Pos = ecs.registerComponent({ x: "f32" });
 		const fired = [];
-		ecs.observe(Pos, { granularity: "entity", access: { reads: [Pos], writes: [] }, onSet: (e) => fired.push(e) });
+		ecs.observe(Pos, {
+			granularity: "entity",
+			access: { reads: [Pos], writes: [] },
+			onSet: (e) => fired.push(e)
+		});
 		const q = ecs.query(Pos);
 		const changed = q.changed(Pos);
 		let seen = 0;
@@ -528,7 +544,9 @@ async function facts() {
 		}
 		try {
 			ecs.query(Pos).andSparse(S).changed(S);
-			lines.push("changed(sparse): accepted, and nothing stamps a sparse column, so it never matches");
+			lines.push(
+				"changed(sparse): accepted, and nothing stamps a sparse column, so it never matches"
+			);
 		} catch (e) {
 			lines.push(`changed(sparse): throws "${e.message}"`);
 		}
@@ -562,7 +580,9 @@ if (which) {
 	const spread = (s) => `${ms(s.p25)}-${ms(s.p75)}`;
 
 	console.log(`P22, change detection at the row grain: where the cost sits`);
-	console.log(`      ${N.toLocaleString()} entities, one component of three f32 fields, node only\n`);
+	console.log(
+		`      ${N.toLocaleString()} entities, one component of three f32 fields, node only\n`
+	);
 
 	console.log(`  a: the facts, on the artifact.`);
 	const f = runVariant(import.meta.url, "a:facts");
@@ -572,7 +592,9 @@ if (which) {
 
 	console.log(`  w: the dense write path. One f32 store per row, plus the record.`);
 	console.log(`     loop = the system body alone. total = the whole update, tick tail included.`);
-	console.log(`  ${"variant".padEnd(18)} ${"loop ns/row".padEnd(12)} ${"vs raw".padEnd(8)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`);
+	console.log(
+		`  ${"variant".padEnd(18)} ${"loop ns/row".padEnd(12)} ${"vs raw".padEnd(8)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`
+	);
 	let raw = null;
 	for (const k of ["raw", "mark-off", "mark", "ticks", "tickcol", "bitset"]) {
 		const r = runVariant(import.meta.url, `w:${k}`);
@@ -588,9 +610,18 @@ if (which) {
 	}
 
 	console.log(`\n  b: the by-id write path, shuffled, every entity once.`);
-	console.log(`  ${"variant".padEnd(22)} ${"loop ns/row".padEnd(12)} ${"vs cursor".padEnd(10)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`);
+	console.log(
+		`  ${"variant".padEnd(22)} ${"loop ns/row".padEnd(12)} ${"vs cursor".padEnd(10)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`
+	);
 	let cursor = null;
-	for (const k of ["cursor", "cursor-tracked", "cursor-idxstamp", "cursor-mark", "setfield", "setfield-tracked"]) {
+	for (const k of [
+		"cursor",
+		"cursor-tracked",
+		"cursor-idxstamp",
+		"cursor-mark",
+		"setfield",
+		"setfield-tracked"
+	]) {
 		const r = runVariant(import.meta.url, `b:${k}`);
 		if (r.blocked) {
 			console.log(`  ${r.name.padEnd(22)} blocked: ${r.blocked.split("\n")[0]}`);
@@ -603,10 +634,18 @@ if (which) {
 		);
 	}
 
-	console.log(`\n  d: the drain. K of ${N.toLocaleString()} rows dirty. Whole-update ms for base, list and ticks,`);
-	console.log(`     loop ms for the hand-written candidates. list minus base is the by-id entity grain end to end,`);
-	console.log(`     ticks is the row record and the scan drain end to end (a chunk loop over every row either way).`);
-	console.log(`  ${"K".padEnd(8)} ${"base".padEnd(9)} ${"list".padEnd(9)} ${"list-base".padEnd(10)} ${"ticks".padEnd(9)} ${"handlist".padEnd(9)} ${"scan".padEnd(9)} ${"scanbits".padEnd(9)} fired`);
+	console.log(
+		`\n  d: the drain. K of ${N.toLocaleString()} rows dirty. Whole-update ms for base, list and ticks,`
+	);
+	console.log(
+		`     loop ms for the hand-written candidates. list minus base is the by-id entity grain end to end,`
+	);
+	console.log(
+		`     ticks is the row record and the scan drain end to end (a chunk loop over every row either way).`
+	);
+	console.log(
+		`  ${"K".padEnd(8)} ${"base".padEnd(9)} ${"list".padEnd(9)} ${"list-base".padEnd(10)} ${"ticks".padEnd(9)} ${"handlist".padEnd(9)} ${"scan".padEnd(9)} ${"scanbits".padEnd(9)} fired`
+	);
 	for (const K of DENSITIES) {
 		const base = runVariant(import.meta.url, `d:base:${K}`);
 		const list = runVariant(import.meta.url, `d:list:${K}`);
@@ -625,7 +664,9 @@ if (which) {
 	}
 
 	console.log(`\n  s: the sparse by-id write path, shuffled, every member once.`);
-	console.log(`  ${"variant".padEnd(22)} ${"loop ns/row".padEnd(12)} ${"vs cursorread".padEnd(14)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`);
+	console.log(
+		`  ${"variant".padEnd(22)} ${"loop ns/row".padEnd(12)} ${"vs cursorread".padEnd(14)} ${"total ms".padEnd(10)} ${"p25-p75".padEnd(16)} fired`
+	);
 	let sread = null;
 	for (const k of ["cursorread", "cursor", "cursor-tracked", "setfield", "setfield-tracked"]) {
 		const r = runVariant(import.meta.url, `s:${k}`);
@@ -640,15 +681,23 @@ if (which) {
 		);
 	}
 
-	console.log(`\n  o: the idle tax. M entity observers on M components, nothing dirty, one empty system.`);
-	console.log(`  ${"M".padEnd(4)} ${"update ms".padEnd(10)} ${"p25-p75".padEnd(16)} buffer bytes added by the observers`);
+	console.log(
+		`\n  o: the idle tax. M entity observers on M components, nothing dirty, one empty system.`
+	);
+	console.log(
+		`  ${"M".padEnd(4)} ${"update ms".padEnd(10)} ${"p25-p75".padEnd(16)} buffer bytes added by the observers`
+	);
 	for (const M of [0, 1, 8, 32]) {
 		const r = runVariant(import.meta.url, `o:${M}`);
 		if (r.blocked) {
 			console.log(`  ${String(M).padEnd(4)} blocked: ${r.blocked.split("\n")[0]}`);
 			continue;
 		}
-		console.log(`  ${String(M).padEnd(4)} ${ms(r.total.median).padEnd(10)} ${spread(r.total.spread).padEnd(16)} ${r.bufferBytes.toLocaleString()}`);
+		console.log(
+			`  ${String(M).padEnd(4)} ${ms(r.total.median).padEnd(10)} ${spread(r.total.spread).padEnd(16)} ${r.bufferBytes.toLocaleString()}`
+		);
 	}
-	console.log(`\n  Numbers are for this machine and this build. Read the ratios and the positions.`);
+	console.log(
+		`\n  Numbers are for this machine and this build. Read the ratios and the positions.`
+	);
 }

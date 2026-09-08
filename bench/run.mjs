@@ -39,7 +39,7 @@ if (saveName) {
 		JSON.stringify(
 			{
 				__meta: { filter, dev, node: process.version, cases: results.length },
-				...Object.fromEntries(results.map((r) => [r.name, r.nsPerOp])),
+				...Object.fromEntries(results.map((r) => [r.name, r.nsPerOp]))
 			},
 			null,
 			2

@@ -23,8 +23,8 @@ const SECTIONS = [
 		lede: "Fixed per-frame cost: what a tick charges before any of your system bodies run. This was the single largest win, two thirds of the phase loop was a Map lookup keyed on the system object.",
 		rows: [
 			["sched/update_20noop", 504.1, 279.3, -45.3, -46, -43, "faster"],
-			["sched/update_20systems", 2058.1, 1737.8, -15.6, -16, -15, "faster"],
-		],
+			["sched/update_20systems", 2058.1, 1737.8, -15.6, -16, -15, "faster"]
+		]
 	},
 	{
 		id: "structural",
@@ -38,8 +38,8 @@ const SECTIONS = [
 			["cmd/spawn_despawn_1000", 50.5, 42.0, -14.3, -18, -13, "faster"],
 			["struct/addComponent_valued", 110.4, 97.5, -11.8, -15, -6, "faster"],
 			["struct/spawn_empty", 8.0, 8.1, 0.6, -1, 3, "flat"],
-			["struct/spawnMany", 11.7, 12.2, 1.9, -5, 190, "noisy"],
-		],
+			["struct/spawnMany", 11.7, 12.2, 1.9, -5, 190, "noisy"]
+		]
 	},
 	{
 		id: "query",
@@ -48,8 +48,8 @@ const SECTIONS = [
 		rows: [
 			["query/resolve_cached", 55.6, 47.4, -14.6, -15, -14, "faster"],
 			["query/compose_without", 7.6, 7.7, 0.7, -2, 1, "flat"],
-			["query/count", 4.0, 4.0, -0.4, -2, 2, "flat"],
-		],
+			["query/count", 4.0, 4.0, -0.4, -2, 2, "flat"]
+		]
 	},
 	{
 		id: "iteration",
@@ -60,8 +60,8 @@ const SECTIONS = [
 			["iter/raw_typedarray_baseline", 1.3, 1.3, 0.0, 0, 2, "control"],
 			["iter/forEach_getColumnRead", 1.0, 1.0, 0.0, -2, 2, "flat"],
 			["iter/forEachEntity", 2.8, 2.8, 0.1, -2, 1, "flat"],
-			["iter/frag_64arch", 0.8, 0.8, -0.3, -9, 3, "noisy"],
-		],
+			["iter/frag_64arch", 0.8, 0.8, -0.3, -9, 3, "noisy"]
+		]
 	},
 	{
 		id: "access",
@@ -75,9 +75,9 @@ const SECTIONS = [
 			["rel/targetOf", 14.1, 14.1, -1.0, -1, 1, "flat"],
 			["rel/sourcesOf", 113.9, 113.7, 0.1, -3, 2, "flat"],
 			["sparse/hasSparse", 13.0, 13.0, -0.5, -4, 0, "flat"],
-			["sparse/getSparseField", 17.9, 17.7, -1.4, -3, 0, "flat"],
-		],
-	},
+			["sparse/getSparseField", 17.9, 17.7, -1.4, -3, 0, "flat"]
+		]
+	}
 ];
 
 // ── bar geometry ───────────────────────────────────────────────────────────
@@ -88,7 +88,11 @@ const MAX = 48; // % faster at full width
 const UNIT = (100 - ZERO - 2) / MAX;
 
 const esc = (s) =>
-	String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+	String(s)
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
 
 function bar(delta, lo, hi, kind) {
 	const g = -delta; // % faster
@@ -120,10 +124,7 @@ function bar(delta, lo, hi, kind) {
 function rowHTML([name, head, work, delta, lo, hi, kind]) {
 	const g = -delta;
 	const sign = g > 0 ? "+" : g < 0 ? "−" : "";
-	const label =
-		kind === "noisy"
-			? "not measurable"
-			: `${sign}${Math.abs(g).toFixed(1)}%`;
+	const label = kind === "noisy" ? "not measurable" : `${sign}${Math.abs(g).toFixed(1)}%`;
 	const speedup = head / work;
 	const tip =
 		kind === "noisy"

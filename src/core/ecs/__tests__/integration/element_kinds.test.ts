@@ -53,7 +53,8 @@ const stored = {
 
 function readAll(ecs: ECS, def: ReturnType<ECS["registerComponent"]>, e: number) {
 	const out: Record<string, number> = {};
-	for (const k of Object.keys(AllKinds)) out[k] = ecs.getField(e as never, def as never, k as never);
+	for (const k of Object.keys(AllKinds))
+		out[k] = ecs.getField(e as never, def as never, k as never);
 	return out;
 }
 
@@ -179,7 +180,11 @@ describe("accessors share one prototype", () => {
 		const B = ecs.registerComponent({ shared_i: "f64", shared_f: "u8" });
 		const C = ecs.registerComponent({ shared_i: "i32" });
 		const e = ecs.spawn(
-			ecs.template(A({ shared_i: -1.5, shared_f: 0.1 }), B({ shared_i: -1.5, shared_f: 300 }), C({ shared_i: 7.7 }))
+			ecs.template(
+				A({ shared_i: -1.5, shared_f: 0.1 }),
+				B({ shared_i: -1.5, shared_f: 300 }),
+				C({ shared_i: 7.7 })
+			)
 		);
 		const ra = ecs.refRead(A, e);
 		const rb = ecs.refRead(B, e);

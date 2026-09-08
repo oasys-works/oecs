@@ -218,7 +218,9 @@ describe("extendColumnStore, happy path", () => {
 		for (let id = 1; id <= 5; id++) {
 			const res = extendColumnStore(
 				store,
-				{ newArchetypes: [spec(id, 4, [{ componentId: id + 1, fieldId: 0, typeTag: TYPE_TAG.f64 }])] },
+				{
+					newArchetypes: [spec(id, 4, [{ componentId: id + 1, fieldId: 0, typeTag: TYPE_TAG.f64 }])]
+				},
 				alloc
 			);
 			expect(res.viewsPreserved).toBe(true);
@@ -228,7 +230,9 @@ describe("extendColumnStore, happy path", () => {
 		}
 		expect(store.archetypes.size).toBe(6);
 		expect(readStoreHeader(store.view).archetypeCount).toBe(6);
-		expect((store as ColumnStoreInternal)._usedDescriptorBytes).toBe(usedDescriptorBytes(store.archetypes));
+		expect((store as ColumnStoreInternal)._usedDescriptorBytes).toBe(
+			usedDescriptorBytes(store.archetypes)
+		);
 		for (let id = 1; id <= 5; id++) {
 			const col = store.archetypes.get(id)!.columns.get(columnKey(id + 1, 0))!.view as Float64Array;
 			expect(col[0]).toBe(id * 1.5);

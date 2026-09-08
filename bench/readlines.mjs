@@ -21,5 +21,7 @@ if (total === 0) {
 console.log(`${fnName}: ${total} ticks`);
 for (const [line, t] of [...hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
 	const text = src ? (src[line - 1] ?? "").trim().slice(0, 100) : "";
-	console.log(`${((t / total) * 100).toFixed(1).padStart(6)}%  ${String(t).padStart(6)}  L${line}  ${text}`);
+	console.log(
+		`${((t / total) * 100).toFixed(1).padStart(6)}%  ${String(t).padStart(6)}  L${line}  ${text}`
+	);
 }

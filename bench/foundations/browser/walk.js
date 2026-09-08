@@ -15,7 +15,14 @@
  * reads the wrong bytes.
  */
 
-import { ARCH, ARCH_HEADER_BYTES, COL, COL_BYTES, COMPONENT_MASK_WORDS, HEADER } from "../par/view.mjs";
+import {
+	ARCH,
+	ARCH_HEADER_BYTES,
+	COL,
+	COL_BYTES,
+	COMPONENT_MASK_WORDS,
+	HEADER
+} from "../par/view.mjs";
 
 export const FNV1A_BASIS = 0x811c9dc5;
 export const FNV1A_PRIME = 16777619;

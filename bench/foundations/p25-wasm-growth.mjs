@@ -13,7 +13,13 @@
 import { loadOecs, table, variantArg, emit, RUNTIMES, runVariantOn } from "./harness.mjs";
 import { emitAbiModule } from "./wasm/abi_module.mjs";
 import { buildZig, zigAvailable } from "./wasm/build_zig.mjs";
-import { MAX_PAGES, buildWorld, readHeader, readDescriptors, collectColumns } from "./wasm/world.mjs";
+import {
+	MAX_PAGES,
+	buildWorld,
+	readHeader,
+	readDescriptors,
+	collectColumns
+} from "./wasm/world.mjs";
 
 const PAGE = 65536;
 
@@ -92,11 +98,21 @@ console.log("## what changes when the store grows");
 	const mem = w.ecs.wasmMemory;
 	const layoutCalls = [];
 	const detach = w.ecs.subscribeLayout({ setLayout: (off) => layoutCalls.push(off) });
-	const before = { header: readHeader(mem.buffer, w.headerOff), cols: columnsOf(mem.buffer, w.Pos.id, w.Vel.id, w.headerOff), bytes: mem.buffer.byteLength, calls: layoutCalls.length };
+	const before = {
+		header: readHeader(mem.buffer, w.headerOff),
+		cols: columnsOf(mem.buffer, w.Pos.id, w.Vel.id, w.headerOff),
+		bytes: mem.buffer.byteLength,
+		calls: layoutCalls.length
+	};
 	const T = w.ecs.template(w.Pos({ x: 1, y: 1, z: 1 }), w.Vel({ vx: 1, vy: 1, vz: 1 }));
 	w.ecs.spawnMany(T, 40000);
 	w.ecs.publishRowCounts();
-	const after = { header: readHeader(mem.buffer, w.headerOff), cols: columnsOf(mem.buffer, w.Pos.id, w.Vel.id, w.headerOff), bytes: mem.buffer.byteLength, calls: layoutCalls.length };
+	const after = {
+		header: readHeader(mem.buffer, w.headerOff),
+		cols: columnsOf(mem.buffer, w.Pos.id, w.Vel.id, w.headerOff),
+		bytes: mem.buffer.byteLength,
+		calls: layoutCalls.length
+	};
 	table(
 		[
 			{ what: "view_stamp", before: before.header.viewStamp, after: after.header.viewStamp },
@@ -121,7 +137,11 @@ console.log("## what changes when the store grows");
 console.log("\n## a module that cached the column address, against one that re-walks");
 {
 	const rows = [];
-	for (const strategy of ["cached before the grow", "re-walked after the grow", "walks the header every call"]) {
+	for (const strategy of [
+		"cached before the grow",
+		"re-walked after the grow",
+		"walks the header every call"
+	]) {
 		const w = buildWorld(ECS, { kind: "f32", n: 512 });
 		const mem = w.ecs.wasmMemory;
 		const ex = instantiate(handBytes, mem);
@@ -133,9 +153,27 @@ console.log("\n## a module that cached the column address, against one that re-w
 		const before = collectColumns(mem.buffer, readDescriptors(mem.buffer, w.headerOff), w.Pos.id);
 		let touched = 0;
 		if (strategy === "cached before the grow") {
-			touched = ex.step_cached(cached.px, cached.py, cached.pz, cached.vx, cached.vy, cached.vz, cached.rows, 1);
+			touched = ex.step_cached(
+				cached.px,
+				cached.py,
+				cached.pz,
+				cached.vx,
+				cached.vy,
+				cached.vz,
+				cached.rows,
+				1
+			);
 		} else if (strategy === "re-walked after the grow") {
-			touched = ex.step_cached(fresh.px, fresh.py, fresh.pz, fresh.vx, fresh.vy, fresh.vz, fresh.rows, 1);
+			touched = ex.step_cached(
+				fresh.px,
+				fresh.py,
+				fresh.pz,
+				fresh.vx,
+				fresh.vy,
+				fresh.vz,
+				fresh.rows,
+				1
+			);
 		} else {
 			touched = ex.step(w.headerOff, w.Pos.id, w.Vel.id, 1);
 		}
@@ -213,13 +251,25 @@ if (zigAvailable() === null) {
 				{ what: "memory.grow returned the old page count", before: "-", after: grew },
 				{ what: "pages the module sees", before: before.pages, after: after.pages },
 				{ what: "header capacity", before: before.header.capacity, after: after.header.capacity },
-				{ what: "header view_stamp", before: before.header.viewStamp, after: after.header.viewStamp },
+				{
+					what: "header view_stamp",
+					before: before.header.viewStamp,
+					after: after.header.viewStamp
+				},
 				{ what: "archetypes in the descriptor region", before: before.descs, after: after.descs },
 				{ what: "stateHash", before: before.hash, after: after.hash },
-				{ what: "entities alive", before: ids.length, after: ids.filter((id) => ecs.isAlive(id)).length },
+				{
+					what: "entities alive",
+					before: ids.length,
+					after: ids.filter((id) => ecs.isAlive(id)).length
+				},
 				{ what: "spawn after the module grew", before: "-", after: spawnError },
 				{ what: "update after the module grew", before: "-", after: updateError },
-				{ what: "capacity after that spawn", before: "-", after: readHeader(memory.buffer, headerOff).capacity }
+				{
+					what: "capacity after that spawn",
+					before: "-",
+					after: readHeader(memory.buffer, headerOff).capacity
+				}
 			],
 			[
 				{ label: "fact", get: (r) => r.what },
@@ -238,7 +288,11 @@ console.log("\n## views over a shared WebAssembly.Memory across memory.grow");
 	for (const rt of RUNTIMES) {
 		const r = runVariantOn(rt, import.meta.url, "views");
 		if (r === null) {
-			rows.push({ runtime: rt.cmd, engine: rt.engine, note: "skip, the runtime is absent or it failed" });
+			rows.push({
+				runtime: rt.cmd,
+				engine: rt.engine,
+				note: "skip, the runtime is absent or it failed"
+			});
 			continue;
 		}
 		rows.push({ runtime: rt.cmd, engine: rt.engine, ...r });
@@ -248,8 +302,14 @@ console.log("\n## views over a shared WebAssembly.Memory across memory.grow");
 		{ label: "engine", get: (r) => r.engine },
 		{ label: "same buffer object", get: (r) => (r.note ? r.note : r.sameBufferObject) },
 		{ label: "old view still reads", get: (r) => (r.note ? "-" : r.oldViewReadable) },
-		{ label: "old write seen through new", get: (r) => (r.note ? "-" : r.writeThroughOldReadsThroughNew) },
-		{ label: "new write seen through old", get: (r) => (r.note ? "-" : r.writeThroughNewReadsThroughOld) },
+		{
+			label: "old write seen through new",
+			get: (r) => (r.note ? "-" : r.writeThroughOldReadsThroughNew)
+		},
+		{
+			label: "new write seen through old",
+			get: (r) => (r.note ? "-" : r.writeThroughNewReadsThroughOld)
+		},
 		{ label: "old buffer byteLength", get: (r) => (r.note ? "-" : r.oldBufferByteLength) },
 		{ label: "new buffer byteLength", get: (r) => (r.note ? "-" : r.newBufferByteLength) }
 	]);

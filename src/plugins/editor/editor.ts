@@ -55,7 +55,11 @@ import type {
  * to a live read channel, such as a `@oasys/oecs/solid` view, or to
  * `ecs.getField`. `undefined` for an unknown slot falls back to `0`.
  */
-export type FieldReader = (entityId: EntityID, def: ComponentDef, field: string) => number | undefined;
+export type FieldReader = (
+	entityId: EntityID,
+	def: ComponentDef,
+	field: string
+) => number | undefined;
 
 /**
  * A reified, undoable unit of editor work: the `forward` commands and their
@@ -153,7 +157,10 @@ export class TransactionBuilder {
 	 * `onSpawned` rewrites this despawn's target so redo removes the respawned
 	 * entity rather than the dead original.
 	 */
-	despawn<Defs extends readonly ComponentDef[]>(entityId: EntityID, restore: SpawnEntries<Defs>): this;
+	despawn<Defs extends readonly ComponentDef[]>(
+		entityId: EntityID,
+		restore: SpawnEntries<Defs>
+	): this;
 	despawn(entityId: EntityID, restore: readonly SpawnEntry[]): this {
 		// Symmetric with `spawn`: one stable forward despawn whose `eid` the respawn's
 		// `onSpawned` mutates in place, so a redo enqueued before the respawn applies
@@ -190,8 +197,20 @@ export class TransactionBuilder {
 			this._readField(entityId, def as ComponentDef, field) ??
 			0;
 		this._staged.set(key, value);
-		this._txn.forward.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value });
-		this._txn.inverse.push({ kind: "set_field", eid: entityId, def: def as ComponentDef, field, value: old });
+		this._txn.forward.push({
+			kind: "set_field",
+			eid: entityId,
+			def: def as ComponentDef,
+			field,
+			value
+		});
+		this._txn.inverse.push({
+			kind: "set_field",
+			eid: entityId,
+			def: def as ComponentDef,
+			field,
+			value: old
+		});
 		return this;
 	}
 
@@ -203,7 +222,12 @@ export class TransactionBuilder {
 		def: ComponentDef<S>,
 		values: CompleteFieldValues<S>
 	): this {
-		this._txn.forward.push({ kind: "add_component", eid: entityId, def: def as ComponentDef, values });
+		this._txn.forward.push({
+			kind: "add_component",
+			eid: entityId,
+			def: def as ComponentDef,
+			values
+		});
 		this._txn.inverse.push({ kind: "remove_component", eid: entityId, def: def as ComponentDef });
 		return this;
 	}

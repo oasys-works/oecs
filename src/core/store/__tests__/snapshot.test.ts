@@ -152,13 +152,7 @@ describe("restoreColumnStore round-trip", () => {
 
 	it("preserves component masks", () => {
 		const store = createColumnStore([
-			spec(
-				0,
-				4,
-				[{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }],
-				0xdead_beef,
-				0xcafe_f00d
-			)
+			spec(0, 4, [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.i32 }], 0xdead_beef, 0xcafe_f00d)
 		]);
 		const restored = restoreColumnStore(columnStoreBytesView(store));
 		const arch = restored.archetypes.get(0)!;
@@ -278,17 +272,19 @@ describe("restoreColumnStore rejection", () => {
 		b.set([0.5, 1.5, 2.5, 3.5]);
 		c.set([61000, 7]);
 
-		const restored = restoreColumnStore(toLegacyDenseSection(new Uint8Array(columnStoreBytesView(store))));
+		const restored = restoreColumnStore(
+			toLegacyDenseSection(new Uint8Array(columnStoreBytesView(store)))
+		);
 		expect(restored.archetypes.size).toBe(2);
-		expect([...(restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)]).toEqual([
-			1, 2, 3, 4
-		]);
+		expect([
+			...(restored.archetypes.get(0)!.columns.get(columnKey(1, 0))!.view as Int32Array)
+		]).toEqual([1, 2, 3, 4]);
 		expect([
 			...(restored.archetypes.get(0)!.columns.get(columnKey(2, 0))!.view as Float64Array)
 		]).toEqual([0.5, 1.5, 2.5, 3.5]);
-		expect([...(restored.archetypes.get(1)!.columns.get(columnKey(3, 0))!.view as Uint16Array)]).toEqual(
-			[61000, 7]
-		);
+		expect([
+			...(restored.archetypes.get(1)!.columns.get(columnKey(3, 0))!.view as Uint16Array)
+		]).toEqual([61000, 7]);
 		// The restored region carries the current width, so `enabled_count` and
 		// `entity_ids_off` read at their version 1 offsets and the second record
 		// starts where the current stride puts it.
@@ -298,10 +294,12 @@ describe("restoreColumnStore rejection", () => {
 			restored.view.getUint32(region + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)
 		).toBe(0);
 		const second = region + archetypeDescriptorBytes(2);
-		expect(restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.archetype_id, true)).toBe(1);
-		expect(restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)).toBe(
-			0
+		expect(restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.archetype_id, true)).toBe(
+			1
 		);
+		expect(
+			restored.view.getUint32(second + ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off, true)
+		).toBe(0);
 	});
 
 	it("keeps an f64 column aligned when an odd number of descriptors widen", () => {

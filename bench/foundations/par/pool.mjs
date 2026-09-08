@@ -50,10 +50,12 @@ export async function startPool(workerUrl, workerCount, payload) {
 			workerData: { control, index: i, workerCount, ...payload }
 		});
 		workers.push(w);
-		ready.push(new Promise((resolve, reject) => {
-			w.once("message", resolve);
-			w.once("error", reject);
-		}));
+		ready.push(
+			new Promise((resolve, reject) => {
+				w.once("message", resolve);
+				w.once("error", reject);
+			})
+		);
 	}
 	const readyPayloads = await Promise.all(ready);
 

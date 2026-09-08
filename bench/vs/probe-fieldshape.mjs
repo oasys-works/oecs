@@ -79,7 +79,9 @@ console.log(`only difference between the two rows: whether the 24 schemas share 
 const results = {};
 for (const unique of [false, true]) {
 	const { ecs, defs, fields, ids } = world(unique);
-	const label = unique ? "unique names, 24 _fieldIndex shapes" : "same names  ,  1 _fieldIndex shape";
+	const label = unique
+		? "unique names, 24 _fieldIndex shapes"
+		: "same names  ,  1 _fieldIndex shape";
 	results[unique] = time(label, 20 * TOTAL, () => {
 		let s = 0;
 		for (let r = 0; r < 20; r++)

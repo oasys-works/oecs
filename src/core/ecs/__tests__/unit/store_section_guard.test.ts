@@ -70,8 +70,7 @@ const S_IMMEDIATE = "Immediate component operations (for setup and spawning)";
 const S_DIRECT = "Direct data access (used by SystemContext)";
 const S_QUERY = "Query support";
 const S_EVENTS = "Event channels, delegations to the event registry";
-const S_RESOURCES =
-	"Resource storage, delegations to `ResourceRegistry` (resource_registry.ts)";
+const S_RESOURCES = "Resource storage, delegations to `ResourceRegistry` (resource_registry.ts)";
 
 /** Every `// ====` banner, in file order, with the synthetic prelude first.
  * A rename or a removal fails here first, which is the intended reading
@@ -417,12 +416,7 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_CONSTRUCTION,
 		to: O_OBSERVERS,
-		fields: [
-			"_obsEvents",
-			"_structuralHooks",
-			"_structuralObserverCount",
-			"_toggleObserverCount"
-		],
+		fields: ["_obsEvents", "_structuralHooks", "_structuralObserverCount", "_toggleObserverCount"],
 		reason:
 			"The deferred buffer's host closures, built in the constructor, read the observer counters to decide whether a flush collects events. A split gives the observer section an install method and keeps the counters behind it."
 	},
@@ -639,7 +633,8 @@ const ALLOWED: Allowed[] = [
 		from: S_RELATIONS,
 		to: O_SPARSE,
 		fields: ["_sparseStores"],
-		reason: "A relation is a sparse (relation, target) pair, so the traversals read the sparse store that backs it."
+		reason:
+			"A relation is a sparse (relation, target) pair, so the traversals read the sparse store that backs it."
 	},
 	{
 		from: S_DIRECT,
@@ -692,7 +687,8 @@ describe("store.ts section boundaries", () => {
 			}
 			const allowedFields = new Set(entry.fields);
 			for (const f of edge.fields) {
-				if (!allowedFields.has(f)) widened.push(`${edgeKey(edge.from, edge.to)} now also reaches ${f}`);
+				if (!allowedFields.has(f))
+					widened.push(`${edgeKey(edge.from, edge.to)} now also reaches ${f}`);
 			}
 		}
 		expect(unlisted).toEqual([]);
@@ -710,7 +706,8 @@ describe("store.ts section boundaries", () => {
 				continue;
 			}
 			for (const f of entry.fields) {
-				if (!edge.fields.has(f)) narrowed.push(`${edgeKey(entry.from, entry.to)} no longer reaches ${f}`);
+				if (!edge.fields.has(f))
+					narrowed.push(`${edgeKey(entry.from, entry.to)} no longer reaches ${f}`);
 			}
 		}
 		expect(stale).toEqual([]);

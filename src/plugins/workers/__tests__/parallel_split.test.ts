@@ -14,13 +14,7 @@ import { SCHEDULE } from "../../../core/ecs/phase";
 import type { SystemContext } from "../../../core/ecs/system_context";
 import type { WorkerPool } from "../../workers/pool";
 import { integrateF32, integrateI32 } from "./parallel_kernels.mjs";
-import {
-	KERNELS_URL,
-	WORKER_URL,
-	buildWorld,
-	readColumns,
-	type Backing
-} from "./parallel_fixture";
+import { KERNELS_URL, WORKER_URL, buildWorld, readColumns, type Backing } from "./parallel_fixture";
 
 const BACKINGS: Backing[] = ["shared", "wasm"];
 const ENTITIES = 4096;
@@ -42,15 +36,8 @@ function integrateWorld(backing: Backing, deterministic: boolean, exportName: st
 	// One variable over two bodies whose columns differ in element type. The
 	// lane picks both the body and the element type, and no signature says that,
 	// so the column parameters are open here.
-	const body: (
-		px: any,
-		py: any,
-		vx: any,
-		vy: any,
-		begin: number,
-		end: number,
-		dt: number
-	) => void = deterministic ? integrateI32 : integrateF32;
+	const body: (px: any, py: any, vx: any, vy: any, begin: number, end: number, dt: number) => void =
+		deterministic ? integrateI32 : integrateF32;
 	const system = ecs.registerSystem({
 		reads: [Vel],
 		writes: [Pos],
@@ -85,25 +72,22 @@ async function attach(world: ReturnType<typeof integrateWorld>, count: number) {
 }
 
 describe.each(BACKINGS)("a parallel system on the %s backing", (backing) => {
-	it.each([1, 2, 4])(
-		"leaves the sequential state hash across %i worker(s)",
-		async (count) => {
-			const sequential = integrateWorld(backing, true, "integrateI32");
-			for (let frame = 0; frame < 4; frame++) sequential.ecs.update(DT);
-			const expected = sequential.ecs.snapshots.stateHash();
+	it.each([1, 2, 4])("leaves the sequential state hash across %i worker(s)", async (count) => {
+		const sequential = integrateWorld(backing, true, "integrateI32");
+		for (let frame = 0; frame < 4; frame++) sequential.ecs.update(DT);
+		const expected = sequential.ecs.snapshots.stateHash();
 
-			const parallel = integrateWorld(backing, true, "integrateI32");
-			const pool = await attach(parallel, count);
-			expect(pool.count).toBe(count);
-			for (let frame = 0; frame < 4; frame++) parallel.ecs.update(DT);
+		const parallel = integrateWorld(backing, true, "integrateI32");
+		const pool = await attach(parallel, count);
+		expect(pool.count).toBe(count);
+		for (let frame = 0; frame < 4; frame++) parallel.ecs.update(DT);
 
-			expect(parallel.ecs.snapshots.stateHash()).toBe(expected);
-			// The seed differs from the result, so an equal hash is not the hash
-			// of a world nothing touched.
-			const untouched = integrateWorld(backing, true, "integrateI32");
-			expect(untouched.ecs.snapshots.stateHash()).not.toBe(expected);
-		}
-	);
+		expect(parallel.ecs.snapshots.stateHash()).toBe(expected);
+		// The seed differs from the result, so an equal hash is not the hash
+		// of a world nothing touched.
+		const untouched = integrateWorld(backing, true, "integrateI32");
+		expect(untouched.ecs.snapshots.stateHash()).not.toBe(expected);
+	});
 
 	it("leaves the sequential column values on a float world", async () => {
 		const sequential = integrateWorld(backing, false, "integrateF32");

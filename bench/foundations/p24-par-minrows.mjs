@@ -72,7 +72,16 @@
  * under bun and under deno, and the output says what happens there.
  */
 import { availableParallelism } from "node:os";
-import { median, iqr, table, emit, variantArg, runVariant, runVariantOn, RUNTIMES } from "./harness.mjs";
+import {
+	median,
+	iqr,
+	table,
+	emit,
+	variantArg,
+	runVariant,
+	runVariantOn,
+	RUNTIMES
+} from "./harness.mjs";
 import { emitKernelModule } from "./wasm/kernel_module.mjs";
 import { integrateI32, mixI32 } from "./wasm/engine-kernels.mjs";
 
@@ -81,11 +90,15 @@ const CORES = availableParallelism();
 
 /** A ladder of about two to one. A crossover is a threshold on a log scale, and
  * a linear ladder spends its samples where the answer is already known. */
-const SIZES = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 125_000, 250_000, 500_000, 1_000_000];
+const SIZES = [
+	1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 125_000, 250_000, 500_000, 1_000_000
+];
 
 /** Two, four, and one below the machine's parallelism, which is the count
  * `workers.attach` defaults to. One worker is not a split. */
-const KS = [...new Set([2, 4, Math.max(2, CORES - 1)])].filter((k) => k <= CORES).sort((a, b) => a - b);
+const KS = [...new Set([2, 4, Math.max(2, CORES - 1)])]
+	.filter((k) => k <= CORES)
+	.sort((a, b) => a - b);
 
 const BACKINGS = ["shared", "wasm"];
 
@@ -128,7 +141,13 @@ const SAMPLE_ROWS = 400_000;
 const ROUNDS = 15;
 
 const BODIES = [
-	{ id: "light", label: "light, pos += vel * dt", js: "integrateI32", wasm: "integrate_i32", fn: integrateI32 },
+	{
+		id: "light",
+		label: "light, pos += vel * dt",
+		js: "integrateI32",
+		wasm: "integrate_i32",
+		fn: integrateI32
+	},
 	{ id: "heavy", label: "heavy, hash mix", js: "mixI32", wasm: "mix_i32", fn: mixI32 }
 ];
 
@@ -193,9 +212,7 @@ function pair(runSequential, runPooled, rows) {
  */
 async function buildWorld(entities, backing) {
 	const { ECS } = await import(new URL("../../dist/index.js", import.meta.url).href);
-	const { workers } = await import(
-		new URL("../../dist/plugins/workers.js", import.meta.url).href
-	);
+	const { workers } = await import(new URL("../../dist/plugins/workers.js", import.meta.url).href);
 	const columnCapacity = Math.ceil(entities / 4) + 64;
 	const memory =
 		backing === "wasm"
@@ -339,9 +356,15 @@ async function runOne(backing, entities) {
 
 	// A wasm kernel cannot load on the shared backing, so the lane is absent and
 	// not zero. `sharedWasmRefusal` reports why, once.
-	const lanes = [{ id: "js", label: "js kernel", kernel: (body) => ({ js: KERNELS_URL, export: body.js }) }];
+	const lanes = [
+		{ id: "js", label: "js kernel", kernel: (body) => ({ js: KERNELS_URL, export: body.js }) }
+	];
 	if (backing === "wasm") {
-		lanes.push({ id: "wasm", label: "wasm kernel", kernel: (body) => ({ wasm: module, export: body.wasm }) });
+		lanes.push({
+			id: "wasm",
+			label: "wasm kernel",
+			kernel: (body) => ({ wasm: module, export: body.wasm })
+		});
 	}
 
 	// One system for each body and lane, all registered, one enabled at a time. A
@@ -526,7 +549,10 @@ function crossovers(rows) {
 	}
 	return out.sort(
 		(a, b) =>
-			a.backing.localeCompare(b.backing) || a.body.localeCompare(b.body) || a.lane.localeCompare(b.lane) || a.k - b.k
+			a.backing.localeCompare(b.backing) ||
+			a.body.localeCompare(b.body) ||
+			a.lane.localeCompare(b.lane) ||
+			a.k - b.k
 	);
 }
 
@@ -569,7 +595,11 @@ function report(results, title) {
 	for (const r of results) {
 		for (const c of r.correctness) {
 			compared++;
-			if (c.hash !== expected.get(`${r.backing}|${r.entities}|${c.lane.split("_")[0]}`) || !c.untouched) bad++;
+			if (
+				c.hash !== expected.get(`${r.backing}|${r.entities}|${c.lane.split("_")[0]}`) ||
+				!c.untouched
+			)
+				bad++;
 		}
 	}
 	console.log(
@@ -583,7 +613,9 @@ function report(results, title) {
 	for (const backing of BACKINGS) {
 		const here = rows.filter((r) => r.backing === backing);
 		if (here.length === 0) continue;
-		console.log(`\n  ${backing} backing, milliseconds for one frame. Both lanes hold the pool, and only the pooled one dispatches`);
+		console.log(
+			`\n  ${backing} backing, milliseconds for one frame. Both lanes hold the pool, and only the pooled one dispatches`
+		);
 		table(here, [
 			{ label: "rows", get: (x) => x.rows },
 			{ label: "body", get: (x) => x.body },
@@ -599,7 +631,9 @@ function report(results, title) {
 		]);
 	}
 
-	console.log(`\n  the gate. An attached pool whose minRows the row count never reaches, against no pool at all`);
+	console.log(
+		`\n  the gate. An attached pool whose minRows the row count never reaches, against no pool at all`
+	);
 	const gate = [];
 	for (const r of results) {
 		for (const attached of r.gate.attached) {
@@ -627,7 +661,9 @@ function report(results, title) {
 		{ label: "gate - before", get: (x) => (x.attached - x.before).toFixed(4) }
 	]);
 
-	console.log(`\n  the kernels alone, no engine and no pool. A wide min-to-max span is the bimodal state, not noise`);
+	console.log(
+		`\n  the kernels alone, no engine and no pool. A wide min-to-max span is the bimodal state, not noise`
+	);
 	table(
 		results.flatMap((r) => r.alone.map((a) => ({ backing: r.backing, rows: r.rows, ...a }))),
 		[
@@ -641,7 +677,9 @@ function report(results, title) {
 		]
 	);
 
-	console.log(`\n  crossovers, in matched rows. The smallest row count that wins and keeps winning`);
+	console.log(
+		`\n  crossovers, in matched rows. The smallest row count that wins and keeps winning`
+	);
 	table(crossovers(rows), [
 		{ label: "backing", get: (x) => x.backing },
 		{ label: "body", get: (x) => x.body },
@@ -649,7 +687,10 @@ function report(results, title) {
 		{ label: "K", get: (x) => x.k },
 		{ label: "against the median", get: (x) => x.byMedian ?? "never" },
 		{ label: "against its best block", get: (x) => x.byBest ?? "never" },
-		{ label: "rows for each worker, best", get: (x) => (x.byBest === null ? "-" : Math.round(x.byBest / x.k)) },
+		{
+			label: "rows for each worker, best",
+			get: (x) => (x.byBest === null ? "-" : Math.round(x.byBest / x.k))
+		},
 		{ label: "worst loss, ms/frame", get: (x) => x.worstLossMs.toFixed(4) }
 	]);
 	console.log("");
@@ -666,7 +707,9 @@ async function main() {
 			// process never reaches its own exit. The parent reads the result line
 			// from a `spawnSync`, which waits for the child to end. Leave loudly, and
 			// read the note this prints as the defect it is.
-			process.stderr.write("  the refusal variant exits itself: the failed attach left its workers running\n");
+			process.stderr.write(
+				"  the refusal variant exits itself: the failed attach left its workers running\n"
+			);
 			process.exit(0);
 		}
 		emit(await runOne(backing, Number(size)));
@@ -703,7 +746,10 @@ async function main() {
 			console.log(`\n  ${runtime.cmd}: no result, see the error above\n`);
 			continue;
 		}
-		report(here, `${runtime.cmd}, ${runtime.engine}${missing ? `, ${missing} variants produced no result` : ""}`);
+		report(
+			here,
+			`${runtime.cmd}, ${runtime.engine}${missing ? `, ${missing} variants produced no result` : ""}`
+		);
 	}
 }
 

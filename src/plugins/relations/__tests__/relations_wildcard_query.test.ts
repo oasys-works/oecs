@@ -100,9 +100,9 @@ describe("(R, *) andRelation, membership", () => {
 		world.relations.add(ents[0], Likes, ents[5]);
 		world.relations.add(ents[2], Likes, ents[4]);
 		world.relations.add(ents[3], Likes, ents[5]);
-		const distinct = [...new Set(world.relations.pairsOf(Likes).map(([src]) => src as number))].sort(
-			(a, b) => a - b
-		);
+		const distinct = [
+			...new Set(world.relations.pairsOf(Likes).map(([src]) => src as number))
+		].sort((a, b) => a - b);
 		expect(collect(world.query().andRelation(Likes))).toEqual(distinct);
 	});
 
@@ -174,9 +174,7 @@ describe("(R, *) andRelation and notRelation, composition", () => {
 		world.addSparse(a, Marked);
 		const b = world.spawn(); // related, not marked
 		world.relations.add(b, Targets, t);
-		expect(collect(world.query().andRelation(Targets).andSparse(Marked))).toEqual(
-			sorted([a])
-		);
+		expect(collect(world.query().andRelation(Targets).andSparse(Marked))).toEqual(sorted([a]));
 	});
 
 	it("excludes disabled sources by default, includes them with includeDisabled()", () => {

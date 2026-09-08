@@ -36,7 +36,9 @@ function time(label, iters, fn) {
  * shape, the property that makes the current keyed load megamorphic.
  */
 function bench(COMPS, WIDTH) {
-	console.log(`\n${COMPS} component shapes × ${WIDTH} fields, read field ordinal ${WIDTH - 1} (worst case for a scan)`);
+	console.log(
+		`\n${COMPS} component shapes × ${WIDTH} fields, read field ordinal ${WIDTH - 1} (worst case for a scan)`
+	);
 
 	const rec = []; // Record<string, number>   what we do today
 	const map = []; // Map<string, number>      every Map shares one hidden class

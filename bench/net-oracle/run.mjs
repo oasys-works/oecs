@@ -192,7 +192,17 @@ import path from "node:path";
 import url from "node:url";
 import { buildLib } from "../build.mjs";
 import { netFromArg, assertNetSpecValid, dupTree, erasureTree, randomNet } from "./nets.mjs";
-import { Divergence, Pressure, confluence, fail, lockstep, memoryArms, report, runCase, workersArm } from "./driver.mjs";
+import {
+	Divergence,
+	Pressure,
+	confluence,
+	fail,
+	lockstep,
+	memoryArms,
+	report,
+	runCase,
+	workersArm
+} from "./driver.mjs";
 import { runSurface } from "./surface.mjs";
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
@@ -223,7 +233,7 @@ const OPT = {
 	record: argv.includes("--record"),
 	fp: num("fp", 1),
 	phase: num("phase", 1),
-	stress: argv.includes("--stress"),
+	stress: argv.includes("--stress")
 };
 // A stress case gives its checkpoints a cadence of their own, because each one is a
 // scan of each agent and the large cases hold hundreds of thousands. An explicit
@@ -254,7 +264,6 @@ const lib = await import(libUrl);
 process.env.OECS_NET_ORACLE_LIB = libUrl;
 const WORKER_ENTRY = new URL("./worker-entry.mjs", import.meta.url);
 
-
 /** The arms for the layout of the memory: the store base, and the two halves of
  * the byte ceiling. `pressure` may be `null`, which is the `--memory` arm, where
  * the floors of the suite do not apply. */
@@ -276,7 +285,7 @@ function runMemoryArms(lib, pressure) {
 		prov: OPT.prov,
 		compactEvery: OPT.compactEvery,
 		fpEvery: OPT.fp,
-		phaseEvery: OPT.phase,
+		phaseEvery: OPT.phase
 	});
 	report("SharedArrayBuffer", r.atZero);
 	report("at a store base", r.atBase);
@@ -318,7 +327,7 @@ async function runWorkersArm(lib, pressure) {
 		prov: OPT.prov,
 		compactEvery: OPT.compactEvery,
 		fpEvery: OPT.fp,
-		phaseEvery: OPT.phase,
+		phaseEvery: OPT.phase
 	});
 	report("the age bump, one thread", r.sequential);
 	report(`the age bump, ${r.count} workers`, r.pooled);
@@ -362,9 +371,11 @@ try {
 	} else if (OPT.net !== null) {
 		// ── single explicit case ────────────────────────────────────────────
 		const spec = netFromArg(OPT.net, OPT.seed);
-		console.log(`net-oracle: ${spec.name}  seed=${OPT.seed} batch=${OPT.batch} ` +
-			`steps=${OPT.steps} verify=${OPT.verify} snap=${OPT.snap} ${OPT.prod ? "prod" : "dev"}` +
-			`${OPT.float ? " f64/no-determinism" : ""}${OPT.sab ? " sab" : ""}${OPT.record ? " record" : ""}`);
+		console.log(
+			`net-oracle: ${spec.name}  seed=${OPT.seed} batch=${OPT.batch} ` +
+				`steps=${OPT.steps} verify=${OPT.verify} snap=${OPT.snap} ${OPT.prod ? "prod" : "dev"}` +
+				`${OPT.float ? " f64/no-determinism" : ""}${OPT.sab ? " sab" : ""}${OPT.record ? " record" : ""}`
+		);
 		const stats = lockstep(lib, spec, {
 			seed: OPT.seed,
 			batch: OPT.batch,
@@ -380,7 +391,7 @@ try {
 			storeBase: OPT.base,
 			maxBytes: OPT.cap,
 			fpEvery: OPT.fp,
-			phaseEvery: OPT.phase,
+			phaseEvery: OPT.phase
 		});
 		stats.batch = OPT.batch;
 		report(spec.name, stats);
@@ -391,7 +402,9 @@ try {
 			if (stats.live !== spec.expectAgents) {
 				fail(spec.name, `closed form says ${spec.expectAgents} agents remain, got ${stats.live}`);
 			}
-			console.log(`  closed form OK: ${spec.expectRewrites} rewrites, ${spec.expectAgents} agents, ${spec.expectLoops} loops`);
+			console.log(
+				`  closed form OK: ${spec.expectRewrites} rewrites, ${spec.expectAgents} agents, ${spec.expectLoops} loops`
+			);
 		}
 		cases = 1;
 	} else if (OPT.soak) {
@@ -415,13 +428,58 @@ try {
 			// The fingerprint and its checkpoints get a cadence here: the soak measures
 			// duration, and a scan of each agent at each of its 150k ticks would make it
 			// a different tool. `--stress` is that tool.
-			{ net: "random:6,30,18,20", steps: 5_000_000, batch: 32, verify: 400, snap: 2000, fp: 16, phase: 128, label: "churn-small" },
-			{ net: "random:1,30,18,20", steps: 3_000_000, batch: 32, verify: 400, snap: 2000, fp: 16, phase: 128, label: "churn-mid" },
+			{
+				net: "random:6,30,18,20",
+				steps: 5_000_000,
+				batch: 32,
+				verify: 400,
+				snap: 2000,
+				fp: 16,
+				phase: 128,
+				label: "churn-small"
+			},
+			{
+				net: "random:1,30,18,20",
+				steps: 3_000_000,
+				batch: 32,
+				verify: 400,
+				snap: 2000,
+				fp: 16,
+				phase: 128,
+				label: "churn-mid"
+			},
 			// unbounded growth, large archetypes, repeated column grows
-			{ net: "random:2,24,24,12", steps: 400_000, batch: 512, verify: 50, snap: 0, fp: 4, phase: 32, label: "growth" },
-			{ net: "random:12,40,30,20", steps: 400_000, batch: 512, verify: 50, snap: 0, fp: 4, phase: 32, label: "growth-wide" },
+			{
+				net: "random:2,24,24,12",
+				steps: 400_000,
+				batch: 512,
+				verify: 50,
+				snap: 0,
+				fp: 4,
+				phase: 32,
+				label: "growth"
+			},
+			{
+				net: "random:12,40,30,20",
+				steps: 400_000,
+				batch: 512,
+				verify: 50,
+				snap: 0,
+				fp: 4,
+				phase: 32,
+				label: "growth-wide"
+			},
 			// closed-form answer at scale
-			{ net: "erase:18", steps: 1_000_000, batch: 256, verify: 32, snap: 400, fp: 8, phase: 64, label: "erase-large" },
+			{
+				net: "erase:18",
+				steps: 1_000_000,
+				batch: 256,
+				verify: 32,
+				snap: 400,
+				fp: 8,
+				phase: 64,
+				label: "erase-large"
+			}
 		];
 		for (const c of SOAK) {
 			const spec = netFromArg(c.net, OPT.seed);
@@ -439,7 +497,7 @@ try {
 				compactEvery: OPT.compactEvery,
 				// the cadence of the case, unless the command line names one.
 				fpEvery: explicitFp ?? c.fp,
-				phaseEvery: explicitPhase ?? c.phase,
+				phaseEvery: explicitPhase ?? c.phase
 			});
 			stats.batch = batch;
 			const secs = Number(process.hrtime.bigint() - t) / 1e9;
@@ -470,14 +528,46 @@ try {
 		const pressure = new Pressure();
 		const STRESS = [
 			// unbounded growth: hundreds of thousands of live agents, large archetypes
-			{ net: "random:2,24,24,12", steps: 400_000, batch: 512, verify: 100, snap: 0, phase: 16, label: "growth" },
-			{ net: "random:12,40,30,20", steps: 400_000, batch: 512, verify: 100, snap: 0, phase: 16, label: "growth-wide" },
+			{
+				net: "random:2,24,24,12",
+				steps: 400_000,
+				batch: 512,
+				verify: 100,
+				snap: 0,
+				phase: 16,
+				label: "growth"
+			},
+			{
+				net: "random:12,40,30,20",
+				steps: 400_000,
+				batch: 512,
+				verify: 100,
+				snap: 0,
+				phase: 16,
+				label: "growth-wide"
+			},
 			// bounded live set, long churn: many ticks, each one checked. The deep
 			// comparison is cheap on a net of this size, and the marks and the explicit
 			// unlinks follow its cadence, so a tight cadence here is what meets their floors.
-			{ net: "random:6,30,18,20", steps: 1_000_000, batch: 32, verify: 50, snap: 2000, phase: 4, label: "churn" },
+			{
+				net: "random:6,30,18,20",
+				steps: 1_000_000,
+				batch: 32,
+				verify: 50,
+				snap: 2000,
+				phase: 4,
+				label: "churn"
+			},
 			// the closed form at scale
-			{ net: "erase:16", steps: 1_000_000, batch: 128, verify: 64, snap: 200, phase: 8, label: "erase-large" },
+			{
+				net: "erase:16",
+				steps: 1_000_000,
+				batch: 128,
+				verify: 64,
+				snap: 200,
+				phase: 8,
+				label: "erase-large"
+			}
 		];
 		for (const c of STRESS) {
 			const spec = netFromArg(c.net, OPT.seed);
@@ -494,7 +584,7 @@ try {
 				prov: OPT.prov,
 				compactEvery: OPT.compactEvery,
 				fpEvery: OPT.fp,
-				phaseEvery: explicitPhase ?? c.phase,
+				phaseEvery: explicitPhase ?? c.phase
 			});
 			stats.batch = batch;
 			const secs = Number(process.hrtime.bigint() - t) / 1e9;
@@ -506,11 +596,7 @@ try {
 					fail(c.label, `closed form says ${spec.expectAgents} agents remain, got ${stats.live}`);
 				}
 			}
-			report(
-				c.label,
-				stats,
-				`  ${(stats.rewrites / secs / 1000).toFixed(0)}k rw/s`
-			);
+			report(c.label, stats, `  ${(stats.rewrites / secs / 1000).toFixed(0)}k rw/s`);
 			pressure.absorb(spec, stats);
 			cases++;
 		}
@@ -534,7 +620,7 @@ try {
 				prov: OPT.prov,
 				compactEvery: OPT.compactEvery,
 				fpEvery: OPT.fp,
-				phaseEvery: OPT.phase,
+				phaseEvery: OPT.phase
 			});
 			if (!stats.normalised) fail(spec.name, `did not normalise within ${OPT.steps} rewrites`);
 			if (stats.rewrites !== spec.expectRewrites) {
@@ -566,10 +652,13 @@ try {
 				prov: OPT.prov,
 				compactEvery: OPT.compactEvery,
 				fpEvery: OPT.fp,
-				phaseEvery: OPT.phase,
+				phaseEvery: OPT.phase
 			});
 			if (stats.peakAgents <= spec.types.length) {
-				fail(spec.name, `peak ${stats.peakAgents} agents never exceeded the initial ${spec.types.length}`);
+				fail(
+					spec.name,
+					`peak ${stats.peakAgents} agents never exceeded the initial ${spec.types.length}`
+				);
 			}
 			report(spec.name, stats, `  grew ${(stats.peakAgents / spec.types.length).toFixed(1)}x`);
 			pressure.absorb(spec, stats);
@@ -593,7 +682,7 @@ try {
 				prov: OPT.prov,
 				compactEvery: OPT.compactEvery,
 				fpEvery: OPT.fp,
-				phaseEvery: OPT.phase,
+				phaseEvery: OPT.phase
 			});
 			report(`random#${s}`, stats);
 			pressure.absorb(spec, stats);
@@ -606,7 +695,7 @@ try {
 			assertNetSpecValid(erasureTree(7)),
 			assertNetSpecValid(dupTree(4)),
 			assertNetSpecValid(dupTree(6)),
-			assertNetSpecValid(randomNet(11, 20, 10, 14)),
+			assertNetSpecValid(randomNet(11, 20, 10, 14))
 		]) {
 			const r = confluence(lib, spec, {
 				orders: OPT.orders,
@@ -618,13 +707,11 @@ try {
 				prov: OPT.prov,
 				compactEvery: OPT.compactEvery,
 				fpEvery: OPT.fp,
-				phaseEvery: OPT.phase,
+				phaseEvery: OPT.phase
 			});
 			console.log(
 				`  ${spec.name.padEnd(30)} ${
-					r.checked
-						? `${r.orders} orders agree at ${r.rewrites} rewrites`
-						: `skipped (${r.reason})`
+					r.checked ? `${r.orders} orders agree at ${r.rewrites} rewrites` : `skipped (${r.reason})`
 				}`
 			);
 			cases++;
@@ -643,14 +730,26 @@ try {
 			// gives up `stateHash`, `capture` and `restore`, which all need determinism,
 			// so `snapEvery` is 0 here.
 			{ label: "f64, no determinism", spec: dupTree(6), float: true, snap: 0 },
-			{ label: "f64, with churn", spec: randomNet(21, 24, 14, 16), float: true, snap: 0, steps: 4000 },
+			{
+				label: "f64, with churn",
+				spec: randomNet(21, 24, 14, 16),
+				float: true,
+				snap: 0,
+				steps: 4000
+			},
 			// the opt-in `SharedArrayBuffer` backing, with every layer on. The arms of
 			// `runMemoryArms` below carry the rest of that backing. They are the store
 			// base, the fixed buffer, and the two halves of the cap.
-			{ label: "SharedArrayBuffer, with churn", spec: randomNet(22, 24, 14, 16), sab: true, snap: 16, steps: 4000 },
+			{
+				label: "SharedArrayBuffer, with churn",
+				spec: randomNet(22, 24, 14, 16),
+				sab: true,
+				snap: 16,
+				steps: 4000
+			},
 			// the recorder for the host commands. It keeps the complete stream, so this
 			// arm is small, and `commandLogCheck` reads it at the end.
-			{ label: "host command log", spec: erasureTree(6), record: true, snap: 8 },
+			{ label: "host command log", spec: erasureTree(6), record: true, snap: 8 }
 		]) {
 			const spec = assertNetSpecValid(arm.spec);
 			const steps = Math.min(OPT.steps, arm.steps ?? OPT.steps);
@@ -669,7 +768,7 @@ try {
 				storeBase: arm.storeBase ?? 0,
 				maxBytes: arm.maxBytes ?? 0,
 				fpEvery: OPT.fp,
-				phaseEvery: OPT.phase,
+				phaseEvery: OPT.phase
 			});
 			report(arm.label, stats);
 			armStats.set(arm.label, stats);
@@ -705,7 +804,9 @@ try {
 	if (err instanceof Divergence) {
 		console.error(`\nDIVERGENCE\n  ${err.message}\n`);
 		console.error(`reproduce with a per-rewrite batch for exact attribution:`);
-		console.error(`  node bench/net-oracle/run.mjs --net=${OPT.net ?? "<case>"} --seed=${OPT.seed} --batch=1 --verify=1`);
+		console.error(
+			`  node bench/net-oracle/run.mjs --net=${OPT.net ?? "<case>"} --seed=${OPT.seed} --batch=1 --verify=1`
+		);
 		process.exit(1);
 	}
 	throw err;

@@ -31,14 +31,14 @@ function capStore(...args: ConstructorParameters<typeof Store>): Store {
 	return built;
 }
 
-
-
-
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
 describe("ECS relations, exclusive", () => {
 	it("registers, adds, queries forward + reverse, and removes", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Targets = world.relations.register(); // exclusive by default
 		const src = world.spawn();
 		const tgt = world.spawn();
@@ -60,7 +60,10 @@ describe("ECS relations, exclusive", () => {
 	});
 
 	it("adding a second target replaces the first, fixing the reverse index", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Targets = world.relations.register({ exclusive: true });
 		const src = world.spawn();
 		const a = world.spawn();
@@ -79,7 +82,10 @@ describe("ECS relations, exclusive", () => {
 	});
 
 	it("re-adding the same target is idempotent (no duplicate reverse entry)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const R = world.relations.register();
 		const src = world.spawn();
 		const tgt = world.spawn();
@@ -95,7 +101,10 @@ describe("ECS relations, exclusive", () => {
 	});
 
 	it("many sources can point at one target (reverse fan-in)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const R = world.relations.register();
 		const tgt = world.spawn();
 		const srcs = [world.spawn(), world.spawn(), world.spawn()];
@@ -121,19 +130,26 @@ describe("ECS relations, exclusive", () => {
 
 		const deadTgt = store.createEntity();
 		store.destroyEntity(deadTgt);
-		expect(() => store.relations.addRelation(src, R, deadTgt)).toThrow(/addRelation.*not alive.*target/);
+		expect(() => store.relations.addRelation(src, R, deadTgt)).toThrow(
+			/addRelation.*not alive.*target/
+		);
 		expect(store.relations.sourcesOf(deadTgt, R)).toEqual([]);
 
 		const deadSrc = store.createEntity();
 		store.destroyEntity(deadSrc);
-		expect(() => store.relations.addRelation(deadSrc, R, tgt)).toThrow(/addRelation.*not alive.*source/);
+		expect(() => store.relations.addRelation(deadSrc, R, tgt)).toThrow(
+			/addRelation.*not alive.*source/
+		);
 		expect(store.relations.sourcesOf(tgt, R)).toEqual([]);
 	});
 });
 
 describe("ECS relations, multi-target", () => {
 	it("adds, removes individual pairs, and queries the set both ways", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
 		const a = world.spawn();
@@ -159,7 +175,10 @@ describe("ECS relations, multi-target", () => {
 	});
 
 	it("removing the last target drops membership, remove-all clears everything", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
 		const a = world.spawn();
@@ -180,7 +199,10 @@ describe("ECS relations, multi-target", () => {
 	});
 
 	it("shares a target across sources and keeps the reverse fan-in consistent", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Likes = world.relations.register({ multi: true });
 		const t = world.spawn();
 		const s1 = world.spawn();
@@ -197,21 +219,27 @@ describe("ECS relations, multi-target", () => {
 
 describe("relations registration + validation", () => {
 	it("rejects a relation declared both exclusive and multi-target", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		// Now a compile error too (RelationOptions is a union), the cast covers
 		// the JS-caller path the runtime throw still guards.
-		expect(() =>
-			world.relations.register({ exclusive: true, multi: true } as never)
-		).toThrow();
+		expect(() => world.relations.register({ exclusive: true, multi: true } as never)).toThrow();
 	});
 
 	it("targetOf throws on a multi-target relation (use targetsOf)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Likes = world.relations.register({ multi: true });
 		const src = world.spawn();
 		// cast: deliberately defeat the cardinality brand to assert the
 		// runtime RELATION_MODE_MISMATCH backstop
-		expect(() => world.relations.targetOf(src, Likes as unknown as RelationDef<"exclusive">)).toThrow();
+		expect(() =>
+			world.relations.targetOf(src, Likes as unknown as RelationDef<"exclusive">)
+		).toThrow();
 	});
 });
 
@@ -282,15 +310,13 @@ describe("relations stay consistent through churn + destroy", () => {
 	});
 
 	it("a re-target chain leaves exactly one reverse edge at every step", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const R = world.relations.register();
 		const src = world.spawn();
-		const targets = [
-			world.spawn(),
-			world.spawn(),
-			world.spawn(),
-			world.spawn()
-		];
+		const targets = [world.spawn(), world.spawn(), world.spawn(), world.spawn()];
 
 		let prev: EntityID | null = null;
 		for (const t of targets) {
@@ -308,7 +334,10 @@ describe("relations stay consistent through churn + destroy", () => {
 		// pairs reached by different add and re-target histories hash equal, and the
 		// pairs round-trip through snapshot and restore.
 		const make = () => {
-			const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const world = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const R = world.relations.register(); // exclusive
 			const src = world.spawn();
 			const a = world.spawn();
@@ -338,7 +367,10 @@ describe("relations stay consistent through churn + destroy", () => {
 	});
 
 	it("survives mixed add, remove and re-target churn with a consistent reverse index", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		const Likes = world.relations.register({ multi: true });
 		const srcs = Array.from({ length: 6 }, () => world.spawn());
 		const tgts = Array.from({ length: 4 }, () => world.spawn());
@@ -393,7 +425,10 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 
 	it("multi: forward sets, reverse index, and stateHash all round-trip", () => {
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const Likes = w.relations.register({ multi: true });
 			const a = w.spawn();
 			const b = w.spawn();
@@ -424,7 +459,10 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 
 	it("stateHash distinguishes different multi target sets (folded, not ignored)", () => {
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const R = w.relations.register({ multi: true });
 			const a = w.spawn();
 			const t1 = w.spawn();
@@ -449,7 +487,10 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 
 	it("restore into a dirty multi world replaces the prior contents", () => {
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const R = w.relations.register({ multi: true });
 			const a = w.spawn();
 			const t1 = w.spawn();
@@ -475,7 +516,10 @@ describe("ECS relations, snapshot and restore rebuilds the derived indices", () 
 		// reverse index. If restore did not rebuild it, a restored tree would not
 		// cascade, the behavioural symptom of the silent-divergence bug.
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const ChildOf = w.relations.register({ onDeleteTarget: "delete" });
 			const root = w.spawn();
 			const c1 = w.spawn();
@@ -511,7 +555,10 @@ describe("relation restore validation, defensive hardening", () => {
 		// gens out of bounds and grows the side Map unboundedly. Patch a valid
 		// one-source multi snapshot's source index to MAX_INDEX + 1.
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const Likes = w.relations.register({ multi: true });
 			const a = w.spawn();
 			const t = w.spawn();
@@ -538,7 +585,10 @@ describe("relation restore validation, defensive hardening", () => {
 		// mis-binding the guard prevents). Patch a valid one-target multi snapshot's
 		// first target f64 to an out-of-range value.
 		const make = () => {
-			const w = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+			const w = ECS.create({
+				deterministic: true,
+				plugins: [snapshots(), relations()]
+			});
 			const Likes = w.relations.register({ multi: true });
 			const a = w.spawn();
 			const t = w.spawn();

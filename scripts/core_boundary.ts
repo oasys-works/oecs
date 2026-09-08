@@ -79,7 +79,8 @@ const DUPLICABLE: Readonly<Record<string, string>> = {
 	"core/ecs/utils/arrays.ts": "bucket push and the entity-id radix, pure functions over numbers",
 	"core/ecs/sparse_store.ts":
 		"sparse stores, built by the core and mutated through methods, and its error class is single",
-	"core/ecs/system.ts": "system ids and the empty access record, which is spread and never compared",
+	"core/ecs/system.ts":
+		"system ids and the empty access record, which is spread and never compared",
 	"core/ecs/utils/constants.ts": "numeric limits",
 	"core/store/allocator.ts":
 		"allocator factories, and a plugin uses the allocator the store hands it, so the copy builds none",

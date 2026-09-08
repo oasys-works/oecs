@@ -117,7 +117,6 @@ export class ECSSnapshots {
 	public stateHash(): number {
 		return this._store.stateHash();
 	}
-
 }
 
 /** The capture and restore surface, present at run time and absent from the

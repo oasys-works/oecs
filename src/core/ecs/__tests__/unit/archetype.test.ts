@@ -215,13 +215,7 @@ describe("Archetype", () => {
 	it("addEntities zero-initialises every column for every new row", () => {
 		const layoutA = makeLayout(1, ["x", "y"]);
 		const layoutB = makeLayout(2, ["v"]);
-		const a = new Archetype(
-			archId(0),
-			makeMask(1, 2),
-			[layoutA, layoutB],
-			16,
-			makeHeapFactory()
-		);
+		const a = new Archetype(archId(0), makeMask(1, 2), [layoutA, layoutB], 16, makeHeapFactory());
 
 		// Pre-seed one entity so the batch isn't trivially at row 0.
 		const seedRow = a.addEntity(entity(99));
@@ -424,13 +418,7 @@ describe("Archetype", () => {
 	it("multiple component columns swap together", () => {
 		const layoutA = makeLayout(1, ["a"]);
 		const layoutB = makeLayout(2, ["b"]);
-		const a = new Archetype(
-			archId(0),
-			makeMask(1, 2),
-			[layoutA, layoutB],
-			16,
-			makeHeapFactory()
-		);
+		const a = new Archetype(archId(0), makeMask(1, 2), [layoutA, layoutB], 16, makeHeapFactory());
 
 		a.addEntity(entity(0)); // row 0
 		a.writeFields(0, compId(1), { a: 100 }, 0);

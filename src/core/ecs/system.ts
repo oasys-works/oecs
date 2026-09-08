@@ -381,13 +381,12 @@ export type ResourcesAccessDecl = readonly ResourceKey<any>[];
 // literal entries that omit an optional field resolve to `never` instead of
 // erroring. A `Template` entry contributes its def-list union, mirroring
 // `_normalizeAccess`'s runtime expansion.
-type SpawnEntryDefs<E> = E extends Template<infer TDefs>
-	? TDefs[number]
-	: E extends readonly (infer D)[]
-		? D
-		: never;
+type SpawnEntryDefs<E> =
+	E extends Template<infer TDefs> ? TDefs[number] : E extends readonly (infer D)[] ? D : never;
 type DespawnEntryDefs<E> = E extends Template<infer TDefs> ? TDefs[number] : E;
-type TransitionAddDefs<T> = T extends { readonly add: readonly (infer D extends ComponentDef<any>)[] }
+type TransitionAddDefs<T> = T extends {
+	readonly add: readonly (infer D extends ComponentDef<any>)[];
+}
 	? D
 	: never;
 type TransitionRemoveDefs<T> = T extends {

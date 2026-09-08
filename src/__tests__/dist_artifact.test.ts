@@ -158,12 +158,7 @@ console.log(JSON.stringify(out));
  * each of three plugin modules. Each plugin bundle is a separate rollup
  * graph. A copied error class would answer `false` to `instanceof` here, even
  * though the same source declared it. */
-const pluginFaults = (
-	core: string,
-	eventsMod: string,
-	snapshotsMod: string,
-	load: string
-) => `
+const pluginFaults = (core: string, eventsMod: string, snapshotsMod: string, load: string) => `
 const root = ${load}(${JSON.stringify(core)});
 const { events } = ${load}(${JSON.stringify(eventsMod)});
 const { snapshots } = ${load}(${JSON.stringify(snapshotsMod)});
@@ -414,12 +409,7 @@ describe("the shipped bundle", () => {
 
 	it("throws the root's error classes out of a plugin, as ESM", () => {
 		const out = probe(
-			pluginFaults(
-				PROD,
-				join(PLUGINS, "events.js"),
-				join(PLUGINS, "snapshots.js"),
-				"await import"
-			)
+			pluginFaults(PROD, join(PLUGINS, "events.js"), join(PLUGINS, "snapshots.js"), "await import")
 		);
 		expect(out.emitCategory).toBe("EVENT_NOT_REGISTERED");
 		expect(out.emitIsECSError).toBe(true);

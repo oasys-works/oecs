@@ -146,9 +146,15 @@ describe("Change Detection", () => {
 		});
 
 		if (writerFirst) {
-			world.addSystems(SCHEDULE.UPDATE, writer, { system: detector, ordering: { after: [writer] } });
+			world.addSystems(SCHEDULE.UPDATE, writer, {
+				system: detector,
+				ordering: { after: [writer] }
+			});
 		} else {
-			world.addSystems(SCHEDULE.UPDATE, detector, { system: writer, ordering: { after: [detector] } });
+			world.addSystems(SCHEDULE.UPDATE, detector, {
+				system: writer,
+				ordering: { after: [detector] }
+			});
 		}
 		world.startup();
 		for (let i = 0; i < 4; i++) world.update(1 / 60);

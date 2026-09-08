@@ -106,7 +106,8 @@ describe("addComponents batching", () => {
 		expect(world.archetypeCount).toBe(2);
 
 		const before = viewStamp(world);
-		world.addComponents(e,
+		world.addComponents(
+			e,
 			A({ v: 11 }), // already present, overwrite
 			B({ v: 22 }), // new
 			C({ v: 33 }) // new

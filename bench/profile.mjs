@@ -74,7 +74,7 @@ const scenarios = {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});
-					},
+					}
 				})
 			);
 		}
@@ -104,7 +104,7 @@ const scenarios = {
 						for (let i = 0; i < spawned.length; i++) ctx.commands.despawn(spawned[i]);
 						spawned.length = 0;
 					}
-				},
+				}
 			})
 		);
 		ecs.startup();
@@ -137,7 +137,7 @@ const scenarios = {
 			const t = ecs.template(Pos({ x: 1, y: 2 }), Vel({ vx: 0, vy: 0 }));
 			for (let i = 0; i < N; i++) ecs.spawn(t);
 		}
-	},
+	}
 };
 
 if (!scenarios[scenario]) {

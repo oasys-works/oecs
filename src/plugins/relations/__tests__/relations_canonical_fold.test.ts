@@ -34,8 +34,6 @@ function capStore(...args: ConstructorParameters<typeof Store>): Store {
 	return built;
 }
 
-
-
 const pairNums = (pairs: readonly (readonly [EntityID, EntityID])[]): [number, number][] =>
 	pairs.map(([s, t]) => [s as number, t as number]);
 
@@ -115,12 +113,14 @@ describe("relations canonical fold, single source of truth", () => {
 		expect(pairNums(dst.relations.pairsOf(Targets2))).toEqual(targetsBefore);
 		// Reverse index rebuilt too (multi from bytes, exclusive from sparse field).
 		expect(
-			dst
-				.relations.sourcesOf(t[0], Likes2)
+			dst.relations
+				.sourcesOf(t[0], Likes2)
 				.map((e) => e as number)
 				.sort((x, y) => x - y)
 		).toEqual([s[0] as number]);
-		expect(dst.relations.sourcesOf(t[0], Targets2).map((e) => e as number)).toEqual([s[1] as number]);
+		expect(dst.relations.sourcesOf(t[0], Targets2).map((e) => e as number)).toEqual([
+			s[1] as number
+		]);
 	});
 
 	it("compactRelations reclaims dead-target reverse entries without changing stateHash or pairsOf", () => {

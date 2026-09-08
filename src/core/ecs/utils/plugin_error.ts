@@ -33,8 +33,7 @@ export function pluginMissingError(plugin: string, api: string): ECSError {
 export function pluginInstalledTwiceError(plugin: string): ECSError {
 	return new ECSError(
 		ECS_ERROR.PLUGIN_ALREADY_INSTALLED,
-		`${plugin} is already installed on this world. ` +
-			`Pass each plugin once to ECS.create`,
+		`${plugin} is already installed on this world. ` + `Pass each plugin once to ECS.create`,
 		{ plugin }
 	);
 }

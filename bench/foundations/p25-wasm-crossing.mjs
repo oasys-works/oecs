@@ -18,7 +18,14 @@ import { readDescriptors } from "./wasm/world.mjs";
 const PAGES = 2048;
 const SIZES = [1000, 10000, 100000, 1000000];
 const ARCHETYPES = 8;
-const BODIES = ["ts", "hand one call", "zig one call", "zig call per archetype", "empty one call", "empty call per archetype"];
+const BODIES = [
+	"ts",
+	"hand one call",
+	"zig one call",
+	"zig call per archetype",
+	"empty one call",
+	"empty call per archetype"
+];
 
 function buildCrossingWorld(ECS, n) {
 	const ecs = ECS.create({ memory: { backing: { wasm: { maximumPages: PAGES } } } });
@@ -30,7 +37,11 @@ function buildCrossingWorld(ECS, n) {
 	for (let i = 0; i < ARCHETYPES; i++) tags.push(ecs.registerComponent({ [`t${i}`]: "u32" }));
 	const per = Math.max(1, Math.floor(n / ARCHETYPES));
 	for (let i = 0; i < ARCHETYPES; i++) {
-		const T = ecs.template(Pos({ x: 1, y: 1, z: 1 }), Vel({ vx: 1, vy: 1, vz: 1 }), tags[i]({ [`t${i}`]: i }));
+		const T = ecs.template(
+			Pos({ x: 1, y: 1, z: 1 }),
+			Vel({ vx: 1, vy: 1, vz: 1 }),
+			tags[i]({ [`t${i}`]: i })
+		);
 		ecs.spawnMany(T, per);
 	}
 	ecs.publishRowCounts();
@@ -61,7 +72,11 @@ class ModuleBackend {
 		// Re-walk lazily, because `setLayout` fires before the store publishes
 		// the row counts of the frame.
 		this._descs = readDescriptors(this._buffer, this._headerOff)
-			.filter((d) => d.columns.some((c) => c.componentId === this._posId) && d.columns.some((c) => c.componentId === this._velId))
+			.filter(
+				(d) =>
+					d.columns.some((c) => c.componentId === this._posId) &&
+					d.columns.some((c) => c.componentId === this._velId)
+			)
 			.map((d) => d.descOff);
 	}
 	run() {
@@ -73,7 +88,13 @@ class ModuleBackend {
 		// A descriptor address is not a column base, so the per-archetype entry
 		// takes both. The columns of that archetype start from the header offset.
 		for (let i = 0; i < this._descs.length; i++) {
-			this._ex[this._entry === "nop" ? "nop" : "step_at"](this._headerOff, this._descs[i], this._posId, this._velId, 0.5);
+			this._ex[this._entry === "nop" ? "nop" : "step_at"](
+				this._headerOff,
+				this._descs[i],
+				this._posId,
+				this._velId,
+				0.5
+			);
 		}
 	}
 }
@@ -133,10 +154,13 @@ if (variant !== null) {
 
 	ecs.addSystems(SCHEDULE.UPDATE, system);
 	ecs.startup();
-	const t = time(() => {
-		ecs.update(0.5);
-		return 1;
-	}, { warmup: 8, samples: 25 });
+	const t = time(
+		() => {
+			ecs.update(0.5);
+			return 1;
+		},
+		{ warmup: 8, samples: 25 }
+	);
 	emit({ median: t.median, p25: t.p25, p75: t.p75, min: t.min, max: t.max });
 	process.exit(0);
 }
@@ -168,7 +192,10 @@ for (const rt of RUNTIMES) {
 		...BODIES.map((b) => ({ label: b, get: (r) => cell(r, b) })),
 		{
 			label: "zig one call against ts",
-			get: (r) => (r.ts && r["zig one call"] ? `${(r.ts.median / r["zig one call"].median).toFixed(2)}x` : "skip")
+			get: (r) =>
+				r.ts && r["zig one call"]
+					? `${(r.ts.median / r["zig one call"].median).toFixed(2)}x`
+					: "skip"
 		}
 	]);
 }

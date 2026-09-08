@@ -135,7 +135,11 @@ export function validateMaxFixedSteps(value: number): number {
  * alternative for each one.
  */
 export function assertTemplate(value: unknown, op: string): void {
-	if (typeof value === "object" && value !== null && typeof (value as Template).archetypeId === "number") {
+	if (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as Template).archetypeId === "number"
+	) {
 		return;
 	}
 	const isDef = typeof value === "function";

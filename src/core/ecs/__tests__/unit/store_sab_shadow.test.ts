@@ -145,9 +145,7 @@ describe("Store. SAB shadow", () => {
 
 		const finalId = store.archetypeCount - 1;
 		const storeArch = store.columnStore.archetypes.get(finalId)!;
-		expect(storeArch.componentMask[0]).toBe(
-			(1 << Pos.id) | (1 << Vel.id)
-		);
+		expect(storeArch.componentMask[0]).toBe((1 << Pos.id) | (1 << Vel.id));
 		expect(storeArch.componentMask[1]).toBe(0);
 		expect(storeArch.componentMask[2]).toBe(0);
 		expect(storeArch.componentMask[3]).toBe(0);

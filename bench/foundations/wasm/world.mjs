@@ -16,12 +16,32 @@
 export const MAX_PAGES = 512;
 export const MAX_BYTES = MAX_PAGES * 65536;
 
-export const HDR = { magic: 0, version: 4, viewStamp: 8, capacity: 12, archetypeCount: 16, layoutOff: 20, entityIndexOff: 32 };
-export const ARCH = { id: 0, mask: 4, rowCount: 20, rowCapacity: 24, columnCount: 28, enabledCount: 32, entityIdsOff: 36, bytes: 40 };
+export const HDR = {
+	magic: 0,
+	version: 4,
+	viewStamp: 8,
+	capacity: 12,
+	archetypeCount: 16,
+	layoutOff: 20,
+	entityIndexOff: 32
+};
+export const ARCH = {
+	id: 0,
+	mask: 4,
+	rowCount: 20,
+	rowCapacity: 24,
+	columnCount: 28,
+	enabledCount: 32,
+	entityIdsOff: 36,
+	bytes: 40
+};
 export const COL = { componentId: 0, fieldId: 2, typeTag: 4, byteOff: 8, stride: 12, bytes: 16 };
 
 /** Four archetypes, deterministic contents, no random source. */
-export function buildWorld(ECS, { kind = "f32", deterministic = false, n = 4, maxPages = MAX_PAGES, seed = true, storeBase } = {}) {
+export function buildWorld(
+	ECS,
+	{ kind = "f32", deterministic = false, n = 4, maxPages = MAX_PAGES, seed = true, storeBase } = {}
+) {
 	const ecs = ECS.create({
 		deterministic,
 		memory: { storeBase, backing: { wasm: { maximumPages: maxPages } } }
@@ -35,7 +55,11 @@ export function buildWorld(ECS, { kind = "f32", deterministic = false, n = 4, ma
 	const Mass = ecs.registerComponent({ m: "u32" });
 	const both = ecs.template(Pos({ x: 1, y: 2, z: 3 }), Vel({ vx: 1, vy: 2, vz: 3 }));
 	const posOnly = ecs.template(Pos({ x: 7, y: 7, z: 7 }));
-	const heavy = ecs.template(Pos({ x: 5, y: 6, z: 7 }), Vel({ vx: 2, vy: 3, vz: 4 }), Mass({ m: 11 }));
+	const heavy = ecs.template(
+		Pos({ x: 5, y: 6, z: 7 }),
+		Vel({ vx: 2, vy: 3, vz: 4 }),
+		Mass({ m: 11 })
+	);
 	const ids = [
 		...ecs.spawnMany(both, n),
 		...ecs.spawnMany(posOnly, Math.max(1, n >> 1)),
@@ -128,7 +152,13 @@ export function readDescriptors(buffer, headerOff = 0) {
  * `round` picks the arithmetic: `fround` rounds each operation to f32 the way
  * WebAssembly does, `native` lets the intermediate stay double.
  */
-export function tsStepFromDescriptors(buffer, posId, velId, dt, { round = "fround", headerOff = 0 } = {}) {
+export function tsStepFromDescriptors(
+	buffer,
+	posId,
+	velId,
+	dt,
+	{ round = "fround", headerOff = 0 } = {}
+) {
 	const descs = readDescriptors(buffer, headerOff);
 	let rows = 0;
 	const dtf = round === "fround" ? Math.fround(dt) : dt;
@@ -141,7 +171,8 @@ export function tsStepFromDescriptors(buffer, posId, velId, dt, { round = "froun
 			const pc = new Float32Array(buffer, p[axis].address, d.enabledCount);
 			const vc = new Float32Array(buffer, v[axis].address, d.enabledCount);
 			for (let r = 0; r < d.enabledCount; r++) {
-				pc[r] = round === "fround" ? Math.fround(pc[r] + Math.fround(vc[r] * dtf)) : pc[r] + vc[r] * dtf;
+				pc[r] =
+					round === "fround" ? Math.fround(pc[r] + Math.fround(vc[r] * dtf)) : pc[r] + vc[r] * dtf;
 			}
 		}
 		rows += d.enabledCount;
@@ -211,7 +242,11 @@ export function changedRanges(before, after, limit = 8) {
 		if (last && r[0] - last[1] <= 8) last[1] = r[1];
 		else merged.push([...r]);
 	}
-	return { count: merged.length, first: merged.slice(0, limit), span: merged.length === 0 ? null : [merged[0][0], merged[merged.length - 1][1]] };
+	return {
+		count: merged.length,
+		first: merged.slice(0, limit),
+		span: merged.length === 0 ? null : [merged[0][0], merged[merged.length - 1][1]]
+	};
 }
 
 /** Every live value of one component, in descriptor order. A digest says

@@ -413,9 +413,7 @@ export function heapArrayBufferAllocator(
  * is address space and not resident memory, the same as the heap profile's
  * reservation.
  */
-export function fixedSabAllocator(
-	maxBytes: number = 256 * 1024 * 1024
-): InPlaceBufferAllocator {
+export function fixedSabAllocator(maxBytes: number = 256 * 1024 * 1024): InPlaceBufferAllocator {
 	if (typeof SharedArrayBuffer === "undefined") throw new SabUnavailableError();
 	return createSingleBufferAllocator(
 		"fixedSabAllocator",

@@ -25,7 +25,12 @@ import { relations } from "../../../../plugins/relations";
 
 /** A system that bumps the changed tick of `def`'s column on every archetype
  * that `q` matches. Ordered before the reader in each test below. */
-function writer(world: ECS, q: Query<ComponentDef[]>, def: ComponentDef, field: string): SystemDescriptor {
+function writer(
+	world: ECS,
+	q: Query<ComponentDef[]>,
+	def: ComponentDef,
+	field: string
+): SystemDescriptor {
 	return world.registerSystem({
 		...openAccess([def]),
 		fn() {
@@ -78,12 +83,10 @@ describe("Query.changed with more than one component", () => {
 			}
 		});
 
-		world.addSystems(
-			SCHEDULE.UPDATE,
-			writeA,
-			writeB,
-			{ system: reader, ordering: { after: [writeA, writeB] } }
-		);
+		world.addSystems(SCHEDULE.UPDATE, writeA, writeB, {
+			system: reader,
+			ordering: { after: [writeA, writeB] }
+		});
 		world.startup();
 		// The reader zeroes its own counters, so what survives is the last tick.
 		// The first tick cannot measure anything: the spawn writes stamp every

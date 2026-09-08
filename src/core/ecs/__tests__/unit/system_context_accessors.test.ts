@@ -21,7 +21,11 @@ import { openAccess } from "../test_helpers";
 import { relations } from "../../../../plugins/relations";
 
 /** Run `fn` once inside a system with the supplied declaration. */
-function inSystem(ecs: ECS, access: ReturnType<typeof openAccess>, fn: (ctx: SystemContext) => void): void {
+function inSystem(
+	ecs: ECS,
+	access: ReturnType<typeof openAccess>,
+	fn: (ctx: SystemContext) => void
+): void {
 	ecs.addSystems(SCHEDULE.UPDATE, ecs.registerSystem({ ...access, fn: fn as never }));
 	ecs.startup();
 	ecs.update(0);
@@ -92,7 +96,10 @@ describe("ctx.targetsOf and ctx.sourcesOf", () => {
 		let sources: number[] = [];
 		let undeclaredTargets: unknown;
 		let undeclaredSources: unknown;
-		type Erased = { targetsOf: (e: unknown, d: unknown) => unknown; sourcesOf: (e: unknown, d: unknown) => unknown };
+		type Erased = {
+			targetsOf: (e: unknown, d: unknown) => unknown;
+			sourcesOf: (e: unknown, d: unknown) => unknown;
+		};
 		inSystem(ecs, openAccess([], [], [], [Likes]), (ctx) => {
 			targets = ctx.targetsOf(src, Likes).map(Number);
 			sources = ctx.sourcesOf(t1, Likes).map(Number);

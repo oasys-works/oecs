@@ -84,10 +84,7 @@ const ARCHETYPE_FIXTURE: ArchetypeDescriptor = {
 // [32..36) enabled_count=3    → 03 00 00 00
 // [36..40) entity_ids_off=0   → 00 00 00 00
 const ARCHETYPE_HEADER_GOLDEN_HEX =
-	"2a000000efbeadde0000000000000000000000000300000010000000" +
-	"01000000" +
-	"03000000" +
-	"00000000";
+	"2a000000efbeadde0000000000000000000000000300000010000000" + "01000000" + "03000000" + "00000000";
 const ARCHETYPE_GOLDEN_HEX = ARCHETYPE_HEADER_GOLDEN_HEX + COLUMN_GOLDEN_HEX;
 
 // ───────────────────────── Region (2 archetypes) ────────────────────────
@@ -188,9 +185,7 @@ describe("SAB ArchetypeDescriptor, 40-byte header + N × 16", () => {
 		// 10 words. `entity_ids_off` closes it, so the first column descriptor
 		// starts at the header width.
 		expect(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off).toBe(36);
-		expect(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off + 4).toBe(
-			ARCHETYPE_DESCRIPTOR_HEADER_BYTES
-		);
+		expect(ARCHETYPE_DESCRIPTOR_OFFSETS.entity_ids_off + 4).toBe(ARCHETYPE_DESCRIPTOR_HEADER_BYTES);
 	});
 
 	it("the writer stores zero in entity_ids_off, which means the table is absent", () => {

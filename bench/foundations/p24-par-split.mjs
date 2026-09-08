@@ -206,11 +206,7 @@ async function runOne({ entities, deterministic }) {
 				kernel: name,
 				what: `${k} workers vs sequential system`,
 				bytes: same ? "equal" : "DIFFER",
-				hash: deterministic
-					? hashPar === hashSystem
-						? "equal"
-						: "DIFFER"
-					: "n/a (float world)"
+				hash: deterministic ? (hashPar === hashSystem ? "equal" : "DIFFER") : "n/a (float world)"
 			});
 		}
 	}

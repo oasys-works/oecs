@@ -309,9 +309,7 @@ export function readLayoutDescriptorRegion(
 
 /** Total bytes needed for a layout descriptor region holding these archetypes.
  * Use to size the SAB region between header end and the first column. */
-export function layoutDescriptorRegionBytes(
-	descriptors: readonly ArchetypeDescriptor[]
-): number {
+export function layoutDescriptorRegionBytes(descriptors: readonly ArchetypeDescriptor[]): number {
 	let total = 0;
 	for (let i = 0; i < descriptors.length; i++) {
 		total += archetypeDescriptorBytes(descriptors[i].columns.length);

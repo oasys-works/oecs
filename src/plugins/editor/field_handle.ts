@@ -66,7 +66,9 @@ export function fieldHandle<S extends ComponentSchema>(
 ): FieldHandle {
 	return {
 		get value(): number | undefined {
-			return read !== undefined ? read() : editor.committedField(entityId, def as ComponentDef, field);
+			return read !== undefined
+				? read()
+				: editor.committedField(entityId, def as ComponentDef, field);
 		},
 		set(value: number): void {
 			editor.setField(entityId, def, field, value);

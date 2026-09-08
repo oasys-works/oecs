@@ -61,13 +61,16 @@ if (!fs.existsSync(bundle)) {
 }
 
 if (variant === undefined) {
-	console.log(`sparse iteration, ns for each entity, best of 7 samples, one process for each variant`);
+	console.log(
+		`sparse iteration, ns for each entity, best of 7 samples, one process for each variant`
+	);
 	for (const v of VARIANTS) {
 		process.stdout.write(execFileSync(process.execPath, [self, v, bundle], { encoding: "utf8" }));
 	}
 	process.exit(0);
 }
-if (!VARIANTS.includes(variant)) throw new Error(`unknown variant ${variant}: ${VARIANTS.join(", ")}`);
+if (!VARIANTS.includes(variant))
+	throw new Error(`unknown variant ${variant}: ${VARIANTS.join(", ")}`);
 
 const { ECS } = await import(url.pathToFileURL(bundle).href);
 const ecs = new ECS({ memory: { columnCapacity: Math.round(N * 1.2) } });

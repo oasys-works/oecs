@@ -34,7 +34,12 @@ const BINDINGS_BYTES = 128;
 // Internal layout primitives not surfaced through the barrel, exercised
 // directly so the 2³¹ overflow guard can be pinned without allocating
 // a 2 GiB SharedArrayBuffer.
-import { alignUp, STORE_MAX_BYTE_OFFSET, StoreLayoutOverflowError, planLayout } from "../column_store";
+import {
+	alignUp,
+	STORE_MAX_BYTE_OFFSET,
+	StoreLayoutOverflowError,
+	planLayout
+} from "../column_store";
 
 // Single-archetype spec with three columns of mixed widths so alignment
 // padding actually matters (u32 lands after a u8, exercises `alignUp`).
@@ -93,11 +98,7 @@ describe("createColumnStore. SAB allocation + layout", () => {
 		const store = createColumnStore(SPEC_MULTI);
 		const h = readStoreHeader(store.view);
 
-		const descs = readLayoutDescriptorRegion(
-			store.view,
-			h.layoutDescriptorOff,
-			h.archetypeCount
-		);
+		const descs = readLayoutDescriptorRegion(store.view, h.layoutDescriptorOff, h.archetypeCount);
 		expect(descs.length).toBe(SPEC_MULTI.length);
 		for (let i = 0; i < SPEC_MULTI.length; i++) {
 			expect(descs[i].archetypeId).toBe(SPEC_MULTI[i].archetypeId);
@@ -334,9 +335,7 @@ describe("createColumnStore, command ring", () => {
 		});
 		const arch = store.archetypes.get(7)!;
 		for (const col of arch.columnsInOrder) {
-			expect(col.byteOff).toBeGreaterThanOrEqual(
-				readStoreHeader(store.view).layoutDescriptorOff
-			);
+			expect(col.byteOff).toBeGreaterThanOrEqual(readStoreHeader(store.view).layoutDescriptorOff);
 		}
 	});
 

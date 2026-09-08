@@ -109,11 +109,7 @@ export class EntityIndexError extends Error {
  * (callers normally allocate the region on a fresh, zero-initialised
  * SAB. Generation 0 is the INITIAL_GENERATION sentinel, archetype and row
  * sentinels of 0 are caught by `length=0` so no read reaches them). */
-export function initEntityIndexRegion(
-	view: DataView,
-	regionOff: number,
-	capacity: number
-): void {
+export function initEntityIndexRegion(view: DataView, regionOff: number, capacity: number): void {
 	if (capacity < 0 || !Number.isInteger(capacity)) {
 		throw new EntityIndexError(
 			`entity index capacity must be a non-negative integer (got ${capacity})`

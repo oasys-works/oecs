@@ -54,12 +54,17 @@ export function buildDist(from, dest, { dev = false } = {}) {
 	const source = path.resolve(from);
 	const script = path.join(source, "scripts/build.mjs");
 	if (!fs.existsSync(script)) {
-		throw new Error(`no scripts/build.mjs in ${source}, thus this is not a checkout of the package`);
+		throw new Error(
+			`no scripts/build.mjs in ${source}, thus this is not a checkout of the package`
+		);
 	}
 
 	// The build writes its report to stdout. A measurement tool writes its result to
 	// stdout as well, and thus the report goes to stderr with the other progress.
-	execFileSync(process.execPath, [script], { cwd: source, stdio: ["ignore", "inherit", "inherit"] });
+	execFileSync(process.execPath, [script], {
+		cwd: source,
+		stdio: ["ignore", "inherit", "inherit"]
+	});
 
 	const dist = path.join(source, "dist");
 	const entry = dev ? ENTRY.development : ENTRY.production;

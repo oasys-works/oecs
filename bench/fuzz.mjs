@@ -26,9 +26,11 @@ import { buildLib } from "./build.mjs";
  * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
-	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+	return lib.ECS.create({
+		...options,
+		plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()]
+	});
 }
-
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -74,7 +76,7 @@ function runOne(seed) {
 		{ def: A, fields: ["a0", "a1"] },
 		{ def: B, fields: ["b0"] },
 		{ def: C, fields: ["c0", "c1", "c2"] },
-		{ def: T, fields: [] },
+		{ def: T, fields: [] }
 	];
 
 	// model: entity -> { comps: Map<defIndex, {field: value}>, disabled: bool }
@@ -221,8 +223,7 @@ function runOne(seed) {
 				if (want === undefined) continue;
 				for (const f of d.fields) {
 					const got = ecs.getField(e, d.def, f);
-					if (got !== want[f])
-						fail(seed, step, `entity ${e} ${f}=${got} want ${want[f]}`);
+					if (got !== want[f]) fail(seed, step, `entity ${e} ${f}=${got} want ${want[f]}`);
 				}
 			}
 		}
@@ -231,7 +232,7 @@ function runOne(seed) {
 		const checks = [
 			[qA, (m) => m.comps.has(defs[0])],
 			[qAB, (m) => m.comps.has(defs[0]) && m.comps.has(defs[1])],
-			[qC, (m) => m.comps.has(defs[2])],
+			[qC, (m) => m.comps.has(defs[2])]
 		];
 		for (const [q, pred] of checks) {
 			let want = 0;

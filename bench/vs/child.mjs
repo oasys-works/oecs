@@ -69,6 +69,6 @@ process.stdout.write(
 		bestMs: times[0],
 		medianMs: times[(times.length / 2) | 0],
 		iters: c.iters,
-		checksum: c.check ? await c.check() : null,
+		checksum: c.check ? await c.check() : null
 	})
 );

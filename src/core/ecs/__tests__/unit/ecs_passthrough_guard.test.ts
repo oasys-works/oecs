@@ -220,9 +220,6 @@ describe("ECS pass-through band", () => {
 				});
 			}
 		}
-		expect(
-			violations,
-			violations.map((v) => `${v.member}: ${v.reason}`).join("\n")
-		).toEqual([]);
+		expect(violations, violations.map((v) => `${v.member}: ${v.reason}`).join("\n")).toEqual([]);
 	});
 });

@@ -175,9 +175,7 @@ describe("memory.storeBase, the world", () => {
 		const Pos = w.registerComponent(Position);
 		const Vel = w.registerComponent(Velocity);
 		const memory = w.wasmMemory!;
-		expect(new DataView(memory.buffer, WASM_STORE_BASE_BYTES).getUint32(0, true)).toBe(
-			STORE_MAGIC
-		);
+		expect(new DataView(memory.buffer, WASM_STORE_BASE_BYTES).getUint32(0, true)).toBe(STORE_MAGIC);
 
 		const ids = [];
 		for (let i = 0; i < 4000; i++) {

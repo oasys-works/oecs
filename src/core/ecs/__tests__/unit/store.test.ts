@@ -135,9 +135,7 @@ describe("Store", () => {
 
 	it("no stale handle to a retired slot ever reads as alive (aba closed)", () => {
 		const store = new Store();
-		const { lastLive, gen0Handle } = churnSlotToExhaustion(store, (s, id) =>
-			s.destroyEntity(id)
-		);
+		const { lastLive, gen0Handle } = churnSlotToExhaustion(store, (s, id) => s.destroyEntity(id));
 		store.destroyEntity(lastLive);
 
 		// The original generation-0 handle is the classic ABA aliasing risk: a

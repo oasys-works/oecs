@@ -101,11 +101,13 @@ async function run(name) {
 
 	const walk = order === "shuffled" ? shuffledOrder(N) : null;
 	// One order array either way, so both rows run the same indirection count.
-	const seq = walk ?? (() => {
-		const a = new Uint32Array(N);
-		for (let i = 0; i < N; i++) a[i] = i;
-		return a;
-	})();
+	const seq =
+		walk ??
+		(() => {
+			const a = new Uint32Array(N);
+			for (let i = 0; i < N; i++) a[i] = i;
+			return a;
+		})();
 
 	// The two candidates reach past the public surface on purpose. They are a
 	// measurement of a body the library could expose, not a suggestion that a
@@ -196,7 +198,9 @@ if (which) {
 } else {
 	console.log(`P10, a read of one field by id: where the cost sits`);
 	console.log(`      ${N.toLocaleString()} entities, one f32 field, summed`);
-	console.log(`      bound and generated resolve the field index once; getfield resolves it per read`);
+	console.log(
+		`      bound and generated resolve the field index once; getfield resolves it per read`
+	);
 	console.log(`      chunk is the floor: a dense walk that resolves nothing per row\n`);
 
 	console.log(
@@ -217,7 +221,9 @@ if (which) {
 				const r = got[p];
 				if (!r) continue;
 				if (r.blocked) {
-					console.log(`  ${order.padEnd(10)} ${rt.cmd.padEnd(12)} ${p.padEnd(11)} blocked: ${r.blocked}`);
+					console.log(
+						`  ${order.padEnd(10)} ${rt.cmd.padEnd(12)} ${p.padEnd(11)} blocked: ${r.blocked}`
+					);
 					continue;
 				}
 				console.log(
@@ -228,6 +234,10 @@ if (which) {
 			}
 		}
 	}
-	console.log(`\n  Checksums must match within an order, or the paths are not reading the same thing.`);
-	console.log(`  A tie between bound and generated means the lookup was the cost, not the call shape.`);
+	console.log(
+		`\n  Checksums must match within an order, or the paths are not reading the same thing.`
+	);
+	console.log(
+		`  A tie between bound and generated means the lookup was the cost, not the call shape.`
+	);
 }

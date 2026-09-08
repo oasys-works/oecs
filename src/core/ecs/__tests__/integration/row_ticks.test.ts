@@ -12,10 +12,11 @@ import { ECS_ERROR } from "../../utils/error";
 import { openAccess } from "../test_helpers";
 import { observers } from "../../../../plugins/observers";
 
-
-
 function world() {
-	const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+	const ecs = ECS.create({
+		deterministic: true,
+		plugins: [snapshots(), observers()]
+	});
 	const Pos = ecs.registerComponent(["x"] as const, "i32");
 	const Tag = ecs.registerTag();
 	const fired: number[] = [];
@@ -33,7 +34,8 @@ function world() {
 	return { ecs, Pos, Tag, ids, fired };
 }
 
-const idx = (ids: EntityID[], ...at: number[]) => at.map((i) => getEntityIndex(ids[i])).sort((a, b) => a - b);
+const idx = (ids: EntityID[], ...at: number[]) =>
+	at.map((i) => getEntityIndex(ids[i])).sort((a, b) => a - b);
 
 describe("cols.ticks, the row record", () => {
 	it("fires once per stamped row, in entity order, and never for a row left alone", () => {
@@ -214,7 +216,14 @@ describe("cols.ticks, the row record", () => {
 	});
 
 	it("survives a grow of the archetype between the stamp and the drain", () => {
-		const ecs = ECS.create({ ...({ deterministic: true, memory: { entities: 64, columnCapacity: 8 } }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			memory: {
+				entities: 64,
+				columnCapacity: 8
+			},
+			plugins: [snapshots(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		ecs.observe(Pos, {
@@ -241,7 +250,10 @@ describe("cols.ticks, the row record", () => {
 	});
 
 	it("throws for a component no entity-level onSet tracks", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
@@ -319,7 +331,10 @@ describe("the tick plane of a freed slot", () => {
 		// stamp unless the next append zeroes the tick plane. A template spawn
 		// lands in that slot, in a frame where the drain scans, and it must not
 		// fire: an insert is structural, and `onAdd` reports it.
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		ecs.observe(Pos, {
@@ -349,7 +364,10 @@ describe("the tick plane of a freed slot", () => {
 
 describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChunk", () => {
 	it("reports the rows written since the reader's previous run, once each", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		ecs.trackRows(Pos);
 		const ids: EntityID[] = [];
@@ -390,7 +408,10 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("sees a row stamped in a chunk loop through ticksRead, and never a row left alone", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		ecs.trackRows(Pos);
 		const T = ecs.template(Pos({ x: 0 }));
@@ -418,7 +439,8 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 			fn: () => {
 				q.changed(Pos).forEachChunk((cols, n) => {
 					const t = cols.ticksRead(Pos);
-					for (let i = 0; i < n; i++) if (t[i] > cols.since) seen.push(getEntityIndex(cols.arch.entityIds[i]));
+					for (let i = 0; i < n; i++)
+						if (t[i] > cols.since) seen.push(getEntityIndex(cols.arch.entityIds[i]));
 				});
 			}
 		});
@@ -438,7 +460,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 		// advances the change tick and hands that value to the pass as `cols.tick`,
 		// then writes it back to the slot after the body. So the `since` of one
 		// pass is the `tick` of the pass before it, and 0 before the first.
-		const ecs = ECS.create({ ...({ deterministic: true }) });
+		const ecs = ECS.create({ deterministic: true });
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		ecs.spawn(ecs.template(Pos({ x: 0 })));
 		const q = ecs.query(Pos);
@@ -468,7 +490,10 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("throws through ticksRead when no row ticks exist, and trackRows is idempotent", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
@@ -481,7 +506,10 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("accepts a sparse component, and rejects a malformed handle", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), observers()]
+		});
 		const S = ecs.registerSparseComponent({ v: "i32" });
 		expect(() => ecs.trackRows(S)).not.toThrow();
 		expect(() => ecs.trackRows({} as never)).toThrow(
@@ -496,7 +524,11 @@ describe("the by-id record switches to the scan past the list cap", () => {
 		// crosses it with a few hundred by-id writes. Every written entity must
 		// still fire exactly one time, and an entity recorded by `markChanged`
 		// in an archetype nobody wrote must still fire from the list.
-		const ecs = ECS.create({ ...({ deterministic: true, memory: { entities: 4096 } }), plugins: [snapshots(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			memory: { entities: 4096 },
+			plugins: [snapshots(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const Tag = ecs.registerTag();
 		const fired: number[] = [];

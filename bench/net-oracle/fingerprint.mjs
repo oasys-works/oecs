@@ -81,12 +81,29 @@ function fmix(h) {
  * arguments in the same order, so the function is the definition of "the state
  * of an agent". */
 function hashAgent(
-	r, t, flags, hits,
-	s0, s1, s2,
-	seq, quar, age,
-	m8, m16, mu16, mu32, mf,
-	b8, b16, bu16, bu32, bf,
-	l0, l1, l2
+	r,
+	t,
+	flags,
+	hits,
+	s0,
+	s1,
+	s2,
+	seq,
+	quar,
+	age,
+	m8,
+	m16,
+	mu16,
+	mu32,
+	mf,
+	b8,
+	b16,
+	bu16,
+	bu32,
+	bf,
+	l0,
+	l1,
+	l2
 ) {
 	let h = 0x811c9dc5;
 	h = step(h, r);
@@ -167,12 +184,29 @@ export function fingerprintRef(ref, { redex = true, float = false } = {}) {
 		const hits = redex && ref._rxOf.has(a) ? seq & 0xff : NONE;
 		fold.add(
 			hashAgent(
-				a, t, flags, hits,
-				slot[i], slot[i + 1], slot[i + 2],
-				seq, ref._quar.get(a), ref._age.has(a) ? ref._age.get(a) : NONE,
-				m.m8, m.m16, m.mu16, m.mu32, float ? f32bits(mirrorF32Of(seq)) : 0,
-				BORN.b8, BORN.b16, BORN.bu16, BORN.bu32, bf,
-				l0, l1, l2
+				a,
+				t,
+				flags,
+				hits,
+				slot[i],
+				slot[i + 1],
+				slot[i + 2],
+				seq,
+				ref._quar.get(a),
+				ref._age.has(a) ? ref._age.get(a) : NONE,
+				m.m8,
+				m.m16,
+				m.mu16,
+				m.mu32,
+				float ? f32bits(mirrorF32Of(seq)) : 0,
+				BORN.b8,
+				BORN.b16,
+				BORN.bu16,
+				BORN.bu32,
+				bf,
+				l0,
+				l1,
+				l2
 			)
 		);
 	}
@@ -261,12 +295,29 @@ export function fingerprintEcs(world, { redex = true } = {}) {
 			}
 			fold.add(
 				hashAgent(
-					r, t, flags, hits,
-					s0[row], s1[row], s2[row],
-					seq[row], quar[row], age === undefined ? NONE : age[row],
-					m8[row], m16[row], mu16[row], mu32[row], float ? f32bits(mf[row]) : 0,
-					b8[row], b16[row], bu16[row], bu32[row], float ? f32bits(bf[row]) : 0,
-					links[0], links[1], links[2]
+					r,
+					t,
+					flags,
+					hits,
+					s0[row],
+					s1[row],
+					s2[row],
+					seq[row],
+					quar[row],
+					age === undefined ? NONE : age[row],
+					m8[row],
+					m16[row],
+					mu16[row],
+					mu32[row],
+					float ? f32bits(mf[row]) : 0,
+					b8[row],
+					b16[row],
+					bu16[row],
+					bu32[row],
+					float ? f32bits(bf[row]) : 0,
+					links[0],
+					links[1],
+					links[2]
 				)
 			);
 		}

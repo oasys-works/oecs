@@ -401,7 +401,8 @@ export function resolveECSMemory(opts?: ECSMemoryOptions): ResolvedECSMemory {
 		// Size columns so the expected per-archetype row count fits without a
 		// doubling, the same way `DEFAULT_COLUMN_CAPACITY` already covers a
 		// small world.
-		columnCapacity = pinnedColumns ?? clamp(ceilPow2(Math.ceil(entities / archetypes)), 64, 1 << 20);
+		columnCapacity =
+			pinnedColumns ?? clamp(ceilPow2(Math.ceil(entities / archetypes)), 64, 1 << 20);
 		// 2× headroom over the count before EID_MAX_INDEX_OVERFLOW, enough slack
 		// for churn, small enough that runaway creation still fails fast.
 		entityIndexCapacity = clamp(ceilPow2(entities * 2), 1 << 12, 1 << 20);

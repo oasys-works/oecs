@@ -95,7 +95,11 @@ function spec(archetypeId: number, rowCapacity: number, columnCount: number): Ar
 		// descriptor layer understands: 6 = f32, 7 = f64 in TYPE_TAG order,
 		// resolved through TYPE_TAG_STRIDE at layout time, so mixing tags
 		// exercises alignUp with heterogeneous strides.
-		columns.push({ componentId: archetypeId * 10 + i, fieldId: i, typeTag: (i % 2 === 0 ? 6 : 7) as TypeTagValue });
+		columns.push({
+			componentId: archetypeId * 10 + i,
+			fieldId: i,
+			typeTag: (i % 2 === 0 ? 6 : 7) as TypeTagValue
+		});
 	}
 	return { archetypeId, componentMask: MASK, rowCapacity, columns };
 }

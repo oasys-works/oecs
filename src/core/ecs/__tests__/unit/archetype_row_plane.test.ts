@@ -190,9 +190,7 @@ describe("Archetype row plane", () => {
 		};
 
 		for (let i = 0; i < 4; i++) append(a, i, i);
-		expect(() => a.addEntity(entity(4))).toThrow(
-			/left capacity 4 below the required 5/
-		);
+		expect(() => a.addEntity(entity(4))).toThrow(/left capacity 4 below the required 5/);
 		expect(growCalls).toBe(1);
 	});
 });

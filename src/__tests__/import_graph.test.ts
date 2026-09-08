@@ -239,34 +239,34 @@ const naming = (component: readonly string[]) => component.map(label).sort().joi
  * and the patch author lowers the list in the same change.
  */
 const TANGLED_MODULES: readonly string[] = [
-	...[
-		"core/ecs/access_check.ts",
-		"core/ecs/archetype.ts",
-		"core/ecs/archetype_graph.ts",
-		"core/ecs/changed_query.ts",
-		"core/ecs/chunk_columns.ts",
-		"core/ecs/ecs.ts",
-		"core/ecs/frame_trace.ts",
-		"core/ecs/observer.ts",
-		"core/ecs/plugin.ts",
-		"core/ecs/query.ts",
-		"core/ecs/query_cache.ts",
-		"core/ecs/query_terms.ts",
-		// Extracted out of store.ts. It names Archetype, and store.ts names it,
-		// so it inherits the store's cycle. A module carved out of a tangled
-		// file joins that file's tangle, and the ceiling below rises with it.
-		"core/ecs/query_registry.ts",
-		// Extracted out of store.ts. It avoids naming Archetype, and it still
-		// names HostState, which snapshot.ts declares from inside the cycle.
-		"core/ecs/snapshot_mount.ts",
-		"core/ecs/relation.ts",
-		"core/ecs/snapshot.ts",
-		"core/ecs/store.ts",
-		"core/ecs/system.ts",
-		"core/ecs/system_context.ts"
-	],
-	...["core/store/column_store.ts", "core/store/store_regions.ts"],
-	...["plugins/relations/builtin_relations.ts", "plugins/relations/index.ts"]
+	"core/ecs/access_check.ts",
+	"core/ecs/archetype.ts",
+	"core/ecs/archetype_graph.ts",
+	"core/ecs/changed_query.ts",
+	"core/ecs/chunk_columns.ts",
+	"core/ecs/ecs.ts",
+	"core/ecs/frame_trace.ts",
+	"core/ecs/observer.ts",
+	"core/ecs/plugin.ts",
+	"core/ecs/query.ts",
+	"core/ecs/query_cache.ts",
+	"core/ecs/query_terms.ts",
+	// Extracted out of store.ts. It names Archetype, and store.ts names it,
+	// so it inherits the store's cycle. A module carved out of a tangled
+	// file joins that file's tangle, and the ceiling below rises with it.
+	"core/ecs/query_registry.ts",
+	// Extracted out of store.ts. It avoids naming Archetype, and it still
+	// names HostState, which snapshot.ts declares from inside the cycle.
+	"core/ecs/snapshot_mount.ts",
+	"core/ecs/relation.ts",
+	"core/ecs/snapshot.ts",
+	"core/ecs/store.ts",
+	"core/ecs/system.ts",
+	"core/ecs/system_context.ts",
+	"core/store/column_store.ts",
+	"core/store/store_regions.ts",
+	"plugins/relations/builtin_relations.ts",
+	"plugins/relations/index.ts"
 ];
 
 /** The member count of the largest type-only component. Lower it with the
@@ -301,13 +301,7 @@ const LARGEST_TANGLE = 17;
 describe("import graph", () => {
 	const configPath = path.join(ROOT, "tsconfig.json");
 	const config = ts.readConfigFile(configPath, ts.sys.readFile);
-	const parsed = ts.parseJsonConfigFileContent(
-		config.config,
-		ts.sys,
-		ROOT,
-		undefined,
-		configPath
-	);
+	const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT, undefined, configPath);
 	const files = sourceFiles(SRC);
 	const edges = collectEdges(files, parsed.options);
 

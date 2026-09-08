@@ -17,7 +17,14 @@ import { RefNet } from "./ref.mjs";
 import { RefProv } from "./prov.mjs";
 import { EcsNet, WORKER_URL } from "./world.mjs";
 import { fingerprintRef } from "./fingerprint.mjs";
-import { BORN, BORN_F32, BORN_INT_FIELDS, MIRROR_INT_FIELDS, mirrorF32Of, mirrorOf } from "./mirror.mjs";
+import {
+	BORN,
+	BORN_F32,
+	BORN_INT_FIELDS,
+	MIRROR_INT_FIELDS,
+	mirrorF32Of,
+	mirrorOf
+} from "./mirror.mjs";
 
 /** Default provenance-layer shape: an epoch every 8 ticks, 4 retained. At the
  * suite's batch of 32 that bounds the live record population to ~1k while pruning
@@ -98,7 +105,7 @@ export function lockstep(
 		// is one more scan, so a large case gives the checkpoints a cadence of their
 		// own. Refer to `fingerprintCheck`.
 		fpEvery = 1,
-		phaseEvery = 1,
+		phaseEvery = 1
 	}
 ) {
 	const rand = rng(seed);
@@ -115,7 +122,17 @@ export function lockstep(
 	const provRef = prov === null ? null : new RefProv(prov);
 	const world =
 		given ??
-		new EcsNet(lib, { strict: true, prov, float, record, sab, storeBase, maxBytes, allocator, parallel });
+		new EcsNet(lib, {
+			strict: true,
+			prov,
+			float,
+			record,
+			sab,
+			storeBase,
+			maxBytes,
+			allocator,
+			parallel
+		});
 	world.load(spec);
 
 	ref.assertConsistent(`${label} t0 (ref load)`);
@@ -208,7 +225,7 @@ export function lockstep(
 		// build has none, and a run on it cannot count a checkpoint.
 		fpChecks: 0,
 		phaseChecks: 0,
-		phaseSink: false,
+		phaseSink: false
 	};
 
 	while (stats.rewrites < steps) {
@@ -262,7 +279,7 @@ export function lockstep(
 				roll = {
 					created: r.created,
 					pruned: r.pruned,
-					ancestors: provRef.epochs.get(r.created).ancestors,
+					ancestors: provRef.epochs.get(r.created).ancestors
 				};
 			}
 		}
@@ -389,13 +406,19 @@ export function lockstep(
 		// and the model gives that number.
 		if (unlink !== null) {
 			if (world.unlinkBefore !== true) {
-				fail(where, `ctx.hasRelation(record ${unlink.serial}, Produced) was ${world.unlinkBefore} ` +
-					`before the unlink, and the model says the set held a target`);
+				fail(
+					where,
+					`ctx.hasRelation(record ${unlink.serial}, Produced) was ${world.unlinkBefore} ` +
+						`before the unlink, and the model says the set held a target`
+				);
 			}
 			const wantAfter = unlink.remaining > 0;
 			if (world.unlinkAfter !== wantAfter) {
-				fail(where, `ctx.hasRelation(record ${unlink.serial}, Produced) is ${world.unlinkAfter} ` +
-					`after the unlink, want ${wantAfter} (${unlink.remaining} targets left)`);
+				fail(
+					where,
+					`ctx.hasRelation(record ${unlink.serial}, Produced) is ${world.unlinkAfter} ` +
+						`after the unlink, want ${wantAfter} (${unlink.remaining} targets left)`
+				);
 			}
 		}
 		// the fingerprint of every agent, at the end of the tick and at each phase of
@@ -492,7 +515,7 @@ export function lockstep(
 			stats.ticks++;
 			stats.idleTicks++;
 			const idleTouched = ref.takeTouched();
-				const iw = `${label} idle tick ${k + 1}`;
+			const iw = `${label} idle tick ${k + 1}`;
 			if (idleTouched.size !== 0) {
 				fail(iw, `the reference wrote ${idleTouched.size} agents on a tick with no rewrite`);
 			}
@@ -503,19 +526,20 @@ export function lockstep(
 			changeCheck(iw, ref, world, fail, idleTouched, {
 				deep: true,
 				quiesce: k >= IDLE_TAIL - 2,
-				marked: idleMarks,
+				marked: idleMarks
 			});
 			censusCheck(iw, world, fail, {
 				liveAtStart: idleLive,
 				liveAfterPlan: idleLive,
-				rootAge: idleRootAge,
+				rootAge: idleRootAge
 			});
 			rowGrainCheck(iw, ref, world, fail, idleTouched);
 			// The tail is where `firstEntity` must give `undefined`: the net reached its
 			// normal form, so no active pair is left. A query that always gave its first
 			// row passes each tick above and fails here.
 			queryVerbCheck(iw, ref, world, fail, { deep: true, phase: -1, rootRef });
-			if (idleFp) fingerprintCheck(iw, ref, world, fail, stats, { refPre: idleRefPre, refUpd: idleRefUpd });
+			if (idleFp)
+				fingerprintCheck(iw, ref, world, fail, stats, { refPre: idleRefPre, refUpd: idleRefUpd });
 			compare(iw, ref, world);
 			quarantineCheck(iw, ref, world, fail);
 		}
@@ -632,8 +656,11 @@ function brief(set, cap = 12) {
 /** Fail unless the two sets hold the same members. */
 function sameSet(where, fail, what, got, want) {
 	if (got.size !== want.size) {
-		fail(where, `${what}: the ECS has ${got.size} members, the model has ${want.size} ` +
-			`(ecs ${brief(got)}, model ${brief(want)})`);
+		fail(
+			where,
+			`${what}: the ECS has ${got.size} members, the model has ${want.size} ` +
+				`(ecs ${brief(got)}, model ${brief(want)})`
+		);
 	}
 	for (const v of want) {
 		if (!got.has(v)) fail(where, `${what}: the model has ${v}, and the ECS does not`);
@@ -647,8 +674,11 @@ function sameSet(where, fail, what, got, want) {
 function coversSet(where, fail, what, got, want) {
 	for (const v of want) {
 		if (!got.has(v)) {
-			fail(where, `${what}: the ECS did not report ${v}, and a write to it happened ` +
-				`(reported ${brief(got)})`);
+			fail(
+				where,
+				`${what}: the ECS did not report ${v}, and a write to it happened ` +
+					`(reported ${brief(got)})`
+			);
 		}
 	}
 }
@@ -780,18 +810,42 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	}
 
 	// ── 1. the granularity of an entity: exact ──────────────────────────────
-	sameSet(where, fail, "onSet(Touch) with the granularity of an entity", world.setEntities, wantEnts);
-	sameSet(where, fail, "onSet(Seen) with the granularity of an entity, from the row ticks", world.seenEntities, wantSeen);
+	sameSet(
+		where,
+		fail,
+		"onSet(Touch) with the granularity of an entity",
+		world.setEntities,
+		wantEnts
+	);
+	sameSet(
+		where,
+		fail,
+		"onSet(Seen) with the granularity of an entity, from the row ticks",
+		world.seenEntities,
+		wantSeen
+	);
 	// The sparse row grain. The harness recorded each member the mutable sparse
 	// cursor wrote, so this compares two reads of the ECS, and the model does not
 	// give the expected value.
-	sameSet(where, fail, "onSet(Watch) with the granularity of an entity, from the sparse row ticks", world.watchSetEntities, world.watchStayed);
+	sameSet(
+		where,
+		fail,
+		"onSet(Watch) with the granularity of an entity, from the sparse row ticks",
+		world.watchSetEntities,
+		world.watchStayed
+	);
 
 	// ── 2 and 3. the granularity of an archetype: complete ──────────────────
 	// The observer reads the tick for the change on the archetype, and not a query.
 	// Therefore it reaches an archetype whose rows are all disabled, and the strong
 	// expected value applies to it.
-	coversSet(where, fail, "onSet(Touch) with the granularity of an archetype", world.setArchSigs, wantSigs);
+	coversSet(
+		where,
+		fail,
+		"onSet(Touch) with the granularity of an archetype",
+		world.setArchSigs,
+		wantSigs
+	);
 	coversSet(where, fail, "changed(Touch)", world.changedTouchSigs, wantSigsEnabled);
 	// The arm with `includeDisabled()` must reach the all-disabled archetypes too.
 	coversSet(where, fail, "includeDisabled().changed(Touch)", world.changedTouchAllSigs, wantSigs);
@@ -824,8 +878,13 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	// the same archetypes through `forEach` on the same query. Therefore this is an
 	// exact expected value, and it is the sharp check on the path with the granularity
 	// of an archetype.
-	sameSet(where, fail, "changed(Age) against the archetypes that ageTick visited",
-		world.changedAgeArchIds, world.ageArchIdsNow);
+	sameSet(
+		where,
+		fail,
+		"changed(Age) against the archetypes that ageTick visited",
+		world.changedAgeArchIds,
+		world.ageArchIdsNow
+	);
 	// The observer takes a different path. It does not read a query. It visits each
 	// archetype that has one or more rows and a tick at or after its own baseline.
 	// Therefore it also reaches an archetype whose rows are all disabled, and an
@@ -833,8 +892,13 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	// bounded on both sides and not pinned to one value: it must hold every archetype
 	// that `ageTick` visited, and it must hold nothing outside the archetypes that
 	// carry `Age` and have a row now.
-	coversSet(where, fail, "onSet(Age) with the granularity of an archetype",
-		world.setAgeArchIds, world.ageArchIdsNow);
+	coversSet(
+		where,
+		fail,
+		"onSet(Age) with the granularity of an archetype",
+		world.setAgeArchIds,
+		world.ageArchIdsNow
+	);
 	for (const id of world.setAgeArchIds) {
 		if (!world.ageArchIdsAll.has(id)) {
 			fail(
@@ -868,20 +932,32 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 		// layer must report nothing, and the difference between the two paths has no
 		// test.
 		if (marked.length === 0) {
-			fail(where, `an idle tick marked no agent, the checks below would then pass ` +
-				`against a world that reports nothing at all`);
+			fail(
+				where,
+				`an idle tick marked no agent, the checks below would then pass ` +
+					`against a world that reports nothing at all`
+			);
 		}
 		if (world.setArchSigs.size !== 0) {
-			fail(where, `onSet with the granularity of an archetype reported ` +
-				`${brief(world.setArchSigs)} on a tick that wrote no column`);
+			fail(
+				where,
+				`onSet with the granularity of an archetype reported ` +
+					`${brief(world.setArchSigs)} on a tick that wrote no column`
+			);
 		}
 		if (world.changedTouchSigs.size !== 0) {
-			fail(where, `changed(Touch) reported ${brief(world.changedTouchSigs)} on a tick that ` +
-				`wrote no column, the layer over-reports, and every other check would pass`);
+			fail(
+				where,
+				`changed(Touch) reported ${brief(world.changedTouchSigs)} on a tick that ` +
+					`wrote no column, the layer over-reports, and every other check would pass`
+			);
 		}
 		if (world.changedTouchAllSigs.size !== 0) {
-			fail(where, `includeDisabled().changed(Touch) reported ` +
-				`${brief(world.changedTouchAllSigs)} on a tick that wrote no column`);
+			fail(
+				where,
+				`includeDisabled().changed(Touch) reported ` +
+					`${brief(world.changedTouchAllSigs)} on a tick that wrote no column`
+			);
 		}
 		// The layer must be busy while the checks above require it to be quiet. Without
 		// this, a `changed()` implementation that always reported nothing would pass
@@ -895,8 +971,11 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 			}
 		}
 		if (wantBusy && world.changedAgeArchIds.size === 0) {
-			fail(where, `changed(Age) reported nothing, and ageTick still visits rows, the quiet ` +
-				`result above would then prove nothing`);
+			fail(
+				where,
+				`changed(Age) reported nothing, and ageTick still visits rows, the quiet ` +
+					`result above would then prove nothing`
+			);
 		}
 	}
 }
@@ -947,12 +1026,22 @@ export function quarantineCheck(where, ref, world, fail) {
 	sameSet(where, fail, "includeDisabled() over the agents", gotAll, wantAll);
 
 	// 4. the observer-maintained set
-	sameSet(where, fail, "the set that onDisable and onEnable maintain",
-		world.observedDisabled, wantDisabled);
+	sameSet(
+		where,
+		fail,
+		"the set that onDisable and onEnable maintain",
+		world.observedDisabled,
+		wantDisabled
+	);
 
 	// 5. the tag that the host adds
-	sameSet(where, fail, "the Tainted tag that the host write seam adds",
-		world.taintedEntities(), wantDisabled);
+	sameSet(
+		where,
+		fail,
+		"the Tainted tag that the host write seam adds",
+		world.taintedEntities(),
+		wantDisabled
+	);
 }
 
 // ── the sparse-component oracle ─────────────────────────────────────────────
@@ -1002,7 +1091,10 @@ export function sparseCheck(where, ref, world, fail) {
 			const want = ref._touch.get(agent) & 0xff;
 			const byName = world.ecs.getSparseField(e, world.Watch, "hits");
 			if (byName !== want) {
-				fail(where, `getSparseField(${e}, Watch, "hits") is ${byName}, the model has ${want} (seq ${ref._touch.get(agent)})`);
+				fail(
+					where,
+					`getSparseField(${e}, Watch, "hits") is ${byName}, the model has ${want} (seq ${ref._touch.get(agent)})`
+				);
 			}
 			const byCursor = cur.at(e).hits;
 			if (byCursor !== want) {
@@ -1043,7 +1135,8 @@ export function sparseCheck(where, ref, world, fail) {
  */
 export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }) {
 	// ── the resource, from inside a system ──────────────────────────────────
-	if (!world.resourceHas) fail(where, `ctx.hasResource(PhaseRes) is false, and the world registered it`);
+	if (!world.resourceHas)
+		fail(where, `ctx.hasResource(PhaseRes) is false, and the world registered it`);
 	if (world.resourcePhase !== phase) {
 		fail(where, `ctx.getResource(PhaseRes) is ${world.resourcePhase}, the driver set ${phase}`);
 	}
@@ -1057,10 +1150,16 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 	// ── firstEntity over the active pairs ───────────────────────────────────
 	const anyRedex = ref.redexCount > 0;
 	if (anyRedex && world.redexFirst === undefined) {
-		fail(where, `firstEntity() over Redex is undefined, and the reference holds ${ref.redexCount} active pairs`);
+		fail(
+			where,
+			`firstEntity() over Redex is undefined, and the reference holds ${ref.redexCount} active pairs`
+		);
 	}
 	if (!anyRedex && world.redexFirst !== undefined) {
-		fail(where, `firstEntity() over Redex gave ${world.redexFirst}, and the reference holds no active pair`);
+		fail(
+			where,
+			`firstEntity() over Redex gave ${world.redexFirst}, and the reference holds no active pair`
+		);
 	}
 
 	// ── query.some ────────────────────────────────────────────────────────
@@ -1068,13 +1167,19 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 	// the query gives two or more, and it runs to the end when it gives fewer.
 	const wantVisited = Math.min(2, world.untilArchTotal);
 	if (world.untilVisited !== wantVisited) {
-		fail(where, `query.some visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
-			`(forEach gives ${world.untilArchTotal})`);
+		fail(
+			where,
+			`query.some visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
+				`(forEach gives ${world.untilArchTotal})`
+		);
 	}
 	const wantStopped = world.untilArchTotal >= 2;
 	if (world.untilStopped !== wantStopped) {
-		fail(where, `query.some reported ${world.untilStopped}, want ${wantStopped} ` +
-			`(forEach gives ${world.untilArchTotal} archetypes)`);
+		fail(
+			where,
+			`query.some reported ${world.untilStopped}, want ${wantStopped} ` +
+				`(forEach gives ${world.untilArchTotal} archetypes)`
+		);
 	}
 
 	if (!deep) return;
@@ -1105,11 +1210,20 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 	// ── the optional column ─────────────────────────────────────────────────
 	sameSet(where, fail, "optional(Age): the span with no Age", world.optionalAgeAbsent, wantNoAge);
 	const gotAgeKeys = new Set(world.optionalAgeSeen.keys());
-	sameSet(where, fail, "optional(Age): the span that holds Age", gotAgeKeys, new Set(wantAge.keys()));
+	sameSet(
+		where,
+		fail,
+		"optional(Age): the span that holds Age",
+		gotAgeKeys,
+		new Set(wantAge.keys())
+	);
 	for (const [e, age] of wantAge) {
 		const got = world.optionalAgeSeen.get(e);
 		if (got !== age) {
-			fail(where, `optional(Age): getOptionalColumnRead gave ${got} for ${e}, the model holds ${age}`);
+			fail(
+				where,
+				`optional(Age): getOptionalColumnRead gave ${got} for ${e}, the model holds ${age}`
+			);
 		}
 	}
 
@@ -1118,8 +1232,20 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 	// `freshPromote` swaps the two in one command batch. The model holds the age
 	// of each agent, so it holds both sets.
 	const wantAged = new Set(wantAge.keys());
-	sameSet(where, fail, "query.and(Age).not(Fresh), the chained form", world.termChainEnts, wantAged);
-	sameSet(where, fail, "where(and(or(and(Age, Touch), Redex), not(Fresh)))", world.termExprEnts, wantAged);
+	sameSet(
+		where,
+		fail,
+		"query.and(Age).not(Fresh), the chained form",
+		world.termChainEnts,
+		wantAged
+	);
+	sameSet(
+		where,
+		fail,
+		"where(and(or(and(Age, Touch), Redex), not(Fresh)))",
+		world.termExprEnts,
+		wantAged
+	);
 	sameSet(where, fail, "where(a term of the harness)", world.termPluginEnts, wantAged);
 	// The complement, through a second term over the same parent query. A `where`
 	// cache that ignored the identity of the term would give this query the list
@@ -1127,18 +1253,33 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 	sameSet(where, fail, "where(the complement term)", world.termUnagedEnts, wantNoAge);
 	// The archetypes, and not the entities alone. A term narrows the archetype
 	// list at the rebuild, so this is the assertion about the list itself.
-	sameSet(where, fail, "the archetypes of the expression against the chained form",
-		world.termExprArchs, world.termChainArchs);
-	sameSet(where, fail, "the archetypes of the harness term against the chained form",
-		world.termPluginArchs, world.termChainArchs);
+	sameSet(
+		where,
+		fail,
+		"the archetypes of the expression against the chained form",
+		world.termExprArchs,
+		world.termChainArchs
+	);
+	sameSet(
+		where,
+		fail,
+		"the archetypes of the harness term against the chained form",
+		world.termPluginArchs,
+		world.termChainArchs
+	);
 
 	// ── the sparse row grain ────────────────────────────────────────────────
 	// `redexMaintain` recorded each member that it wrote through the mutable
 	// sparse cursor. `ctx.sparseChanged` reads the sparse tick that the same call
 	// stamped, and it applies no rule about a disabled row. Therefore the two must
 	// hold the same members, and the comparison is exact in both directions.
-	sameSet(where, fail, "ctx.sparseChanged(Watch) against the members the cursor wrote",
-		world.sparseChangedEnts, world.watchStamped);
+	sameSet(
+		where,
+		fail,
+		"ctx.sparseChanged(Watch) against the members the cursor wrote",
+		world.sparseChangedEnts,
+		world.watchStamped
+	);
 }
 
 // ── the oracle for the row grain ────────────────────────────────────────────
@@ -1170,12 +1311,27 @@ export function rowGrainCheck(where, ref, world, fail, touched) {
 		wantAll.add(e);
 		if (!ref.isDisabled(a)) wantEnabled.add(e);
 	}
-	sameSet(where, fail, "includeDisabled(): the rows above cols.since of ticksRead(Mix)",
-		world.rowChangedAll, wantAll);
-	sameSet(where, fail, "a default query: the rows above cols.since of ticksRead(Mix)",
-		world.rowChangedEnabled, wantEnabled);
-	sameSet(where, fail, "changed(Mix).forEachChunk: the rows above cols.since",
-		world.rowChangedFiltered, wantAll);
+	sameSet(
+		where,
+		fail,
+		"includeDisabled(): the rows above cols.since of ticksRead(Mix)",
+		world.rowChangedAll,
+		wantAll
+	);
+	sameSet(
+		where,
+		fail,
+		"a default query: the rows above cols.since of ticksRead(Mix)",
+		world.rowChangedEnabled,
+		wantEnabled
+	);
+	sameSet(
+		where,
+		fail,
+		"changed(Mix).forEachChunk: the rows above cols.since",
+		world.rowChangedFiltered,
+		wantAll
+	);
 }
 
 // ── the oracle for the position of an added phase ───────────────────────────
@@ -1193,20 +1349,32 @@ export function rowGrainCheck(where, ref, world, fail, touched) {
  */
 export function censusCheck(where, world, fail, { liveAtStart, liveAfterPlan, rootAge }) {
 	if (world.censusPreLive !== liveAtStart) {
-		fail(where, `the census in the phase before UPDATE counted ${world.censusPreLive} agents, ` +
-			`the model holds ${liveAtStart} at the start of the tick (${liveAfterPlan} after the rewrites)`);
+		fail(
+			where,
+			`the census in the phase before UPDATE counted ${world.censusPreLive} agents, ` +
+				`the model holds ${liveAtStart} at the start of the tick (${liveAfterPlan} after the rewrites)`
+		);
 	}
 	if (world.censusPostLive !== liveAfterPlan) {
-		fail(where, `the census in the phase after UPDATE counted ${world.censusPostLive} agents, ` +
-			`the model holds ${liveAfterPlan} after the rewrites (${liveAtStart} at the start of the tick)`);
+		fail(
+			where,
+			`the census in the phase after UPDATE counted ${world.censusPostLive} agents, ` +
+				`the model holds ${liveAfterPlan} after the rewrites (${liveAtStart} at the start of the tick)`
+		);
 	}
 	if (world.censusPreRootAge !== rootAge) {
-		fail(where, `the census before UPDATE read Age.ticks ${world.censusPreRootAge} on the ROOT, ` +
-			`the model holds ${rootAge} before the age bump of POST_UPDATE`);
+		fail(
+			where,
+			`the census before UPDATE read Age.ticks ${world.censusPreRootAge} on the ROOT, ` +
+				`the model holds ${rootAge} before the age bump of POST_UPDATE`
+		);
 	}
 	if (world.censusPostRootAge !== rootAge) {
-		fail(where, `the census after UPDATE read Age.ticks ${world.censusPostRootAge} on the ROOT, ` +
-			`the model holds ${rootAge} before the age bump of POST_UPDATE`);
+		fail(
+			where,
+			`the census after UPDATE read Age.ticks ${world.censusPostRootAge} on the ROOT, ` +
+				`the model holds ${rootAge} before the age bump of POST_UPDATE`
+		);
 	}
 }
 
@@ -1278,7 +1446,10 @@ export function commandLogCheck(where, world, fail) {
 	}
 	const back = deserializeCommandLog(serializeCommandLog(log));
 	if (back.ticks.length !== log.ticks.length) {
-		fail(where, `the log has ${log.ticks.length} ticks, and it came back with ${back.ticks.length}`);
+		fail(
+			where,
+			`the log has ${log.ticks.length} ticks, and it came back with ${back.ticks.length}`
+		);
 	}
 	for (let i = 0; i < log.ticks.length; i++) {
 		const a = log.ticks[i];
@@ -1290,11 +1461,17 @@ export function commandLogCheck(where, world, fail) {
 			const x = a.commands[k];
 			const y = b.commands[k];
 			if (x.kind !== y.kind || x.eid !== y.eid) {
-				fail(where, `command ${k} of tick ${i} came back as ${y.kind} on ${y.eid}, want ${x.kind} on ${x.eid}`);
+				fail(
+					where,
+					`command ${k} of tick ${i} came back as ${y.kind} on ${y.eid}, want ${x.kind} on ${x.eid}`
+				);
 			}
 			// A def is a callable, so the round trip keeps its id alone.
 			if (x.def !== undefined && x.def.id !== y.def.id) {
-				fail(where, `command ${k} of tick ${i} came back naming component ${y.def.id}, want ${x.def.id}`);
+				fail(
+					where,
+					`command ${k} of tick ${i} came back naming component ${y.def.id}, want ${x.def.id}`
+				);
 			}
 			if (x.field !== undefined && (x.field !== y.field || x.value !== y.value)) {
 				fail(where, `the set_field command ${k} of tick ${i} did not survive the round trip`);
@@ -1437,7 +1614,10 @@ export function compare(where, ref, world) {
 		for (const f of MIRROR_INT_FIELDS) {
 			const got = world.ecs.getField(e, world.Mix, f);
 			if (got !== wantMix[f]) {
-				fail(where, `agent ref ${r}/ecs ${e}: Mix.${f} ecs ${got}, model ${wantMix[f]} (seq ${refTouch})`);
+				fail(
+					where,
+					`agent ref ${r}/ecs ${e}: Mix.${f} ecs ${got}, model ${wantMix[f]} (seq ${refTouch})`
+				);
 			}
 		}
 		for (const f of BORN_INT_FIELDS) {
@@ -1450,7 +1630,10 @@ export function compare(where, ref, world) {
 			const gotM = world.ecs.getField(e, world.Mix, "mf32");
 			const wantM = mirrorF32Of(refTouch);
 			if (gotM !== wantM) {
-				fail(where, `agent ref ${r}/ecs ${e}: Mix.mf32 ecs ${gotM}, model ${wantM} (seq ${refTouch})`);
+				fail(
+					where,
+					`agent ref ${r}/ecs ${e}: Mix.mf32 ecs ${gotM}, model ${wantM} (seq ${refTouch})`
+				);
 			}
 			const gotB = world.ecs.getField(e, world.Mix, "bf32");
 			if (gotB !== BORN_F32) {
@@ -1480,7 +1663,8 @@ export function compare(where, ref, world) {
 		);
 	}
 	for (const e of rescan) {
-		if (!observed.has(e)) fail(where, `entity ${e} is an active pair member but not observer-queued`);
+		if (!observed.has(e))
+			fail(where, `entity ${e} is an active pair member but not observer-queued`);
 	}
 	const refRedex = new Set();
 	for (const [a, b] of ref.redexes()) {
@@ -1491,7 +1675,8 @@ export function compare(where, ref, world) {
 		fail(where, `observer queue ${observed.size} entries, reference says ${refRedex.size}`);
 	}
 	for (const e of refRedex) {
-		if (!observed.has(e)) fail(where, `reference says ${e} is in an active pair; observer disagrees`);
+		if (!observed.has(e))
+			fail(where, `reference says ${e} is in an active pair; observer disagrees`);
 	}
 
 	// ── bijection-free structural check ─────────────────────────────────────
@@ -1566,9 +1751,21 @@ export function fingerprintCheck(where, ref, world, fail, stats, { refPre, refUp
 	stats.phaseSink = true;
 	const { SCHEDULE } = world._lib;
 	const checks = [
-		[SCHEDULE.PRE_UPDATE, refPre, "after PRE_UPDATE (the write seam and the epoch roll are applied, the promotion is not)"],
-		[SCHEDULE.UPDATE, refUpd, "after UPDATE (the promotion and the rewrites are applied, the age bump is not)"],
-		[SCHEDULE.POST_UPDATE, refPost, "after POST_UPDATE (the age bump is applied; the onSet dispatch must change nothing)"],
+		[
+			SCHEDULE.PRE_UPDATE,
+			refPre,
+			"after PRE_UPDATE (the write seam and the epoch roll are applied, the promotion is not)"
+		],
+		[
+			SCHEDULE.UPDATE,
+			refUpd,
+			"after UPDATE (the promotion and the rewrites are applied, the age bump is not)"
+		],
+		[
+			SCHEDULE.POST_UPDATE,
+			refPost,
+			"after POST_UPDATE (the age bump is applied; the onSet dispatch must change nothing)"
+		]
 	];
 	for (const [phase, want, what] of checks) {
 		const got = world.phaseFp.get(phase);
@@ -1626,7 +1823,10 @@ export function compactCheck(where, world, provRef, stats) {
 	if (world.hashable) {
 		const after = world.ecs.snapshots.stateHash();
 		if (before !== after) {
-			fail(where, `compact() moved stateHash ${before} -> ${after}; it must change nothing observable`);
+			fail(
+				where,
+				`compact() moved stateHash ${before} -> ${after}; it must change nothing observable`
+			);
 		}
 	}
 	world.assertProvenance(`${where} [prov post-compact]`, provRef, fail);
@@ -1725,7 +1925,22 @@ export function snapshotRoundTrip(where, world) {
 export function confluence(
 	lib,
 	spec,
-	{ orders, batch, steps, verifyEvery, snapEvery, label, prov, compactEvery, quar, float, record, sab, fpEvery, phaseEvery }
+	{
+		orders,
+		batch,
+		steps,
+		verifyEvery,
+		snapEvery,
+		label,
+		prov,
+		compactEvery,
+		quar,
+		float,
+		record,
+		sab,
+		fpEvery,
+		phaseEvery
+	}
 ) {
 	const results = [];
 	for (let k = 0; k < orders; k++) {
@@ -1743,7 +1958,7 @@ export function confluence(
 			record,
 			sab,
 			fpEvery,
-			phaseEvery,
+			phaseEvery
 		});
 		results.push(s);
 	}
@@ -1803,33 +2018,45 @@ export function confluence(
  */
 export function memoryArms(lib, { spec, capSpec, cap, tooSmall, ...opts }) {
 	const base = 65536;
-	const atZero = runCase(lib, spec, { ...opts, label: `SharedArrayBuffer ${spec.name}`, sab: true });
+	const atZero = runCase(lib, spec, {
+		...opts,
+		label: `SharedArrayBuffer ${spec.name}`,
+		sab: true
+	});
 	const atBase = runCase(lib, spec, {
 		...opts,
 		label: `SharedArrayBuffer at a store base ${spec.name}`,
 		sab: true,
-		storeBase: base,
+		storeBase: base
 	});
 	if (atZero.finalHash !== atBase.finalHash) {
-		fail("the store base", `stateHash at base 0 is ${atZero.finalHash}, and at a base of ${base} ` +
-			`it is ${atBase.finalHash}. The base moves every offset, and it must move no result`);
+		fail(
+			"the store base",
+			`stateHash at base 0 is ${atZero.finalHash}, and at a base of ${base} ` +
+				`it is ${atBase.finalHash}. The base moves every offset, and it must move no result`
+		);
 	}
 	if (atZero.canonical.form !== atBase.canonical.form) {
 		fail("the store base", `the normal form at base 0 differs from the form at a base of ${base}`);
 	}
 	if (atZero.rewrites !== atBase.rewrites) {
-		fail("the store base", `the run at base 0 took ${atZero.rewrites} rewrites, and the run at a ` +
-			`base of ${base} took ${atBase.rewrites}`);
+		fail(
+			"the store base",
+			`the run at base 0 took ${atZero.rewrites} rewrites, and the run at a ` +
+				`base of ${base} took ${atBase.rewrites}`
+		);
 	}
 	const underCap = runCase(lib, spec, {
 		...opts,
 		label: `a cap the case fits inside ${spec.name}`,
 		sab: true,
-		maxBytes: cap,
+		maxBytes: cap
 	});
 	if (underCap.canonical.form !== atZero.canonical.form) {
-		fail("the cap on the backing", `the normal form under a ${cap}-byte cap differs from the form ` +
-			`with no cap declared`);
+		fail(
+			"the cap on the backing",
+			`the normal form under a ${cap}-byte cap differs from the form ` + `with no cap declared`
+		);
 	}
 	// The fixed buffer. It is born at the ceiling and it never grows. The growable
 	// one starts small and grows into the ceiling. Both must hold one world.
@@ -1837,19 +2064,27 @@ export function memoryArms(lib, { spec, capSpec, cap, tooSmall, ...opts }) {
 		...opts,
 		label: `a fixed shared buffer ${spec.name}`,
 		allocator: lib.fixedSabAllocator(cap),
-		maxBytes: cap,
+		maxBytes: cap
 	});
 	if (onFixed.finalHash !== atZero.finalHash) {
-		fail("the fixed allocator", `stateHash over a fixed buffer is ${onFixed.finalHash}, and over a ` +
-			`growable one it is ${atZero.finalHash}`);
+		fail(
+			"the fixed allocator",
+			`stateHash over a fixed buffer is ${onFixed.finalHash}, and over a ` +
+				`growable one it is ${atZero.finalHash}`
+		);
 	}
 	if (onFixed.canonical.form !== atZero.canonical.form) {
-		fail("the fixed allocator", `the normal form over a fixed buffer differs from the form over a ` +
-			`growable one`);
+		fail(
+			"the fixed allocator",
+			`the normal form over a fixed buffer differs from the form over a ` + `growable one`
+		);
 	}
 	if (onFixed.rewrites !== atZero.rewrites) {
-		fail("the fixed allocator", `the run over a fixed buffer took ${onFixed.rewrites} rewrites, and ` +
-			`the run over a growable one took ${atZero.rewrites}`);
+		fail(
+			"the fixed allocator",
+			`the run over a fixed buffer took ${onFixed.rewrites} rewrites, and ` +
+				`the run over a growable one took ${atZero.rewrites}`
+		);
 	}
 	const refused = capRefusal(lib, capSpec, { cap: tooSmall, label: "the cap on the backing" });
 	// The same refusal, from a buffer that is fixed at that size. The allocator
@@ -1858,11 +2093,14 @@ export function memoryArms(lib, { spec, capSpec, cap, tooSmall, ...opts }) {
 	const refusedFixed = capRefusal(lib, capSpec, {
 		cap: tooSmall,
 		allocator: lib.fixedSabAllocator(tooSmall),
-		label: "the fixed allocator",
+		label: "the fixed allocator"
 	});
 	if (refusedFixed.live !== refused.live) {
-		fail("the fixed allocator", `the fixed buffer refused at ${refusedFixed.live} live entities, and ` +
-			`the growable one refused at ${refused.live}`);
+		fail(
+			"the fixed allocator",
+			`the fixed buffer refused at ${refusedFixed.live} live entities, and ` +
+				`the growable one refused at ${refused.live}`
+		);
 	}
 	return { atZero, atBase, underCap, onFixed, refused, refusedFixed, base };
 }
@@ -1908,12 +2146,15 @@ export async function workersArm(lib, spec, { count, workerUrl = WORKER_URL, ...
 		prov,
 		label: `the age bump on one thread ${spec.name}`,
 		sab: true,
-		parallel: true,
+		parallel: true
 	});
 	if (sequential.ageSequentialRuns !== sequential.ticks) {
-		fail("the workers arm", `the world with no pool ran the sequential body ` +
-			`${sequential.ageSequentialRuns} times over ${sequential.ticks} ticks. The counter must ` +
-			`follow the ticks, or a zero in the pooled world says nothing`);
+		fail(
+			"the workers arm",
+			`the world with no pool ran the sequential body ` +
+				`${sequential.ageSequentialRuns} times over ${sequential.ticks} ticks. The counter must ` +
+				`follow the ticks, or a zero in the pooled world says nothing`
+		);
 	}
 	const pooledWorld = new EcsNet(lib, { strict: true, prov, sab: true, parallel: true });
 	const pool = await pooledWorld.ecs.workers.attach({ count, workerUrl });
@@ -1928,26 +2169,38 @@ export async function workersArm(lib, spec, { count, workerUrl = WORKER_URL, ...
 			label: `the age bump across ${count} workers ${spec.name}`,
 			sab: true,
 			parallel: true,
-			world: pooledWorld,
+			world: pooledWorld
 		});
 	} finally {
 		await pool.detach();
 	}
 	if (pooled.ageSequentialRuns !== 0) {
-		fail("the workers arm", `the pooled world ran the sequential body ` +
-			`${pooled.ageSequentialRuns} times. The pool must take every pass, or the equal results ` +
-			`below say nothing about it`);
+		fail(
+			"the workers arm",
+			`the pooled world ran the sequential body ` +
+				`${pooled.ageSequentialRuns} times. The pool must take every pass, or the equal results ` +
+				`below say nothing about it`
+		);
 	}
 	if (pooled.finalHash !== sequential.finalHash) {
-		fail("the workers arm", `stateHash across ${count} workers is ${pooled.finalHash}, and on one ` +
-			`thread it is ${sequential.finalHash}`);
+		fail(
+			"the workers arm",
+			`stateHash across ${count} workers is ${pooled.finalHash}, and on one ` +
+				`thread it is ${sequential.finalHash}`
+		);
 	}
 	if (pooled.canonical.form !== sequential.canonical.form) {
-		fail("the workers arm", `the normal form across ${count} workers differs from the form on one thread`);
+		fail(
+			"the workers arm",
+			`the normal form across ${count} workers differs from the form on one thread`
+		);
 	}
 	if (pooled.rewrites !== sequential.rewrites) {
-		fail("the workers arm", `the run across ${count} workers took ${pooled.rewrites} rewrites, and ` +
-			`the run on one thread took ${sequential.rewrites}`);
+		fail(
+			"the workers arm",
+			`the run across ${count} workers took ${pooled.rewrites} rewrites, and ` +
+				`the run on one thread took ${sequential.rewrites}`
+		);
 	}
 	return { sequential, pooled, count };
 }
@@ -1976,7 +2229,7 @@ export function capRefusal(lib, spec, { cap, allocator = null, label = "cap refu
 		prov: null,
 		sab: allocator === null,
 		allocator,
-		maxBytes: cap,
+		maxBytes: cap
 	});
 	let thrown = null;
 	try {
@@ -1991,20 +2244,29 @@ export function capRefusal(lib, spec, { cap, allocator = null, label = "cap refu
 	const category = thrown.category;
 	if (category !== "STORE_CAP_EXCEEDED") {
 		world.ecs.dispose();
-		fail(label, `the refusal carries the category ${category}, want STORE_CAP_EXCEEDED ` +
-			`(the message is ${thrown.message})`);
+		fail(
+			label,
+			`the refusal carries the category ${category}, want STORE_CAP_EXCEEDED ` +
+				`(the message is ${thrown.message})`
+		);
 	}
 	// The count the world holds after the refusal. The message must name it, which
 	// is what makes the diagnostic a fact about this world and not a constant.
 	const live = world.ecs.entityCount;
 	if (live <= 0) {
 		world.ecs.dispose();
-		fail(label, `the world holds ${live} live entities after the refusal, and the load spawned agents`);
+		fail(
+			label,
+			`the world holds ${live} live entities after the refusal, and the load spawned agents`
+		);
 	}
 	if (!thrown.message.includes(`${live} live entities`)) {
 		world.ecs.dispose();
-		fail(label, `the refusal does not name the ${live} live entities that the world holds. ` +
-			`The message is ${thrown.message}`);
+		fail(
+			label,
+			`the refusal does not name the ${live} live entities that the world holds. ` +
+				`The message is ${thrown.message}`
+		);
 	}
 	world.ecs.dispose();
 	return { live, cap };
@@ -2279,13 +2541,19 @@ export class Pressure {
 		console.log(`\npressure (suite-wide, all floors met)`);
 		console.log(`  rewrites            ${this.rewrites}`);
 		console.log(`  ticks               ${this.ticks}`);
-		console.log(`  distinct archetypes ${this.archetypes.size}  [${[...this.archetypes].sort().join(" ")}]`);
+		console.log(
+			`  distinct archetypes ${this.archetypes.size}  [${[...this.archetypes].sort().join(" ")}]`
+		);
 		console.log(`  observer calls      +${this.observerAdds} / -${this.observerRemoves}`);
 		console.log(`  snapshot round-trips ${this.snapshots}`);
 		console.log(`  peak growth         ${this.maxGrowth.toFixed(2)}x initial`);
 		console.log(`  rules               ${rules}`);
-		console.log(`  change detection    ${this.setEntityCalls} onSet(entity) / ${this.setArchCalls} onSet(archetype)`);
-		console.log(`  quarantine          -${this.disableCalls} / +${this.enableCalls} toggles, peak ${this.peakDisabled} disabled`);
+		console.log(
+			`  change detection    ${this.setEntityCalls} onSet(entity) / ${this.setArchCalls} onSet(archetype)`
+		);
+		console.log(
+			`  quarantine          -${this.disableCalls} / +${this.enableCalls} toggles, peak ${this.peakDisabled} disabled`
+		);
 		console.log(`  events              ${this.events} emitted and drained`);
 		console.log(`  gated system        ${this.gatedRuns} runs under a run condition`);
 		console.log(
@@ -2297,7 +2565,9 @@ export class Pressure {
 			`  added phases        ${this.censusSplitTicks} ticks where the census before UPDATE ` +
 				`and the census after it must differ`
 		);
-		console.log(`  archetype terms     ${this.termSplitTicks} ticks where the term split the agents`);
+		console.log(
+			`  archetype terms     ${this.termSplitTicks} ticks where the term split the agents`
+		);
 		console.log(
 			`  row grain           ${this.rowGrainRows} rows above cols.since, ` +
 				`${this.sparseStamps} members that ctx.sparseChanged must report`
@@ -2308,8 +2578,12 @@ export class Pressure {
 				`(${this.phaseSinkCases} cases with the trace seam)`
 		);
 		console.log(`  idle tail           ${this.idleTicks} ticks that must report no change`);
-		console.log(`  Fresh + disabled    ${this.freshDisabledTicks} ticks, peak ${this.peakFreshDisabled} rows`);
-		console.log(`  sparse scribbles    ${this.sparseScribbles} snapshot round trips wrote the sparse store`);
+		console.log(
+			`  Fresh + disabled    ${this.freshDisabledTicks} ticks, peak ${this.peakFreshDisabled} rows`
+		);
+		console.log(
+			`  sparse scribbles    ${this.sparseScribbles} snapshot round trips wrote the sparse store`
+		);
 		console.log(`  f64 arm             ${this.floatCases} cases with no determinism`);
 		console.log(`  SharedArrayBuffer   ${this.sabCases} cases on the opt-in backing`);
 		console.log(
@@ -2319,9 +2593,13 @@ export class Pressure {
 		console.log(`  workers             ${this.pooledCases} cases with the age bump across a pool`);
 		if (this.provCases > 0) {
 			console.log(`  provenance layer    ${this.provCases} cases`);
-			console.log(`    records           ${this.records} logged, ${this.cascaded} destroyed by cascade`);
+			console.log(
+				`    records           ${this.records} logged, ${this.cascaded} destroyed by cascade`
+			);
 			console.log(`    epochs pruned     ${this.epochsPruned}`);
-			console.log(`    record observer   -${this.recordRemoves} removes (every one a cascade victim)`);
+			console.log(
+				`    record observer   -${this.recordRemoves} removes (every one a cascade victim)`
+			);
 			console.log(`    compact()         ${this.compactReclaimed} orphan keys reclaimed`);
 			console.log(`    widest multi set  ${this.maxProducedSet} targets`);
 			console.log(`    deepest chain     ${this.maxChainDepth} levels (hierarchy and maxDepth)`);
@@ -2363,7 +2641,7 @@ export function runCase(
 		parallel,
 		world,
 		fpEvery,
-		phaseEvery,
+		phaseEvery
 	}
 ) {
 	const pre = refOnly(spec, seed, steps);
@@ -2387,7 +2665,7 @@ export function runCase(
 		parallel,
 		world,
 		fpEvery,
-		phaseEvery,
+		phaseEvery
 	});
 	if (pre.normalised !== stats.normalised) {
 		fail(label, `reference-only run ${pre.normalised ? "normalised" : "capped"}, lockstep did not`);
@@ -2430,4 +2708,3 @@ export function report(label, stats, extra = "") {
 		);
 	}
 }
-

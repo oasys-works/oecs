@@ -8,11 +8,7 @@ import {
 } from "../../archetype";
 import { asComponentId, createComponentDef } from "../../component";
 import { createEntityId } from "../../entity";
-import {
-	BitSet,
-	TypedArrayFor,
-	type TypedArrayTag
-} from "../../../../type_primitives";
+import { BitSet, TypedArrayFor, type TypedArrayTag } from "../../../../type_primitives";
 
 import {
 	columnKey,
@@ -119,9 +115,9 @@ describe("Archetype.fromColumnStore", () => {
 			columns: [{ componentId: 1, fieldId: 0, typeTag: TYPE_TAG.f64 }]
 		};
 		const columnStore = createColumnStore([spec]);
-		expect(() => Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0)).toThrow(
-			/has no column for/
-		);
+		expect(() =>
+			Archetype.fromColumnStore(archId(0), makeMask(1), layouts, columnStore, 0)
+		).toThrow(/has no column for/);
 	});
 
 	it("push past row_capacity throws StoreColumnOverflowError", () => {

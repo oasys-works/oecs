@@ -61,7 +61,9 @@ function liveBytes(bound, buffer) {
 }
 
 async function main() {
-	console.log(`\nP24 conflict. availableParallelism() = ${CORES}, ${ENTITIES.toLocaleString()} entities\n`);
+	console.log(
+		`\nP24 conflict. availableParallelism() = ${CORES}, ${ENTITIES.toLocaleString()} entities\n`
+	);
 
 	const { ecs, Pos, Vel, Target } = await buildWorld({ entities: ENTITIES });
 	seedWorld(ecs, Pos, Vel, Target);
@@ -119,7 +121,9 @@ async function main() {
 		});
 	}
 
-	console.log("Case 1. Two or more workers write every row of Pos.x. FNV over the live column bytes.\n");
+	console.log(
+		"Case 1. Two or more workers write every row of Pos.x. FNV over the live column bytes.\n"
+	);
 	table(overlapRows, [
 		{ label: "workers", get: (r) => r.k },
 		{ label: "run", get: (r) => r.run },
@@ -166,7 +170,9 @@ async function main() {
 		});
 	}
 
-	console.log(`\nCase 2. Every worker folds Pos.x into one shared cell, no atomic. Sequential sum = ${seqSum}.\n`);
+	console.log(
+		`\nCase 2. Every worker folds Pos.x into one shared cell, no atomic. Sequential sum = ${seqSum}.\n`
+	);
 	table(cellRows, [
 		{ label: "workers", get: (r) => r.k },
 		{ label: "run", get: (r) => r.run },

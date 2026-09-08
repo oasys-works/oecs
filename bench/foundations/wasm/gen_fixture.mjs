@@ -25,9 +25,13 @@ import { fileURLToPath } from "node:url";
 import { emitAbiModule } from "./abi_module.mjs";
 import { MAX_PAGES } from "./world.mjs";
 
-const OUT = fileURLToPath(new URL("../../../src/core/ecs/__tests__/fixtures/store_reader.wasm", import.meta.url));
+const OUT = fileURLToPath(
+	new URL("../../../src/core/ecs/__tests__/fixtures/store_reader.wasm", import.meta.url)
+);
 
 const bytes = emitAbiModule({ minPages: 1, maxPages: MAX_PAGES });
-mkdirSync(fileURLToPath(new URL("../../../src/core/ecs/__tests__/fixtures/", import.meta.url)), { recursive: true });
+mkdirSync(fileURLToPath(new URL("../../../src/core/ecs/__tests__/fixtures/", import.meta.url)), {
+	recursive: true
+});
 writeFileSync(OUT, bytes);
 console.log(`wrote ${OUT}, ${bytes.length} bytes, maximum ${MAX_PAGES} pages`);

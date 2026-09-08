@@ -161,9 +161,7 @@ export class QueryCache {
 					: e.excludeMask !== null && e.excludeMask.equals(exclude);
 			if (!excOk) continue;
 			const anyOk =
-				anyOf === null
-					? e.anyOfMask === null
-					: e.anyOfMask !== null && e.anyOfMask.equals(anyOf);
+				anyOf === null ? e.anyOfMask === null : e.anyOfMask !== null && e.anyOfMask.equals(anyOf);
 			if (!anyOk) continue;
 			return e;
 		}

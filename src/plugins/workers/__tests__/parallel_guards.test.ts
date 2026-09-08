@@ -129,9 +129,7 @@ describe("a parallel registration", () => {
 		const { ecs, Pos, Vel, base } = fixture();
 		const parallel = { ...base.parallel, columns: [[Pos, "x"]] };
 		expect(
-			category(() =>
-				ecs.registerSystem({ ...base, writes: [Pos, Vel], parallel } as never)
-			)
+			category(() => ecs.registerSystem({ ...base, writes: [Pos, Vel], parallel } as never))
 		).toBe(ECS_ERROR.PARALLEL_ACCESS);
 	});
 

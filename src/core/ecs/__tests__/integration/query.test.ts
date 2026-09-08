@@ -166,14 +166,42 @@ describe("ECS query (integration)", () => {
 		// spawnBundle and spawnMany) redirects to ctx.commands.spawn. Its append
 		// paths (addEntity*) skip even the _iterDepth guard, so this throw is the
 		// only backstop.
-		const ops: [string, (world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void, RegExp][] = [
+		const ops: [
+			string,
+			(world: ECS, victim: EntityID, def: ComponentDef<{ x: "i32" }>) => void,
+			RegExp
+		][] = [
 			["spawn", (w) => void w.spawn(), /host spawn is immediate.*ctx\.commands\.spawn/],
-			["spawnBundle", (w, _e, d) => void w.spawnBundle(d({ x: 1 })), /host spawnBundle is immediate.*ctx\.commands\.spawn/],
-			["spawnMany", (w, _e, d) => void w.spawnMany(w.template(d({ x: 1 })), 2), /host spawnMany is immediate.*ctx\.commands\.spawn/],
-			["addComponent", (w, e, d) => void w.addComponent(e, d, { x: 1 }), /host addComponent is immediate.*ctx\.commands\.add/],
-			["addComponents", (w, e, d) => void w.addComponents(e, d({ x: 1 })), /host addComponents is immediate.*ctx\.commands\.add/],
-			["removeComponent", (w, e, d) => void w.removeComponent(e, d), /host removeComponent is immediate.*ctx\.commands\.remove/],
-			["removeComponents", (w, e, d) => void w.removeComponents(e, d), /host removeComponents is immediate.*ctx\.commands\.remove/],
+			[
+				"spawnBundle",
+				(w, _e, d) => void w.spawnBundle(d({ x: 1 })),
+				/host spawnBundle is immediate.*ctx\.commands\.spawn/
+			],
+			[
+				"spawnMany",
+				(w, _e, d) => void w.spawnMany(w.template(d({ x: 1 })), 2),
+				/host spawnMany is immediate.*ctx\.commands\.spawn/
+			],
+			[
+				"addComponent",
+				(w, e, d) => void w.addComponent(e, d, { x: 1 }),
+				/host addComponent is immediate.*ctx\.commands\.add/
+			],
+			[
+				"addComponents",
+				(w, e, d) => void w.addComponents(e, d({ x: 1 })),
+				/host addComponents is immediate.*ctx\.commands\.add/
+			],
+			[
+				"removeComponent",
+				(w, e, d) => void w.removeComponent(e, d),
+				/host removeComponent is immediate.*ctx\.commands\.remove/
+			],
+			[
+				"removeComponents",
+				(w, e, d) => void w.removeComponents(e, d),
+				/host removeComponents is immediate.*ctx\.commands\.remove/
+			],
 			["disable", (w, e) => void w.disable(e), /host disable is immediate.*ctx\.commands\.disable/],
 			["enable", (w, e) => void w.enable(e), /host enable is immediate.*ctx\.commands\.enable/]
 		];

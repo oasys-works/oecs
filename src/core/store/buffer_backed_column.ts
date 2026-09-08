@@ -30,7 +30,9 @@ export class StoreColumnOverflowError extends Error {
 	public readonly requested: number;
 
 	constructor(capacity: number, requested: number) {
-		super(`BufferBackedColumn overflow: requested length ${requested} exceeds capacity ${capacity}`);
+		super(
+			`BufferBackedColumn overflow: requested length ${requested} exceeds capacity ${capacity}`
+		);
 		this.name = "StoreColumnOverflowError";
 		this.capacity = capacity;
 		this.requested = requested;

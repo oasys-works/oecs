@@ -35,7 +35,14 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import { emit, iqr, median, RUNTIMES, runVariantOn, table, variantArg } from "./harness.mjs";
-import { controlBuffer, hostJoin, hostRelease, JOB_STOP, VARIANTS, variantLabel } from "./par/join.mjs";
+import {
+	controlBuffer,
+	hostJoin,
+	hostRelease,
+	JOB_STOP,
+	VARIANTS,
+	variantLabel
+} from "./par/join.mjs";
 
 const WORKER = new URL("./par/join-worker.mjs", import.meta.url);
 const DT = 1 / 60;
@@ -262,7 +269,9 @@ function present(results) {
 	]);
 
 	for (const n of SIZES) {
-		console.log(`\nOne whole pass of pos += vel * dt over ${n.toLocaleString()} rows, milliseconds.\n`);
+		console.log(
+			`\nOne whole pass of pos += vel * dt over ${n.toLocaleString()} rows, milliseconds.\n`
+		);
 		const passRows = [];
 		for (const k of KS) {
 			for (const v of VARIANTS) {

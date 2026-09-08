@@ -15,29 +15,15 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-	createColumnStore,
-	readStoreHeader,
-	TYPE_TAG,
-	type ArchetypeSpec
-} from "..";
-import {
-	actionRingCapacitySlots,
-	pendingActionCount,
-	popAction,
-	pushAction
-} from "../action_ring";
+import { createColumnStore, readStoreHeader, TYPE_TAG, type ArchetypeSpec } from "..";
+import { actionRingCapacitySlots, pendingActionCount, popAction, pushAction } from "../action_ring";
 import {
 	commandRingCapacitySlots,
 	pendingCommandCount,
 	popCommand,
 	pushCommand
 } from "../command_ring";
-import {
-	entityIndexCapacity,
-	entityIndexLength,
-	setEntityIndexLength
-} from "../entity_index";
+import { entityIndexCapacity, entityIndexLength, setEntityIndexLength } from "../entity_index";
 import { eventRingCapacitySlots, pendingEventCount, popEvent, pushEvent } from "../event_ring";
 import { growColumnStore } from "../grow";
 

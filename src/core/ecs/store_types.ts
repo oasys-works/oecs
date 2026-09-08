@@ -103,7 +103,6 @@ export interface StructuralObserverEvents {
 	enaLen: number;
 }
 
-
 /** What `Store.drainSet` hands a consumer of the change feed: the rows a
  * tick-plane scan found and the rows the dirty list held.
  *

@@ -61,7 +61,8 @@ if (variant === undefined) {
 	}
 	process.exit(0);
 }
-if (!VARIANTS.includes(variant)) throw new Error(`unknown variant ${variant}: ${VARIANTS.join(", ")}`);
+if (!VARIANTS.includes(variant))
+	throw new Error(`unknown variant ${variant}: ${VARIANTS.join(", ")}`);
 
 const { ECS } = await import(url.pathToFileURL(bundle).href);
 const PRESIZED_BULK = { memory: { columnCapacity: N * 6 } };

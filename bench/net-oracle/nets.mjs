@@ -76,7 +76,7 @@ export function erasureTree(depth) {
 	return b.done(`erasureTree(${depth})`, {
 		expectRewrites: 2 ** (depth + 1),
 		expectAgents: 2, // ROOT + one ERA
-		expectLoops: 0,
+		expectLoops: 0
 	});
 }
 
@@ -165,7 +165,7 @@ export function assertNetSpecValid(spec) {
 	for (const [a, pa, bb, pb] of wires) {
 		for (const [g, q] of [
 			[a, pa],
-			[bb, pb],
+			[bb, pb]
 		]) {
 			if (g < 0 || g >= types.length) throw new Error(`${name}: wire to unknown agent ${g}`);
 			if (q < 0 || q >= PORTS[types[g]]) {

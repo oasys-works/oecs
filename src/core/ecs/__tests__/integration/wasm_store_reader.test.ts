@@ -193,9 +193,9 @@ describe("a WASM module reads the store layout", () => {
 		expect(tsRows).toBe(80);
 
 		const after = collectColumnValues(byTs.memory.buffer, byTs.headerOff, byTs.Pos.id, "f32");
-		expect(collectColumnValues(byModule.memory.buffer, byModule.headerOff, byModule.Pos.id, "f32")).toEqual(
-			after
-		);
+		expect(
+			collectColumnValues(byModule.memory.buffer, byModule.headerOff, byModule.Pos.id, "f32")
+		).toEqual(after);
 		byTs.ecs.dispose();
 		byModule.ecs.dispose();
 	});
@@ -244,8 +244,7 @@ describe("a WASM module reads the store layout", () => {
 		// Without a relocation the rest of this test proves nothing.
 		expect(fresh.pos[0]).not.toBe(cached.pos[0]);
 
-		const live = (): number[] =>
-			collectColumnValues(w.memory.buffer, w.headerOff, w.Pos.id, "f32");
+		const live = (): number[] => collectColumnValues(w.memory.buffer, w.headerOff, w.Pos.id, "f32");
 		const untouched = live();
 		const touchedRows = w.reader.step_cached(
 			cached.pos[0],

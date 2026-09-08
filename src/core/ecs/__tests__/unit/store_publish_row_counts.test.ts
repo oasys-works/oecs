@@ -124,18 +124,14 @@ describe("Store.publishRowCounts", () => {
 			entities.push(e);
 		}
 		store.publishRowCounts();
-		expect(
-			rowCountByArchId(store).get(store.getEntityArchetype(entities[0]).id as number)
-		).toBe(5);
+		expect(rowCountByArchId(store).get(store.getEntityArchetype(entities[0]).id as number)).toBe(5);
 
 		// Defer-destroy two. Flush. Publish. Descriptor row_count must drop.
 		store.destroyEntityDeferred(entities[0]);
 		store.destroyEntityDeferred(entities[1]);
 		store.flushDestroys();
 		store.publishRowCounts();
-		expect(
-			rowCountByArchId(store).get(store.getEntityArchetype(entities[2]).id as number)
-		).toBe(3);
+		expect(rowCountByArchId(store).get(store.getEntityArchetype(entities[2]).id as number)).toBe(3);
 	});
 
 	it("re-marks dirty after immediate destroyEntity, re-stamps on next publish", () => {

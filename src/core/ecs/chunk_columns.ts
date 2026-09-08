@@ -33,8 +33,10 @@ import { DEV } from "../../dev_flag";
  * object (a per-archetype-per-component cache refreshed in place), hiding the
  * change tick. Destructure the group immediately. Don't retain it across calls.
  */
-export class ChunkColumns<out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]> {
-	/** @internal */ arch!: Archetype
+export class ChunkColumns<
+	out Defs extends readonly ComponentDef<any>[] = readonly ComponentDef<any>[]
+> {
+	/** @internal */ arch!: Archetype;
 	/** The change tick this pass stamps. Store it into a row of `ticks(def)`
 	 * to record that row for an entity-level `onSet`. */
 	tick = 0;

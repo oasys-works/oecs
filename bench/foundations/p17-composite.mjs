@@ -196,7 +196,9 @@ if (which) {
 	console.log(
 		`  ${"runtime".padEnd(8)} ${"engine".padEnd(7)} ${"oecs".padEnd(10)} ${"plainObj".padEnd(10)} ${"oecs vs plain".padEnd(14)} checksums`
 	);
-	console.log(`  ${"-".repeat(8)} ${"-".repeat(7)} ${"-".repeat(10)} ${"-".repeat(10)} ${"-".repeat(14)} ---------`);
+	console.log(
+		`  ${"-".repeat(8)} ${"-".repeat(7)} ${"-".repeat(10)} ${"-".repeat(10)} ${"-".repeat(14)} ---------`
+	);
 	for (const r of rows) {
 		console.log(
 			`  ${r.runtime.padEnd(8)} ${r.engine.padEnd(7)} ` +
@@ -217,5 +219,7 @@ if (which) {
 	console.log(
 		`\n  range: ${worst.ratio.toFixed(2)}x (${worst.runtime}) .. ${best.ratio.toFixed(2)}x (${best.runtime})`
 	);
-	console.log(`  K1 verdict: oecs is ${worst.ratio >= 1 ? "FASTER" : "SLOWER"} than plain objects on every engine tested`);
+	console.log(
+		`  K1 verdict: oecs is ${worst.ratio >= 1 ? "FASTER" : "SLOWER"} than plain objects on every engine tested`
+	);
 }

@@ -101,8 +101,7 @@ export function bindArchetypes(
 ): BoundArchetype[] {
 	const dv = new DataView(buffer);
 	const archetypeCount = dv.getUint32(storeBase + STORE_HEADER_OFFSETS.archetype_count, true);
-	let off =
-		storeBase + dv.getUint32(storeBase + STORE_HEADER_OFFSETS.layout_descriptor_off, true);
+	let off = storeBase + dv.getUint32(storeBase + STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 	const wantCount = specs.length >> 1;
 	const out: BoundArchetype[] = [];
 
@@ -145,8 +144,7 @@ export function bindArchetypes(
 			// still be filled.
 			for (let s = 0; s < wantCount; s++) {
 				if (specs[s * 2] !== cid || specs[s * 2 + 1] !== fid) continue;
-				const address =
-					storeBase + dv.getUint32(co + COLUMN_DESCRIPTOR_OFFSETS.byte_off, true);
+				const address = storeBase + dv.getUint32(co + COLUMN_DESCRIPTOR_OFFSETS.byte_off, true);
 				if (wantViews) {
 					const Ctor = TAG_CTOR[dv.getUint8(co + COLUMN_DESCRIPTOR_OFFSETS.type_tag)];
 					views[s] = new Ctor(buffer, address, rowCapacity);

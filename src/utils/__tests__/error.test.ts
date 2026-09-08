@@ -5,68 +5,68 @@ import { AppError } from "../error";
 // (The ECS-specific `ECSError` is tested next to its definition in
 // `core/ecs/utils/__tests__/error.test.ts`.)
 class TestError extends AppError {
-  constructor(message: string, isOperational = true, context?: Record<string, unknown>) {
-    super(message, isOperational, context);
-  }
+	constructor(message: string, isOperational = true, context?: Record<string, unknown>) {
+		super(message, isOperational, context);
+	}
 }
 
 describe("AppError", () => {
-  //=========================================================
-  // Construction & properties
-  //=========================================================
+	//=========================================================
+	// Construction & properties
+	//=========================================================
 
-  it("stores the message", () => {
-    const err = new TestError("boom");
-    expect(err.message).toBe("boom");
-  });
+	it("stores the message", () => {
+		const err = new TestError("boom");
+		expect(err.message).toBe("boom");
+	});
 
-  it("stores the operational flag", () => {
-    expect(new TestError("a", true).isOperational).toBe(true);
-    expect(new TestError("b", false).isOperational).toBe(false);
-  });
+	it("stores the operational flag", () => {
+		expect(new TestError("a", true).isOperational).toBe(true);
+		expect(new TestError("b", false).isOperational).toBe(false);
+	});
 
-  it("context is undefined when not provided", () => {
-    const err = new TestError("a");
-    expect(err.context).toBeUndefined();
-  });
+	it("context is undefined when not provided", () => {
+		const err = new TestError("a");
+		expect(err.context).toBeUndefined();
+	});
 
-  it("stores provided context", () => {
-    const ctx = { system: "physics", phase: "init" };
-    const err = new TestError("dup", true, ctx);
-    expect(err.context).toEqual({ system: "physics", phase: "init" });
-  });
+	it("stores provided context", () => {
+		const ctx = { system: "physics", phase: "init" };
+		const err = new TestError("dup", true, ctx);
+		expect(err.context).toEqual({ system: "physics", phase: "init" });
+	});
 
-  it("sets name to the concrete subclass name", () => {
-    const err = new TestError("a");
-    expect(err.name).toBe("TestError");
-  });
+	it("sets name to the concrete subclass name", () => {
+		const err = new TestError("a");
+		expect(err.name).toBe("TestError");
+	});
 
-  //=========================================================
-  // Inheritance
-  //=========================================================
+	//=========================================================
+	// Inheritance
+	//=========================================================
 
-  it("is an instance of AppError", () => {
-    expect(new TestError("a")).toBeInstanceOf(AppError);
-  });
+	it("is an instance of AppError", () => {
+		expect(new TestError("a")).toBeInstanceOf(AppError);
+	});
 
-  it("is an instance of Error", () => {
-    expect(new TestError("a")).toBeInstanceOf(Error);
-  });
+	it("is an instance of Error", () => {
+		expect(new TestError("a")).toBeInstanceOf(Error);
+	});
 });
 
 describe("AppError without Error.captureStackTrace", () => {
-  it("delivers the fault when the extension is absent", () => {
-    // A V8 extension. An engine without it must still hand the caller the
-    // message and the name.
-    const ctor = Error as { captureStackTrace?: unknown };
-    const saved = ctor.captureStackTrace;
-    ctor.captureStackTrace = undefined;
-    try {
-      const err = new TestError("boom");
-      expect(err.message).toBe("boom");
-      expect(err.name).toBe("TestError");
-    } finally {
-      ctor.captureStackTrace = saved;
-    }
-  });
+	it("delivers the fault when the extension is absent", () => {
+		// A V8 extension. An engine without it must still hand the caller the
+		// message and the name.
+		const ctor = Error as { captureStackTrace?: unknown };
+		const saved = ctor.captureStackTrace;
+		ctor.captureStackTrace = undefined;
+		try {
+			const err = new TestError("boom");
+			expect(err.message).toBe("boom");
+			expect(err.name).toBe("TestError");
+		} finally {
+			ctor.captureStackTrace = saved;
+		}
+	});
 });

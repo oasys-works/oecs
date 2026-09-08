@@ -3,31 +3,28 @@ import fs from "fs";
 import path from "path";
 
 export default defineConfig({
-  define: {
-    __DEV__: true,
-  },
-  test: {
-    environment: "node",
-    // Collect only from this checkout's `src/`. Every test in the repo lives
-    // there, and the default scan starts at the project root, which picks up
-    // any git worktree parked inside it. `.claude/worktrees/<branch>/src/` holds
-    // a second full copy of the suite, so an unscoped run reports roughly twice
-    // the file count and validates another branch alongside this one. A release
-    // gate has to count this tree and nothing else.
-    //
-    // `bench/` is deliberately out of this list. It is a local tool, and it is not
-    // a part of the package or of the gate. `bench/net-oracle/oracle.test.mjs` is a
-    // vitest file, so a person can run it by name, and this list keeps it out of
-    // `pnpm test`. `bench/net-oracle/README.md` gives the command.
-    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
-    alias: Object.fromEntries(
-      fs
-        .readdirSync(path.resolve(__dirname, "src"), { withFileTypes: true })
-        .filter((dirent) => dirent.isDirectory())
-        .map((dirent) => [
-          dirent.name,
-          path.resolve(__dirname, `./src/${dirent.name}`),
-        ]),
-    ),
-  },
+	define: {
+		__DEV__: true
+	},
+	test: {
+		environment: "node",
+		// Collect only from this checkout's `src/`. Every test in the repo lives
+		// there, and the default scan starts at the project root, which picks up
+		// any git worktree parked inside it. `.claude/worktrees/<branch>/src/` holds
+		// a second full copy of the suite, so an unscoped run reports roughly twice
+		// the file count and validates another branch alongside this one. A release
+		// gate has to count this tree and nothing else.
+		//
+		// `bench/` is deliberately out of this list. It is a local tool, and it is not
+		// a part of the package or of the gate. `bench/net-oracle/oracle.test.mjs` is a
+		// vitest file, so a person can run it by name, and this list keeps it out of
+		// `pnpm test`. `bench/net-oracle/README.md` gives the command.
+		include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
+		alias: Object.fromEntries(
+			fs
+				.readdirSync(path.resolve(__dirname, "src"), { withFileTypes: true })
+				.filter((dirent) => dirent.isDirectory())
+				.map((dirent) => [dirent.name, path.resolve(__dirname, `./src/${dirent.name}`)])
+		)
+	}
 });

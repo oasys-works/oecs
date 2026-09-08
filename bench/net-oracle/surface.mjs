@@ -41,9 +41,11 @@ import { Divergence } from "./driver.mjs";
  * and restore, so they take it. A consumer installs only the plugins it
  * names, and carries no code for the rest. */
 function snapshotWorld(lib, options) {
-	return lib.ECS.create({ ...options, plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()] });
+	return lib.ECS.create({
+		...options,
+		plugins: [lib.snapshots(), lib.events(), lib.relations(), lib.observers()]
+	});
 }
-
 
 /** Report a failure through the same channel that the driver uses. */
 function bad(what, msg) {
@@ -148,7 +150,12 @@ function refusalShape(lib, what, name, err, ECSRestoreError) {
 	if (!lib.isEcsError(err)) {
 		bad(what, `${name}: the restore threw ${err.name}, which is not an ECSError: ${err.message}`);
 	}
-	eq(what, `${name}: the category of the refusal`, err.category, lib.ECS_ERROR.SNAPSHOT_RESTORE_FAILED);
+	eq(
+		what,
+		`${name}: the category of the refusal`,
+		err.category,
+		lib.ECS_ERROR.SNAPSHOT_RESTORE_FAILED
+	);
 	eq(what, `${name}: the name of the refusal`, err.name, "ECSRestoreError");
 	counted();
 	if (!(err instanceof ECSRestoreError)) {
@@ -197,7 +204,10 @@ function devBuild(lib) {
 		return DEV_BUILD;
 	}
 	if (!lib.isEcsError(err) || err.category !== lib.ECS_ERROR.QUERY_NOT_SINGLETON) {
-		bad(what, `singleEntity on a query with no match threw ${err.category ?? err.name}, want QUERY_NOT_SINGLETON`);
+		bad(
+			what,
+			`singleEntity on a query with no match threw ${err.category ?? err.name}, want QUERY_NOT_SINGLETON`
+		);
 	}
 	DEV_BUILD = true;
 	return DEV_BUILD;
@@ -252,7 +262,7 @@ export function traversalGuards(lib) {
 		chain[3],
 		chain[2],
 		chain[1],
-		chain[0],
+		chain[0]
 	]);
 	eq(what, "rootOf over four edges", ecs.relations.rootOf(chain[4], P), chain[0]);
 	eqList(what, "cascadeOf from the root", ecs.relations.cascadeOf(chain[0], P), chain);
@@ -273,9 +283,7 @@ export function traversalGuards(lib) {
 	// result of the production arm to name no entity two times, a walk that repeated
 	// an entity would be going around the cycle.
 	ecs.relations.add(chain[0], P, chain[4]);
-	cyclicWalk(lib, what, "ancestorsOf over a cycle", () =>
-		ecs.relations.ancestorsOf(chain[4], P)
-	);
+	cyclicWalk(lib, what, "ancestorsOf over a cycle", () => ecs.relations.ancestorsOf(chain[4], P));
 	cyclicWalk(lib, what, "rootOf over a cycle", () => [ecs.relations.rootOf(chain[4], P)]);
 	cyclicWalk(lib, what, "hierarchy over a cycle", () => walk());
 	ecs.dispose();
@@ -352,7 +360,7 @@ export function builtinRelations(lib) {
 		e[1],
 		e[2],
 		e[3],
-		e[4],
+		e[4]
 	]);
 	// The default of `ChildOf` is `"delete"`. Therefore the subtree dies with the root.
 	ecs.despawn(e[0]);
@@ -419,16 +427,15 @@ export function wildcardRead(lib) {
 			q.forEachRelatedTo(e[0], (x) => out.push(x));
 			out.sort((a, b) => a - b);
 			got = out;
-		},
+		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, reader);
 	ecs.startup();
 	ecs.update(1);
 	// The same answer, from the reads of one relation at a time.
-	const want = [
-		...ecs.relations.sourcesOf(e[0], R1),
-		...ecs.relations.sourcesOf(e[0], R2),
-	].sort((a, b) => a - b);
+	const want = [...ecs.relations.sourcesOf(e[0], R1), ...ecs.relations.sourcesOf(e[0], R2)].sort(
+		(a, b) => a - b
+	);
 	eqList(what, "forEachRelatedTo against the per-relation reads", got, want);
 	// `sourcesOfAny` answers the same question, and it names the relation as well.
 	const anyPairs = ecs.relations.sourcesOfAny(e[0]);
@@ -566,12 +573,7 @@ export function templatesAndBatch(lib) {
 export function hostSeamVocabulary(lib) {
 	const what = "host-seam";
 	const at = CHECKS;
-	const {
-		ECS,
-		installHostCommandSeam,
-		uninstallHostCommandSeam,
-		spawnEntry,
-	} = lib;
+	const { ECS, installHostCommandSeam, uninstallHostCommandSeam, spawnEntry } = lib;
 	const ecs = snapshotWorld(lib, { deterministic: true });
 	const queue = installHostCommandSeam(ecs);
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
@@ -646,17 +648,14 @@ export function commandReplay(lib) {
 		serializeCommandLog,
 		deserializeCommandLog,
 		replayCommandLog,
-		spawnEntry,
+		spawnEntry
 	} = lib;
 
 	// One builder, used two times. The replay needs a world with the same shape: the
 	// same components, registered in the same order, and the same systems.
 	const build = (recorder) => {
 		const ecs = snapshotWorld(lib, { deterministic: true });
-		const queue = installHostCommandSeam(
-			ecs,
-			recorder === null ? undefined : { recorder }
-		);
+		const queue = installHostCommandSeam(ecs, recorder === null ? undefined : { recorder });
 		const Pos = ecs.registerComponent({ x: "i32", y: "i32" }, { name: "Pos" });
 		const Vel = ecs.registerComponent({ dx: "i32" }, { name: "Vel" });
 		const Tag = ecs.registerComponent({}, { name: "Tag" });
@@ -673,7 +672,7 @@ export function commandReplay(lib) {
 					const { dx } = cols.read(Vel);
 					for (let i = 0; i < count; i++) x[i] += dx[i];
 				});
-			},
+			}
 		});
 		ecs.addSystems(SCHEDULE.UPDATE, move);
 		return { ecs, queue, Pos, Vel, Tag };
@@ -683,8 +682,9 @@ export function commandReplay(lib) {
 	const first = build(recorder);
 	// Seed-time commands drain at PRE_STARTUP, so they go in before `startup()`.
 	const seeded = [];
-	first.queue.spawn([spawnEntry(first.Pos, { x: 0, y: 0 }), spawnEntry(first.Vel, { dx: 2 })], (id) =>
-		seeded.push(id)
+	first.queue.spawn(
+		[spawnEntry(first.Pos, { x: 0, y: 0 }), spawnEntry(first.Vel, { dx: 2 })],
+		(id) => seeded.push(id)
 	);
 	first.ecs.startup();
 	counted();
@@ -754,19 +754,28 @@ export function runConditions(lib) {
 		runIfNot,
 		runIfAll,
 		runIfAny,
-		systemSet,
+		systemSet
 	} = lib;
 	const ecs = snapshotWorld(lib, { deterministic: true });
 	const Mark = ecs.registerComponent({ v: "i32" }, { name: "Mark" });
 	const Mode = resourceKey("mode");
 	ecs.resources.register(Mode, 0);
 
-	const runs = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, allGates: 0, anyGate: 0, anyMark: 0, setA: 0, setB: 0 };
+	const runs = {
+		every2: 0,
+		every3off1: 0,
+		modeIs1: 0,
+		notMode1: 0,
+		allGates: 0,
+		anyGate: 0,
+		anyMark: 0,
+		setA: 0,
+		setB: 0
+	};
 	const counter = (key) => () => {
 		runs[key]++;
 	};
-	const mk = (name, key) =>
-		ecs.registerSystem({ name, reads: [], writes: [], fn: counter(key) });
+	const mk = (name, key) => ecs.registerSystem({ name, reads: [], writes: [], fn: counter(key) });
 
 	// The driver of the value of the resource. It runs first, so a gate in a later
 	// phase sees the value of this tick.
@@ -776,7 +785,7 @@ export function runConditions(lib) {
 		reads: [],
 		writes: [],
 		resourceWrites: [Mode],
-		fn: (ctx) => ctx.setResource(Mode, mode),
+		fn: (ctx) => ctx.setResource(Mode, mode)
 	});
 	ecs.addSystems(SCHEDULE.PRE_UPDATE, setMode);
 
@@ -788,8 +797,14 @@ export function runConditions(lib) {
 		{ system: mk("every3off1", "every3off1"), runIf: runEveryNTicks(3, 1) },
 		{ system: mk("modeIs1", "modeIs1"), runIf: runIfResourceEq(Mode, 1) },
 		{ system: mk("notMode1", "notMode1"), runIf: runIfNot(runIfResourceEq(Mode, 1)) },
-		{ system: mk("allGates", "allGates"), runIf: runIfAll(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
-		{ system: mk("anyGate", "anyGate"), runIf: runIfAny(runEveryNTicks(2), runIfResourceEq(Mode, 1)) },
+		{
+			system: mk("allGates", "allGates"),
+			runIf: runIfAll(runEveryNTicks(2), runIfResourceEq(Mode, 1))
+		},
+		{
+			system: mk("anyGate", "anyGate"),
+			runIf: runIfAny(runEveryNTicks(2), runIfResourceEq(Mode, 1))
+		},
 		{ system: mk("anyMark", "anyMark"), runIf: runIfAnyMatch(qMark) },
 		// two members of one set. `configureSet` gives the set one condition, and each
 		// member inherits it.
@@ -803,7 +818,17 @@ export function runConditions(lib) {
 	// N-th call of `update` is N-1, so the index of this loop is that tick. A read of
 	// `getCurrentTick()` before the call gives the tick of the previous update, which
 	// is one step early.
-	const want = { every2: 0, every3off1: 0, modeIs1: 0, notMode1: 0, allGates: 0, anyGate: 0, anyMark: 0, setA: 0, setB: 0 };
+	const want = {
+		every2: 0,
+		every3off1: 0,
+		modeIs1: 0,
+		notMode1: 0,
+		allGates: 0,
+		anyGate: 0,
+		anyMark: 0,
+		setA: 0,
+		setB: 0
+	};
 	for (let i = 0; i < 12; i++) {
 		mode = i % 3;
 		// A `Mark` entity exists from tick 4 on, so `runIfAnyMatch` must be false before
@@ -886,7 +911,7 @@ export function resourceAndEventEdges(lib) {
 		fn: (ctx) => {
 			for (let i = 0; i < emit; i++) ctx.emit(Hit, { a: i, b: i * 2 });
 			if (emit > 0) ctx.emit(Ping);
-		},
+		}
 	});
 	const rd = ecs.registerSystem({
 		name: "rd",
@@ -898,7 +923,7 @@ export function resourceAndEventEdges(lib) {
 			for (let i = 0; i < r.length; i++) rows.push(`${r.a[i]}:${r.b[i]}`);
 			seen.push(rows.join(","));
 			signals.push(ctx.readEvents(Ping).length);
-		},
+		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, em);
 	ecs.addSystems(SCHEDULE.POST_UPDATE, rd);
@@ -909,7 +934,14 @@ export function resourceAndEventEdges(lib) {
 	}
 	// A channel clears itself at the end of each update. Therefore a tick with no emit
 	// must read nothing, and a tick that emits must read that tick alone.
-	eqList(what, "the rows of the event channel per tick", seen, ["", "0:0,1:2", "", "0:0,1:2,2:4", "0:0", ""]);
+	eqList(what, "the rows of the event channel per tick", seen, [
+		"",
+		"0:0,1:2",
+		"",
+		"0:0,1:2,2:4",
+		"0:0",
+		""
+	]);
 	eqList(what, "the count of the signal per tick", signals, [0, 1, 0, 1, 1, 0]);
 	ecs.dispose();
 	return CHECKS - at;
@@ -989,7 +1021,7 @@ export function frameTrace(lib) {
 		transitions: [{ whenHas: [Pos], add: [Tag], remove: [] }],
 		fn: (ctx) => {
 			for (const e of seeds) ctx.commands.add(e, Tag);
-		},
+		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, sys);
 	ecs.startup();
@@ -1033,7 +1065,12 @@ export function frameTrace(lib) {
 	for (const ev of frames[0].events) {
 		if (ev.kind === "command_queued") seenEntities.add(ev.entity);
 	}
-	eqList(what, "the entities of the recorded commands", [...seenEntities].sort((a, b) => a - b), [...seeds].sort((a, b) => a - b));
+	eqList(
+		what,
+		"the entities of the recorded commands",
+		[...seenEntities].sort((a, b) => a - b),
+		[...seeds].sort((a, b) => a - b)
+	);
 	// `reset()` frees the recorder for a second run.
 	rec.reset();
 	eq(what, "the frames after reset()", rec.frames().length, 0);
@@ -1095,11 +1132,23 @@ export function relationRemoval(lib) {
 	ecs.relations.add(e[2], Mu, e[0]);
 	ecs.relations.add(e[2], Mu, e[3]);
 	ecs.relations.add(e[2], Mu, e[4]);
-	eqList(what, "targetsOf() after three adds", ecs.relations.targetsOf(e[2], Mu), asc([e[0], e[3], e[4]]));
+	eqList(
+		what,
+		"targetsOf() after three adds",
+		ecs.relations.targetsOf(e[2], Mu),
+		asc([e[0], e[3], e[4]])
+	);
 	ecs.relations.remove(e[2], Mu, e[3]);
-	eqList(what, "targetsOf() after one remove", ecs.relations.targetsOf(e[2], Mu), asc([e[0], e[4]]));
+	eqList(
+		what,
+		"targetsOf() after one remove",
+		ecs.relations.targetsOf(e[2], Mu),
+		asc([e[0], e[4]])
+	);
 	eqList(what, "the reverse key of the removed target", ecs.relations.sourcesOf(e[3], Mu), []);
-	eqList(what, "the reverse key of a target that stayed", ecs.relations.sourcesOf(e[0], Mu), [e[2]]);
+	eqList(what, "the reverse key of a target that stayed", ecs.relations.sourcesOf(e[0], Mu), [
+		e[2]
+	]);
 	eq(what, "has() while targets remain", ecs.relations.has(e[2], Mu), true);
 
 	// ── the multi unlink with no target: every target of that source ────────
@@ -1107,10 +1156,20 @@ export function relationRemoval(lib) {
 	// leave that other source alone.
 	ecs.relations.add(e[5], Mu, e[0]);
 	ecs.relations.remove(e[2], Mu);
-	eqList(what, "targetsOf() after the remove of every target", ecs.relations.targetsOf(e[2], Mu), []);
+	eqList(
+		what,
+		"targetsOf() after the remove of every target",
+		ecs.relations.targetsOf(e[2], Mu),
+		[]
+	);
 	eq(what, "has() after the remove of every target", ecs.relations.has(e[2], Mu), false);
 	eqList(what, "the other source survives", ecs.relations.sourcesOf(e[0], Mu), [e[5]]);
-	eqList(what, "the reverse key of the other target is gone", ecs.relations.sourcesOf(e[4], Mu), []);
+	eqList(
+		what,
+		"the reverse key of the other target is gone",
+		ecs.relations.sourcesOf(e[4], Mu),
+		[]
+	);
 	eqList(
 		what,
 		"pairsOf() holds the surviving pair alone",
@@ -1173,7 +1232,12 @@ export function cursorsAndRefs(lib) {
 
 	// ── `tryGetField`: the total sibling of `getField` ──────────────────────
 	eq(what, "tryGetField on a component the entity holds", ecs.tryGetField(ents[0], Pos, "x"), 100);
-	eq(what, "tryGetField on a component the entity lacks", ecs.tryGetField(ents[0], Other, "z"), undefined);
+	eq(
+		what,
+		"tryGetField on a component the entity lacks",
+		ecs.tryGetField(ents[0], Other, "z"),
+		undefined
+	);
 
 	// ── `ctx.ref` inside a system, and the change tick that it stamps ───────
 	const qChanged = ecs.query(Pos).changed(Pos);
@@ -1190,7 +1254,7 @@ export function cursorsAndRefs(lib) {
 			const w = ctx.ref(Pos, ents[0]);
 			const r = ctx.refRead(Pos, ents[1]);
 			w.y = r.y + 7;
-		},
+		}
 	});
 	const reader = ecs.registerSystem({
 		name: "changed-reader",
@@ -1199,7 +1263,7 @@ export function cursorsAndRefs(lib) {
 		fn: () => {
 			changedArchetypes = 0;
 			qChanged.forEach(() => changedArchetypes++);
-		},
+		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, writer);
 	ecs.addSystems(SCHEDULE.POST_UPDATE, reader);
@@ -1264,7 +1328,7 @@ export function immediateToggle(lib) {
 		name: "toggle-watch",
 		access: { reads: [], writes: [] },
 		onDisable: () => disables++,
-		onEnable: () => enables++,
+		onEnable: () => enables++
 	});
 	const ents = [];
 	for (let i = 0; i < 4; i++) {
@@ -1362,7 +1426,12 @@ export function worldRestoreGuard(lib) {
 	const bytes = ecs.snapshots.capture();
 	const hash0 = ecs.snapshots.stateHash();
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	eq(what, "the version word of a fresh capture", view.getUint32(VERSION_OFF, true), ECS_SNAPSHOT_VERSION);
+	eq(
+		what,
+		"the version word of a fresh capture",
+		view.getUint32(VERSION_OFF, true),
+		ECS_SNAPSHOT_VERSION
+	);
 
 	// The good path first. Without it every refusal below could pass while the bytes
 	// themselves were bad, and the probe would show nothing.
@@ -1387,7 +1456,12 @@ export function worldRestoreGuard(lib) {
 		if (err === null) bad(what, `${name}: the restore did not throw`);
 		refusalShape(lib, what, name, err, ECSRestoreError);
 		eq(what, `${name}: the hash after the refused restore`, ecs.snapshots.stateHash(), before);
-		eq(what, `${name}: a live field after the refused restore`, ecs.getField(ents[1], Pos, "x"), beforeField);
+		eq(
+			what,
+			`${name}: a live field after the refused restore`,
+			ecs.getField(ents[1], Pos, "x"),
+			beforeField
+		);
 	};
 
 	/** A copy of the good bytes, which the caller then damages. */
@@ -1453,17 +1527,33 @@ export function worldRestoreGuard(lib) {
 		otherErr = e;
 	}
 	counted();
-	if (otherErr === null) bad(what, `a restore into a world with a different registration did not throw`);
+	if (otherErr === null)
+		bad(what, `a restore into a world with a different registration did not throw`);
 	refusalShape(lib, what, "a world with a different registration", otherErr, ECSRestoreError);
-	eq(what, "the hash of the other world after the refused restore", other.snapshots.stateHash(), otherHash);
-	eq(what, "a field of the other world after the refused restore", other.getField(oe, OPos, "z"), 3);
+	eq(
+		what,
+		"the hash of the other world after the refused restore",
+		other.snapshots.stateHash(),
+		otherHash
+	);
+	eq(
+		what,
+		"a field of the other world after the refused restore",
+		other.getField(oe, OPos, "z"),
+		3
+	);
 
 	// The world must still tick after the refusals. A world that fails closed but
 	// cannot continue has kept its bytes and lost its purpose.
 	ecs.update(1);
 	eq(what, "a dense field after the world ticked again", ecs.getField(ents[0], Pos, "x"), 0);
 	ecs.snapshots.restore(bytes);
-	eq(what, "the hash after a good restore that follows the refusals", ecs.snapshots.stateHash(), hash0);
+	eq(
+		what,
+		"the hash after a good restore that follows the refusals",
+		ecs.snapshots.stateHash(),
+		hash0
+	);
 	ecs.dispose();
 	other.dispose();
 	return CHECKS - at;
@@ -1504,7 +1594,7 @@ export function immediateComponentWrites(lib) {
 			name: `watch-${def.id}`,
 			access: { reads: [], writes: [] },
 			onAdd: () => adds++,
-			onRemove: () => removes++,
+			onRemove: () => removes++
 		});
 	}
 	const single = ecs.spawn();
@@ -1532,7 +1622,10 @@ export function immediateComponentWrites(lib) {
 	ecs.addComponents(plural, bundle(Pos, { x: 1, y: 2 }), bundle(Vel, { dx: 3 }), Tag);
 	eq(what, "the onAdd calls that the immediate adds made", adds, 0);
 
-	for (const [name, e] of [["one at a time", single], ["in one call", plural]]) {
+	for (const [name, e] of [
+		["one at a time", single],
+		["in one call", plural]
+	]) {
 		eq(what, `Pos.x after the adds ${name}`, ecs.getField(e, Pos, "x"), 1);
 		eq(what, `Pos.y after the adds ${name}`, ecs.getField(e, Pos, "y"), 2);
 		eq(what, `Vel.dx after the adds ${name}`, ecs.getField(e, Vel, "dx"), 3);
@@ -1549,7 +1642,10 @@ export function immediateComponentWrites(lib) {
 	ecs.removeComponent(single, Tag);
 	ecs.removeComponents(plural, Vel, Tag);
 	eq(what, "the onRemove calls that the immediate removes made", removes, 0);
-	for (const [name, e] of [["one at a time", single], ["in one call", plural]]) {
+	for (const [name, e] of [
+		["one at a time", single],
+		["in one call", plural]
+	]) {
 		eq(what, `Vel after the removes ${name}`, ecs.hasComponent(e, Vel), false);
 		eq(what, `Tag after the removes ${name}`, ecs.hasComponent(e, Tag), false);
 		// The row moved between archetypes. The column that stayed must carry its
@@ -1571,7 +1667,7 @@ export function immediateComponentWrites(lib) {
 		fn: (ctx) => {
 			if (step === 0) ctx.commands.add(single, Vel, { dx: 7 });
 			if (step === 1) ctx.commands.remove(single, Vel);
-		},
+		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, sys);
 	ecs.update(1);
@@ -1680,7 +1776,12 @@ export function templateRefusals(lib) {
 	// The refusals changed nothing. A guard that threw after it took a slot
 	// leaves a dead entity behind. The count of the live rows shows it.
 	eq(what, "Pos.x of the first row after the refusals", ecs.getField(one, Pos, "x"), 3);
-	eq(what, "the rows of the template archetype after the refusals", ecs.query(Pos, Vel).entityCount, 4);
+	eq(
+		what,
+		"the rows of the template archetype after the refusals",
+		ecs.query(Pos, Vel).entityCount,
+		4
+	);
 	ecs.dispose();
 	return CHECKS - at;
 }
@@ -1786,7 +1887,7 @@ export function denseReaderRefusals(lib) {
 	for (const [name, read] of [
 		["archetypeCount", () => qWhere.archetypeCount],
 		["archetypes", () => qWhere.archetypes],
-		["excludeWords", () => qWhere.excludeWords],
+		["excludeWords", () => qWhere.excludeWords]
 	]) {
 		throwsNaming(
 			lib,
@@ -1799,13 +1900,16 @@ export function denseReaderRefusals(lib) {
 	}
 
 	// The sparse guard covers a different set, and `archetypes` is not in it.
-	for (const [label, query] of [["andSparse", qSparse], ["andRelation", qRel]]) {
+	for (const [label, query] of [
+		["andSparse", qSparse],
+		["andRelation", qRel]
+	]) {
 		for (const [name, read] of [
 			["archetypeCount", () => query.archetypeCount],
 			["entityCount", () => query.entityCount],
 			["forEach", () => query.forEach(() => undefined)],
 			["forEachChunk", () => query.forEachChunk(() => undefined)],
-			["some", () => query.some(() => true)],
+			["some", () => query.some(() => true)]
 		]) {
 			throwsNaming(
 				lib,
@@ -1856,7 +1960,7 @@ function tallyPlugin(name) {
 				remove: false,
 				disable: false,
 				enable: false,
-				set: true,
+				set: true
 			});
 			host.onSettle((run) => {
 				runs.push(run);
@@ -1865,7 +1969,7 @@ function tallyPlugin(name) {
 				for (const id of result.listed) seen.push(id);
 			});
 			return { tally: { def, seen, runs } };
-		},
+		}
 	};
 }
 
@@ -1884,7 +1988,7 @@ export function pluginHost(lib) {
 		["events", "ecs.events.register", () => bare.events.register],
 		["workers", "ecs.workers.attach", () => bare.workers.attach],
 		["observers", "ecs.observe", () => bare.observe(Pos, { name: "w", access: {} })],
-		["snapshots", "ecs.snapshots.capture", () => bare.snapshots.capture()],
+		["snapshots", "ecs.snapshots.capture", () => bare.snapshots.capture()]
 	]) {
 		throwsNaming(
 			lib,
@@ -1917,7 +2021,12 @@ export function pluginHost(lib) {
 	world.startup();
 	// The facade answers through the world. The plugin registered its component
 	// on the bare world it was handed, and this world holds that component.
-	eq(what, "the field of the component that the plugin registered", world.getField(n, Note, "n"), 1);
+	eq(
+		what,
+		"the field of the component that the plugin registered",
+		world.getField(n, Note, "n"),
+		1
+	);
 	eq(what, "the settle hooks before the first update", tally.runs.length, 0);
 	world.update(1);
 	eq(what, "the settle hooks after one update", tally.runs.length, 1);
@@ -1932,7 +2041,10 @@ export function pluginHost(lib) {
 	eq(what, "the settle hooks after three updates", tally.runs.length, 3);
 	counted();
 	if (!(tally.runs[2] > tally.runs[1])) {
-		bad(what, `the settle hook read ${tally.runs[2]} after ${tally.runs[1]}, and each settle is at a later change tick`);
+		bad(
+			what,
+			`the settle hook read ${tally.runs[2]} after ${tally.runs[1]}, and each settle is at a later change tick`
+		);
 	}
 	world.dispose();
 
@@ -1969,7 +2081,7 @@ export function pluginHost(lib) {
 		["collide", "update"],
 		() =>
 			ECS.create({
-				plugins: [{ name: "collide", install: () => ({ update: () => undefined }) }],
+				plugins: [{ name: "collide", install: () => ({ update: () => undefined }) }]
 			})
 	);
 	return CHECKS - at;
@@ -2006,7 +2118,7 @@ export function openPhases(lib) {
 			name: `mark-${label}`,
 			reads: [],
 			writes: [],
-			fn: () => log.push(label),
+			fn: () => log.push(label)
 		});
 	ecs.addSystems(SCHEDULE.PRE_UPDATE, mark("PRE_UPDATE"));
 	ecs.addSystems(early, mark("early"));
@@ -2023,7 +2135,7 @@ export function openPhases(lib) {
 		"early",
 		"UPDATE",
 		"POST_UPDATE",
-		"late",
+		"late"
 	]);
 	log.length = 0;
 	ecs.update(1);
@@ -2032,7 +2144,7 @@ export function openPhases(lib) {
 		"early",
 		"UPDATE",
 		"POST_UPDATE",
-		"late",
+		"late"
 	]);
 
 	// ── a handle from another world ─────────────────────────────────────────
@@ -2073,7 +2185,7 @@ export function openPhases(lib) {
 		"early",
 		"UPDATE",
 		"POST_UPDATE",
-		"late",
+		"late"
 	]);
 	other.dispose();
 	ecs.dispose();
@@ -2117,7 +2229,7 @@ export function seamAtAddedPhase(lib) {
 	const drain = ecs.addPhase("drain", {
 		loop: "update",
 		after: [SCHEDULE.UPDATE],
-		before: [SCHEDULE.POST_UPDATE],
+		before: [SCHEDULE.POST_UPDATE]
 	});
 	const queue = installHostCommandSeam(ecs, { schedules: [drain], name: "phase-seam" });
 	const Pos = ecs.registerComponent({ x: "i32" }, { name: "Pos" });
@@ -2130,7 +2242,7 @@ export function seamAtAddedPhase(lib) {
 			name: `read-${label}`,
 			reads: [Pos],
 			writes: [],
-			fn: (ctx) => sink.push(ctx.getField(e, Pos, "x")),
+			fn: (ctx) => sink.push(ctx.getField(e, Pos, "x"))
 		});
 	ecs.addSystems(SCHEDULE.UPDATE, reader("before", before));
 	ecs.addSystems(SCHEDULE.POST_UPDATE, reader("after", after));
@@ -2219,7 +2331,10 @@ export function whereTerms(lib) {
 	eq(what, "the count of the terms the record carries", qa.terms.archetypeTerms.length, 1);
 	counted();
 	if (qa.terms.archetypeTerms[0] !== holdsA) {
-		bad(what, `the terms record holds ${qa.terms.archetypeTerms[0]?.name}, want the term the caller gave`);
+		bad(
+			what,
+			`the terms record holds ${qa.terms.archetypeTerms[0]?.name}, want the term the caller gave`
+		);
 	}
 	eq(what, "the base query carries no term", q.terms.archetypeTerms.length, 0);
 	eq(what, "the entities a plugin term matched", walk(qa), 9);
@@ -2299,7 +2414,7 @@ export const PROBES = [
 	["the plugin host, bare slots and a third-party plugin", pluginHost, 49],
 	["the open phase set", openPhases, 27],
 	["the write seam at a phase the caller added", seamAtAddedPhase, 7],
-	["the shape of a where term", whereTerms, 24],
+	["the shape of a where term", whereTerms, 24]
 ];
 
 /** Run each probe. It gives back the count of the probes and the count of the

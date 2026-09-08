@@ -58,7 +58,7 @@ export function iqr(xs) {
  */
 export function time(fn, { warmup = 5, samples = 15 } = {}) {
 	let sink = 0;
-    for (let i = 0; i < warmup; i++) sink += consume(fn());
+	for (let i = 0; i < warmup; i++) sink += consume(fn());
 	const times = [];
 	for (let i = 0; i < samples; i++) {
 		const t0 = performance.now();
@@ -125,7 +125,9 @@ export function mib(bytes) {
 }
 
 export function table(rows, cols) {
-	const widths = cols.map((c) => Math.max(c.label.length, ...rows.map((r) => String(c.get(r)).length)));
+	const widths = cols.map((c) =>
+		Math.max(c.label.length, ...rows.map((r) => String(c.get(r)).length))
+	);
 	const line = (cells) => "  " + cells.map((c, i) => String(c).padEnd(widths[i])).join("  ");
 	console.log(line(cols.map((c) => c.label)));
 	console.log(line(widths.map((w) => "-".repeat(w))));

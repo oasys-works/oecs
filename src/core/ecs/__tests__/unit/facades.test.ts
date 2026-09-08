@@ -15,8 +15,6 @@ import { events } from "../../../../plugins/events";
 import { relations } from "../../../../plugins/relations";
 import { storeOnlyHost } from "../../plugin";
 
-
-
 describe("ECS grouped facades", () => {
 	it("relations: register, add, has, targetOf, traversal and compact", () => {
 		const ecs = ECS.create({ plugins: [snapshots(), relations()] });
@@ -76,7 +74,10 @@ describe("ECS grouped facades", () => {
 	});
 
 	it("snapshots: deterministic flag + capture and restore round-trip", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [snapshots(), relations()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [snapshots(), relations()]
+		});
 		expect(ecs.snapshots.deterministic).toBe(true);
 
 		const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
@@ -107,7 +108,10 @@ describe("ECS grouped facades", () => {
 		// fault instead of a `TypeError` about a missing method. The core half of
 		// the facade still answers, because determinism is a property of the
 		// world and not of the plugin.
-		const bare = ECS.create({ ...({ deterministic: true }), plugins: [relations()] });
+		const bare = ECS.create({
+			deterministic: true,
+			plugins: [relations()]
+		});
 		expect(bare.snapshots.deterministic).toBe(true);
 		expect(typeof bare.snapshots.stateHash()).toBe("number");
 		const bareSnapshots = bare.snapshots as unknown as Record<string, () => unknown>;

@@ -41,107 +41,79 @@ const VARIANT = DEV_BUILD ? "development" : "production";
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  plugins: [
-    ...(command === "build" && !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD
-      ? [dts({ tsconfigPath: "./tsconfig.build.json" })]
-      : []),
-    ...(command === "build" && !WORKER_BUILD
-      ? [
-          PLUGIN_BUILD
-            ? bindToCoreArtifact(SRC_DIR, VARIANT)
-            : recordCoreGraph(SRC_DIR, VARIANT),
-        ]
-      : []),
-  ],
+	plugins: [
+		...(command === "build" && !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD
+			? [dts({ tsconfigPath: "./tsconfig.build.json" })]
+			: []),
+		...(command === "build" && !WORKER_BUILD
+			? [PLUGIN_BUILD ? bindToCoreArtifact(SRC_DIR, VARIANT) : recordCoreGraph(SRC_DIR, VARIANT)]
+			: [])
+	],
 
-  define: {
-    __DEV__: command === "build" ? (DEV_BUILD ? "true" : "false") : "true",
-  },
+	define: {
+		__DEV__: command === "build" ? (DEV_BUILD ? "true" : "false") : "true"
+	},
 
-  resolve: {
-    // alias for every top level directories in src
-    alias: Object.fromEntries(
-      fs
-        .readdirSync(path.resolve(__dirname, "src"), { withFileTypes: true })
-        .filter((dirent) => dirent.isDirectory())
-        .map((dirent) => [
-          dirent.name,
-          path.resolve(__dirname, `./src/${dirent.name}`),
-        ]),
-    ),
-  },
+	resolve: {
+		// alias for every top level directories in src
+		alias: Object.fromEntries(
+			fs
+				.readdirSync(path.resolve(__dirname, "src"), { withFileTypes: true })
+				.filter((dirent) => dirent.isDirectory())
+				.map((dirent) => [dirent.name, path.resolve(__dirname, `./src/${dirent.name}`)])
+		)
+	},
 
-  build: {
-    target: "es2022",
-    // production pass wipes dist. The development pass adds its `*.development.*`
-    // artifacts alongside without clearing the production output.
-    emptyOutDir: !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD,
-    lib: {
-      // Multi-entry, one per published subpath. Keys are src-relative paths so
-      // the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
-      // land at matching paths, the `exports` map points both at the same path.
-      entry: WORKER_BUILD
-        ? { worker: path.resolve(__dirname, "src/worker.ts") }
-        : PLUGIN_BUILD
-        ? {
-            // Every plugin is a directory with an `index.ts`, and every one
-            // emits `dist/plugins/<name>.js`. The emitted shape is the build's
-            // and not the source tree's, because `defaultWorkerUrl` derives the
-            // worker entry from the parent of `dist/plugins`.
-            "plugins/snapshots": path.resolve(
-              __dirname,
-              "src/plugins/snapshots/index.ts",
-            ),
-            "plugins/events": path.resolve(
-              __dirname,
-              "src/plugins/events/index.ts",
-            ),
-            "plugins/relations": path.resolve(
-              __dirname,
-              "src/plugins/relations/index.ts",
-            ),
-            "plugins/observers": path.resolve(
-              __dirname,
-              "src/plugins/observers/index.ts",
-            ),
-            "plugins/workers": path.resolve(
-              __dirname,
-              "src/plugins/workers/index.ts",
-            ),
-          }
-        : {
-            index: path.resolve(__dirname, "src/index.ts"),
-            shared: path.resolve(__dirname, "src/shared.ts"),
-            // The editor and solid plugins emit the same flat path as the
-            // other five. They stay in the core pass: each shares the module
-            // instances of `index.js`, so no classification question arises.
-            "plugins/editor": path.resolve(
-              __dirname,
-              "src/plugins/editor/index.ts",
-            ),
-            "plugins/solid": path.resolve(
-              __dirname,
-              "src/plugins/solid/index.ts",
-            ),
-            primitives: path.resolve(__dirname, "src/primitives.ts"),
-            internal: path.resolve(__dirname, "src/internal.ts"),
-          },
-      formats: ["es", "cjs"],
-      fileName: (format, entryName) =>
-        `${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`,
-    },
-    rollupOptions: {
-      // solid-js is an optional peerDependency, never bundle it. `solid-js/store`
-      // is a separate specifier, and it resolves to its own module, so leaving it
-      // off this list compiles a second copy of the store into the solid plugin.
-      //
-      // `node:worker_threads` stays here even though `node_threads.ts` names no
-      // specifier rollup can see. It is a tripwire. A literal specifier that
-      // comes back reaches the emitted file, where the dist test fails on it.
-      // Drop it and the same regression turns into a browser stub chunk, which
-      // loads on node and holds no `Worker`. It reaches the workers plugin pass
-      // and the worker pass, and no longer the core one.
-      external: ["solid-js", "solid-js/store", "node:worker_threads"],
-    },
-  },
+	build: {
+		target: "es2022",
+		// production pass wipes dist. The development pass adds its `*.development.*`
+		// artifacts alongside without clearing the production output.
+		emptyOutDir: !DEV_BUILD && !PLUGIN_BUILD && !WORKER_BUILD,
+		lib: {
+			// Multi-entry, one per published subpath. Keys are src-relative paths so
+			// the emitted .js/.cjs and the vite-plugin-dts .d.ts (which mirrors src/)
+			// land at matching paths, the `exports` map points both at the same path.
+			entry: WORKER_BUILD
+				? { worker: path.resolve(__dirname, "src/worker.ts") }
+				: PLUGIN_BUILD
+					? {
+							// Every plugin is a directory with an `index.ts`, and every one
+							// emits `dist/plugins/<name>.js`. The emitted shape is the build's
+							// and not the source tree's, because `defaultWorkerUrl` derives the
+							// worker entry from the parent of `dist/plugins`.
+							"plugins/snapshots": path.resolve(__dirname, "src/plugins/snapshots/index.ts"),
+							"plugins/events": path.resolve(__dirname, "src/plugins/events/index.ts"),
+							"plugins/relations": path.resolve(__dirname, "src/plugins/relations/index.ts"),
+							"plugins/observers": path.resolve(__dirname, "src/plugins/observers/index.ts"),
+							"plugins/workers": path.resolve(__dirname, "src/plugins/workers/index.ts")
+						}
+					: {
+							index: path.resolve(__dirname, "src/index.ts"),
+							shared: path.resolve(__dirname, "src/shared.ts"),
+							// The editor and solid plugins emit the same flat path as the
+							// other five. They stay in the core pass: each shares the module
+							// instances of `index.js`, so no classification question arises.
+							"plugins/editor": path.resolve(__dirname, "src/plugins/editor/index.ts"),
+							"plugins/solid": path.resolve(__dirname, "src/plugins/solid/index.ts"),
+							primitives: path.resolve(__dirname, "src/primitives.ts"),
+							internal: path.resolve(__dirname, "src/internal.ts")
+						},
+			formats: ["es", "cjs"],
+			fileName: (format, entryName) =>
+				`${entryName}${DEV_BUILD ? ".development" : ""}.${format === "es" ? "js" : "cjs"}`
+		},
+		rollupOptions: {
+			// solid-js is an optional peerDependency, never bundle it. `solid-js/store`
+			// is a separate specifier, and it resolves to its own module, so leaving it
+			// off this list compiles a second copy of the store into the solid plugin.
+			//
+			// `node:worker_threads` stays here even though `node_threads.ts` names no
+			// specifier rollup can see. It is a tripwire. A literal specifier that
+			// comes back reaches the emitted file, where the dist test fails on it.
+			// Drop it and the same regression turns into a browser stub chunk, which
+			// loads on node and holds no `Worker`. It reaches the workers plugin pass
+			// and the worker pass, and no longer the core one.
+			external: ["solid-js", "solid-js/store", "node:worker_threads"]
+		}
+	}
 }));

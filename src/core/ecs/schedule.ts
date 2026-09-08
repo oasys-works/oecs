@@ -60,8 +60,7 @@ import type { PhasePlan, SetOrdering, SystemNode } from "./schedule_plan";
 import type { SystemEntry, SystemSet, SystemSetConfig } from "./system_set";
 import type { Phase, PhaseConfig, PhaseLoop, SchedulePhase } from "./phase";
 import type { SystemContext } from "./system_context";
-import type {
-	SystemFn, SystemDescriptor } from "./system";
+import type { SystemFn, SystemDescriptor } from "./system";
 import type { ComputeBackend } from "./compute_backend";
 import type { RunCondition } from "./run_condition";
 import { ECS_ERROR, ECSError } from "./utils/error";
@@ -384,10 +383,7 @@ export class Schedule {
 		else this._updateOrder = sorted;
 	}
 
-	public addSystems(
-		phase: SchedulePhase,
-		...entries: (SystemDescriptor | SystemEntry)[]
-	): void {
+	public addSystems(phase: SchedulePhase, ...entries: (SystemDescriptor | SystemEntry)[]): void {
 		const target = this._resolvePhase(phase);
 		for (const entry of entries) {
 			const isEntry = "system" in entry;
@@ -715,9 +711,7 @@ export class Schedule {
 		// member, instead of re-evaluating per member. Run conditions are pure reads
 		// and deferred changes aren't flushed until the phase ends, so the memo is
 		// observationally identical within a phase, and it drops the repeat per member.
-		const setVerdicts: Map<SystemSet, boolean> | undefined = hasGates
-			? new Map()
-			: undefined;
+		const setVerdicts: Map<SystemSet, boolean> | undefined = hasGates ? new Map() : undefined;
 		// `slots` is a snapshot: a `removeSystem` from inside a system clears
 		// every cached plan, but this loop keeps running, and keeps writing back through,
 		// the plan it already captured. The caller, one of `runStartup`, `runUpdate`

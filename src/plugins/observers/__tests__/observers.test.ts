@@ -27,7 +27,10 @@ import { observers } from "../../observers";
 
 describe("Observers, onAdd and onRemove basics", () => {
 	it("onAdd fires at the flush boundary for a deferred add", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const fired: number[] = [];
 		world.observe(Tag, {
@@ -47,7 +50,10 @@ describe("Observers, onAdd and onRemove basics", () => {
 	});
 
 	it("onRemove fires for an effective remove, a no-op remove fires nothing", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const removed: number[] = [];
 		world.observe(Tag, {
@@ -70,7 +76,10 @@ describe("Observers, onAdd and onRemove basics", () => {
 	});
 
 	it("immediate (top-level) addComponent does not fire onAdd (fires only at the flush boundary)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		let fires = 0;
 		world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
@@ -80,7 +89,10 @@ describe("Observers, onAdd and onRemove basics", () => {
 	});
 
 	it("dispose() stops firing and restores the fast path", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		let fires = 0;
 		const handle = world.observe(Tag, { onAdd: () => fires++, access: openAccess([Tag]) });
@@ -120,7 +132,10 @@ describe("Observers, onAdd and onRemove basics", () => {
 
 describe("Observers, dispose mid-round", () => {
 	it("an observer disposed from a sibling's onAdd does not fire later the same round", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerTag(); // registered first → lower cid → fires first
 		const B = world.registerTag();
 		let aFires = 0;
@@ -156,7 +171,10 @@ describe("Observers, dispose mid-round", () => {
 	});
 
 	it("an observer disposed from a sibling's onRemove does not fire later the same round", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerTag(); // lower cid → fires first
 		const B = world.registerTag();
 		let aRemoves = 0;
@@ -203,7 +221,10 @@ describe("Observers, dispose mid-round", () => {
 
 describe("Observers, onRemove on destroy", () => {
 	it("a deferred destroy fires onRemove for every component the entity carried", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Tag = world.registerTag();
 		const removedPos: number[] = [];
@@ -231,7 +252,10 @@ describe("Observers, onRemove on destroy", () => {
 	});
 
 	it("destroying a component-less entity fires no onRemove", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const removed: number[] = [];
 		world.observe(Tag, {
@@ -251,7 +275,10 @@ describe("Observers, onRemove on destroy", () => {
 	});
 
 	it("onRemove from a destroy sees the entity already freed (commit-then-observe)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		let aliveInCallback: boolean | null = null;
 		world.observe(Tag, {
@@ -273,7 +300,10 @@ describe("Observers, onRemove on destroy", () => {
 	});
 
 	it("a remove and a destroy in the same tick: the remove's onRemove sees the entity live, the destroy's fires after with it freed", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerTag();
 		const B = world.registerTag();
 		let aliveWhenARemoved: boolean | null = null;
@@ -308,7 +338,10 @@ describe("Observers, onRemove on destroy", () => {
 	});
 
 	it("a destroy's onRemove may queue structural work, which settles to a fixed point", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Unit = world.registerTag();
 		const Marker = world.registerTag();
 		const survivor = world.spawn();
@@ -330,7 +363,10 @@ describe("Observers, onRemove on destroy", () => {
 	});
 
 	it("a destroy's onRemove that destroys another entity cascades to a fixed point", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Parent = world.registerTag();
 		const Child = world.registerTag();
 		const removedChildren: number[] = [];
@@ -360,7 +396,10 @@ describe("Observers, onRemove on destroy", () => {
 
 	it("destroy onRemove fires in canonical entity-index order, independent of destroy queue order", () => {
 		const fireOrder = (reverse: boolean): number[] => {
-			const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+			const world = ECS.create({
+				deterministic: true,
+				plugins: [events(), observers()]
+			});
 			const Tag = world.registerTag();
 			const fired: number[] = [];
 			world.observe(Tag, {
@@ -395,7 +434,10 @@ describe("Observers, onRemove on destroy", () => {
 
 describe("Observers, canonical ordering", () => {
 	it("fires entities in entity-id order regardless of queue order (radix, not queue)", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const fired: number[] = [];
 		world.observe(Tag, {
@@ -435,7 +477,10 @@ describe("Observers, canonical ordering", () => {
 		// no-op. The index is exactly 20 bits, and the two 10-bit passes never
 		// read the generation bits above bit 19. So the catchable regression is
 		// a sort that reads those bits, such as a comparator on raw ids.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const fired: number[] = [];
 		world.observe(Tag, {
@@ -508,7 +553,10 @@ describe("Observers, determinism, on the real engine", () => {
 		C: ReturnType<ECS["registerComponent"]>;
 		ids: EntityID[];
 	} {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerComponent(["v"] as const, "i32");
 		const B = world.registerComponent(["v"] as const, "i32");
 		const C = world.registerComponent(["v"] as const, "i32");
@@ -520,8 +568,7 @@ describe("Observers, determinism, on the real engine", () => {
 				seq++;
 				const hasB = ctx.hasComponent(eid, B);
 				ctx.setField(eid, A, "v", ctx.getField(eid, A, "v") + (hasB ? 1000 : 0) + seq);
-				if (getEntityIndex(eid) % 2 === 0)
-					ctx.commands.add(eid, C, { v: getEntityIndex(eid) });
+				if (getEntityIndex(eid) % 2 === 0) ctx.commands.add(eid, C, { v: getEntityIndex(eid) });
 			},
 			access
 		});
@@ -622,7 +669,10 @@ describe("Observers, glitch-free ordering, on the real engine", () => {
 	// Producer P (onAdd C) writes D=50. Consumer Q (onAdd B) reads D → A = D+1.
 	// Access-topological order fires P before Q ⇒ A = 51 (glitch-free).
 	function run(perm: (ids: EntityID[]) => EntityID[]): number[] {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerComponent(["v"] as const, "i32");
 		const B = world.registerTag();
 		const C = world.registerTag();
@@ -685,13 +735,19 @@ describe("Observers, no-observer fast path", () => {
 	}
 
 	it("a side-effect-free observer does not perturb stateHash vs no observer", () => {
-		const w1 = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const w1 = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const T1 = w1.registerTag();
 		const id1: EntityID[] = [w1.spawn(), w1.spawn()];
 		scenario(w1, T1, id1);
 		const hashNoObserver = w1.snapshots.stateHash();
 
-		const w2 = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const w2 = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const T2 = w2.registerTag();
 		w2.observe(T2, { onAdd: () => {}, onRemove: () => {}, access: openAccess([T2]) });
 		const id2: EntityID[] = [w2.spawn(), w2.spawn()];
@@ -702,7 +758,10 @@ describe("Observers, no-observer fast path", () => {
 
 describe("Observers, access enforcement", () => {
 	it("an undeclared write inside an observer throws in __DEV__", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const e = world.spawn();
@@ -722,7 +781,10 @@ describe("Observers, access enforcement", () => {
 	});
 
 	it("a declared write inside an observer passes", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const e = world.spawn();
@@ -744,7 +806,10 @@ describe("Observers, access enforcement", () => {
 
 describe("Observers, cascades", () => {
 	it("a cascading chain converges to a fixed point", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const A = world.registerTag();
 		const B = world.registerTag();
 		const C = world.registerTag();
@@ -772,7 +837,10 @@ describe("Observers, cascades", () => {
 	});
 
 	it("a non-convergent cascade throws OBSERVER_NON_CONVERGENT", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Toggle = world.registerTag();
 		world.observe(Toggle, {
 			onAdd: (eid, ctx) => ctx.commands.remove(eid, Toggle),
@@ -796,7 +864,10 @@ describe("Observers, cascades", () => {
 
 describe("Observers, yieldExisting", () => {
 	it("replays onAdd over current matches on registration, in entity-id order", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const ids: EntityID[] = [];
 		for (let i = 0; i < 5; i++) {
@@ -818,7 +889,10 @@ describe("Observers, yieldExisting", () => {
 		// nulls the caller's frame (leave() doesn't pop), silently disabling
 		// dev-mode enforcement for the remainder of the registering system. The
 		// undeclared Pos write below must still throw under the restored frame.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Tag = world.registerTag();
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		// A pre-existing match so yieldExisting actually enters and leaves a frame.
@@ -851,7 +925,10 @@ describe("Observers, yieldExisting", () => {
 
 describe("Observers, onSet (per-entity, dirty list)", () => {
 	it("fires once per changed entity, deduped within a tick", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		world.observe(Pos, {
@@ -883,7 +960,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 		// A `ctx.ref` or `ctx.getColumnMut` write bypasses setField's auto-record. A
 		// per-entity onSet consumer marks the row itself, which costs one raw write
 		// and one int push.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		world.observe(Pos, {
@@ -909,7 +989,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 	});
 
 	it("does not fire for entities whose value did not change", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		let fires = 0;
 		world.observe(Pos, {
@@ -931,7 +1014,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 		// must receive the full changed-entity set, the first observer's drain
 		// must not starve the rest (the consume-once bug: a shared dirty list was
 		// taken by the first observer, leaving later observers an empty list).
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const a: number[] = [];
 		const b: number[] = [];
@@ -968,7 +1054,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 		// A mutation through the host facade (outside a system, between updates)
 		// must still be seen by an entity-granular onSet observer, `ECS.setField`
 		// records the dirty row exactly like `SystemContext.setField`.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		world.observe(Pos, {
@@ -988,7 +1077,10 @@ describe("Observers, onSet (per-entity, dirty list)", () => {
 
 describe("Observers, onSet (archetype-granular, change tick)", () => {
 	it("fires once per changed archetype-column with the archetype view, and not on an unchanged tick", () => {
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const counts: number[] = [];
 		world.observe(Pos, {
@@ -1021,7 +1113,10 @@ describe("Observers, dirty state stays out of stateHash", () => {
 		// Capture the hash mid-tick (after writes, before the post-update drain),
 		// with and without an entity-onSet observer enabling dirty tracking.
 		function hashAfterWrite(observe: boolean): number {
-			const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+			const world = ECS.create({
+				deterministic: true,
+				plugins: [events(), observers()]
+			});
 			const Pos = world.registerComponent(["x"] as const, "i32");
 			if (observe)
 				world.observe(Pos, {
@@ -1053,7 +1148,10 @@ describe("Observers, onSet and the one-tick event window", () => {
 		// `events.clear()` is the tick's last act, after `dispatchSet`, so onSet
 		// sees the settled component snapshot and this tick's events. The count
 		// was 0 while the clear ran before `dispatchSet`.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
 		world.events.register(Ev, ["v"] as const);
@@ -1084,7 +1182,10 @@ describe("Observers, onSet and the one-tick event window", () => {
 		// stateHash() and the world snapshot exclude event state. That is sound only
 		// because no event survives the update() boundary. onSet reading an event must
 		// not keep it alive into the next tick.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
 		world.events.register(Ev, ["v"] as const);
@@ -1122,7 +1223,10 @@ describe("Observers, onSet and the one-tick event window", () => {
 		// `events.clear()` before any reader, and it would break snapshot and
 		// restore determinism if it survived. A __DEV__ guard turns the silent
 		// drop into a loud error.
-		const world = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const world = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = world.registerComponent(["x"] as const, "i32");
 		const Ev = eventKey<{ v: number }>("Ev");
 		world.events.register(Ev, ["v"] as const);
@@ -1151,7 +1255,10 @@ describe("Observers, onSet (per-entity) records ref and cursor writes", () => {
 	// as the archetype stamp does. Before this, both writes were invisible to
 	// an entity-granular onSet while the docs said a ref write was seen.
 	function world() {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		const fired: number[] = [];
 		ecs.observe(Pos, {
@@ -1250,7 +1357,10 @@ describe("Observers, onSet (archetype-granular) and the host window", () => {
 		// host write between frames stamps above it, so the next dispatch
 		// reports it, and the one after does not. Before this the baseline was
 		// the next frame tick, which a host write never reached.
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		let fires = 0;
 		ecs.observe(Pos, {
@@ -1274,7 +1384,10 @@ describe("Observers, onSet (archetype-granular) and the host window", () => {
 	});
 
 	it("does not fire twice for a write a system made before the dispatch", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const Pos = ecs.registerComponent(["x"] as const, "i32");
 		let fires = 0;
 		ecs.observe(Pos, {
@@ -1306,7 +1419,10 @@ describe("Observers, onSet (archetype-granular) and the host window", () => {
 
 describe("observe() and a definition that is not a dense component", () => {
 	it("accepts the entity-level onSet of a sparse component, and rejects a malformed handle", () => {
-		const ecs = ECS.create({ ...({ deterministic: true }), plugins: [events(), observers()] });
+		const ecs = ECS.create({
+			deterministic: true,
+			plugins: [events(), observers()]
+		});
 		const S = ecs.registerSparseComponent({ v: "i32" });
 		expect(() =>
 			ecs.observe(S, {

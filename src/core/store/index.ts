@@ -141,12 +141,7 @@ export {
 	growColumnStore
 } from "./grow";
 
-export {
-	type ExtendPlan,
-	type ExtendResult,
-	StoreExtendError,
-	extendColumnStore
-} from "./extend";
+export { type ExtendPlan, type ExtendResult, StoreExtendError, extendColumnStore } from "./extend";
 
 // Shared grow and extend layout and realloc building blocks, one home for the
 // tail-cursor layout rule, the realloc-and-republish choreography, and the

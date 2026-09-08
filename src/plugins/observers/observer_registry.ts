@@ -132,10 +132,7 @@ interface SparseSetEntry {
  * object identity is stable for the observer's lifetime (cached in accessCheck's
  * WeakMap). The `fn` is never called, observers dispatch through their own
  * callbacks. */
-function synthDescriptor(
-	name: string,
-	access: Partial<SystemAccessDeclaration>
-): SystemDescriptor {
+function synthDescriptor(name: string, access: Partial<SystemAccessDeclaration>): SystemDescriptor {
 	const merged: SystemDescriptor = {
 		..._INTERNAL_EMPTY_ACCESS,
 		...access,
@@ -271,7 +268,8 @@ export class ObserverRegistry implements ObserverHooks {
 	descriptors(): SystemDescriptor[] {
 		const out: SystemDescriptor[] = [];
 		for (let i = 0; i < this._entries.length; i++) out.push(this._entries[i].descriptor);
-		for (let i = 0; i < this._sparseEntries.length; i++) out.push(this._sparseEntries[i].descriptor);
+		for (let i = 0; i < this._sparseEntries.length; i++)
+			out.push(this._sparseEntries[i].descriptor);
 		return out;
 	}
 
@@ -369,7 +367,10 @@ export class ObserverRegistry implements ObserverHooks {
 				'observe(): a sparse component takes onSet with granularity "entity" and no other callback. Move onAdd, onRemove, onDisable, onEnable and the archetype grain to a dense component'
 			);
 		}
-		const descriptor = synthDescriptor(config.name ?? `observer(sparse ${sid})`, config.access ?? {});
+		const descriptor = synthDescriptor(
+			config.name ?? `observer(sparse ${sid})`,
+			config.access ?? {}
+		);
 		const entry: SparseSetEntry = {
 			id: descriptor.id as unknown as number,
 			sid,
@@ -385,7 +386,8 @@ export class ObserverRegistry implements ObserverHooks {
 			const i = this._sparseEntries.indexOf(entry);
 			if (i >= 0) this._sparseEntries.splice(i, 1);
 			let left = false;
-			for (let k = 0; k < this._sparseEntries.length; k++) if (this._sparseEntries[k].sid === sid) left = true;
+			for (let k = 0; k < this._sparseEntries.length; k++)
+				if (this._sparseEntries[k].sid === sid) left = true;
 			if (!left) this._store.configureSparseObservation(OBSERVERS_CONSUMER, sid, false);
 		};
 		return { dispose, [DISPOSE]: dispose };
@@ -582,7 +584,11 @@ export class ObserverRegistry implements ObserverHooks {
 	/** Fire one sparse observer over the members recorded since the last
 	 * drain. The store's walk gives alive, member and enabled entities, so no
 	 * check remains here. Canonical order by entity index, through the radix. */
-	private _dispatchSparseSet(obs: SparseSetEntry, cache: Map<number, EntityID[]>, run: number): void {
+	private _dispatchSparseSet(
+		obs: SparseSetEntry,
+		cache: Map<number, EntityID[]>,
+		run: number
+	): void {
 		let eids = cache.get(obs.sid);
 		if (eids === undefined) {
 			eids = this._store.drainSparseSet(obs.sid, run);

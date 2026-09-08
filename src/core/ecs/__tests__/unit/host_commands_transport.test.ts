@@ -98,7 +98,9 @@ describe("the entity-id ring codecs", () => {
 		expect(Array.from(ringDisableCodec().encode({ kind: "disable", eid }))).toEqual(golden);
 		expect(Array.from(ringEnableCodec().encode({ kind: "enable", eid }))).toEqual(golden);
 		expect(
-			Array.from(ringRemoveComponentCodec(Cell).encode({ kind: "remove_component", eid, def: Cell }))
+			Array.from(
+				ringRemoveComponentCodec(Cell).encode({ kind: "remove_component", eid, def: Cell })
+			)
 		).toEqual(golden);
 
 		// Decode reads the same offset back. A payload built by hand, not by

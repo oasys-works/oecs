@@ -152,13 +152,7 @@ async function storeReader() {
 	const intTs = buildReaderWorld(module, "i32");
 	const intModule = buildReaderWorld(module, "i32");
 	const hashBefore = intTs.ecs.snapshots.stateHash() === intModule.ecs.snapshots.stateHash();
-	const pageIntRows = stepI32(
-		intTs.memory.buffer,
-		intTs.headerOff,
-		intTs.Pos.id,
-		intTs.Vel.id,
-		3
-	);
+	const pageIntRows = stepI32(intTs.memory.buffer, intTs.headerOff, intTs.Pos.id, intTs.Vel.id, 3);
 	const moduleIntRows = intModule.reader.step_i32(
 		intModule.headerOff,
 		intModule.Pos.id,

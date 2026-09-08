@@ -68,9 +68,8 @@ export type FieldValues<S extends ComponentSchema> = {
  * conditional forbids values on tags outright. A schema-erased `ComponentDef`
  * falls into the valued branch, so untyped call sites keep the loose shape.
  */
-export type ValuesArg<S extends ComponentSchema> = S extends Record<string, never>
-	? []
-	: [values?: Partial<FieldValues<S>>];
+export type ValuesArg<S extends ComponentSchema> =
+	S extends Record<string, never> ? [] : [values?: Partial<FieldValues<S>>];
 
 /**
  * `FieldValues` for APIs where the values object is required and complete
@@ -80,9 +79,8 @@ export type ValuesArg<S extends ComponentSchema> = S extends Record<string, neve
  * `addComponent(e, Frozen, { x: 1 })` is a compile error while the
  * tag-overload-less call sites can still pass `{}`.
  */
-export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<string, never>
-	? Record<string, never>
-	: FieldValues<S>;
+export type CompleteFieldValues<S extends ComponentSchema> =
+	S extends Record<string, never> ? Record<string, never> : FieldValues<S>;
 
 /**
  * Trailing-argument tuple for the attach surfaces (`ctx.commands.add`'s
@@ -92,9 +90,8 @@ export type CompleteFieldValues<S extends ComponentSchema> = S extends Record<st
  * declared-access-constrained type param, and per-schema overloads would
  * re-introduce the tag-vs-valued split on top of it.
  */
-export type AttachValuesArg<S extends ComponentSchema> = S extends Record<string, never>
-	? []
-	: [values: CompleteFieldValues<S>];
+export type AttachValuesArg<S extends ComponentSchema> =
+	S extends Record<string, never> ? [] : [values: CompleteFieldValues<S>];
 
 /** Maps schema fields to their specific typed array columns. */
 export type ColumnsForSchema<S extends ComponentSchema> = {

@@ -159,15 +159,21 @@ if (which) {
 	emit(await run(which));
 } else {
 	console.log(`P09, access by id (exp 09 L3 to L5, exp 17 and exp 19)`);
-	console.log(`      small = ${SMALL.toLocaleString()} (fits cache), large = ${LARGE.toLocaleString()} (does not)`);
+	console.log(
+		`      small = ${SMALL.toLocaleString()} (fits cache), large = ${LARGE.toLocaleString()} (does not)`
+	);
 	console.log(`      shuffled = Fisher-Yates over xorshift32, not a modulo stride\n`);
 
 	const impls = ["cursor", "getField", "sparse", "plainObj", "rawSoA"];
 	for (const size of ["small", "large"]) {
-		console.log(`  --- ${size} (${(size === "small" ? SMALL : LARGE).toLocaleString()} entities) ---`);
+		console.log(
+			`  --- ${size} (${(size === "small" ? SMALL : LARGE).toLocaleString()} entities) ---`
+		);
 		const header = `  ${"impl".padEnd(10)} ${"runtime".padEnd(7)} ${"in order".padEnd(12)} ${"shuffled".padEnd(12)} shuffle cost`;
 		console.log(header);
-		console.log(`  ${"-".repeat(10)} ${"-".repeat(7)} ${"-".repeat(12)} ${"-".repeat(12)} ------------`);
+		console.log(
+			`  ${"-".repeat(10)} ${"-".repeat(7)} ${"-".repeat(12)} ${"-".repeat(12)} ------------`
+		);
 		for (const impl of impls) {
 			for (const rt of RUNTIMES) {
 				const seq = runVariantOn(rt, import.meta.url, `${impl}-${size}-seq`);

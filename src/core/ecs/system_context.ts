@@ -194,7 +194,10 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 	}
 
 	/** Remove a component (deferred). */
-	public remove<D extends ComponentDef<any>>(entityId: EntityID, def: D & DeclaredRemove<A, D>): this {
+	public remove<D extends ComponentDef<any>>(
+		entityId: EntityID,
+		def: D & DeclaredRemove<A, D>
+	): this {
 		if (DEV) accessCheck.assertRemove(def);
 		this._store.removeComponentDeferred(entityId, def);
 		if (DEV) this._store.trace?.commandQueued("remove", entityId, def.id);
@@ -306,7 +309,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): number {
 		if (DEV) {
 			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("ctx.getField", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -336,7 +340,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 		value: number
 	): void {
 		if (DEV) {
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.setField", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("ctx.setField", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -363,7 +368,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): number {
 		if (DEV) {
 			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.updateField", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("ctx.updateField", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -403,7 +409,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): ComponentRef<SchemaOf<D>> {
 		if (DEV) {
 			accessCheck.assertWrite(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.ref", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("ctx.ref", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -433,7 +440,8 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	): ReadonlyComponentRef<SchemaOf<D>> {
 		if (DEV) {
 			accessCheck.assertRead(def);
-			if (!this._store.isAlive(entityId)) throw entityNotAliveError("ctx.refRead", entityId, componentLabel(def));
+			if (!this._store.isAlive(entityId))
+				throw entityNotAliveError("ctx.refRead", entityId, componentLabel(def));
 		}
 		const arch = this._store.resolveEntity(entityId);
 		const row = this._store.resolvedRow;
@@ -616,14 +624,22 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	// dedicated relation sets.
 
 	/** Add a `(R, tgt)` pair to `src` (exclusive replaces, multi adds). */
-	public addRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt: EntityID): this {
+	public addRelation<D extends RelationDef>(
+		src: EntityID,
+		def: D & DeclaredRelationWrite<A, D>,
+		tgt: EntityID
+	): this {
 		if (DEV) accessCheck.assertRelationWrite(def);
 		this._store.requireRelations("ctx.addRelation").addRelation(src, def, tgt);
 		return this;
 	}
 
 	/** Remove a `(R, tgt)` pair from `src`. For multi, omitting `tgt` removes all. */
-	public removeRelation<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationWrite<A, D>, tgt?: EntityID): this {
+	public removeRelation<D extends RelationDef>(
+		src: EntityID,
+		def: D & DeclaredRelationWrite<A, D>,
+		tgt?: EntityID
+	): this {
 		if (DEV) accessCheck.assertRelationWrite(def);
 		this._store.requireRelations("ctx.removeRelation").removeRelation(src, def, tgt);
 		return this;
@@ -639,14 +655,20 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	}
 
 	/** All targets of `src` under `R`, ascending by id. */
-	public targetsOf<D extends RelationDef>(src: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
+	public targetsOf<D extends RelationDef>(
+		src: EntityID,
+		def: D & DeclaredRelationRead<A, D>
+	): EntityID[] {
 		if (DEV) accessCheck.assertRelationRead(def);
 		return this._store.requireRelations("ctx.targetsOf").targetsOf(src, def);
 	}
 
 	/** Sources pointing at `tgt` under `R` (the reverse index), ascending by id.
 	 * `(entity, def)` order, matching `targetOf` and `targetsOf`. */
-	public sourcesOf<D extends RelationDef>(tgt: EntityID, def: D & DeclaredRelationRead<A, D>): EntityID[] {
+	public sourcesOf<D extends RelationDef>(
+		tgt: EntityID,
+		def: D & DeclaredRelationRead<A, D>
+	): EntityID[] {
 		if (DEV) accessCheck.assertRelationRead(def);
 		return this._store.requireRelations("ctx.sourcesOf").sourcesOf(tgt, def);
 	}

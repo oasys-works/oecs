@@ -32,9 +32,6 @@ function capStore(...args: ConstructorParameters<typeof Store>): Store {
 	return built;
 }
 
-
-
-
 const sorted = (ids: EntityID[]): number[] => ids.map((e) => e as number).sort((a, b) => a - b);
 
 describe("OnDeleteTarget = delete, cascade", () => {
