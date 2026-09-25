@@ -16,7 +16,7 @@
  *
  * The variants, from the entry to the floor:
  *
- *   packed         dense Pos and Vel through `eachChunk`. The `oecs` entry.
+ *   packed         dense Pos and Vel through `forEachChunk`. The `oecs` entry.
  *   fe             `forEachEntity` with two sparse cursors. The `oecs-sparse` entry.
  *   fe-empty       the same driver with an empty callback. The driver alone.
  *   tight-full-cb  a loop over the member list of Pos, with the filters the query
@@ -30,12 +30,10 @@
  *   raw            the loop with no filter. The floor of a gather through the id
  *                  list, which is the loop the id-indexed libraries run.
  *
- * What the split shows. `fe-empty` costs about as much as `fe`, so the body of
- * `_forEachSparseMatch` is the loss, and `raw` ties the id-indexed libraries, so
- * the layout is not. `tight-full` recovers about half and stays far behind them,
- * because their query returns a member list that the library keeps up to date,
- * and a filter at each entity cannot reach that. The tight variants read private
- * fields of the store, and a real API adds a little on top of each floor.
+ * Result: `fe-empty` costs the same as `tight-full`. The filters are the cost,
+ * not the driver. `raw` ties the id-indexed libraries. They keep a member list
+ * for each query, and a filter for each entity cannot match that. The tight
+ * variants read private fields, so a real API costs a little more.
  *
  * The checksum is the sum of `x` after every run. Each variant must give the same
  * sum, except `fe-empty`, which writes nothing.
@@ -84,7 +82,7 @@ if (variant === "packed") {
 	const q = ecs.query(Pos, Vel);
 	fn = () => {
 		for (let r = 0; r < REPS; r++) {
-			q.eachChunk((cols, count) => {
+			q.forEachChunk((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { vx, vy } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -96,7 +94,7 @@ if (variant === "packed") {
 	};
 	check = () => {
 		let s = 0;
-		q.eachChunk((cols, count) => {
+		q.forEachChunk((cols, count) => {
 			const { x } = cols.read(Pos);
 			for (let i = 0; i < count; i++) s += x[i];
 		});
@@ -131,13 +129,13 @@ if (variant === "packed") {
 
 	// The tight variants read the store through its private fields. The build
 	// keeps the names, and this file breaks loudly when a rename removes one.
-	const store = ecs.store;
-	const posS = store.sparseStores[Pos];
-	const velS = store.sparseStores[Vel];
-	const entArch = store.entityArchetype;
-	const entRow = store.entityRow;
-	const archetypes = store.archGraph.archetypes;
-	const gens = store.entityAllocator.generations;
+	const store = ecs._store;
+	const posS = store._sparseStores[Pos];
+	const velS = store._sparseStores[Vel];
+	const entArch = store._entityArchetypes;
+	const entRow = store._entityRows;
+	const archetypes = store._archGraph.archetypes;
+	const gens = store._entityAllocator.generations;
 	if (!posS?._dense || !posS._cols || !velS?._pos || !entArch || !entRow || !archetypes || !gens) {
 		throw new Error("a private field of the store is not reachable, update this probe");
 	}
@@ -154,9 +152,11 @@ if (variant === "packed") {
 			for (let r = 0; r < REPS; r++) q.forEachEntity(step);
 		};
 	} else if (variant === "fe-empty") {
-		let k = 0;
+		// Sum into a typed array. A captured `let` leaves the small-integer range
+		// and boxes on each store, which costs more than the driver.
+		const k = new Float64Array(1);
 		const nop = (e) => {
-			k += e;
+			k[0] += e;
 		};
 		fn = () => {
 			for (let r = 0; r < REPS; r++) q.forEachEntity(nop);

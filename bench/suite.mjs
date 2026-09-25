@@ -204,6 +204,35 @@ export function makeSuite(lib, filter = "") {
 			},
 			{ iters: 20 * N }
 		);
+		// 72 field names at one call site. A name lookup can win with one component
+		// and lose here. See the `_fieldIndex` note in `archetype.ts`.
+		{
+			const ecs = new ECS(PRESIZED);
+			const defs = [];
+			const names = [];
+			for (let c = 0; c < 24; c++) {
+				const fields = [`c${c}_a`, `c${c}_b`, `c${c}_c`];
+				defs.push(
+					ecs.registerComponent({ [fields[0]]: "f64", [fields[1]]: "f64", [fields[2]]: "f64" })
+				);
+				names.push(fields);
+			}
+			const M = 1000;
+			const many = ecs.spawnMany(ecs.template(...defs.map((d) => d({}))), M);
+			add(
+				"access/getField_manyNames",
+				() => {
+					let s = 0;
+					for (let r = 0; r < 20; r++)
+						for (let i = 0; i < M; i++) {
+							const c = (i + r) % 24;
+							s += ecs.getField(many[i], defs[c], names[c][(i + c) % 3]);
+						}
+					sink = s;
+				},
+				{ iters: 20 * M }
+			);
+		}
 		add(
 			"access/setField",
 			() => {
@@ -641,6 +670,43 @@ export function makeSuite(lib, filter = "") {
 							s += spark.v;
 						}
 					sink = s;
+				},
+				{ iters: 20 * (N / 2) }
+			);
+		}
+		// The sparse query driver. `_2` is the `oecs-sparse` shape of `vs/`.
+		{
+			const q = ecs.query(Pos).andSparse(Spark);
+			const spark = ecs.sparseCursorRead(Spark);
+			add(
+				"iter/sparse_forEachEntity_1",
+				() => {
+					let s = 0;
+					for (let r = 0; r < 20; r++)
+						q.forEachEntity((e) => {
+							spark.at(e);
+							s += spark.v;
+						});
+					sink = s;
+				},
+				{ iters: 20 * (N / 2) }
+			);
+		}
+		{
+			const Vel = ecs.registerSparseComponent({ vx: "f64", vy: "f64" });
+			for (let i = 0; i < N; i += 2) ecs.addSparse(ids[i], Vel, { vx: 1, vy: 1 });
+			const q = ecs.query(Pos).andSparse(Spark, Vel);
+			const spark = ecs.sparseCursor(Spark);
+			const vel = ecs.sparseCursorRead(Vel);
+			add(
+				"iter/sparse_forEachEntity_2",
+				() => {
+					for (let r = 0; r < 20; r++)
+						q.forEachEntity((e) => {
+							spark.at(e);
+							vel.at(e);
+							spark.v += vel.vx * 0.016;
+						});
 				},
 				{ iters: 20 * (N / 2) }
 			);

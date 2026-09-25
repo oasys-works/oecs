@@ -335,6 +335,7 @@ export class Archetype implements ArchetypeView {
 	// number of different names at the site. The cost of a probe of a dictionary
 	// does not increase. We also built and measured a perfect hash for each
 	// component over globally interned names, and it fails in the same way.
+	// A `Map` for each component also fails.
 	// Do not "fix" this line. If you measure it again, measure the condition that
 	// has many different field names, and not the condition with one component.
 	private readonly _fieldIndex: Record<string, number>[] = [];
