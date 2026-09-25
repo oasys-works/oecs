@@ -3273,6 +3273,24 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			}
 		}
 
+		// Fast path: one or two sparse requires, no sparse exclude. The term-list
+		// loops below cost more than their tests. Driver and order are the same.
+		const nIncludes = sparseIncludes.length;
+		if (nIncludes > 0 && nIncludes <= 2 && sparseExcludes.length === 0) {
+			let driver = stores[sparseIncludes[0] as number];
+			let other: SparseComponentStore | null = null;
+			if (sparseIncludes.length === 2) {
+				other = stores[sparseIncludes[1] as number];
+				if (other.size < driver.size) {
+					const first = driver;
+					driver = other;
+					other = first;
+				}
+			}
+			this._forEachSparsePair(driver, other, include, exclude, anyOf, includesDisabled, cb);
+			return;
+		}
+
 		if (sparseIncludes.length > 0) {
 			// Drive from the smallest required store, its membership is an
 			// upper bound on the match, so the scan is sized to the rarest term.
@@ -3370,6 +3388,48 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				}
 				cb(id);
 			}
+		}
+	}
+
+	/** The fast path of `forEachSparseMatch`. `other` is the second required
+	 * store, or `null`. The checks are those of the general loop. */
+	private _forEachSparsePair(
+		driver: SparseComponentStore,
+		other: SparseComponentStore | null,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		includesDisabled: boolean,
+		cb: (entityId: EntityID) => void
+	): void {
+		const gens = this._entityAllocator.generations;
+		const entArch = this._entityArchetypes;
+		const entRow = this._entityRows;
+		const archetypes = this._archGraph.archetypes;
+		let memoArch = -2;
+		let memoOk = false;
+		let memoEnabled = 0;
+		for (let i = 0; i < driver.size; i++) {
+			const idx = driver.indexAt(i);
+			if (other !== null && !other.has(idx)) continue;
+			const archId = entArch[idx];
+			if (archId === UNASSIGNED) continue;
+			if (archId !== memoArch) {
+				const arch = archetypes[archId];
+				const mask = arch.mask;
+				memoArch = archId;
+				memoOk =
+					mask.contains(include) &&
+					(exclude === null || !mask.overlaps(exclude)) &&
+					(anyOf === null || mask.overlaps(anyOf));
+				memoEnabled = arch.enabledCount;
+			}
+			if (!memoOk) continue;
+			if (!includesDisabled) {
+				const row = entRow[idx];
+				if (row !== UNASSIGNED && row >= memoEnabled) continue;
+			}
+			cb(createEntityId(idx, gens[idx]));
 		}
 	}
 
