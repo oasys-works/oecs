@@ -1,10 +1,10 @@
 /***
- * The `forEachChunk` cursor.
+ * The `forEachColumns` cursor.
  *
  * One instance per pass, re-pointed at each matched archetype. Its four
  * methods run once per archetype per pass, never per row, so the inner loop
  * of a chunk body pays nothing for them. `query.ts` and `changed_query.ts`
- * both allocate one, and each hands it to the chunk body of `forEachChunk`.
+ * both allocate one, and each hands it to the chunk body of `forEachColumns`.
  *
  * The class is public API, so a field added here widens the shipped surface.
  ***/
@@ -24,10 +24,10 @@ import { accessCheck } from "./access_check";
 import { DEV } from "../../dev_flag";
 
 /**
- * forEachChunk cursor. One instance is allocated per `forEachChunk`
+ * forEachColumns cursor. One instance is allocated per `forEachColumns`
  * pass and reused across every matched archetype in that pass. Only `arch` and
  * `tick` are re-pointed per archetype, so the inner loop allocates nothing.
- * Per-call (not cached on the query) so a nested `forEachChunk` on the same query
+ * Per-call (not cached on the query) so a nested `forEachColumns` on the same query
  * gets its own cursor and can't re-point an outer pass's position. `.mut(def)`
  * and `.read(def)` resolve a whole component's columns at once into a field-keyed
  * object (a per-archetype-per-component cache refreshed in place), hiding the

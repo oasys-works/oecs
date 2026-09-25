@@ -2,7 +2,7 @@
  * Query and QueryBuilder. The read side of the system-facing interface.
  *
  * Query<Defs> is a live, cached view over all archetypes matching a
- * component mask. Iterate with forEach(), which yields non-empty
+ * component mask. Iterate with forEachArchetype(), which yields non-empty
  * archetypes. Use arch.getColumnRead() to access SoA columns, then
  * write the inner loop over arch.entityCount.
  *
@@ -64,7 +64,7 @@
 
 import type { Archetype, ArchetypeView } from "./archetype";
 import { _setIterAllRows } from "./archetype";
-import type { EntityID } from "./entity";
+import type { EntityID, ReadonlyEntityIDArray } from "./entity";
 import type { ComponentDef, ComponentID } from "./component";
 import type { SparseComponentDef, SparseComponentID } from "./sparse_store";
 import type { RelationDef } from "./relation";
@@ -115,7 +115,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// `registerQuery`.
 	public readonly terms: QueryTerms;
 	// `terms.includesDisabled`, copied out at construction. The iteration bound
-	// is chosen from it on every `entityCount`, `firstEntity` and `forEach`
+	// is chosen from it on every `entityCount`, `firstEntity` and `forEachArchetype`
 	// call, and reading it through `terms` there costs a second load on a very
 	// short path. The constructor is the only writer and `terms` is frozen, so
 	// the copy cannot drift.
@@ -142,8 +142,8 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		this.includesDisabled = terms.includesDisabled;
 	}
 
-	/** Guard the dense-only methods `entityCount`, `archetypeCount`, `forEach`,
-	 * `forEachChunk` and `some` against a query carrying sparse terms. These
+	/** Guard the dense-only methods `entityCount`, `archetypeCount`, `forEachArchetype`,
+	 * `forEachColumns` and `some` against a query carrying sparse terms. These
 	 * walk the dense archetype
 	 * list and never consult `sparseIncludes` or `sparseExcludes`, so on a
 	 * sparse-derived query they would fail open, returning the unfiltered dense
@@ -175,7 +175,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		if (terms.length === 0) return;
 		throw new ECSError(
 			ECS_ERROR.QUERY_TERM_DENSE_PATH,
-			`Query.${method} answers from the dense archetype list, and this query carries the archetype term ${terms[0].name}, which narrows that list. Read the matched archetypes with forEach instead.`
+			`Query.${method} answers from the dense archetype list, and this query carries the archetype term ${terms[0].name}, which narrows that list. Read the matched archetypes with forEachArchetype instead.`
 		);
 	}
 
@@ -192,7 +192,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/** First matching entity, or `undefined` when the query matches none, the
-	 * singleton read (`player`, `camera`) without hand-rolling a forEach +
+	 * singleton read (`player`, `camera`) without hand-rolling a forEachArchetype +
 	 * closure capture. Dense-only queries answer from the
 	 * first non-empty archetype in O(archetypes). A query with a sparse, relation
 	 * or hierarchy term falls back to a full `forEachEntity` walk.
@@ -374,7 +374,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** Require a sparse component: match only entities that hold it,
 	 * across every archetype. A sparse term doesn't touch the dense mask, so
 	 * the returned (cached) query reuses this one's live archetype list. It is
-	 * iterated via `forEachEntity`, never `forEach` (sparse members are
+	 * iterated via `forEachEntity`, never `forEachArchetype` (sparse members are
 	 * scattered within archetypes, so there is no SoA column span to yield). */
 	public andSparse(...defs: SparseComponentDef[]): Query<Defs> {
 		if (defs.length === 1) return this._andSparseOne(defs[0] as unknown as number);
@@ -471,7 +471,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * way every other non-dense term is threaded.
 	 *
 	 * What it costs. One predicate call per archetype, per query, at the
-	 * rebuild the store's dirty epoch triggers. `forEach`, `forEachChunk` and
+	 * rebuild the store's dirty epoch triggers. `forEachArchetype`, `forEachColumns` and
 	 * `forEachEntity` are untouched: they walk the list the rebuild produced.
 	 *
 	 * What it refuses. `archetypeCount`, `archetypes` and `excludeWords` all
@@ -599,7 +599,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * peers), produced by an O(K) radix on the entity index, never a comparator sort.
 	 *
 	 * Iterate with `forEachEntity`: members scatter across archetypes, so there is
-	 * no SoA column span, and `forEach` and `entityCount` reject a hierarchy query (like
+	 * no SoA column span, and `forEachArchetype` and `entityCount` reject a hierarchy query (like
 	 * a sparse term). Exclusive relations only, which matches the traversal
 	 * constraint. A multi relation throws `RELATION_MODE_MISMATCH` at iteration, and a
 	 * cycle is a loud `RELATION_CYCLE` in `DEV` (a safe break in production).
@@ -707,7 +707,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * and without each `T`. Read each column per archetype span via
 	 * `arch.getOptionalColumnRead(T, field)` (column when present, `undefined`
 	 * when absent). `.optional(T)` is the *declaration* that authorizes that fetch:
-	 * inside `forEach`, `getOptionalColumnRead` throws in `DEV` if `T` was
+	 * inside `forEachArchetype`, `getOptionalColumnRead` throws in `DEV` if `T` was
 	 * not declared here, the read-side analog of `reads:[T]`, which is also
 	 * still required for access coverage (both checks fire, even on the absent
 	 * span). The term is carried through `and`, `not` and `or` (see
@@ -758,7 +758,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	/** Opt this query back in to disabled entities. By default a query
 	 * excludes disabled entities (the iteration bound `arch.entityCount` is the
 	 * enabled-row count). The returned (cached) query spans disabled rows too:
-	 * `forEach` publishes the all-rows flag so the SoA loop's `arch.entityCount`
+	 * `forEachArchetype` publishes the all-rows flag so the SoA loop's `arch.entityCount`
 	 * reports `length`, and `entityCount` and `forEachEntity` widen accordingly. Does not
 	 * touch the dense mask, so it reuses this query's live archetype list and is
 	 * carried through `and`, `not` or `or` like the sparse or optional terms. */
@@ -781,7 +781,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		return result;
 	}
 
-	public forEach(cb: (arch: ArchetypeView<Defs>) => void): void {
+	public forEachArchetype(cb: (arch: ArchetypeView<Defs>) => void): void {
 		// Include-disabled iteration: publish the all-rows flag so the SoA
 		// loop's `arch.entityCount` spans disabled rows, restoring the previous
 		// flag after (re-entrancy-safe). Kept off the default hot path entirely.
@@ -790,13 +790,13 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			return;
 		}
 		// Default path: inline `_forEachInner`'s body rather than delegate.
-		// `forEach` is a megamorphic call site (every system passes a distinct
+		// `forEachArchetype` is a megamorphic call site (every system passes a distinct
 		// `cb`), so V8 will not inline the delegate, the extra stack frame is a
-		// real per-call cost on `forEach`-call-bound loops. Keep this body
+		// real per-call cost on `forEachArchetype`-call-bound loops. Keep this body
 		// byte-identical to `_forEachInner`. Do not "dry it up" back into a
 		// delegate hop (that hop is exactly the regression this restores).
 		if (DEV) {
-			this._assertDenseOnly("forEach");
+			this._assertDenseOnly("forEachArchetype");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
 			// `.optional(T)`. Dev-only, prod runs the bare loop below
@@ -824,10 +824,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
-	/** @internal, cold `includeDisabled` wrapper for `forEach`, split out
+	/** @internal, cold `includeDisabled` wrapper for `forEachArchetype`, split out
 	 * so the all-rows flag dance (`_setIterAllRows` inside a `finally`) stays
-	 * out of `forEach`'s inlined hot body. The default (enabled-only) query never
-	 * reaches here, so V8 leaves this uninlined and `forEach` shrinks accordingly. */
+	 * out of `forEachArchetype`'s inlined hot body. The default (enabled-only) query never
+	 * reaches here, so V8 leaves this uninlined and `forEachArchetype` shrinks accordingly. */
 	private _forEachIncludeDisabled(cb: (arch: ArchetypeView<Defs>) => void): void {
 		const prev = _setIterAllRows(true);
 		try {
@@ -842,7 +842,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * `run()` model and the koota `useStores` model, and the recommended hot-path default for
 	 * mutating systems:
 	 *
-	 *   q.forEachChunk((cols, count) => {
+	 *   q.forEachColumns((cols, count) => {
 	 *     const { x, y }   = cols.mut(Pos);   // whole group, tick stamped inside
 	 *     const { vx, vy } = cols.read(Vel);  // read-only group
 	 *     for (let i = 0; i < count; i++) { x[i] += vx[i] * dt; y[i] += vy[i] * dt; }
@@ -854,45 +854,45 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * the manual tick arg (hidden in `.mut`), and the `.length`-vs-`entityCount`
 	 * corruption trap (`count` is `entityCount`). It is also the only mutable
 	 * column accessor reachable through the iteration path, the read-only
-	 * `ArchetypeView` from `forEach` deliberately omits the mutable `getColumnMut`.
+	 * `ArchetypeView` from `forEachArchetype` deliberately omits the mutable `getColumnMut`.
 	 * The SoA inner loop is byte-identical, and the per-archetype group objects
 	 * are cached (zero per-archetype allocation). One `ChunkColumns` cursor is
 	 * allocated per pass and reused across that pass's archetypes. Honours
-	 * `includeDisabled()` exactly like `forEach` (the bound widens to the
-	 * disabled tail). Dense-only like `forEach`, so a sparse, relation or
+	 * `includeDisabled()` exactly like `forEachArchetype` (the bound widens to the
+	 * disabled tail). Dense-only like `forEachArchetype`, so a sparse, relation or
 	 * hierarchy term throws in `DEV`. Iterate those with `forEachEntity`.
 	 */
-	public forEachChunk(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
+	public forEachColumns(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		// Include-disabled iteration: publish the all-rows flag so each
 		// archetype's `entityCount` spans its disabled tail, then restore it
-		// (re-entrancy-safe). Mirrors `forEach` and `some`, every dense
+		// (re-entrancy-safe). Mirrors `forEachArchetype` and `some`, every dense
 		// iterator honours `includeDisabled()`. Kept off the default hot path.
 		if (this.includesDisabled) {
 			const prev = _setIterAllRows(true);
 			try {
-				this._forEachChunkInner(cb);
+				this._forEachColumnsInner(cb);
 			} finally {
 				_setIterAllRows(prev);
 			}
 			return;
 		}
-		this._forEachChunkInner(cb);
+		this._forEachColumnsInner(cb);
 	}
 
-	/** @internal, shared body for `forEachChunk`'s default and `includeDisabled`
+	/** @internal, shared body for `forEachColumns`'s default and `includeDisabled`
 	 * paths. The `ChunkColumns` cursor is allocated per call (a small object whose
 	 * cost does not scale with the per-row work) rather than cached on the query, so
-	 * a nested `forEachChunk` on the same query gets its own cursor instead of
+	 * a nested `forEachColumns` on the same query gets its own cursor instead of
 	 * re-pointing the outer pass's `arch` and `tick`. The per-(archetype, component)
 	 * column-group caches that actually matter for allocation live on the
 	 * `Archetype`, untouched. */
-	private _forEachChunkInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
+	private _forEachColumnsInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		const view = new ChunkColumns<Defs>();
 		view.tick = this._resolver.getChangeTick();
 		view.since = this._resolver.getLastRunTick();
 		view.resolver = this._resolver;
 		if (DEV) {
-			this._assertDenseOnly("forEachChunk");
+			this._assertDenseOnly("forEachColumns");
 			accessCheck.enterOptionalScope(this.terms.optionalTerms);
 			try {
 				const archs = this.nonEmptyArchs();
@@ -919,12 +919,12 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	}
 
 	/**
-	 * Early-exit iteration: like `forEach`, but stops as soon as `cb` returns
+	 * Early-exit iteration: like `forEachArchetype`, but stops as soon as `cb` returns
 	 * `true`, and returns whether any callback did. The predicate analog for
 	 * "does any matching row satisfy X?", without it, callers hand-rolled a
 	 * `query.archetypes` walk (re-implementing the empty-archetype skip) only
 	 * to be able to `return` mid-scan. Deliberately a separate method:
-	 * honouring return values on `forEach`'s existing `=> void` callback
+	 * honouring return values on `forEachArchetype`'s existing `=> void` callback
 	 * would silently change behaviour for arrow-expression bodies that happen
 	 * to return a truthy value.
 	 */
@@ -942,7 +942,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** @internal, shared body for `some`'s default and
 	 * `includeDisabled` paths. Same dev-mode optional-term scope as
-	 * `forEach`. */
+	 * `forEachArchetype`. */
 	private _someInner(cb: (arch: ArchetypeView<Defs>) => boolean): boolean {
 		if (DEV) {
 			this._assertDenseOnly("some");
@@ -970,13 +970,13 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		return false;
 	}
 
-	/** @internal, the `includeDisabled` delegate for `forEach`. The
-	 * default (enabled-only) path inlines this body directly into `forEach`
+	/** @internal, the `includeDisabled` delegate for `forEachArchetype`. The
+	 * default (enabled-only) path inlines this body directly into `forEachArchetype`
 	 * to dodge a megamorphic delegate hop. This copy survives only for the
 	 * rare all-rows path, which needs the `_setIterAllRows` `finally` wrap. */
 	private _forEachInner(cb: (arch: ArchetypeView<Defs>) => void): void {
 		if (DEV) {
-			this._assertDenseOnly("forEach");
+			this._assertDenseOnly("forEachArchetype");
 			// Publish this query's optional terms as the active scope so
 			// `getOptionalColumnRead` can verify each fetch was declared via
 			// `.optional(T)`. Dev-only, prod runs the bare loop below
@@ -1010,14 +1010,14 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * across archetypes, so there is no SoA column span to hand back, read
 	 * fields via `ctx.getField` (dense) or `ctx.getSparseField` (sparse) on
 	 * the yielded entity. A dense-only query also works here (it walks its
-	 * archetypes' entity ids), but prefer `forEach` for the SoA hot loop.
+	 * archetypes' entity ids), but prefer `forEachArchetype` for the SoA hot loop.
 	 *
 	 * Iteration is read-mostly: mutating the *driving* sparse component's
 	 * membership mid-iteration is unsafe. The walk drives off the store's live
 	 * key array, so **adding** the driving component (the store `push`es a new
 	 * key, which the `i < length` loop then visits) and **removing** it (the
 	 * store swap-pops, shifting the index list under the walk) both corrupt the
-	 * traversal. This is sharper than for dense `forEach`. `ctx.addSparse` and
+	 * traversal. This is sharper than for dense `forEachArchetype`. `ctx.addSparse` and
 	 * `ctx.addRelation` apply immediately (no archetype transition to defer),
 	 * so unlike a deferred dense `addComponent` the mutation lands in the live
 	 * array at once. Buffer such edits and apply them after the walk. */
@@ -1053,16 +1053,50 @@ export class Query<Defs extends readonly ComponentDef[]> {
 		);
 	}
 
+	/** `forEachEntity` in runs. The same entities in the same order, given as a
+	 * buffer of ids and a count:
+	 *
+	 *   q.forEachIds((ids, count) => {
+	 *     for (let i = 0; i < count; i++) { p.at(ids[i]); v.at(ids[i]); p.x += v.vx * dt; }
+	 *   });
+	 *
+	 * Use it for a hot loop. A callback for each entity runs through a call site
+	 * that all queries share, and V8 does not inline it there. Here the loop is
+	 * the caller's own code.
+	 *
+	 * Read `ids` inside the call only. The buffer is reused. A run is a copy, so
+	 * an entity that the callback removes still shows in the rest of its run.
+	 * Buffer structural edits and apply them after the walk. */
+	public forEachIds(cb: (ids: ReadonlyEntityIDArray, count: number) => void): void {
+		if (DEV) this._assertRelationAccess();
+		if (this.terms.hierarchyTerm !== null) {
+			const ids: EntityID[] = [];
+			this.forEachEntity((e) => {
+				ids.push(e);
+			});
+			if (ids.length > 0) cb(ids, ids.length);
+			return;
+		}
+		this._resolver.forEachSparseIds(
+			this.include,
+			this._exclude,
+			this._anyOf,
+			this.terms,
+			this.nonEmptyArchs(),
+			cb
+		);
+	}
+
 	/** @internal, used by ChangedQuery. Rebuild non-empty archetype list if the
 	 * Store has bumped its dirty epoch since our last rebuild, return cached result.
 	 *
 	 * Rebuild allocates a *fresh* array and swaps it in rather than truncating
-	 * the cached one in place. `forEach`, `entityCount` and `ChangedQuery.forEach`
+	 * the cached one in place. `forEachArchetype`, `entityCount` and `ChangedQuery.forEachArchetype`
 	 * bind the returned array once and walk it. An in-place `dst.length = 0` +
 	 * re-push would corrupt that walk if the query is re-entrantly iterated,
 	 * i.e. the callback runs an immediate-mode mutation that crosses a
 	 * 0↔non-zero entity boundary on the *same* Query (bumping the epoch) and
-	 * then re-enters here via a nested `forEach` or `entityCount`. Building fresh hands
+	 * then re-enters here via a nested `forEachArchetype` or `entityCount`. Building fresh hands
 	 * the inner call its own array and leaves the outer iterator's snapshot
 	 * intact, so each archetype is visited exactly once. Cost is one array
 	 * allocation per epoch advance, and only on a boundary crossing. The
@@ -1079,7 +1113,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * hot `nonEmptyArchs` body is only an epoch check + cached return. Keeping the
 	 * filter loops here shrinks `nonEmptyArchs`'s inlined bytecode footprint, which
 	 * matters when several composed queries iterate inside one hot function (the
-	 * `query_compose` shape): the leaner `nonEmptyArchs` keeps `forEach` under V8's
+	 * `query_compose` shape): the leaner `nonEmptyArchs` keeps `forEachArchetype` under V8's
 	 * per-function cumulative inlining budget. */
 	private _rebuildNonEmpty(epoch: number): void {
 		// A plugin term narrows the set, and it takes its own body. One
@@ -1160,11 +1194,11 @@ export class Query<Defs extends readonly ComponentDef[]> {
 
 	/** Create a ChangedQuery that filters archetypes by change tick.
 	 *
-	 *  `forEach` works at archetype grain, not row grain: the store stamps
+	 *  `forEachArchetype` works at archetype grain, not row grain: the store stamps
 	 *  `changedTick[cid]` per archetype on any write into that component's
 	 *  column (`Archetype.changedTick` in archetype.ts). One changed row trips
-	 *  `forEach` on the whole archetype next tick. For row grain, iterate with
-	 *  `forEachChunk` and read `cols.ticksRead(def)`, which needs
+	 *  `forEachArchetype` on the whole archetype next tick. For row grain, iterate with
+	 *  `forEachColumns` and read `cols.ticksRead(def)`, which needs
 	 *  `ecs.trackRows(def)`.
 	 *
 	 *  A stamp is reported once. The change tick advances before every

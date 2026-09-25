@@ -75,7 +75,7 @@ describe("Query scale", () => {
 		// Query for comp[0] should find all 500 entities
 		const q0 = world.query(comps[0]);
 		let total = 0;
-		q0.forEach((arch) => {
+		q0.forEachArchetype((arch) => {
 			total += arch.entityCount;
 		});
 		expect(total).toBe(500);

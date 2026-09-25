@@ -346,7 +346,7 @@ const MUTANTS = [
 		// makes `changed(Age)` and the `onSet` observer on `Age` report nothing at all.
 		//
 		// The first version of this mutant removed the same line from `ctx.ref`, and it
-		// escaped: the harness writes `Age` through `forEachChunk` alone, so `ctx.ref` was
+		// escaped: the harness writes `Age` through `forEachColumns` alone, so `ctx.ref` was
 		// a path that no case reached. The escape was correct, and the lesson is the one
 		// that `README.md` records about a mutant that goes stale, a mutant must name
 		// the code that the harness runs.
@@ -650,7 +650,7 @@ const MUTANTS = [
   }`,
 		to: `  some(cb) {
     let hit = false;
-    this.forEach((arch) => {
+    this.forEachArchetype((arch) => {
       if (cb(arch)) hit = true;
     });
     return hit;
@@ -733,15 +733,15 @@ const MUTANTS = [
 		// mutant makes it the tick of this pass. No row is then above it, and the row
 		// grain reports nothing.
 		id: "chunk-since-is-the-current-tick",
-		what: "forEachChunk sets cols.since to the tick of this pass, so no row reports",
+		what: "forEachColumns sets cols.since to the tick of this pass, so no row reports",
 		find: `    view.since = this._resolver.getLastRunTick();`,
 		to: `    view.since = this._resolver.getChangeTick();`
 	},
 	{
 		// The same fault on the `changed()` path. It also silences the filter on the
-		// archetype, so `changed(def).forEachChunk` visits nothing.
+		// archetype, so `changed(def).forEachColumns` visits nothing.
 		id: "changed-chunk-since-is-the-current-tick",
-		what: "changed().forEachChunk sets cols.since to the tick of this pass",
+		what: "changed().forEachColumns sets cols.since to the tick of this pass",
 		find: `    view.since = q.lastRunTick();`,
 		to: `    view.since = q.changeTick();`
 	},

@@ -63,7 +63,7 @@ function build(memory: ECSOptions): World {
 		reads: [],
 		writes: [],
 		fn: (ctx) => {
-			movers.forEach((arch) => {
+			movers.forEachArchetype((arch) => {
 				const ids = arch.entityIds;
 				for (let i = 0; i < arch.entityCount; i++) {
 					const p = ctx.ref(Pos, ids[i]);

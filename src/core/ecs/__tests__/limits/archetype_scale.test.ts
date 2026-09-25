@@ -71,7 +71,7 @@ describe("Archetype scale", () => {
 
 		const q = world.query(Common);
 		let total = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			total += arch.entityCount;
 		});
 		expect(total).toBe(1_000);
@@ -121,7 +121,7 @@ describe("Archetype scale", () => {
 		const q0 = world.query(tags[0]);
 		let foundCount = 0;
 		const foundSet = new Set<EntityID>();
-		q0.forEach((arch) => {
+		q0.forEachArchetype((arch) => {
 			foundCount += arch.entityCount;
 			for (let i = 0; i < arch.entityCount; i++) {
 				foundSet.add(arch.entityIds[i] as EntityID);

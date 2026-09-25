@@ -193,6 +193,17 @@ export class SparseComponentStore {
 		return this._dense.subarray(0, this._size);
 	}
 
+	/** The member list, valid in `[0, size)`. The live array: a grow replaces
+	 * it. For a loop that makes no call, and so cannot grow the store. */
+	public get members(): Uint32Array {
+		return this._dense;
+	}
+
+	/** Entity index → member position, or `-1`. The live array, as `members`. */
+	public get positions(): Int32Array {
+		return this._pos;
+	}
+
 	/** The member index at position `i` of the member list, `0 <= i < size`.
 	 * Reads the live list, so a walk over `size` sees a swap-remove and an
 	 * append made during the walk, exactly as a walk over a shrinking array

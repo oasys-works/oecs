@@ -380,14 +380,14 @@ class AccessCheck {
 	// This is what makes the optional term *consumed* rather than decorative: like
 	// `reads:[T]` for required access, `.optional(T)` is the fetch's declaration,
 	// checked here in `DEV`. A stack (not a single slot) handles a re-entrant or
-	// nested `forEach`. The optional scope is independent of the per-system
-	// `enter` and `leave` above, a host-side `ecs.query(...).forEach` outside any
+	// nested `forEachArchetype`. The optional scope is independent of the per-system
+	// `enter` and `leave` above, a host-side `ecs.query(...).forEachArchetype` outside any
 	// system still establishes one. No active scope ⇒ lenient: a manual
 	// `query.archetypes` walk can't be attributed to an optional declaration, so it
 	// isn't checked, mirroring the unchecked outside-of-system calls in the header.
 	//
 	// Caveat: the gate always attributes to the innermost active
-	// `forEach`. If you nest `forEach` and call `getOptionalColumnRead` on an
+	// `forEachArchetype`. If you nest `forEachArchetype` and call `getOptionalColumnRead` on an
 	// outer query's archetype inside the inner loop, it is checked against the inner
 	// query's terms (a false throw or false pass). Per-query attribution isn't worth
 	// the complexity for a dev-only assertion. Iterate one query at a time, or read
@@ -404,7 +404,7 @@ class AccessCheck {
 
 	assertOptionalFetch(def: ComponentHandle): void {
 		const depth = this._optionalScopes.length;
-		if (depth === 0) return; // no active forEach scope, lenient (see above)
+		if (depth === 0) return; // no active forEachArchetype scope, lenient (see above)
 		const scope = this._optionalScopes[depth - 1];
 		const cid = def.id;
 		for (let i = 0; i < scope.length; i++) {

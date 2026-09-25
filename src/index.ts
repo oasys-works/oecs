@@ -210,7 +210,7 @@ export type {
 // Queries
 export { Query, QueryBuilder, ChangedQuery, HIERARCHY_UNBOUNDED, and, or, not } from "./core/ecs";
 export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm } from "./core/ecs";
-// The forEachChunk cursor (`cols.mut` and `cols.read`) and the `ctx.commands`
+// The forEachColumns cursor (`cols.mut` and `cols.read`) and the `ctx.commands`
 // deferred facade.
 export { ChunkColumns, Commands } from "./core/ecs";
 

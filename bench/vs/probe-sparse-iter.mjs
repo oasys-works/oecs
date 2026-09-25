@@ -16,8 +16,12 @@
  *
  * The variants, from the entry to the floor:
  *
- *   packed         dense Pos and Vel through `forEachChunk`. The `oecs` entry.
+ *   packed         dense Pos and Vel through `forEachColumns`. The `oecs` entry.
  *   fe             `forEachEntity` with two sparse cursors. The `oecs-sparse` entry.
+ *   fe-shared      `fe` after six other callbacks ran through the driver. An app
+ *                  with many queries has this. The callback does not inline.
+ *   batch          `forEachIds` with the same cursors. One call for each run.
+ *   batch-shared   `batch` after six other callbacks ran through the driver.
  *   fe-empty       the same driver with an empty callback. The driver alone.
  *   tight-full-cb  a loop over the member list of Pos, with the filters the query
  *                  keeps: Vel membership, the dense mask, the enabled row. It
@@ -48,7 +52,18 @@ const DT = 0.016;
 const REPS = 100;
 const UNASSIGNED = -1;
 const INDEX_BITS = 20;
-const VARIANTS = ["packed", "fe", "fe-empty", "tight-full-cb", "tight-full", "tight-2store", "raw"];
+const VARIANTS = [
+	"packed",
+	"fe",
+	"fe-shared",
+	"batch",
+	"batch-shared",
+	"fe-empty",
+	"tight-full-cb",
+	"tight-full",
+	"tight-2store",
+	"raw"
+];
 
 const self = url.fileURLToPath(import.meta.url);
 const here = path.dirname(self);
@@ -82,7 +97,7 @@ if (variant === "packed") {
 	const q = ecs.query(Pos, Vel);
 	fn = () => {
 		for (let r = 0; r < REPS; r++) {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { vx, vy } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -94,7 +109,7 @@ if (variant === "packed") {
 	};
 	check = () => {
 		let s = 0;
-		q.forEachChunk((cols, count) => {
+		q.forEachColumns((cols, count) => {
 			const { x } = cols.read(Pos);
 			for (let i = 0; i < count; i++) s += x[i];
 		});
@@ -147,14 +162,63 @@ if (variant === "packed") {
 		return ok;
 	};
 
-	if (variant === "fe") {
+	// Distinct literals. Closures of one literal share call feedback, and V8 can
+	// still inline them.
+	const k = new Float64Array(1);
+	const others = [
+		(e) => (k[0] += e),
+		(e) => (k[0] -= e),
+		(e) => (k[0] += e * 2),
+		(e) => (k[0] += e * 3),
+		(e) => (k[0] += e * 4),
+		(e) => (k[0] += e * 5)
+	];
+	const batchStep = (ids, count) => {
+		for (let i = 0; i < count; i++) {
+			const e = ids[i];
+			p.at(e);
+			v.at(e);
+			p.x += v.vx * DT;
+			p.y += v.vy * DT;
+		}
+	};
+
+	if (variant === "fe" || variant === "fe-shared") {
+		if (variant === "fe-shared")
+			for (let r = 0; r < 20; r++) for (const o of others) q.forEachEntity(o);
 		fn = () => {
 			for (let r = 0; r < REPS; r++) q.forEachEntity(step);
+		};
+	} else if (variant === "batch" || variant === "batch-shared") {
+		if (variant === "batch-shared") {
+			const wrap = [
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[0](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[1](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[2](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[3](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[4](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[5](ids[i]);
+				}
+			];
+			for (let r = 0; r < 20; r++) for (const w of wrap) q.forEachIds(w);
+		}
+		fn = () => {
+			for (let r = 0; r < REPS; r++) q.forEachIds(batchStep);
 		};
 	} else if (variant === "fe-empty") {
 		// Sum into a typed array. A captured `let` leaves the small-integer range
 		// and boxes on each store, which costs more than the driver.
-		const k = new Float64Array(1);
 		const nop = (e) => {
 			k[0] += e;
 		};

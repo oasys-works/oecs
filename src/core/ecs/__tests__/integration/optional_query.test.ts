@@ -74,7 +74,7 @@ describe("ECS optional query terms", () => {
 		const visited: number[] = [];
 		const withVel: number[] = [];
 		const withoutVel: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -108,7 +108,7 @@ describe("ECS optional query terms", () => {
 		const q = world.query(Pos).optional(Vel);
 
 		let sawArchetype = false;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			sawArchetype = true;
 			expect(arch.getOptionalColumnRead(Vel, "vx")).toBeUndefined();
 		});
@@ -126,7 +126,7 @@ describe("ECS optional query terms", () => {
 		const q = world.query(Pos).optional(Vel);
 
 		const presentBefore: boolean[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			presentBefore.push(arch.getOptionalColumnRead(Vel, "vx") !== undefined);
 		});
 		expect(presentBefore).toEqual([false]);
@@ -136,7 +136,7 @@ describe("ECS optional query terms", () => {
 
 		let presentAfter = false;
 		let value = -1;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
 			if (vx !== undefined) {
 				presentAfter = true;
@@ -166,7 +166,7 @@ describe("ECS optional query terms", () => {
 
 		const before = world.snapshots.stateHash();
 		let sum = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -201,7 +201,7 @@ describe("ECS optional query terms", () => {
 				name: "optional_reader",
 				reads: [Pos, Vel],
 				fn() {
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						arch.getColumnRead(Pos, "x");
 						arch.getOptionalColumnRead(Vel, "vx");
 					});
@@ -228,7 +228,7 @@ describe("ECS optional query terms", () => {
 				name: "undeclared_optional",
 				reads: [Pos], // Vel omitted
 				fn() {
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						arch.getOptionalColumnRead(Vel, "vx");
 					});
 				}
@@ -255,7 +255,7 @@ describe("ECS optional query terms", () => {
 				name: "absent_span_reader",
 				reads: [Pos], // Vel omitted
 				fn() {
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						arch.getOptionalColumnRead(Vel, "vx");
 					});
 				}
@@ -317,7 +317,7 @@ describe("ECS optional query terms", () => {
 
 		const visited: number[] = [];
 		const withVel: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
 			for (let i = 0; i < arch.entityCount; i++) {
 				visited.push(arch.entityIds[i]);
@@ -359,7 +359,7 @@ describe("ECS optional query terms", () => {
 
 		const visited: number[] = [];
 		const withVel: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const vx = arch.getOptionalColumnRead(Vel, "vx"); // declared ⇒ no throw
 			for (let i = 0; i < arch.entityCount; i++) {
 				visited.push(arch.entityIds[i]);
@@ -388,7 +388,7 @@ describe("ECS optional query terms", () => {
 		// not throw the dev-gate.
 		const q = world.query(Pos).optional(Vel).not(Hp);
 		const seen: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const vx = arch.getOptionalColumnRead(Vel, "vx");
 			for (let i = 0; i < arch.entityCount; i++) {
 				seen.push(arch.entityIds[i]);
@@ -400,7 +400,7 @@ describe("ECS optional query terms", () => {
 		// or preserves it as well (smoke: declared fetch doesn't throw).
 		const q2 = world.query(Pos).optional(Vel).or(Vel, Hp);
 		expect(() =>
-			q2.forEach((arch) => {
+			q2.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
 		).not.toThrow();
@@ -423,7 +423,7 @@ describe("ECS optional query terms", () => {
 		// Plain query, never called .optional(Vel).
 		const q = world.query(Pos);
 		expect(() =>
-			q.forEach((arch) => {
+			q.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
 		).toThrow(/getOptionalColumnRead.*did not declare it/);
@@ -441,7 +441,7 @@ describe("ECS optional query terms", () => {
 		// Declared .optional(Hp), but fetches Vel. Vel is not in the scope.
 		const q = world.query(Pos).optional(Hp);
 		expect(() =>
-			q.forEach((arch) => {
+			q.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
 		).toThrow(/getOptionalColumnRead.*did not declare it/);
@@ -462,14 +462,14 @@ describe("ECS optional query terms", () => {
 		const cq = world.query(Pos).optional(Vel).changed(Pos);
 
 		expect(() =>
-			cq.forEach((arch) => {
+			cq.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Hp, "hp"); // undeclared → must throw now
 			})
 		).toThrow(/getOptionalColumnRead.*did not declare it/);
 
 		// The declared optional does not throw in the same changed-query loop.
 		expect(() =>
-			cq.forEach((arch) => {
+			cq.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
 		).not.toThrow();
@@ -501,7 +501,7 @@ describe("ECS optional query terms", () => {
 
 		// And the optional term still gates a fetch through the folded compose.
 		expect(() =>
-			multi.forEach((arch) => {
+			multi.forEachArchetype((arch) => {
 				arch.getOptionalColumnRead(Vel, "vx");
 			})
 		).not.toThrow();

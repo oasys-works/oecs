@@ -77,7 +77,7 @@ import { Query, QueryBuilder } from "./query";
 import { QueryCache, type QueryResolver } from "./query_cache";
 import type { QueryTerms } from "./query_terms";
 import { SystemContext } from "./system_context";
-import type { EntityID } from "./entity";
+import type { EntityID, ReadonlyEntityIDArray } from "./entity";
 import { entityNotAliveError } from "./entity";
 import { componentLabel } from "./debug_names";
 import {
@@ -765,7 +765,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	// transition. Toggling is a single row swap. Host-side calls are immediate
 	// (mirrors `addComponent`). The deferred in-system path is
 	// `ctx.commands.disable` and `ctx.commands.enable`, because a row swap would
-	// corrupt an in-flight `forEach` over that archetype. An entity must hold at
+	// corrupt an in-flight `forEachArchetype` over that archetype. An entity must hold at
 	// least one component (a component-less entity has no archetype row to
 	// partition).
 
@@ -979,7 +979,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 *   }
 	 *
 	 * Reach for it when you touch many entities by id. Reach for `refRead` or
-	 * `ref` for a single entity, and for `forEachChunk` whenever a query can express
+	 * `ref` for a single entity, and for `forEachColumns` whenever a query can express
 	 * the set. A column walk resolves nothing for each row, so it stays quicker
 	 * than a cursor, a cursor removes the allocation, not the resolution.
 	 *
@@ -1113,12 +1113,12 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * `defs`. Queries are deduplicated by mask, calling this twice with the
 	 * same terms returns the same instance, so build once at setup and reuse.
 	 * The view stays live as archetypes appear. Refine with `.and()`,
-	 * `.not()` or `.or()`. Iterate with `forEachChunk` (mutating hot path),
-	 * `forEach` (per-archetype), or `forEachEntity` (per-entity).
+	 * `.not()` or `.or()`. Iterate with `forEachColumns` (mutating hot path),
+	 * `forEachArchetype` (per-archetype), or `forEachEntity` (per-entity).
 	 *
 	 * @example
 	 * const movers = ecs.query(Pos, Vel);
-	 * movers.forEachChunk((cols, count) => {
+	 * movers.forEachColumns((cols, count) => {
 	 *   const { x, y } = cols.mut(Pos);
 	 *   const { vx, vy } = cols.read(Vel);
 	 *   for (let i = 0; i < count; i++) { x[i] += vx[i]; y[i] += vy[i]; }
@@ -1218,7 +1218,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 *   reads: [Vel],
 	 *   writes: [Pos],
 	 *   fn(ctx, dt) {
-	 *     movers.forEachChunk((cols, count) => { ... });
+	 *     movers.forEachColumns((cols, count) => { ... });
 	 *   },
 	 * });
 	 * ecs.addSystems(SCHEDULE.UPDATE, move);
@@ -1688,7 +1688,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		return this._ctx.lastRunTick;
 	}
 
-	/** The change tick, the stamp `forEachChunk` makes via `cols.mut`. */
+	/** The change tick, the stamp `forEachColumns` makes via `cols.mut`. */
 	public getChangeTick(): number {
 		return this._store.changeTick;
 	}
@@ -1712,6 +1712,18 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		cb: (entityId: EntityID) => void
 	): void {
 		this._store.forEachSparseMatch(include, exclude, anyOf, terms, denseArchetypes, cb);
+	}
+
+	/** QueryResolver implementation, the sparse match in runs of ids. */
+	public forEachSparseIds(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		denseArchetypes: readonly Archetype[],
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
+	): void {
+		this._store.forEachSparseIds(include, exclude, anyOf, terms, denseArchetypes, cb);
 	}
 
 	/** QueryResolver implementation, backing sparse id of a relation, for the
@@ -1794,7 +1806,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 
 	/**
 	 * Keep a change tick for each row of `def`, the row grain of change
-	 * detection. `cols.ticksRead(def)` and `changed(def).forEachChunk` read it
+	 * detection. `cols.ticksRead(def)` and `changed(def).forEachColumns` read it
 	 * against `cols.since`, and every write path stamps it: `setField`, `ref`,
 	 * a cursor, `markChanged`, and a store into `cols.ticks(def)`. An `onSet`
 	 * observer with entity granularity turns it on as well. Costs one word for

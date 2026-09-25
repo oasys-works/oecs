@@ -54,7 +54,7 @@ function integrateWorld(backing: Backing, deterministic: boolean, exportName: st
 			query
 		},
 		fn: (_ctx: SystemContext, dt: number) => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				body(p.x, p.y, v.vx, v.vy, 0, count, dt);
@@ -106,7 +106,7 @@ describe.each(BACKINGS)("a parallel system on the %s backing", (backing) => {
 		const before = readColumns(world.ecs, world.Pos, world.Vel);
 		const frozen = world.ecs.query(world.Pos, world.Vel, world.Frozen);
 		const frozenBefore: number[] = [];
-		frozen.forEachChunk((cols, count) => {
+		frozen.forEachColumns((cols, count) => {
 			const p = cols.read(world.Pos);
 			for (let i = 0; i < count; i++) frozenBefore.push(p.x[i], p.y[i]);
 		});
@@ -116,7 +116,7 @@ describe.each(BACKINGS)("a parallel system on the %s backing", (backing) => {
 		world.ecs.update(DT);
 
 		const frozenAfter: number[] = [];
-		frozen.forEachChunk((cols, count) => {
+		frozen.forEachColumns((cols, count) => {
 			const p = cols.read(world.Pos);
 			for (let i = 0; i < count; i++) frozenAfter.push(p.x[i], p.y[i]);
 		});

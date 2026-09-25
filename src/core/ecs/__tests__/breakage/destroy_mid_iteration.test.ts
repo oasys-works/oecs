@@ -23,7 +23,7 @@ describe("Destruction during system execution", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					const px = arch.getColumnRead(Pos, "x");
 					const py = arch.getColumnRead(Pos, "y");
 					for (let i = 0; i < arch.entityCount; i++) {
@@ -70,7 +70,7 @@ describe("Destruction during system execution", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						ctx.commands.despawn(arch.entityIds[i] as EntityID);
 						iterationCount++;
@@ -170,7 +170,7 @@ describe("Destruction during system execution", () => {
 		const sys2 = world.registerSystem({
 			...openAccess([Pos]),
 			fn() {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						if (arch.entityIds[i] === e) {
 							sys2SawEntity = true;
@@ -211,7 +211,7 @@ describe("Destruction during system execution", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						ctx.commands.despawn(arch.entityIds[i] as EntityID);
 					}

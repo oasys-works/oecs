@@ -40,7 +40,7 @@ if (variant !== null) {
 		queries: [[Pos, Vel]],
 		fn: () => {
 			let s = 0;
-			movers.forEachChunk((cols, count) => {
+			movers.forEachColumns((cols, count) => {
 				const { x, y, z } = cols.read(Pos);
 				for (let i = 0; i < count; i++) s += x[i] + y[i] + z[i];
 			});
@@ -53,7 +53,7 @@ if (variant !== null) {
 		writes: [Pos],
 		queries: [[Pos, Vel]],
 		fn: () => {
-			movers.forEachChunk((cols, count) => {
+			movers.forEachColumns((cols, count) => {
 				const { x, y, z } = cols.mut(Pos);
 				const { vx, vy, vz } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -71,14 +71,14 @@ if (variant !== null) {
 	// store path and not the load path.
 	const readTime = time(() => {
 		let s = 0;
-		movers.forEachChunk((cols, count) => {
+		movers.forEachColumns((cols, count) => {
 			const { x, y, z } = cols.read(Pos);
 			for (let i = 0; i < count; i++) s += x[i] + y[i] + z[i];
 		});
 		return s;
 	});
 	const writeTime = time(() => {
-		movers.forEachChunk((cols, count) => {
+		movers.forEachColumns((cols, count) => {
 			const { x, y, z } = cols.mut(Pos);
 			const { vx, vy, vz } = cols.read(Vel);
 			for (let i = 0; i < count; i++) {

@@ -86,7 +86,7 @@
  *  12. The verbs of a query, `andRelation` and `notRelation` against the arity
  *      of the ports, `optional` against the agents that have no `Age` yet,
  *      `singleEntity` against the one ROOT, `firstEntity` against the idle tail, and
- *      `some` against the count of the archetypes that `forEach` gives. Each
+ *      `some` against the count of the archetypes that `forEachArchetype` gives. Each
  *      one reads a fact that the reference already holds.
  *  13. `ctx.markChanged`, a mark records a row for the per-entity `onSet` observer,
  *      and it makes no archetype changed. The idle tail is where that difference is
@@ -104,7 +104,7 @@
  *      of POST_UPDATE. So the position of each phase has an exact expected value.
  *  17. The row grain. `ecs.trackRows(Mix)` gives `Mix` a row tick column.
  *      `cols.ticksRead(Mix)` against `cols.since` must report exactly the agents
- *      that the reference wrote in its own `setLink`. `changed(Mix).forEachChunk`
+ *      that the reference wrote in its own `setLink`. `changed(Mix).forEachColumns`
  *      reaches the same rows behind the filter on the archetype.
  *  18. The sparse row grain. `ctx.sparseChanged(Watch)` must report exactly the
  *      members that `redexMaintain` wrote through the mutable sparse cursor.

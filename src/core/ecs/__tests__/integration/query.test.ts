@@ -93,7 +93,7 @@ describe("ECS query (integration)", () => {
 
 		expect(q.archetypeCount).toBeGreaterThan(beforeLen);
 		const entityIds: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entityIds.push(a.entityIds[i]);
 		});
 		expect(entityIds).toContain(e2);
@@ -275,7 +275,7 @@ describe("ECS query (integration)", () => {
 		world.addComponent(e1, Pos, { x: 10, y: 20 });
 		world.addComponent(e1, Vel, { vx: 1, vy: 2 });
 
-		world.query(Pos, Vel).forEach((arch) => {
+		world.query(Pos, Vel).forEachArchetype((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
 			const vy = arch.getColumnRead(Vel, "vy");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -378,7 +378,7 @@ describe("ECS query (integration)", () => {
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				const entities: number[] = [];
-				posQuery.forEach((a) => {
+				posQuery.forEachArchetype((a) => {
 					for (let i = 0; i < a.entityCount; i++) entities.push(a.entityIds[i]);
 				});
 				if (entities.includes(e1 as number)) sys1SawPos = true;
@@ -433,10 +433,10 @@ describe("ECS query (integration)", () => {
 	});
 
 	//=========================================================
-	// forEach iteration
+	// forEachArchetype iteration
 	//=========================================================
 
-	it("forEach yields non-empty archetypes with correct columns and count", () => {
+	it("forEachArchetype yields non-empty archetypes with correct columns and count", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -452,7 +452,7 @@ describe("ECS query (integration)", () => {
 		let archCount = 0;
 		let totalEntities = 0;
 
-		world.query(Pos, Vel).forEach((arch) => {
+		world.query(Pos, Vel).forEachArchetype((arch) => {
 			archCount++;
 			totalEntities += arch.entityCount;
 			// Verify typed columns are accessible
@@ -468,7 +468,7 @@ describe("ECS query (integration)", () => {
 		expect(totalEntities).toBe(2);
 	});
 
-	it("forEach skips archetypes with zero entities", () => {
+	it("forEachArchetype skips archetypes with zero entities", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -484,13 +484,13 @@ describe("ECS query (integration)", () => {
 		world.flush();
 
 		let archCount = 0;
-		q.forEach(() => {
+		q.forEachArchetype(() => {
 			archCount++;
 		});
 		expect(archCount).toBe(0);
 	});
 
-	it("forEach iteration allows column mutation", () => {
+	it("forEachArchetype iteration allows column mutation", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -513,7 +513,7 @@ describe("ECS query (integration)", () => {
 		}
 
 		// Verify mutation via getColumnMut
-		world.query(Pos, Vel).forEach((arch) => {
+		world.query(Pos, Vel).forEachArchetype((arch) => {
 			const x = arch.getColumnRead(Pos, "x");
 			const y = arch.getColumnRead(Pos, "y");
 			for (let i = 0; i < arch.entityCount; i++) {

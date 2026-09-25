@@ -106,7 +106,7 @@ export function buildWorld(options: WorldOptions): ParallelWorld {
 export function seed(ecs: ECS, Pos: ComponentDef<any>, Vel: ComponentDef<any>): void {
 	const q = ecs.query(Pos, Vel);
 	let n = 0;
-	q.forEachChunk((cols, count) => {
+	q.forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		const v = cols.mut(Vel);
 		for (let i = 0; i < count; i++, n++) {
@@ -123,7 +123,7 @@ export function seed(ecs: ECS, Pos: ComponentDef<any>, Vel: ComponentDef<any>): 
 export function readColumns(ecs: ECS, Pos: ComponentDef<any>, Vel: ComponentDef<any>): number[] {
 	const out: number[] = [];
 	const q = ecs.query(Pos, Vel);
-	q.forEachChunk((cols, count) => {
+	q.forEachColumns((cols, count) => {
 		const p = cols.read(Pos);
 		const v = cols.read(Vel);
 		for (let i = 0; i < count; i++) {

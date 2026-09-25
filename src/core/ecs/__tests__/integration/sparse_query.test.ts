@@ -9,7 +9,7 @@
  *  - mixed dense-bitmask + sparse-membership terms → correct intersection
  *  - multi-sparse require (smallest-store drive) → intersection
  *  - empty-result cases
- *  - the dense `forEach` path stays untouched (no sparse consultation).
+ *  - the dense `forEachArchetype` path stays untouched (no sparse consultation).
  */
 
 import { describe, expect, it } from "vitest";
@@ -315,10 +315,10 @@ describe("ECS sparse query integration", () => {
 	});
 
 	//=========================================================
-	// Dense-only path unaffected: forEach still yields archetype views
+	// Dense-only path unaffected: forEachArchetype still yields archetype views
 	//=========================================================
 
-	it("dense-only forEach is untouched by the sparse path", () => {
+	it("dense-only forEachArchetype is untouched by the sparse path", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -328,7 +328,7 @@ describe("ECS sparse query integration", () => {
 
 		// Dense query iterates archetype views regardless of sparse membership.
 		let rows = 0;
-		world.query(Pos).forEach((arch) => {
+		world.query(Pos).forEachArchetype((arch) => {
 			rows += arch.entityCount;
 		});
 		expect(rows).toBe(1);
@@ -372,7 +372,7 @@ describe("ECS sparse query integration", () => {
 	// Dense-path methods guard against sparse terms
 	//=========================================================
 	//
-	// entityCount, forEach() and archetypeCount walk only the dense archetype
+	// entityCount, forEachArchetype() and archetypeCount walk only the dense archetype
 	// list and never consult the sparse stores. On a sparse-derived query they
 	// would fail open and return the unfiltered dense result, so they throw in
 	// __DEV__ and name forEachEntity. Tests run under vitest, where __DEV__ is
@@ -401,7 +401,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 	});
 
-	it("forEach() throws on a sparse-derived query", () => {
+	it("forEachArchetype() throws on a sparse-derived query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Marked = world.registerSparseTag();
@@ -410,7 +410,7 @@ describe("ECS sparse query integration", () => {
 		world.addSparse(a, Marked);
 
 		const q = world.query(Pos).andSparse(Marked);
-		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
+		expect(() => q.forEachArchetype(() => {})).toThrow(/forEachEntity/);
 	});
 
 	it("archetypeCount throws on a sparse-derived query", () => {
@@ -425,7 +425,7 @@ describe("ECS sparse query integration", () => {
 		expect(() => q.archetypeCount).toThrow(/forEachEntity/);
 	});
 
-	it("dense-only queries keep entityCount, forEach() and archetypeCount working", () => {
+	it("dense-only queries keep entityCount, forEachArchetype() and archetypeCount working", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const a = world.spawn();
@@ -437,7 +437,7 @@ describe("ECS sparse query integration", () => {
 		expect(q.entityCount).toBe(2);
 		expect(q.archetypeCount).toBeGreaterThanOrEqual(1);
 		let rows = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			rows += arch.entityCount;
 		});
 		expect(rows).toBe(2);

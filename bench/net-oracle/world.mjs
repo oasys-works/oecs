@@ -329,7 +329,7 @@ export class EcsNet {
 		this.qWatchAll = ecs.query(this.Slot).includeDisabled().andSparse(this.Watch);
 		this.qNoWatch = ecs.query(this.Slot).notSparse(this.Watch);
 		// The change-detection queries. `changed()` needs its component in the include
-		// mask of the query, and it gives back a `ChangedQuery`, which has `forEach`
+		// mask of the query, and it gives back a `ChangedQuery`, which has `forEachArchetype`
 		// alone. A `ChangedQuery` also composes, and the two spellings below must give
 		// the same set.
 		this.qTouchChanged = ecs.query(this.Touch).changed(this.Touch);
@@ -826,7 +826,7 @@ export class EcsNet {
 				// of these rows in the flush of this phase, so the record must travel.
 				const touched = this._touched;
 				if (touched.size > 0) {
-					this.qSeen.forEachChunk((cols, count) => {
+					this.qSeen.forEachColumns((cols, count) => {
 						const seen = cols.mut(this.Seen).n;
 						const seq = cols.read(this.Touch).seq;
 						const t = cols.ticks(this.Seen);
@@ -940,13 +940,13 @@ export class EcsNet {
 					});
 
 		// The per-tick age bump, one hot `i32` column write per live aged agent,
-		// through the `forEachChunk` mutable path.
+		// through the `forEachColumns` mutable path.
 		//
 		// `cols.mut(def)` sets the tick for the change at the moment of the call, and
 		// it does that even if no write follows. This loop asks for that accessor for
 		// each archetype that the query gives. Therefore each of those archetypes must
 		// appear in a `changed(Age)` query and in the `onSet` observer on `Age`.
-		// `changeRead` below lists the same archetypes through `forEach`, which walks
+		// `changeRead` below lists the same archetypes through `forEachArchetype`, which walks
 		// the same set. That list is the expected value, and it needs no model of the
 		// archetype graph.
 		//
@@ -973,7 +973,7 @@ export class EcsNet {
 			...ageParallel,
 			fn: (ctx, dt) => {
 				this.ageSequentialRuns++;
-				this.qAge.forEachChunk((cols, count) => {
+				this.qAge.forEachColumns((cols, count) => {
 					const c = cols.mut(this.Age);
 					ageStepI32(c.ticks, 0, count, dt);
 					if (float) {
@@ -1005,7 +1005,7 @@ export class EcsNet {
 			fn: () => {
 				this.changedTouchSigs.clear();
 				this.changedTouchEnts.clear();
-				this.qTouchChanged.forEach((arch) => {
+				this.qTouchChanged.forEachArchetype((arch) => {
 					this.changedTouchSigs.add(this._archSignature(arch));
 					const ids = arch.entityIds;
 					for (let i = 0; i < arch.entityCount; i++) this.changedTouchEnts.add(ids[i]);
@@ -1013,40 +1013,40 @@ export class EcsNet {
 				// The arm that shows the disabled rows. An archetype whose rows are all
 				// disabled is absent from the default arm above, and it must be present here.
 				this.changedTouchAllSigs.clear();
-				this.qTouchChangedAll.forEach((arch) => {
+				this.qTouchChangedAll.forEachArchetype((arch) => {
 					this.changedTouchAllSigs.add(this._archSignature(arch));
 				});
 				// The same set through the two spellings of the composition. The
 				// documentation says that they give one set, so they must agree.
 				this.changedTouchNoFreshSigs.clear();
-				this.qTouchChangedNoFresh.forEach((arch) => {
+				this.qTouchChangedNoFresh.forEachArchetype((arch) => {
 					this.changedTouchNoFreshSigs.add(this._archSignature(arch));
 				});
 				this.changedTouchNoFreshAltSigs.clear();
-				this.qTouchNoFreshChanged.forEach((arch) => {
+				this.qTouchNoFreshChanged.forEachArchetype((arch) => {
 					this.changedTouchNoFreshAltSigs.add(this._archSignature(arch));
 				});
 				this.changedAgeArchIds.clear();
 				this.changedAgeEnts.clear();
-				this.qAgeChanged.forEach((arch) => {
+				this.qAgeChanged.forEachArchetype((arch) => {
 					this.changedAgeArchIds.add(arch.id);
 					const ids = arch.entityIds;
 					for (let i = 0; i < arch.entityCount; i++) this.changedAgeEnts.add(ids[i]);
 				});
 				// The expected value for the two lines above, and for the `onSet` observer
 				// on `Age`. `ageTick` ran a moment ago in this same phase, and it asked for
-				// the mutable accessor of each archetype that this query gives. `forEach`
-				// and `forEachChunk` walk the same list. Therefore this set is exactly the set
+				// the mutable accessor of each archetype that this query gives. `forEachArchetype`
+				// and `forEachColumns` walk the same list. Therefore this set is exactly the set
 				// of archetypes whose `Age` column the tick wrote.
 				this.ageArchIdsNow.clear();
 				this.ageEntsNow.clear();
-				this.qAge.forEach((arch) => {
+				this.qAge.forEachArchetype((arch) => {
 					this.ageArchIdsNow.add(arch.id);
 					const ids = arch.entityIds;
 					for (let i = 0; i < arch.entityCount; i++) this.ageEntsNow.add(ids[i]);
 				});
 				this.ageArchIdsAll.clear();
-				this.qAgeAll.forEach((arch) => this.ageArchIdsAll.add(arch.id));
+				this.qAgeAll.forEachArchetype((arch) => this.ageArchIdsAll.add(arch.id));
 			}
 		});
 
@@ -1057,7 +1057,7 @@ export class EcsNet {
 		// which agents those are, because `setLink` writes `Mix` for both endpoints.
 		//
 		// Three arms. The default query drops a disabled row. The `includeDisabled()`
-		// arm keeps it. `changed(Mix).forEachChunk` reaches the same rows behind the
+		// arm keeps it. `changed(Mix).forEachColumns` reaches the same rows behind the
 		// filter on the archetype. The body runs on the cadence of the deep
 		// comparison. The system runs at each tick, so `cols.since` still spans one
 		// tick.
@@ -1133,10 +1133,10 @@ export class EcsNet {
 				this.redexFirst = this.qRedexAll.firstEntity();
 
 				// `some` must stop at the archetype that the predicate accepts, and
-				// it must report that it stopped. The count of the archetypes that `forEach`
+				// it must report that it stopped. The count of the archetypes that `forEachArchetype`
 				// gives is the expected value, so this needs no model of the graph.
 				this.untilArchTotal = 0;
-				this.qAgentsAll.forEach(() => this.untilArchTotal++);
+				this.qAgentsAll.forEachArchetype(() => this.untilArchTotal++);
 				this.untilVisited = 0;
 				this.untilStopped = this.qAgentsAll.some(() => {
 					this.untilVisited++;
@@ -1158,7 +1158,7 @@ export class EcsNet {
 				// is not an error.
 				this.optionalAgeSeen.clear();
 				this.optionalAgeAbsent.clear();
-				this.qOptionalAge.forEach((arch) => {
+				this.qOptionalAge.forEachArchetype((arch) => {
 					const ticks = arch.getOptionalColumnRead(this.Age, "ticks");
 					const ids = arch.entityIds;
 					if (ticks === undefined) {
@@ -1590,7 +1590,7 @@ export class EcsNet {
 	 * archetype, and none for each row, so a census system pays it at each tick. */
 	_countAgents() {
 		let n = 0;
-		this.qAgentsAll.forEach((arch) => {
+		this.qAgentsAll.forEachArchetype((arch) => {
 			n += arch.entityCount;
 		});
 		return n;
@@ -2378,7 +2378,7 @@ function inc(v) {
 function collect(query, archs, ents) {
 	if (archs !== null) archs.clear();
 	ents.clear();
-	query.forEach((arch) => {
+	query.forEachArchetype((arch) => {
 		if (archs !== null) archs.add(arch.id);
 		const ids = arch.entityIds;
 		for (let i = 0; i < arch.entityCount; i++) ents.add(ids[i]);
@@ -2390,7 +2390,7 @@ function collect(query, archs, ents) {
  * that `ecs.trackRows(def)` installs. */
 function collectChangedRows(query, def, out) {
 	out.clear();
-	query.forEachChunk((cols, count) => {
+	query.forEachColumns((cols, count) => {
 		const t = cols.ticksRead(def);
 		const since = cols.since;
 		const eids = cols.arch.entityIds;

@@ -50,7 +50,7 @@ interface Built {
  * `undefined` if none. */
 function firstEntity(world: ECS, def: ComponentDef): EntityID | undefined {
 	let found: EntityID | undefined;
-	world.query(def).forEach((arch) => {
+	world.query(def).forEachArchetype((arch) => {
 		if (found === undefined && arch.entityCount > 0) found = arch.entityIds[0];
 	});
 	return found;
@@ -77,7 +77,7 @@ function buildWorld(recorder?: HostCommandSink): Built {
 		fn: (ctx, dt) => {
 			const step = Math.round(dt * 1000);
 			if (step === 0) return;
-			clocks.forEach((arch) => {
+			clocks.forEachArchetype((arch) => {
 				const ids = arch.entityIds;
 				for (let i = 0; i < arch.entityCount; i++) {
 					ctx.updateField(ids[i], Clock, "ms", (v) => v + step);

@@ -78,7 +78,7 @@ describe("ctx.commands (deferred structural facade)", () => {
 
 		// default query excludes disabled rows
 		let visible = 0;
-		world.query(Pos).forEach((arch) => {
+		world.query(Pos).forEachArchetype((arch) => {
 			visible += arch.entityCount;
 		});
 		expect(visible).toBe(0);

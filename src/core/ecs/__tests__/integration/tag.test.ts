@@ -93,8 +93,8 @@ describe("Tag components", () => {
 		expect(world.hasComponent(e, Pos)).toBe(true);
 		expect(world.hasComponent(e, Tag)).toBe(false);
 
-		// Verify position data survived via forEach
-		world.query(Pos).forEach((arch) => {
+		// Verify position data survived via forEachArchetype
+		world.query(Pos).forEachArchetype((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
 			const py = arch.getColumnRead(Pos, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -123,7 +123,7 @@ describe("Tag components", () => {
 		// Query requiring tag should only match e1
 		const q = world.query(Pos).and(IsEnemy);
 		const entities: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entities.push(a.entityIds[i]);
 		});
 		expect(entities).toContain(e1);
@@ -144,7 +144,7 @@ describe("Tag components", () => {
 
 		const q = world.query(Pos).not(IsDead);
 		const entities: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entities.push(a.entityIds[i]);
 		});
 		expect(entities).toContain(alive);
@@ -218,7 +218,7 @@ describe("Tag components", () => {
 		// Query for TagA + TagB should match both
 		const qAb = world.query(TagA).and(TagB);
 		const entitiesAb: number[] = [];
-		qAb.forEach((a) => {
+		qAb.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entitiesAb.push(a.entityIds[i]);
 		});
 		expect(entitiesAb).toContain(e1);
@@ -227,7 +227,7 @@ describe("Tag components", () => {
 		// Query for TagA + TagB + TagC should only match e2
 		const qAbc = world.query(TagA).and(TagB, TagC);
 		const entitiesAbc: number[] = [];
-		qAbc.forEach((a) => {
+		qAbc.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entitiesAbc.push(a.entityIds[i]);
 		});
 		expect(entitiesAbc).not.toContain(e1);
@@ -255,7 +255,7 @@ describe("Tag components", () => {
 		// All enemies with position
 		const qEnemies = world.query(Pos).and(IsEnemy);
 		const enemies: number[] = [];
-		qEnemies.forEach((a) => {
+		qEnemies.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) enemies.push(a.entityIds[i]);
 		});
 		expect(enemies).toContain(minion);
@@ -264,14 +264,14 @@ describe("Tag components", () => {
 		// Only bosses
 		const qBosses = world.query(Pos).and(IsEnemy, IsBoss);
 		const bosses: number[] = [];
-		qBosses.forEach((a) => {
+		qBosses.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) bosses.push(a.entityIds[i]);
 		});
 		expect(bosses).not.toContain(minion);
 		expect(bosses).toContain(boss);
 
 		// Data columns still accessible alongside tags
-		qBosses.forEach((arch) => {
+		qBosses.forEachArchetype((arch) => {
 			const px = arch.getColumnRead(Pos, "x");
 			const py = arch.getColumnRead(Pos, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -282,10 +282,10 @@ describe("Tag components", () => {
 	});
 
 	//=========================================================
-	// forEach skips empty archetypes
+	// forEachArchetype skips empty archetypes
 	//=========================================================
 
-	it("forEach skips empty archetypes", () => {
+	it("forEachArchetype skips empty archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 
@@ -299,13 +299,13 @@ describe("Tag components", () => {
 		world.flush();
 
 		let iteratedCount = 0;
-		q.forEach(() => {
+		q.forEachArchetype(() => {
 			iteratedCount++;
 		});
 		expect(iteratedCount).toBe(0);
 	});
 
-	it("forEach yields only non-empty archetypes", () => {
+	it("forEachArchetype yields only non-empty archetypes", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const Vel = world.registerComponent(Velocity);
@@ -327,9 +327,9 @@ describe("Tag components", () => {
 		world.despawn(e1);
 		world.flush();
 
-		// forEach should skip the empty one
+		// forEachArchetype should skip the empty one
 		let iteratedCount = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			iteratedCount++;
 			expect(arch.entityCount).toBeGreaterThan(0);
 		});

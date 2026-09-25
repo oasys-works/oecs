@@ -56,7 +56,7 @@ function staggeredWorld() {
 			query
 		},
 		fn: () => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				for (let i = 0; i < count; i++) p.x[i] = -1;
 			});
@@ -70,7 +70,7 @@ function staggeredWorld() {
  * before the last worker finished leaves the tail of some range untouched. */
 function everyRowCopied(world: ReturnType<typeof staggeredWorld>): boolean {
 	let ok = true;
-	world.query.forEachChunk((cols, count) => {
+	world.query.forEachColumns((cols, count) => {
 		const p = cols.read(world.Pos);
 		const v = cols.read(world.Vel);
 		for (let i = 0; i < count; i++) if (p.x[i] !== v.vx[i]) ok = false;

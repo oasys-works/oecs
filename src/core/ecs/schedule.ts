@@ -123,7 +123,7 @@ function toArray<T>(value: T | readonly T[] | undefined): readonly T[] {
  * When every system in a world comes from one function literal, a factory
  * such as `makeMover(component)`, or a world with a single system, the
  * dispatch site in `_runPhase` sees one target and TurboFan inlines the system
- * body, with its `forEachChunk` callback and its hot loop, into the scheduler's
+ * body, with its `forEachColumns` callback and its hot loop, into the scheduler's
  * own loop over the systems. Measured, that inlined loop runs slower than the
  * same loop compiled on its own: the scheduler keeps many values live across
  * it, and the loop code pays for that. A world whose systems come from two or

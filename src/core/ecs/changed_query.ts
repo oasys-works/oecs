@@ -69,8 +69,8 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		return new ChangedQuery(this._query.optional(...defs), this._changedIds);
 	}
 
-	public forEach(cb: (arch: ArchetypeView<Defs>) => void): void {
-		// Mirror Query.forEach's include-disabled handling: publish the
+	public forEachArchetype(cb: (arch: ArchetypeView<Defs>) => void): void {
+		// Mirror Query.forEachArchetype's include-disabled handling: publish the
 		// all-rows flag so the SoA loop's `arch.entityCount` spans disabled rows.
 		// Cold branch split out to keep the flag dance off the inlined hot body.
 		if (this._query.includesDisabled) {
@@ -78,7 +78,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 			return;
 		}
 		// Default path: inline `_forEachInner`'s body rather than delegate,
-		// for the same reason as `Query.forEach`. This is a megamorphic call site
+		// for the same reason as `Query.forEachArchetype`. This is a megamorphic call site
 		// V8 will not inline through, so the delegate hop is a real per-call cost.
 		// Keep byte-identical to `_forEachInner`. Do not re-introduce the hop.
 		const lastTick = this._query.lastRunTick();
@@ -86,7 +86,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const ids = this._changedIds;
 		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
-			// publish the same optional scope `Query.forEach` does, otherwise
+			// publish the same optional scope `Query.forEachArchetype` does, otherwise
 			// `getOptionalColumnRead` falls into `assertOptionalFetch`'s lenient
 			// no-scope branch and the `.optional(T)` gate never fires here.
 			// Dev-only. Prod runs the bare loop below byte-for-byte.
@@ -122,27 +122,27 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
-	/** The chunk form of `forEach`: the changed archetypes, as column groups.
+	/** The chunk form of `forEachArchetype`: the changed archetypes, as column groups.
 	 * The row grain sits inside: `cols.ticksRead(def)` is the row tick column,
 	 * and a row above `cols.since` changed since the previous run of the
 	 * system. `def` needs row ticks (`ecs.trackRows`). Same include-disabled
-	 * handling as `Query.forEachChunk`. */
-	public forEachChunk(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
+	 * handling as `Query.forEachColumns`. */
+	public forEachColumns(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		if (this._query.includesDisabled) {
 			const prev = _setIterAllRows(true);
 			try {
-				this._forEachChunkInner(cb);
+				this._forEachColumnsInner(cb);
 			} finally {
 				_setIterAllRows(prev);
 			}
 			return;
 		}
-		this._forEachChunkInner(cb);
+		this._forEachColumnsInner(cb);
 	}
 
-	/** @internal, the body of `forEachChunk`: `Query._forEachChunkInner` with
-	 * the change-tick filter of `forEach` in front of each archetype. */
-	private _forEachChunkInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
+	/** @internal, the body of `forEachColumns`: `Query._forEachColumnsInner` with
+	 * the change-tick filter of `forEachArchetype` in front of each archetype. */
+	private _forEachColumnsInner(cb: (cols: ChunkColumns<Defs>, count: number) => void): void {
 		const q = this._query;
 		const view = new ChunkColumns<Defs>();
 		view.tick = q.changeTick();
@@ -152,7 +152,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const archs = q.nonEmptyArchs();
 		const ids = this._changedIds;
 		if (DEV) {
-			q.assertDenseOnly("changed().forEachChunk");
+			q.assertDenseOnly("changed().forEachColumns");
 			accessCheck.enterOptionalScope(q.terms.optionalTerms);
 			try {
 				for (let i = 0; i < archs.length; i++) {
@@ -187,7 +187,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
-	/** @internal, cold `includeDisabled` wrapper, split out of `forEach`
+	/** @internal, cold `includeDisabled` wrapper, split out of `forEachArchetype`
 	 * so the all-rows flag dance stays out of the inlined hot body. */
 	private _forEachIncludeDisabled(cb: (arch: ArchetypeView<Defs>) => void): void {
 		const prev = _setIterAllRows(true);
@@ -198,8 +198,8 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		}
 	}
 
-	/** @internal, the `includeDisabled` delegate for `forEach`. The
-	 * default path inlines this body directly into `forEach` to dodge a
+	/** @internal, the `includeDisabled` delegate for `forEachArchetype`. The
+	 * default path inlines this body directly into `forEachArchetype` to dodge a
 	 * megamorphic delegate hop. This copy survives only for the rare all-rows
 	 * path, which needs the `_setIterAllRows` `finally` wrap. */
 	private _forEachInner(cb: (arch: ArchetypeView<Defs>) => void): void {
@@ -208,7 +208,7 @@ export class ChangedQuery<Defs extends readonly ComponentDef[]> {
 		const ids = this._changedIds;
 		if (DEV) {
 			// A changed-query loop is still iterating the underlying query, so it must
-			// publish the same optional scope `Query.forEach` does, otherwise
+			// publish the same optional scope `Query.forEachArchetype` does, otherwise
 			// `getOptionalColumnRead` falls into `assertOptionalFetch`'s lenient
 			// no-scope branch and the `.optional(T)` gate never fires here.
 			// Dev-only. Prod runs the bare loop below byte-for-byte.

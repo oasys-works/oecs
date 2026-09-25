@@ -7,12 +7,12 @@
  *      `x[e]`, which is the same instruction as the raw baseline. oecs puts the rows
  *      together in each archetype. Therefore the same read must first resolve the
  *      entity to an archetype and a row. This probe measures the cost of each
- *      documented alternative: `getField`, `refRead`, and a walk with `forEachChunk`
+ *      documented alternative: `getField`, `refRead`, and a walk with `forEachColumns`
  *      outside the loop. Thus the difference has a cause in the layout, and it does
  *      not look like a missing optimization.
  *
  *   2. The cost for each chunk. `iter_frag` puts 9,984 entities in 64 archetypes.
- *      Therefore `forEachChunk` runs 64 times in each pass, with approximately 156 rows
+ *      Therefore `forEachColumns` runs 64 times in each pass, with approximately 156 rows
  *      each time. This probe measures the dispatch alone, with an empty body, for 1
  *      archetype and for 64 archetypes. That cost is the difference between oecs and
  *      a library that gives the caller an array of tuples for each archetype, and
@@ -72,10 +72,10 @@ function time(label, iters, fn) {
 		sink = s;
 	});
 
-	time("forEachChunk column walk (not by id)", 20 * N, () => {
+	time("forEachColumns column walk (not by id)", 20 * N, () => {
 		let s = 0;
 		for (let r = 0; r < 20; r++) {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x } = cols.read(Pos);
 				for (let i = 0; i < count; i++) s += x[i];
 			});
@@ -101,19 +101,19 @@ function time(label, iters, fn) {
 		return { ecs, Pos, q: ecs.query(Pos), rows: per * archetypes };
 	};
 
-	console.log("\nforEachChunk dispatch, empty body (pure per-chunk overhead)");
+	console.log("\nforEachColumns dispatch, empty body (pure per-chunk overhead)");
 	for (const n of [1, 8, 64]) {
 		const { q, rows } = mk(n);
 		time(
 			`${String(n).padStart(2)} archetypes (${Math.floor(rows / n)} rows each)`,
 			300 * rows,
 			() => {
-				for (let r = 0; r < 300; r++) q.forEachChunk((_c, count) => (sink = count));
+				for (let r = 0; r < 300; r++) q.forEachColumns((_c, count) => (sink = count));
 			}
 		);
 	}
 
-	console.log("\nforEachChunk with x[i] += 2 body");
+	console.log("\nforEachColumns with x[i] += 2 body");
 	for (const n of [1, 8, 64]) {
 		const { q, Pos, rows } = mk(n);
 		time(
@@ -121,7 +121,7 @@ function time(label, iters, fn) {
 			300 * rows,
 			() => {
 				for (let r = 0; r < 300; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += 2;
 					});

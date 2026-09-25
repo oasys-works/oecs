@@ -28,7 +28,7 @@ export type ArchetypeID = Brand<number, "archetype_id">;
 
 /**
  * Public, read-only window onto an archetype's rows. This is the only
- * surface `Query.archetypes`, `Query.forEach`, and `ChangedQuery.forEach`
+ * surface `Query.archetypes`, `Query.forEachArchetype`, and `ChangedQuery.forEachArchetype`
  * hand to callers, the concrete `Archetype` (with its structural mutators
  * `swapRemoveRow`, `moveEntityFrom`, `writeFields`, `setEdge`, and the
  * mutable `getColumnMut`) stays internal so query iteration can't bypass the
@@ -47,7 +47,7 @@ export interface ArchetypeView<
 	readonly id: ArchetypeID;
 	/** Number of **enabled** entities, the default-iteration bound. Rows
 	 * `0..entityCount-1` are enabled. Disabled rows (if any) sit contiguously at
-	 * `entityCount..totalCount-1`. `forEach` SoA loops read this, so they skip
+	 * `entityCount..totalCount-1`. `forEachArchetype` SoA loops read this, so they skip
 	 * disabled rows for free. Use `totalCount` to span disabled rows too. */
 	readonly entityCount: number;
 	/** Total live rows, enabled + disabled. Equal to `entityCount` unless

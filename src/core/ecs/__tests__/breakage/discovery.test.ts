@@ -166,7 +166,7 @@ describe("Swap-and-pop multi-column integrity", () => {
 		// Verify via column iteration that data is dense and correct
 		const q = world.query(Pos);
 		const seen = new Map<number, number>(); // x → y
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const cx = arch.getColumnRead(Pos, "x");
 			const cy = arch.getColumnRead(Pos, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -532,7 +532,7 @@ describe("Query iteration edge cases", () => {
 		// Query should have grown live to include both archetypes
 		// (plus potentially intermediate [Pos]-only archetypes from transitions)
 		let total = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			total += arch.entityCount;
 		});
 		expect(total).toBe(2);
@@ -586,7 +586,7 @@ describe("Query iteration edge cases", () => {
 		// rowEntityIds should contain exactly {e0, e2, e3, e4} (in some order)
 		const q = world.query(Pos);
 		const listed = new Set<number>();
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			for (let i = 0; i < arch.entityCount; i++) {
 				listed.add(arch.entityIds[i]);
 			}
@@ -921,7 +921,7 @@ describe("Deferred destroy + structural interaction", () => {
 		// The [Pos, Vel] archetype should only have the survivor, not ghost data from e
 		const q = world.query(Pos, Vel);
 		let totalEntities = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			totalEntities += arch.entityCount;
 			// Verify all entities in the archetype are actually alive
 			for (let i = 0; i < arch.entityCount; i++) {

@@ -512,7 +512,7 @@ export function templatesAndBatch(lib) {
 	// Find the archetype of the bulk-spawned rows, and add a component to the whole
 	// archetype at one time. Each row of it must get the same value.
 	let target = null;
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		if (arch.hasComponent(Mark.id)) return;
 		if (target === null) target = arch.id;
 	});
@@ -520,7 +520,7 @@ export function templatesAndBatch(lib) {
 	if (target === null) bad(what, `no archetype of {Pos, Vel} with no Mark was found`);
 	// Collect the members before the add: the add moves every row to a new archetype.
 	const members = [];
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		if (arch.id !== target) return;
 		const ids = arch.entityIds;
 		for (let i = 0; i < arch.entityCount; i++) members.push(ids[i]);
@@ -531,7 +531,7 @@ export function templatesAndBatch(lib) {
 
 	// And back again. `batchRemoveComponent` takes the archetype that the add made.
 	let withExtra = null;
-	ecs.query(Pos, Vel, Extra).forEach((arch) => {
+	ecs.query(Pos, Vel, Extra).forEachArchetype((arch) => {
 		if (withExtra === null) withExtra = arch.id;
 	});
 	counted();
@@ -550,7 +550,7 @@ export function templatesAndBatch(lib) {
 	// `entityIdAtRow` reads the id out of a row of an archetype. Therefore the two
 	// helpers must agree for each row of each archetype that the model holds. The row
 	// must give the same id again.
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		const ids = arch.entityIds;
 		for (let row = 0; row < arch.entityCount; row++) {
 			eq(what, `entityIdAtRow(${arch.id}, ${row})`, ecs.entityIdAtRow(arch.id, row), ids[row]);
@@ -667,7 +667,7 @@ export function commandReplay(lib) {
 			reads: [Vel],
 			writes: [Pos],
 			fn: () => {
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const { x } = cols.mut(Pos);
 					const { dx } = cols.read(Vel);
 					for (let i = 0; i < count; i++) x[i] += dx[i];
@@ -1184,7 +1184,7 @@ export function relationRemoval(lib) {
 /**
  * `ecs.cursor`, `ecs.cursorRead`, `ctx.ref`, `ctx.refRead` and `tryGetField`.
  *
- * The simulation writes each column through `forEachChunk`, `setField` or
+ * The simulation writes each column through `forEachColumns`, `setField` or
  * `updateField`. Therefore it never reaches this family of calls. `mutants.mjs`
  * found that gap: the first version of the `changed-tick-not-set-by-mut` mutant
  * removed the line for the change tick from `ctx.ref`. Its pattern matched, and the
@@ -1262,7 +1262,7 @@ export function cursorsAndRefs(lib) {
 		writes: [],
 		fn: () => {
 			changedArchetypes = 0;
-			qChanged.forEach(() => changedArchetypes++);
+			qChanged.forEachArchetype(() => changedArchetypes++);
 		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, writer);
@@ -1605,7 +1605,7 @@ export function immediateComponentWrites(lib) {
 	const qPos = ecs.query(Pos);
 	const archOf = (e) => {
 		let id = -1;
-		qPos.forEach((arch) => {
+		qPos.forEachArchetype((arch) => {
 			const ids = arch.entityIds;
 			for (let i = 0; i < arch.entityCount; i++) if (ids[i] === e) id = arch.id;
 		});
@@ -1793,13 +1793,13 @@ export function templateRefusals(lib) {
  * `archetypeCount`, `archetypes` and `excludeWords` answer from the unfiltered
  * dense archetype list. A `where` term narrows that list at the rebuild. Those
  * three would then answer wider than the query matches, so each one refuses a
- * term-carrying query with `QUERY_TERM_DENSE_PATH`. `forEach`, `some`,
+ * term-carrying query with `QUERY_TERM_DENSE_PATH`. `forEachArchetype`, `some`,
  * `entityCount` and `forEachEntity` walk the list the rebuild produced. They
  * answer, and this probe gives each one an exact count.
  *
  * A sparse term is the other half, and the set of readers is different.
  * `andSparse` and `andRelation` leave the dense list alone. They filter each
- * entity instead. So `archetypeCount`, `entityCount`, `forEach`, `forEachChunk`
+ * entity instead. So `archetypeCount`, `entityCount`, `forEachArchetype`, `forEachColumns`
  * and `some` refuse with `SPARSE_QUERY_DENSE_PATH`. `forEachEntity` is the one
  * reader that honours the term. `archetypes` answers, because the dense list is
  * the right list for a sparse term.
@@ -1848,7 +1848,7 @@ export function denseReaderRefusals(lib) {
 	};
 	const archWalk = (query) => {
 		let n = 0;
-		query.forEach(() => n++);
+		query.forEachArchetype(() => n++);
 		return n;
 	};
 	eq(what, "the entities of the base query", q.entityCount, 9);
@@ -1860,7 +1860,7 @@ export function denseReaderRefusals(lib) {
 	// the list that each of them walks.
 	eq(what, "forEachEntity on a where query", walk(qWhere), 5);
 	eq(what, "entityCount on a where query", qWhere.entityCount, 5);
-	eq(what, "forEach on a where query", archWalk(qWhere), 2);
+	eq(what, "forEachArchetype on a where query", archWalk(qWhere), 2);
 	let stopped = 0;
 	counted();
 	if (!qWhere.some(() => ++stopped > 0)) bad(what, `some on a where query found no archetype`);
@@ -1894,7 +1894,7 @@ export function denseReaderRefusals(lib) {
 			what,
 			`${name} on a where query`,
 			ECS_ERROR.QUERY_TERM_DENSE_PATH,
-			[`Query.${name}`, termName, "forEach"],
+			[`Query.${name}`, termName, "forEachArchetype"],
 			read
 		);
 	}
@@ -1907,8 +1907,8 @@ export function denseReaderRefusals(lib) {
 		for (const [name, read] of [
 			["archetypeCount", () => query.archetypeCount],
 			["entityCount", () => query.entityCount],
-			["forEach", () => query.forEach(() => undefined)],
-			["forEachChunk", () => query.forEachChunk(() => undefined)],
+			["forEachArchetype", () => query.forEachArchetype(() => undefined)],
+			["forEachColumns", () => query.forEachColumns(() => undefined)],
 			["some", () => query.some(() => true)]
 		]) {
 			throwsNaming(
@@ -2318,7 +2318,7 @@ export function whereTerms(lib) {
 	};
 	const archWalk = (query) => {
 		let n = 0;
-		query.forEach(() => n++);
+		query.forEachArchetype(() => n++);
 		return n;
 	};
 	eq(what, "the entities of the base query", q.entityCount, 20);

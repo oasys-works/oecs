@@ -56,7 +56,7 @@ function integrateWorld(backing: Backing) {
 			query
 		},
 		fn: (_ctx: SystemContext, dt: number) => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				integrateI32(p.x, p.y, v.vx, v.vy, 0, count, dt);

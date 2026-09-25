@@ -70,7 +70,7 @@ const scenarios = {
 				ecs.registerSystem({
 					writes: [Pos],
 					fn: () => {
-						q.forEachChunk((cols, count) => {
+						q.forEachColumns((cols, count) => {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});

@@ -282,7 +282,7 @@ async function libVariant(profile, wantMemory) {
 		reads: [Mass],
 		writes: [Pos, Vel],
 		fn: () => {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y, z } = cols.mut(Pos);
 				const { vx, vy, vz } = cols.mut(Vel);
 				const { m } = cols.read(Mass);
@@ -313,7 +313,7 @@ async function libVariant(profile, wantMemory) {
 	// because it moved fewer bytes is not a result.
 	let checksum = 0;
 	const readQ = ecs.query(Pos);
-	readQ.forEachChunk((cols, count) => {
+	readQ.forEachColumns((cols, count) => {
 		const { y } = cols.read(Pos);
 		for (let i = 0; i < count; i++) checksum += y[i];
 	});

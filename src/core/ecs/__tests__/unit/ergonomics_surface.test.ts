@@ -182,7 +182,7 @@ describe("Archetype.getColumnsRead", () => {
 		const e = world.spawn();
 		world.addComponent(e, Pos, { x: 3, y: 4 });
 		let checked = false;
-		world.query(Pos).forEach((arch) => {
+		world.query(Pos).forEachArchetype((arch) => {
 			const [xs, ys] = arch.getColumnsRead(Pos, "x", "y");
 			expect(xs).toBe(arch.getColumnRead(Pos, "x"));
 			expect(ys).toBe(arch.getColumnRead(Pos, "y"));

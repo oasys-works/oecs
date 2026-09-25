@@ -83,7 +83,7 @@ export function oecsCases(lib) {
 			iters: 100 * N,
 			fn: () => {
 				for (let r = 0; r < 100; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						const { vx, vy } = cols.read(Vel);
 						for (let i = 0; i < count; i++) {
@@ -95,7 +95,7 @@ export function oecsCases(lib) {
 			},
 			check: () => {
 				let s = 0;
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const { x } = cols.read(Pos);
 					for (let i = 0; i < count; i++) s += x[i];
 				});
@@ -127,7 +127,7 @@ export function oecsCases(lib) {
 			iters: 300 * FRAG_PER * FRAG_ARCH,
 			fn: () => {
 				for (let r = 0; r < 300; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += 2;
 					});
@@ -135,7 +135,7 @@ export function oecsCases(lib) {
 			},
 			check: () => {
 				let s = 0;
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const { x } = cols.read(Pos);
 					for (let i = 0; i < count; i++) s += x[i];
 				});
@@ -623,7 +623,7 @@ export function bitecsCases(lib) {
 // ── harmony-ecs ─────────────────────────────────────────────────────────────
 // Namespaced API. `Schema.makeBinary` is the SoA (TypedArray) storage class and
 // a query iterates `[entities, [columns…]]` per matched archetype, the closest
-// analogue to oecs's `forEachChunk`, and what the README's own example uses.
+// analogue to oecs's `forEachColumns`, and what the README's own example uses.
 export function harmonyCases(lib) {
 	const { World, Schema, Entity, Query, Format } = lib;
 	const V2 = { x: Format.float64, y: Format.float64 };
@@ -789,7 +789,7 @@ export function harmonyCases(lib) {
 }
 
 // ── wolf-ecs ────────────────────────────────────────────────────────────────
-// `defineComponent` returns the SoA storage directly, and `Query.forEach` walks
+// `defineComponent` returns the SoA storage directly, and `Query.forEachArchetype` walks
 // entity ids. Storage is indexed by entity id, so the hot loop is an id-indexed
 // walk, same shape as bitECS.
 export function wolfCases(lib) {

@@ -1,10 +1,10 @@
 /**
- * `Query.forEach` re-entrancy must not corrupt the non-empty buffer.
+ * `Query.forEachArchetype` re-entrancy must not corrupt the non-empty buffer.
  *
- * `forEach`, `count` and `ChangedQuery.forEach` bind the array returned by
+ * `forEachArchetype`, `count` and `ChangedQuery.forEachArchetype` bind the array returned by
  * `Query.nonEmptyArchs()` once and walk it. Before the fix, `nonEmptyArchs()`
  * rebuilt that array *in place* (`dst.length = 0; …push`) whenever the query
- * dirty epoch advanced, so a nested `forEach` and `count` on the *same* Query,
+ * dirty epoch advanced, so a nested `forEachArchetype` and `count` on the *same* Query,
  * after an immediate-mode mutation that crosses a 0↔non-zero entity boundary
  * (which bumps the epoch), truncated the array the outer loop was mid-walking.
  * Result: a still-non-empty archetype gets skipped, or an archetype that was
@@ -38,7 +38,7 @@ function getStore(world: ECS): Store {
 	return (world as unknown as { _store: Store })._store;
 }
 
-describe("Query.forEach re-entrancy", () => {
+describe("Query.forEachArchetype re-entrancy", () => {
 	it("nested count() after a 1→0 crossing does not skip a still-non-empty archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
@@ -67,7 +67,7 @@ describe("Query.forEach re-entrancy", () => {
 		const order: ArchetypeView[] = [];
 		let mutated = false;
 
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			visited.add(arch);
 			order.push(arch);
 			if (!mutated) {
@@ -90,7 +90,7 @@ describe("Query.forEach re-entrancy", () => {
 		for (const a of startNonEmpty) expect(visited.has(a)).toBe(true);
 	});
 
-	it("nested forEach after a 0→non-zero crossing does not spuriously visit a freshly-filled archetype", () => {
+	it("nested forEachArchetype after a 0→non-zero crossing does not spuriously visit a freshly-filled archetype", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent(Position);
 		const A = world.registerComponent(Tag);
@@ -120,18 +120,18 @@ describe("Query.forEach re-entrancy", () => {
 		const order: ArchetypeView[] = [];
 		let mutated = false;
 
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			visited.add(arch);
 			order.push(arch);
 			if (!mutated) {
 				mutated = true;
 				// Fill the empty matching archetype (0→non-zero, bumps the
-				// epoch), then re-enter via a nested forEach on the same query.
+				// epoch), then re-enter via a nested forEachArchetype on the same query.
 				// Single transition (empty arch → [Pos, B]) so no row leaves the
 				// archetype this callback is standing in (see header NOTE).
 				const e2 = world.spawn();
 				world.addComponents(e2, Pos({ x: 2, y: 2 }), B({ v: 0 }));
-				q.forEach(() => {});
+				q.forEachArchetype(() => {});
 			}
 		});
 
@@ -165,7 +165,7 @@ describe("Query.forEach re-entrancy", () => {
 		const q = world.query(Pos);
 		let visits = 0;
 		let destroyed = false;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			visits++;
 			if (!destroyed && arch.entityIds[0] === (e0 as number)) {
 				destroyed = true;

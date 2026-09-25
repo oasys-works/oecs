@@ -43,13 +43,21 @@ export function makeSuite(lib, filter = "") {
 		return lib.ECS.create({ ...options, plugins });
 	};
 	const { ECS, SCHEDULE } = lib;
+	// A build from before 0.7.0 names the iterators `forEach` and `forEachChunk`.
+	// Give the new names the old functions. Both sides then make the same call.
+	for (const cls of [lib.Query, lib.ChangedQuery]) {
+		const proto = cls?.prototype;
+		if (proto === undefined || typeof proto.forEachArchetype === "function") continue;
+		proto.forEachArchetype = proto.forEach;
+		proto.forEachColumns = proto.forEachChunk;
+	}
 	const cases = [];
 	const add = (name, fn, opts) => {
 		if (name.includes(filter)) cases.push({ name, fn, opts });
 	};
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 1. SoA iteration, the core promise. forEachChunk over N entities.
+	// 1. SoA iteration, the core promise. forEachColumns over N entities.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -62,7 +70,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/eachChunk_2comp",
 			() => {
 				for (let r = 0; r < 100; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						const { vx, vy } = cols.read(Vel);
 						for (let i = 0; i < count; i++) {
@@ -97,7 +105,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/forEach_getColumnRead",
 			() => {
 				for (let r = 0; r < 100; r++) {
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						const x = arch.getColumnRead(Pos, "x");
 						const y = arch.getColumnRead(Pos, "y");
 						const n = arch.entityCount;
@@ -132,7 +140,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/frag_64arch",
 			() => {
 				for (let r = 0; r < 300; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += y[i];
 					});
@@ -520,7 +528,7 @@ export function makeSuite(lib, filter = "") {
 				ecs.registerSystem({
 					writes: [Pos],
 					fn: () => {
-						q.forEachChunk((cols, count) => {
+						q.forEachColumns((cols, count) => {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});
@@ -691,6 +699,25 @@ export function makeSuite(lib, filter = "") {
 				},
 				{ iters: 20 * (N / 2) }
 			);
+			// A build from before `forEachIds` runs without the batch rows.
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_1",
+					() => {
+						let s = 0;
+						for (let r = 0; r < 20; r++)
+							q.forEachIds((ids, count) => {
+								let t = 0;
+								for (let i = 0; i < count; i++) {
+									spark.at(ids[i]);
+									t += spark.v;
+								}
+								s += t;
+							});
+						sink = s;
+					},
+					{ iters: 20 * (N / 2) }
+				);
 		}
 		{
 			const Vel = ecs.registerSparseComponent({ vx: "f64", vy: "f64" });
@@ -710,6 +737,22 @@ export function makeSuite(lib, filter = "") {
 				},
 				{ iters: 20 * (N / 2) }
 			);
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_2",
+					() => {
+						for (let r = 0; r < 20; r++)
+							q.forEachIds((ids, count) => {
+								for (let i = 0; i < count; i++) {
+									const e = ids[i];
+									spark.at(e);
+									vel.at(e);
+									spark.v += vel.vx * 0.016;
+								}
+							});
+					},
+					{ iters: 20 * (N / 2) }
+				);
 		}
 		// Membership churn on a sparse tag: a bit flip and no archetype move.
 		const SparkTag = ecs.registerSparseTag();

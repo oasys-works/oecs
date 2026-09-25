@@ -58,7 +58,7 @@ async function variantOecs() {
 		reads: [Kind],
 		writes: [Pos, Health],
 		fn: () => {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { hp } = cols.mut(Health);
 				const { k } = cols.read(Kind);
@@ -98,7 +98,7 @@ async function variantOecs() {
 	// Checksum: read every entity back so the comparison is verified to have
 	// computed something, and the two variants are verified to agree.
 	let sum = 0;
-	q.forEachChunk((cols, count) => {
+	q.forEachColumns((cols, count) => {
 		const { x, y } = cols.mut(Pos);
 		const { hp } = cols.mut(Health);
 		for (let i = 0; i < count; i++) sum = (sum + x[i] + y[i] + hp[i]) % 1e9;

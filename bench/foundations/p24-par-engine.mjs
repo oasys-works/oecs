@@ -127,7 +127,7 @@ async function runOne({ entities, deterministic }) {
 			query: qA
 		},
 		fn: (_ctx, dt) => {
-			qA.forEachChunk((cols, count) => {
+			qA.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				integrate(p.x, p.y, p.z, v.vx, v.vy, v.vz, 0, count, dt);
@@ -157,7 +157,7 @@ async function runOne({ entities, deterministic }) {
 			query: qB
 		},
 		fn: (_ctx, dt) => {
-			qB.forEachChunk((cols, count) => {
+			qB.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.mut(Vel);
 				const t = cols.read(Target);

@@ -44,7 +44,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: () => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const { x } = cols.mut(Pos);
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) {
@@ -69,7 +69,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: () => {
-				q.forEachChunk((cols) => {
+				q.forEachColumns((cols) => {
 					cols.mut(Pos);
 					cols.ticks(Pos);
 				});
@@ -92,7 +92,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: (ctx) => {
-				plain.forEachChunk((cols, n) => {
+				plain.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[0]) t[i] = cols.tick;
 				});
@@ -112,7 +112,7 @@ describe("cols.ticks, the row record", () => {
 			...openAccess([Pos]),
 			fn: (ctx) => {
 				ctx.setField(ids[2], Pos, "x", 7);
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[2]) t[i] = cols.tick;
 				});
@@ -133,7 +133,7 @@ describe("cols.ticks, the row record", () => {
 			...openAccess([Pos]),
 			fn: () => {
 				if (!stampAll) return;
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) t[i] = cols.tick;
 				});
@@ -160,7 +160,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos, Tag]),
 			fn: (ctx) => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[3]) t[i] = cols.tick;
 				});
@@ -180,7 +180,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: (ctx) => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[4]) t[i] = cols.tick;
 				});
@@ -202,7 +202,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: (ctx) => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[5]) t[i] = cols.tick;
 				});
@@ -239,7 +239,7 @@ describe("cols.ticks, the row record", () => {
 		ecs.startup();
 		// A host stamp, then enough host spawns to grow the archetype past its
 		// column capacity, then the drain.
-		q.forEachChunk((cols, n) => {
+		q.forEachColumns((cols, n) => {
 			const t = cols.ticks(Pos);
 			for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === first) t[i] = cols.tick;
 		});
@@ -257,7 +257,7 @@ describe("cols.ticks, the row record", () => {
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
-		expect(() => q.forEachChunk((cols) => void cols.ticks(Vel))).toThrow(
+		expect(() => q.forEachColumns((cols) => void cols.ticks(Vel))).toThrow(
 			expect.objectContaining({ category: ECS_ERROR.ROW_TICKS_NOT_TRACKED })
 		);
 	});
@@ -270,7 +270,7 @@ describe("cols.ticks, the row record", () => {
 			...openAccess([Pos]),
 			fn: () => {
 				if (!stamp) return;
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[2]) t[i] = cols.tick;
 				});
@@ -284,7 +284,7 @@ describe("cols.ticks, the row record", () => {
 		fired.length = 0;
 		stamp = true;
 		// A raw stamp lands, then the restore replaces the rows under it.
-		q.forEachChunk((cols, n) => {
+		q.forEachColumns((cols, n) => {
 			const t = cols.ticks(Pos);
 			for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === ids[2]) t[i] = cols.tick;
 		});
@@ -301,7 +301,7 @@ describe("cols.ticks, the row record", () => {
 		const sys = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: () => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) t[i] = cols.tick;
 				});
@@ -350,7 +350,7 @@ describe("the tick plane of a freed slot", () => {
 		ecs.startup();
 		const q = ecs.query(Pos);
 		const last = ids[3];
-		q.forEachChunk((cols, n) => {
+		q.forEachColumns((cols, n) => {
 			const t = cols.ticks(Pos);
 			for (let i = 0; i < n; i++) if (cols.arch.entityIds[i] === last) t[i] = cols.tick;
 		});
@@ -362,7 +362,7 @@ describe("the tick plane of a freed slot", () => {
 	});
 });
 
-describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChunk", () => {
+describe("the row grain as a pull: trackRows, ticksRead and changed().forEachColumns", () => {
 	it("reports the rows written since the reader's previous run, once each", () => {
 		const ecs = ECS.create({
 			deterministic: true,
@@ -391,7 +391,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 			...openAccess([Pos]),
 			fn: () => {
 				const rows: number[] = [];
-				moved.forEachChunk((cols, n) => {
+				moved.forEachColumns((cols, n) => {
 					const t = cols.ticksRead(Pos);
 					const eids = cols.arch.entityIds;
 					for (let i = 0; i < n; i++) if (t[i] > cols.since) rows.push(getEntityIndex(eids[i]));
@@ -421,7 +421,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 		const writer = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: () => {
-				q.forEachChunk((cols, n) => {
+				q.forEachColumns((cols, n) => {
 					const { x } = cols.mut(Pos);
 					const t = cols.ticks(Pos);
 					for (let i = 0; i < n; i++) {
@@ -437,7 +437,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 		const reader = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn: () => {
-				q.changed(Pos).forEachChunk((cols, n) => {
+				q.changed(Pos).forEachColumns((cols, n) => {
 					const t = cols.ticksRead(Pos);
 					for (let i = 0; i < n; i++)
 						if (t[i] > cols.since) seen.push(getEntityIndex(cols.arch.entityIds[i]));
@@ -451,8 +451,8 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 	});
 
 	it("hands a plain chunk loop the change tick of the system's own previous run", () => {
-		// The two cases above read `cols.since` through `changed().forEachChunk`,
-		// which is a different method on a different class. A plain `forEachChunk`
+		// The two cases above read `cols.since` through `changed().forEachColumns`,
+		// which is a different method on a different class. A plain `forEachColumns`
 		// fills the same field, and this pins it.
 		//
 		// The expected value comes from the schedule, not from a run. Before each
@@ -471,7 +471,7 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 			ecs.registerSystem({
 				...openAccess([Pos]),
 				fn: () => {
-					q.forEachChunk((cols) => {
+					q.forEachColumns((cols) => {
 						ticks.push(cols.tick);
 						sinces.push(cols.since);
 					});
@@ -497,12 +497,12 @@ describe("the row grain as a pull: trackRows, ticksRead and changed().forEachChu
 		const Vel = ecs.registerComponent(["v"] as const, "i32");
 		ecs.spawn(ecs.template(Vel({ v: 0 })));
 		const q = ecs.query(Vel);
-		expect(() => q.forEachChunk((cols) => void cols.ticksRead(Vel))).toThrow(
+		expect(() => q.forEachColumns((cols) => void cols.ticksRead(Vel))).toThrow(
 			expect.objectContaining({ category: ECS_ERROR.ROW_TICKS_NOT_TRACKED })
 		);
 		ecs.trackRows(Vel);
 		ecs.trackRows(Vel);
-		expect(() => q.forEachChunk((cols) => void cols.ticksRead(Vel))).not.toThrow();
+		expect(() => q.forEachColumns((cols) => void cols.ticksRead(Vel))).not.toThrow();
 	});
 
 	it("accepts a sparse component, and rejects a malformed handle", () => {

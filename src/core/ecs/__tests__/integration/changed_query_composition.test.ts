@@ -1,7 +1,7 @@
 // ChangedQuery is composable.
 //
 // `q.changed(...)` used to return a terminal `ChangedQuery` exposing only
-// `forEach`, so refining after it (`q.changed(Pos).not(Dead)`) was
+// `forEachArchetype`, so refining after it (`q.changed(Pos).not(Dead)`) was
 // impossible. You had to remember to refine before
 // (`q.not(Dead).changed(Pos)`). ChangedQuery now mirrors the dense query
 // verbs `and`, `not`, `or` and `optional`. Each refines the underlying
@@ -54,10 +54,10 @@ describe("ChangedQuery composition", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos, Vel, Dead]),
 			fn() {
-				dq.changed(Pos).forEach(() => base++);
+				dq.changed(Pos).forEachArchetype(() => base++);
 				dq.changed(Pos)
 					.not(Dead)
-					.forEach(() => filtered++);
+					.forEachArchetype(() => filtered++);
 			}
 		});
 
@@ -92,10 +92,10 @@ describe("ChangedQuery composition", () => {
 			fn() {
 				dq.changed(Pos)
 					.not(Dead)
-					.forEach(() => after++); // refine AFTER changed()
+					.forEachArchetype(() => after++); // refine AFTER changed()
 				dq.not(Dead)
 					.changed(Pos)
-					.forEach(() => before++); // refine BEFORE changed()
+					.forEachArchetype(() => before++); // refine BEFORE changed()
 			}
 		});
 
@@ -125,10 +125,10 @@ describe("ChangedQuery composition", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn() {
-				dq.changed(Pos).forEach(() => base++);
+				dq.changed(Pos).forEachArchetype(() => base++);
 				dq.changed(Pos)
 					.and(Vel)
-					.forEach(() => narrowed++);
+					.forEachArchetype(() => narrowed++);
 			}
 		});
 
@@ -162,10 +162,10 @@ describe("ChangedQuery composition", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos, Vel, Tag]),
 			fn() {
-				dq.changed(Pos).forEach(() => base++);
+				dq.changed(Pos).forEachArchetype(() => base++);
 				dq.changed(Pos)
 					.or(Vel, Tag)
-					.forEach(() => any++);
+					.forEachArchetype(() => any++);
 			}
 		});
 
@@ -194,10 +194,10 @@ describe("ChangedQuery composition", () => {
 			fn() {
 				// `getOptionalColumnRead` throws in __DEV__ unless `.optional(Vel)`
 				// declared it, so reaching it without throwing proves the optional
-				// scope carried through the composed ChangedQuery's forEach.
+				// scope carried through the composed ChangedQuery's forEachArchetype.
 				dq.changed(Pos)
 					.optional(Vel)
-					.forEach((arch: ArchetypeView) => {
+					.forEachArchetype((arch: ArchetypeView) => {
 						const vx = arch.getOptionalColumnRead(Vel, "vx");
 						if (vx !== undefined) sawVel += vx[0];
 					});

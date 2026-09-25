@@ -707,7 +707,7 @@ function coversSet(where, fail, what, got, want) {
  *  5. `changed(Age)` and the `onSet` observer on `Age`, exact, in both directions.
  *     `ageTick` asks for the mutable accessor of each archetype that its query gives,
  *     and that call sets the tick even when no write follows. `changeRead` lists the
- *     same archetypes through `forEach`. Therefore this one has an exact expected
+ *     same archetypes through `forEachArchetype`. Therefore this one has an exact expected
  *     value, and it is the sharp check on the path with the granularity of an
  *     archetype.
  *
@@ -875,7 +875,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	// ── 5. changed(Age): exact, in both directions ──────────────────────────
 	// `ageTick` asks for the mutable accessor of each archetype that its default query
 	// gives, and that call sets the tick even when no write follows. `changeRead` lists
-	// the same archetypes through `forEach` on the same query. Therefore this is an
+	// the same archetypes through `forEachArchetype` on the same query. Therefore this is an
 	// exact expected value, and it is the sharp check on the path with the granularity
 	// of an archetype.
 	sameSet(
@@ -990,7 +990,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
  *  1. `isDisabled` for each live agent.
  *  2. A default query gives exactly the enabled agents. This is the primary
  *     assertion about the partition, and `compare()` adds the strongest one: it
- *     compares `Age.ticks` exactly, and a disabled row that `forEachChunk` still visits
+ *     compares `Age.ticks` exactly, and a disabled row that `forEachColumns` still visits
  *     therefore gives a divergence at the next tick.
  *  3. `includeDisabled()` gives every agent.
  *  4. The set that `onDisable` and `onEnable` maintain alone.
@@ -1128,7 +1128,7 @@ export function sparseCheck(where, ref, world, fail) {
  *     `undefined` in the idle tail. The idle tail is what makes the second half
  *     reachable: a query that always gave its first row would pass the first half.
  *  5. `some`. It must stop at the archetype that the predicate accepts, and
- *     it must report that it stopped. `forEach` over the same query gives the count
+ *     it must report that it stopped. `forEachArchetype` over the same query gives the count
  *     of the archetypes, so this needs no model of the archetype graph.
  *  6. `ctx.getResource` and `ctx.hasResource`, the driver picks the phase number,
  *     so the driver knows the value. `surface.mjs` reads the host facade instead.
@@ -1170,7 +1170,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		fail(
 			where,
 			`query.some visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
-				`(forEach gives ${world.untilArchTotal})`
+				`(forEachArchetype gives ${world.untilArchTotal})`
 		);
 	}
 	const wantStopped = world.untilArchTotal >= 2;
@@ -1178,7 +1178,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		fail(
 			where,
 			`query.some reported ${world.untilStopped}, want ${wantStopped} ` +
-				`(forEach gives ${world.untilArchTotal} archetypes)`
+				`(forEachArchetype gives ${world.untilArchTotal} archetypes)`
 		);
 	}
 
@@ -1298,7 +1298,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
  *  2. the default query, the touched agents that are not disabled. A chunk loop
  *     over a default query stops at the enabled count. So this arm also reads the
  *     partition of the rows.
- *  3. `changed(Mix).forEachChunk`, the same rows behind the filter on the
+ *  3. `changed(Mix).forEachColumns`, the same rows behind the filter on the
  *     archetype. The filter is conservative, and the row tick narrows it. So the
  *     result must be equal to the first arm.
  */
@@ -1328,7 +1328,7 @@ export function rowGrainCheck(where, ref, world, fail, touched) {
 	sameSet(
 		where,
 		fail,
-		"changed(Mix).forEachChunk: the rows above cols.since",
+		"changed(Mix).forEachColumns: the rows above cols.since",
 		world.rowChangedFiltered,
 		wantAll
 	);

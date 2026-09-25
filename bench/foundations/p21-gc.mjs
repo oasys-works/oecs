@@ -51,7 +51,7 @@ async function workloadOecs() {
 			reads: [Vel],
 			writes: [Pos],
 			fn: () => {
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const { x, y } = cols.mut(Pos);
 					const { vx, vy } = cols.read(Vel);
 					for (let i = 0; i < count; i++) {

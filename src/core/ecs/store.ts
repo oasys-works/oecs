@@ -44,6 +44,7 @@ import {
 	MAX_ENTITY_ID as MAX_ENTITY_ID_IMPORT,
 	RETIRED_GENERATION as RETIRED_GENERATION_IMPORT,
 	type EntityID,
+	type ReadonlyEntityIDArray,
 	entityNotAliveError
 } from "./entity";
 import { type AccessorColumns, type CursorBinder, type SparseCursorCheck } from "./ref";
@@ -107,7 +108,11 @@ import type { HostState, SnapshotHooks, SnapshotHost } from "./snapshot";
 import { ArchetypeGraph } from "./archetype_graph";
 import { adoptRestoredBacking, reconstructHostRows } from "./snapshot_mount";
 import { accessCheck } from "./access_check";
-import { UNASSIGNED, EMPTY_VALUES, DEFAULT_COLUMN_CAPACITY } from "./utils/constants";
+import {
+	UNASSIGNED as UNASSIGNED_IMPORT,
+	EMPTY_VALUES,
+	DEFAULT_COLUMN_CAPACITY
+} from "./utils/constants";
 import {
 	ACTION_RING_DEFAULT_CAPACITY_SLOTS,
 	createEntityIndexViews,
@@ -139,21 +144,27 @@ import {
 import type { ECSMemoryCapContext } from "./ecs_memory";
 import { DEV } from "../../dev_flag";
 
-// Local copies of the entity-id constants. The by-id paths (`_liveIndex`,
-// `resolveEntity`, the cursor binders) compare and mask with them on every
-// call, and an imported binding is not a constant to the optimizer: the
-// package build puts this file and `entity.ts` in different chunks, and a
-// value read through the import cell is a load, not an immediate. See the note
-// on the accessor state in ref.ts for the measurement.
+// Local copies of the entity-id constants and `UNASSIGNED`. The by-id paths
+// (`_liveIndex`, `resolveEntity`, the cursor binders) and the sparse drivers
+// compare and mask with them for each entity, and an imported binding is not a
+// constant to the optimizer: the package build puts this file and the modules
+// of these constants in different chunks, and a value read through the import
+// cell is a load, not an immediate. For the same reason the sparse drivers
+// compose an id inline and do not call `createEntityId`. See the note on the
+// accessor state in ref.ts for the measurement.
 const INDEX_BITS = INDEX_BITS_IMPORT;
 const INDEX_MASK = INDEX_MASK_IMPORT;
 const MAX_ENTITY_ID = MAX_ENTITY_ID_IMPORT;
 const RETIRED_GENERATION = RETIRED_GENERATION_IMPORT;
+const UNASSIGNED = UNASSIGNED_IMPORT;
 
 /** Sentinel in a `Template.overrideIndex`: the field name is owned by more
  * than one component, so a flat per-instance override cannot disambiguate
  * which column it means. Overriding such a field throws in `DEV`. */
 const TEMPLATE_OVERRIDE_AMBIGUOUS = -1;
+
+/** The ids in one run of `forEachSparseIds`. The buffer stays in L1. */
+const SPARSE_BATCH = 1024;
 
 /** Scratch buffer for folding an f64 sparse field into `stateHash` as two
  * little-endian u32 words. One `Store` runs on one thread, so calls reuse it.
@@ -633,7 +644,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// A component with row ticks (`trackRows`) has a tick column in every
 	// archetype that holds it (`Archetype.rowTicks`), and every write path
 	// stamps the row. A reader compares a row's tick with its own last run
-	// (`cols.ticksRead`, `ChangedQuery.forEachChunk`). An entity-level onSet
+	// (`cols.ticksRead`, `ChangedQuery.forEachColumns`). An entity-level onSet
 	// adds the dirty list: a by-id record (`setField`, `ref`, a cursor,
 	// `markChanged`) also pushes the entity when the row's previous stamp lay
 	// at or below the last drain, so a row joins the list one time per drain
@@ -1874,7 +1885,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * enabled-count move it can make is 1→0, when the last enabled row leaves an
 	 * archetype that keeps disabled rows. That leaves the archetype in a default
 	 * query's non-empty list as a harmless stale *inclusion*. `count` and
-	 * `forEach` bound on `enabledCount` (now 0), so they iterate it zero times.
+	 * `forEachArchetype` bound on `enabledCount` (now 0), so they iterate it zero times.
 	 * Only a **grow** into
 	 * an all-disabled archetype can stale-*exclude* a live row, so the enabled
 	 * crossing lives in `_onArchGrow`, off this path.
@@ -1942,7 +1953,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// default-iteration bound (`Archetype.entityCount` = `enabled_count`) skips
 	// it. No archetype transition, no data loss. Host-side calls are immediate.
 	// The system-side mirrors (`disableEntityDeferred`, `enableEntityDeferred`)
-	// buffer instead, because the row swap would corrupt an in-flight `forEach`
+	// buffer instead, because the row swap would corrupt an in-flight `forEachArchetype`
 	// over that archetype.
 
 	/** Immediately disable an entity (idempotent). The entity must hold at least
@@ -2048,7 +2059,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	}
 
 	/** Buffer an enable and disable toggle for the phase flush. The row swap a
-	 * toggle performs would corrupt a `forEach` over that archetype if applied
+	 * toggle performs would corrupt a `forEachArchetype` over that archetype if applied
 	 * mid-system, so it is deferred like an add and a remove. */
 	public disableEntityDeferred(id: EntityID): void {
 		if (DEV && !this.isAlive(id)) throw entityNotAliveError("disableEntityDeferred", id);
@@ -3241,7 +3252,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 *    store.
 	 *  - **neither** → walk `denseArchetypes`' entity ids (dense-only fallback).
 	 *
-	 * Only reached via `Query.forEachEntity`. Dense `forEach` never consults
+	 * Only reached via `Query.forEachEntity`. Dense `forEachArchetype` never consults
 	 * the sparse stores, so dense-only queries are unaffected. */
 	public forEachSparseMatch(
 		include: BitSet,
@@ -3357,7 +3368,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 					const row = entRow[idx];
 					if (row !== UNASSIGNED && row >= memoEnabled) continue;
 				}
-				cb(createEntityId(idx, gens[idx]));
+				cb(((gens[idx] << INDEX_BITS) | idx) as EntityID);
 			}
 			return;
 		}
@@ -3429,8 +3440,235 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				const row = entRow[idx];
 				if (row !== UNASSIGNED && row >= memoEnabled) continue;
 			}
-			cb(createEntityId(idx, gens[idx]));
+			cb(((gens[idx] << INDEX_BITS) | idx) as EntityID);
 		}
+	}
+
+	/** The id buffers of `forEachSparseIds`, one for each nesting depth. A
+	 * nested walk must not refill the buffer its caller still reads. */
+	private readonly _batchBufs: Uint32Array[] = [];
+	private _batchDepth = 0;
+	/** The second result of `_fillSparseRun`. */
+	private _runNext = 0;
+
+	/** `forEachSparseMatch` in runs. The same entities in the same order, given
+	 * to `cb` as a buffer of ids and a count. One call for each run, not for
+	 * each entity. A call for each entity through a shared site does not inline.
+	 *
+	 * A run is a copy. An entity that `cb` removes still shows in the rest of
+	 * its run. A dense-only query with no sparse exclude gives each
+	 * archetype's own id column, with no copy. */
+	public forEachSparseIds(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		denseArchetypes: readonly Archetype[],
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
+	): void {
+		const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
+		const stores = this._sparseStores;
+		if (DEV) {
+			for (let i = 0; i < sparseIncludes.length; i++) {
+				if (stores[sparseIncludes[i] as number] === undefined)
+					throw new ECSError(
+						ECS_ERROR.COMPONENT_NOT_REGISTERED,
+						`sparse component ${sparseIncludes[i]} is not registered`
+					);
+			}
+			for (let i = 0; i < sparseExcludes.length; i++) {
+				if (stores[sparseExcludes[i] as number] === undefined)
+					throw new ECSError(
+						ECS_ERROR.COMPONENT_NOT_REGISTERED,
+						`sparse component ${sparseExcludes[i]} is not registered`
+					);
+			}
+		}
+
+		if (sparseIncludes.length === 0 && sparseExcludes.length === 0) {
+			for (let a = 0; a < denseArchetypes.length; a++) {
+				const arch = denseArchetypes[a];
+				const n = includesDisabled ? arch.totalCount : arch.enabledCount;
+				if (n > 0) cb(arch.entityIds, n);
+			}
+			return;
+		}
+
+		const depth = this._batchDepth;
+		let buf = this._batchBufs[depth];
+		if (buf === undefined) {
+			buf = new Uint32Array(SPARSE_BATCH);
+			this._batchBufs[depth] = buf;
+		}
+		this._batchDepth = depth + 1;
+		try {
+			if (sparseIncludes.length > 0) {
+				// The driver rule of `forEachSparseMatch`: the first smallest store.
+				let d = 0;
+				for (let i = 1; i < sparseIncludes.length; i++) {
+					if (stores[sparseIncludes[i] as number].size < stores[sparseIncludes[d] as number].size)
+						d = i;
+				}
+				const driver = stores[sparseIncludes[d] as number];
+				const pair = sparseIncludes.length <= 2 && sparseExcludes.length === 0;
+				const other =
+					pair && sparseIncludes.length === 2 ? stores[sparseIncludes[1 - d] as number] : null;
+				this._fillSparseBatch(
+					driver,
+					other,
+					pair ? null : terms,
+					include,
+					exclude,
+					anyOf,
+					includesDisabled,
+					buf,
+					cb
+				);
+			} else {
+				this._fillExcludeBatch(sparseExcludes, denseArchetypes, includesDisabled, buf, cb);
+			}
+		} finally {
+			this._batchDepth = depth;
+		}
+	}
+
+	/** The require path of `forEachSparseIds`. `other` is the second require
+	 * of a pair. `rest` is set for the other shapes, and the slow term check
+	 * then runs for each entity. */
+	private _fillSparseBatch(
+		driver: SparseComponentStore,
+		other: SparseComponentStore | null,
+		rest: QueryTerms | null,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		includesDisabled: boolean,
+		buf: Uint32Array,
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
+	): void {
+		let i = 0;
+		for (;;) {
+			const m = this._fillSparseRun(
+				driver,
+				other,
+				rest,
+				include,
+				exclude,
+				anyOf,
+				includesDisabled,
+				buf,
+				i
+			);
+			i = this._runNext;
+			if (m === 0) return;
+			cb(unsafeCast<ReadonlyEntityIDArray>(buf), m);
+		}
+	}
+
+	/** Fill `buf` from member position `start`. Gives the count, and puts the
+	 * next position in `_runNext`. The loop makes no call, so V8 keeps the
+	 * store fields in registers. */
+	private _fillSparseRun(
+		driver: SparseComponentStore,
+		other: SparseComponentStore | null,
+		rest: QueryTerms | null,
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		includesDisabled: boolean,
+		buf: Uint32Array,
+		start: number
+	): number {
+		const gens = this._entityAllocator.generations;
+		const entArch = this._entityArchetypes;
+		const entRow = this._entityRows;
+		const archetypes = this._archGraph.archetypes;
+		const cap = buf.length;
+		const n = driver.size;
+		const members = driver.members;
+		const otherPos = other !== null ? other.positions : null;
+		let m = 0;
+		let memoArch = -2;
+		let memoOk = false;
+		let memoEnabled = 0;
+		let i = start;
+		for (; i < n && m < cap; i++) {
+			const idx = members[i];
+			// An index past the capacity reads `undefined`, and the compare is false.
+			if (otherPos !== null && !(otherPos[idx] >= 0)) continue;
+			if (rest !== null && !this._sparseTermsHold(rest, driver, idx)) continue;
+			const archId = entArch[idx];
+			if (archId === UNASSIGNED) continue;
+			if (archId !== memoArch) {
+				const arch = archetypes[archId];
+				const mask = arch.mask;
+				memoArch = archId;
+				memoOk =
+					mask.contains(include) &&
+					(exclude === null || !mask.overlaps(exclude)) &&
+					(anyOf === null || mask.overlaps(anyOf));
+				memoEnabled = arch.enabledCount;
+			}
+			if (!memoOk) continue;
+			if (!includesDisabled) {
+				const row = entRow[idx];
+				if (row !== UNASSIGNED && row >= memoEnabled) continue;
+			}
+			buf[m++] = (gens[idx] << INDEX_BITS) | idx;
+		}
+		this._runNext = i;
+		return m;
+	}
+
+	/** Every sparse term but the driver holds for `idx`. */
+	private _sparseTermsHold(terms: QueryTerms, driver: SparseComponentStore, idx: number): boolean {
+		const stores = this._sparseStores;
+		const inc = terms.sparseIncludes;
+		for (let j = 0; j < inc.length; j++) {
+			const s = stores[inc[j] as number];
+			if (s !== driver && !s.has(idx)) return false;
+		}
+		const exc = terms.sparseExcludes;
+		for (let j = 0; j < exc.length; j++) {
+			if (stores[exc[j] as number].has(idx)) return false;
+		}
+		return true;
+	}
+
+	/** The sparse-exclude-only path of `forEachSparseIds`. */
+	private _fillExcludeBatch(
+		sparseExcludes: readonly SparseComponentID[],
+		denseArchetypes: readonly Archetype[],
+		includesDisabled: boolean,
+		buf: Uint32Array,
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
+	): void {
+		const stores = this._sparseStores;
+		const cap = buf.length;
+		let m = 0;
+		for (let a = 0; a < denseArchetypes.length; a++) {
+			const arch = denseArchetypes[a];
+			const eids = arch.entityIds;
+			const n = includesDisabled ? arch.totalCount : arch.enabledCount;
+			for (let r = 0; r < n; r++) {
+				const id = eids[r];
+				const idx = getEntityIndex(id);
+				let excluded = false;
+				for (let j = 0; j < sparseExcludes.length; j++) {
+					if (stores[sparseExcludes[j] as number].has(idx)) {
+						excluded = true;
+						break;
+					}
+				}
+				if (excluded) continue;
+				buf[m++] = id;
+				if (m === cap) {
+					cb(unsafeCast<ReadonlyEntityIDArray>(buf), m);
+					m = 0;
+				}
+			}
+		}
+		if (m > 0) cb(unsafeCast<ReadonlyEntityIDArray>(buf), m);
 	}
 
 	/** Fourth query-match path: the matched set in hierarchy depth order

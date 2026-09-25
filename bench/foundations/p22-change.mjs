@@ -143,7 +143,7 @@ async function denseWrite(kind) {
 		observer,
 		body: (ctx) => {
 			const tick = ctx.ecsTick;
-			w.q.forEachChunk((cols, count) => {
+			w.q.forEachColumns((cols, count) => {
 				const { x } = cols.mut(w.Pos);
 				const eids = cols.arch.entityIds;
 				if (kind === "raw") {
@@ -264,7 +264,7 @@ async function drain(kind, K) {
 		const w = await build({
 			observer: true,
 			body: () => {
-				w.q.forEachChunk((cols, count) => {
+				w.q.forEachColumns((cols, count) => {
 					const t = cols.ticks(w.Pos);
 					const now = cols.tick;
 					for (let i = 0; i < count; i += stride) t[i] = now;
@@ -467,7 +467,7 @@ async function facts() {
 			fn: (ctx) => {
 				if (mode === "ref") ctx.ref(Pos, ids[0]).x = 5;
 				else if (mode === "cursor") ctx.cursor(Pos).at(ids[1]).x = 6;
-				else if (mode === "mut, no write") q.forEachChunk((cols) => void cols.mut(Pos));
+				else if (mode === "mut, no write") q.forEachColumns((cols) => void cols.mut(Pos));
 				else if (mode === "setField") ctx.setField(ids[2], Pos, "x", 7);
 				else if (mode === "markChanged") ctx.markChanged(ids[3], Pos);
 			}
@@ -477,7 +477,7 @@ async function facts() {
 			writes: [],
 			fn: () => {
 				seen = 0;
-				changed.forEach(() => seen++);
+				changed.forEachArchetype(() => seen++);
 			}
 		});
 		ecs.addSystems(SCHEDULE.UPDATE, writer, reader);
@@ -517,7 +517,7 @@ async function facts() {
 			writes: [],
 			fn: () => {
 				let n = 0;
-				changed.forEach(() => n++);
+				changed.forEachArchetype(() => n++);
 				if (n) seen.push(tick);
 			}
 		});

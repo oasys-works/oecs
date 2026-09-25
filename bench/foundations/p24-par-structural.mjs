@@ -64,7 +64,7 @@ async function makeWorld({ allocator, columnCapacity, entities }) {
 	for (let i = 0; i < entities; i++) ids.push(ecs.spawn(T));
 	// Identity in `Pos.z`, marker in `Pos.x`.
 	let n = 0;
-	ecs.query(Pos).forEachChunk((cols, count) => {
+	ecs.query(Pos).forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		for (let i = 0; i < count; i++, n++) {
 			p.x[i] = 100;
@@ -80,7 +80,7 @@ function hostTruth(ecs, Pos) {
 	let rows = 0;
 	let sumX = 0;
 	const ids = [];
-	ecs.query(Pos).forEachChunk((cols, count) => {
+	ecs.query(Pos).forEachColumns((cols, count) => {
 		const p = cols.read(Pos);
 		for (let i = 0; i < count; i++) {
 			rows++;
@@ -117,7 +117,7 @@ async function growStage(backingName, allocator) {
 	ecs.publishRowCounts();
 	// A marker no cached view can predict, written through the engine.
 	let n = 0;
-	ecs.query(Pos).forEachChunk((cols, count) => {
+	ecs.query(Pos).forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		for (let i = 0; i < count; i++, n++) {
 			p.x[i] = 777;
