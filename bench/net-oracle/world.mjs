@@ -56,6 +56,7 @@ import { ROOT, MAX_PORTS, NO_SLOT, PORTS, TYPE_NAME, applyRewrite, reduces } fro
 import { mirrorF32Of, mirrorOf, mixDefaults, mixSchema } from "./mirror.mjs";
 import { fingerprintEcs } from "./fingerprint.mjs";
 import { ageStepI32 } from "./kernels.mjs";
+import { aos } from "./aos.mjs";
 
 /** The module that a `js` kernel names. The worker loads it by URL, and the
  * system body imports it, so one source serves both paths. */
@@ -176,7 +177,10 @@ export class EcsNet {
 		// never attaches a pool carries neither the pool nor the plan builder. The
 		// other arms keep the shape that the package ships.
 		this.parallel = parallel;
-		const plugins = [snapshots(), events(), relations(), observers()];
+		// `aos` is a plugin written outside the package, from the root exports alone
+		// (`aos.mjs`). It keeps two array-of-structs stores that the storage seam
+		// takes into the destroy purge, the digest and the snapshot.
+		const plugins = [snapshots(), events(), relations(), observers(), aos(lib)()];
 		if (parallel) plugins.push(workers());
 		this.ecs = ECS.create({ ...options, plugins });
 		const ecs = this.ecs;
@@ -250,6 +254,16 @@ export class EcsNet {
 		// component in `sparseWrites`, which it does.
 		this.watchWrite = ecs.sparseCursor(this.Watch);
 		this.watchRead = ecs.sparseCursorRead(this.Watch);
+		// Two stores a plugin owns, array-of-structs, beside the core's own. `Kin`
+		// holds one record for each agent: its type and `Touch.seq`. `Pair` holds a
+		// record for each agent in an active pair, the rule that `Watch` follows,
+		// with `Touch.seq`. A rewrite destroys exactly the agents of an active pair,
+		// so the destroy purge runs on `Pair` members at each rewrite. The reference
+		// holds the type, the counter and the pairs, so both stores have an exact
+		// model and the harness adds no state for them.
+		this.kin = ecs.aos.define("net.Kin", ["type", "seq"]);
+		this.pair = ecs.aos.define("net.Pair", ["seq"]);
+		this.aosJoins = 0;
 		// The row grain of the change detection, on a component that carries no
 		// `onSet` observer. `Touch` and `Seen` get a tick plane from their
 		// observers, so neither one can show what `trackRows` does. `Mix` has no
@@ -866,6 +880,44 @@ export class EcsNet {
 						this.watchStamped.add(e);
 					}
 				}
+				// `_touched` stays for `net-aos`, which runs next and clears it.
+			}
+		});
+
+		// The two plugin stores, maintained for every agent a rewrite touched. It
+		// runs after `redexMaintain`, so `Watch` already holds this tick's pairs,
+		// and `Pair` follows it by the same rule. The declaration names the two
+		// access domains in `domainWrites` alone, and the body reads `Kin` too, so
+		// the rule that a write implies a read runs at each tick. The adds and the
+		// removes are the plugin's own and immediate. The destroyed agents left
+		// through the purge, inside the rewrite's flush.
+		const kin = this.kin;
+		const pair = this.pair;
+		const aosMaintain = ecs.registerSystem({
+			name: "net-aos",
+			reads: [this.Touch],
+			writes: [],
+			domainWrites: [kin.domain, pair.domain],
+			fn: (ctx) => {
+				for (const e of this._touched) {
+					if (!ctx.isAlive(e)) continue;
+					const seq = ctx.getField(e, this.Touch, "seq");
+					if (!kin.has(e)) {
+						kin.add(e, { type: this._typeOfCtx(ctx, e), seq });
+						this.aosJoins++;
+					} else if (kin.get(e, "seq") !== seq) {
+						kin.set(e, "seq", seq);
+					}
+					if (ctx.hasSparse(e, this.Watch)) {
+						if (pair.has(e)) pair.set(e, "seq", seq);
+						else pair.add(e, { seq });
+					} else if (pair.has(e)) {
+						// Unreached in a net: an agent leaves an active pair only when a
+						// rewrite consumes the pair, and the rewrite destroys it, so the
+						// purge takes the record first. The branch keeps the rule whole.
+						pair.remove(e);
+					}
+				}
 				this._touched.clear();
 			}
 		});
@@ -1389,7 +1441,8 @@ export class EcsNet {
 			SCHEDULE.UPDATE,
 			{ system: freshPromote, ordering: { before: [rewrite] } },
 			rewrite,
-			{ system: redexMaintain, ordering: { after: [rewrite] } }
+			{ system: redexMaintain, ordering: { after: [rewrite] } },
+			{ system: aosMaintain, ordering: { after: [redexMaintain] } }
 		);
 		ecs.addSystems(
 			SCHEDULE.POST_UPDATE,

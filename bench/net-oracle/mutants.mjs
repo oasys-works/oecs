@@ -531,7 +531,7 @@ const MUTANTS = [
 		id: "restore-accepts-any-version",
 		what: "a restore of a world does not check the version of the snapshot",
 		find: `  const version = view.getUint32(4, true);
-  if (version !== ECS_SNAPSHOT_VERSION) {`,
+  if (version !== ECS_SNAPSHOT_VERSION && version !== LEGACY_ECS_SNAPSHOT_VERSION) {`,
 		to: `  const version = view.getUint32(4, true);
   if (false) {`
 	},
@@ -996,6 +996,176 @@ const MUTANTS = [
 		what: "the last worker stops one row short of the tail",
 		find: `      const end = Math.floor(rows * (index + 1) / count);`,
 		to: `      const end = index === count - 1 ? Math.max(0, rows - 1) : Math.floor(rows * (index + 1) / count);`
+	},
+	// ── the storage seam ─────────────────────────────────────────────────────
+	{
+		// Each rewrite destroys two agents through the deferred flush, and both hold
+		// a record in `Kin`. The size check at each tick sees the first one left.
+		id: "flush-skips-the-storage-purge",
+		what: "the destroy flush never calls a plugin store's purge",
+		find: `      if (hasPurgers) this._purgeStorages(eid);`,
+		to: `      void hasPurgers;`
+	},
+	{
+		// The net destroys through the flush alone, so the immediate despawn has no
+		// cover there. The probe of the storage seam despawns at once.
+		id: "immediate-destroy-skips-the-storage-purge",
+		what: "the immediate despawn never calls a plugin store's purge",
+		find: `    if (this._purgers.length > 0) this._purgeStorages(id);`,
+		to: `    void 0;`
+	},
+	{
+		// `Kin` registers before `Pair`, so the first store keeps its purge and the
+		// second loses it. `Pair` then keeps the records of the pairs a rewrite took.
+		// Both destroy paths share the loop, so this reaches the flush and the
+		// immediate despawn alike.
+		id: "the-purge-reaches-the-first-store-alone",
+		what: "a destroy purges the first plugin store and no other",
+		find: `    for (let p = 0; p < purgers.length; p++) purgers[p].purge(id);`,
+		to: `    for (let p = 0; p < Math.min(1, purgers.length); p++) purgers[p].purge(id);`
+	},
+	{
+		id: "register-storage-forgets-the-purge",
+		what: "registerStorage keeps the store but never lists its purge",
+		find: `    if (provider.purge !== void 0) this._purgers.push(provider);`,
+		to: `    if (false) this._purgers.push(provider);`
+	},
+	{
+		// The snapshot layer writes one value into `Kin` and requires the digest to
+		// move for it.
+		id: "the-digest-skips-the-plugin-stores",
+		what: "stateHash never folds a plugin store",
+		find: `      provider.hash(fold);`,
+		to: `      void fold;`
+	},
+	{
+		// Each store in the net folds its size, so the words it folds move the digest
+		// with no header. A store that folds no word is in the probe alone.
+		id: "the-digest-drops-the-store-position",
+		what: "stateHash folds each plugin store's words with no position before them",
+		find: `      h = fnv1aStepWord(h, s);
+      provider.hash(fold);`,
+		to: `      provider.hash(fold);`
+	},
+	{
+		id: "the-restore-skips-the-plugin-stores",
+		what: "a restore never hands a plugin store its section",
+		find: `      storageSections[i].provider.restore(storageSections[i].bytes);`,
+		to: `      void storageSections;`
+	},
+	{
+		// The layer 8 round trip restores into the world that made the bytes, so the
+		// names always match there. The probe restores into a world with another
+		// store of the same width, which only the name tells apart.
+		id: "the-restore-ignores-the-store-names",
+		what: "a restore matches the storage sections by count alone",
+		find: `    for (let i = 0; same && i < live.length; i++) same = entries[i].name === live[i].name;`,
+		to: `    void live;`
+	},
+	{
+		id: "the-restore-skips-a-store-validate",
+		what: "a restore never lets a store refuse its own section",
+		find: `          provider.validate(entries[i].bytes);`,
+		to: `          void entries;`
+	},
+	{
+		// A store that restores before the dense mount reads the world as it was
+		// before the restore. The probe's store asks for an entity that died after
+		// the capture.
+		id: "the-restore-mounts-the-stores-first",
+		what: "a restore hands each store its section before it mounts the world",
+		find: `    const storageSections = this._matchStorageSections(sections.storage);`,
+		to: `    const storageSections = this._matchStorageSections(sections.storage);
+    for (const s of storageSections) s.provider.restore(s.bytes);`
+	},
+	{
+		id: "a-store-refusal-escapes-as-a-plain-error",
+		what: "a store's own refusal leaves restore as the store's error, not an ECSRestoreError",
+		find: `          if (err instanceof ECSRestoreError) throw err;`,
+		to: `          throw err;`
+	},
+	{
+		id: "the-restore-refuses-the-legacy-frame",
+		what: "a restore refuses a frame of version 1",
+		find: `  if (version !== ECS_SNAPSHOT_VERSION && version !== LEGACY_ECS_SNAPSHOT_VERSION) {`,
+		to: `  if (version !== ECS_SNAPSHOT_VERSION) {`
+	},
+	{
+		// Skips the store, so the match sees none of it. Only the explicit
+		// refusal names a store with no capture.
+		id: "the-restore-keeps-a-store-with-no-capture",
+		what: "a restore passes over a store with no capture and leaves its data",
+		find: `      if (storages[i].capture === void 0) {`,
+		to: `      if (storages[i].capture === void 0) {
+        continue;`
+	},
+	{
+		id: "a-second-store-of-one-name-registers",
+		what: "registerStorage takes a second store of one name",
+		find: `      if (this._storages[i].name === name) {`,
+		to: `      if (false) {`
+	},
+	{
+		id: "a-half-store-registers",
+		what: "registerStorage takes a store with capture and no restore",
+		find: `    if (provider.capture === void 0 !== (provider.restore === void 0)) {`,
+		to: `    if (false) {`
+	},
+	// ── the access domains ──────────────────────────────────────────────────
+	// Each one names a check that a development build alone runs, so each carries
+	// `devOnly`. A production build compiles the check out, and the probe reads
+	// there that the access went through.
+	{
+		// `net-aos` declares its two domains in `domainWrites` alone and reads
+		// `Kin`, so the net throws first. That is an engine error: the fault is
+		// fatal, and the probe of the storage seam is the layer that names it.
+		id: "a-domain-write-implies-no-read",
+		what: "a domain in domainWrites does not grant its read",
+		devOnly: true,
+		find: `      domainReads.add(domainW[i]);`,
+		to: `      void 0;`
+	},
+	{
+		id: "a-domain-write-checks-the-read-set",
+		what: "a domain write passes where the system declared the read alone",
+		devOnly: true,
+		find: `    if (this._activeSets.domainWrites.has(domain)) return;`,
+		to: `    if (this._activeSets.domainReads.has(domain)) return;`
+	},
+	{
+		id: "a-domain-read-is-never-refused",
+		what: "a domain read passes in a system that declared nothing",
+		devOnly: true,
+		find: `    if (this._activeSets.domainReads.has(domain)) return;`,
+		to: `    return;`
+	},
+	{
+		id: "a-run-condition-drops-its-domain-reads",
+		what: "a run condition's domainReads authorise nothing",
+		devOnly: true,
+		find: `    for (let i = 0; i < cond.domainReads.length; i++) domainReads.add(cond.domainReads[i]);`,
+		to: `    void cond;`
+	},
+	{
+		id: "a-combinator-drops-domain-reads",
+		what: "runIfAll carries no domainReads of its operands",
+		devOnly: true,
+		find: `    if (c.domainReads) domainReads.push(...c.domainReads);`,
+		to: `    void c;`
+	},
+	{
+		id: "registration-drops-the-domain-reads",
+		what: "a system's domainReads never reach its descriptor",
+		devOnly: true,
+		find: `    domainReads: config.domainReads,`,
+		to: `    domainReads: void 0,`
+	},
+	{
+		id: "the-domain-read-never-asks-the-checker",
+		what: "AccessDomain.assertRead never calls the access checker",
+		devOnly: true,
+		find: `      if (DEV) accessCheck.assertDomainRead(domain);`,
+		to: `      if (false) accessCheck.assertDomainRead(domain);`
 	}
 ];
 
