@@ -32,6 +32,7 @@ import type { ComponentDef, ComponentHandle } from "./component";
 import type { SparseComponentDef } from "./sparse_store";
 import { ANY_RELATION, type RelationDef } from "./relation";
 import type { ResourceKey } from "./resource";
+import type { AccessDomain } from "./access_domain_types";
 import type { SystemDescriptor } from "./system";
 import { ECSError, ECS_ERROR } from "./utils/error";
 import { componentLabel } from "./debug_names";
@@ -49,6 +50,9 @@ interface AccessSets {
 	sparseWrites: Set<number>;
 	relationReads: Set<number>;
 	relationWrites: Set<number>;
+	// Keyed by identity.
+	domainReads: Set<AccessDomain>;
+	domainWrites: Set<AccessDomain>;
 }
 
 // WeakMap keyed on the frozen descriptor. The descriptor object is frozen and
@@ -69,6 +73,8 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	const sparseWrites = new Set<number>();
 	const relationReads = new Set<number>();
 	const relationWrites = new Set<number>();
+	const domainReads = new Set<AccessDomain>();
+	const domainWrites = new Set<AccessDomain>();
 
 	for (let i = 0; i < desc.writes.length; i++) {
 		const cid = desc.writes[i].id;
@@ -149,6 +155,18 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 	if (relationR !== undefined) {
 		for (let i = 0; i < relationR.length; i++) relationReads.add(relationR[i] as unknown as number);
 	}
+	// A domain write implies its read.
+	const domainW = desc.domainWrites;
+	if (domainW !== undefined) {
+		for (let i = 0; i < domainW.length; i++) {
+			domainWrites.add(domainW[i]);
+			domainReads.add(domainW[i]);
+		}
+	}
+	const domainR = desc.domainReads;
+	if (domainR !== undefined) {
+		for (let i = 0; i < domainR.length; i++) domainReads.add(domainR[i]);
+	}
 
 	return {
 		reads,
@@ -161,7 +179,9 @@ function computeSets(desc: SystemDescriptor): AccessSets {
 		sparseReads,
 		sparseWrites,
 		relationReads,
-		relationWrites
+		relationWrites,
+		domainReads,
+		domainWrites
 	};
 }
 
@@ -181,6 +201,7 @@ interface ConditionAccess {
 	readonly name: string;
 	readonly reads?: readonly ComponentDef[];
 	readonly resourceReads?: readonly ResourceKey<any>[];
+	readonly domainReads?: readonly AccessDomain[];
 }
 
 // Cached per condition object, built-ins and custom conditions are stable
@@ -191,6 +212,10 @@ const conditionSetsCache = new WeakMap<ConditionAccess, AccessSets>();
 function computeConditionSets(cond: ConditionAccess): AccessSets {
 	const reads = new Set<number>();
 	const resourceReads = new Set<symbol>();
+	const domainReads = new Set<AccessDomain>();
+	if (cond.domainReads !== undefined) {
+		for (let i = 0; i < cond.domainReads.length; i++) domainReads.add(cond.domainReads[i]);
+	}
 	if (cond.reads !== undefined) {
 		for (let i = 0; i < cond.reads.length; i++) reads.add(cond.reads[i].id);
 	}
@@ -213,7 +238,9 @@ function computeConditionSets(cond: ConditionAccess): AccessSets {
 		sparseReads: new Set<number>(),
 		sparseWrites: new Set<number>(),
 		relationReads: new Set<number>(),
-		relationWrites: new Set<number>()
+		relationWrites: new Set<number>(),
+		domainReads,
+		domainWrites: new Set<AccessDomain>()
 	};
 }
 
@@ -357,6 +384,21 @@ class AccessCheck {
 		this._failRelation("write", rid, "relationWrites");
 	}
 
+	// --- Plugin access domain checks ---
+	// `AccessDomain` calls these under `DEV` only.
+
+	assertDomainRead(domain: AccessDomain): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.domainReads.has(domain)) return;
+		this._failDomain("read", domain, "domainReads or domainWrites");
+	}
+
+	assertDomainWrite(domain: AccessDomain): void {
+		if (this._activeSets === null) return;
+		if (this._activeSets.domainWrites.has(domain)) return;
+		this._failDomain("write", domain, "domainWrites");
+	}
+
 	/** A `(*, T)` wildcard (`Query.forEachRelatedTo`) reads every
 	 * relation's reverse index, so it can't name a specific relation. It is
 	 * authorised by the `ANY_RELATION` sentinel in `relationReads`. Honoured here
@@ -445,6 +487,16 @@ class AccessCheck {
 			ECS_ERROR.ACCESS_UNDECLARED,
 			`system '${name}' performed ${op} on relation ${rid} but did not declare it. Add it to '${missingField}'`,
 			{ system: name, op, relation: rid }
+		);
+	}
+
+	private _failDomain(op: string, domain: AccessDomain, missingField: string): never {
+		// ! safe: same as failComponent.
+		const name = this._activeName!;
+		throw new ECSError(
+			ECS_ERROR.ACCESS_UNDECLARED,
+			`system '${name}' performed ${op} on access domain '${domain.name}' but did not declare it. Add the domain to '${missingField}'`,
+			{ system: name, op, domain: domain.name }
 		);
 	}
 

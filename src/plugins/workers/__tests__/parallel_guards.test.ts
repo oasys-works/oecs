@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ECS } from "../../../core/ecs/ecs";
 import { resourceKey } from "../../../core/ecs/resource";
+import { accessDomain } from "../../../core/ecs/access_domain";
 import { SCHEDULE } from "../../../core/ecs/phase";
 import { ECS_ERROR, ECSError } from "../../../core/ecs/utils/error";
 import { DEFAULT_PARALLEL_MIN_ROWS, type ParallelPlan } from "../../workers/plan";
@@ -89,6 +90,24 @@ describe("a parallel registration", () => {
 		expect(category(() => ecs.registerSystem({ ...base, resourceReads: [key] } as never))).toBe(
 			ECS_ERROR.PARALLEL_ACCESS
 		);
+	});
+
+	it("refuses an access domain, read or written", () => {
+		const { ecs, base } = fixture();
+		const domain = accessDomain("store");
+		for (const field of ["domainReads", "domainWrites"] as const) {
+			let message = "";
+			try {
+				ecs.registerSystem({ ...base, name: "par", [field]: [domain] } as never);
+			} catch (error) {
+				expect(error).toBeInstanceOf(ECSError);
+				expect((error as ECSError).category).toBe(ECS_ERROR.PARALLEL_ACCESS);
+				message = (error as Error).message;
+			}
+			expect(message).toBe(
+				`system 'par' declares '${field}' beside 'parallel', and a plugin's own state is a main-thread object. Drop the declaration, or run the system sequentially.`
+			);
+		}
 	});
 
 	it("refuses a spawn declaration", () => {

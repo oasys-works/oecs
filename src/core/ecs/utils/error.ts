@@ -97,6 +97,9 @@ export enum ECS_ERROR {
 	 * `Object.assign` would overwrite it without a word, and the world would
 	 * lose a method it needs. Dev-only. */
 	PLUGIN_SURFACE_COLLISION = "PLUGIN_SURFACE_COLLISION",
+	/** A provider handed to `registerStorage` has no name, a name already in
+	 * use, or `capture` without `restore` or the reverse. */
+	INVALID_STORAGE_PROVIDER = "INVALID_STORAGE_PROVIDER",
 	/** `workers.attach` ran on a world that already holds a pool. One pool per
 	 * world, because one control buffer carries one barrier. */
 	WORKERS_ATTACHED = "WORKERS_ATTACHED",

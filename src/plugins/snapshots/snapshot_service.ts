@@ -36,12 +36,17 @@ import type {
 } from "../../core/ecs/snapshot";
 import { snapshotRelations, restoreRelations } from "../relations/relation_store";
 import { restoreColumnStore, columnStoreBytesView } from "../../core/store";
+import type { StorageProvider } from "../../core/ecs/storage_provider";
 import {
 	assertDenseMatchesLive,
+	ECSRestoreError,
 	frameWorldSnapshot,
 	parseHostState,
+	parseStorageSections,
 	serializeHostState,
-	unframeWorldSnapshot
+	serializeStorageSections,
+	unframeWorldSnapshot,
+	type StorageSection
 } from "./resume";
 
 export class SnapshotService implements SnapshotHooks {
@@ -127,9 +132,10 @@ export class SnapshotService implements SnapshotHooks {
 	}
 
 	/** Capture the full live world to one self-contained byte buffer that
-	 * `restore` can mount back onto a live, ticking world. Three
+	 * `restore` can mount back onto a live, ticking world. Four
 	 * sections (see `resume.ts`): the dense SAB column bytes, the sparse and
-	 * relation bytes, and the host-side bookkeeping the SAB omits. */
+	 * relation bytes, the host-side bookkeeping the SAB omits, and the plugin
+	 * stores. */
 	public snapshot(): Uint8Array {
 		// Keep the dense descriptors self-consistent for any bare dense reader.
 		// The restore below reconstructs from the host state and a region scan,
@@ -140,7 +146,62 @@ export class SnapshotService implements SnapshotHooks {
 		const dense = new Uint8Array(columnStoreBytesView(this._host.columnStore()));
 		const sparse = this.snapshotSparse();
 		const host = serializeHostState(this._collectHostState());
-		return frameWorldSnapshot(dense, sparse, host);
+		const storages = this._host.storages();
+		const sections: StorageSection[] = [];
+		for (let i = 0; i < storages.length; i++) {
+			const provider = storages[i];
+			if (provider.capture === undefined) continue;
+			sections.push({ name: provider.name, bytes: provider.capture() });
+		}
+		return frameWorldSnapshot(dense, sparse, host, serializeStorageSections(sections));
+	}
+
+	/** Match the storage entries to the live stores, in order and by name, and
+	 * run each `validate`. Read-only, so a refusal leaves the world as it was. */
+	private _matchStorageSections(
+		storage: Uint8Array | null
+	): { provider: StorageProvider; bytes: Uint8Array }[] {
+		const entries = storage === null ? [] : parseStorageSections(storage);
+		const storages = this._host.storages();
+		const live: StorageProvider[] = [];
+		for (let i = 0; i < storages.length; i++) {
+			// A store with no section would keep its data from before the
+			// restore, and a recycled id would then read a dead entity's data.
+			if (storages[i].capture === undefined) {
+				throw new ECSRestoreError(
+					`storage '${storages[i].name}' supplies no capture, so a restore cannot ` +
+						`reset it. Supply capture and restore, or do not restore this world`
+				);
+			}
+			live.push(storages[i]);
+		}
+		const names = (list: readonly { name: string }[]): string =>
+			list.length === 0 ? "none" : list.map((e) => `'${e.name}'`).join(", ");
+		let same = entries.length === live.length;
+		for (let i = 0; same && i < live.length; i++) same = entries[i].name === live[i].name;
+		if (!same) {
+			throw new ECSRestoreError(
+				`storage mismatch: the snapshot carries stores ${names(entries)}, ` +
+					`and this world registered ${names(live)}. Register the same plugin stores, ` +
+					`in the same order, before you restore`
+			);
+		}
+		const matched: { provider: StorageProvider; bytes: Uint8Array }[] = [];
+		for (let i = 0; i < live.length; i++) {
+			const provider = live[i];
+			if (provider.validate !== undefined) {
+				try {
+					provider.validate(entries[i].bytes);
+				} catch (err) {
+					// The caller catches one error class for each restore layer.
+					if (err instanceof ECSRestoreError) throw err;
+					const why = err instanceof Error ? err.message : String(err);
+					throw new ECSRestoreError(`storage '${provider.name}' refused its section: ${why}`);
+				}
+			}
+			matched.push({ provider, bytes: entries[i].bytes });
+		}
+		return matched;
 	}
 
 	/** Gather the host-side state a snapshot carries alongside the dense and
@@ -191,6 +252,7 @@ export class SnapshotService implements SnapshotHooks {
 			this._host.entityIndexCapacity()
 		);
 		this._assertSparseMatchesLive(sections.sparse);
+		const storageSections = this._matchStorageSections(sections.storage);
 
 		// --- Mount: build the restored dense store (now safe to overwrite the
 		//     live backing) and hand it to the Store to adopt (the grow tail: a
@@ -215,6 +277,11 @@ export class SnapshotService implements SnapshotHooks {
 		// indices). Its shape was already validated above, so this only commits data
 		// (a registration mismatch would have failed closed before the dense mount).
 		this.restoreSparse(sections.sparse);
+
+		// Last, so each store reads the restored world.
+		for (let i = 0; i < storageSections.length; i++) {
+			storageSections[i].provider.restore!(storageSections[i].bytes);
+		}
 	}
 
 	/** Read-only validation of a `snapshotSparse` Section (the framed

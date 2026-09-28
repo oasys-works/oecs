@@ -341,6 +341,9 @@ export { eventKey, signalKey } from "./event";
 // Resources
 export type { ResourceKey, ResourceValueOf } from "./resource";
 export { resourceKey } from "./resource";
+// Plugin access domains.
+export type { AccessDomain } from "./access_domain_types";
+export { accessDomain } from "./access_domain";
 
 // Dispatch trace (dev-mode only, gated by DEV + VISUAL_INTEL_TRACE)
 export {
@@ -367,6 +370,8 @@ export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./plugin";
 // The route seam a plugin implements. Structural, and exported so a plugin author
 // can name what `installRoute` takes and hands back.
 export type { SystemRoutePlanner, RouteControl, PluginMemory } from "./plugin";
+// The storage seam, see `PluginHost.registerStorage`.
+export type { StorageProvider, StorageHashFold } from "./storage_provider";
 export type { RouteDispatch } from "./schedule";
 export { storeOnlyHost } from "./plugin";
 

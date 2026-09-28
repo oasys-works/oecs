@@ -32,6 +32,7 @@
 
 import type { ComponentDef } from "./component";
 import type { ResourceKey } from "./resource";
+import type { AccessDomain } from "./access_domain_types";
 import type { Query } from "./query";
 import { DEV } from "../../dev_flag";
 import { ECSError, ECS_ERROR } from "./utils/error";
@@ -71,6 +72,8 @@ export interface RunCondition {
 	/** Resources the predicate reads. Validated at runtime in `DEV` when the
 	 *  condition evaluates inside `accessCheck.enterCondition`. */
 	readonly resourceReads?: readonly ResourceKey<any>[];
+	/** Plugin access domains the predicate reads. Checked in `DEV`. */
+	readonly domainReads?: readonly AccessDomain[];
 }
 
 /**
@@ -154,7 +157,7 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 
 // ── Combinators ────────────────────────────────────────────────────────────
 // Compose conditions without hand-rolled closures. Each combinator merges the
-// operands' declared read surfaces (`reads` and `resourceReads`) so accessCheck
+// operands' declared read surfaces (`reads`, `resourceReads` and `domainReads`) so accessCheck
 // and the future parallel scheduler still see every edge, and derives its
 // `name` from the operands for legible diagnostics. Evaluation order is the
 // argument order, and it short-circuits like `&&` and `||`. A condition is a
@@ -169,16 +172,20 @@ export function runIfAnyMatch(query: Query<readonly ComponentDef[]>): RunConditi
 function mergeDeclares(conds: readonly RunCondition[]): {
 	reads?: readonly ComponentDef[];
 	resourceReads?: readonly ResourceKey<any>[];
+	domainReads?: readonly AccessDomain[];
 } {
 	const reads: ComponentDef[] = [];
 	const resourceReads: ResourceKey<any>[] = [];
+	const domainReads: AccessDomain[] = [];
 	for (const c of conds) {
 		if (c.reads) reads.push(...c.reads);
 		if (c.resourceReads) resourceReads.push(...c.resourceReads);
+		if (c.domainReads) domainReads.push(...c.domainReads);
 	}
 	return {
 		...(reads.length > 0 ? { reads } : {}),
-		...(resourceReads.length > 0 ? { resourceReads } : {})
+		...(resourceReads.length > 0 ? { resourceReads } : {}),
+		...(domainReads.length > 0 ? { domainReads } : {})
 	};
 }
 

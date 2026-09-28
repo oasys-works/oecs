@@ -28,6 +28,11 @@ export type { ECSResources, ECSSnapshots } from "./core/ecs";
 // `PluginsOf` computes the world type a plugin list builds.
 export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./core/ecs";
 export type { SystemRoutePlanner, RouteControl, RouteDispatch, PluginMemory } from "./core/ecs";
+// The storage seam, see `PluginHost.registerStorage`.
+export type { StorageProvider, StorageHashFold } from "./core/ecs";
+// Access domains, the declared-access term for plugin state.
+export { accessDomain } from "./core/ecs";
+export type { AccessDomain } from "./core/ecs";
 
 // The change feed a plugin drains. `ChangeFeed` above names the seam.
 // These are the records that cross it.

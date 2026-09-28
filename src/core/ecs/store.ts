@@ -105,6 +105,7 @@ import { pluginMissingError, pluginInstalledTwiceError } from "./utils/plugin_er
 import { EntityAllocator } from "./entity_allocator";
 import { DeferredCommandBuffer } from "./deferred_commands";
 import type { HostState, SnapshotHooks, SnapshotHost } from "./snapshot";
+import type { StorageProvider } from "./storage_provider";
 import { ArchetypeGraph } from "./archetype_graph";
 import { adoptRestoredBacking, reconstructHostRows } from "./snapshot_mount";
 import { accessCheck } from "./access_check";
@@ -371,6 +372,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	// read goes through the `snapshots` accessor, which is never in a loop.
 	private _snapshots: SnapshotHooks | null;
 
+	// --- Plugin storage providers ---
+	// Registration order sets the digest fold order and the snapshot section
+	// order. `_purgers` holds the providers that supply `purge`.
+	private readonly _storages: StorageProvider[] = [];
+	private readonly _purgers: StorageProvider[] = [];
+
 	// =======================================================
 	// Plugin install seams and the accessors a caller reaches by name
 	// =======================================================
@@ -423,6 +430,36 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		};
 	}
 
+	/** See `PluginHost.registerStorage`. Cold. */
+	public registerStorage(provider: StorageProvider): void {
+		const name = provider.name;
+		if (typeof name !== "string" || name.length === 0) {
+			throw new ECSError(
+				ECS_ERROR.INVALID_STORAGE_PROVIDER,
+				"a storage provider needs a non-empty name. The snapshot matches its section to the live store by that name"
+			);
+		}
+		if ((provider.capture === undefined) !== (provider.restore === undefined)) {
+			throw new ECSError(
+				ECS_ERROR.INVALID_STORAGE_PROVIDER,
+				`storage '${name}' supplies ${provider.capture === undefined ? "restore" : "capture"} ` +
+					`alone. A store that writes a snapshot section must read it back, so supply both or neither`,
+				{ storage: name }
+			);
+		}
+		for (let i = 0; i < this._storages.length; i++) {
+			if (this._storages[i].name === name) {
+				throw new ECSError(
+					ECS_ERROR.INVALID_STORAGE_PROVIDER,
+					`a storage named '${name}' is already registered on this world. Give each store its own name`,
+					{ storage: name }
+				);
+			}
+		}
+		this._storages.push(provider);
+		if (provider.purge !== undefined) this._purgers.push(provider);
+	}
+
 	/** Install the relations plugin. Called once, by the plugin. */
 	public installRelations(service: RelationHooks): void {
 		if (this._relations !== null) throw pluginInstalledTwiceError("relations");
@@ -462,6 +499,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			// an empty section is what the snapshot format already writes for a
 			// world that registered no relation.
 			relationStores: () => (this._relations === null ? [] : this._relations.stores),
+			storages: () => this._storages,
 			generations: () => this._entityAllocator.generations,
 			archetypes: () => this._archGraph.archetypes,
 			columnStore: () => this._columnStore,
@@ -1330,7 +1368,30 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				for (let t = 0; t < targets.length; t++) h = fnv1aStepWord(h, targets[t]);
 			});
 		}
+
+		// A world with no provider keeps the digest it had before this seam.
+		if (this._storages.length > 0) h = this._foldStorages(h);
 		return h >>> 0;
+	}
+
+	/** The position folds first, so a store that folds no word still moves
+	 * the digest.
+	 *
+	 * Keep this out of `stateHash`. A `fold` closure there captures its `h`,
+	 * and V8 then moves `h` to a heap context for the whole column loop. */
+	private _foldStorages(digest: number): number {
+		let h = digest;
+		const fold = (word: number): void => {
+			h = fnv1aStepWord(h, word >>> 0);
+		};
+		const storages = this._storages;
+		for (let s = 0; s < storages.length; s++) {
+			const provider = storages[s];
+			if (provider.hash === undefined) continue;
+			h = fnv1aStepWord(h, s);
+			provider.hash(fold);
+		}
+		return h;
 	}
 
 	// =======================================================
@@ -1805,6 +1866,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// by the archetype swap-remove above, purge it explicitly so a recycled
 		// slot can't inherit stale sparse components.
 		if (this._sparseStores.length > 0) this._purgeSparse(index);
+		// Before the release, so the id still names this entity.
+		if (this._purgers.length > 0) this._purgeStorages(id);
 
 		// Generation bump, `RETIRED_GENERATION` tombstone, free-list push,
 		// see `EntityAllocator.release`.
@@ -2210,6 +2273,8 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// component on each dying entity. Gated so the no-observer path is
 		// byte-for-byte unchanged. Dispatched by `flushStructural`.
 		const collecting = this._structuralObserverCount > 0;
+		// Hoisted, and the loop stays out of this body to keep its size.
+		const hasPurgers = this._purgers.length > 0;
 
 		for (let i = 0; i < buf.length; i++) {
 			const eid = buf[i];
@@ -2240,6 +2305,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			if (hasRelations) relations!.purgeSource(eid);
 			if (hasTargetCleanup) relations!.cleanupTarget(eid, buf);
 			if (hasSparse) this._purgeSparse(idx);
+			if (hasPurgers) this._purgeStorages(eid);
 
 			entArch[idx] = UNASSIGNED;
 			entRow[idx] = UNASSIGNED;
@@ -2256,6 +2322,12 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			this._rowCountsDirty = true;
 			if (crossed) this.queryDirtyEpoch++;
 		}
+	}
+
+	/** Both destroy paths call this, only when a purger exists. */
+	private _purgeStorages(id: EntityID): void {
+		const purgers = this._purgers;
+		for (let p = 0; p < purgers.length; p++) purgers[p].purge!(id);
 	}
 
 	public get pendingDestroyCount(): number {

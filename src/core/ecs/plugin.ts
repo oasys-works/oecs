@@ -29,11 +29,12 @@
  *
  * **What a plugin outside this package gets.** Every member of `PluginHost` is
  * open to anyone: `store`, `world`, `changes`, `context`, `memory`,
- * `onSettle`, `onPrewarm`, `onDispose` and `installRoute`. A plugin registers
- * its own components, systems and phases through `world`, drains the change
- * feed through `changes`, and publishes at the tail of `update()` through
- * `onSettle`. `src/core/ecs/__tests__/integration/third_party_plugin.test.ts`
- * writes one that way and proves the seam holds from outside.
+ * `onSettle`, `onPrewarm`, `onDispose`, `installRoute` and `registerStorage`.
+ * A plugin registers its own components, systems and phases through `world`,
+ * drains the change feed through `changes`, and publishes at the tail of
+ * `update()` through `onSettle`. A plugin hands a store it keeps per entity to
+ * `registerStorage`. `third_party_plugin.test.ts` and
+ * `third_party_storage.test.ts` prove the seams from outside the package.
  *
  * Every hook point below is named for what it hooks, never for the plugin
  * that ships it. `onSettle` takes the tail of a frame, `onPrewarm` contributes
@@ -60,6 +61,8 @@ import type { SystemContext } from "./system_context";
 import type { ECS } from "./ecs";
 import type { RouteDispatch } from "./schedule";
 import type { SystemConfig, SystemDescriptor } from "./system";
+import type { StorageProvider } from "./storage_provider";
+export type { StorageProvider, StorageHashFold } from "./storage_provider";
 import { ECSError, ECS_ERROR } from "./utils/error";
 
 /** How a plugin claims the body of a system, and builds what one dispatch of
@@ -140,6 +143,9 @@ export interface PluginHost {
 	 * call that turns the route on and off. A world holds one route, so a
 	 * second install is a fault. */
 	installRoute(planner: SystemRoutePlanner): RouteControl;
+	/** Add a store this plugin owns to the destroy purge, `stateHash` and the
+	 * world snapshot. Cold. */
+	registerStorage(provider: StorageProvider): void;
 }
 
 /** An optional subsystem, and the facade surface it contributes.
@@ -208,6 +214,7 @@ export function storeOnlyHost(store: Store): PluginHost {
 	return {
 		store,
 		changes: store,
+		registerStorage: (provider) => store.registerStorage(provider),
 		get world(): ECS {
 			throw new ECSError(
 				ECS_ERROR.PLUGIN_NOT_INSTALLED,

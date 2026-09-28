@@ -236,7 +236,8 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 				this._routePlanner = planner;
 				const schedule = this._schedule;
 				return { route: (dispatch) => schedule.setRoute(dispatch) };
-			}
+			},
+			registerStorage: (provider) => this._store.registerStorage(provider)
 		};
 	}
 
