@@ -5,12 +5,12 @@
  * `EntityID`, but is moved to the disabled tail of its archetype so default
  * queries skip it (the iteration bound `arch.entityCount` is the enabled-row
  * count). `.includeDisabled()` opts a query back in. Covers:
- *  - default query exclusion (forEach and count) + `includeDisabled` opt-in
+ *  - default query exclusion (forEachArchetype and count) + `includeDisabled` opt-in
  *  - round-trip preservation of components, sparse data, relations, EntityID
  *  - the partition invariant under disable, enable, destroy, spawn and
  *    addComponent
  *  - `stateHash` reflecting the disabled set + snapshot round-trip
- *  - deferred (system-side) toggling being safe mid-`forEach`.
+ *  - deferred (system-side) toggling being safe mid-`forEachArchetype`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -49,9 +49,9 @@ describe("entity enable and disable", () => {
 		expect(world.isDisabled(ids[1])).toBe(true);
 		expect(q.entityCount).toBe(3);
 
-		// forEach must not visit the disabled entity.
+		// forEachArchetype must not visit the disabled entity.
 		const seen = new Set<number>();
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const xs = arch.getColumnRead(P, "x");
 			for (let i = 0; i < arch.entityCount; i++) seen.add(xs[i]);
 		});
@@ -63,7 +63,7 @@ describe("entity enable and disable", () => {
 		expect(q.entityCount).toBe(4);
 	});
 
-	it("includeDisabled() sees disabled entities (count + forEach span)", () => {
+	it("includeDisabled() sees disabled entities (count + forEachArchetype span)", () => {
 		const world = ECS.create({
 			deterministic: true,
 			plugins: [relations()]
@@ -80,8 +80,8 @@ describe("entity enable and disable", () => {
 		expect(qAll.entityCount).toBe(4);
 
 		let n = 0;
-		qAll.forEach((arch) => {
-			// Inside an includeDisabled forEach, entityCount spans all rows.
+		qAll.forEachArchetype((arch) => {
+			// Inside an includeDisabled forEachArchetype, entityCount spans all rows.
 			expect(arch.entityCount).toBe(arch.totalCount);
 			n += arch.entityCount;
 		});
@@ -154,7 +154,7 @@ describe("entity enable and disable", () => {
 		world.disable(ids[0]); // x=0
 
 		const xs: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const col = arch.getColumnRead(P, "x");
 			const y = arch.getColumnRead(P, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -212,7 +212,7 @@ describe("entity enable and disable", () => {
 		world.flush();
 
 		const enabled: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			const col = arch.getColumnRead(P, "x");
 			const y = arch.getColumnRead(P, "y");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -320,7 +320,7 @@ describe("entity enable and disable", () => {
 		expect(a.w.snapshots.stateHash()).toBe(b.w.snapshots.stateHash());
 	});
 
-	it("system-side disable is deferred and safe mid-forEach", () => {
+	it("system-side disable is deferred and safe mid-forEachArchetype", () => {
 		const world = ECS.create({
 			deterministic: true,
 			plugins: [relations()]
@@ -340,7 +340,7 @@ describe("entity enable and disable", () => {
 				fn(ctx) {
 					if (ran) return;
 					ran = true;
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						const xs = arch.getColumnRead(P, "x");
 						const eids = arch.entityIds;
 						for (let i = 0; i < arch.entityCount; i++) {

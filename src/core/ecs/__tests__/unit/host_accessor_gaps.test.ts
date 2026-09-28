@@ -1,6 +1,6 @@
 /**
  * Four accessors the suite named but never called, and one loop behind
- * `ChangedQuery.forEach`.
+ * `ChangedQuery.forEachArchetype`.
  *
  * `regionOffset` and `entityIdAtRow` are the WASM-facing half of the store.
  * A consumer builds a typed view from the first and converts an event-ring
@@ -96,7 +96,7 @@ describe("FrameStepper.fixedDt and maxDt", () => {
 	});
 });
 
-describe("ChangedQuery.forEach under includeDisabled", () => {
+describe("ChangedQuery.forEachArchetype under includeDisabled", () => {
 	it("spans the disabled rows, and restores the flag for the next query", () => {
 		const world = new ECS();
 		const Pos = world.registerComponent({ x: "f64" });
@@ -123,10 +123,10 @@ describe("ChangedQuery.forEach under includeDisabled", () => {
 			fn() {
 				enabledRows = 0;
 				allRows = 0;
-				plain.changed(Pos).forEach((arch) => {
+				plain.changed(Pos).forEachArchetype((arch) => {
 					enabledRows += arch.entityCount;
 				});
-				all.changed(Pos).forEach((arch) => {
+				all.changed(Pos).forEachArchetype((arch) => {
 					allRows += arch.entityCount;
 				});
 				// The all-rows flag is restored on the way out, so a plain query

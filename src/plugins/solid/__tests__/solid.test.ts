@@ -275,7 +275,7 @@ describe("the column grain", () => {
 		project.mockClear();
 
 		run(() => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const { x } = cols.mut(Pos);
 				for (let i = 0; i < count; i++) x[i] += 100;
 			});
@@ -360,7 +360,7 @@ describe("two views on one component", () => {
 		byEntity.mockClear();
 		byColumn.mockClear();
 		run(() => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const { x } = cols.mut(Pos);
 				for (let i = 0; i < count; i++) x[i] = 50;
 			});

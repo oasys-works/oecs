@@ -134,7 +134,9 @@ const REFUSED: readonly (readonly [keyof SystemConfig, string])[] = [
 	["sparseReads", "a sparse store is a main-thread object"],
 	["sparseWrites", "a sparse store is a main-thread object"],
 	["relationReads", "a relation store is a main-thread object"],
-	["relationWrites", "a relation store is a main-thread object"]
+	["relationWrites", "a relation store is a main-thread object"],
+	["domainReads", "a plugin's own state is a main-thread object"],
+	["domainWrites", "a plugin's own state is a main-thread object"]
 ];
 
 /**

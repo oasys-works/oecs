@@ -23,7 +23,7 @@
  *     Therefore a disabled agent must not age, and it must keep `Fresh`.
  *     `promoteFresh` and `ageTick` below copy that rule. `compare()` then compares
  *     `Age.ticks`, and that comparison is the proof that the row partition of the ECS
- *     kept the row out of `forEachChunk`.
+ *     kept the row out of `forEachColumns`.
  *   - `_quar`, the value of the `Quar.count` column. The host writes that column
  *     through the write seam, and not a system. Therefore the comparison of the value
  *     is the check on the `set_field` command of the seam.
@@ -225,7 +225,7 @@ export class RefNet {
 	 * that this tick created has no `Age` yet, so this code correctly skips it.
 	 *
 	 * A disabled agent does not age, for the reason that `promoteFresh` gives: the
-	 * ECS system uses `qAge.forEachChunk`, and that loop stops at `entityCount`, which
+	 * ECS system uses `qAge.forEachColumns`, and that loop stops at `entityCount`, which
 	 * excludes the disabled rows. `compare()` compares `Age.ticks` exactly. Therefore
 	 * a disabled row that the loop still visits gives a divergence at the next tick. */
 	ageTick() {

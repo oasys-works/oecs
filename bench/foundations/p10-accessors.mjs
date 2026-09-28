@@ -168,13 +168,13 @@ async function run(name) {
 		const q = ecs.query(Pos);
 		times = timeIt(() => {
 			let s = 0;
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x } = cols.read(Pos);
 				for (let i = 0; i < count; i++) s += x[i];
 			});
 			return s;
 		});
-		q.forEachChunk((cols, count) => {
+		q.forEachColumns((cols, count) => {
 			const { x } = cols.read(Pos);
 			for (let i = 0; i < count; i++) checksum += x[i];
 		});

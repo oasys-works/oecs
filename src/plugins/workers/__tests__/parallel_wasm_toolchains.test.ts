@@ -111,7 +111,7 @@ function kernelWorld({ kernel, body, storeBase = STORE_BASE }: WorldOptions) {
 			query
 		},
 		fn: (_ctx: SystemContext, dt: number) => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				body(p.x, p.y, v.vx, v.vy, 0, count, dt);
@@ -194,7 +194,7 @@ function stackThenTableWorld(kernel: { wasm?: WebAssembly.Module; js?: string })
 				query
 			},
 			fn: (_ctx: SystemContext, dt: number) => {
-				query.forEachChunk((cols, count) => {
+				query.forEachColumns((cols, count) => {
 					const p = cols.mut(Pos);
 					const v = cols.read(Vel);
 					body(p.x, p.y, v.vx, v.vy, 0, count, dt);

@@ -224,7 +224,7 @@ export { ECS_SNAPSHOT_VERSION } from "./snapshot";
 // suffix (`ctx.refRead`, `Archetype.getColumnRead`).
 //
 // The column-cursor family shares this convention in a second spelling: the
-// forEachChunk cursors `cols.mut(def)` and `cols.read(def)` are the
+// forEachColumns cursors `cols.mut(def)` and `cols.read(def)` are the
 // explicit-verb pair, and `ctx.ref` and `ctx.refRead` are their
 // outside-iteration single-entity analog. All are def-first (`ref(Pos, e)`,
 // `cols.mut(Pos)`), a cursor is named for what it points at, deliberately
@@ -246,7 +246,7 @@ export { Query, QueryBuilder } from "./query";
 export { ChangedQuery } from "./changed_query";
 export { HIERARCHY_UNBOUNDED, and, or, not } from "./query_terms";
 export type { ArchetypeTerm, ArchetypeExpr, HierarchyTerm, QueryTerms } from "./query_terms";
-// forEachChunk cursor (cols.mut/read) + the ctx.commands deferred facade.
+// forEachColumns cursor (cols.mut/read) + the ctx.commands deferred facade.
 export { ChunkColumns } from "./chunk_columns";
 export { Commands } from "./system_context";
 
@@ -341,6 +341,9 @@ export { eventKey, signalKey } from "./event";
 // Resources
 export type { ResourceKey, ResourceValueOf } from "./resource";
 export { resourceKey } from "./resource";
+// Plugin access domains.
+export type { AccessDomain } from "./access_domain_types";
+export { accessDomain } from "./access_domain";
 
 // Dispatch trace (dev-mode only, gated by DEV + VISUAL_INTEL_TRACE)
 export {
@@ -367,6 +370,8 @@ export type { Plugin, PluginHost, PluginsOf, ChangeFeed } from "./plugin";
 // The route seam a plugin implements. Structural, and exported so a plugin author
 // can name what `installRoute` takes and hands back.
 export type { SystemRoutePlanner, RouteControl, PluginMemory } from "./plugin";
+// The storage seam, see `PluginHost.registerStorage`.
+export type { StorageProvider, StorageHashFold } from "./storage_provider";
 export type { RouteDispatch } from "./schedule";
 export { storeOnlyHost } from "./plugin";
 

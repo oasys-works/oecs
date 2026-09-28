@@ -50,6 +50,7 @@ import type { EntityID } from "./entity";
 import type { SparseComponentDef } from "./sparse_store";
 import type { RelationDef } from "./relation";
 import type { ResourceKey } from "./resource";
+import type { AccessDomain } from "./access_domain_types";
 import type { SystemContext } from "./system_context";
 import type { BackendSystemHandle } from "./compute_backend";
 import type { Template } from "./store_types";
@@ -133,6 +134,13 @@ export interface SystemAccessConfig {
 	/** Relations the system mutates with `addRelation` or `removeRelation`.
 	 * A write implies a read. */
 	readonly relationWrites?: readonly RelationDef[];
+
+	// --- Plugin access domains ---
+
+	/** Plugin access domains the system reads. */
+	readonly domainReads?: readonly AccessDomain[];
+	/** Plugin access domains the system writes. A write implies a read. */
+	readonly domainWrites?: readonly AccessDomain[];
 }
 
 /** The normalized access declaration a registered system carries, what
@@ -461,6 +469,9 @@ export interface TypedSystemConfig<
 	readonly sparseWrites?: SW;
 	readonly relationReads?: RR;
 	readonly relationWrites?: RW;
+	/** Not generic, because `SystemContext` has no domain method to narrow. */
+	readonly domainReads?: readonly AccessDomain[];
+	readonly domainWrites?: readonly AccessDomain[];
 	/** Compile-time mirror of the declared-access lint: every query term ∈ reads ∪ writes. */
 	readonly queries?: readonly (readonly (R[number] | W[number])[])[];
 	name?: string;
@@ -537,7 +548,9 @@ export function _normalizeAccess(config: SystemAccessConfig): SystemAccessDeclar
 		sparseReads: config.sparseReads,
 		sparseWrites: config.sparseWrites,
 		relationReads: config.relationReads,
-		relationWrites: config.relationWrites
+		relationWrites: config.relationWrites,
+		domainReads: config.domainReads,
+		domainWrites: config.domainWrites
 	};
 }
 
@@ -591,7 +604,9 @@ export const _INTERNAL_EMPTY_ACCESS: SystemAccessDeclaration = Object.freeze({
 	sparseReads: Object.freeze<SparseComponentDef[]>([]),
 	sparseWrites: Object.freeze<SparseComponentDef[]>([]),
 	relationReads: Object.freeze<RelationDef[]>([]),
-	relationWrites: Object.freeze<RelationDef[]>([])
+	relationWrites: Object.freeze<RelationDef[]>([]),
+	domainReads: Object.freeze<AccessDomain[]>([]),
+	domainWrites: Object.freeze<AccessDomain[]>([])
 });
 
 /** @internal The config a bare-function registration produces. The access

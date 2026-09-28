@@ -104,7 +104,7 @@ function buildWorld({ memory, kernel }) {
 		},
 		fn: (_ctx, dt) => {
 			fnRuns++;
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				integrateI32(p.x, p.y, v.vx, v.vy, 0, count, dt);
@@ -123,7 +123,7 @@ function buildWorld({ memory, kernel }) {
 	// plausible one.
 	const seed = () => {
 		let n = 0;
-		ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+		ecs.query(Pos, Vel).forEachColumns((cols, count) => {
 			const p = cols.mut(Pos);
 			const v = cols.mut(Vel);
 			for (let i = 0; i < count; i++, n++) {

@@ -21,7 +21,7 @@ function expectIterationGuard(fn: () => void): void {
 }
 
 describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
-	it("despawning a walked entity inside a host forEach throws instead of skipping rows", () => {
+	it("despawning a walked entity inside a host forEachArchetype throws instead of skipping rows", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent(["x"] as const);
 		for (let i = 0; i < 3; i++) {
@@ -30,7 +30,7 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 		}
 		const q = ecs.query(Pos);
 		expectIterationGuard(() => {
-			q.forEach((arch) => {
+			q.forEachArchetype((arch) => {
 				for (let i = 0; i < arch.entityCount; i++) {
 					ecs.despawn(arch.entityIds[i] as EntityID);
 				}
@@ -49,25 +49,25 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 		ecs.addComponent(e, Pos, { x: 1 });
 		const q = ecs.query(Pos);
 		expectIterationGuard(() => {
-			q.forEach(() => {
+			q.forEachArchetype(() => {
 				ecs.removeComponent(e, Pos);
 			});
 		});
 		expectIterationGuard(() => {
-			q.forEach(() => {
+			q.forEachArchetype(() => {
 				ecs.addComponent(e, Tag); // transition moves the row out of the walked archetype
 			});
 		});
 	});
 
-	it("disable of a walked entity throws inside forEachChunk", () => {
+	it("disable of a walked entity throws inside forEachColumns", () => {
 		const ecs = new ECS();
 		const Pos = ecs.registerComponent(["x"] as const);
 		const e = ecs.spawn();
 		ecs.addComponent(e, Pos, { x: 1 });
 		const q = ecs.query(Pos);
 		expectIterationGuard(() => {
-			q.forEachChunk(() => {
+			q.forEachColumns(() => {
 				ecs.disable(e);
 			});
 		});
@@ -83,7 +83,7 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 		ecs.addComponent(bystander, Other, { y: 2 });
 		const q = ecs.query(Pos);
 		let visited = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			visited += arch.entityCount;
 			ecs.despawn(bystander);
 		});
@@ -101,7 +101,7 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 		}
 		const q = ecs.query(Pos);
 		const doomed: EntityID[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			for (let i = 0; i < arch.entityCount; i++) doomed.push(arch.entityIds[i] as EntityID);
 		});
 		for (const e of doomed) ecs.despawn(e);
@@ -119,7 +119,7 @@ describe("host iteration guard (STRUCTURAL_DURING_ITERATION)", () => {
 			writes: [],
 			despawns: [Pos],
 			fn() {
-				q.forEach((arch) => {
+				q.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						// deferred, applies at the phase flush, after the walk
 						void arch.entityIds[i];

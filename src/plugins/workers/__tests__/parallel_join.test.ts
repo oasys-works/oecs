@@ -52,7 +52,7 @@ function integrateWorld(entities: number, minRows: number, exportName = "integra
 			query
 		},
 		fn: (_ctx: SystemContext, dt: number) => {
-			query.forEachChunk((cols, count) => {
+			query.forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				if (exportName === "markKernel") {
@@ -132,7 +132,7 @@ describe("a system registered after the attach", () => {
 				query
 			},
 			fn: () => {
-				query.forEachChunk((cols, count) => {
+				query.forEachColumns((cols, count) => {
 					const p = cols.mut(Pos);
 					for (let i = 0; i < count; i++) {
 						p.x[i] = SEQUENTIAL_MARK;
@@ -169,7 +169,7 @@ describe("the join stamp", () => {
 			name: "reader",
 			fn: () => {
 				seen = 0;
-				changed.forEachChunk(() => {
+				changed.forEachColumns(() => {
 					seen++;
 				});
 			}
@@ -229,7 +229,7 @@ describe("the join stamp", () => {
 				query
 			},
 			fn: (_ctx: SystemContext, dt: number) => {
-				query.forEachChunk((cols, count) => {
+				query.forEachColumns((cols, count) => {
 					const p = cols.mut(Pos);
 					const v = cols.read(Vel);
 					integrateI32(p.x, p.y, v.vx, v.vy, 0, count, dt);

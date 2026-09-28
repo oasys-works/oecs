@@ -238,7 +238,7 @@ export function fingerprintEcs(world, { redex = true } = {}) {
 	// `qOptionalAge` spans each archetype of the agents, the disabled rows included,
 	// and it declares `Age` as optional. The fetch of an optional column checks that
 	// declaration, so this is the query that the scan must walk.
-	world.qOptionalAge.forEach((arch) => {
+	world.qOptionalAge.forEachArchetype((arch) => {
 		const total = arch.totalCount;
 		if (total === 0) return;
 		const enabled = total - arch.disabledCount;

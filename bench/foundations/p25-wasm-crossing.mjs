@@ -116,7 +116,7 @@ if (variant !== null) {
 			writes: [Pos],
 			queries: [[Pos, Vel]],
 			fn: () => {
-				movers.forEachChunk((cols, count) => {
+				movers.forEachColumns((cols, count) => {
 					const { x, y, z } = cols.mut(Pos);
 					const { vx, vy, vz } = cols.read(Vel);
 					for (let i = 0; i < count; i++) {

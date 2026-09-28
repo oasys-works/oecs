@@ -100,7 +100,7 @@ export type ColumnsForSchema<S extends ComponentSchema> = {
 
 /**
  * Mutable sibling of `ColumnsForSchema`, the field-keyed column group handed
- * back by `forEachChunk`'s `cols.mut(def)` (no `readonly`, since the whole point
+ * back by `forEachColumns`'s `cols.mut(def)` (no `readonly`, since the whole point
  * is in-place writes). The change-tick is stamped once when the group is
  * resolved, so the per-row loop is plain typed-array indexing.
  */
@@ -153,7 +153,7 @@ export type SchemaOf<D> = D extends ComponentDef<infer S extends ComponentSchema
 /**
  * `unknown` if `D` is one of the query's declared terms, else an error tuple,
  * the query-seam sibling of system.ts's `DeclaredRead`.
- * `Query.forEachChunk`'s cursor and `ArchetypeView`'s column
+ * `Query.forEachColumns`'s cursor and `ArchetypeView`'s column
  * accessors intersect this into their `def` parameter so fetching a component
  * that is not a term of the iterating query fails to compile (previously
  * caught only by the dev-mode access check, and only when the system's

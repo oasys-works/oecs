@@ -115,6 +115,7 @@ const O_RELATIONS = "Relations (sparse (relation, target) pairs)";
 const O_EVENTS = "Event channels";
 const O_DEFERRED = "Deferred operation buffers";
 const O_SNAPSHOT_SVC = "Snapshot and resume service";
+const O_STORAGES = "Plugin storage providers";
 const O_OBSERVERS = "Component observers";
 const O_QUERY_REGISTRY = "Query registry";
 const O_ROW_GRAIN = "The row grain: the row tick plane and the dirty list";
@@ -321,6 +322,13 @@ const ALLOWED: Allowed[] = [
 	},
 	{
 		from: S_SEAMS,
+		to: O_STORAGES,
+		fields: ["_purgers", "_storages"],
+		reason:
+			"registerStorage fills both lists, and snapshotHost hands the list to the snapshot plugin. A split moves both with the seam."
+	},
+	{
+		from: S_SEAMS,
 		to: S_RESOURCES,
 		fields: ["_resources"],
 		reason: "The resources accessor, one line over the extracted ResourceRegistry."
@@ -463,6 +471,12 @@ const ALLOWED: Allowed[] = [
 	},
 	{
 		from: S_STATE_HASH,
+		to: O_STORAGES,
+		fields: ["_storages"],
+		reason: "The digest folds each plugin store after the relations, in registration order."
+	},
+	{
+		from: S_STATE_HASH,
 		to: O_SPARSE,
 		fields: ["_sparseStores"],
 		reason:
@@ -507,6 +521,13 @@ const ALLOWED: Allowed[] = [
 		to: O_RELATIONS,
 		fields: ["_relations"],
 		reason: "_destroyOne purges the destroyed entity's relations before the row goes."
+	},
+	{
+		from: S_SPAWN,
+		to: O_STORAGES,
+		fields: ["_purgers"],
+		reason:
+			"_destroyOne purges every plugin store for the destroyed entity before its slot is recycled."
 	},
 	{
 		from: S_SPAWN,
@@ -558,6 +579,12 @@ const ALLOWED: Allowed[] = [
 		to: O_RELATIONS,
 		fields: ["_relations"],
 		reason: "The destroy flush purges relations for every destroyed entity."
+	},
+	{
+		from: S_DESTROY,
+		to: O_STORAGES,
+		fields: ["_purgers"],
+		reason: "The destroy flush purges every plugin store for every destroyed entity, hoisted once."
 	},
 	{
 		from: S_DESTROY,

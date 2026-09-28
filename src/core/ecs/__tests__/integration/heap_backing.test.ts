@@ -50,7 +50,7 @@ function worldWithMovers(
 		reads: [],
 		writes: [],
 		fn: (ctx, dt) => {
-			movers.forEach((arch) => {
+			movers.forEachArchetype((arch) => {
 				const vx = arch.getColumnRead(Vel, "vx");
 				const vy = arch.getColumnRead(Vel, "vy");
 				const ids = arch.entityIds;

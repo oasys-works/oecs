@@ -113,7 +113,7 @@ async function runOne({ entities, deterministic }) {
 		writes: [Pos, Vel],
 		fn: () => {
 			const q = activeKernel === KERNEL_A ? qA : qB;
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				runKernel(activeKernel, chunkViews(cols, activeKernel), 0, count, DT);
 			});
 		}

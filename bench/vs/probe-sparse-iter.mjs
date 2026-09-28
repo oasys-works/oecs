@@ -16,8 +16,12 @@
  *
  * The variants, from the entry to the floor:
  *
- *   packed         dense Pos and Vel through `eachChunk`. The `oecs` entry.
+ *   packed         dense Pos and Vel through `forEachColumns`. The `oecs` entry.
  *   fe             `forEachEntity` with two sparse cursors. The `oecs-sparse` entry.
+ *   fe-shared      `fe` after six other callbacks ran through the driver. An app
+ *                  with many queries has this. The callback does not inline.
+ *   batch          `forEachIds` with the same cursors. One call for each run.
+ *   batch-shared   `batch` after six other callbacks ran through the driver.
  *   fe-empty       the same driver with an empty callback. The driver alone.
  *   tight-full-cb  a loop over the member list of Pos, with the filters the query
  *                  keeps: Vel membership, the dense mask, the enabled row. It
@@ -30,12 +34,10 @@
  *   raw            the loop with no filter. The floor of a gather through the id
  *                  list, which is the loop the id-indexed libraries run.
  *
- * What the split shows. `fe-empty` costs about as much as `fe`, so the body of
- * `_forEachSparseMatch` is the loss, and `raw` ties the id-indexed libraries, so
- * the layout is not. `tight-full` recovers about half and stays far behind them,
- * because their query returns a member list that the library keeps up to date,
- * and a filter at each entity cannot reach that. The tight variants read private
- * fields of the store, and a real API adds a little on top of each floor.
+ * Result: `fe-empty` costs the same as `tight-full`. The filters are the cost,
+ * not the driver. `raw` ties the id-indexed libraries. They keep a member list
+ * for each query, and a filter for each entity cannot match that. The tight
+ * variants read private fields, so a real API costs a little more.
  *
  * The checksum is the sum of `x` after every run. Each variant must give the same
  * sum, except `fe-empty`, which writes nothing.
@@ -50,7 +52,18 @@ const DT = 0.016;
 const REPS = 100;
 const UNASSIGNED = -1;
 const INDEX_BITS = 20;
-const VARIANTS = ["packed", "fe", "fe-empty", "tight-full-cb", "tight-full", "tight-2store", "raw"];
+const VARIANTS = [
+	"packed",
+	"fe",
+	"fe-shared",
+	"batch",
+	"batch-shared",
+	"fe-empty",
+	"tight-full-cb",
+	"tight-full",
+	"tight-2store",
+	"raw"
+];
 
 const self = url.fileURLToPath(import.meta.url);
 const here = path.dirname(self);
@@ -84,7 +97,7 @@ if (variant === "packed") {
 	const q = ecs.query(Pos, Vel);
 	fn = () => {
 		for (let r = 0; r < REPS; r++) {
-			q.eachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { vx, vy } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -96,7 +109,7 @@ if (variant === "packed") {
 	};
 	check = () => {
 		let s = 0;
-		q.eachChunk((cols, count) => {
+		q.forEachColumns((cols, count) => {
 			const { x } = cols.read(Pos);
 			for (let i = 0; i < count; i++) s += x[i];
 		});
@@ -131,13 +144,13 @@ if (variant === "packed") {
 
 	// The tight variants read the store through its private fields. The build
 	// keeps the names, and this file breaks loudly when a rename removes one.
-	const store = ecs.store;
-	const posS = store.sparseStores[Pos];
-	const velS = store.sparseStores[Vel];
-	const entArch = store.entityArchetype;
-	const entRow = store.entityRow;
-	const archetypes = store.archGraph.archetypes;
-	const gens = store.entityAllocator.generations;
+	const store = ecs._store;
+	const posS = store._sparseStores[Pos];
+	const velS = store._sparseStores[Vel];
+	const entArch = store._entityArchetypes;
+	const entRow = store._entityRows;
+	const archetypes = store._archGraph.archetypes;
+	const gens = store._entityAllocator.generations;
 	if (!posS?._dense || !posS._cols || !velS?._pos || !entArch || !entRow || !archetypes || !gens) {
 		throw new Error("a private field of the store is not reachable, update this probe");
 	}
@@ -149,14 +162,65 @@ if (variant === "packed") {
 		return ok;
 	};
 
-	if (variant === "fe") {
+	// Distinct literals. Closures of one literal share call feedback, and V8 can
+	// still inline them.
+	const k = new Float64Array(1);
+	const others = [
+		(e) => (k[0] += e),
+		(e) => (k[0] -= e),
+		(e) => (k[0] += e * 2),
+		(e) => (k[0] += e * 3),
+		(e) => (k[0] += e * 4),
+		(e) => (k[0] += e * 5)
+	];
+	const batchStep = (ids, count) => {
+		for (let i = 0; i < count; i++) {
+			const e = ids[i];
+			p.at(e);
+			v.at(e);
+			p.x += v.vx * DT;
+			p.y += v.vy * DT;
+		}
+	};
+
+	if (variant === "fe" || variant === "fe-shared") {
+		if (variant === "fe-shared")
+			for (let r = 0; r < 20; r++) for (const o of others) q.forEachEntity(o);
 		fn = () => {
 			for (let r = 0; r < REPS; r++) q.forEachEntity(step);
 		};
+	} else if (variant === "batch" || variant === "batch-shared") {
+		if (variant === "batch-shared") {
+			const wrap = [
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[0](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[1](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[2](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[3](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[4](ids[i]);
+				},
+				(ids, n) => {
+					for (let i = 0; i < n; i++) others[5](ids[i]);
+				}
+			];
+			for (let r = 0; r < 20; r++) for (const w of wrap) q.forEachIds(w);
+		}
+		fn = () => {
+			for (let r = 0; r < REPS; r++) q.forEachIds(batchStep);
+		};
 	} else if (variant === "fe-empty") {
-		let k = 0;
+		// Sum into a typed array. A captured `let` leaves the small-integer range
+		// and boxes on each store, which costs more than the driver.
 		const nop = (e) => {
-			k += e;
+			k[0] += e;
 		};
 		fn = () => {
 			for (let r = 0; r < REPS; r++) q.forEachEntity(nop);

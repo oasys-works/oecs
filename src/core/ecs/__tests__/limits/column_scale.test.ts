@@ -24,7 +24,7 @@ describe("Column scale", () => {
 			world.addComponent(e, Pos, { x: i, y: i * 3 });
 		}
 
-		world.query(Pos).forEach((arch) => {
+		world.query(Pos).forEachArchetype((arch) => {
 			const cx = arch.getColumnRead(Pos, "x");
 			const cy = arch.getColumnRead(Pos, "y");
 			for (let i = 0; i < arch.entityCount; i++) {

@@ -304,7 +304,7 @@ describe("interaction-net oracle (deterministic simulation, lockstep vs referenc
 			steps: 4000
 		});
 		// `quarantineCheck` holds the exact set equality, and `compare` holds the
-		// strongest assertion: a disabled row that `forEachChunk` still visits gives the
+		// strongest assertion: a disabled row that `forEachColumns` still visits gives the
 		// wrong `Age.ticks` at the next tick. These are the floors.
 		expect(stats.disableCalls).toBeGreaterThan(100);
 		expect(stats.enableCalls).toBeGreaterThan(50);

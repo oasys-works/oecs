@@ -21,7 +21,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
 				// Iterate over Pos-only entities and add Vel to one
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
 						ctx.commands.add(eid, Vel, { vx: 10, vy: 20 });
@@ -64,7 +64,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				posVelQuery.forEach((arch) => {
+				posVelQuery.forEachArchetype((arch) => {
 					const px = arch.getColumnRead(Pos, "x");
 					const vx = arch.getColumnRead(Vel, "vx");
 					for (let i = 0; i < arch.entityCount; i++) {
@@ -103,7 +103,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Tag]),
 			fn(ctx) {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i];
 						// When iterating eB, add Tag to eA
@@ -148,7 +148,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 		const sys = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn(ctx) {
-				posQuery.forEach((arch) => {
+				posQuery.forEachArchetype((arch) => {
 					for (let i = 0; i < arch.entityCount; i++) {
 						const eid = arch.entityIds[i] as EntityID;
 						ctx.commands.add(eid, Vel, { vx: 1, vy: 2 });
@@ -163,7 +163,7 @@ describe("Structural changes mid-system are properly deferred", () => {
 
 		// After flush, all 100 entities should be in the Pos+Vel query
 		let total = 0;
-		posVelQuery.forEach((arch) => {
+		posVelQuery.forEachArchetype((arch) => {
 			total += arch.entityCount;
 		});
 		expect(total).toBe(100);

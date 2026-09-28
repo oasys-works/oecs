@@ -16,7 +16,7 @@
  *  - exclusive-only guard (`RELATION_MODE_MISMATCH`) + cycle guard (`RELATION_CYCLE`)
  *  - intersection and composition with dense + sparse terms
  *  - `relationReads: [R]` access declaration (in-system)
- *  - `forEach` and `count` reject a hierarchy query (no per-archetype span)
+ *  - `forEachArchetype` and `count` reject a hierarchy query (no per-archetype span)
  *  - cached, stable instances + single-ordering guard.
  *
  * Entity index == creation order for a fresh world (generation 0), so the
@@ -67,6 +67,23 @@ describe(".hierarchy(R), canonical depth ordering", () => {
 
 		// depth 0: [r] . Depth 1: [p, q] (3 < 4) . Depth 2: [x, y] (1 < 2)
 		expect(order(world.query(Node).hierarchy(ChildOf))).toEqual([r, p, q, x, y].map(Number));
+	});
+
+	it("forEachIds gives the depth order of forEachEntity", () => {
+		const world = ECS.create({ plugins: [relations()] });
+		const Node = world.registerTag();
+		const ChildOf = registerChildOf(world);
+		const ids = Array.from({ length: 6 }, () => world.spawn());
+		for (const e of ids) world.addComponent(e, Node);
+		world.relations.add(ids[0], ChildOf, ids[3]);
+		world.relations.add(ids[1], ChildOf, ids[0]);
+		world.relations.add(ids[5], ChildOf, ids[3]);
+		const q = world.query(Node).hierarchy(ChildOf);
+		const got: number[] = [];
+		q.forEachIds((batch, count) => {
+			for (let i = 0; i < count; i++) got.push(batch[i] as number);
+		});
+		expect(got).toEqual(order(q));
 	});
 
 	it("a lone matched entity with no relation is a root (depth 0)", () => {
@@ -310,12 +327,12 @@ describe(".hierarchy(R), guards", () => {
 		).toThrow(/cycle/i);
 	});
 
-	it("forEach, count and archetypeCount reject a hierarchy query (no per-archetype span)", () => {
+	it("forEachArchetype, count and archetypeCount reject a hierarchy query (no per-archetype span)", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const Node = world.registerTag();
 		const ChildOf = registerChildOf(world);
 		const q = world.query(Node).hierarchy(ChildOf);
-		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
+		expect(() => q.forEachArchetype(() => {})).toThrow(/forEachEntity/);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
 		expect(() => q.archetypeCount).toThrow(/forEachEntity/);
 	});

@@ -141,7 +141,7 @@ describe("cursor", () => {
 		const detector = ecs.registerSystem({
 			...openAccess([Pos]),
 			fn() {
-				dq.changed(Pos).forEach(() => {
+				dq.changed(Pos).forEachArchetype(() => {
 					seen++;
 				});
 			}

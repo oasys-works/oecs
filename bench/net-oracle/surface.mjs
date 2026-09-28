@@ -36,6 +36,7 @@
  * not a part of the package.
  */
 import { Divergence } from "./driver.mjs";
+import { aos } from "./aos.mjs";
 
 /** A world with the snapshot plugin installed. The tools here drive capture
  * and restore, so they take it. A consumer installs only the plugins it
@@ -512,7 +513,7 @@ export function templatesAndBatch(lib) {
 	// Find the archetype of the bulk-spawned rows, and add a component to the whole
 	// archetype at one time. Each row of it must get the same value.
 	let target = null;
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		if (arch.hasComponent(Mark.id)) return;
 		if (target === null) target = arch.id;
 	});
@@ -520,7 +521,7 @@ export function templatesAndBatch(lib) {
 	if (target === null) bad(what, `no archetype of {Pos, Vel} with no Mark was found`);
 	// Collect the members before the add: the add moves every row to a new archetype.
 	const members = [];
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		if (arch.id !== target) return;
 		const ids = arch.entityIds;
 		for (let i = 0; i < arch.entityCount; i++) members.push(ids[i]);
@@ -531,7 +532,7 @@ export function templatesAndBatch(lib) {
 
 	// And back again. `batchRemoveComponent` takes the archetype that the add made.
 	let withExtra = null;
-	ecs.query(Pos, Vel, Extra).forEach((arch) => {
+	ecs.query(Pos, Vel, Extra).forEachArchetype((arch) => {
 		if (withExtra === null) withExtra = arch.id;
 	});
 	counted();
@@ -550,7 +551,7 @@ export function templatesAndBatch(lib) {
 	// `entityIdAtRow` reads the id out of a row of an archetype. Therefore the two
 	// helpers must agree for each row of each archetype that the model holds. The row
 	// must give the same id again.
-	ecs.query(Pos, Vel).forEach((arch) => {
+	ecs.query(Pos, Vel).forEachArchetype((arch) => {
 		const ids = arch.entityIds;
 		for (let row = 0; row < arch.entityCount; row++) {
 			eq(what, `entityIdAtRow(${arch.id}, ${row})`, ecs.entityIdAtRow(arch.id, row), ids[row]);
@@ -667,7 +668,7 @@ export function commandReplay(lib) {
 			reads: [Vel],
 			writes: [Pos],
 			fn: () => {
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const { x } = cols.mut(Pos);
 					const { dx } = cols.read(Vel);
 					for (let i = 0; i < count; i++) x[i] += dx[i];
@@ -1184,7 +1185,7 @@ export function relationRemoval(lib) {
 /**
  * `ecs.cursor`, `ecs.cursorRead`, `ctx.ref`, `ctx.refRead` and `tryGetField`.
  *
- * The simulation writes each column through `forEachChunk`, `setField` or
+ * The simulation writes each column through `forEachColumns`, `setField` or
  * `updateField`. Therefore it never reaches this family of calls. `mutants.mjs`
  * found that gap: the first version of the `changed-tick-not-set-by-mut` mutant
  * removed the line for the change tick from `ctx.ref`. Its pattern matched, and the
@@ -1262,7 +1263,7 @@ export function cursorsAndRefs(lib) {
 		writes: [],
 		fn: () => {
 			changedArchetypes = 0;
-			qChanged.forEach(() => changedArchetypes++);
+			qChanged.forEachArchetype(() => changedArchetypes++);
 		}
 	});
 	ecs.addSystems(SCHEDULE.UPDATE, writer);
@@ -1605,7 +1606,7 @@ export function immediateComponentWrites(lib) {
 	const qPos = ecs.query(Pos);
 	const archOf = (e) => {
 		let id = -1;
-		qPos.forEach((arch) => {
+		qPos.forEachArchetype((arch) => {
 			const ids = arch.entityIds;
 			for (let i = 0; i < arch.entityCount; i++) if (ids[i] === e) id = arch.id;
 		});
@@ -1793,13 +1794,13 @@ export function templateRefusals(lib) {
  * `archetypeCount`, `archetypes` and `excludeWords` answer from the unfiltered
  * dense archetype list. A `where` term narrows that list at the rebuild. Those
  * three would then answer wider than the query matches, so each one refuses a
- * term-carrying query with `QUERY_TERM_DENSE_PATH`. `forEach`, `some`,
+ * term-carrying query with `QUERY_TERM_DENSE_PATH`. `forEachArchetype`, `some`,
  * `entityCount` and `forEachEntity` walk the list the rebuild produced. They
  * answer, and this probe gives each one an exact count.
  *
  * A sparse term is the other half, and the set of readers is different.
  * `andSparse` and `andRelation` leave the dense list alone. They filter each
- * entity instead. So `archetypeCount`, `entityCount`, `forEach`, `forEachChunk`
+ * entity instead. So `archetypeCount`, `entityCount`, `forEachArchetype`, `forEachColumns`
  * and `some` refuse with `SPARSE_QUERY_DENSE_PATH`. `forEachEntity` is the one
  * reader that honours the term. `archetypes` answers, because the dense list is
  * the right list for a sparse term.
@@ -1848,7 +1849,7 @@ export function denseReaderRefusals(lib) {
 	};
 	const archWalk = (query) => {
 		let n = 0;
-		query.forEach(() => n++);
+		query.forEachArchetype(() => n++);
 		return n;
 	};
 	eq(what, "the entities of the base query", q.entityCount, 9);
@@ -1860,7 +1861,7 @@ export function denseReaderRefusals(lib) {
 	// the list that each of them walks.
 	eq(what, "forEachEntity on a where query", walk(qWhere), 5);
 	eq(what, "entityCount on a where query", qWhere.entityCount, 5);
-	eq(what, "forEach on a where query", archWalk(qWhere), 2);
+	eq(what, "forEachArchetype on a where query", archWalk(qWhere), 2);
 	let stopped = 0;
 	counted();
 	if (!qWhere.some(() => ++stopped > 0)) bad(what, `some on a where query found no archetype`);
@@ -1894,7 +1895,7 @@ export function denseReaderRefusals(lib) {
 			what,
 			`${name} on a where query`,
 			ECS_ERROR.QUERY_TERM_DENSE_PATH,
-			[`Query.${name}`, termName, "forEach"],
+			[`Query.${name}`, termName, "forEachArchetype"],
 			read
 		);
 	}
@@ -1907,8 +1908,8 @@ export function denseReaderRefusals(lib) {
 		for (const [name, read] of [
 			["archetypeCount", () => query.archetypeCount],
 			["entityCount", () => query.entityCount],
-			["forEach", () => query.forEach(() => undefined)],
-			["forEachChunk", () => query.forEachChunk(() => undefined)],
+			["forEachArchetype", () => query.forEachArchetype(() => undefined)],
+			["forEachColumns", () => query.forEachColumns(() => undefined)],
 			["some", () => query.some(() => true)]
 		]) {
 			throwsNaming(
@@ -2318,7 +2319,7 @@ export function whereTerms(lib) {
 	};
 	const archWalk = (query) => {
 		let n = 0;
-		query.forEach(() => n++);
+		query.forEachArchetype(() => n++);
 		return n;
 	};
 	eq(what, "the entities of the base query", q.entityCount, 20);
@@ -2376,6 +2377,514 @@ export function whereTerms(lib) {
 }
 
 // ── the runner ──────────────────────────────────────────────────────────────
+// ── 22. the storage seam and the access domains ─────────────────────────────
+/**
+ * A store a plugin owns, and the access domain that guards it.
+ *
+ * The net keeps two such stores (`aos.mjs`) and reaches the deferred destroy, the
+ * digest and a restore that must succeed. It never destroys an entity at once,
+ * never holds a store that folds nothing, never restores into a world that
+ * registered other stores, and never reads a frame of the legacy version. Its one
+ * system declares its domains correctly, so no refusal fires in it. This probe
+ * reads each of those.
+ *
+ * The purge. Two stores, both purging, so the core must call every store and not
+ * the first. The immediate despawn, the immediate cascade and the deferred
+ * cascade each drop the records of every entity they take, and a recycled index
+ * starts empty.
+ *
+ * The digest. A store with no `hash` folds nothing, and a store whose `hash` folds
+ * no word still moves the digest. Two stores that fold one word between them give
+ * two digests, by the position of each.
+ *
+ * The snapshot. A restore reads the records back, and each store restores after
+ * the world, so its `restore` reads the restored entities. A store of another name,
+ * a store that refuses its own bytes, a legacy frame where a store needs a
+ * section and a store with no capture each refuse with an `ECSRestoreError`,
+ * and the world stays as it was.
+ *
+ * The access domain. A development build refuses each undeclared access, and names
+ * the system, the domain and the field. A production build compiles the check out,
+ * so there each access goes through, and the probe reads that it did.
+ */
+function rawStorage(provider, name = provider.name) {
+	return { name: `raw.${name}`, install: (host) => (host.registerStorage(provider), {}) };
+}
+
+export function pluginStorage(lib) {
+	const what = "storage";
+	const at = CHECKS;
+	const { ECS, ECS_ERROR, ECSRestoreError, SCHEDULE, ECS_SNAPSHOT_VERSION } = lib;
+	const dev = devBuild(lib);
+	const storageWorld = () =>
+		ECS.create({ deterministic: true, plugins: [lib.snapshots(), lib.relations(), aos(lib)()] });
+
+	// ── the purge, on every path, for every store ───────────────────────────
+	{
+		const w = storageWorld();
+		const one = w.aos.define("probe.One", ["v"]);
+		const two = w.aos.define("probe.Two", ["v"]);
+		const ChildOf = lib.registerChildOf(w);
+		const es = [];
+		for (let i = 0; i < 6; i++) es.push(w.spawn());
+		for (let i = 0; i < 6; i++) {
+			one.add(es[i], { v: i });
+			two.add(es[i], { v: 10 + i });
+		}
+		w.relations.add(es[2], ChildOf, es[1]);
+		w.relations.add(es[4], ChildOf, es[3]);
+
+		w.despawn(es[0]);
+		eq(what, "store One holds the record of an entity despawned at once", one.has(es[0]), false);
+		eq(what, "store Two holds the record of an entity despawned at once", two.has(es[0]), false);
+		eq(what, "records One's purge dropped after one immediate despawn", one.purgedRecords, 1);
+		eq(what, "records Two's purge dropped after one immediate despawn", two.purgedRecords, 1);
+
+		// The immediate cascade: the parent and its child.
+		w.despawn(es[1]);
+		eq(what, "the child the immediate cascade took, in store One", one.has(es[2]), false);
+		eq(what, "the child the immediate cascade took, in store Two", two.has(es[2]), false);
+		eq(what, "records One's purge dropped after the immediate cascade", one.purgedRecords, 3);
+
+		// The deferred cascade, from a system.
+		let cut = null;
+		w.addSystems(
+			SCHEDULE.UPDATE,
+			w.registerSystem({
+				name: "probe-cut",
+				reads: [],
+				writes: [],
+				exclusive: true,
+				fn: (ctx) => {
+					if (cut !== null) ctx.commands.despawn(cut);
+					cut = null;
+				}
+			})
+		);
+		w.startup();
+		cut = es[3];
+		w.update(1);
+		eq(what, "the parent of the deferred cascade, alive", w.isAlive(es[3]), false);
+		eq(what, "the child the deferred cascade took, in store One", one.has(es[4]), false);
+		eq(what, "the child the deferred cascade took, in store Two", two.has(es[4]), false);
+		eqList(what, "the members of store One after every path", one.members(), [es[5]]);
+		eqList(what, "the members of store Two after every path", two.members(), [es[5]]);
+		eq(what, "records Two's purge dropped in all", two.purgedRecords, 5);
+		eq(what, "the value of the survivor in store Two", two.get(es[5], "v"), 15);
+
+		// The free list is LIFO: the next spawn takes the last index freed.
+		const fresh = w.spawn();
+		eq(what, "a recycled index in store One", one.has(fresh), false);
+		eq(what, "the size of store One after a spawn at a recycled index", one.size, 1);
+		w.dispose();
+	}
+
+	// ── the digest ─────────────────────────────────────────────────────────
+	{
+		const bare = ECS.create({ deterministic: true, plugins: [lib.snapshots()] });
+		const quiet = ECS.create({
+			deterministic: true,
+			plugins: [lib.snapshots(), rawStorage({ name: "probe.NoHash", purge() {} })]
+		});
+		const silent = ECS.create({
+			deterministic: true,
+			plugins: [lib.snapshots(), rawStorage({ name: "probe.Silent", hash() {} })]
+		});
+		const h = bare.snapshots.stateHash();
+		eq(what, "the digest of a world whose store has no hash", quiet.snapshots.stateHash(), h);
+		counted();
+		if (silent.snapshots.stateHash() === h) {
+			bad(what, "a store whose hash folds no word leaves the digest where a bare world has it");
+		}
+		const pair = (first, second) =>
+			ECS.create({
+				deterministic: true,
+				plugins: [
+					lib.snapshots(),
+					rawStorage({ name: "probe.A", hash: (fold) => first.forEach(fold) }),
+					rawStorage({ name: "probe.B", hash: (fold) => second.forEach(fold) })
+				]
+			}).snapshots.stateHash();
+		counted();
+		if (pair([5], []) === pair([], [5])) {
+			bad(what, "two stores that fold one word between them give one digest, whichever folded it");
+		}
+		eq(what, "the digest of one store pair, read two times", pair([5], [7]), pair([5], [7]));
+		for (const x of [bare, quiet, silent]) x.dispose();
+	}
+
+	// ── the snapshot ───────────────────────────────────────────────────────
+	{
+		const scene = (names) => {
+			const w = storageWorld();
+			const Tag = w.registerComponent({ v: "i32" }, { name: "Tag" });
+			const stores = names.map((n) => w.aos.define(n, ["v"]));
+			const es = [];
+			for (let i = 0; i < 4; i++) es.push(w.spawnBundle(Tag({ v: i })));
+			for (const st of stores) for (let i = 0; i < 3; i++) st.add(es[i], { v: 100 + i });
+			w.startup();
+			return { w, stores, es, Tag };
+		};
+
+		const { w, stores, es, Tag } = scene(["probe.Kin"]);
+		const [kin] = stores;
+		const h0 = w.snapshots.stateHash();
+		const bytes = w.snapshots.capture();
+		eq(
+			what,
+			"the version word of a fresh capture",
+			new DataView(bytes.buffer, bytes.byteOffset).getUint32(4, true),
+			ECS_SNAPSHOT_VERSION
+		);
+		kin.set(es[0], "v", -1);
+		kin.remove(es[1]);
+		kin.add(es[3], { v: 9 });
+		w.despawn(es[2]);
+		w.snapshots.restore(bytes);
+		eq(what, "the digest after a restore", w.snapshots.stateHash(), h0);
+		eqList(what, "the members after a restore", kin.members(), [es[0], es[1], es[2]]);
+		eqList(
+			what,
+			"the values after a restore",
+			[es[0], es[1], es[2]].map((e) => kin.get(e, "v")),
+			[100, 101, 102]
+		);
+
+		// A store restores after the world, so its `restore` reads the restored
+		// entities. The entity died after the capture, and the restore brings it
+		// back before the store looks.
+		{
+			const seen = [];
+			let world = null;
+			let e = null;
+			const probe = {
+				name: "probe.Order",
+				capture: () => new Uint8Array([1]),
+				restore: () => seen.push(world.isAlive(e))
+			};
+			world = ECS.create({ deterministic: true, plugins: [lib.snapshots(), rawStorage(probe)] });
+			e = world.spawn();
+			const snap = world.snapshots.capture();
+			world.despawn(e);
+			world.snapshots.restore(snap);
+			eqList(what, "what the store saw of its entity during the restore", seen, [true]);
+			world.dispose();
+		}
+
+		// Refusals, each before the world changes.
+		const refuse = (name, dst, frame, needles) => {
+			const hash = dst.w.snapshots.stateHash();
+			const probeEntity = dst.es[3];
+			const value = dst.w.getField(probeEntity, dst.Tag, "v");
+			let err = null;
+			try {
+				dst.w.snapshots.restore(frame);
+			} catch (e) {
+				err = e;
+			}
+			counted();
+			if (err === null) bad(what, `${name}: the restore did not refuse`);
+			refusalShape(lib, what, name, err, ECSRestoreError);
+			for (const needle of needles) {
+				counted();
+				if (!String(err.message).includes(needle)) {
+					bad(what, `${name}: the message does not name "${needle}": ${err.message}`);
+				}
+			}
+			eq(what, `${name}: the digest after the refusal`, dst.w.snapshots.stateHash(), hash);
+			eq(
+				what,
+				`${name}: a live field after the refusal`,
+				dst.w.getField(probeEntity, dst.Tag, "v"),
+				value
+			);
+		};
+		refuse("a store of another name", scene(["probe.Other"]), bytes, ["probe.Kin", "probe.Other"]);
+		refuse("a second store", scene(["probe.Kin", "probe.Extra"]), bytes, ["probe.Extra"]);
+		refuse("no store at all", scene([]), bytes, ["probe.Kin", "registered none"]);
+		// The store refuses its own bytes: the width word of its section is damaged.
+		{
+			const damaged = bytes.slice();
+			const view = new DataView(damaged.buffer);
+			const storageLen = view.getUint32(20, true);
+			const storageAt = damaged.length - storageLen;
+			const nameLen = view.getUint32(storageAt + 4, true);
+			view.setInt32(storageAt + 4 + 4 + nameLen + 4, 99, true);
+			const dst = scene(["probe.Kin"]);
+			dst.stores[0].set(dst.es[0], "v", 555);
+			refuse("a store that refuses its own section", dst, damaged, [
+				"probe.Kin",
+				"refused its section"
+			]);
+			eq(what, "the record after the store refused", dst.stores[0].get(dst.es[0], "v"), 555);
+		}
+		// A legacy frame: the five-word header and no storage section.
+		{
+			const plain = scene([]);
+			const v2 = plain.w.snapshots.capture();
+			const view = new DataView(v2.buffer, v2.byteOffset);
+			const storageLen = view.getUint32(20, true);
+			const body = v2.subarray(24, v2.length - storageLen);
+			const v1 = new Uint8Array(20 + body.length);
+			v1.set(v2.subarray(0, 20));
+			new DataView(v1.buffer).setUint32(4, 1, true);
+			v1.set(body, 20);
+			const hash = plain.w.snapshots.stateHash();
+			plain.w.spawnBundle(plain.Tag({ v: 50 }));
+			counted();
+			try {
+				plain.w.snapshots.restore(v1);
+			} catch (e) {
+				bad(
+					what,
+					`a world with no store refused a version 1 frame, which it must read: ${e.message}`
+				);
+			}
+			eq(what, "the digest after a restore of a legacy frame", plain.w.snapshots.stateHash(), hash);
+			refuse("a legacy frame where a store needs a section", scene(["probe.Kin"]), v1, [
+				"none",
+				"probe.Kin"
+			]);
+		}
+		// A store with no capture: its data would outlive the restore.
+		{
+			const keep = ECS.create({
+				deterministic: true,
+				plugins: [lib.snapshots(), rawStorage({ name: "probe.Keep", purge() {} })]
+			});
+			const snap = keep.snapshots.capture();
+			const e = keep.spawn();
+			const hash = keep.snapshots.stateHash();
+			let err = null;
+			try {
+				keep.snapshots.restore(snap);
+			} catch (x) {
+				err = x;
+			}
+			counted();
+			if (err === null) {
+				bad(what, "a store with no capture: the restore did not refuse");
+			} else {
+				refusalShape(lib, what, "a store with no capture", err, ECSRestoreError);
+				counted();
+				if (!String(err.message).includes("probe.Keep")) {
+					bad(what, `a store with no capture: the message does not name it: ${err.message}`);
+				}
+			}
+			eq(what, "a store with no capture: the entity after the refusal", keep.isAlive(e), true);
+			eq(
+				what,
+				"a store with no capture: the digest after the refusal",
+				keep.snapshots.stateHash(),
+				hash
+			);
+			keep.dispose();
+		}
+		w.dispose();
+	}
+
+	// ── registration refuses a malformed store ──────────────────────────────
+	throwsNaming(
+		lib,
+		what,
+		"a store with no name",
+		ECS_ERROR.INVALID_STORAGE_PROVIDER,
+		["name"],
+		() => ECS.create({ plugins: [rawStorage({ name: "" }, "anon")] })
+	);
+	throwsNaming(
+		lib,
+		what,
+		"a store with capture alone",
+		ECS_ERROR.INVALID_STORAGE_PROVIDER,
+		["probe.Half", "capture"],
+		() =>
+			ECS.create({
+				plugins: [rawStorage({ name: "probe.Half", capture: () => new Uint8Array(0) })]
+			})
+	);
+	throwsNaming(
+		lib,
+		what,
+		"a store with restore alone",
+		ECS_ERROR.INVALID_STORAGE_PROVIDER,
+		["probe.Half", "restore"],
+		() => ECS.create({ plugins: [rawStorage({ name: "probe.Half", restore() {} })] })
+	);
+	{
+		const w = storageWorld();
+		w.aos.define("probe.Twice", ["v"]);
+		throwsNaming(
+			lib,
+			what,
+			"a second store of one name",
+			ECS_ERROR.INVALID_STORAGE_PROVIDER,
+			["probe.Twice"],
+			() => w.aos.define("probe.Twice", ["w"])
+		);
+		w.dispose();
+	}
+
+	// ── the access domain ──────────────────────────────────────────────────
+	// Each case builds a world, runs one tick, and gives back the error or null.
+	// A development build must refuse where `refuses` names an op. A production
+	// build must let the op through, and `after` reads that it went through.
+	const domainCase = (name, { declare = () => ({}), body, runIf, observe, refuses, after }) => {
+		const w = ECS.create({ plugins: [aos(lib)(), lib.observers()] });
+		const kin = w.aos.define("probe.Kin", ["v"]);
+		const e = w.spawn();
+		kin.add(e, { v: 1 });
+		const d = declare(kin);
+		let got = null;
+		if (observe) {
+			const Hit = w.registerComponent({ n: "i32" }, { name: "Hit" });
+			w.observe(Hit, { onAdd: (x) => kin.add(x, { v: 5 }), access: d });
+			w.addSystems(
+				SCHEDULE.UPDATE,
+				w.registerSystem({
+					name: "probe-hitter",
+					reads: [],
+					writes: [],
+					spawns: [[Hit]],
+					fn: (ctx) => void ctx.commands.spawn(Hit({ n: 1 }))
+				})
+			);
+		} else {
+			const sys = w.registerSystem({
+				name: "probe-sys",
+				reads: [],
+				writes: [],
+				...(runIf ? {} : d),
+				fn: () => {
+					got = body(kin, e);
+				}
+			});
+			const cond = runIf ? runIf(kin, e, d) : null;
+			w.addSystems(SCHEDULE.UPDATE, cond === null ? sys : { system: sys, runIf: cond });
+		}
+		w.startup();
+		let err = null;
+		try {
+			w.update(1);
+		} catch (x) {
+			err = x;
+		}
+		if (dev && refuses !== undefined) {
+			const [who, op, field] = refuses;
+			counted();
+			if (err === null)
+				bad(what, `${name}: the ${op} went through, and a development build refuses it`);
+			eq(what, `${name}: the category`, err.category, ECS_ERROR.ACCESS_UNDECLARED);
+			for (const needle of [`'${who}'`, `performed ${op} on access domain 'probe.Kin'`, field]) {
+				counted();
+				if (!String(err.message).includes(needle)) {
+					bad(what, `${name}: the message does not name "${needle}": ${err.message}`);
+				}
+			}
+		} else {
+			counted();
+			if (err !== null) bad(what, `${name}: threw ${err.message}`);
+			after(kin, e, got);
+		}
+		w.dispose();
+	};
+
+	domainCase("a declared read", {
+		declare: (k) => ({ domainReads: [k.domain] }),
+		body: (k, e) => k.get(e, "v"),
+		after: (k, e, got) => eq(what, "the value a declared reader read", got, 1)
+	});
+	domainCase("a read that the system never declared", {
+		body: (k, e) => k.get(e, "v"),
+		refuses: ["probe-sys", "read", "domainReads or domainWrites"],
+		after: (k, e, got) =>
+			eq(what, "the value an undeclared reader read, in a production build", got, 1)
+	});
+	domainCase("a write under a read declaration", {
+		declare: (k) => ({ domainReads: [k.domain] }),
+		body: (k, e) => k.set(e, "v", 2),
+		refuses: ["probe-sys", "write", "domainWrites"],
+		after: (k, e) =>
+			eq(what, "the value after an undeclared write, in a production build", k.get(e, "v"), 2)
+	});
+	domainCase("a read under a write declaration", {
+		declare: (k) => ({ domainWrites: [k.domain] }),
+		body: (k, e) => (k.set(e, "v", k.get(e, "v") + 1), k.get(e, "v")),
+		after: (k, e) => eq(what, "the value a writer read and wrote", k.get(e, "v"), 2)
+	});
+	domainCase("a second domain of one name", {
+		declare: () => ({ domainWrites: [lib.accessDomain("probe.Kin")] }),
+		body: (k, e) => k.get(e, "v"),
+		refuses: ["probe-sys", "read", "domainReads"],
+		after: (k, e, got) =>
+			eq(what, "the value a twin-domain reader read, in a production build", got, 1)
+	});
+	domainCase("an exclusive system", {
+		declare: () => ({ exclusive: true }),
+		body: (k, e) => (k.set(e, "v", 7), k.get(e, "v")),
+		after: (k, e) => eq(what, "the value an exclusive system wrote", k.get(e, "v"), 7)
+	});
+	domainCase("a run condition that declared its read", {
+		declare: (k) => ({ domainReads: [k.domain] }),
+		runIf: (k, e, d) => ({ name: "probe-gate", ...d, evaluate: () => k.get(e, "v") === 1 }),
+		body: () => 1,
+		after: (k, e, got) => eq(what, "the body the gate let through", got, 1)
+	});
+	domainCase("a run condition that did not declare its read", {
+		runIf: (k, e) => ({ name: "probe-gate", evaluate: () => k.get(e, "v") === 1 }),
+		body: () => 1,
+		refuses: ["probe-gate", "read", "domainReads"],
+		after: (k, e, got) =>
+			eq(what, "the body an undeclared gate let through, in a production build", got, 1)
+	});
+	domainCase("a run condition that writes", {
+		declare: (k) => ({ domainReads: [k.domain] }),
+		runIf: (k, e, d) => ({
+			name: "probe-gate",
+			...d,
+			evaluate: () => (k.set(e, "v", 3), true)
+		}),
+		body: () => 1,
+		refuses: ["probe-gate", "write", "domainWrites"],
+		after: (k, e) =>
+			eq(what, "the value a writing gate left, in a production build", k.get(e, "v"), 3)
+	});
+	domainCase("a combinator over a gate that declared its read", {
+		declare: (k) => ({ domainReads: [k.domain] }),
+		runIf: (k, e, d) =>
+			lib.runIfAll(
+				{ name: "probe-always", evaluate: () => true },
+				{ name: "probe-gate", ...d, evaluate: () => k.get(e, "v") === 1 }
+			),
+		body: () => 1,
+		after: (k, e, got) => eq(what, "the body the combined gate let through", got, 1)
+	});
+	domainCase("an observer that declared its write", {
+		declare: (k) => ({ domainWrites: [k.domain] }),
+		observe: true,
+		after: (k) => eq(what, "the records after the observer wrote", k.size, 2)
+	});
+	domainCase("an observer that did not declare its write", {
+		declare: () => ({}),
+		observe: true,
+		refuses: ["observer(Hit)", "write", "domainWrites"],
+		after: (k) =>
+			eq(what, "the records after an undeclared observer wrote, in a production build", k.size, 2)
+	});
+	{
+		// Outside every system the check does not apply, in each build.
+		const w = ECS.create({ plugins: [aos(lib)()] });
+		const kin = w.aos.define("probe.Kin", ["v"]);
+		const e = w.spawn();
+		kin.add(e, { v: 4 });
+		kin.set(e, "v", kin.get(e, "v") + 1);
+		eq(what, "a read and a write outside every system", kin.get(e, "v"), 5);
+		w.dispose();
+	}
+
+	return CHECKS - at;
+}
+
 /**
  * Each probe: its name, its function, and a floor on the count of the assertions
  * that it must make.
@@ -2387,11 +2896,12 @@ export function whereTerms(lib) {
  * report only.
  *
  * Each floor is the count that a production build makes. A development build makes
- * the same count or more. Four probes read a guard that a `DEV` build alone keeps.
- * Each of the four makes fewer comparisons in a production build. `frameTrace` reads its
+ * the same count or more. Five probes read a guard that a `DEV` build alone keeps.
+ * Each of the five makes fewer comparisons in a production build. `frameTrace` reads its
  * trace sink. `templateRefusals` and `denseReaderRefusals` read a refusal that a
  * production build does not raise. `pluginHost` reads one refusal of its three.
- * `devBuild` selects the arm.
+ * `pluginStorage` reads the access-domain refusals, and in a production build reads
+ * instead that each access went through. `devBuild` selects the arm.
  */
 export const PROBES = [
 	["traversal guards (cycle, maxDepth)", traversalGuards, 11],
@@ -2414,7 +2924,8 @@ export const PROBES = [
 	["the plugin host, bare slots and a third-party plugin", pluginHost, 49],
 	["the open phase set", openPhases, 27],
 	["the write seam at a phase the caller added", seamAtAddedPhase, 7],
-	["the shape of a where term", whereTerms, 24]
+	["the shape of a where term", whereTerms, 24],
+	["the storage seam and the access domains", pluginStorage, 115]
 ];
 
 /** Run each probe. It gives back the count of the probes and the count of the

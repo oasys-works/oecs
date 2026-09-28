@@ -45,7 +45,7 @@ describe("ECS query", () => {
 		// Query [Pos] should match both archetypes
 		const matches = world.query(Pos);
 		const allEntities: number[] = [];
-		matches.forEach((a) => {
+		matches.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) allEntities.push(a.entityIds[i]);
 		});
 		expect(allEntities).toContain(e1);
@@ -159,7 +159,7 @@ describe("ECS query", () => {
 
 		// e2 should not appear in any archetype
 		const entityIds: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entityIds.push(a.entityIds[i]);
 		});
 		expect(entityIds).toContain(e1);
@@ -256,7 +256,7 @@ describe("ECS query", () => {
 		const q = world.query(Pos).or(Vel, Hp);
 
 		const entityIds: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) entityIds.push(a.entityIds[i]);
 		});
 		expect(entityIds).toContain(e1);
@@ -309,7 +309,7 @@ describe("ECS query", () => {
 		// Each matching archetype appears exactly once.
 		const seen = new Set<number>();
 		let visits = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			visits++;
 			seen.add(a.id);
 		});
@@ -319,7 +319,7 @@ describe("ECS query", () => {
 		// Every entity is counted exactly once (no double-visit inflation).
 		expect(q.entityCount).toBe(4);
 		const ids: number[] = [];
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			for (let i = 0; i < a.entityCount; i++) ids.push(a.entityIds[i]);
 		});
 		expect(ids.length).toBe(4);

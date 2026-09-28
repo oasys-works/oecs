@@ -3,7 +3,7 @@
  *
  * `Store.snapshot()` and `Store.restore()` mount a captured world back onto a
  * live, ticking `Store` ("rewind a running world and keep ticking"). A full
- * snapshot is three sections:
+ * snapshot is four sections:
  *
  *   1. **dense**, the store column bytes (`columnStoreBytesView`): every
  *      component column, the entity-index region (generations, archetype and row
@@ -18,6 +18,8 @@
  *      resume, see below), the alive count, and per-archetype `length` and
  *      `enabledCount` (the SAB descriptor omits these for tag-only archetypes,
  *      so the capture takes them for every archetype uniformly).
+ *   4. **storage**, one named entry for each plugin store. A version 1
+ *      frame has no such section.
  *
  * **Why serialize the free-list rather than rescan it.** A scan of the restored
  * entity-index region recovers the *set* of recycled slots but not the *order*
@@ -149,44 +151,56 @@ export function parseHostState(bytes: Uint8Array): HostState {
 	return { tick, entityHighWater, entityAliveCount, freeIndices, archetypeRows };
 }
 
-/** Assemble the combined world-snapshot frame from its three sections. Layout:
+/** Assemble the combined world-snapshot frame from its four sections. Layout:
  *
- *   [u32 magic][u32 version][u32 denseLen][u32 sparseLen][u32 hostLen]
- *   [dense][sparse][host]
+ *   [u32 magic][u32 version][u32 denseLen][u32 sparseLen][u32 hostLen][u32 storageLen]
+ *   [dense][sparse][host][storage]
  */
 export function frameWorldSnapshot(
 	dense: Uint8Array,
 	sparse: Uint8Array,
-	host: Uint8Array
+	host: Uint8Array,
+	storage: Uint8Array
 ): Uint8Array {
-	const header = U32 * 5;
-	const out = new Uint8Array(header + dense.length + sparse.length + host.length);
+	const header = U32 * 6;
+	const out = new Uint8Array(header + dense.length + sparse.length + host.length + storage.length);
 	const view = new DataView(out.buffer);
 	view.setUint32(0, WORLD_SNAPSHOT_MAGIC, true);
 	view.setUint32(4, ECS_SNAPSHOT_VERSION, true);
 	view.setUint32(8, dense.length, true);
 	view.setUint32(12, sparse.length, true);
 	view.setUint32(16, host.length, true);
-	out.set(dense, header);
-	out.set(sparse, header + dense.length);
-	out.set(host, header + dense.length + sparse.length);
+	view.setUint32(20, storage.length, true);
+	let at = header;
+	out.set(dense, at);
+	at += dense.length;
+	out.set(sparse, at);
+	at += sparse.length;
+	out.set(host, at);
+	at += host.length;
+	out.set(storage, at);
 	return out;
 }
 
-/** The three sections of a combined frame, as zero-copy subviews over `bytes`. */
+/** The frame version with no storage section and a five-word header. */
+export const LEGACY_ECS_SNAPSHOT_VERSION = 1;
+
+/** The sections of a combined frame, as zero-copy subviews over `bytes`.
+ * `storage` is `null` for a version 1 frame. */
 export interface WorldSnapshotSections {
 	readonly dense: Uint8Array;
 	readonly sparse: Uint8Array;
 	readonly host: Uint8Array;
+	readonly storage: Uint8Array | null;
 }
 
 /** Split a combined frame back into its sections. Validates magic, version, and
  * an exact (no trailing bytes) frame. Throws `ECSRestoreError` otherwise. */
 export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
-	const header = U32 * 5;
-	if (bytes.byteLength < header) {
+	const legacyHeader = U32 * 5;
+	if (bytes.byteLength < legacyHeader) {
 		throw new ECSRestoreError(
-			`world snapshot too small: ${bytes.byteLength} bytes (frame header needs ${header})`
+			`world snapshot too small: ${bytes.byteLength} bytes (frame header needs ${legacyHeader})`
 		);
 	}
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -200,27 +214,119 @@ export function unframeWorldSnapshot(bytes: Uint8Array): WorldSnapshotSections {
 		);
 	}
 	const version = view.getUint32(4, true);
-	if (version !== ECS_SNAPSHOT_VERSION) {
+	if (version !== ECS_SNAPSHOT_VERSION && version !== LEGACY_ECS_SNAPSHOT_VERSION) {
 		throw new ECSRestoreError(
 			`incompatible world-snapshot version: snapshot=${version}, build=${ECS_SNAPSHOT_VERSION}`
+		);
+	}
+	const legacy = version === LEGACY_ECS_SNAPSHOT_VERSION;
+	const header = legacy ? legacyHeader : U32 * 6;
+	if (bytes.byteLength < header) {
+		throw new ECSRestoreError(
+			`world snapshot too small: ${bytes.byteLength} bytes (frame header needs ${header})`
 		);
 	}
 	const denseLen = view.getUint32(8, true);
 	const sparseLen = view.getUint32(12, true);
 	const hostLen = view.getUint32(16, true);
-	if (header + denseLen + sparseLen + hostLen !== bytes.byteLength) {
+	const storageLen = legacy ? 0 : view.getUint32(20, true);
+	const total = header + denseLen + sparseLen + hostLen + storageLen;
+	if (total !== bytes.byteLength) {
 		throw new ECSRestoreError(
 			`world-snapshot frame mismatch: header declares ${header}+${denseLen}+${sparseLen}+` +
-				`${hostLen}=${header + denseLen + sparseLen + hostLen} bytes, buffer is ${bytes.byteLength}`
+				`${hostLen}+${storageLen}=${total} bytes, buffer is ${bytes.byteLength}`
 		);
 	}
 	const base = bytes.byteOffset;
 	const buf = bytes.buffer;
-	return {
-		dense: new Uint8Array(buf, base + header, denseLen),
-		sparse: new Uint8Array(buf, base + header + denseLen, sparseLen),
-		host: new Uint8Array(buf, base + header + denseLen + sparseLen, hostLen)
+	let at = base + header;
+	const dense = new Uint8Array(buf, at, denseLen);
+	at += denseLen;
+	const sparse = new Uint8Array(buf, at, sparseLen);
+	at += sparseLen;
+	const host = new Uint8Array(buf, at, hostLen);
+	at += hostLen;
+	const storage = legacy ? null : new Uint8Array(buf, at, storageLen);
+	return { dense, sparse, host, storage };
+}
+
+/** One section of a plugin store, as a subview over the frame. */
+export interface StorageSection {
+	readonly name: string;
+	readonly bytes: Uint8Array;
+}
+
+const utf8Encoder = new TextEncoder();
+// `fatal`, so a damaged name refuses.
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+
+/** Serialize the plugin stores' sections. Layout:
+ *
+ *   [u32 count] then, per store, [u32 nameLen][name utf-8][u32 dataLen][data]
+ *
+ * In registration order. */
+export function serializeStorageSections(sections: readonly StorageSection[]): Uint8Array {
+	const names = sections.map((s) => utf8Encoder.encode(s.name));
+	let len = U32;
+	for (let i = 0; i < sections.length; i++)
+		len += U32 + names[i].length + U32 + sections[i].bytes.length;
+	const out = new Uint8Array(len);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, sections.length, true);
+	let at = U32;
+	for (let i = 0; i < sections.length; i++) {
+		view.setUint32(at, names[i].length, true);
+		at += U32;
+		out.set(names[i], at);
+		at += names[i].length;
+		view.setUint32(at, sections[i].bytes.length, true);
+		at += U32;
+		out.set(sections[i].bytes, at);
+		at += sections[i].bytes.length;
+	}
+	return out;
+}
+
+/** Parse the storage section into subviews over `bytes`. Throws
+ * `ECSRestoreError` on a bad length or trailing bytes. */
+export function parseStorageSections(bytes: Uint8Array): StorageSection[] {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const need = (at: number, n: number, what: string): void => {
+		if (at + n > bytes.byteLength) {
+			throw new ECSRestoreError(
+				`storage section truncated: ${what} needs ${n} bytes at ${at}, section is ${bytes.byteLength}`
+			);
+		}
 	};
+	need(0, U32, "the store count");
+	const count = view.getUint32(0, true);
+	const out: StorageSection[] = [];
+	let at = U32;
+	for (let i = 0; i < count; i++) {
+		need(at, U32, `the name length of store ${i}`);
+		const nameLen = view.getUint32(at, true);
+		at += U32;
+		need(at, nameLen, `the name of store ${i}`);
+		let name: string;
+		try {
+			name = utf8Decoder.decode(bytes.subarray(at, at + nameLen));
+		} catch {
+			throw new ECSRestoreError(`storage section: the name of store ${i} is not valid UTF-8`);
+		}
+		at += nameLen;
+		need(at, U32, `the data length of store '${name}'`);
+		const dataLen = view.getUint32(at, true);
+		at += U32;
+		need(at, dataLen, `the data of store '${name}'`);
+		out.push({ name, bytes: bytes.subarray(at, at + dataLen) });
+		at += dataLen;
+	}
+	if (at !== bytes.byteLength) {
+		throw new ECSRestoreError(
+			`storage section frame mismatch: ${count} stores end at byte ${at}, section is ${bytes.byteLength}`
+		);
+	}
+	return out;
 }
 
 /**

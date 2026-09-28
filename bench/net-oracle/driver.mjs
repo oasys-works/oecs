@@ -197,6 +197,11 @@ export function lockstep(
 		// the last active pair skips the write. Without this count, that skip is
 		// silent.
 		sparseScribbles: 0,
+		// the snapshot round trips that wrote into both plugin stores, and the records
+		// of those stores that the storage layer compared against the model. A run
+		// with none of the first passes a restore that ignores the storage section.
+		storageScribbles: 0,
+		storageChecked: 0,
 		gatedRuns: 0,
 		expectedGated: 0,
 		storeBase,
@@ -380,6 +385,10 @@ export function lockstep(
 		// that a channel clears itself at the end of each update.
 		eventCheck(where, world, plan, roll, fail);
 		stats.events += plan.length;
+		// The plugin stores, every tick, by size alone. `Kin` holds one record for
+		// each live agent, so a destroy that skipped the purge leaves the size above
+		// the count at once. The count is one read for each archetype.
+		storageSizeCheck(where, world, fail);
 		// The change detection, every tick. A set of the ECS holds one tick, so this
 		// cannot wait for the cadence of the deep verification. The `deep` part is the
 		// comparison over each live agent, and that part follows the cadence.
@@ -434,6 +443,7 @@ export function lockstep(
 			compare(where, ref, world);
 			quarantineCheck(where, ref, world, fail);
 			sparseCheck(where, ref, world, fail);
+			stats.storageChecked += storageCheck(where, ref, world, fail);
 			if (provRef !== null) world.assertProvenance(`${where} [prov]`, provRef, fail);
 			for (const s of world.archetypeSignatures()) stats.archetypes.add(s);
 		}
@@ -446,11 +456,17 @@ export function lockstep(
 			// The result says if the round trip reached the sparse store. That write
 			// needs one agent in an active pair. A snapshot on the tick that used the
 			// last active pair finds none. The floor for non-vacuity counts the rest.
-			if (snapshotRoundTrip(where, world)) stats.sparseScribbles++;
+			const wrote = snapshotRoundTrip(where, world);
+			if (wrote.sparse) stats.sparseScribbles++;
+			if (wrote.storage) stats.storageScribbles++;
 			// The partition of the rows must survive the round trip, and so must the
 			// sparse store. Both are part of the state, and neither is a dense column.
 			quarantineCheck(`${where} [post-restore]`, ref, world, fail);
 			sparseCheck(`${where} [post-restore]`, ref, world, fail);
+			// The plugin stores too, and here, before the next tick. `net-aos` writes
+			// each touched record again, so a store that the restore left scribbled
+			// would heal at the next tick and pass every later check.
+			stats.storageChecked += storageCheck(`${where} [post-restore]`, ref, world, fail);
 			// A snapshot captures sparse relations, including multi forward target
 			// sets, which `stateHash` folds in, so the provenance layer has to survive
 			// the round-trip too, not only the dense agent columns.
@@ -565,6 +581,10 @@ export function lockstep(
 	compare(where, ref, world);
 	quarantineCheck(where, ref, world, fail);
 	sparseCheck(where, ref, world, fail);
+	stats.storageChecked += storageCheck(where, ref, world, fail);
+	stats.storagePurged = world.kin.purgedRecords + world.pair.purgedRecords;
+	stats.storageRemoved = world.kin.removed + world.pair.removed;
+	stats.storageJoins = world.aosJoins;
 	if (world.recorder !== null) commandLogCheck(where, world, fail);
 	if (provRef !== null) {
 		world.assertProvenance(`${where} [prov]`, provRef, fail);
@@ -707,7 +727,7 @@ function coversSet(where, fail, what, got, want) {
  *  5. `changed(Age)` and the `onSet` observer on `Age`, exact, in both directions.
  *     `ageTick` asks for the mutable accessor of each archetype that its query gives,
  *     and that call sets the tick even when no write follows. `changeRead` lists the
- *     same archetypes through `forEach`. Therefore this one has an exact expected
+ *     same archetypes through `forEachArchetype`. Therefore this one has an exact expected
  *     value, and it is the sharp check on the path with the granularity of an
  *     archetype.
  *
@@ -875,7 +895,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
 	// ── 5. changed(Age): exact, in both directions ──────────────────────────
 	// `ageTick` asks for the mutable accessor of each archetype that its default query
 	// gives, and that call sets the tick even when no write follows. `changeRead` lists
-	// the same archetypes through `forEach` on the same query. Therefore this is an
+	// the same archetypes through `forEachArchetype` on the same query. Therefore this is an
 	// exact expected value, and it is the sharp check on the path with the granularity
 	// of an archetype.
 	sameSet(
@@ -990,7 +1010,7 @@ export function changeCheck(where, ref, world, fail, touched, { deep, quiesce, m
  *  1. `isDisabled` for each live agent.
  *  2. A default query gives exactly the enabled agents. This is the primary
  *     assertion about the partition, and `compare()` adds the strongest one: it
- *     compares `Age.ticks` exactly, and a disabled row that `forEachChunk` still visits
+ *     compares `Age.ticks` exactly, and a disabled row that `forEachColumns` still visits
  *     therefore gives a divergence at the next tick.
  *  3. `includeDisabled()` gives every agent.
  *  4. The set that `onDisable` and `onEnable` maintain alone.
@@ -1104,6 +1124,85 @@ export function sparseCheck(where, ref, world, fail) {
 	}
 }
 
+// ── the oracle for the plugin stores ────────────────────────────────────────
+/**
+ * The size of plugin store `Kin`, against the live agents. One read for each
+ * archetype, so it runs at each tick.
+ *
+ * `Kin` holds one record for each live agent. A destroy that skips the purge
+ * leaves a dead agent's record, and the size stays above the count from that
+ * tick on. `Pair` has no count this cheap: its model is the `Watch` set, and a
+ * query with a sparse term has no dense count. `storageCheck` reads it on the
+ * cadence of the deep comparison.
+ */
+export function storageSizeCheck(where, world, fail) {
+	const agents = world._countAgents();
+	if (world.kin.size !== agents) {
+		fail(where, `plugin store Kin holds ${world.kin.size} records, and ${agents} agents are live`);
+	}
+}
+
+/**
+ * The two plugin stores, record by record, against the model.
+ *
+ * `Kin` must hold a record for each live agent, with the agent's type and its
+ * `Touch.seq`, and no other record. `Pair` must hold a record for each agent in
+ * an active pair, with its `Touch.seq`, and no other record. The reference holds
+ * the type, the counter and the pairs, so the expected value is the model's and
+ * never the ECS's.
+ *
+ * The records are read two ways. `members()` lists them by the store's own scan,
+ * and `has` and `get` answer for one entity. A store that kept a dead record
+ * fails the first, and one that lost a record fails the second.
+ *
+ * Returns the count of the records it compared, for the floor.
+ */
+export function storageCheck(where, ref, world, fail) {
+	const { kin, pair } = world;
+	let checked = 0;
+	const live = ref.liveAgents();
+	const wantKin = new Set();
+	for (const r of live) {
+		const e = world.byRef.get(r);
+		wantKin.add(e);
+		if (!kin.has(e)) {
+			fail(where, `plugin store Kin holds no record for agent ref ${r}/ecs ${e}`);
+			continue;
+		}
+		const type = kin.get(e, "type");
+		if (type !== ref.typeOf(r)) {
+			fail(where, `Kin(${e}).type is ${type}, the model has ${ref.typeOf(r)} (agent ref ${r})`);
+		}
+		const seq = kin.get(e, "seq");
+		if (seq !== ref.touchOf(r)) {
+			fail(where, `Kin(${e}).seq is ${seq}, the model has ${ref.touchOf(r)} (agent ref ${r})`);
+		}
+		checked++;
+	}
+	sameSet(where, fail, "the members of plugin store Kin", new Set(kin.members()), wantKin);
+	const wantPair = new Set();
+	for (const [a, b] of ref.redexes()) {
+		for (const r of [a, b]) {
+			const e = world.byRef.get(r);
+			wantPair.add(e);
+			if (!pair.has(e)) {
+				fail(
+					where,
+					`plugin store Pair holds no record for agent ref ${r}/ecs ${e}, which is in an active pair`
+				);
+				continue;
+			}
+			const seq = pair.get(e, "seq");
+			if (seq !== ref.touchOf(r)) {
+				fail(where, `Pair(${e}).seq is ${seq}, the model has ${ref.touchOf(r)} (agent ref ${r})`);
+			}
+			checked++;
+		}
+	}
+	sameSet(where, fail, "the members of plugin store Pair", new Set(pair.members()), wantPair);
+	return checked;
+}
+
 // ── the oracle for the query verbs ──────────────────────────────────────────
 /**
  * The verbs of a query that the net gives an exact model for.
@@ -1128,7 +1227,7 @@ export function sparseCheck(where, ref, world, fail) {
  *     `undefined` in the idle tail. The idle tail is what makes the second half
  *     reachable: a query that always gave its first row would pass the first half.
  *  5. `some`. It must stop at the archetype that the predicate accepts, and
- *     it must report that it stopped. `forEach` over the same query gives the count
+ *     it must report that it stopped. `forEachArchetype` over the same query gives the count
  *     of the archetypes, so this needs no model of the archetype graph.
  *  6. `ctx.getResource` and `ctx.hasResource`, the driver picks the phase number,
  *     so the driver knows the value. `surface.mjs` reads the host facade instead.
@@ -1170,7 +1269,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		fail(
 			where,
 			`query.some visited ${world.untilVisited} archetypes, want ${wantVisited} ` +
-				`(forEach gives ${world.untilArchTotal})`
+				`(forEachArchetype gives ${world.untilArchTotal})`
 		);
 	}
 	const wantStopped = world.untilArchTotal >= 2;
@@ -1178,7 +1277,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
 		fail(
 			where,
 			`query.some reported ${world.untilStopped}, want ${wantStopped} ` +
-				`(forEach gives ${world.untilArchTotal} archetypes)`
+				`(forEachArchetype gives ${world.untilArchTotal} archetypes)`
 		);
 	}
 
@@ -1298,7 +1397,7 @@ export function queryVerbCheck(where, ref, world, fail, { deep, phase, rootRef }
  *  2. the default query, the touched agents that are not disabled. A chunk loop
  *     over a default query stops at the enabled count. So this arm also reads the
  *     partition of the rows.
- *  3. `changed(Mix).forEachChunk`, the same rows behind the filter on the
+ *  3. `changed(Mix).forEachColumns`, the same rows behind the filter on the
  *     archetype. The filter is conservative, and the row tick narrows it. So the
  *     result must be equal to the first arm.
  */
@@ -1328,7 +1427,7 @@ export function rowGrainCheck(where, ref, world, fail, touched) {
 	sameSet(
 		where,
 		fail,
-		"changed(Mix).forEachChunk: the rows above cols.since",
+		"changed(Mix).forEachColumns: the rows above cols.since",
 		world.rowChangedFiltered,
 		wantAll
 	);
@@ -1884,14 +1983,41 @@ export function snapshotRoundTrip(where, world) {
 			fail(where, `stateHash is blind to a sparse write, the sparse round trip would be vacuous`);
 		}
 	}
+	// The plugin stores. One value in `Kin` and one whole record out of `Pair`,
+	// each through the plugin's own call, and each must move the digest: the
+	// storage seam folds both stores into `stateHash`. The caller then compares
+	// both stores against the model, so a restore that left them as scribbled
+	// fails there even when the digest does not.
+	let scribbledStorage = false;
+	const kinMembers = world.kin.members();
+	const pairMembers = world.pair.members();
+	if (kinMembers.length > 0 && pairMembers.length > 0) {
+		scribbledStorage = true;
+		const hPlain = ecs.snapshots.stateHash();
+		const victim = kinMembers[kinMembers.length >> 1];
+		world.kin.set(victim, "seq", world.kin.get(victim, "seq") + 13);
+		const hKin = ecs.snapshots.stateHash();
+		if (hKin === hPlain) {
+			fail(
+				where,
+				`stateHash is blind to a write into plugin store Kin, the storage round trip would be vacuous`
+			);
+		}
+		world.pair.remove(pairMembers[0]);
+		if (ecs.snapshots.stateHash() === hKin) {
+			fail(where, `stateHash is blind to a record removed from plugin store Pair`);
+		}
+	}
 	ecs.snapshots.restore(bytes);
 	ecs.snapshots.restoreSparse(sparseBytes);
 	const h1 = ecs.snapshots.stateHash();
 	if (h0 !== h1) fail(where, `stateHash ${h0} -> ${h1} across capture and restore`);
 	world.assertSelfConsistent(`${where} [post-restore]`);
-	// The caller counts this result. A run that never wrote the sparse half shows
-	// nothing about `restoreSparse`. Refer to `stats.sparseScribbles`.
-	return scribbledSparse;
+	// The caller counts both results. A run that never wrote the sparse half shows
+	// nothing about `restoreSparse`, and one that never wrote a plugin store shows
+	// nothing about the storage section. Refer to `stats.sparseScribbles` and
+	// `stats.storageScribbles`.
+	return { sparse: scribbledSparse, storage: scribbledStorage };
 }
 
 // ── confluence: the same net under different reduction orders ───────────────
@@ -2324,6 +2450,12 @@ export class Pressure {
 		this.freshDisabledTicks = 0;
 		this.peakFreshDisabled = 0;
 		this.sparseScribbles = 0;
+		// the plugin stores
+		this.storageScribbles = 0;
+		this.storageChecked = 0;
+		this.storagePurged = 0;
+		this.storageRemoved = 0;
+		this.storageJoins = 0;
 		this.optionalSpansWithAge = 0;
 		this.optionalSpansWithoutAge = 0;
 		this.untilStops = 0;
@@ -2359,6 +2491,11 @@ export class Pressure {
 		this.freshDisabledTicks += stats.freshDisabledTicks;
 		this.peakFreshDisabled = Math.max(this.peakFreshDisabled, stats.peakFreshDisabled);
 		this.sparseScribbles += stats.sparseScribbles;
+		this.storageScribbles += stats.storageScribbles;
+		this.storageChecked += stats.storageChecked;
+		this.storagePurged += stats.storagePurged ?? 0;
+		this.storageRemoved += stats.storageRemoved ?? 0;
+		this.storageJoins += stats.storageJoins ?? 0;
 		this.optionalSpansWithAge += stats.optionalSpansWithAge;
 		this.optionalSpansWithoutAge += stats.optionalSpansWithoutAge;
 		this.untilStops += stats.untilStops;
@@ -2502,7 +2639,21 @@ export class Pressure {
 			// A snapshot round trip that wrote into the sparse store. Without that write,
 			// a `restoreSparse` that makes no change passes the round trip.
 			floor("snapshot round trips that wrote a sparse byte", this.sparseScribbles, 5);
+			// A snapshot round trip that wrote into both plugin stores. Without that
+			// write, a restore that ignores the storage section passes the round trip.
+			floor("snapshot round trips that wrote a plugin store", this.storageScribbles, 5);
 		}
+		// The plugin stores. The purge floor is the pressure on the destroy path: a
+		// run in which no member died shows nothing about the purge. The compared
+		// records are the depth of the storage layer.
+		//
+		// No floor reads the plugin's own removes. An agent leaves an active pair
+		// only when a rewrite consumes the pair, and the rewrite destroys it, so the
+		// net takes every `Pair` record out through the purge. The one remove each
+		// round trip makes in `snapshotRoundTrip` is the whole count, and the floor
+		// on the scribbles above already covers it.
+		floor("plugin store records the destroy purge dropped", this.storagePurged, 20000);
+		floor("plugin store records compared against the model", this.storageChecked, 20000);
 		const missing = ALL_RULES.filter((r) => !this.rules.has(r));
 		if (missing.length > 0) bad.push(`rules never fired: ${missing.join(", ")}`);
 		if (this.maxGrowth < 2) {
@@ -2583,6 +2734,11 @@ export class Pressure {
 		);
 		console.log(
 			`  sparse scribbles    ${this.sparseScribbles} snapshot round trips wrote the sparse store`
+		);
+		console.log(
+			`  plugin stores       ${this.storageJoins} Kin joins, ${this.storagePurged} records purged ` +
+				`by a destroy, ${this.storageRemoved} removed by a scribble, ${this.storageChecked} ` +
+				`compared, ${this.storageScribbles} snapshot scribbles`
 		);
 		console.log(`  f64 arm             ${this.floatCases} cases with no determinism`);
 		console.log(`  SharedArrayBuffer   ${this.sabCases} cases on the opt-in backing`);

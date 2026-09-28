@@ -70,7 +70,7 @@ const move = ecs.registerSystem({
 	reads: [Vel],
 	writes: [Pos],
 	fn: () => {
-		movers.forEachChunk((cols, count) => {
+		movers.forEachColumns((cols, count) => {
 			const { x, y } = cols.mut(Pos);
 			const { vx, vy } = cols.read(Vel);
 			for (let i = 0; i < count; i++) {

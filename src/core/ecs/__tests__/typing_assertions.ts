@@ -27,6 +27,7 @@ import type { SparseComponentDef } from "../sparse_store";
 import type { RelationDef, RelationCardinality } from "../relation";
 import type { ResourceKey } from "../resource";
 import type { Template } from "../store";
+import type { AccessDomain } from "../access_domain_types";
 import { events, type EventsPlugin } from "../../../plugins/events";
 import { relations, type RelationsPlugin } from "../../../plugins/relations";
 import { observers, type ObserversPlugin } from "../../../plugins/observers";
@@ -339,7 +340,7 @@ declare function archHelper(arch: ArchetypeView): void;
 function queryTermAssertions(): void {
 	// Column accessors are constrained to the query's terms.
 	const movers = world.query(Pos, Vel);
-	movers.forEachChunk((cols) => {
+	movers.forEachColumns((cols) => {
 		const { x, y } = cols.mut(Pos);
 		const { vx } = cols.read(Vel);
 		void x;
@@ -350,7 +351,7 @@ function queryTermAssertions(): void {
 		// @ts-expect-error, mut on a non-term
 		void cols.mut(Health);
 	});
-	movers.forEach((arch) => {
+	movers.forEachArchetype((arch) => {
 		void arch.getColumnRead(Pos, "x");
 		void arch.getColumnsRead(Vel, "vx", "vy");
 		// @ts-expect-error, health is not a term of this query
@@ -361,13 +362,13 @@ function queryTermAssertions(): void {
 		archHelper(arch);
 	});
 	// .and() extends the term set.
-	movers.and(Health).forEachChunk((cols) => {
+	movers.and(Health).forEachColumns((cols) => {
 		void cols.read(Health);
 		void cols.read(Pos);
 	});
 	// Optional fetches stay compile-permissive (the runtime owns them): the
 	// fetch-if-present accessor may name components outside the term set.
-	movers.optional(Health).forEach((arch) => {
+	movers.optional(Health).forEachArchetype((arch) => {
 		void arch.getOptionalColumnRead(Health, "hp");
 	});
 }
@@ -465,6 +466,32 @@ function pluginGateAssertions(): void {
 	void asBare;
 }
 
+// ── Access domains ───────────────────────────────────────────────────────
+// The typed config form takes `domainReads` and `domainWrites` beside every
+// other term, and a domain changes nothing the context narrows. A value that is
+// not a domain does not pass for one.
+declare const Domain: AccessDomain;
+function accessDomainAssertions(): void {
+	world.registerSystem({
+		reads: [Pos],
+		writes: [],
+		domainReads: [Domain],
+		domainWrites: [Domain],
+		fn(ctx) {
+			ctx.getField(e, Pos, "x");
+			// @ts-expect-error, a domain grants no component: pos stays read-only
+			ctx.setField(e, Pos, "x", 1);
+		}
+	});
+	// @ts-expect-error, a resource key is not an access domain
+	world.registerSystem({
+		reads: [],
+		writes: [],
+		domainReads: [KeyA]
+	});
+}
+
+void accessDomainAssertions;
 void registerEventAssertions;
 void hostSeamAssertions;
 void noInferAssertions;

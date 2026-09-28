@@ -191,7 +191,7 @@ async function caseDispatch(lib, size) {
 			reads: [Vel],
 			writes: [Pos],
 			fn: (ctx, dt) => {
-				q.forEachChunk((cols, count) => {
+				q.forEachColumns((cols, count) => {
 					const p = cols.mut(Pos);
 					const v = cols.read(Vel);
 					const x = p.x;

@@ -15,7 +15,7 @@
 
 import type { FrameTraceSink } from "./frame_trace";
 import type { Archetype } from "./archetype";
-import type { EntityID } from "./entity";
+import type { EntityID, ReadonlyEntityIDArray } from "./entity";
 import type { ComponentDef, ComponentHandle } from "./component";
 import type { SparseComponentID } from "./sparse_store";
 import type { RelationDef } from "./relation";
@@ -67,6 +67,15 @@ export interface QueryHost {
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		cb: (entityId: EntityID) => void
+	): void;
+	/** The second path in runs of ids. */
+	forEachSparseIds(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		denseArchetypes: readonly Archetype[],
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void;
 	/** Fourth query-match path: hierarchy depth ordering. */
 	forEachHierarchyMatch(
@@ -182,7 +191,7 @@ export interface QueryResolver {
 		defs: readonly ComponentDef[]
 	): Query<any>; // any: heterogeneous cache, callers downcast to their specific Query<Defs>
 	getLastRunTick(): number;
-	/** The change tick, the stamp `forEachChunk` makes via `cols.mut`. */
+	/** The change tick, the stamp `forEachColumns` makes via `cols.mut`. */
 	getChangeTick(): number;
 	/** A chunk loop took the row tick column of `cid` (`cols.ticks`), so the
 	 * entity-level onSet drain scans the plane this frame. */
@@ -198,7 +207,7 @@ export interface QueryResolver {
 	 * span to hand back. With a sparse require term, drive from the smallest
 	 * required store and filter. With only sparse excludes, drive the dense
 	 * archetype list and skip excluded rows. With neither, walk dense entities.
-	 * Only entered via `Query.forEachEntity`, so dense `forEach` never pays.
+	 * Only entered via `Query.forEachEntity`, so dense `forEachArchetype` never pays.
 	 * `includeDisabled` widens the per-archetype row scan from enabled rows to
 	 * all rows. */
 	forEachSparseMatch(
@@ -208,6 +217,15 @@ export interface QueryResolver {
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
 		cb: (entityId: EntityID) => void
+	): void;
+	/** `forEachSparseMatch` in runs of ids, one call for each run. */
+	forEachSparseIds(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		denseArchetypes: readonly Archetype[],
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void;
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term
 	 * (`andRelation`) to the membership store the sparse-match path

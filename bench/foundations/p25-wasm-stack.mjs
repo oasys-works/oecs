@@ -187,7 +187,7 @@ async function buildWorld({ ECS, SCHEDULE, snapshots, workers }, module, storeBa
 			query
 		},
 		fn: (_ctx, dt) => {
-			query.forEachChunk((cols, n) => {
+			query.forEachColumns((cols, n) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				stackI32(p.x, p.y, v.vx, v.vy, 0, n, dt);
@@ -198,7 +198,7 @@ async function buildWorld({ ECS, SCHEDULE, snapshots, workers }, module, storeBa
 	ecs.startup();
 	const template = ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 0, vy: 0 }));
 	for (let i = 0; i < ROWS; i++) ecs.spawn(template);
-	query.forEachChunk((cols, n) => {
+	query.forEachColumns((cols, n) => {
 		const p = cols.mut(Pos);
 		const v = cols.mut(Vel);
 		for (let i = 0; i < n; i++) {

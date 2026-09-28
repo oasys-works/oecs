@@ -257,7 +257,7 @@ function build() {
 			minRows: 1
 		},
 		fn: (ctx, dt) => {
-			ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+			ecs.query(Pos, Vel).forEachColumns((cols, count) => {
 				const p = cols.mut(Pos);
 				const v = cols.read(Vel);
 				for (let i = 0; i < count; i++) p.x[i] = p.x[i] + v.vx[i] * dt;
@@ -267,7 +267,7 @@ function build() {
 	ecs.startup();
 	for (let i = 0; i < 512; i++) ecs.spawn(template);
 	let n = 0;
-	ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+	ecs.query(Pos, Vel).forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		const v = cols.mut(Vel);
 		for (let i = 0; i < count; i++, n++) {

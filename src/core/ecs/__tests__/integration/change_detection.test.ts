@@ -99,7 +99,7 @@ describe("Change Detection", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos, Vel]),
 			fn() {
-				dq.changed(Pos).forEach(() => {
+				dq.changed(Pos).forEachArchetype(() => {
 					changeCount++;
 				});
 			}
@@ -139,7 +139,7 @@ describe("Change Detection", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				dq.changed(Pos).forEach(() => {
+				dq.changed(Pos).forEachArchetype(() => {
 					changeTicks.push(ctx.ecsTick);
 				});
 			}
@@ -184,7 +184,7 @@ describe("Change Detection", () => {
 		const detector = world.registerSystem({
 			...openAccess([Pos]),
 			fn(ctx) {
-				dq.changed(Pos).forEach(() => {
+				dq.changed(Pos).forEachArchetype(() => {
 					changeTicks.push(ctx.ecsTick);
 				});
 			}
@@ -214,8 +214,8 @@ describe("Change Detection", () => {
 			...openAccess([Pos]),
 			fn(ctx) {
 				// Read first: the previous frame's own stamp must not show.
-				q.changed(Pos).forEach(() => seen.push(ctx.ecsTick));
-				q.forEachChunk((cols) => void cols.mut(Pos));
+				q.changed(Pos).forEachArchetype(() => seen.push(ctx.ecsTick));
+				q.forEachColumns((cols) => void cols.mut(Pos));
 			}
 		});
 		world.addSystems(SCHEDULE.UPDATE, sys);

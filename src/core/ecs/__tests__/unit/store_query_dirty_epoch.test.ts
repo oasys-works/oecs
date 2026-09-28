@@ -37,7 +37,7 @@ describe("Store._query_dirty_epoch", () => {
 		world.addComponent(seed, Pos, { x: 0, y: 0 });
 		const q = world.query(Pos);
 		expect(q.archetypeCount).toBe(1);
-		q.forEach(() => {});
+		q.forEachArchetype(() => {});
 		// Snapshot the cached non-empty list so we can prove coalescing
 		// behaviourally below: a rebuild allocates a fresh array, so an
 		// unchanged reference == no rebuild happened.
@@ -59,7 +59,7 @@ describe("Store._query_dirty_epoch", () => {
 		// served them without rebuilding the non-empty list (same reference),
 		// the N adds coalesced into zero rebuilds.
 		let seen = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			seen += a.entityCount;
 		});
 		expect(seen).toBe(N + 1);
@@ -80,13 +80,13 @@ describe("Store._query_dirty_epoch", () => {
 
 		const q = world.query(Pos);
 		const first: unknown[] = [];
-		q.forEach((a) => first.push(a));
+		q.forEachArchetype((a) => first.push(a));
 
 		// Re-read without any mutation: the archetype list returned must be
 		// the same reference as before, proves the epoch-equality fast path
 		// returned the cached array instead of rebuilding it.
 		const second: unknown[] = [];
-		q.forEach((a) => second.push(a));
+		q.forEachArchetype((a) => second.push(a));
 		expect(second.length).toBe(first.length);
 		for (let i = 0; i < first.length; i++) expect(second[i]).toBe(first[i]);
 	});
@@ -100,7 +100,7 @@ describe("Store._query_dirty_epoch", () => {
 
 		const q = world.query(Pos);
 		let count = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			count += a.entityCount;
 		});
 		expect(count).toBe(1);
@@ -112,7 +112,7 @@ describe("Store._query_dirty_epoch", () => {
 		store.destroyEntity(e);
 
 		count = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			count += a.entityCount;
 		});
 		// Drained: nothing matches.
@@ -123,7 +123,7 @@ describe("Store._query_dirty_epoch", () => {
 		world.addComponent(e2, Pos, { x: 1, y: 1 });
 
 		count = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			count += a.entityCount;
 		});
 		expect(count).toBe(1);
@@ -140,7 +140,7 @@ describe("Store._query_dirty_epoch", () => {
 
 		const q = world.query(Pos);
 		expect(q.archetypeCount).toBe(1);
-		q.forEach(() => {});
+		q.forEachArchetype(() => {});
 
 		const store = (world as unknown as { _store: Store })._store;
 		const epochBefore = store.queryDirtyEpoch;
@@ -156,7 +156,7 @@ describe("Store._query_dirty_epoch", () => {
 		expect(store.queryDirtyEpoch).toBeGreaterThan(epochBefore);
 		expect(q.archetypeCount).toBe(2);
 		let total = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			total += a.entityCount;
 		});
 		expect(total).toBe(2);

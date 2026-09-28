@@ -39,6 +39,7 @@ export const ROOT_EXPORTS: readonly string[] = [
 	"StoreRestoreError",
 	"SystemContext",
 	"VERSION",
+	"accessDomain",
 	"and",
 	"applyHostCommand",
 	"bundle",

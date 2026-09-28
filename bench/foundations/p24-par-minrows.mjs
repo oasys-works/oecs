@@ -250,7 +250,7 @@ async function buildWorld(entities, backing) {
 	// repeat on a short cycle, so a wrong offset gives a wrong value and not a
 	// plausible one.
 	let n = 0;
-	ecs.query(Pos, Vel).forEachChunk((cols, count) => {
+	ecs.query(Pos, Vel).forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		const v = cols.mut(Vel);
 		for (let i = 0; i < count; i++, n++) {
@@ -379,7 +379,7 @@ async function runOne(backing, entities) {
 			writes: [Pos],
 			parallel: { kernel, columns, minRows, query },
 			fn: (_ctx, dt) => {
-				query.forEachChunk((cols, count) => {
+				query.forEachColumns((cols, count) => {
 					const p = cols.mut(Pos);
 					const v = cols.read(Vel);
 					body.fn(p.x, p.y, v.vx, v.vy, 0, count, dt);
@@ -409,7 +409,7 @@ async function runOne(backing, entities) {
 	const excluded = ecs.query(Pos, Vel, Frozen);
 	const excludedFold = () => {
 		let h = 0x811c9dc5;
-		excluded.forEachChunk((cols, count) => {
+		excluded.forEachColumns((cols, count) => {
 			const p = cols.read(Pos);
 			for (let i = 0; i < count; i++) {
 				h = Math.imul(h ^ p.x[i], 16777619) >>> 0;

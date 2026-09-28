@@ -13,7 +13,7 @@
  *
  * The comparison is exact. The worker returns the sum, the first row and the
  * last row of each bound field, and an FNV fold over the live bytes. The host
- * derives all four from `query.forEachChunk`. A mismatch on any one fails the
+ * derives all four from `query.forEachColumns`. A mismatch on any one fails the
  * probe.
  *
  * Run: `node bench/foundations/p24-par-bytes-view.mjs`. Also runs under
@@ -41,7 +41,7 @@ function request(worker, msg) {
 function hostSide(ecs, defs, fields) {
 	const q = ecs.query(...defs);
 	const per = [];
-	q.forEachChunk((cols, count) => {
+	q.forEachColumns((cols, count) => {
 		const views = fields.map(([def, name]) => cols.read(def)[name]);
 		const sums = views.map((v) => {
 			let s = 0;

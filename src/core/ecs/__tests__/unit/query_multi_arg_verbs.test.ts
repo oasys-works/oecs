@@ -77,9 +77,9 @@ describe("Query.changed with more than one component", () => {
 				onlyA = 0;
 				onlyB = 0;
 				both = 0;
-				q.changed(A).forEach(() => onlyA++);
-				q.changed(B).forEach(() => onlyB++);
-				q.changed(A, B).forEach(() => both++);
+				q.changed(A).forEachArchetype(() => onlyA++);
+				q.changed(B).forEachArchetype(() => onlyB++);
+				q.changed(A, B).forEachArchetype(() => both++);
 			}
 		});
 

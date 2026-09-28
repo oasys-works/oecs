@@ -200,8 +200,8 @@ export class Archetype implements ArchetypeView {
 	public flushPreEnabled: number = 0;
 	/**
 	 * DEV-only iteration guard: >0 while a dense query iterator delivers this
-	 * archetype to a user callback. Those iterators are `forEach`,
-	 * `forEachChunk`, `some` and `ChangedQuery.forEach`. The row-removing and
+	 * archetype to a user callback. Those iterators are `forEachArchetype`,
+	 * `forEachColumns`, `some` and `ChangedQuery.forEachArchetype`. The row-removing and
 	 * reordering primitives `removeRow`, `disableRow` and `enableRow` check it, so an immediate
 	 * structural mutation from inside the walk, which would swap-remove under
 	 * the iterator and silently skip or repeat entities, throws instead.
@@ -335,6 +335,7 @@ export class Archetype implements ArchetypeView {
 	// number of different names at the site. The cost of a probe of a dictionary
 	// does not increase. We also built and measured a perfect hash for each
 	// component over globally interned names, and it fails in the same way.
+	// A `Map` for each component also fails.
 	// Do not "fix" this line. If you measure it again, measure the condition that
 	// has many different field names, and not the condition with one component.
 	private readonly _fieldIndex: Record<string, number>[] = [];
@@ -352,7 +353,7 @@ export class Archetype implements ArchetypeView {
 	// Sparse by ComponentID → last tick that modified this component's columns.
 	public readonly changedTick: number[] = [];
 
-	// forEachChunk group caches, sparse by ComponentID. One reusable
+	// forEachColumns group caches, sparse by ComponentID. One reusable
 	// field-keyed object per component, refreshed (not reallocated) on each
 	// cols.mut()/cols.read() so a chunk loop allocates nothing per archetype.
 	private readonly _mutGroupCache: (Record<string, AnyTypedArray> | undefined)[] = [];
@@ -573,19 +574,19 @@ export class Archetype implements ArchetypeView {
 		const eidCap = this._eids.length;
 		this._rowCap = eidCap < colCap ? eidCap : colCap;
 		if (this._tickBufs.length !== 0) this._syncTicks(rowBufs, cols.length);
-		// The cached `forEachChunk` groups point at the buffers that were only
+		// The cached `forEachColumns` groups point at the buffers that were only
 		// re-derived, so they are refreshed here rather than re-checked on every
 		// read. See `_refreshColumnCaches`.
 		this._refreshColumnCaches();
 	}
 
-	/** Re-point every cached `forEachChunk` column group at the current `bufs`.
+	/** Re-point every cached `forEachColumns` column group at the current `bufs`.
 	 *
 	 * Called only from `_syncRowPlane`, which is the only thing that can change a
 	 * column's buffer identity, so after this runs, a cached group is correct by
 	 * construction, and `columnGroupMut` and `columnGroupRead` need no staleness test
 	 * at all. That absence is the point: those two run once per archetype per
-	 * `forEachChunk` pass, which for a fragmented query is once per chunk, and this
+	 * `forEachColumns` pass, which for a fragmented query is once per chunk, and this
 	 * file already carries one hard-won lesson (`_onArchShrink`): one more
 	 * statement pushed that per-mutation function past V8's inlining budget, and
 	 * it became much slower. We measured two earlier forms of this optimisation
@@ -884,7 +885,7 @@ export class Archetype implements ArchetypeView {
 	/** Enabled-row count, the default iteration bound. See `enabled_count`.
 	 * Equals `length` whenever no entity is disabled (the common case).
 	 *
-	 * During an `includeDisabled()` query's `forEach`, the module flag
+	 * During an `includeDisabled()` query's `forEachArchetype`, the module flag
 	 * `iterAllRows` is set so this returns `length` (enabled + disabled), the
 	 * user's `for i < arch.entityCount` loop then spans disabled rows
 	 * transparently, with no change to the loop. Outside such iteration the flag is
@@ -1225,7 +1226,7 @@ export class Archetype implements ArchetypeView {
 		return this.flatColumns[this.colOffset[cid] + fi].buf as TagToTypedArray[S[K]];
 	}
 
-	// ── forEachChunk column-group accessors ───────────────────────
+	// ── forEachColumns column-group accessors ───────────────────────
 	// Resolve all of one component's field columns at once into a field-keyed
 	// object, `const { x, y } = cols.mut(Pos)`, collapsing the per-field
 	// `getColumnMut` preamble + tick threading into one call, then a plain
@@ -1257,7 +1258,7 @@ export class Archetype implements ArchetypeView {
 		// No refresh and no staleness test: the group was filled on first use and is
 		// re-pointed by `_syncRowPlane` whenever a buffer moves, so reaching it is
 		// one array load. This used to rewrite one string-keyed property per field
-		// on every call, which a fragmented `forEachChunk` pass pays once per chunk
+		// on every call, which a fragmented `forEachColumns` pass pays once per chunk
 		// instead of once per tick.
 		return this._mutGroupCache[cid] as MutableColumnsForSchema<S>;
 	}
@@ -1852,11 +1853,11 @@ export const _moveResult: [number, number] = [0, NO_SWAP];
 
 /**
  * Module flag: when set, every `Archetype.entityCount` reports `length`
- * (all rows) instead of `enabled_count`. `Query.forEach` sets it for the
+ * (all rows) instead of `enabled_count`. `Query.forEachArchetype` sets it for the
  * duration of an `includeDisabled()` iteration so the SoA loop spans disabled
  * rows without the caller changing `for i < arch.entityCount`. Iteration is
  * single-threaded and synchronous, so a plain module variable with save and restore
- * is safe across nesting (an inner default `forEach` restores the outer state).
+ * is safe across nesting (an inner default `forEachArchetype` restores the outer state).
  * `nonEmptyArchs` and `count` read the `enabled_count` and `length` fields directly, so they
  * never depend on this flag. */
 let iterAllRows = false;

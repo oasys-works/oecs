@@ -332,12 +332,12 @@ describe("(R, *) determinism, identical histories yield identical order", () => 
 
 // ─────────────────────────── dense-path guard ──────────────────────────────
 describe("(R, *), dense-path methods refuse the wildcard query", () => {
-	it("count() and forEach() throw, steering to forEachEntity", () => {
+	it("count() and forEachArchetype() throw, steering to forEachEntity", () => {
 		const world = ECS.create({ plugins: [relations()] });
 		const R = world.relations.register();
 		const q = world.query().andRelation(R);
 		expect(() => q.entityCount).toThrow(/forEachEntity/);
-		expect(() => q.forEach(() => {})).toThrow(/forEachEntity/);
+		expect(() => q.forEachArchetype(() => {})).toThrow(/forEachEntity/);
 	});
 });
 

@@ -43,13 +43,21 @@ export function makeSuite(lib, filter = "") {
 		return lib.ECS.create({ ...options, plugins });
 	};
 	const { ECS, SCHEDULE } = lib;
+	// A build from before 0.7.0 names the iterators `forEach` and `forEachChunk`.
+	// Give the new names the old functions. Both sides then make the same call.
+	for (const cls of [lib.Query, lib.ChangedQuery]) {
+		const proto = cls?.prototype;
+		if (proto === undefined || typeof proto.forEachArchetype === "function") continue;
+		proto.forEachArchetype = proto.forEach;
+		proto.forEachColumns = proto.forEachChunk;
+	}
 	const cases = [];
 	const add = (name, fn, opts) => {
 		if (name.includes(filter)) cases.push({ name, fn, opts });
 	};
 
 	// ────────────────────────────────────────────────────────────────────────
-	// 1. SoA iteration, the core promise. forEachChunk over N entities.
+	// 1. SoA iteration, the core promise. forEachColumns over N entities.
 	// ────────────────────────────────────────────────────────────────────────
 	{
 		const ecs = new ECS();
@@ -62,7 +70,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/eachChunk_2comp",
 			() => {
 				for (let r = 0; r < 100; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						const { vx, vy } = cols.read(Vel);
 						for (let i = 0; i < count; i++) {
@@ -97,7 +105,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/forEach_getColumnRead",
 			() => {
 				for (let r = 0; r < 100; r++) {
-					q.forEach((arch) => {
+					q.forEachArchetype((arch) => {
 						const x = arch.getColumnRead(Pos, "x");
 						const y = arch.getColumnRead(Pos, "y");
 						const n = arch.entityCount;
@@ -132,7 +140,7 @@ export function makeSuite(lib, filter = "") {
 			"iter/frag_64arch",
 			() => {
 				for (let r = 0; r < 300; r++) {
-					q.forEachChunk((cols, count) => {
+					q.forEachColumns((cols, count) => {
 						const { x, y } = cols.mut(Pos);
 						for (let i = 0; i < count; i++) x[i] += y[i];
 					});
@@ -204,6 +212,35 @@ export function makeSuite(lib, filter = "") {
 			},
 			{ iters: 20 * N }
 		);
+		// 72 field names at one call site. A name lookup can win with one component
+		// and lose here. See the `_fieldIndex` note in `archetype.ts`.
+		{
+			const ecs = new ECS(PRESIZED);
+			const defs = [];
+			const names = [];
+			for (let c = 0; c < 24; c++) {
+				const fields = [`c${c}_a`, `c${c}_b`, `c${c}_c`];
+				defs.push(
+					ecs.registerComponent({ [fields[0]]: "f64", [fields[1]]: "f64", [fields[2]]: "f64" })
+				);
+				names.push(fields);
+			}
+			const M = 1000;
+			const many = ecs.spawnMany(ecs.template(...defs.map((d) => d({}))), M);
+			add(
+				"access/getField_manyNames",
+				() => {
+					let s = 0;
+					for (let r = 0; r < 20; r++)
+						for (let i = 0; i < M; i++) {
+							const c = (i + r) % 24;
+							s += ecs.getField(many[i], defs[c], names[c][(i + c) % 3]);
+						}
+					sink = s;
+				},
+				{ iters: 20 * M }
+			);
+		}
 		add(
 			"access/setField",
 			() => {
@@ -491,7 +528,7 @@ export function makeSuite(lib, filter = "") {
 				ecs.registerSystem({
 					writes: [Pos],
 					fn: () => {
-						q.forEachChunk((cols, count) => {
+						q.forEachColumns((cols, count) => {
 							const { x } = cols.mut(Pos);
 							for (let j = 0; j < count; j++) x[j] += 1;
 						});
@@ -645,6 +682,78 @@ export function makeSuite(lib, filter = "") {
 				{ iters: 20 * (N / 2) }
 			);
 		}
+		// The sparse query driver. `_2` is the `oecs-sparse` shape of `vs/`.
+		{
+			const q = ecs.query(Pos).andSparse(Spark);
+			const spark = ecs.sparseCursorRead(Spark);
+			add(
+				"iter/sparse_forEachEntity_1",
+				() => {
+					let s = 0;
+					for (let r = 0; r < 20; r++)
+						q.forEachEntity((e) => {
+							spark.at(e);
+							s += spark.v;
+						});
+					sink = s;
+				},
+				{ iters: 20 * (N / 2) }
+			);
+			// A build from before `forEachIds` runs without the batch rows.
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_1",
+					() => {
+						let s = 0;
+						for (let r = 0; r < 20; r++)
+							q.forEachIds((ids, count) => {
+								let t = 0;
+								for (let i = 0; i < count; i++) {
+									spark.at(ids[i]);
+									t += spark.v;
+								}
+								s += t;
+							});
+						sink = s;
+					},
+					{ iters: 20 * (N / 2) }
+				);
+		}
+		{
+			const Vel = ecs.registerSparseComponent({ vx: "f64", vy: "f64" });
+			for (let i = 0; i < N; i += 2) ecs.addSparse(ids[i], Vel, { vx: 1, vy: 1 });
+			const q = ecs.query(Pos).andSparse(Spark, Vel);
+			const spark = ecs.sparseCursor(Spark);
+			const vel = ecs.sparseCursorRead(Vel);
+			add(
+				"iter/sparse_forEachEntity_2",
+				() => {
+					for (let r = 0; r < 20; r++)
+						q.forEachEntity((e) => {
+							spark.at(e);
+							vel.at(e);
+							spark.v += vel.vx * 0.016;
+						});
+				},
+				{ iters: 20 * (N / 2) }
+			);
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_2",
+					() => {
+						for (let r = 0; r < 20; r++)
+							q.forEachIds((ids, count) => {
+								for (let i = 0; i < count; i++) {
+									const e = ids[i];
+									spark.at(e);
+									vel.at(e);
+									spark.v += vel.vx * 0.016;
+								}
+							});
+					},
+					{ iters: 20 * (N / 2) }
+				);
+		}
 		// Membership churn on a sparse tag: a bit flip and no archetype move.
 		const SparkTag = ecs.registerSparseTag();
 		add(
@@ -690,6 +799,26 @@ export function makeSuite(lib, filter = "") {
 						for (let i = 0; i < 200_000; i++) sink = base.without(Tag);
 					},
 			{ iters: 200_000 }
+		);
+	}
+
+	// ────────────────────────────────────────────────────────────────────────
+	// 11. The world digest, dense columns and a sparse store.
+	// ────────────────────────────────────────────────────────────────────────
+	// No plugin store, so the row shows the cost of the storage seam to a world
+	// that does not use it. Skipped by the filter, for the reason section 8 gives.
+	if ("digest/".includes(filter) || filter.startsWith("digest/")) {
+		const ecs = makeWorld({ ...PRESIZED, deterministic: true });
+		const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
+		const Mark = ecs.registerSparseComponent({ v: "i32" });
+		const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 2 })), N);
+		for (let i = 0; i < N; i += 4) ecs.addSparse(ids[i], Mark, { v: i });
+		add(
+			"digest/stateHash",
+			() => {
+				for (let r = 0; r < 10; r++) sink = ecs.snapshots.stateHash();
+			},
+			{ iters: 10 * N }
 		);
 	}
 

@@ -26,7 +26,7 @@ describe("Query cache coherence edge cases", () => {
 
 		// Verify we can iterate and read data
 		let total = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			total += arch.entityCount;
 			const px = arch.getColumnRead(Pos, "x");
 			for (let i = 0; i < arch.entityCount; i++) {
@@ -55,9 +55,9 @@ describe("Query cache coherence edge cases", () => {
 		world.despawn(e2);
 		world.flush();
 
-		// forEach should skip empty archetypes
+		// forEachArchetype should skip empty archetypes
 		let countAfterDestroy = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			countAfterDestroy += arch.entityCount;
 		});
 		expect(countAfterDestroy).toBe(0);
@@ -66,10 +66,10 @@ describe("Query cache coherence edge cases", () => {
 		const e3 = world.spawn();
 		world.addComponent(e3, Pos, { x: 10, y: 20 });
 
-		// forEach should now yield exactly the new entity
+		// forEachArchetype should now yield exactly the new entity
 		let countAfterReadd = 0;
 		const readValues: number[] = [];
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			countAfterReadd += arch.entityCount;
 			const px = arch.getColumnRead(Pos, "x");
 			const py = arch.getColumnRead(Pos, "y");
@@ -175,7 +175,7 @@ describe("Query cache coherence edge cases", () => {
 		// Query should yield exactly 1 non-empty archetype with 1 entity
 		let archCount = 0;
 		let totalEntities = 0;
-		q.forEach((arch) => {
+		q.forEachArchetype((arch) => {
 			archCount++;
 			totalEntities += arch.entityCount;
 		});

@@ -218,7 +218,7 @@ export class Commands<out A extends SystemAccess = SystemAccess> {
 
 	/** Buffer `entityId` to be disabled at the phase flush (idempotent).
 	 * Deferred because a toggle is an in-archetype row swap, which would corrupt
-	 * a `forEach` SoA loop iterating that archetype if applied mid-system (it
+	 * a `forEachArchetype` SoA loop iterating that archetype if applied mid-system (it
 	 * reorders the dense columns being read). A disabled entity is excluded from
 	 * default queries. Opt back in per query with `.includeDisabled()`. The
 	 * immediate read is `ctx.isDisabled`. */
@@ -468,7 +468,7 @@ export class SystemContext<out A extends SystemAccess = SystemAccess> {
 	 *   const p = ctx.cursor(Pos);
 	 *   for (const e of hits) { p.at(e); p.x += p.y * dt; }
 	 *
-	 * Mutable: every `at()` stamps the change tick. Still prefer `forEachChunk` when
+	 * Mutable: every `at()` stamps the change tick. Still prefer `forEachColumns` when
 	 * a query can express the entity set, a cursor removes the per-entity
 	 * allocation, not the per-entity archetype resolution.
 	 */

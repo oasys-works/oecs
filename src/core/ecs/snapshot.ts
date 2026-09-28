@@ -13,12 +13,14 @@
 import type { Archetype } from "./archetype";
 import type { RelationStoreView } from "./relation";
 import type { SparseComponentStore } from "./sparse_store";
+import type { StorageProvider } from "./storage_provider";
 import type { ColumnStore, InPlaceBufferAllocator } from "../store";
 
 /** Combined-frame format version. Bumped if the section framing or host-state
  * layout changes. Independent of `SIM_ABI_VERSION` (which gates the dense
- * bytes). */
-export const ECS_SNAPSHOT_VERSION = 1;
+ * bytes). Version 2 adds the plugin storage section. A restore still reads
+ * version 1. */
+export const ECS_SNAPSHOT_VERSION = 2;
 
 /** Per-archetype host-side row bookkeeping the SAB doesn't carry authoritatively. */
 export interface ArchetypeRowState {
@@ -55,6 +57,8 @@ export interface SnapshotHost {
 	/** The relation stores, narrowed to what the codec folds and rebuilds. A
 	 * world without the relations plugin answers with an empty list. */
 	readonly relationStores: () => readonly RelationStoreView[];
+	/** The plugin stores, in registration order. */
+	readonly storages: () => readonly StorageProvider[];
 	/** Live SAB generations view (replanted on restore), for rebuilding
 	 * relation ids from entity indices. */
 	readonly generations: () => Int32Array;

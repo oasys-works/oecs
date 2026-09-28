@@ -23,8 +23,11 @@ import type { SparseComponentDef } from "../../../core/ecs/sparse_store";
 import type { EntityID } from "../../../core/ecs/entity";
 import {
 	frameWorldSnapshot,
+	LEGACY_ECS_SNAPSHOT_VERSION,
 	parseHostState,
+	parseStorageSections,
 	serializeHostState,
+	serializeStorageSections,
 	unframeWorldSnapshot,
 	WORLD_SNAPSHOT_MAGIC,
 	ECSRestoreError,
@@ -63,7 +66,7 @@ function build(memory: ECSOptions): World {
 		reads: [],
 		writes: [],
 		fn: (ctx) => {
-			movers.forEach((arch) => {
+			movers.forEachArchetype((arch) => {
 				const ids = arch.entityIds;
 				for (let i = 0; i < arch.entityCount; i++) {
 					const p = ctx.ref(Pos, ids[i]);
@@ -146,11 +149,62 @@ describe("resume framing + host-state serialization", () => {
 		const dense = new Uint8Array([1, 2, 3]);
 		const sparse = new Uint8Array([4, 5]);
 		const host = new Uint8Array([6, 7, 8, 9]);
-		const framed = frameWorldSnapshot(dense, sparse, host);
+		const storage = new Uint8Array([10, 11]);
+		const framed = frameWorldSnapshot(dense, sparse, host, storage);
 		const s = unframeWorldSnapshot(framed);
 		expect([...s.dense]).toEqual([1, 2, 3]);
 		expect([...s.sparse]).toEqual([4, 5]);
 		expect([...s.host]).toEqual([6, 7, 8, 9]);
+		expect([...s.storage!]).toEqual([10, 11]);
+	});
+
+	it("reads a legacy version 1 frame, whose five-word header has no storage section", () => {
+		const header = 20;
+		const v1 = new Uint8Array(header + 3 + 2 + 1);
+		const view = new DataView(v1.buffer);
+		view.setUint32(0, WORLD_SNAPSHOT_MAGIC, true);
+		view.setUint32(4, LEGACY_ECS_SNAPSHOT_VERSION, true);
+		view.setUint32(8, 3, true);
+		view.setUint32(12, 2, true);
+		view.setUint32(16, 1, true);
+		v1.set([1, 2, 3, 4, 5, 6], header);
+		const s = unframeWorldSnapshot(v1);
+		expect([...s.dense]).toEqual([1, 2, 3]);
+		expect([...s.sparse]).toEqual([4, 5]);
+		expect([...s.host]).toEqual([6]);
+		expect(s.storage).toBeNull();
+	});
+
+	it("round-trips the storage entries by name, and keeps an empty entry", () => {
+		const bytes = serializeStorageSections([
+			{ name: "aos.Kin", bytes: new Uint8Array([1, 2, 3]) },
+			{ name: "grid", bytes: new Uint8Array(0) },
+			{ name: "ünï", bytes: new Uint8Array([9]) }
+		]);
+		const back = parseStorageSections(bytes);
+		expect(back.map((e) => e.name)).toEqual(["aos.Kin", "grid", "ünï"]);
+		expect(back.map((e) => [...e.bytes])).toEqual([[1, 2, 3], [], [9]]);
+		expect(parseStorageSections(serializeStorageSections([]))).toEqual([]);
+	});
+
+	it("refuses a storage section that is truncated, padded or holds a damaged name", () => {
+		const good = serializeStorageSections([{ name: "aos", bytes: new Uint8Array([1, 2]) }]);
+		// One byte short of the data the entry declares.
+		expect(() => parseStorageSections(good.subarray(0, good.length - 1))).toThrow(ECSRestoreError);
+		// One trailing byte past the last entry.
+		const padded = new Uint8Array(good.length + 1);
+		padded.set(good);
+		expect(() => parseStorageSections(padded)).toThrow(/frame mismatch/);
+		// A count that promises a second entry the bytes do not hold.
+		const more = good.slice();
+		new DataView(more.buffer).setUint32(0, 2, true);
+		expect(() => parseStorageSections(more)).toThrow(/truncated/);
+		// An invalid UTF-8 byte in the name.
+		const bad = good.slice();
+		bad[8] = 0xff;
+		expect(() => parseStorageSections(bad)).toThrow(/UTF-8/);
+		// Too short to hold the count at all.
+		expect(() => parseStorageSections(new Uint8Array(3))).toThrow(ECSRestoreError);
 	});
 
 	it("rejects a bare dense buffer (wrong magic)", () => {
@@ -159,14 +213,24 @@ describe("resume framing + host-state serialization", () => {
 	});
 
 	it("rejects a frame with trailing bytes", () => {
-		const framed = frameWorldSnapshot(new Uint8Array([1]), new Uint8Array(0), new Uint8Array(0));
+		const framed = frameWorldSnapshot(
+			new Uint8Array([1]),
+			new Uint8Array(0),
+			new Uint8Array(0),
+			serializeStorageSections([])
+		);
 		const padded = new Uint8Array(framed.length + 1);
 		padded.set(framed, 0); // magic copies through; the lone extra byte fails the frame-length check
 		expect(() => unframeWorldSnapshot(padded)).toThrow(ECSRestoreError);
 	});
 
 	it("magic is the documented constant", () => {
-		const framed = frameWorldSnapshot(new Uint8Array(0), new Uint8Array(0), new Uint8Array(0));
+		const framed = frameWorldSnapshot(
+			new Uint8Array(0),
+			new Uint8Array(0),
+			new Uint8Array(0),
+			serializeStorageSections([])
+		);
 		expect(new DataView(framed.buffer).getUint32(0, true)).toBe(WORLD_SNAPSHOT_MAGIC);
 	});
 });
@@ -208,7 +272,8 @@ describe("restore, mount + reconstruction", () => {
 		const legacy = frameWorldSnapshot(
 			toLegacyDenseSection(sections.dense),
 			sections.sparse,
-			sections.host
+			sections.host,
+			sections.storage!
 		);
 
 		const dst = build(SAB);

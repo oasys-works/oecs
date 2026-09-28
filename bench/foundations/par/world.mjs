@@ -100,7 +100,7 @@ export async function buildWorld({
 export function seedWorld(ecs, Pos, Vel, Target) {
 	const q = ecs.query(Pos, Vel, Target);
 	let n = 0;
-	q.forEachChunk((cols, count) => {
+	q.forEachColumns((cols, count) => {
 		const p = cols.mut(Pos);
 		const v = cols.mut(Vel);
 		const t = cols.mut(Target);

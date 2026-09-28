@@ -51,7 +51,7 @@ const NO_RELATION_TERMS: readonly RelationDef[] = Object.freeze([]);
  * of the three went unnoticed. Add a term by adding a field here and a line to
  * `deriveTerms`.
  *
- * Cold path. Read once per `forEach` call, never per row. */
+ * Cold path. Read once per `forEachArchetype` call, never per row. */
 /** An archetype-level term a plugin contributes.
  *
  * The engine already answers three archetype questions with a bit mask: hold

@@ -117,9 +117,9 @@ function time(label, fn) {
 	ecs.spawnMany(ecs.template(Pos({ x: 0, y: 0 }), Vel({ vx: 1, vy: 1 })), N);
 	const q = ecs.query(Pos, Vel);
 	console.log("oecs");
-	time("forEachChunk per rep", () => {
+	time("forEachColumns per rep", () => {
 		for (let r = 0; r < REPS; r++) {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y } = cols.mut(Pos);
 				const { vx, vy } = cols.read(Vel);
 				for (let i = 0; i < count; i++) {
@@ -129,7 +129,7 @@ function time(label, fn) {
 			});
 		}
 	});
-	time("forEachChunk alone, empty body", () => {
-		for (let r = 0; r < REPS; r++) q.forEachChunk((_c, count) => (sink = count));
+	time("forEachColumns alone, empty body", () => {
+		for (let r = 0; r < REPS; r++) q.forEachColumns((_c, count) => (sink = count));
 	});
 }

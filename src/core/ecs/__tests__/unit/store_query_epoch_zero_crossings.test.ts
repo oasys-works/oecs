@@ -63,7 +63,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		// Sanity: query still returns the right count after the no-bump path.
 		const q = world.query(Pos);
 		let total = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			total += a.entityCount;
 		});
 		expect(total).toBe(5);
@@ -80,7 +80,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		world.addComponent(a, Pos, { x: 0, y: 0 });
 		const q = world.query(Pos);
 		expect(q.archetypeCount).toBe(1);
-		q.forEach(() => {});
+		q.forEachArchetype(() => {});
 
 		const epochBefore = store.queryDirtyEpoch;
 
@@ -106,13 +106,13 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		// lazily at the first createEntity.)
 		const a = world.spawn();
 		world.addComponent(a, Pos, { x: 0, y: 0 });
-		world.query(Pos).forEach(() => {});
+		world.query(Pos).forEachArchetype(() => {});
 
 		// Cache a query over the [Vel] shape that does not exist yet. No [Vel]
 		// archetype has been installed, so it currently matches nothing.
 		const qVel = world.query(Vel);
 		expect(qVel.archetypeCount).toBe(0);
-		qVel.forEach(() => {});
+		qVel.forEachArchetype(() => {});
 
 		// A component-less (`UNASSIGNED`) entity gains Vel. This installs the
 		// brand-new [Vel] archetype and crosses its entity count 0→1. The
@@ -126,7 +126,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(qVel.archetypeCount).toBe(1);
 		let total = 0;
 		let foundB = false;
-		qVel.forEach((arch) => {
+		qVel.forEachArchetype((arch) => {
 			total += arch.entityCount;
 			for (let i = 0; i < arch.entityCount; i++) {
 				if (arch.entityIds[i] === b) foundB = true;
@@ -146,7 +146,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		world.addComponent(e, Pos, { x: 0, y: 0 });
 		const q = world.query(Pos);
 		let count = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			count += a.entityCount;
 		});
 		expect(count).toBe(1);
@@ -157,7 +157,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		store.destroyEntity(e);
 
 		count = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			count += a.entityCount;
 		});
 		expect(count).toBe(0);
@@ -176,7 +176,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 			ids.push(e);
 		}
 		const q = world.query(Pos);
-		q.forEach(() => {});
+		q.forEachArchetype(() => {});
 
 		const epochBefore = store.queryDirtyEpoch;
 
@@ -189,7 +189,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 
 		// And the cached query rebuilds: the emptied archetype is gone.
 		let total = 0;
-		q.forEach((a) => {
+		q.forEachArchetype((a) => {
 			total += a.entityCount;
 		});
 		expect(total).toBe(0);
@@ -206,7 +206,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 			world.addComponent(e, Pos, { x: i, y: i });
 			ids.push(e);
 		}
-		world.query(Pos).forEach(() => {});
+		world.query(Pos).forEachArchetype(() => {});
 
 		const epochBefore = store.queryDirtyEpoch;
 
@@ -218,7 +218,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		expect(store.queryDirtyEpoch).toBe(epochBefore);
 
 		let total = 0;
-		world.query(Pos).forEach((a) => {
+		world.query(Pos).forEachArchetype((a) => {
 			total += a.entityCount;
 		});
 		expect(total).toBe(3);
@@ -287,7 +287,7 @@ describe("Store._query_dirty_epoch 0-crossings only", () => {
 		}
 
 		let total = 0;
-		qPos.forEach((a) => {
+		qPos.forEachArchetype((a) => {
 			total += a.entityCount;
 		});
 		expect(total).toBe(90); // 100 created - 10 destroyed
@@ -343,7 +343,7 @@ describe("enabledCount 0-crossings on row add", () => {
 
 		const a = world.spawn();
 		world.addComponent(a, T, { v: 1 });
-		world.query(T).forEach(() => {});
+		world.query(T).forEachArchetype(() => {});
 		world.disable(a);
 
 		const epochBefore = store.queryDirtyEpoch;

@@ -78,7 +78,7 @@ async function oecsVariant(sizing) {
 		reads: [Mass],
 		writes: [Pos, Vel],
 		fn: () => {
-			q.forEachChunk((cols, count) => {
+			q.forEachColumns((cols, count) => {
 				const { x, y, z } = cols.mut(Pos);
 				const { vx, vy, vz } = cols.mut(Vel);
 				const { m } = cols.read(Mass);
