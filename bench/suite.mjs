@@ -802,6 +802,26 @@ export function makeSuite(lib, filter = "") {
 		);
 	}
 
+	// ────────────────────────────────────────────────────────────────────────
+	// 11. The world digest, dense columns and a sparse store.
+	// ────────────────────────────────────────────────────────────────────────
+	// No plugin store, so the row shows the cost of the storage seam to a world
+	// that does not use it. Skipped by the filter, for the reason section 8 gives.
+	if ("digest/".includes(filter) || filter.startsWith("digest/")) {
+		const ecs = makeWorld({ ...PRESIZED, deterministic: true });
+		const Pos = ecs.registerComponent({ x: "i32", y: "i32" });
+		const Mark = ecs.registerSparseComponent({ v: "i32" });
+		const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 2 })), N);
+		for (let i = 0; i < N; i += 4) ecs.addSparse(ids[i], Mark, { v: i });
+		add(
+			"digest/stateHash",
+			() => {
+				for (let r = 0; r < 10; r++) sink = ecs.snapshots.stateHash();
+			},
+			{ iters: 10 * N }
+		);
+	}
+
 	return cases;
 }
 
