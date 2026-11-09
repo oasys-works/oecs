@@ -977,6 +977,23 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 10 * N }
 		);
 	}
+	// The sparse part of the digest alone: every entity a member of a sparse store
+	// with three fields, and a dense part of one i32 column. The row shows the
+	// per-member cost of the sparse fold.
+	if ("digest/".includes(filter) || filter.startsWith("digest/")) {
+		const ecs = makeWorld({ ...PRESIZED, deterministic: true });
+		const Pos = ecs.registerComponent({ x: "i32" });
+		const Aura = ecs.registerSparseComponent({ a: "i32", b: "i32", c: "u16" });
+		const ids = ecs.spawnMany(ecs.template(Pos({ x: 1 })), N);
+		for (let i = 0; i < N; i++) ecs.addSparse(ids[i], Aura, { a: i, b: -i, c: i & 0xff });
+		add(
+			"digest/stateHash_sparse",
+			() => {
+				for (let r = 0; r < 10; r++) sink = ecs.snapshots.stateHash();
+			},
+			{ iters: 10 * N }
+		);
+	}
 
 	return cases;
 }
