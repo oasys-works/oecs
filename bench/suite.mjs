@@ -150,6 +150,34 @@ export function makeSuite(lib, filter = "") {
 		);
 	}
 
+	// Same total, 512 archetypes of about 19 rows: the per-archetype cost of
+	// `forEachColumns` is the larger share of the pass.
+	{
+		const ecs = new ECS();
+		const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+		const tags = [];
+		for (let i = 0; i < 9; i++) tags.push(ecs.registerTag());
+		const per = Math.floor(N / 512);
+		for (let mask = 0; mask < 512; mask++) {
+			const items = [Pos({ x: 1, y: 2 })];
+			for (let b = 0; b < 9; b++) if (mask & (1 << b)) items.push(tags[b]);
+			ecs.spawnMany(ecs.template(...items), per);
+		}
+		const q = ecs.query(Pos);
+		add(
+			"iter/frag_512arch",
+			() => {
+				for (let r = 0; r < 60; r++) {
+					q.forEachColumns((cols, count) => {
+						const { x, y } = cols.mut(Pos);
+						for (let i = 0; i < count; i++) x[i] += y[i];
+					});
+				}
+			},
+			{ iters: 60 * per * 512 }
+		);
+	}
+
 	// ────────────────────────────────────────────────────────────────────────
 	// 3. forEachEntity, the entity-id walk.
 	// ────────────────────────────────────────────────────────────────────────
