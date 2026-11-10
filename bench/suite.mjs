@@ -870,6 +870,49 @@ export function makeSuite(lib, filter = "") {
 					},
 					{ iters: 20 * (N / 2) }
 				);
+			// `_batch_2` with one membership change before each pass, a remove and an
+			// add of `Vel` on one member. The match keeps its size. The worst case
+			// for a match that is kept between passes: each pass derives it again.
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_2_churn",
+					() => {
+						for (let r = 0; r < 20; r++) {
+							ecs.removeSparse(ids[0], Vel);
+							ecs.addSparse(ids[0], Vel, { vx: 1, vy: 1 });
+							q.forEachIds((ids, count) => {
+								for (let i = 0; i < count; i++) {
+									const e = ids[i];
+									spark.at(e);
+									vel.at(e);
+									spark.v += vel.vx * 0.016;
+								}
+							});
+						}
+					},
+					{ iters: 20 * (N / 2) }
+				);
+			// `_batch_2` with a dense change before each pass on an entity outside
+			// the match: a disable and an enable of a non-member.
+			if (typeof q.forEachIds === "function")
+				add(
+					"iter/sparse_batch_2_dense_churn",
+					() => {
+						for (let r = 0; r < 20; r++) {
+							ecs.disable(ids[1]);
+							ecs.enable(ids[1]);
+							q.forEachIds((ids, count) => {
+								for (let i = 0; i < count; i++) {
+									const e = ids[i];
+									spark.at(e);
+									vel.at(e);
+									spark.v += vel.vx * 0.016;
+								}
+							});
+						}
+					},
+					{ iters: 20 * (N / 2) }
+				);
 		}
 		// Membership churn on a sparse tag: a bit flip and no archetype move.
 		const SparkTag = ecs.registerSparseTag();
