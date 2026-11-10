@@ -130,6 +130,11 @@ export class SparseComponentStore {
 	/** The member indices, valid in `[0, _size)`. */
 	private _dense: Uint32Array;
 	private _size = 0;
+	/** Advances on each change of the member set or its order: a join, a
+	 * remove of a member, a clear. A field write leaves it. A kept match list
+	 * (`SparseMatchCache`) keys on it. Never goes back, so a sum of versions
+	 * changes when any one of them does. */
+	public version = 0;
 	/** The row ticks, one for each entity index, or `null` until `trackTicks`.
 	 * The row grain of change detection for a sparse component: `setField` and
 	 * a mutable cursor's `at` stamp the member's entry, and a join zeroes it,
@@ -242,6 +247,7 @@ export class SparseComponentStore {
 	public clear(): void {
 		this._pos.fill(-1);
 		this._size = 0;
+		this.version++;
 	}
 
 	/** Insert the positional field-value `row` for `index`. Restore path only.
@@ -282,6 +288,7 @@ export class SparseComponentStore {
 	public remove(index: number): boolean {
 		const p = this._pos[index];
 		if (!(p >= 0)) return false;
+		this.version++;
 		const last = --this._size;
 		const moved = this._dense[last];
 		this._dense[p] = moved;
@@ -344,6 +351,7 @@ export class SparseComponentStore {
 		}
 		this._pos[index] = this._size;
 		this._dense[this._size++] = index;
+		this.version++;
 	}
 
 	/** Double the index capacity until `index` fits, and move every column and
