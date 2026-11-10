@@ -74,7 +74,7 @@ import type { RelationDef, RelationHooks, RelationServiceHost } from "./relation
 import type { EventHooks } from "./event";
 import { ResourceRegistry } from "./resource_registry";
 import { QueryRegistry } from "./query_registry";
-import { unsafeCast, BitSet, type TypedArrayTag } from "../../type_primitives";
+import { unsafeCast, BitSet, type TypedArrayTag, type AnyTypedArray } from "../../type_primitives";
 import { Archetype, _moveResult, type ArchetypeColumnLayout, type ArchetypeID } from "./archetype";
 import type { Query } from "./query";
 import type { QueryHost } from "./query_cache";
@@ -172,12 +172,44 @@ const SPARSE_BATCH = 1024;
  * The explicit little-endian read matches the dense column path's byte
  * assembly, so the digest stays architecture-independent. */
 const F64_HASH_SCRATCH = new DataView(new ArrayBuffer(8));
+/** The same eight bytes as an f64 and its two platform-order words. Read only
+ * on a little-endian host (`HOST_LITTLE_ENDIAN`), where they are the two
+ * little-endian words the `DataView` reads, at the cost of two typed loads. */
+const F64_HASH_F64 = new Float64Array(1);
+const F64_HASH_U32 = new Uint32Array(F64_HASH_F64.buffer);
 
 /** Whether this host stores a typed-array element little-endian. A
  * `Uint32Array` reads words in platform order and the digest is defined over
  * little-endian words, so `stateHash` reads a column through one only when
  * the two agree. Tested once, at module load. */
 const HOST_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+/** Fold one sparse member into `h`: its entity index, so identical rows on
+ * different entities don't collide and the membership set is part of the
+ * digest (the destroy and purge path drops stale indices, so a recycled slot
+ * can't smuggle a previous occupant's data in), then each field as the two
+ * little-endian words of its f64 value, matching the dense column path's
+ * explicit byte order (architecture-stable). A little-endian host reads the
+ * words through the aliased `Uint32Array`, any other host through the
+ * `DataView`. */
+function foldSparseMember(digest: number, index: number, fcols: readonly AnyTypedArray[]): number {
+	// The step of `fnv1aStepWord`, inline and kept in signed 32-bit form: an
+	// unsigned result above 2³¹ is a heap number, one allocation a word.
+	let h = Math.imul(digest ^ index, HASH_PRIME);
+	for (let f = 0; f < fcols.length; f++) {
+		const v = fcols[f][index];
+		if (HOST_LITTLE_ENDIAN) {
+			F64_HASH_F64[0] = v;
+			h = Math.imul(h ^ F64_HASH_U32[0], HASH_PRIME);
+			h = Math.imul(h ^ F64_HASH_U32[1], HASH_PRIME);
+		} else {
+			F64_HASH_SCRATCH.setFloat64(0, v, true);
+			h = Math.imul(h ^ F64_HASH_SCRATCH.getUint32(0, true), HASH_PRIME);
+			h = Math.imul(h ^ F64_HASH_SCRATCH.getUint32(4, true), HASH_PRIME);
+		}
+	}
+	return h;
+}
 
 /** `FNV1A_PRIME` as a local constant for the column fold. An imported binding
  * is a load in the package build, not an immediate (see `INDEX_BITS`). */
@@ -1349,22 +1381,22 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			// members, not capacity), folds via the shared `fnv1aStepWord`.
 			h = fnv1aStepWord(h, s);
 			h = fnv1aStepWord(h, store.size);
-			const idxs = store.canonicalIndices();
-			for (let i = 0; i < idxs.length; i++) {
-				const index = idxs[i];
-				// Fold the source entity index so identical rows on different
-				// entities don't collide, and so the membership set is part of
-				// the digest (the destroy and purge path drops stale indices, so a
-				// recycled slot can't smuggle a previous occupant's data in).
-				h = fnv1aStepWord(h, index);
-				const row = store.getRow(index)!;
-				for (let f = 0; f < row.length; f++) {
-					// f64 field → two little-endian u32 words, matching the dense
-					// column path's explicit LE byte order (architecture-stable).
-					F64_HASH_SCRATCH.setFloat64(0, row[f], true);
-					h = fnv1aStepWord(h, F64_HASH_SCRATCH.getUint32(0, true));
-					h = fnv1aStepWord(h, F64_HASH_SCRATCH.getUint32(4, true));
+			// The canonical order is ascending entity index. When the members
+			// fill at least a sixteenth of the index capacity, a scan of the
+			// position map visits them in that order at about a nanosecond a
+			// slot. Otherwise a typed copy of the member list sorts numerically
+			// with no comparator call. Both read the fields straight from the
+			// store's columns, so a member costs no allocation.
+			const fcols = store.fieldColumns;
+			const pos = store.positions;
+			if (pos.length <= store.size * 16) {
+				for (let index = 0; index < pos.length; index++) {
+					if (pos[index] < 0) continue;
+					h = foldSparseMember(h, index, fcols);
 				}
+			} else {
+				const idxs = store.indices.slice().sort();
+				for (let i = 0; i < idxs.length; i++) h = foldSparseMember(h, idxs[i], fcols);
 			}
 		}
 

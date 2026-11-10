@@ -290,6 +290,14 @@ export class SparseComponentStore {
 		return true;
 	}
 
+	/** The field columns, indexed by field then by entity index, valid at a
+	 * member's index only. The live array: a grow replaces its entries, so
+	 * read it again after a call that can add a member. For the determinism
+	 * fold, which reads every member's fields with no row copy. */
+	public get fieldColumns(): readonly AnyTypedArray[] {
+		return this._cols;
+	}
+
 	/** Read one field, or `undefined` if `index` doesn't hold this component. */
 	public getField(index: number, fieldIdx: number): number | undefined {
 		if (!(this._pos[index] >= 0)) return undefined;
