@@ -977,6 +977,29 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 10 * N }
 		);
 	}
+	// The dense part of the digest alone: N rows over four archetypes, with 4-,
+	// 2- and 1-byte columns, and no sparse store.
+	if ("digest/".includes(filter) || filter.startsWith("digest/")) {
+		const ecs = makeWorld({ ...PRESIZED, deterministic: true });
+		const Pos = ecs.registerComponent({ x: "i32", y: "i32", z: "i32" });
+		const Hp = ecs.registerComponent({ hp: "u16", lvl: "u8" });
+		const A = ecs.registerComponent({ a: "u32" });
+		const B = ecs.registerComponent({ b: "i32" });
+		const kinds = [
+			ecs.template(Pos({ x: 1, y: 2, z: 3 })),
+			ecs.template(Pos({ x: 1, y: 2, z: 3 }), Hp({ hp: 7, lvl: 1 })),
+			ecs.template(Pos({ x: 1, y: 2, z: 3 }), A({ a: 9 })),
+			ecs.template(Pos({ x: 1, y: 2, z: 3 }), Hp({ hp: 7, lvl: 1 }), B({ b: 5 }))
+		];
+		for (const t of kinds) ecs.spawnMany(t, N / 4);
+		add(
+			"digest/stateHash_dense",
+			() => {
+				for (let r = 0; r < 10; r++) sink = ecs.snapshots.stateHash();
+			},
+			{ iters: 10 * N }
+		);
+	}
 	// The sparse part of the digest alone: every entity a member of a sparse store
 	// with three fields, and a dense part of one i32 column. The row shows the
 	// per-member cost of the sparse fold.
