@@ -904,6 +904,15 @@ export class Archetype implements ArchetypeView {
 		return this.length - this.enabledCount;
 	}
 
+	/** The width-canonical row plane, index-parallel with `flatColumns` (the
+	 * tick planes follow the data columns). Read-only: `_syncRowPlane` is its
+	 * one writer, so a grow or a restore refreshes it like `bufs`. `stateHash`
+	 * reads a 4-byte column through its `Uint32Array` entry here, and a 1-byte
+	 * column through its `Uint8Array`, with no view to allocate. Cold. */
+	public get widthBufs(): readonly AnyTypedArray[] {
+		return this._widthBufs;
+	}
+
 	/** Raw entity ID buffer (packed `EntityID`s). Valid data at indices
 	 * 0..totalCount-1 (enabled rows first, then disabled). */
 	public get entityIds(): ReadonlyEntityIDArray {

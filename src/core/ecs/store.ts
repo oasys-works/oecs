@@ -173,6 +173,16 @@ const SPARSE_BATCH = 1024;
  * assembly, so the digest stays architecture-independent. */
 const F64_HASH_SCRATCH = new DataView(new ArrayBuffer(8));
 
+/** Whether this host stores a typed-array element little-endian. A
+ * `Uint32Array` reads words in platform order and the digest is defined over
+ * little-endian words, so `stateHash` reads a column through one only when
+ * the two agree. Tested once, at module load. */
+const HOST_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+/** `FNV1A_PRIME` as a local constant for the column fold. An imported binding
+ * is a load in the package build, not an immediate (see `INDEX_BITS`). */
+const HASH_PRIME = FNV1A_PRIME;
+
 /**
  * Composite-add edge cache key construction. The plural-add key packs
  * the entry def ids as a base-`COMPOSITE_ADD_ID_STRIDE` number seeded with the
@@ -1233,10 +1243,10 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * u8 or u16 columns at odd row counts) are folded together as a single
 	 * little-endian word so the algorithm stays branch-free in the inner
 	 * loop. The 4-byte `id` and `len` headers are folded as words for the
-	 * same reason. Byte order is little-endian to match the platform's
-	 * native TypedArray layout. The digest is opaque (no consumer compares
-	 * against a literal value), so endianness is an implementation detail
-	 * rather than wire contract.
+	 * same reason. Words are little-endian on every host: a 4- or 8-byte
+	 * column reads them through a `Uint32Array` on a little-endian host, and
+	 * through the byte assembly on a big-endian one, so both read the same
+	 * words.
 	 *
 	 * Determinism: same store ⇒ same digest within a process, and across
 	 * processes on the same architecture, which is all a lockstep replay
@@ -1269,27 +1279,45 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			h = fnv1aStepWord(h, arch.enabledCount);
 			if (len === 0) continue;
 			const cols = arch.flatColumns;
+			const plane = arch.widthBufs;
 			for (let j = 0; j < cols.length; j++) {
 				const buf = cols[j].buf;
-				const lenBytes = len * buf.BYTES_PER_ELEMENT;
-				const view = new Uint8Array(buf.buffer, buf.byteOffset, lenBytes);
+				const width = buf.BYTES_PER_ELEMENT;
+				const lenBytes = len * width;
+				// Hot inner loops: the per-word FNV step is deliberately inlined
+				// here rather than calling `fnv1aStepWord` (the shared definition
+				// the cold folds below use). This scan dominates `stateHash`, run
+				// per tick over every live column. The step is identical to
+				// `fnv1aStepWord`. Keep them in sync.
+				if (width >= 4 && HOST_LITTLE_ENDIAN) {
+					// A 4- or 8-byte column is 4-aligned (its own view could not
+					// exist otherwise), so its words read straight from a
+					// `Uint32Array`, with no tail. On a little-endian host that is
+					// the word the byte path below assembles, about twice as fast.
+					// A 4-byte column's view is already in the row plane. An 8-byte
+					// column takes a view per call, as the byte path did.
+					const words =
+						width === 4
+							? (plane[j] as Uint32Array)
+							: new Uint32Array(buf.buffer, buf.byteOffset, lenBytes >>> 2);
+					const wordCount = lenBytes >>> 2;
+					for (let w = 0; w < wordCount; w++) h = Math.imul(h ^ words[w], HASH_PRIME);
+					continue;
+				}
+				// A 1- or 2-byte column may sit at a 1- or 2-byte offset, where a
+				// `Uint32Array` view would throw, and a big-endian host reads a
+				// different word through one. Assemble each little-endian word from
+				// four byte loads instead. A 1-byte column's byte view is in the
+				// row plane already.
+				const view =
+					width === 1
+						? (plane[j] as Uint8Array)
+						: new Uint8Array(buf.buffer, buf.byteOffset, lenBytes);
 				const wordCount = lenBytes >>> 2;
 				let k = 0;
-				// Hot inner loop: the per-word FNV step is deliberately inlined here
-				// rather than calling `fnv1aStepWord` (the shared definition the
-				// cold folds below use). Inlining the column fold is a
-				// deliberate perf decision. It is much quicker than the per-byte loop
-				// it replaced, and this
-				// scan dominates `stateHash`, run per tick over every live column.
-				// The step is identical to `fnv1aStepWord`. Keep them in sync.
 				for (let w = 0; w < wordCount; w++) {
-					// Assemble little-endian u32 from four byte loads. Works at
-					// any byteOffset alignment (u8 or u16 SAB columns may sit at
-					// 1- or 2-byte boundaries. A Uint32Array view would throw).
-					const word =
-						(view[k] | (view[k + 1] << 8) | (view[k + 2] << 16) | (view[k + 3] << 24)) >>> 0;
-					h = (h ^ word) >>> 0;
-					h = Math.imul(h, FNV1A_PRIME);
+					const word = view[k] | (view[k + 1] << 8) | (view[k + 2] << 16) | (view[k + 3] << 24);
+					h = Math.imul(h ^ word, HASH_PRIME);
 					k += 4;
 				}
 				const tail = lenBytes & 3;
@@ -1299,8 +1327,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 					let tailWord = view[k];
 					if (tail > 1) tailWord |= view[k + 1] << 8;
 					if (tail > 2) tailWord |= view[k + 2] << 16;
-					h = (h ^ (tailWord >>> 0)) >>> 0;
-					h = Math.imul(h, FNV1A_PRIME);
+					h = Math.imul(h ^ tailWord, HASH_PRIME);
 				}
 			}
 		}
