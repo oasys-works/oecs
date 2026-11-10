@@ -735,6 +735,7 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 	 * process-global, so without it a system of world A mutating world B (a
 	 * supported pattern. B is not mid-iteration) would false-throw. */
 	private _assertOutsideSystem(op: string, alternative: string): void {
+		if (!DEV) return;
 		if (this._updating && accessCheck.current() !== null) {
 			const desc = accessCheck.current()!;
 			const name = desc.name ?? `system_${desc.id}`;

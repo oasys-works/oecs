@@ -3167,6 +3167,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		const store = this._sparseStoreOf(def);
 		const sid = def as unknown as number;
 		return (entity) => {
+			if (!DEV) return;
 			if (write) accessCheck.assertSparseWrite(def);
 			else accessCheck.assertSparseRead(def);
 			if (!this.isAlive(entity as EntityID))

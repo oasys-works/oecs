@@ -249,7 +249,7 @@ function toRepoRelative(abs: string, root: string): string {
 	return p.replace(/\\/g, "/");
 }
 
-export const dispatchTrace: DispatchTrace = new DispatchTrace();
+export const dispatchTrace: DispatchTrace = /* @__PURE__ */ new DispatchTrace();
 
 // Test seam, exposes the parser, the pure callsite walk, and the tracer
 // constructor without exposing the singleton's internals to production code.

@@ -668,6 +668,7 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 * built outside a system, same rationale as the data-op checks. `DEV` only
 	 * outside a system `assertRelationRead` is a no-op. */
 	private _assertRelationAccess(): void {
+		if (!DEV) return;
 		for (let i = 0; i < this.terms.relationIncludes.length; i++) {
 			accessCheck.assertRelationRead(this.terms.relationIncludes[i]);
 		}

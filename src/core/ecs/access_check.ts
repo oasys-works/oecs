@@ -512,7 +512,7 @@ class AccessCheck {
 	}
 }
 
-export const accessCheck: AccessCheck = new AccessCheck();
+export const accessCheck: AccessCheck = /* @__PURE__ */ new AccessCheck();
 
 /** @internal, test seam for unit tests that need a fresh tracker. */
 export const _accessCheckInternals = {
