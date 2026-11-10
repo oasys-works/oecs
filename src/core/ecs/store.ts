@@ -556,7 +556,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			reconstructHostRows: (host) => this._reconstructHostRows(host),
 			invalidateCaches: () => {
 				this.queryDirtyEpoch++;
-				this._rowCountsDirty = true;
+				this._rowEpoch++;
 			}
 		};
 	}
@@ -741,12 +741,21 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	private readonly _dirtyLists: (EntityID[] | undefined)[] = [];
 	private readonly _drainResults: (DrainResult | undefined)[] = [];
 
-	/** Set by any path that changes a SAB-backed archetype's live row count
-	 * (`flushStructural` and `flushDestroys` when they did work, immediate
-	 * `destroyEntity`, `addComponent(s)`, `removeComponent(s)` on the
-	 * Store). Cleared by `publishRowCounts`. Lets read-only
-	 * phases' `ctx.flush` skip the descriptor walk entirely. */
-	private _rowCountsDirty: boolean = false;
+	/** Advanced by any path that changes an archetype's live row count or its
+	 * enabled count (`flushStructural` and `flushDestroys` when they did work,
+	 * immediate `destroyEntity`, `addComponent(s)`, `removeComponent(s)`,
+	 * enable and disable, spawn, the batch moves, a restore). Row counts are
+	 * dirty while it differs from `_rowEpochPublished`, which
+	 * `publishRowCounts` sets. Lets read-only phases' `ctx.flush` skip the
+	 * descriptor walk entirely.
+	 *
+	 * A counter and not a flag, so a second reader can key on it. Each entity
+	 * that changes archetype, is enabled or disabled, or leaves a row moves a
+	 * row count, so the counter advances for each of them. A kept sparse match
+	 * list (`SparseMatchCache`) keys on it for the dense side of its match.
+	 * The write was a store of `true`. It is now a load, an add and a store. */
+	private _rowEpoch: number = 0;
+	private _rowEpochPublished: number = 0;
 
 	/** Monotonic counter bumped by every membership-changing path (immediate
 	 * `addComponent(s)`, `removeComponent(s)`, `destroyEntity`,
@@ -1195,13 +1204,13 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * on every call. Cheap: descriptor-region seeks only, no column
 	 * I/O.
 	 *
-	 * Gated by `_rowCountsDirty`, mutation paths
+	 * Gated by `_rowEpoch`, mutation paths
 	 * (`flushStructural`, `flushDestroys`, immediate `destroyEntity`,
-	 * `addComponent(s)`, `removeComponent(s)`) set the flag. This method
-	 * clears it. Read-only phases that flush only to drain empty buffers
+	 * `addComponent(s)`, `removeComponent(s)`) advance it. This method
+	 * records the value it published. Read-only phases that flush only to drain empty buffers
 	 * pay nothing. */
 	public publishRowCounts(): void {
-		if (!this._rowCountsDirty) return;
+		if (this._rowEpoch === this._rowEpochPublished) return;
 		const view = this._columnStore.view;
 		let archAddr = view.getUint32(STORE_HEADER_OFFSETS.layout_descriptor_off, true);
 		const archs = this._archGraph.archetypes;
@@ -1239,7 +1248,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			);
 			archAddr += ARCHETYPE_DESCRIPTOR_HEADER_BYTES + columnCount * COLUMN_DESCRIPTOR_BYTES;
 		}
-		this._rowCountsDirty = false;
+		this._rowEpochPublished = this._rowEpoch;
 	}
 
 	// =======================================================
@@ -2022,7 +2031,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * mutation hot path before you merge a change here. Code review alone is
 	 * not sufficient. */
 	private _onArchShrink(arch: Archetype, preLen: number): void {
-		this._rowCountsDirty = true;
+		this._rowEpoch++;
 		if ((preLen === 0) !== (arch.length === 0)) this.queryDirtyEpoch++;
 	}
 
@@ -2050,7 +2059,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 *     read is short-circuited away on the hot path (`preLen` or `preEnabled`
 	 *     non-zero), so a no-disabled workload pays only two scalar compares. */
 	private _onArchGrow(arch: Archetype, preLen: number, preEnabled: number): void {
-		this._rowCountsDirty = true;
+		this._rowEpoch++;
 		if (preLen === 0 || (preEnabled === 0 && arch.enabledCount !== 0)) this.queryDirtyEpoch++;
 	}
 
@@ -2062,7 +2071,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 * enters and leaves a query's non-empty set, because `Query.nonEmptyArchs`
 	 * filters on `entityCount`, which is now `enabled_count`. */
 	private _onArchEnabledChange(arch: Archetype, preEnabled: number): void {
-		this._rowCountsDirty = true;
+		this._rowEpoch++;
 		if ((preEnabled === 0) !== (arch.enabledCount === 0)) this.queryDirtyEpoch++;
 	}
 
@@ -2156,7 +2165,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	private _settleFlushDirty(): void {
 		const touched = this._flushTouched;
 		if (touched.length === 0) return;
-		this._rowCountsDirty = true;
+		this._rowEpoch++;
 		let crossed = false;
 		for (let i = 0; i < touched.length; i++) {
 			const arch = touched[i];
@@ -2378,7 +2387,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		// Settle dirty flags inline (mirrors `_settleFlushDirty`, but for the
 		// remove-only case computed above without the pre-length Map).
 		if (removedRow) {
-			this._rowCountsDirty = true;
+			this._rowEpoch++;
 			if (crossed) this.queryDirtyEpoch++;
 		}
 	}
