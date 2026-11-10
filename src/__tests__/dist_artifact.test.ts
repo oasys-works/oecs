@@ -35,6 +35,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { build } from "vite";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	INTERNAL_EXPORTS,
@@ -406,6 +407,67 @@ describe("the shipped bundle", () => {
 		expect(out.singleOfOne).toBe("true");
 		expect(out.singleOfTwo).toBe("true");
 	});
+
+	it("leaves no dev-only class in a bare production bundle", async () => {
+		// The artifact itself still holds `AccessCheck`, because `internal.js`
+		// exports it on purpose. What a consumer ships is what survives their own
+		// bundler, so bundle a minimal world against `index.js` and read the result.
+		// A dev-only method whose body is not gated pins the whole class and one of
+		// these names comes back. Rollup proves a local `new` pure by itself, so this
+		// does not see a missing `@__PURE__` mark, which only esbuild needs.
+		const dir = mkdtempSync(join(tmpdir(), "oecs-shake-"));
+		try {
+			const entry = join(dir, "app.mjs");
+			writeFileSync(
+				entry,
+				`import { ECS, SCHEDULE } from ${JSON.stringify(PROD)};
+const ecs = new ECS();
+const Pos = ecs.registerComponent({ x: "f64" });
+const q = ecs.query(Pos);
+const s = ecs.registerSystem({ writes: [Pos], fn: () => { q.forEachColumns((c, n) => { const { x } = c.mut(Pos); for (let i = 0; i < n; i++) x[i] += 1; }); } });
+ecs.addSystems(SCHEDULE.UPDATE, s);
+ecs.startup();
+ecs.spawn();
+ecs.update(1 / 60);
+console.log(ecs.entityCount);
+`
+			);
+			const result = await build({
+				configFile: false,
+				logLevel: "silent",
+				root: dir,
+				build: {
+					write: false,
+					minify: false,
+					lib: { entry, formats: ["es"], fileName: "out" }
+				}
+			});
+			const outputs = (Array.isArray(result) ? result : [result]) as {
+				output: { type: string; code?: string }[];
+			}[];
+			const code = outputs
+				.flatMap((o) => o.output)
+				.map((o) => o.code ?? "")
+				.join("\n");
+			expect(code.length).toBeGreaterThan(10_000);
+			for (const name of [
+				"assertRead",
+				"assertWrite",
+				"assertRelationRead",
+				"assertSparseRead",
+				"assertOptionalFetch",
+				"enterOptionalScope",
+				"isActive",
+				"recordEventEmit",
+				"recordResourceRead"
+			]) {
+				const at = code.indexOf(`${name}(`);
+				expect(at, `${name} shipped: ${code.slice(at - 80, at + 80)}`).toBe(-1);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 60_000);
 
 	it("throws the root's error classes out of a plugin, as ESM", () => {
 		const out = probe(
