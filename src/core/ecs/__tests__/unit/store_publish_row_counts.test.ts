@@ -7,9 +7,9 @@
  * behaviour is verified by reading back the descriptor region and
  * checking each archetype's `row_count` matches `Archetype.length`.
  *
- * The publish path is gated by an internal `_rowCountsDirty`
- * flag that every mutation site sets through `_onArchShrink`, `_onArchGrow`,
- * `_onArchEnabledChange` or `_settleFlushDirty`, and that publish clears.
+ * The publish path is gated by an internal `_rowEpoch`
+ * counter that every mutation site advances through `_onArchShrink`, `_onArchGrow`,
+ * `_onArchEnabledChange` or `_settleFlushDirty`, and whose value publish records.
  * Read-only tick phases
  * call `ctx.flush()` which drains empty buffers and then invokes
  * publish. The descriptor walk must skip the work entirely when nothing

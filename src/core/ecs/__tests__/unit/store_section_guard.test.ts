@@ -357,7 +357,7 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_SEAMS,
 		to: O_ROW_GRAIN,
-		fields: ["_rowCountsDirty", "queryDirtyEpoch"],
+		fields: ["_rowEpoch", "queryDirtyEpoch"],
 		reason:
 			"A restore replaces rows, so the snapshot host's mount seam invalidates the cached row counts and bumps the query epoch. The same invalidation seam every structural section uses."
 	},
@@ -431,8 +431,8 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_CONSTRUCTION,
 		to: O_ROW_GRAIN,
-		fields: ["_rowCountsDirty"],
-		reason: "publishRowCounts clears the row-count dirty flag after it stamps the descriptors."
+		fields: ["_rowEpoch", "_rowEpochPublished"],
+		reason: "publishRowCounts records the row epoch it published after it stamps the descriptors."
 	},
 	{
 		from: S_CONSTRUCTION,
@@ -512,7 +512,7 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_SPAWN,
 		to: O_ROW_GRAIN,
-		fields: ["_rowCountsDirty", "queryDirtyEpoch"],
+		fields: ["_rowEpoch", "queryDirtyEpoch"],
 		reason:
 			"A spawn or a destroy invalidates the cached row counts and bumps the query epoch. Every structural section writes these two, so they are the split's shared invalidation seam."
 	},
@@ -540,7 +540,7 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_TOGGLE,
 		to: O_ROW_GRAIN,
-		fields: ["_rowCountsDirty", "queryDirtyEpoch"],
+		fields: ["_rowEpoch", "queryDirtyEpoch"],
 		reason: "A toggle moves the enabled partition boundary, so the cached row counts go stale."
 	},
 
@@ -571,7 +571,7 @@ const ALLOWED: Allowed[] = [
 	{
 		from: S_DESTROY,
 		to: O_ROW_GRAIN,
-		fields: ["_rowCountsDirty", "queryDirtyEpoch"],
+		fields: ["_rowEpoch", "queryDirtyEpoch"],
 		reason: "Same invalidation seam as the spawn section."
 	},
 	{
