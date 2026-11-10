@@ -515,6 +515,47 @@ export function makeSuite(lib, filter = "") {
 		}
 	);
 
+	// The same attach with 24 component shapes (72 field names) at one call site.
+	// `writeFields` reads `values[names[i]]`, and with one shape that keyed load is
+	// monomorphic. A world with many components makes it megamorphic, the case
+	// `access/getField_manyNames` builds for reads. The values objects are built
+	// once, outside the timed loop, so the row measures the attach and not a literal.
+	// All 24 archetypes are planted and presized, so nothing grows in the timed part.
+	add(
+		"struct/addComponent_valued_manyDefs",
+		(s) => {
+			const { ecs, ids, defs, vals } = s;
+			for (let i = 0; i < ids.length; i++) ecs.addComponent(ids[i], defs[i % 24], vals[i % 24]);
+		},
+		{
+			iters: 3 * N,
+			setup: () => {
+				const ecs = new ECS({ memory: { columnCapacity: N * 6 } });
+				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+				const defs = [];
+				const vals = [];
+				for (let c = 0; c < 24; c++) {
+					const f = [`c${c}_a`, `c${c}_b`, `c${c}_c`];
+					defs.push(
+						ecs.registerComponent({
+							[f[0]]: "f64",
+							[f[1]]: "f64",
+							[f[2]]: "f64"
+						})
+					);
+					vals.push({ [f[0]]: 1, [f[1]]: 2, [f[2]]: 3 });
+				}
+				const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), 3 * N);
+				// Plant every [Pos, Cn] archetype and its columns outside the timed loop.
+				for (let c = 0; c < 24; c++) {
+					ecs.addComponent(ids[0], defs[c], vals[c]);
+					ecs.removeComponent(ids[0], defs[c]);
+				}
+				return { ecs, ids, defs, vals };
+			}
+		}
+	);
+
 	// Archetype registration ramp-up, the O(N²) extend cascade, where creating a
 	// new archetype re-publishes column views to every existing one. `refreshViews`
 	// is tuned to be allocation-free there, and the row plane adds work to it, so
@@ -624,6 +665,54 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 600 * 2000 }
 		);
 	}
+
+	// The deferred attach with 24 component shapes at one call site. The flush reads
+	// each caller's values object by name, far from the call site. One update runs
+	// one system that queues an add for every entity, then the phase flush applies
+	// them. Archetypes are planted and presized as in
+	// `struct/addComponent_valued_manyDefs`.
+	add(
+		"cmd/add_valued_manyDefs",
+		(s) => {
+			s.ecs.update(0.016);
+		},
+		{
+			iters: 3 * N,
+			setup: () => {
+				const ecs = new ECS({ memory: { columnCapacity: N * 6 } });
+				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+				const defs = [];
+				const vals = [];
+				for (let c = 0; c < 24; c++) {
+					const f = [`c${c}_a`, `c${c}_b`, `c${c}_c`];
+					defs.push(
+						ecs.registerComponent({
+							[f[0]]: "f64",
+							[f[1]]: "f64",
+							[f[2]]: "f64"
+						})
+					);
+					vals.push({ [f[0]]: 1, [f[1]]: 2, [f[2]]: 3 });
+				}
+				const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), 3 * N);
+				for (let c = 0; c < 24; c++) {
+					ecs.addComponent(ids[0], defs[c], vals[c]);
+					ecs.removeComponent(ids[0], defs[c]);
+				}
+				ecs.addSystems(
+					SCHEDULE.UPDATE,
+					ecs.registerSystem({
+						fn: (ctx) => {
+							for (let i = 0; i < ids.length; i++)
+								ctx.commands.add(ids[i], defs[i % 24], vals[i % 24]);
+						}
+					})
+				);
+				ecs.startup();
+				return { ecs };
+			}
+		}
+	);
 
 	// ────────────────────────────────────────────────────────────────────────
 	// 8. Relations.
@@ -795,6 +884,45 @@ export function makeSuite(lib, filter = "") {
 			{ iters: 10 * N }
 		);
 	}
+
+	// `addSparse` with 24 sparse shapes at one call site. `setRow` reads the values
+	// object by name, so the keyed load is megamorphic here as in
+	// `struct/addComponent_valued_manyDefs`. The sparse columns grow with the highest
+	// member index, so the setup attaches every shape to the last entity first.
+	add(
+		"sparse/addSparse_valued_manyDefs",
+		(s) => {
+			const { ecs, ids, defs, vals } = s;
+			for (let i = 0; i < ids.length; i++) ecs.addSparse(ids[i], defs[i % 24], vals[i % 24]);
+		},
+		{
+			iters: 3 * N,
+			setup: () => {
+				const ecs = new ECS({ memory: { columnCapacity: N * 6 } });
+				const Pos = ecs.registerComponent({ x: "f64", y: "f64" });
+				const defs = [];
+				const vals = [];
+				for (let c = 0; c < 24; c++) {
+					const f = [`c${c}_a`, `c${c}_b`, `c${c}_c`];
+					defs.push(
+						ecs.registerSparseComponent({
+							[f[0]]: "f64",
+							[f[1]]: "f64",
+							[f[2]]: "f64"
+						})
+					);
+					vals.push({ [f[0]]: 1, [f[1]]: 2, [f[2]]: 3 });
+				}
+				const ids = ecs.spawnMany(ecs.template(Pos({ x: 1, y: 1 })), 3 * N);
+				const last = ids[ids.length - 1];
+				for (let c = 0; c < 24; c++) {
+					ecs.addSparse(last, defs[c], vals[c]);
+					ecs.removeSparse(last, defs[c]);
+				}
+				return { ecs, ids, defs, vals };
+			}
+		}
+	);
 
 	// ────────────────────────────────────────────────────────────────────────
 	// 10. Query resolution and composition (cache-hit cost).
