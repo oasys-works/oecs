@@ -3591,6 +3591,14 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	private _batchDepth = 0;
 	/** The second result of `_fillSparseRun`. */
 	private _runNext = 0;
+	/** How many members `_fillSparseRun` found on a free slot, ever. The
+	 * destroy purge leaves none. A sparse-only restore can leave one, when an
+	 * entity died after the capture. A spawn with no component then takes the
+	 * slot, and the member shows on it, with no move of the row epoch or of a
+	 * version. So a derivation that saw one keeps nothing, and the next pass
+	 * derives again. The count only goes up, so a nested pass cannot hide what
+	 * an outer pass saw. */
+	private _freeMembersSeen = 0;
 
 	/** `forEachSparseMatch` in runs. The same entities in the same order, given
 	 * to `cb` as a buffer of ids and a count. One call for each run, not for
@@ -3727,6 +3735,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				return;
 			}
 			kept.key = -1;
+			const freeSeen = this._freeMembersSeen;
 			const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
 			const stores = this._sparseStores;
 			// The driver rule of `forEachSparseIds`.
@@ -3768,7 +3777,9 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			}
 			kept.count = total;
 			if (runs.length > 2 * r + 2) runs.length = r + 1;
-			if (this._sparseMatchKey(terms) === key) kept.key = key;
+			// Keep the match when the walk changed nothing and met no member on a
+			// free slot.
+			if (this._freeMembersSeen === freeSeen && this._sparseMatchKey(terms) === key) kept.key = key;
 		} finally {
 			kept.busy = 0;
 		}
@@ -3830,6 +3841,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 		const members = driver.members;
 		const otherPos = other !== null ? other.positions : null;
 		let m = 0;
+		let free = 0;
 		let memoArch = -2;
 		let memoOk = false;
 		let memoEnabled = 0;
@@ -3840,7 +3852,11 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			if (otherPos !== null && !(otherPos[idx] >= 0)) continue;
 			if (rest !== null && !this._sparseTermsHold(rest, driver, idx)) continue;
 			const archId = entArch[idx];
-			if (archId === UNASSIGNED) continue;
+			if (archId === UNASSIGNED) {
+				// A member on a free slot. See `_freeMembersSeen`.
+				free++;
+				continue;
+			}
 			if (archId !== memoArch) {
 				const arch = archetypes[archId];
 				const mask = arch.mask;
@@ -3858,6 +3874,7 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			}
 			buf[m++] = (gens[idx] << INDEX_BITS) | idx;
 		}
+		if (free !== 0) this._freeMembersSeen += free;
 		this._runNext = i;
 		return m;
 	}

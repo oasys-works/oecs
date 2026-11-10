@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { ECS } from "../../ecs";
 import { SCHEDULE } from "../../phase";
-import type { EntityID } from "../../entity";
+import { getEntityIndex, type EntityID } from "../../entity";
 import { relations } from "../../../../plugins/relations";
 import { snapshots } from "../../../../plugins/snapshots";
 import { openAccess } from "../test_helpers";
@@ -337,5 +337,28 @@ describe("forEachIds, the kept sparse match", () => {
 		).toThrow("boom");
 		expect(walkIds(q)).toEqual(walk(q));
 		expect(walkIds(q).length).toBe(49);
+	});
+
+	it("keeps nothing while a member sits on a free slot", () => {
+		// The sparse half of a snapshot carries no liveness. An entity that died
+		// after the capture comes back as a member on its free slot. A spawn with
+		// no component then takes that slot, and neither the row epoch nor a
+		// version moves. A pass that saw such a member must not keep its match.
+		const ecs = ECS.create({ deterministic: true, plugins: [snapshots()] });
+		const A = ecs.registerSparseTag();
+		const stays = ecs.spawn();
+		const gone = ecs.spawn();
+		ecs.addSparse(stays, A);
+		ecs.addSparse(gone, A);
+		const q = ecs.query().andSparse(A) as unknown as Walkable;
+		const bytes = ecs.snapshots.captureSparse();
+		ecs.despawn(gone);
+		ecs.snapshots.restoreSparse(bytes);
+		// Three passes: the first keeps nothing by rule, the second would keep,
+		// and the third would give the kept match.
+		for (let pass = 0; pass < 3; pass++) expect(walkIds(q)).toEqual(walk(q));
+		const born = ecs.spawn();
+		expect(getEntityIndex(born)).toBe(getEntityIndex(gone));
+		expect(walkIds(q)).toEqual(walk(q));
 	});
 });
