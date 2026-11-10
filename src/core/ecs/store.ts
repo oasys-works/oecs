@@ -77,7 +77,7 @@ import { QueryRegistry } from "./query_registry";
 import { unsafeCast, BitSet, type TypedArrayTag, type AnyTypedArray } from "../../type_primitives";
 import { Archetype, _moveResult, type ArchetypeColumnLayout, type ArchetypeID } from "./archetype";
 import type { Query } from "./query";
-import type { QueryHost } from "./query_cache";
+import type { QueryHost, SparseMatchCache } from "./query_cache";
 import type { QueryTerms } from "./query_terms";
 // The store shapes a consumer names without holding a `Store`. They live in a
 // leaf so a module that only needs one does not import this file.
@@ -3598,13 +3598,17 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 	 *
 	 * A run is a copy. An entity that `cb` removes still shows in the rest of
 	 * its run. A dense-only query with no sparse exclude gives each
-	 * archetype's own id column, with no copy. */
+	 * archetype's own id column, with no copy.
+	 *
+	 * `kept` is the match the query keeps, or `null`. The query passes it only
+	 * when it has a sparse require. See `_keptSparseIds`. */
 	public forEachSparseIds(
 		include: BitSet,
 		exclude: BitSet | null,
 		anyOf: BitSet | null,
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
+		kept: SparseMatchCache | null,
 		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void {
 		const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
@@ -3632,6 +3636,11 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 				const n = includesDisabled ? arch.totalCount : arch.enabledCount;
 				if (n > 0) cb(arch.entityIds, n);
 			}
+			return;
+		}
+		// A nested pass of the same query takes the scratch path below.
+		if (kept !== null && kept.busy === 0) {
+			this._keptSparseIds(include, exclude, anyOf, terms, kept, cb);
 			return;
 		}
 
@@ -3670,6 +3679,98 @@ export class Store implements ChangeFeed, ObserverHost, QueryHost {
 			}
 		} finally {
 			this._batchDepth = depth;
+		}
+	}
+
+	/** The key of a sparse match: the row epoch plus the membership version of
+	 * each sparse store the query names. Each counter only goes up, so the sum
+	 * changes when any one of them does. The row epoch covers the dense side:
+	 * the archetype of an entity (the mask test), its place in the enabled
+	 * partition, and its row. The versions cover membership and the member
+	 * order, and with the destroy purge, liveness and the generation. */
+	private _sparseMatchKey(terms: QueryTerms): number {
+		const stores = this._sparseStores;
+		const inc = terms.sparseIncludes;
+		const exc = terms.sparseExcludes;
+		let key = this._rowEpoch;
+		for (let j = 0; j < inc.length; j++) key += stores[inc[j] as number].version;
+		for (let j = 0; j < exc.length; j++) key += stores[exc[j] as number].version;
+		return key;
+	}
+
+	/** The require path of `forEachSparseIds` for a query that keeps its match.
+	 * With a valid key, give the kept runs. Otherwise derive the match into the
+	 * kept runs, as the scratch path derives it into its buffer, and keep the
+	 * key when the walk changed nothing. A walk that changed something leaves
+	 * the key invalid, because its runs mix two states. The runs are never
+	 * reallocated in a steady state. They shrink when the match falls below
+	 * half of them. */
+	private _keptSparseIds(
+		include: BitSet,
+		exclude: BitSet | null,
+		anyOf: BitSet | null,
+		terms: QueryTerms,
+		kept: SparseMatchCache,
+		cb: (ids: ReadonlyEntityIDArray, count: number) => void
+	): void {
+		const key = this._sparseMatchKey(terms);
+		const runs = kept.runs;
+		kept.busy = 1;
+		try {
+			if (key === kept.key) {
+				let left = kept.count;
+				for (let r = 0; left > 0; r++) {
+					const m = left < SPARSE_BATCH ? left : SPARSE_BATCH;
+					left -= m;
+					cb(unsafeCast<ReadonlyEntityIDArray>(runs[r]), m);
+				}
+				return;
+			}
+			kept.key = -1;
+			const { sparseIncludes, sparseExcludes, includesDisabled } = terms;
+			const stores = this._sparseStores;
+			// The driver rule of `forEachSparseIds`.
+			let d = 0;
+			for (let i = 1; i < sparseIncludes.length; i++) {
+				if (stores[sparseIncludes[i] as number].size < stores[sparseIncludes[d] as number].size)
+					d = i;
+			}
+			const driver = stores[sparseIncludes[d] as number];
+			const pair = sparseIncludes.length <= 2 && sparseExcludes.length === 0;
+			const other =
+				pair && sparseIncludes.length === 2 ? stores[sparseIncludes[1 - d] as number] : null;
+			const rest = pair ? null : terms;
+			let i = 0;
+			let r = 0;
+			let total = 0;
+			for (;;) {
+				let buf = runs[r];
+				if (buf === undefined) {
+					buf = new Uint32Array(SPARSE_BATCH);
+					runs.push(buf);
+				}
+				const m = this._fillSparseRun(
+					driver,
+					other,
+					rest,
+					include,
+					exclude,
+					anyOf,
+					includesDisabled,
+					buf,
+					i
+				);
+				i = this._runNext;
+				if (m === 0) break;
+				total += m;
+				r++;
+				cb(unsafeCast<ReadonlyEntityIDArray>(buf), m);
+			}
+			kept.count = total;
+			if (runs.length > 2 * r + 2) runs.length = r + 1;
+			if (this._sparseMatchKey(terms) === key) kept.key = key;
+		} finally {
+			kept.busy = 0;
 		}
 	}
 

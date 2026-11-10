@@ -664,6 +664,13 @@ const ALLOWED: Allowed[] = [
 			"A relation is a sparse (relation, target) pair, so the traversals read the sparse store that backs it."
 	},
 	{
+		from: S_RELATIONS,
+		to: O_ROW_GRAIN,
+		fields: ["_rowEpoch"],
+		reason:
+			"The sparse match a query keeps (`_keptSparseIds`) keys on the row epoch, which advances on every archetype change, enable, disable and row removal. A split hands the driver the epoch through a getter."
+	},
+	{
 		from: S_DIRECT,
 		to: O_ROW_GRAIN,
 		fields: ["anyDirtyTracked"],

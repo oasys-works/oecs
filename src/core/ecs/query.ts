@@ -82,7 +82,7 @@ import {
 	termCacheKey
 } from "./query_terms";
 import type { ArchetypeTerm, HierarchyTerm, QueryTerms } from "./query_terms";
-import type { QueryResolver } from "./query_cache";
+import type { QueryResolver, SparseMatchCache } from "./query_cache";
 import { ChunkColumns } from "./chunk_columns";
 import { ChangedQuery } from "./changed_query";
 
@@ -120,6 +120,10 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	// short path. The constructor is the only writer and `terms` is frozen, so
 	// the copy cannot drift.
 	public readonly includesDisabled: boolean;
+	// The match `forEachIds` keeps between passes, for a query with a sparse
+	// require. `null` until the first pass, which keeps nothing: a query walked
+	// one time pins no buffer. See `SparseMatchCache`.
+	private _kept: SparseMatchCache | null = null;
 
 	constructor(
 		archetypes: Archetype[],
@@ -1067,7 +1071,17 @@ export class Query<Defs extends readonly ComponentDef[]> {
 	 *
 	 * Read `ids` inside the call only. The buffer is reused. A run is a copy, so
 	 * an entity that the callback removes still shows in the rest of its run.
-	 * Buffer structural edits and apply them after the walk. */
+	 * Buffer structural edits and apply them after the walk.
+	 *
+	 * A query with a sparse require keeps its match from one pass to the next.
+	 * A later pass gives the kept match again when nothing changed between the
+	 * passes: no sparse store the query names gained or lost a member, and no
+	 * entity changed archetype, was enabled or disabled, or left its row. Any
+	 * such change makes the next pass derive the match again. A pass that gives
+	 * the kept match is a copy as a whole, so an edit that the callback makes
+	 * shows in no later run of that pass. A pass that derives the match reads
+	 * the stores live from one run to the next, as it always did, and keeps the
+	 * result only when the callback changed nothing. */
 	public forEachIds(cb: (ids: ReadonlyEntityIDArray, count: number) => void): void {
 		if (DEV) this._assertRelationAccess();
 		if (this.terms.hierarchyTerm !== null) {
@@ -1078,12 +1092,18 @@ export class Query<Defs extends readonly ComponentDef[]> {
 			if (ids.length > 0) cb(ids, ids.length);
 			return;
 		}
+		let kept: SparseMatchCache | null = null;
+		if (this.terms.sparseIncludes.length > 0) {
+			kept = this._kept;
+			if (kept === null) this._kept = { runs: [], count: 0, key: -1, busy: 0 };
+		}
 		this._resolver.forEachSparseIds(
 			this.include,
 			this._exclude,
 			this._anyOf,
 			this.terms,
 			this.nonEmptyArchs(),
+			kept,
 			cb
 		);
 	}

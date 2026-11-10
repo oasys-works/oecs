@@ -75,6 +75,7 @@ export interface QueryHost {
 		anyOf: BitSet | null,
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
+		kept: SparseMatchCache | null,
 		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void;
 	/** Fourth query-match path: hierarchy depth ordering. */
@@ -183,6 +184,23 @@ export class QueryCache {
 	}
 }
 
+/** The match a query with a sparse require keeps between two `forEachIds`
+ * passes. The query owns it, so its lifetime is the query's. The store fills
+ * it and keys it, so the query holds no store state. */
+export interface SparseMatchCache {
+	/** The match, in runs of `SPARSE_BATCH` ids. Every run is full but the
+	 * last. A run is one buffer, reused by the next derivation. */
+	readonly runs: Uint32Array[];
+	/** The ids in the match. */
+	count: number;
+	/** The key the match was derived under, or `-1` when it is not valid. */
+	key: number;
+	/** `1` while a pass walks or fills `runs`. A nested pass of the same query
+	 * then takes the scratch path, so it cannot refill a run the outer pass
+	 * still reads. */
+	busy: number;
+}
+
 export interface QueryResolver {
 	resolveQuery(
 		include: BitSet,
@@ -225,6 +243,7 @@ export interface QueryResolver {
 		anyOf: BitSet | null,
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
+		kept: SparseMatchCache | null,
 		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void;
 	/** Backing sparse id of a relation, resolves a `(R, *)` wildcard term

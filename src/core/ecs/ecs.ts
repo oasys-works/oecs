@@ -74,7 +74,7 @@ import { Schedule } from "./schedule";
 import type { Phase, PhaseConfig, SchedulePhase } from "./phase";
 import type { Archetype, ArchetypeID } from "./archetype";
 import { Query, QueryBuilder } from "./query";
-import { QueryCache, type QueryResolver } from "./query_cache";
+import { QueryCache, type QueryResolver, type SparseMatchCache } from "./query_cache";
 import type { QueryTerms } from "./query_terms";
 import { SystemContext } from "./system_context";
 import type { EntityID, ReadonlyEntityIDArray } from "./entity";
@@ -1723,9 +1723,10 @@ export class ECS<C extends Plugins = object> implements QueryResolver {
 		anyOf: BitSet | null,
 		terms: QueryTerms,
 		denseArchetypes: readonly Archetype[],
+		kept: SparseMatchCache | null,
 		cb: (ids: ReadonlyEntityIDArray, count: number) => void
 	): void {
-		this._store.forEachSparseIds(include, exclude, anyOf, terms, denseArchetypes, cb);
+		this._store.forEachSparseIds(include, exclude, anyOf, terms, denseArchetypes, kept, cb);
 	}
 
 	/** QueryResolver implementation, backing sparse id of a relation, for the
