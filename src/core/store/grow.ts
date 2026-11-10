@@ -48,14 +48,8 @@ import {
 	type ColumnStoreInternal
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
-import {
-	growBufferInPlace,
-	layoutColumnsAtTail,
-	reallocAndRepublish,
-	tailCursorBytes,
-	type ArchetypeGrowSpec,
-	type TailArchetypeLayout
-} from "./layout_ops";
+import { growBufferInPlace, reallocAndRepublish, type ArchetypeGrowSpec } from "./layout_ops";
+import { moveAndClear, planPlacements, type PlacementRequest } from "./holes";
 import { DEV } from "../../dev_flag";
 
 // The per-archetype plan-entry shape lives in layout_ops.ts (shared with
@@ -103,8 +97,8 @@ interface GrowTarget {
  * archetype that becomes larger in steps fires one grow at each step, and each
  * grow copies every other archetype again.
  *
- * The fast path relocates only the growing archetypes' columns to the SAB
- * tail (copying only their live rows), rewrites their descriptors in place
+ * The fast path relocates only the growing archetypes' columns, to a hole
+ * or the SAB tail (copying only their live rows), rewrites their descriptors in place
  * (a grow never changes column count, so each descriptor occupies the same
  * bytes), grows the SAB, and rebuilds views for the grown archetypes only.
  * Every other archetype, and the prefix regions (entity-index, command
@@ -112,62 +106,65 @@ interface GrowTarget {
  * and data carry forward verbatim. Cost drops from O(all archetypes) to
  * O(grown archetype live rows).
  *
- * Tradeoff: the grown archetype's previous column region is abandoned (a
- * hole). Geometric doubling bounds the wasted bytes by the archetype's
- * final live size. The growable SAB only ever grows, so holes are not
- * reclaimed within an allocator's lifetime. That suits a bounded-lifetime
- * world, where an archetype reaches a steady capacity and stops growing.
- * A compaction pass could reclaim them later.
+ * The grown archetype's previous column region becomes a hole. A later grow
+ * or extend reuses it (`holes.ts`), and an archetype with free bytes after it
+ * grows where it stands. The p26 probe measured the holes at 28 to 50% of the
+ * column area before the reuse and under 2% after it. The cost: a write
+ * through a column view held across a grow can now land in live data, where
+ * it used to land in an abandoned region.
  */
 function growColumnStoreInPlace(
 	old: ColumnStoreInternal,
 	growTargets: readonly GrowTarget[],
 	regionOff: number
 ): GrowResult {
-	// 1. Lay the grown archetypes' columns out at the current SAB tail. Only
-	//    these archetypes move. A grow keeps each column's stride (the column
-	//    set is unchanged), so the tail layout reuses the old strides verbatim.
-	const tailLayouts: TailArchetypeLayout[] = new Array(growTargets.length);
+	// 1. Place the grown archetypes' columns: in a hole that fits, where the
+	//    archetype stands when the bytes after it are free, else at the tail
+	//    (see `planPlacements`). Only these archetypes move. A grow keeps each
+	//    column's stride (the column set is unchanged), so the layout reuses
+	//    the old strides verbatim.
+	const requests: PlacementRequest[] = new Array(growTargets.length);
 	for (let t = 0; t < growTargets.length; t++) {
 		const target = growTargets[t];
 		const oldArch = old.archetypes.get(target.archetypeId)!;
-		tailLayouts[t] = {
-			archetypeId: target.archetypeId,
-			componentMask: oldArch.componentMask,
-			rowCapacity: target.newRowCapacity,
-			columns: oldArch.columnsInOrder
+		const oldOffsets: number[] = new Array(oldArch.columnsInOrder.length);
+		for (let j = 0; j < oldOffsets.length; j++) oldOffsets[j] = oldArch.columnsInOrder[j].byteOff;
+		requests[t] = {
+			layout: {
+				archetypeId: target.archetypeId,
+				componentMask: oldArch.componentMask,
+				rowCapacity: target.newRowCapacity,
+				columns: oldArch.columnsInOrder
+			},
+			old: { offsets: oldOffsets, rowCapacity: oldArch.rowCapacity, rowCount: target.rowCount }
 		};
 	}
-	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
-	// `capacity` for the fixed heap ArrayBuffer (whose byteLength is the full
-	// cap), or `buffer.byteLength` for the growable-SAB and wasm backings (unchanged).
-	const { descriptors, newTotal } = layoutColumnsAtTail(tailCursorBytes(old), tailLayouts);
+	const plan = planPlacements(old, requests);
+	const newTotal = plan.newTotal;
 	const newDescriptors = new Map<number, ArchetypeDescriptor>();
-	for (let i = 0; i < descriptors.length; i++) {
-		newDescriptors.set(descriptors[i].archetypeId, descriptors[i]);
+	for (let i = 0; i < plan.placements.length; i++) {
+		const d = plan.placements[i].descriptor;
+		newDescriptors.set(d.archetypeId, d);
 	}
 
-	// 2. Grow the backing store in place. Old views stay valid either way,
-	//    see `growBufferInPlace`.
+	// 2. Grow the backing store in place when the span grew. Old views stay
+	//    valid either way, see `growBufferInPlace`.
 	const { grownBuffer, newView } = growBufferInPlace(old, newTotal);
 
-	// 3. Copy each grown archetype's live rows from its old column ranges to
-	//    the new tail ranges. Byte-level copy handles any column type. Src
-	//    (< pre-grow byteLength) and dst (>= pre-grow byteLength) never
-	//    overlap.
+	// 3. Copy each grown archetype's live rows to its new columns, in plan
+	//    order, and zero the rest of each column where the bytes may be stale.
+	//    A source and its destination may overlap. `planPlacements` picked the
+	//    column order that makes the copy safe.
 	// Based at the store, so a descriptor's relative `byte_off` indexes it.
 	const bytes = new Uint8Array(grownBuffer, old.storeBase, newTotal);
 	for (let t = 0; t < growTargets.length; t++) {
-		const target = growTargets[t];
-		const oldArch = old.archetypes.get(target.archetypeId)!;
-		const desc = newDescriptors.get(target.archetypeId)!;
-		for (let j = 0; j < oldArch.columnsInOrder.length; j++) {
-			const oldc = oldArch.columnsInOrder[j];
-			const live = target.rowCount * oldc.stride;
-			if (live > 0) {
-				bytes.copyWithin(desc.columns[j].byteOff, oldc.byteOff, oldc.byteOff + live);
-			}
-		}
+		moveAndClear(
+			bytes,
+			plan.placements[t],
+			requests[t].old!.offsets,
+			growTargets[t].rowCount,
+			plan.fillLimit
+		);
 	}
 
 	// 4. Rewrite the grown archetypes' descriptors in place. A grow never
@@ -225,7 +222,8 @@ function growColumnStoreInPlace(
 		// re-reserves the same descriptor-region margin.
 		_reservedDescriptorBytes: old._reservedDescriptorBytes,
 		// A grow adds no archetype, so the descriptor bytes in use do not change.
-		_usedDescriptorBytes: old._usedDescriptorBytes
+		_usedDescriptorBytes: old._usedDescriptorBytes,
+		_holes: plan.holes
 	};
 
 	const grownArchetypeIds: number[] = new Array(growTargets.length);

@@ -15,11 +15,13 @@ import { openAccess } from "../test_helpers";
 describe("Column buffer invalidation", () => {
 	// Columns are typed arrays over one buffer. The default heap allocator
 	// reserves that buffer at the cap, so a grow relocates the growing
-	// archetype's columns to the tail and `refreshViews` repoints every
-	// column at the new region. The buffer itself never changes identity.
-	// A reference taken before the grow keeps the pre-grow values, and a
-	// write through it lands in the abandoned region, so live data is
-	// unaffected.
+	// archetype's columns inside it and `refreshViews` repoints every column
+	// at the new region. The buffer itself never changes identity. A
+	// reference taken before the grow keeps its old length and does not see
+	// rows past it. The region a grow leaves is a hole that a later grow or
+	// extend reuses, and an archetype with free bytes after it grows where it
+	// stands, so a write through a stale reference can land in live data. A
+	// reference must be dropped after any structural change.
 	it("getColumnMut returns stale TypedArray after archetype grows past capacity", () => {
 		// Use small initial capacity to force reallocation quickly
 		const world = new ECS({ memory: { columnCapacity: 4 } });
@@ -61,13 +63,11 @@ describe("Column buffer invalidation", () => {
 		expect(staleX![0]).toBe(0);
 		expect(staleX![1]).toBe(1);
 		expect(staleX![2]).toBe(2);
-		// Index 5 on old buffer should be 0 (or whatever was in the old allocation)
-		// while fresh should have 5
+		// The stale ref keeps the pre-grow capacity, so it cannot reach row 5,
+		// while the fresh one holds it.
+		expect(staleX!.length).toBe(4);
+		expect(freshX!.length).toBeGreaterThanOrEqual(13);
 		expect(freshX![5]).toBe(5);
-
-		// Critical: writing to stale ref does not affect the live data
-		staleX![0] = 999;
-		expect(freshX![0]).toBe(0); // live data unaffected
 		expect(world.getField(q.archetypes[0].entityIds[0] as EntityID, Pos, "x")).toBe(0);
 	});
 

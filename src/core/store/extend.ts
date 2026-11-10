@@ -37,15 +37,14 @@ import {
 	usedDescriptorBytes
 } from "./column_store";
 import type { BufferAllocator } from "./allocator";
-import { TYPE_TAG_STRIDE, archetypeDescriptorBytes, writeArchetypeDescriptor } from "./descriptor";
 import {
-	growBufferInPlace,
-	layoutColumnsAtTail,
-	reallocAndRepublish,
-	tailCursorBytes,
-	type ArchetypeGrowSpec,
-	type TailArchetypeLayout
-} from "./layout_ops";
+	TYPE_TAG_STRIDE,
+	archetypeDescriptorBytes,
+	writeArchetypeDescriptor,
+	type ArchetypeDescriptor
+} from "./descriptor";
+import { growBufferInPlace, reallocAndRepublish, type ArchetypeGrowSpec } from "./layout_ops";
+import { moveAndClear, planPlacements, type PlacementRequest } from "./holes";
 
 export interface ExtendPlan {
 	/** Archetypes to append. Each `archetype_id` must be absent from
@@ -269,33 +268,31 @@ function extendColumnStoreInPlace(
 	usedRegion: number,
 	newRegion: number
 ): ExtendResult {
-	// 1. Compute new column byte_offs at the SAB tail, `tailCursorBytes(old)`
-	//    is the live extent (header `capacity` for the fixed heap buffer,
-	//    `buffer.byteLength` for the growable-SAB and wasm backings). New columns
-	//    have no prior stride, so it's derived from the type tag here.
-	const tailLayouts: TailArchetypeLayout[] = new Array(newArchetypes.length);
+	// 1. Place the new archetypes' columns: in a hole that fits, else past the
+	//    used span (see `planPlacements`). New columns have no prior stride,
+	//    so it's derived from the type tag here.
+	const requests: PlacementRequest[] = new Array(newArchetypes.length);
 	for (let i = 0; i < newArchetypes.length; i++) {
 		const spec = newArchetypes[i];
-		tailLayouts[i] = {
-			archetypeId: spec.archetypeId,
-			componentMask: spec.componentMask,
-			rowCapacity: spec.rowCapacity,
-			columns: spec.columns.map((c) => ({
-				componentId: c.componentId,
-				fieldId: c.fieldId,
-				typeTag: c.typeTag,
-				stride: TYPE_TAG_STRIDE[c.typeTag]
-			}))
+		requests[i] = {
+			layout: {
+				archetypeId: spec.archetypeId,
+				componentMask: spec.componentMask,
+				rowCapacity: spec.rowCapacity,
+				columns: spec.columns.map((c) => ({
+					componentId: c.componentId,
+					fieldId: c.fieldId,
+					typeTag: c.typeTag,
+					stride: TYPE_TAG_STRIDE[c.typeTag]
+				}))
+			}
 		};
 	}
-	// Tail cursor = the backing's live extent (see `tailCursorBytes`): the header
-	// `capacity` for the fixed heap ArrayBuffer, or `buffer.byteLength` for the
-	// growable-SAB and wasm backings (the wasm fast path deliberately lands new
-	// regions past its page-rounded tail, unchanged here).
-	const { descriptors: newDescriptors, newTotal } = layoutColumnsAtTail(
-		tailCursorBytes(old),
-		tailLayouts
-	);
+	const plan = planPlacements(old, requests);
+	const newTotal = plan.newTotal;
+	const newDescriptors: ArchetypeDescriptor[] = new Array(plan.placements.length);
+	for (let i = 0; i < plan.placements.length; i++)
+		newDescriptors[i] = plan.placements[i].descriptor;
 
 	// 2. Grow the storage to fit the new tail, see `growBufferInPlace`.
 	//    Header + descriptor writes below all stay within the pre-grow byte
@@ -303,6 +300,17 @@ function extendColumnStoreInPlace(
 	//    for the new descriptors), but tracking the live SAB on
 	//    `newStore.view` keeps future grows and extends well-formed.
 	const { grownBuffer, newView } = growBufferInPlace(old, newTotal);
+
+	// A new archetype has no rows. A column placed in a hole holds stale bytes,
+	// so it is zeroed, as fresh bytes past the tail already are. An extend that
+	// only appended skips the pass, which keeps the common extend as cheap as
+	// it was.
+	if (plan.reused) {
+		const bytes = new Uint8Array(grownBuffer, old.storeBase, newTotal);
+		for (let i = 0; i < plan.placements.length; i++) {
+			moveAndClear(bytes, plan.placements[i], null, 0, plan.fillLimit);
+		}
+	}
 
 	// 3. Append the new descriptor entries into the reserved descriptor
 	//    region slack (after the existing entries, before the unused
@@ -360,7 +368,8 @@ function extendColumnStoreInPlace(
 		// Carry the headroom policy forward so a later realloc (once this
 		// in-place slack is exhausted) re-reserves the same margin.
 		_reservedDescriptorBytes: old._reservedDescriptorBytes,
-		_usedDescriptorBytes: usedRegion + newRegion
+		_usedDescriptorBytes: usedRegion + newRegion,
+		_holes: plan.holes
 	};
 
 	// Fast path: existing ArchetypeViews carried forward unchanged, so

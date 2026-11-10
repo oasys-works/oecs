@@ -478,6 +478,11 @@ export interface ColumnStoreInternal extends ColumnStore {
 	 * N-th archetype grow with N. Absent on a record that predates the cache
 	 * (a store from `growColumnStore`), and then summed one time on demand. */
 	readonly _usedDescriptorBytes?: number;
+	/** The holes of the column data area, flat `[start, end, ...]` and sorted
+	 * (see `holes.ts`). A cache of what the descriptors already say, kept so an
+	 * extend does not sort every extent. Absent on a fresh or realloc'd record,
+	 * and then derived one time on demand. */
+	readonly _holes?: readonly number[];
 }
 
 /** The descriptor-region bytes that `archetypes` use. */

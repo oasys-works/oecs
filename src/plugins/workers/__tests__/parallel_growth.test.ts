@@ -67,11 +67,14 @@ function integrateWorld(backing: Backing) {
 	return world;
 }
 
-/** Spawn far past the column capacity, so the store grows and moves columns. */
+/** Spawn far past the column capacity, so the store grows and moves columns.
+ * Far enough that the wasm memory must take new pages too: a smaller grow can
+ * fit in a hole or in the page-rounded slack past the span, and then the wasm
+ * buffer keeps its identity. */
 function growPastCapacity(world: ReturnType<typeof integrateWorld>): void {
 	const { ecs, Pos, Vel } = world;
 	const template = ecs.template(Pos({ x: 0, y: 0 } as never), Vel({ vx: 0, vy: 0 } as never));
-	for (let i = 0; i < 600; i++) ecs.spawn(template);
+	for (let i = 0; i < 20_000; i++) ecs.spawn(template);
 	seed(ecs, Pos, Vel);
 	ecs.publishRowCounts();
 }

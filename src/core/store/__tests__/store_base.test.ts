@@ -252,7 +252,9 @@ describe("store base, grow", () => {
 		const beforeCapacity = store.header.capacity;
 		store = growColumnStore(
 			store,
-			{ archetypes: [{ archetypeId: 2, newRowCapacity: 64, rowCount: 0 }] },
+			// Archetype 1, not the last one: the last one would grow where it
+			// stands, and this test is about where an append lands.
+			{ archetypes: [{ archetypeId: 1, newRowCapacity: 64, rowCount: 0 }] },
 			allocator
 		).store;
 		let capacity = new DataView(store.buffer, storeBase).getUint32(
@@ -263,7 +265,7 @@ describe("store base, grow", () => {
 		// The relocated column lands at the old span's end, not at the backing's
 		// end. A tail cursor that forgot to drop the base would leak one base per
 		// grow and put the column a base too high.
-		const moved = store.archetypes.get(2)!.columnsInOrder[0];
+		const moved = store.archetypes.get(1)!.columnsInOrder[0];
 		expect(moved.byteOff).toBe(alignUp(beforeCapacity, moved.stride));
 
 		store = extendColumnStore(

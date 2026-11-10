@@ -1257,8 +1257,8 @@
 		{
 			"label": "wasm_memory/A/grow",
 			"layout": {
-				"byteLength": 262144,
-				"headerCapacity": 196992,
+				"byteLength": 196608,
+				"headerCapacity": 131328,
 				"headerViewStamp": 2,
 				"headerArchetypeCount": 3,
 				"headerLayoutDescriptorOff": 52,
@@ -1271,14 +1271,14 @@
 								"componentId": 0,
 								"fieldId": 0,
 								"typeTag": 6,
-								"byteOff": 196608,
+								"byteOff": 552,
 								"stride": 4
 							},
 							{
 								"componentId": 1,
 								"fieldId": 1,
 								"typeTag": 7,
-								"byteOff": 196736,
+								"byteOff": 680,
 								"stride": 8
 							}
 						]
@@ -1328,7 +1328,7 @@
 			"viewsPreserved": true,
 			"oldViewStamp": 1,
 			"newViewStamp": 2,
-			"bufferIdentityKept": false,
+			"bufferIdentityKept": true,
 			"dataProbe": [
 				0,
 				1,
